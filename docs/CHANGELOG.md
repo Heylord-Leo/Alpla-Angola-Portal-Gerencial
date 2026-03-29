@@ -1,5 +1,11 @@
 # Changelog
 
+## [v2.9.15] - 2026-03-29
+
+### Fixed
+- **Quotation Completion Validation**: Resolved a persistent issue where the "Concluir cotação" action was blocked by a "zero items" error even when quotations with items were present. The validation logic now correctly calculates a union of request-level items and items stored within Quotation entities.
+- **Workflow Signature Consistency**: Standardized the `completeQuotationAction` call across `BuyerItemsList.tsx` and `RequestEdit.tsx`.
+
 ## [v2.10.0] - 2026-03-29
 
 ### Added

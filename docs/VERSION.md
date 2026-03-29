@@ -2,10 +2,11 @@
 
 ## Current Version
 
-v2.9.14
+v2.9.15
 
 ## Version History
 
+- **2.9.15**: Quotation Completion Validation Fix. Resolved a false-positive "zero items" error by correctly summing request-level and quotation-level line items.
 - **2.9.14**: Session Security Fix. Migrated auth storage to `sessionStorage` to enforce tab-scoped access and logout on browser close.
 - **2.9.13**: Modal Layering Fix. Standardized z-index stacking for User Management, Approval, and Receiving modals using React Portals.
 - **2.9.12**: Line-Item Persistence Bug. Fixed audit log constraint violations during line-item updates.
@@ -50,11 +51,13 @@ Active Development
 ## [v2.9.14] - 2026-03-29
 
 ### Fixed
+
 - **Session Security**: Migrated authentication data (`auth_token`, `auth_user`) from `localStorage` to `sessionStorage`. This ensures that sessions are tied to the browser tab lifecycle and are automatically cleared when the tab or browser window is closed.
 
 ## [v2.9.13] - 2026-03-29
 
 ### Fixed
+
 - **Modal Layering & Stacking Context**: Resolved a critical UI conflict where the sticky Topbar (z-index 100) obscured modal dialogs and side drawers. Implemented `DropdownPortal` in `UserManagement.tsx`, `ApprovalModal.tsx`, and `ReceivingModal.tsx`.
 - **Import Resolution**: Fixed a naming collision in `UserManagement.tsx` between the `Link` icon and the `Link` routing component.
 
@@ -76,7 +79,7 @@ Active Development
 
 ## Last Updated
 
-2026-03-29 (Session Security Fix)
+2026-03-29 (Quotation Completion Fix)
 
 ## Version Notes
 

@@ -6,21 +6,11 @@ import { api } from './api';
  */
 export async function completeQuotationAction(
     requestId: string,
-    hasProforma: boolean,
-    hasSupplier: boolean,
     itemCount: number,
     comment: string = ''
 ) {
     if (itemCount === 0) {
-        throw new Error('O pedido deve conter pelo menos uma linha de item para ser concluído.');
-    }
-
-    if (!hasSupplier) {
-        throw new Error('É necessário selecionar um fornecedor antes de concluir a cotação.');
-    }
-
-    if (!hasProforma) {
-        throw new Error('É necessário anexar a Proforma antes de concluir a cotação.');
+        throw new Error('O pedido deve conter pelo menos uma linha de item (via cotação vinculada ou itens diretos) para ser concluído.');
     }
 
     // 2. Execute API Call

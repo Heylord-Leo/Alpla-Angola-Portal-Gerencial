@@ -977,7 +977,7 @@ export function BuyerItemsList() {
     };
 
     const handleModalAction = async () => {
-        const { requestId, itemId, newStatusCode, type, hasProforma, hasSupplier, itemsCount } = showApprovalModal;
+        const { requestId, itemId, newStatusCode, type, itemsCount } = showApprovalModal;
         if (!requestId && type !== 'ITEM_STATUS_CHANGE') return;
 
         try {
@@ -985,7 +985,7 @@ export function BuyerItemsList() {
             setModalFeedback({ type: 'error', message: null });
 
             if (type === 'COMPLETE_QUOTATION') {
-                await completeQuotationAction(requestId!, hasProforma, hasSupplier, itemsCount, approvalComment);
+                await completeQuotationAction(requestId!, itemsCount, approvalComment);
                 setFeedback({ type: 'success', message: 'Cotação concluída e enviada para aprovação.' });
             } else if (type === 'CANCEL_REQUEST' && requestId) {
                 await api.requests.cancel(requestId, approvalComment);
@@ -2170,7 +2170,8 @@ export function BuyerItemsList() {
                                                                 const hasCompQ = group.quotations.some((q: SavedQuotationDto) => 
                                                                     (q.itemCount > 0) && (!!q.proformaAttachmentId) && (!!q.supplierId)
                                                                 );
-                                                                handleCompleteQuotation(group.requestId, !!group.proformaId, anySupplierSet, group.items.length, qCount, hasCompQ);
+                                                                const totalItemsCount = group.items.length + group.quotations.reduce((acc: number, q: SavedQuotationDto) => acc + q.itemCount, 0);
+                                                                handleCompleteQuotation(group.requestId, !!group.proformaId, anySupplierSet, totalItemsCount, qCount, hasCompQ);
                                                             }}
                                                             disabled={isSaving || !!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]}
                                                             className={!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? "" : "btn-primary"}

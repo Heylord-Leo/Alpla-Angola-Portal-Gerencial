@@ -625,10 +625,8 @@ export function RequestEdit() {
         }
         if (action === 'COMPLETE_QUOTATION') {
             try {
-                const hasProforma = attachments.some(a => a.attachmentTypeCode === 'PROFORMA');
-                const hasSupplier = !!formData.supplierId;
-                const itemsCount = lineItems.length;
-                await completeQuotationAction(id, hasProforma, hasSupplier, itemsCount, approvalComment);
+                const totalItemsCount = lineItems.length + quotations.reduce((acc: number, q: SavedQuotationDto) => acc + q.itemCount, 0);
+                await completeQuotationAction(id!, totalItemsCount, approvalComment);
                 setApprovalProcessing(false);
                 setFeedback({ type: 'success', message: 'Cotação concluída e enviada para aprovação.' });
                 setShowApprovalModal({ show: false, type: null });
