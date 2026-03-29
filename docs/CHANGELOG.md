@@ -1,5 +1,10 @@
 # Changelog
 
+## [v2.9.14] - 2026-03-29
+
+### Fixed
+- **Session Persistence**: Switched authentication storage from `localStorage` to `sessionStorage`. Sessions are now strictly tab/window scoped and do not survive browser closure, improving security for the administrative portal.
+
 ## [v2.9.13] - 2026-03-29
 
 ### Fixed

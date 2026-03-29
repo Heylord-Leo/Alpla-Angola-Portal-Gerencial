@@ -16,7 +16,7 @@ export class ApiError extends Error {
 }
 
 export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
-    const token = localStorage.getItem('auth_token');
+    const token = sessionStorage.getItem('auth_token');
     const headers = {
         ...options.headers,
         ...(token ? { 'Authorization': `Bearer ${token}` } : {})
@@ -32,8 +32,8 @@ async function handleApiError(
     // Detect expired/invalid token
     // We skip the redirect if it is a login request, so the caller can handle and display the error
     if (response.status === 401 && !response.url.includes('/api/auth/login')) {
-        localStorage.removeItem('auth_token');
-        localStorage.removeItem('auth_user');
+        sessionStorage.removeItem('auth_token');
+        sessionStorage.removeItem('auth_user');
         window.location.href = '/login';
     }
 

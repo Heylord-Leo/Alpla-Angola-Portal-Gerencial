@@ -2,10 +2,11 @@
 
 ## Current Version
 
-v2.9.13
+v2.9.14
 
 ## Version History
 
+- **2.9.14**: Session Security Fix. Migrated auth storage to `sessionStorage` to enforce tab-scoped access and logout on browser close.
 - **2.9.13**: Modal Layering Fix. Standardized z-index stacking for User Management, Approval, and Receiving modals using React Portals.
 - **2.9.12**: Line-Item Persistence Bug. Fixed audit log constraint violations during line-item updates.
 - **2.9.11**: Buyer OCR & Admin Logs Auth standardization.
@@ -46,6 +47,11 @@ Semantic Versioning (MAJOR.MINOR.PATCH)
 
 Active Development
 
+## [v2.9.14] - 2026-03-29
+
+### Fixed
+- **Session Security**: Migrated authentication data (`auth_token`, `auth_user`) from `localStorage` to `sessionStorage`. This ensures that sessions are tied to the browser tab lifecycle and are automatically cleared when the tab or browser window is closed.
+
 ## [v2.9.13] - 2026-03-29
 
 ### Fixed
@@ -70,7 +76,7 @@ Active Development
 
 ## Last Updated
 
-2026-03-29 (Modal Layering Fix)
+2026-03-29 (Session Security Fix)
 
 ## Version Notes
 
