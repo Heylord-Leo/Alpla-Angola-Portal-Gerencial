@@ -1,5 +1,14 @@
 # Changelog
 
+## [v2.9.17] - 2026-03-29
+
+### Fixed
+- **Quotation Workspace Filtering**: Implemented strict backend filtering for the "Gestão de Cotações" workspace. Only requests of type `QUOTATION` are now included in the list and KPI summaries, preventing data leakage from `PAYMENT` requests.
+- **Centralized Constants**: Introduced `RequestConstants.cs` and `AttachmentConstants.cs` to eliminate hardcoded string literals throughout the backend controllers, improving maintainability.
+
+### Added
+- **Performance Optimization**: Added database indexes for `CreatedAtUtc` and `RequestId`/`IsDeleted` to optimize query performance for large request datasets.
+
 ## [v2.9.16] - 2026-03-29
 
 ### Added

@@ -1,5 +1,6 @@
 using AlplaPortal.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using AlplaPortal.Domain.Constants;
 
 namespace AlplaPortal.Api.Controllers;
 
@@ -12,12 +13,12 @@ public static class RequestWorkflowHelper
     {
         bool allReceived = false;
 
-        if (request.RequestType!.Code == "QUOTATION" && request.SelectedQuotationId.HasValue)
+        if (request.RequestType!.Code == RequestConstants.Types.Quotation && request.SelectedQuotationId.HasValue)
         {
             var winningQuotation = request.Quotations.FirstOrDefault(q => q.Id == request.SelectedQuotationId.Value);
             if (winningQuotation != null)
             {
-                allReceived = winningQuotation.Items.All(qi => qi.LineItemStatus?.Code == "RECEIVED");
+                allReceived = winningQuotation.Items.All(qi => qi.LineItemStatus?.Code == "RECEIVED"); // RECEIVED status not yet in constants
             }
         }
         else
@@ -35,7 +36,13 @@ public static class RequestWorkflowHelper
     /// </summary>
     public static bool CanMutateQuotation(string statusCode)
     {
-        var allowedStatuses = new[] { "DRAFT", "WAITING_QUOTATION", "AREA_ADJUSTMENT", "FINAL_ADJUSTMENT" };
+        var allowedStatuses = new[] 
+        { 
+            RequestConstants.Statuses.Draft, 
+            RequestConstants.Statuses.WaitingQuotation, 
+            RequestConstants.Statuses.AreaAdjustment, 
+            RequestConstants.Statuses.FinalAdjustment 
+        };
         return allowedStatuses.Contains(statusCode);
     }
 }

@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
-using System.Security.Claims;
+using AlplaPortal.Domain.Constants;
 using System.IO;
 
 namespace AlplaPortal.Api.Controllers;
@@ -59,25 +59,25 @@ public class AttachmentsController : BaseController
 
         switch (typeCodeStr)
         {
-            case "PROFORMA":
+            case AttachmentConstants.Types.Proforma:
                 isUploadable = RequestWorkflowHelper.CanMutateQuotation(statusCode);
                 detail = "O documento Proforma só pode ser carregado nos estágios de Rascunho, Reajuste ou Cotação.";
                 break;
-            case "PO":
-                isUploadable = new[] { "APPROVED", "PO_ISSUED", "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "WAITING_RECEIPT" }.Contains(statusCode);
+            case AttachmentConstants.Types.PurchaseOrder:
+                isUploadable = new[] { "APPROVED", RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup }.Contains(statusCode);
                 detail = "O documento P.O só pode ser carregado a partir do estágio de Aprovação.";
                 break;
-            case "PAYMENT_SCHEDULE":
-                isUploadable = new[] { "PO_ISSUED", "PAYMENT_SCHEDULED" }.Contains(statusCode);
+            case AttachmentConstants.Types.PaymentSchedule:
+                isUploadable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled }.Contains(statusCode);
                 detail = "O Cronograma de Pagamento deve ser carregado nos estágios de emissão de P.O ou agendamento.";
                 break;
-            case "PAYMENT_PROOF":
-                isUploadable = new[] { "PO_ISSUED", "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "WAITING_RECEIPT" }.Contains(statusCode);
+            case AttachmentConstants.Types.PaymentProof:
+                isUploadable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup }.Contains(statusCode);
                 detail = "O Comprovante de Pagamento deve ser carregado nos estágios de emissão de P.O, agendamento, conclusão ou recebimento.";
                 break;
             default:
                 // For any other types, only allow upload in editable stages
-                isUploadable = new[] { "DRAFT", "AREA_ADJUSTMENT", "FINAL_ADJUSTMENT", "WAITING_QUOTATION" }.Contains(statusCode);
+                isUploadable = new[] { RequestConstants.Statuses.Draft, RequestConstants.Statuses.AreaAdjustment, RequestConstants.Statuses.FinalAdjustment, RequestConstants.Statuses.WaitingQuotation }.Contains(statusCode);
                 detail = "Este documento só pode ser carregado em estágios editáveis.";
                 break;
         }
@@ -132,10 +132,10 @@ public class AttachmentsController : BaseController
 
         // 3. Add Aggregated History Entry
         string typeLabel = typeCode;
-        if (typeCode == "PROFORMA") typeLabel = "Proforma";
-        else if (typeCode == "PO") typeLabel = "P.O";
-        else if (typeCode == "PAYMENT_SCHEDULE") typeLabel = "Cronograma de Pagamento";
-        else if (typeCode == "PAYMENT_PROOF") typeLabel = "Comprovante de Pagamento";
+        if (typeCode == AttachmentConstants.Types.Proforma) typeLabel = "Proforma";
+        else if (typeCode == AttachmentConstants.Types.PurchaseOrder) typeLabel = "P.O";
+        else if (typeCode == AttachmentConstants.Types.PaymentSchedule) typeLabel = "Cronograma de Pagamento";
+        else if (typeCode == AttachmentConstants.Types.PaymentProof) typeLabel = "Comprovante de Pagamento";
 
         string comment = filesToProcess.Count == 1 
             ? $"Documento \"{filesToProcess[0].FileName}\" ({typeLabel}) adicionado ao pedido por {user.FullName}."
@@ -203,25 +203,25 @@ public class AttachmentsController : BaseController
 
         switch (attachment.AttachmentTypeCode)
         {
-            case "PROFORMA":
+            case AttachmentConstants.Types.Proforma:
                 isDeletable = RequestWorkflowHelper.CanMutateQuotation(attachment.Request.Status!.Code);
                 detail = "O documento Proforma só pode ser removido nos estágios de Rascunho, Reajuste ou Cotação.";
                 break;
-            case "PO":
+            case AttachmentConstants.Types.PurchaseOrder:
                 isDeletable = new[] { "APPROVED" }.Contains(attachment.Request.Status!.Code);
                 detail = "O documento P.O só pode ser removido enquanto o pedido está no status Aprovado.";
                 break;
-            case "PAYMENT_SCHEDULE":
-                isDeletable = new[] { "PO_ISSUED", "PAYMENT_SCHEDULED" }.Contains(attachment.Request.Status!.Code);
+            case AttachmentConstants.Types.PaymentSchedule:
+                isDeletable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled }.Contains(attachment.Request.Status!.Code);
                 detail = "O Cronograma de Pagamento só pode ser removido enquanto estiver em emissão de P.O ou agendamento.";
                 break;
-            case "PAYMENT_PROOF":
-                isDeletable = new[] { "PO_ISSUED", "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "WAITING_RECEIPT" }.Contains(attachment.Request.Status!.Code);
+            case AttachmentConstants.Types.PaymentProof:
+                isDeletable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup }.Contains(attachment.Request.Status!.Code);
                 detail = "O Comprovante de Pagamento só pode ser removido antes da finalização do pedido.";
                 break;
             default:
                 // For any other types, only allow deletion in editable stages
-                isDeletable = new[] { "DRAFT", "AREA_ADJUSTMENT", "FINAL_ADJUSTMENT", "WAITING_QUOTATION" }.Contains(attachment.Request.Status!.Code);
+                isDeletable = new[] { RequestConstants.Statuses.Draft, RequestConstants.Statuses.AreaAdjustment, RequestConstants.Statuses.FinalAdjustment, RequestConstants.Statuses.WaitingQuotation }.Contains(attachment.Request.Status!.Code);
                 detail = "Este documento só pode ser removido em estágios editáveis.";
                 break;
         }

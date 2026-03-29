@@ -14,65 +14,62 @@ namespace AlplaPortal.Api.Controllers;
 [Route("api/v1/line-items")]
 public class LineItemsController : BaseController
 {
-    public LineItemsController(ApplicationDbContext context) : base(context)
+    private readonly ILogger<LineItemsController> _logger;
+
+    public LineItemsController(ApplicationDbContext context, ILogger<LineItemsController> logger) : base(context)
     {
+        _logger = logger;
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetLineItems(
-        [FromQuery] string? query,
-        [FromQuery] string? itemStatus,
-        [FromQuery] string? requestStatus,
-        [FromQuery] int? plant,
-        [FromQuery] int? department,
+    public async Task<ActionResult> GetLineItems(
+        [FromQuery] string? query = null,
+        [FromQuery] string? itemStatus = null,
+        [FromQuery] string? requestStatus = null,
+        [FromQuery] int? plant = null,
+        [FromQuery] int? department = null,
+        [FromQuery] string? owner = null,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 15)
+        [FromQuery] int pageSize = 20)
     {
-        var requestsQuery = await GetScopedRequestsQuery();
+        var swOverall = System.Diagnostics.Stopwatch.StartNew();
+        var swCount = new System.Diagnostics.Stopwatch();
+        var swPage = new System.Diagnostics.Stopwatch();
+        var swRelated = new System.Diagnostics.Stopwatch();
+
+        var requestsBaseQuery = await GetScopedRequestsQuery();
         
-        requestsQuery = requestsQuery
-            .Include(r => r.Status)
-            .Include(r => r.RequestType)
-            .Include(r => r.Department)
-            .Include(r => r.Company)
-            .Include(r => r.Attachments)
-            .Include(r => r.Supplier)
-            .Include(r => r.Requester)
-            .Include(r => r.Plant)
-            .Include(r => r.LineItems)
-                .ThenInclude(li => li.LineItemStatus)
-            .Include(r => r.LineItems)
-                .ThenInclude(li => li.Plant)
-            .Include(r => r.LineItems)
-                .ThenInclude(li => li.Supplier)
-            .Include(r => r.LineItems)
-                .ThenInclude(li => li.CostCenter)
-            .Include(r => r.LineItems)
-                .ThenInclude(li => li.Unit)
-            .Include(r => r.StatusHistories)
-                .ThenInclude(sh => sh.ActorUser)
-            .Include(r => r.StatusHistories)
-                .ThenInclude(sh => sh.NewStatus)
-            .Include(r => r.Quotations)
-                .ThenInclude(q => q.Items)
-            .Where(r => !r.IsCancelled);
+        // Phase 0: Build the filtered query (No Includes needed yet)
+        var filteredRequests = requestsBaseQuery
+            .AsNoTracking()
+            .Where(r => !r.IsCancelled && r.RequestType!.Code == RequestConstants.Types.Quotation);
 
         // Security: Filter to only show items for requests in specific allowed statuses
-        var allowedStatuses = new[] { "WAITING_QUOTATION", "AREA_ADJUSTMENT", "FINAL_ADJUSTMENT", "PAYMENT_COMPLETED", "IN_FOLLOWUP" };
-        requestsQuery = requestsQuery.Where(r => allowedStatuses.Contains(r.Status!.Code));
+        var allowedStatuses = new[] 
+        { 
+            RequestConstants.Statuses.WaitingQuotation, 
+            RequestConstants.Statuses.AreaAdjustment, 
+            RequestConstants.Statuses.FinalAdjustment, 
+            RequestConstants.Statuses.PaymentCompleted, 
+            RequestConstants.Statuses.InFollowup, 
+            RequestConstants.Statuses.WaitingAreaApproval, 
+            RequestConstants.Statuses.WaitingFinalApproval, 
+            RequestConstants.Statuses.WaitingCostCenter 
+        };
+        filteredRequests = filteredRequests.Where(r => allowedStatuses.Contains(r.Status!.Code));
 
         if (department.HasValue)
         {
-            requestsQuery = requestsQuery.Where(r => r.DepartmentId == department.Value);
+            filteredRequests = filteredRequests.Where(r => r.DepartmentId == department.Value);
         }
 
         if (!string.IsNullOrWhiteSpace(requestStatus))
         {
-            requestsQuery = requestsQuery.Where(r => r.Status!.Code == requestStatus);
+            filteredRequests = filteredRequests.Where(r => r.Status!.Code == requestStatus);
         }
 
-        // Project to a combined structure before further filtering
-        var dbQuery = requestsQuery.SelectMany(
+        // Project to a combined structure for filtering
+        var dbQuery = filteredRequests.SelectMany(
             r => r.LineItems.Where(li => !li.IsDeleted).DefaultIfEmpty(),
             (r, li) => new { Request = r, LineItem = li }
         );
@@ -98,160 +95,214 @@ public class LineItemsController : BaseController
             dbQuery = dbQuery.Where(x => x.LineItem != null && x.LineItem.LineItemStatus!.Code == itemStatus);
         }
 
+        // Phase 1: Count
+        swCount.Start();
         var totalCount = await dbQuery.CountAsync();
+        swCount.Stop();
 
-        var items = await dbQuery
+        // Phase 2: Page Fetch (Only Flat Data)
+        swPage.Start();
+        var pageItemsRaw = await dbQuery
             .OrderByDescending(x => x.Request.CreatedAtUtc)
             .ThenBy(x => x.Request.Id)
             .ThenBy(x => x.LineItem != null ? x.LineItem.LineNumber : 0)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(x => new LineItemDetailsDto
+            .Select(x => new
             {
-                LineItemId = x.LineItem != null ? (Guid?)x.LineItem.Id : null,
-                LineNumber = x.LineItem != null ? x.LineItem.LineNumber : 0,
+                LineItem = x.LineItem,
                 RequestId = x.Request.Id,
-                RequestNumber = x.Request.RequestNumber ?? "",
+                RequestNumber = x.Request.RequestNumber,
                 RequestTitle = x.Request.Title,
                 RequestStatusName = x.Request.Status!.Name,
                 RequestStatusCode = x.Request.Status!.Code,
                 RequestStatusBadgeColor = x.Request.Status!.BadgeColor,
                 RequestTypeCode = x.Request.RequestType!.Code,
                 RequestTypeName = x.Request.RequestType!.Name,
-                CompanyId = x.Request.CompanyId,
-
-                ProformaId = x.Request.Attachments
-                    .Where(a => a.AttachmentTypeCode == "PROFORMA" && !a.IsDeleted)
-                    .OrderByDescending(a => a.UploadedAtUtc)
-                    .Select(a => (Guid?)a.Id)
-                    .FirstOrDefault(),
-                ProformaFileName = x.Request.Attachments
-                    .Where(a => a.AttachmentTypeCode == "PROFORMA" && !a.IsDeleted)
-                    .OrderByDescending(a => a.UploadedAtUtc)
-                    .Select(a => a.FileName)
-                    .FirstOrDefault(),
-                ProformaAttachments = x.Request.Attachments
-                    .Where(a => a.AttachmentTypeCode == "PROFORMA" && !a.IsDeleted)
-                    .OrderByDescending(a => a.UploadedAtUtc)
-                    .Select(a => new AlplaPortal.Application.DTOs.Requests.ProformaAttachmentDto
-                    {
-                        Id = a.Id,
-                        FileName = a.FileName
-                    })
-                    .ToList(),
-                
-                DepartmentName = x.Request.Department!.Name,
-                PlantId = x.LineItem != null ? x.LineItem.PlantId : null,
-                PlantName = x.LineItem != null && x.LineItem.Plant != null ? x.LineItem.Plant.Name : null,
                 RequestPlantId = x.Request.PlantId,
                 RequestPlantName = x.Request.Plant != null ? x.Request.Plant.Name : null,
                 RequesterName = x.Request.Requester!.FullName,
                 NeedByDateUtc = x.Request.NeedByDateUtc,
+                DepartmentName = x.Request.Department!.Name,
+                CompanyId = x.Request.CompanyId,
+                RequestSupplierId = x.Request.SupplierId,
+                RequestSupplierName = x.Request.Supplier != null ? x.Request.Supplier.Name : null,
+                RequestSupplierCode = x.Request.Supplier != null ? x.Request.Supplier.PortalCode : null,
+                RequestCurrencyId = x.Request.CurrencyId,
+                RequestCurrencyCode = x.Request.Currency != null ? x.Request.Currency.Code : null,
+                RequestUpdatedAtUtc = x.Request.UpdatedAtUtc,
+                RequestCreatedAtUtc = x.Request.CreatedAtUtc,
+                
+                // Line Item specific flat fields
+                ItemPlantName = x.LineItem != null && x.LineItem.Plant != null ? x.LineItem.Plant.Name : null,
+                ItemUnitCode = x.LineItem != null && x.LineItem.Unit != null ? x.LineItem.Unit.Code : null,
+                ItemCurrencyCode = x.LineItem != null && x.LineItem.Currency != null ? x.LineItem.Currency.Code : null,
+                ItemStatusName = x.LineItem != null && x.LineItem.LineItemStatus != null ? x.LineItem.LineItemStatus.Name : null,
+                ItemStatusCode = x.LineItem != null && x.LineItem.LineItemStatus != null ? x.LineItem.LineItemStatus.Code : null,
+                ItemStatusBadgeColor = x.LineItem != null && x.LineItem.LineItemStatus != null ? x.LineItem.LineItemStatus.BadgeColor : null,
+                ItemSupplierName = x.LineItem != null && x.LineItem.Supplier != null ? x.LineItem.Supplier.Name : (x.LineItem != null ? x.LineItem.SupplierName : null),
+                ItemSupplierCode = x.LineItem != null && x.LineItem.Supplier != null ? x.LineItem.Supplier.PortalCode : null,
+                ItemPrimaveraCode = x.LineItem != null && x.LineItem.Supplier != null ? x.LineItem.Supplier.PrimaveraCode : null,
+                ItemCostCenterName = x.LineItem != null && x.LineItem.CostCenter != null ? x.LineItem.CostCenter.Name : null,
+                ItemCostCenterCode = x.LineItem != null && x.LineItem.CostCenter != null ? x.LineItem.CostCenter.Code : null
+            })
+            .ToListAsync();
+        swPage.Stop();
+
+        // Phase 3: Related Data Hydration (Quotations, Attachments, Histories)
+        swRelated.Start();
+        var uniqueRequestIds = pageItemsRaw.Select(x => x.RequestId).Distinct().ToList();
+        
+        var requestDetails = await _context.Requests
+            .AsNoTracking()
+            .Where(r => uniqueRequestIds.Contains(r.Id))
+            .Select(r => new
+            {
+                r.Id,
+                Attachments = r.Attachments
+                    .Where(a => a.AttachmentTypeCode == "PROFORMA" && !a.IsDeleted)
+                    .OrderByDescending(a => a.UploadedAtUtc)
+                    .Select(a => new ProformaAttachmentDto { Id = a.Id, FileName = a.FileName })
+                    .ToList(),
+                StatusHistories = r.StatusHistories
+                    .Where(sh => sh.ActionTaken == "REQUEST_ADJUSTMENT")
+                    .OrderByDescending(sh => sh.CreatedAtUtc)
+                    .Select(sh => new 
+                    { 
+                        sh.Comment, 
+                        ActorName = sh.ActorUser!.FullName, 
+                        NewStatusCode = sh.NewStatus!.Code,
+                        sh.CreatedAtUtc 
+                    })
+                    .Take(1)
+                    .ToList(),
+                Quotations = r.Quotations
+                    .OrderByDescending(q => q.CreatedAtUtc)
+                    .Select(q => new SavedQuotationDto
+                    {
+                        Id = q.Id,
+                        RequestId = q.RequestId,
+                        SupplierId = q.SupplierId,
+                        SupplierNameSnapshot = q.SupplierNameSnapshot,
+                        DocumentNumber = q.DocumentNumber,
+                        DocumentDate = q.DocumentDate,
+                        Currency = q.Currency,
+                        TotalGrossAmount = q.TotalGrossAmount,
+                        TotalIvaAmount = q.TotalIvaAmount,
+                        TotalAmount = q.TotalAmount,
+                        DiscountAmount = q.DiscountAmount,
+                        TotalTaxableBase = q.TotalTaxableBase,
+                        SourceType = q.SourceType,
+                        SourceFileName = q.SourceFileName,
+                        ProformaAttachmentId = q.ProformaAttachmentId,
+                        IsSelected = q.IsSelected,
+                        CreatedAtUtc = q.CreatedAtUtc,
+                        ItemCount = q.Items.Count,
+                        Items = q.Items.Select(qi => new SavedQuotationItemDto
+                        {
+                            Id = qi.Id,
+                            LineNumber = qi.LineNumber,
+                            Description = qi.Description,
+                            Quantity = qi.Quantity,
+                            UnitPrice = qi.UnitPrice,
+                            UnitId = qi.UnitId,
+                            UnitName = qi.Unit != null ? qi.Unit.Name : null,
+                            UnitCode = qi.Unit != null ? qi.Unit.Code : null,
+                            IvaRateId = qi.IvaRateId,
+                            IvaRatePercent = qi.IvaRatePercent,
+                            GrossSubtotal = qi.GrossSubtotal,
+                            IvaAmount = qi.IvaAmount,
+                            LineTotal = qi.LineTotal
+                        }).ToList()
+                    })
+                    .ToList()
+            })
+            .ToListAsync();
+        
+        var requestDetailsLookup = requestDetails.ToDictionary(x => x.Id);
+        swRelated.Stop();
+
+        // Phase 4: Final Merge
+        var finalItems = pageItemsRaw.Select(x => 
+        {
+            var rd = requestDetailsLookup.TryGetValue(x.RequestId, out var val) ? val : null;
+            var latestAdj = rd?.StatusHistories.FirstOrDefault();
+            
+            return new LineItemDetailsDto
+            {
+                LineItemId = x.LineItem != null ? (Guid?)x.LineItem.Id : null,
+                LineNumber = x.LineItem != null ? x.LineItem.LineNumber : 0,
+                RequestId = x.RequestId,
+                RequestNumber = x.RequestNumber ?? "",
+                RequestTitle = x.RequestTitle,
+                RequestStatusName = x.RequestStatusName,
+                RequestStatusCode = x.RequestStatusCode,
+                RequestStatusBadgeColor = x.RequestStatusBadgeColor,
+                RequestTypeCode = x.RequestTypeCode,
+                RequestTypeName = x.RequestTypeName,
+                CompanyId = x.CompanyId,
+                
+                ProformaId = rd?.Attachments.FirstOrDefault()?.Id,
+                ProformaFileName = rd?.Attachments.FirstOrDefault()?.FileName,
+                ProformaAttachments = rd?.Attachments,
+                
+                DepartmentName = x.DepartmentName,
+                PlantId = x.LineItem != null ? x.LineItem.PlantId : null,
+                PlantName = x.ItemPlantName,
+                RequestPlantId = x.RequestPlantId,
+                RequestPlantName = x.RequestPlantName,
+                RequesterName = x.RequesterName,
+                NeedByDateUtc = x.NeedByDateUtc,
                 
                 ItemDescription = x.LineItem != null ? x.LineItem.Description : string.Empty,
                 ItemPriority = x.LineItem != null ? x.LineItem.ItemPriority : null,
-                PrimaveraCode = x.LineItem != null && x.LineItem.Supplier != null ? x.LineItem.Supplier.PrimaveraCode : null,
+                PrimaveraCode = x.ItemPrimaveraCode,
                 
                 Quantity = x.LineItem != null ? x.LineItem.Quantity : 0,
                 UnitPrice = x.LineItem != null ? x.LineItem.UnitPrice : 0,
                 Total = x.LineItem != null ? x.LineItem.Quantity * x.LineItem.UnitPrice : 0,
-                UnitCode = x.LineItem != null && x.LineItem.Unit != null ? x.LineItem.Unit.Code : null,
-
+                UnitCode = x.ItemUnitCode,
+                
                 CurrencyId = x.LineItem != null ? x.LineItem.CurrencyId : null,
-                CurrencyCode = x.LineItem != null && x.LineItem.Currency != null ? x.LineItem.Currency.Code : null,
-
-                RequestCurrencyId = x.Request.CurrencyId,
-                RequestCurrencyCode = x.Request.Currency != null ? x.Request.Currency.Code : null,
-
+                CurrencyCode = x.ItemCurrencyCode,
+                RequestCurrencyId = x.RequestCurrencyId,
+                RequestCurrencyCode = x.RequestCurrencyCode,
                 
-                LineItemStatusCode = x.LineItem != null && x.LineItem.LineItemStatus != null ? x.LineItem.LineItemStatus.Code : null,
-                LineItemStatusName = x.LineItem != null && x.LineItem.LineItemStatus != null ? x.LineItem.LineItemStatus.Name : null,
-                LineItemStatusBadgeColor = x.LineItem != null && x.LineItem.LineItemStatus != null ? x.LineItem.LineItemStatus.BadgeColor : null,
+                LineItemStatusCode = x.ItemStatusCode,
+                LineItemStatusName = x.ItemStatusName,
+                LineItemStatusBadgeColor = x.ItemStatusBadgeColor,
                 
-                SupplierId = x.Request.RequestType!.Code == "PAYMENT" ? x.Request.SupplierId : (x.LineItem != null ? x.LineItem.SupplierId : null),
-                SupplierName = x.Request.RequestType!.Code == "PAYMENT" 
-                    ? (x.Request.Supplier != null ? x.Request.Supplier.Name : null) 
-                    : (x.LineItem != null ? (x.LineItem.Supplier != null ? x.LineItem.Supplier.Name : x.LineItem.SupplierName) : null),
-                SupplierCode = x.Request.RequestType!.Code == "PAYMENT" 
-                    ? (x.Request.Supplier != null ? x.Request.Supplier.PortalCode : null) 
-                    : (x.LineItem != null && x.LineItem.Supplier != null ? x.LineItem.Supplier.PortalCode : null),
-
-                RequestSupplierId = x.Request.SupplierId,
-                RequestSupplierName = x.Request.Supplier != null ? x.Request.Supplier.Name : null,
-                RequestSupplierCode = x.Request.Supplier != null ? x.Request.Supplier.PortalCode : null,
-
+                SupplierId = x.RequestTypeCode == "PAYMENT" ? x.RequestSupplierId : (x.LineItem != null ? x.LineItem.SupplierId : null),
+                SupplierName = x.RequestTypeCode == "PAYMENT" ? x.RequestSupplierName : x.ItemSupplierName,
+                SupplierCode = x.RequestTypeCode == "PAYMENT" ? x.RequestSupplierCode : x.ItemSupplierCode,
+                
+                RequestSupplierId = x.RequestSupplierId,
+                RequestSupplierName = x.RequestSupplierName,
+                RequestSupplierCode = x.RequestSupplierCode,
+                
                 CostCenterId = x.LineItem != null ? x.LineItem.CostCenterId : null,
-                CostCenterName = x.LineItem != null && x.LineItem.CostCenter != null ? x.LineItem.CostCenter.Name : null,
-                CostCenterCode = x.LineItem != null && x.LineItem.CostCenter != null ? x.LineItem.CostCenter.Code : null,
+                CostCenterName = x.ItemCostCenterName,
+                CostCenterCode = x.ItemCostCenterCode,
                 
                 Notes = x.LineItem != null ? x.LineItem.Notes : null,
-                UpdatedAtUtc = x.LineItem != null ? (x.LineItem.UpdatedAtUtc ?? x.LineItem.CreatedAtUtc) : x.Request.UpdatedAtUtc ?? x.Request.CreatedAtUtc,
-
-                LatestAdjustmentMessage = x.Request.StatusHistories
-                    .Where(sh => sh.ActionTaken == "REQUEST_ADJUSTMENT")
-                    .OrderByDescending(sh => sh.CreatedAtUtc)
-                    .Select(sh => sh.Comment)
-                    .FirstOrDefault(),
+                UpdatedAtUtc = x.LineItem != null ? (x.LineItem.UpdatedAtUtc ?? x.LineItem.CreatedAtUtc) : x.RequestUpdatedAtUtc ?? x.RequestCreatedAtUtc,
                 
-                LatestAdjustmentActor = x.Request.StatusHistories
-                    .Where(sh => sh.ActionTaken == "REQUEST_ADJUSTMENT")
-                    .OrderByDescending(sh => sh.CreatedAtUtc)
-                    .Select(sh => sh.ActorUser!.FullName)
-                    .FirstOrDefault(),
+                LatestAdjustmentMessage = latestAdj?.Comment,
+                LatestAdjustmentActor = latestAdj?.ActorName,
+                LatestAdjustmentRole = latestAdj != null ? (latestAdj.NewStatusCode == "AREA_ADJUSTMENT" ? "Aprovador de Área" : (latestAdj.NewStatusCode == "FINAL_ADJUSTMENT" ? "Aprovador Final" : "Aprovador")) : null,
+                LatestAdjustmentDateUtc = latestAdj?.CreatedAtUtc,
                 
-                LatestAdjustmentRole = x.Request.StatusHistories
-                    .Where(sh => sh.ActionTaken == "REQUEST_ADJUSTMENT")
-                    .OrderByDescending(sh => sh.CreatedAtUtc)
-                    .Select(sh => sh.NewStatus!.Code == "AREA_ADJUSTMENT" ? "Aprovador de Área" : (sh.NewStatus!.Code == "FINAL_ADJUSTMENT" ? "Aprovador Final" : "Aprovador"))
-                    .FirstOrDefault(),
-                
-                LatestAdjustmentDateUtc = x.Request.StatusHistories
-                    .Where(sh => sh.ActionTaken == "REQUEST_ADJUSTMENT")
-                    .OrderByDescending(sh => sh.CreatedAtUtc)
-                    .Select(sh => (DateTime?)sh.CreatedAtUtc)
-                    .FirstOrDefault(),
+                Quotations = rd?.Quotations ?? new List<SavedQuotationDto>()
+            };
+        }).ToList();
 
-                Quotations = x.Request.Quotations.Select(q => new SavedQuotationDto
-                {
-                    Id = q.Id,
-                    RequestId = q.RequestId,
-                    SupplierId = q.SupplierId,
-                    SupplierNameSnapshot = q.SupplierNameSnapshot,
-                    DocumentNumber = q.DocumentNumber,
-                    DocumentDate = q.DocumentDate,
-                    Currency = q.Currency,
-                    TotalGrossAmount = q.TotalGrossAmount,
-                    TotalIvaAmount = q.TotalIvaAmount,
-                    TotalAmount = q.TotalAmount,
-                    DiscountAmount = q.DiscountAmount,
-                    TotalTaxableBase = q.TotalTaxableBase,
-                    SourceType = q.SourceType,
-                    SourceFileName = q.SourceFileName,
-                    ProformaAttachmentId = q.ProformaAttachmentId,
-                    IsSelected = q.IsSelected,
-                    CreatedAtUtc = q.CreatedAtUtc,
-                    ItemCount = q.Items.Count,
-                    Items = q.Items.Select(qi => new SavedQuotationItemDto
-                    {
-                        Id = qi.Id,
-                        LineNumber = qi.LineNumber,
-                        Description = qi.Description,
-                        Quantity = qi.Quantity,
-                        UnitPrice = qi.UnitPrice,
-                        UnitId = qi.UnitId,
-                        UnitName = qi.Unit != null ? qi.Unit.Name : null,
-                        UnitCode = qi.Unit != null ? qi.Unit.Code : null,
-                        IvaRateId = qi.IvaRateId,
-                        IvaRatePercent = qi.IvaRatePercent,
-                        GrossSubtotal = qi.GrossSubtotal,
-                        IvaAmount = qi.IvaAmount,
-                        LineTotal = qi.LineTotal
-                    }).ToList()
-                }).OrderByDescending(q => q.CreatedAtUtc).ToList()
-            })
-            .ToListAsync();
+        swOverall.Stop();
+        
+        // Log performance metrics
+        _logger.LogInformation("Perf: GetLineItems total {0}ms [Count: {1}ms, Page: {2}ms, Related: {3}ms]. Rows: {4}", 
+            swOverall.ElapsedMilliseconds, swCount.ElapsedMilliseconds, swPage.ElapsedMilliseconds, swRelated.ElapsedMilliseconds, finalItems.Count);
 
-        return Ok(new { Data = items, TotalCount = totalCount, Page = page, PageSize = pageSize });
+        return Ok(new { Data = finalItems, TotalCount = totalCount, Page = page, PageSize = pageSize });
     }
 
     [HttpGet("{id}/check-last-pending")]

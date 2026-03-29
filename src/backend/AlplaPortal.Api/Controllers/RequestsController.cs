@@ -10,9 +10,9 @@ using AlplaPortal.Infrastructure.Logging;
 using AlplaPortal.Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using AlplaPortal.Domain.Constants;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
-using AlplaPortal.Domain.Constants;
 
 
 [Authorize]
@@ -40,67 +40,64 @@ public class RequestsController : BaseController
     public async Task<ActionResult<DashboardSummaryDto>> GetDashboardSummary()
     {
         var in4Days = DateTime.UtcNow.Date.AddDays(4);
+        var terminalStates = new[] { "APPROVED", "REJECTED", "CANCELLED", "COMPLETED", "QUOTATION_COMPLETED" };
 
         var query = await GetScopedRequestsQuery();
 
-        var total = await query.CountAsync();
-        
-        var waitingQuotation = await query.CountAsync(r => r.Status!.Code == "WAITING_QUOTATION");
-        
-        var waitingAreaApproval = await query.CountAsync(r => r.Status!.Code == "WAITING_AREA_APPROVAL");
-        
-        // WAITING_COST_CENTER is aggregated into Final Approval as per business process stage grouping
-        var waitingFinalApproval = await query.CountAsync(r => r.Status!.Code == "WAITING_FINAL_APPROVAL" || r.Status!.Code == "WAITING_COST_CENTER");
-        
-        var inAdjustment = await query.CountAsync(r => r.Status!.Code == "AREA_ADJUSTMENT" || r.Status!.Code == "FINAL_ADJUSTMENT");
-
-        // "Em Atenção" aligns with system-wide attention/urgency logic (Overdue, Due Today, Due in 3 days)
-        // Excludes terminal states (Approved, Rejected, Cancelled, Completed)
-        var terminalStates = new[] { "APPROVED", "REJECTED", "CANCELLED", "COMPLETED", "QUOTATION_COMPLETED" };
-        var inAttention = await query.CountAsync(r => 
-            !terminalStates.Contains(r.Status!.Code) && 
-            r.NeedByDateUtc.HasValue && 
-            r.NeedByDateUtc.Value < in4Days);
+        var stats = await query
+            .GroupBy(r => 1)
+            .Select(g => new
+            {
+                Total = g.Count(),
+                WaitingQuotation = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingQuotation && r.RequestType!.Code == RequestConstants.Types.Quotation),
+                WaitingAreaApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval),
+                WaitingFinalApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval || r.Status!.Code == RequestConstants.Statuses.WaitingCostCenter),
+                InAdjustment = g.Count(r => r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment),
+                InAttention = g.Count(r => !terminalStates.Contains(r.Status!.Code) && r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < in4Days)
+            })
+            .FirstOrDefaultAsync();
 
         return Ok(new DashboardSummaryDto
         {
-            TotalRequests = total,
-            WaitingQuotation = waitingQuotation,
-            WaitingAreaApproval = waitingAreaApproval,
-            WaitingFinalApproval = waitingFinalApproval,
-            InAdjustment = inAdjustment,
-            InAttention = inAttention
+            TotalRequests = stats?.Total ?? 0,
+            WaitingQuotation = stats?.WaitingQuotation ?? 0,
+            WaitingAreaApproval = stats?.WaitingAreaApproval ?? 0,
+            WaitingFinalApproval = stats?.WaitingFinalApproval ?? 0,
+            InAdjustment = stats?.InAdjustment ?? 0,
+            InAttention = stats?.InAttention ?? 0
         });
+
     }
 
     [HttpGet("purchasing-summary")]
     public async Task<ActionResult<PurchasingSummaryDto>> GetPurchasingSummary()
     {
-        var query = await GetScopedRequestsQuery();
-        var today = DateTime.UtcNow.Date;
-        
-        // Terminal states for "Active" count exclusion
-        // Note: APPROVED is considered active here as it requires Buyer action to issue P.O.
+        var query = await GetScopedRequestsQuery();        var today = DateTime.UtcNow.Date;
         var terminalStates = new[] { "REJECTED", "CANCELLED", "COMPLETED", "QUOTATION_COMPLETED" };
-
-        var totalActive = await query.CountAsync(r => !terminalStates.Contains(r.Status!.Code));
-        var waitingQuotation = await query.CountAsync(r => r.Status!.Code == "WAITING_QUOTATION");
-        var awaitingApproval = await query.CountAsync(r => r.Status!.Code == "WAITING_AREA_APPROVAL" || 
-                                                        r.Status!.Code == "WAITING_FINAL_APPROVAL" || 
-                                                        r.Status!.Code == "WAITING_COST_CENTER");
-        var awaitingPayment = await query.CountAsync(r => r.Status!.Code == "PO_ISSUED" || 
-                                                       r.Status!.Code == "PAYMENT_REQUEST_SENT" || 
-                                                       r.Status!.Code == "PAYMENT_SCHEDULED");
         var receivingStatuses = new[] { "PAYMENT_COMPLETED", "WAITING_RECEIPT", "IN_FOLLOWUP", "PAG_REALIZADO", "AG_RECIBO" };
-        var pendingReceiving = await query.CountAsync(r => receivingStatuses.Contains(r.Status!.Code));
+
+        var stats = await query
+            .GroupBy(r => 1)
+            .Select(g => new
+            {
+                TotalActive = g.Count(r => !terminalStates.Contains(r.Status!.Code)),
+                WaitingQuotation = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingQuotation && r.RequestType!.Code == RequestConstants.Types.Quotation),
+                AwaitingApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval || r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval || r.Status!.Code == RequestConstants.Statuses.WaitingCostCenter),
+                AwaitingPayment = g.Count(r => r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled),
+                PendingReceiving = g.Count(r => receivingStatuses.Contains(r.Status!.Code)),
+                Overdue = g.Count(r => !terminalStates.Contains(r.Status!.Code) && r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < today)
+            })
+            .FirstOrDefaultAsync();
+
+        var totalActive = stats?.TotalActive ?? 0;
+        var waitingQuotation = stats?.WaitingQuotation ?? 0;
+        var awaitingApproval = stats?.AwaitingApproval ?? 0;
+        var awaitingPayment = stats?.AwaitingPayment ?? 0;
+        var pendingReceiving = stats?.PendingReceiving ?? 0;
+        var overdueCount = stats?.Overdue ?? 0;
 
         var attentionPoints = new List<AttentionPointDto>();
 
-        // 1. Overdue
-        var overdueCount = await query.CountAsync(r => 
-            !terminalStates.Contains(r.Status!.Code) && 
-            r.NeedByDateUtc.HasValue && 
-            r.NeedByDateUtc.Value < today);
 
         if (overdueCount > 0)
         {
@@ -219,17 +216,25 @@ public class RequestsController : BaseController
         }
 
         // 2. Calculate Dashboard Summary (Aware of base filters, but before status filters)
+        var counts = await query
+            .GroupBy(r => 1)
+            .Select(g => new
+            {
+                Total = g.Count(),
+                WaitingQuotation = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingQuotation && r.RequestType!.Code == RequestConstants.Types.Quotation),
+                AwaitingApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval || r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval || r.Status!.Code == RequestConstants.Statuses.WaitingCostCenter),
+                AwaitingPayment = g.Count(r => r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled),
+                Completed = g.Count(r => r.Status!.Code == "COMPLETED") // COMPLETED status not yet in constants
+            })
+            .FirstOrDefaultAsync();
+
         var summary = new DashboardSummaryDto
         {
-            TotalRequests = await query.CountAsync(),
-            WaitingQuotation = await query.CountAsync(r => r.Status!.Code == "WAITING_QUOTATION"),
-            AwaitingApproval = await query.CountAsync(r => r.Status!.Code == "WAITING_AREA_APPROVAL" || 
-                                                            r.Status!.Code == "WAITING_FINAL_APPROVAL" || 
-                                                            r.Status!.Code == "WAITING_COST_CENTER"),
-            AwaitingPayment = await query.CountAsync(r => r.Status!.Code == "PO_ISSUED" || 
-                                                           r.Status!.Code == "PAYMENT_REQUEST_SENT" || 
-                                                           r.Status!.Code == "PAYMENT_SCHEDULED"),
-            CompletedRequests = await query.CountAsync(r => r.Status!.Code == "COMPLETED")
+            TotalRequests = counts?.Total ?? 0,
+            WaitingQuotation = counts?.WaitingQuotation ?? 0,
+            AwaitingApproval = counts?.AwaitingApproval ?? 0,
+            AwaitingPayment = counts?.AwaitingPayment ?? 0,
+            CompletedRequests = counts?.Completed ?? 0
         };
 
         // 3. Apply List-Specific Filters (Status, Attention)
@@ -294,20 +299,20 @@ public class RequestsController : BaseController
                 PlantId = r.PlantId,
                 PlantName = r.Plant != null ? r.Plant.Name : "---",
                 SupplierId = r.SelectedQuotationId.HasValue 
-                    ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.SupplierId 
+                    ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => (int?)q.SupplierId).FirstOrDefault() 
                     : r.SupplierId,
                 SupplierName = r.SelectedQuotationId.HasValue 
-                    ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.SupplierNameSnapshot 
+                    ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => q.SupplierNameSnapshot).FirstOrDefault() 
                     : (r.Supplier != null ? r.Supplier.Name : null),
                 SupplierPortalCode = r.SelectedQuotationId.HasValue 
                     ? null 
                     : (r.Supplier != null ? r.Supplier.PortalCode : null),
                 EstimatedTotalAmount = r.SelectedQuotationId.HasValue 
-                    ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.TotalAmount 
+                    ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => (decimal?)q.TotalAmount).FirstOrDefault() ?? 0
                     : r.EstimatedTotalAmount,
                 CurrencyId = r.CurrencyId,
                 CurrencyCode = r.SelectedQuotationId.HasValue 
-                    ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.Currency 
+                    ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => q.Currency).FirstOrDefault() 
                     : (r.Currency != null ? r.Currency.Code : null),
                 CapexOpexClassificationId = r.CapexOpexClassificationId,
                 RequestedDateUtc = r.RequestedDateUtc,

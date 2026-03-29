@@ -2,10 +2,11 @@
 
 ## Current Version
 
-v2.9.16
+v2.9.17
 
 ## Version History
 
+- **2.9.17**: Strict Quotation Workspace Filtering. Enforced backend-level request type filtering to prevent Payment requests from appearing in the quotation management area. Added performance indexes.
 - **2.9.16**: Quotation Workflow Locking. Implemented strict read-only boundaries for quotations after the quotation phase ends, including backend guards and frontend action hiding.
 - **2.9.15**: Quotation Completion Validation Fix. Resolved a false-positive "zero items" error by correctly summing request-level and quotation-level line items.
 - **2.9.14**: Session Security Fix. Migrated auth storage to `sessionStorage` to enforce tab-scoped access and logout on browser close.
@@ -77,6 +78,15 @@ Active Development
 
 ### Fixed
 - **Document Extraction Settings Auth**: Resolved 401 Unauthorized issue by migrating to `apiFetch()`.
+
+## [v2.9.17] - 2026-03-29
+
+### Fixed
+- **Quotation Workspace Filtering**: Implemented strict backend filtering to ensure the "Gestão de Cotações" view and counters exclusively reflect `QUOTATION` type requests, preventing data leakage from `PAYMENT` requests.
+- **Centralized Constants**: Introduced `RequestConstants` and `AttachmentConstants` to eliminate hardcoded strings in controllers and helpers.
+
+### Added
+- **Performance Optimization**: Added database indexes for `CreatedAtUtc` and `RequestId`/`IsDeleted` to improve query speed in the requests and line items modules.
 
 2026-03-29 (Quotation Locking Workflow)
 

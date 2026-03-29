@@ -105,6 +105,13 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Request>().HasIndex(r => r.RequestNumber).IsUnique().HasFilter("[RequestNumber] IS NOT NULL");
         modelBuilder.Entity<SystemCounter>().HasKey(sc => sc.Id);
 
+        modelBuilder.Entity<Request>().HasIndex(r => r.CreatedAtUtc);
+        modelBuilder.Entity<Request>().HasIndex(r => r.StatusId);
+        modelBuilder.Entity<Request>().HasIndex(r => r.RequesterId);
+
+        modelBuilder.Entity<RequestLineItem>().HasIndex(r => r.RequestId);
+        modelBuilder.Entity<RequestLineItem>().HasIndex(r => new { r.RequestId, r.IsDeleted });
+
         // Notification Indexes
         modelBuilder.Entity<NotificationStatus>()
             .HasIndex(ns => new { ns.UserId, ns.Category })
