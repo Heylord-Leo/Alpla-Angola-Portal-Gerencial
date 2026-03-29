@@ -1,5 +1,18 @@
 # Changelog
 
+## [v2.9.16] - 2026-03-29
+
+### Added
+- **Quotation Workflow Locking**: Implemented a mandatory read-only boundary for quotations once a request advances beyond the quotation/adjustment phase (WAITING_AREA_APPROVAL and later). This ensures commercial data integrity throughout the approval and operational lifecycle.
+
+### Fixed
+- **Status Guards Enforcement**: Applied centralized status-based mutation guards to all relevant backend endpoints (SaveQuotation, UpdateQuotation, DeleteQuotation, OcrExtract, and Proforma management).
+- **Data Integrity Fix**: Added missing .Include(r => r.Status) to the SaveQuotation logic to ensure the request status is always available for validation, preventing runtime null references.
+
+### Changed
+- **Quotation Management UI**: Standardized "Gestão de Cotações" to hide (instead of disable) mutation actions when a request is in a locked state, providing a cleaner tracking interface for post-quotation workflows.
+
+
 ## [v2.9.15] - 2026-03-29
 
 ### Fixed

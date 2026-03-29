@@ -1007,3 +1007,17 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
 - **Context:** The previous "10% opacity" badge styling resulted in insufficient contrast for light status colors like Amber, Yellow, and Cyan, violating WCAG AA accessibility standards.
 - **Decision:** Switch to solid background colors for all status badges, with dark text (`#111827`) enforced for light backgrounds (Yellow/Amber/Orange) to ensure a minimum 4.5:1 contrast ratio.
 - **Consequences:** Significantly improves legibility for critical statuses like `PENDENTE`. Centralizes badge styling in `globals.css` via semantic classes, eliminating inconsistent inline-style implementations.
+
+---
+
+## DEC-073 — Quotation Workflow Locking and Mutability Boundary
+
+- **Date:** 2026-03-29
+- **Status:** Accepted
+- **Context:** Quotation data integrity was at risk if buyers could modify, replace, or delete quotations after a request had been approved or advanced to final operational stages.
+- **Decision:** Implement a strict 'Read-Only' boundary for quotations once a request advances beyond the quotation/adjustment phase.
+    1. **Centralized Rule**: Create RequestWorkflowHelper.CanMutateQuotation(statusCode) as the single source of truth.
+    2. **Backend Enforcement**: Apply the guard to all mutation endpoints (Save, Update, Delete, OCR, Proforma Management).
+    3. **Frontend Hardening**: Hide mutation actions in the Buyer Workspace for post-quotation requests.
+- **Consequences:** Guarantees commercial data consistency throughout the approval and operational lifecycle. Prevents accidental or unauthorized changes once stakeholders have begun the approval process. Improves auditability.
+

@@ -91,8 +91,8 @@ public class RequestsController : BaseController
         var awaitingPayment = await query.CountAsync(r => r.Status!.Code == "PO_ISSUED" || 
                                                        r.Status!.Code == "PAYMENT_REQUEST_SENT" || 
                                                        r.Status!.Code == "PAYMENT_SCHEDULED");
-        var pendingReceiving = await query.CountAsync(r => r.Status!.Code == "WAITING_RECEIPT" || 
-                                                        r.Status!.Code == "PARTIALLY_RECEIVED");
+        var receivingStatuses = new[] { "PAYMENT_COMPLETED", "WAITING_RECEIPT", "IN_FOLLOWUP", "PAG_REALIZADO", "AG_RECIBO" };
+        var pendingReceiving = await query.CountAsync(r => receivingStatuses.Contains(r.Status!.Code));
 
         var attentionPoints = new List<AttentionPointDto>();
 
@@ -1067,8 +1067,22 @@ public class RequestsController : BaseController
             return BadRequest("Nenhum arquivo enviado.");
         }
 
-        var requestExists = await _context.Requests.AnyAsync(r => r.Id == id);
-        if (!requestExists) return NotFound("Pedido não encontrado.");
+        var request = await _context.Requests
+            .Include(r => r.Status)
+            .FirstOrDefaultAsync(r => r.Id == id);
+        
+        if (request == null) return NotFound("Pedido não encontrado.");
+
+        // Rule: OCR extraction is only allowed during the quotation phase
+        if (!RequestWorkflowHelper.CanMutateQuotation(request.Status!.Code))
+        {
+            return Conflict(new ProblemDetails 
+            { 
+                Title = "Ação Bloqueada", 
+                Detail = "Não é possível realizar extração OCR neste status do pedido.", 
+                Status = 409 
+            });
+        }
 
         try
         {
@@ -1104,6 +1118,7 @@ public class RequestsController : BaseController
         if (user == null) return Unauthorized();
 
         var request = await _context.Requests
+            .Include(r => r.Status)
             .Include(r => r.Quotations)
                 .ThenInclude(q => q.Items)
                     .ThenInclude(i => i.Unit)
@@ -1111,6 +1126,17 @@ public class RequestsController : BaseController
             .FirstOrDefaultAsync(r => r.Id == id);
         
         if (request == null) return NotFound("Pedido não encontrado.");
+
+        // Status Rule Check: Only explicitly editable statuses allow quotation persistence changes
+        if (!RequestWorkflowHelper.CanMutateQuotation(request.Status!.Code))
+        {
+            return Conflict(new ProblemDetails 
+            { 
+                Title = "Ação Bloqueada", 
+                Detail = "Não é possível adicionar cotações neste status do pedido.", 
+                Status = 409 
+            });
+        }
 
         // Duplicate Supplier Protection
         if (request.Quotations.Any(q => q.SupplierId == dto.SupplierId && q.Id != replaceQuotationId))
@@ -1286,8 +1312,7 @@ public class RequestsController : BaseController
         if (request == null) return NotFound("Pedido não encontrado.");
 
         // Status Rule Check: Only explicitly editable statuses allow quotation persistence changes
-        var editableStatuses = new[] { "DRAFT", "WAITING_QUOTATION", "AREA_ADJUSTMENT", "FINAL_ADJUSTMENT" };
-        if (!editableStatuses.Contains(request.Status!.Code))
+        if (!RequestWorkflowHelper.CanMutateQuotation(request.Status!.Code))
         {
             return Conflict(new ProblemDetails 
             { 
@@ -1480,8 +1505,7 @@ public class RequestsController : BaseController
         if (request == null) return NotFound("Pedido não encontrado.");
 
         // Status Rule Check
-        var editableStatuses = new[] { "DRAFT", "WAITING_QUOTATION", "AREA_ADJUSTMENT", "FINAL_ADJUSTMENT" };
-        if (!editableStatuses.Contains(request.Status!.Code))
+        if (!RequestWorkflowHelper.CanMutateQuotation(request.Status!.Code))
         {
             return Conflict(new ProblemDetails 
             { 

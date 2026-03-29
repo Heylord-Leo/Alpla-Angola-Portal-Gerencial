@@ -60,7 +60,7 @@ public class AttachmentsController : BaseController
         switch (typeCodeStr)
         {
             case "PROFORMA":
-                isUploadable = new[] { "DRAFT", "AREA_ADJUSTMENT", "FINAL_ADJUSTMENT", "WAITING_QUOTATION" }.Contains(statusCode);
+                isUploadable = RequestWorkflowHelper.CanMutateQuotation(statusCode);
                 detail = "O documento Proforma só pode ser carregado nos estágios de Rascunho, Reajuste ou Cotação.";
                 break;
             case "PO":
@@ -204,7 +204,7 @@ public class AttachmentsController : BaseController
         switch (attachment.AttachmentTypeCode)
         {
             case "PROFORMA":
-                isDeletable = new[] { "DRAFT", "AREA_ADJUSTMENT", "FINAL_ADJUSTMENT", "WAITING_QUOTATION" }.Contains(attachment.Request.Status!.Code);
+                isDeletable = RequestWorkflowHelper.CanMutateQuotation(attachment.Request.Status!.Code);
                 detail = "O documento Proforma só pode ser removido nos estágios de Rascunho, Reajuste ou Cotação.";
                 break;
             case "PO":

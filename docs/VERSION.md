@@ -2,10 +2,11 @@
 
 ## Current Version
 
-v2.9.15
+v2.9.16
 
 ## Version History
 
+- **2.9.16**: Quotation Workflow Locking. Implemented strict read-only boundaries for quotations after the quotation phase ends, including backend guards and frontend action hiding.
 - **2.9.15**: Quotation Completion Validation Fix. Resolved a false-positive "zero items" error by correctly summing request-level and quotation-level line items.
 - **2.9.14**: Session Security Fix. Migrated auth storage to `sessionStorage` to enforce tab-scoped access and logout on browser close.
 - **2.9.13**: Modal Layering Fix. Standardized z-index stacking for User Management, Approval, and Receiving modals using React Portals.
@@ -77,9 +78,19 @@ Active Development
 ### Fixed
 - **Document Extraction Settings Auth**: Resolved 401 Unauthorized issue by migrating to `apiFetch()`.
 
-## Last Updated
+2026-03-29 (Quotation Locking Workflow)
 
-2026-03-29 (Quotation Completion Fix)
+## [v2.9.16] - 2026-03-29
+
+### Added
+- **Quotation Workflow Locking**: Implemented a mandatory boundary that makes quotations read-only once a request advances to `WAITING_AREA_APPROVAL` or beyond.
+
+### Fixed
+- **RequestsController Security**: Added missing status guards to `SaveQuotation` (POST) and `OcrExtract`, ensuring consistency with existing Update/Delete endpoints.
+- **Data Integrity**: Fixed a potential `NullReferenceException` in `SaveQuotation` by ensuring the `Status` entity is included in the EF Core query.
+
+### Changed
+- **Frontend UX**: Replaced disabled buttons with explicit hiding of mutation actions ("Editar", "Excluir", "Registrar Nova Cotação") in the "Gestão de Cotações" workspace for post-quotation requests.
 
 ## Version Notes
 

@@ -1121,7 +1121,7 @@ export function BuyerItemsList() {
                         const urgency = getUrgencyStyle(group.needByDateUtc, group.requestStatusCode);
                         const actionBadge = getActionBadge(group.requestStatusCode);
                         const isAdjustmentPhase = group.requestStatusCode === 'AREA_ADJUSTMENT' || group.requestStatusCode === 'FINAL_ADJUSTMENT';
-                        const isPurchasingPhaseGroup = group.requestStatusCode === 'WAITING_QUOTATION' || isAdjustmentPhase;
+                        const canMutateQuotation = ['DRAFT', 'WAITING_QUOTATION', 'AREA_ADJUSTMENT', 'FINAL_ADJUSTMENT'].includes(group.requestStatusCode);
 
                         return (
                             <div key={group.requestId} style={{
@@ -1335,7 +1335,8 @@ export function BuyerItemsList() {
 
                                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
                                                                             {/* Maintenance Actions (Step 8.1) */}
-                                                                            <div style={{ display: 'flex', gap: '8px' }} onClick={(e) => e.stopPropagation()}>
+                                                                            {canMutateQuotation && mode === 'BUYER' && (
+                                                                                <div style={{ display: 'flex', gap: '8px' }} onClick={(e) => e.stopPropagation()}>
                                                                                 <button 
                                                                                     onClick={() => handleEditQuotation(group.requestId, q)}
                                                                                     style={{
@@ -1363,10 +1364,11 @@ export function BuyerItemsList() {
                                                                                     <Trash2 size={12} /> Excluir
                                                                                 </button>
                                                                             </div>
+                                                                        )}
 
-                                                                            <div style={{ textAlign: 'right' }}>
-                                                                                <div style={{ fontSize: '1.25rem', fontWeight: 900, color: isLowest ? '#059669' : '#0369a1', display: 'baseline', gap: '4px' }}>
-                                                                                    <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>{q.currency}</span>
+                                                                        <div style={{ textAlign: 'right' }}>
+                                                                            <div style={{ fontSize: '1.25rem', fontWeight: 900, color: isLowest ? '#059669' : '#0369a1', display: 'baseline', gap: '4px' }}>
+                                                                                <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>{q.currency}</span>
                                                                                     {formatCurrencyAO(q.totalAmount)}
                                                                                 </div>
                                                                                 <div style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', fontWeight: 700 }}>{q.itemCount} ITENS • {formatDate(q.createdAtUtc)}</div>
@@ -1483,7 +1485,7 @@ export function BuyerItemsList() {
                                                                         >
                                                                             <ExternalLink size={16} />
                                                                         </a>
-                                                                        {isPurchasingPhaseGroup && mode === 'BUYER' && (
+                                                                        {canMutateQuotation && mode === 'BUYER' && (
                                                                             <button
                                                                                 onClick={() => handleDeleteProforma(att.id)}
                                                                                 disabled={isSaving}
@@ -1518,7 +1520,7 @@ export function BuyerItemsList() {
                                         </div>
 
                                         {/* SECTION B: Add New Quotation */}
-                                        {isPurchasingPhaseGroup && mode === 'BUYER' && (
+                                        {canMutateQuotation && mode === 'BUYER' && (
                                             <div 
                                                 id={`section-b-${group.requestId}`}
                                                 className={highlightedRequestId === group.requestId ? 'section-attention-highlight' : ''}

@@ -27,4 +27,15 @@ public static class RequestWorkflowHelper
 
         return allReceived ? "COMPLETED" : "IN_FOLLOWUP";
     }
+
+    /// <summary>
+    /// Governs whether a request is in a status that allows quotation creation, editing, or deletion.
+    /// Allowed: DRAFT, WAITING_QUOTATION, AREA_ADJUSTMENT, FINAL_ADJUSTMENT
+    /// Restricted: All other statuses (e.g., WAITING_AREA_APPROVAL onwards)
+    /// </summary>
+    public static bool CanMutateQuotation(string statusCode)
+    {
+        var allowedStatuses = new[] { "DRAFT", "WAITING_QUOTATION", "AREA_ADJUSTMENT", "FINAL_ADJUSTMENT" };
+        return allowedStatuses.Contains(statusCode);
+    }
 }
