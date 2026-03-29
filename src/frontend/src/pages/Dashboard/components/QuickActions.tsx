@@ -1,0 +1,135 @@
+import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+import { PlusCircle, LayoutList, Package } from 'lucide-react';
+
+interface QuickActionItemProps {
+    label: string;
+    icon: React.ReactNode;
+    description: string;
+    onClick: () => void;
+    color?: string;
+}
+
+function QuickActionItem({ label, icon, description, onClick, color = 'var(--color-primary)' }: QuickActionItemProps) {
+    return (
+        <motion.button
+            whileHover={{ y: -2, boxShadow: `6px 6px 0px ${color}`, transition: { duration: 0.1 } }}
+            whileTap={{ scale: 0.98 }}
+            onClick={onClick}
+            style={{
+                backgroundColor: 'var(--color-bg-surface)',
+                border: `2px solid ${color}`,
+                boxShadow: `4px 4px 0px ${color}`,
+                padding: '1.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '1.25rem',
+                textAlign: 'left',
+                cursor: 'pointer',
+                width: '100%',
+                position: 'relative',
+                overflow: 'hidden'
+            }}
+        >
+            <div style={{ 
+                backgroundColor: `${color}15`, 
+                padding: '0.75rem', 
+                color: color,
+                display: 'flex',
+                borderRadius: '4px'
+            }}>
+                {icon}
+            </div>
+            <div style={{ flex: 1 }}>
+                <div style={{ 
+                    fontSize: '1rem', 
+                    fontWeight: 800, 
+                    textTransform: 'uppercase', 
+                    color: 'var(--color-text-main)',
+                    letterSpacing: '-0.01em',
+                    lineHeight: 1.2
+                }}>
+                    {label}
+                </div>
+                <div style={{ 
+                    fontSize: '0.75rem', 
+                    color: 'var(--color-text-muted)',
+                    fontWeight: 500,
+                    marginTop: '2px'
+                }}>
+                    {description}
+                </div>
+            </div>
+            
+            {/* Minimal decoration */}
+            <div style={{ 
+                position: 'absolute', 
+                top: 0, 
+                right: 0, 
+                width: '8px', 
+                height: '8px', 
+                backgroundColor: color,
+                clipPath: 'polygon(0 0, 100% 0, 100% 100%)'
+            }} />
+        </motion.button>
+    );
+}
+
+export function QuickActions() {
+    const navigate = useNavigate();
+
+    const actions = [
+        {
+            label: 'Novo Pedido',
+            description: 'Criar uma nova solicitação',
+            icon: <PlusCircle size={24} />,
+            color: 'var(--color-primary)',
+            onClick: () => navigate('/requests/create')
+        },
+        {
+            label: 'Ver Pedidos',
+            description: 'Acompanhar lista de pedidos',
+            icon: <LayoutList size={24} />,
+            color: 'var(--color-status-blue)',
+            onClick: () => navigate('/requests')
+        },
+        {
+            label: 'Gestão de Cotações',
+            description: 'Gerencie itens solicitados e processe cotações de fornecedores',
+            icon: <Package size={24} />,
+            color: 'var(--color-status-indigo)',
+            onClick: () => navigate('/buyer/items')
+        }
+    ];
+
+    return (
+        <section style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <header>
+                <h2 style={{ 
+                    margin: 0, 
+                    fontSize: '1.25rem', 
+                    fontWeight: 800, 
+                    textTransform: 'uppercase',
+                    borderLeft: '4px solid var(--color-primary)',
+                    paddingLeft: '1rem'
+                }}>
+                    Ações Rápidas
+                </h2>
+                <p style={{ margin: '0.25rem 0 0 1.25rem', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
+                    Atalhos para as operações mais comuns do dia a dia
+                </p>
+            </header>
+
+            <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
+                gap: '1rem',
+                marginTop: '0.5rem'
+            }}>
+                {actions.map((action, index) => (
+                    <QuickActionItem key={index} {...action} />
+                ))}
+            </div>
+        </section>
+    );
+}

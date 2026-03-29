@@ -1,0 +1,62 @@
+:root {
+  /* Brand Colors (Alpla Corporate) */
+  --color-primary: #004d90;
+  /* Alpla Congress Blue */
+  --color-primary-hover: #003666;
+  --color-secondary: #00A3E0;
+  /* Cyan accent */
+  --color-accent: #000000;
+  /* True black accent */
+
+  /* Neutrals */
+  --color-bg-page: #F3F4F6;
+  /* Stark industrial light gray */
+  --color-bg-surface: #FFFFFF;
+  --color-border: #D1D5DB;
+  --color-border-heavy: #004d90;
+  /* Corporate blue borders for brutalist effect */
+
+  --color-text-main: #111827;
+  --color-text-muted: #4B5563;
+
+  /* Status Colors (Sharper contrast) mapped from DB Master Data */
+  --color-status-gray: #6B7280;
+  --color-status-blue: #2563EB;
+  --color-status-indigo: #4F46E5;
+  --color-status-orange: #EA580C;
+  --color-status-purple: #9333EA;
+  --color-status-teal: #0D9488;
+  --color-status-red: #DC2626;
+  --color-status-yellow: #CA8A04;
+  --color-status-green: #16A34A;
+  --color-status-slate: #475569;
+  --color-status-cyan: #0891B2;
+  --color-status-sky: #0284C7;
+  --color-status-rose: #E11D48;
+  --color-status-violet: #7C3AED;
+  --color-status-fuchsia: #C026D3;
+  --color-status-stone: #57534E;
+  --color-status-emerald: #059669;
+  --color-status-amber: #D97706;
+  --color-status-rejected: #DC2626;
+  --color-status-rejected-rgb: 220, 38, 38;
+
+  /* Typography (Geometric & Clean) */
+  /* Alpla uses Futura for headings and a clean sans for body */
+  --font-family-display: "Futura", "Space Grotesk", system-ui, sans-serif;
+  --font-family-body: "Inter", "Helvetica Neue", system-ui, sans-serif;
+
+  /* Layout Dimensions */
+  --header-height: 90px;
+
+  /* Radii & Shadows (Industrial = Sharp, 0px radius to break 'Safe Harbor' trend) */
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+
+  /* Brutalist/Industrial Shadows */
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-brutal: 6px 6px 0px var(--color-border-heavy);
+  --focus-ring: 0 0 0 2px var(--color-bg-page), 0 0 0 4px var(--color-primary);
+}

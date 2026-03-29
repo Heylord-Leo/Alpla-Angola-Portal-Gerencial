@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+bin/
+obj/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+[Pp]ublish/
+
+# Logs and temporary files
+*.log
+.tmp/
+tmp_verify/
+debug/
+redesign-temp/
+.temp/
+
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+*.pfx
+*.certificate
+*.cert
+
+# .NET Specific
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+_ReSharper*/
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Project-specific ignores
+build_*.txt
+data/attachments/
