@@ -1,10 +1,14 @@
 ---
-description: Reviso do estado da tarefa sem commit ou push
+description: Revisão do estado da tarefa sem commit ou push
 ---
 
-1. Analisar os arquivos modificados e no rastreados em `C:\dev\alpla-portal`.
-2. Revisar o cdigo alterado e funcionalidade implementada.
-3. Avaliar impacto no Frontend (`src/frontend/`) e Backend (`src/backend/`).
-4. Recomendar verso (PATCH, MINOR ou MAJOR) com base em `directives/fechar_tarefa.md`.
-5. Verificar se `docs/` e `directives/` precisam de atualizao.
-6. Gerar resumo da reviso e informar se est pronto para entrega.
+> [!NOTE]
+> Este workflow é destinado apenas à análise e validação.
+> Siga rigorosamente o **`directives/SOP_TASK_LIFECYCLE.md`**.
+> **NUNCA** realize commit ou push a partir deste comando.
+
+1. **Status do Git**: Identificar arquivos modificados e não rastreados.
+2. **Análise de Alterações**: Revisar o que foi implementado em termos de código e UX.
+3. **Avaliação de Documentao**: Verificar se `directives/`, `docs/`, `CHANGELOG.md` e `VERSION.md` precisam de atualização.
+4. **Impacto de Versionamento**: Avaliar o impacto (PATCH/MINOR/MAJOR).
+5. **Recomendação**: Informar se o trabalho está pronto para o comando `/task-publish`.

@@ -173,6 +173,7 @@ export interface UserDto {
     fullName: string;
     email: string;
     isActive: boolean;
+    roles: string[];
 }
 
 export interface RequestStatusDto {

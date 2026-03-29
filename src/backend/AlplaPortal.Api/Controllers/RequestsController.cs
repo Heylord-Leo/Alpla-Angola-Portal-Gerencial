@@ -654,10 +654,6 @@ public class RequestsController : BaseController
         var initialStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == initialStatusCode);
         if (initialStatus == null) return StatusCode(500, $"{initialStatusCode} status code not found in database lookup.");
 
-        if (requestTypeEntity.Code == "PAYMENT" && !dto.SupplierId.HasValue)
-        {
-             return BadRequest("O fornecedor é obrigatório para a criação de pedidos de pagamento.");
-        }
 
         if (dto.NeedByDateUtc.HasValue && dto.NeedByDateUtc.Value.Date < DateTime.UtcNow.Date)
         {
@@ -704,12 +700,12 @@ public class RequestsController : BaseController
             RequestNumber = requestNumber,
             Title = dto.Title,
             Description = dto.Description,
-            RequestTypeId = dto.RequestTypeId,
+            RequestTypeId = dto.RequestTypeId!.Value,
             NeedLevelId = dto.NeedLevelId,
             CurrencyId = dto.CurrencyId,
             EstimatedTotalAmount = dto.EstimatedTotalAmount,
-            DepartmentId = dto.DepartmentId,
-            CompanyId = dto.CompanyId,
+            DepartmentId = dto.DepartmentId!.Value,
+            CompanyId = dto.CompanyId!.Value,
             PlantId = dto.PlantId,
             CapexOpexClassificationId = dto.CapexOpexClassificationId,
             NeedByDateUtc = dto.NeedByDateUtc,

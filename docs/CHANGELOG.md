@@ -1,6 +1,18 @@
 # Changelog
 
-## [v2.9.14] - 2026-03-29
+## [v2.10.0] - 2026-03-29
+
+### Added
+- **Modernized Request Creation**: Reformulated the "Novo Pedido" screen for improved clarity and workflow alignment.
+- **Support Documents Integration**: Re-introduced support for attaching technical files (photos, PDFs) directly during the draft creation stage.
+- **Role-Based Participant Filtering**: Implemented dynamic filtering in the workflow participant selects (Comprador, Aprovador de Área, Aprovador Final) using real system users and real role checks.
+
+### Changed
+- **Draft Creation Flow**: Simplified the initial form by removing redundant fields (`Fornecedor`, `Necessário até`) that are now handled in the submission/buyer stages.
+- **DTO Resilience**: Updated `CreateRequestDraftDto` to use nullable types for ID fields, improving model binding stability and validation feedback.
+
+### Fixed
+- **Generic Validation Error (400)**: Resolved the "One or more validation errors occurred" issue that blocked request creation by aligning frontend payload types with backend binder expectations.
 
 ### Fixed
 - **Session Persistence**: Switched authentication storage from `localStorage` to `sessionStorage`. Sessions are now strictly tab/window scoped and do not survive browser closure, improving security for the administrative portal.

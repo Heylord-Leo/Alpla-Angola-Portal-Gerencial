@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Save, X } from 'lucide-react';
+import { Save, X, Paperclip, Trash2 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { FeedbackType } from '../../components/ui/Feedback';
-import { SupplierAutocomplete } from '../../components/SupplierAutocomplete';
-import { DateInput } from '../../components/DateInput';
 import { LookupDto, UserDto } from '../../types';
 import { motion } from 'framer-motion';
 import { RequestActionHeader, BreadcrumbItem } from './components/RequestActionHeader';
 import { scrollToFirstError } from '../../lib/validation';
+import { ROLES } from '../../constants/roles';
 
 
 export function RequestCreate() {
@@ -25,6 +24,7 @@ export function RequestCreate() {
     const [users, setUsers] = useState<UserDto[]>([]);
     const [allowedPlantCodes, setAllowedPlantCodes] = useState<string[]>([]);
     const [isScopeLoading, setIsScopeLoading] = useState(true);
+    const [attachments, setAttachments] = useState<File[]>([]);
 
     const [formData, setFormData] = useState({
         title: '',
@@ -36,9 +36,7 @@ export function RequestCreate() {
         departmentId: '',
         companyId: '',
         plantId: '',
-        needByDateUtc: '',
         buyerId: '',
-        supplierId: '',
         areaApproverId: '',
         finalApproverId: ''
     });
@@ -78,6 +76,11 @@ export function RequestCreate() {
         filteredPlants.some(p => p.companyId === c.id)
     );
 
+    // Filter participants by their specific roles
+    const buyers = users.filter(u => u.roles?.includes(ROLES.BUYER));
+    const areaApprovers = users.filter(u => u.roles?.includes(ROLES.AREA_APPROVER));
+    const finalApprovers = users.filter(u => u.roles?.includes(ROLES.FINAL_APPROVER));
+
     // Auto-selection of Company/Plant based on restricted scope
     React.useEffect(() => {
         if (isScopeLoading || plants.length === 0 || companies.length === 0) return;
@@ -113,7 +116,16 @@ export function RequestCreate() {
         });
     };
 
-    const today = new Date().toISOString().split('T')[0];
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) {
+            const newFiles = Array.from(e.target.files);
+            setAttachments(prev => [...prev, ...newFiles]);
+        }
+    };
+
+    const removeFile = (index: number) => {
+        setAttachments(prev => prev.filter((_, i) => i !== index));
+    };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
@@ -158,14 +170,6 @@ export function RequestCreate() {
         if (!formData.departmentId) newErrors['DepartmentId'] = ['O departamento é obrigatório.'];
         if (!formData.companyId) newErrors['CompanyId'] = ['A empresa é obrigatória.'];
         if (!formData.plantId) newErrors['PlantId'] = ['A planta é obrigatória.'];
-        if (!formData.needByDateUtc) newErrors['NeedByDateUtc'] = ['A data Necessário Até é obrigatória.'];
-        if (formData.needByDateUtc && formData.needByDateUtc < today) {
-            newErrors['NeedByDateUtc'] = ['A data Necessário Até não pode ser no passado.'];
-        }
-
-        if (Number(formData.requestTypeId) === 2 && !formData.supplierId) {
-             newErrors['SupplierId'] = ['O fornecedor é obrigatório para pedidos de Pagamento.'];
-        }
         if (Object.keys(newErrors).length > 0) {
             setFieldErrors(newErrors);
             setFeedback({ type: 'error', message: 'Preencha todos os campos obrigatórios antes de continuar.' });
@@ -189,15 +193,19 @@ export function RequestCreate() {
             departmentId: formData.departmentId ? Number(formData.departmentId) : null,
             companyId: formData.companyId ? Number(formData.companyId) : null,
             plantId: formData.plantId ? Number(formData.plantId) : null,
-            supplierId: formData.supplierId ? Number(formData.supplierId) : null,
-            needByDateUtc: formData.needByDateUtc ? new Date(formData.needByDateUtc).toISOString() : null,
             buyerId: formData.buyerId || null,
             areaApproverId: formData.areaApproverId || null,
-            finalApproverId: formData.finalApproverId || null
+            finalApproverId: formData.finalApproverId || null,
+            needByDateUtc: null // Will be handled in the next step
         };
 
         try {
             const result = await api.requests.create(payload);
+
+            // Step 2: Upload attachments if any
+            if (attachments.length > 0) {
+                await api.attachments.upload(result.id, attachments, 'SUPPORTING');
+            }
 
             const isQuotation = Number(formData.requestTypeId) === 1;
             const fallbackSuccessMessage = isQuotation ? 'Pedido de Cotação criado com sucesso.' : 'Rascunho salvo com sucesso.';
@@ -328,7 +336,7 @@ export function RequestCreate() {
                 <Save size={14} /> 
                 {loading ? 'GERANDO...' : (
                     Number(formData.requestTypeId) === 1 ? 'CRIAR PEDIDO' : 
-                    Number(formData.requestTypeId) === 2 ? 'GERAR PEDIDO & INCLUIR PROFORMA' : 
+                    Number(formData.requestTypeId) === 2 ? 'GERAR PEDIDO' : 
                     'CRIAR RASCUNHO'
                 )}
             </button>
@@ -424,36 +432,21 @@ export function RequestCreate() {
                             {renderFieldError('Description')}
                         </label>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-                            <label style={labelStyle}>
-                                Tipo de Pedido <span style={{ color: 'red' }}>*</span>
-                                <select
-                                    name="requestTypeId"
-                                    value={formData.requestTypeId}
-                                    onChange={handleChange}
-                                    style={getInputStyle('RequestTypeId')}
-                                >
-                                    <option value="">-- Selecione --</option>
-                                    {requestTypes.filter(rt => rt.isActive).map(rt => (
-                                        <option key={rt.id} value={rt.id}>{rt.name}</option>
-                                    ))}
-                                </select>
-                                {renderFieldError('RequestTypeId')}
-                            </label>
-
-                            <label style={labelStyle}>
-                                Fornecedor {Number(formData.requestTypeId) === 2 && <span style={{ color: 'red' }}>*</span>}
-                                <SupplierAutocomplete
-                                    onChange={(id) => {
-                                        setFormData(prev => ({ ...prev, supplierId: id ? String(id) : '' }));
-                                        clearFieldError('SupplierId');
-                                    }}
-                                    hasError={!!getFieldErrors('SupplierId')}
-                                    className="mt-1"
-                                />
-                                {renderFieldError('SupplierId')}
-                            </label>
-                        </div>
+                             <label style={labelStyle}>
+                                 Tipo de Pedido <span style={{ color: 'red' }}>*</span>
+                                 <select
+                                     name="requestTypeId"
+                                     value={formData.requestTypeId}
+                                     onChange={handleChange}
+                                     style={getInputStyle('RequestTypeId')}
+                                 >
+                                     <option value="">-- Selecione --</option>
+                                     {requestTypes.filter(rt => rt.isActive).map(rt => (
+                                         <option key={rt.id} value={rt.id}>{rt.name}</option>
+                                     ))}
+                                 </select>
+                                 {renderFieldError('RequestTypeId')}
+                             </label>
 
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '24px' }}>
                             <label style={labelStyle}>
@@ -515,22 +508,6 @@ export function RequestCreate() {
                                 {renderFieldError('PlantId')}
                             </label>
                         </div>
-
-                        <label style={labelStyle}>
-                            Necessário até (Data limite) <span style={{ color: 'red' }}>*</span>
-                            <DateInput
-                                required
-                                name="needByDateUtc"
-                                value={formData.needByDateUtc}
-                                onChange={(val) => {
-                                    setFormData(prev => ({ ...prev, needByDateUtc: val }));
-                                    clearFieldError('NeedByDateUtc');
-                                }}
-                                hasError={!!getFieldErrors('NeedByDateUtc')}
-                                style={getInputStyle('NeedByDateUtc')}
-                            />
-                            {renderFieldError('NeedByDateUtc')}
-                        </label>
                     </div>
                 </section>
 
@@ -546,7 +523,7 @@ export function RequestCreate() {
                             Comprador Atribuído <span style={{ color: 'red' }}>*</span>
                             <select name="buyerId" value={formData.buyerId} onChange={handleChange} style={getInputStyle('BuyerId')}>
                                 <option value="">-- Selecione --</option>
-                                {users.map(u => (
+                                {buyers.map(u => (
                                     <option key={u.id} value={u.id}>{u.fullName}</option>
                                 ))}
                             </select>
@@ -557,7 +534,7 @@ export function RequestCreate() {
                             Aprovador de Área <span style={{ color: 'red' }}>*</span>
                             <select name="areaApproverId" value={formData.areaApproverId} onChange={handleChange} style={getInputStyle('AreaApproverId')}>
                                 <option value="">-- Selecione --</option>
-                                {users.map(u => (
+                                {areaApprovers.map(u => (
                                     <option key={u.id} value={u.id}>{u.fullName}</option>
                                 ))}
                             </select>
@@ -568,7 +545,7 @@ export function RequestCreate() {
                             Aprovador Final <span style={{ color: 'red' }}>*</span>
                             <select name="finalApproverId" value={formData.finalApproverId} onChange={handleChange} style={getInputStyle('FinalApproverId')}>
                                 <option value="">-- Selecione --</option>
-                                {users.map(u => (
+                                {finalApprovers.map(u => (
                                     <option key={u.id} value={u.id}>{u.fullName}</option>
                                 ))}
                             </select>
@@ -577,33 +554,65 @@ export function RequestCreate() {
                     </div>
                 </section>
 
-                {/* Section C: Resumo Financeiro do Pedido */}
+                {/* Section C: Documentos de Apoio */}
                 <section style={{ backgroundColor: 'var(--color-bg-surface)', padding: '32px', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-brutal)', border: '2px solid var(--color-border-heavy)' }}>
-                    <h2 style={sectionTitleStyle}>Resumo Financeiro do Pedido</h2>
+                    <h2 style={sectionTitleStyle}>Documentos de Apoio</h2>
+                    <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '24px' }}>
+                        Anexe fotos da peça, especificações técnicas ou outros ficheiros para auxiliar o comprador.
+                    </p>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '32px', alignItems: 'start' }}>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px', backgroundColor: 'var(--color-bg-page)', border: '2px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-muted)', letterSpacing: '0.05em' }}>
-                                Valor Total Estimado
-                            </span>
-                            <span style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--color-text-main)', fontFamily: 'var(--font-family-display)' }}>
-                                0,00
-                            </span>
-                            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                                Este valor será calculado automaticamente a partir dos itens inseridos.
-                            </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        <div style={{ 
+                            border: '2px dashed var(--color-border)', 
+                            padding: '30px', 
+                            textAlign: 'center', 
+                            borderRadius: 'var(--radius-sm)',
+                            backgroundColor: 'white',
+                            cursor: 'pointer',
+                            position: 'relative'
+                        }}>
+                            <input 
+                                type="file" 
+                                multiple 
+                                onChange={handleFileChange}
+                                style={{
+                                    position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer'
+                                }}
+                            />
+                            <Paperclip size={24} style={{ color: 'var(--color-primary)', marginBottom: '10px' }} />
+                            <div style={{ fontWeight: 700, fontSize: '0.875rem' }}>CLIQUE OU ARRASTE ARQUIVOS PARA ANEXAR</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>PDF, JPG, PNG, DOCX (Máx 5MB por ficheiro)</div>
                         </div>
 
-                        <label style={labelStyle}>
-                            Moeda Principal do Pedido
-                            <select name="currencyId" value={formData.currencyId} onChange={handleChange} style={getInputStyle('CurrencyId')}>
-                                <option value="1">AOA (Kz)</option>
-                                <option value="2">USD ($)</option>
-                                <option value="3">EUR (€)</option>
-                            </select>
-                            {renderFieldError('CurrencyId')}
-                        </label>
+                        {attachments.length > 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                {attachments.map((file, idx) => (
+                                    <div key={idx} style={{ 
+                                        display: 'flex', 
+                                        justifyContent: 'space-between', 
+                                        alignItems: 'center', 
+                                        padding: '12px 16px', 
+                                        backgroundColor: 'white', 
+                                        border: '1px solid var(--color-border)', 
+                                        borderRadius: 'var(--radius-sm)',
+                                        boxShadow: '2px 2px 0px var(--color-border)'
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <Paperclip size={16} />
+                                            <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{file.name}</span>
+                                            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>({(file.size / (1024 * 1024)).toFixed(2)} MB)</span>
+                                        </div>
+                                        <button 
+                                            type="button" 
+                                            onClick={() => removeFile(idx)}
+                                            style={{ color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </section>
 

@@ -1,4 +1,7 @@
-# Diretiva - Fechar Tarefa (Reviso e Publicar)
+# Diretiva - Fechar Tarefa (Revisão e Publicar)
+
+> [!IMPORTANT]
+> Esta diretiva é uma extensão do **`SOP_TASK_LIFECYCLE.md`**. O fechamento de tarefa só deve ser iniciado após a conclusão da fase de implementação e validação manual.
 
 ## Objetivo
 
@@ -21,7 +24,7 @@ Garantir que cada tarefa concluda no portal siga um processo padronizado de revi
 
 ### 2. Publicar (`/task-publish`)
 
-**Foco**: Finalizao, registro oficial e commit/push.
+**Foco**: Finalização, registro oficial e commit/push. Único fluxo autorizado para persistência no Git.
 
 1. **Reviso Final**: Executar todos os passos da Reviso.
 2. **Verificao de Integridade**: Se houver alteraes pendentes ou misturadas (unrelated/unfinished), o processo deve interromper e solicitar limpeza.

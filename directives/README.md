@@ -12,6 +12,9 @@ Ao abrir uma nova tarefa, referencie explicitamente a diretiva aplicável no pro
 
 ## Diretivas incluídas
 
+0. `SOP_TASK_LIFECYCLE.md`
+   - **MANDATÓRIO**: SOP de ciclo de vida de tarefa (Análise, Plano, Checks e Fechamento Seguro)
+
 1. `implementar_request_items.md`
    - Implementação do vertical slice de itens do pedido (`RequestLineItem`) dentro de `RequestEdit`
 
@@ -26,7 +29,7 @@ Ao abrir uma nova tarefa, referencie explicitamente a diretiva aplicável no pro
 
 ## Regras padrão do projeto
 
-Sempre que aplicável, considerar estas instruções como padrão:
+Sempre que abrir uma nova tarefa, o primeiro passo deve ser a leitura de `SOP_TASK_LIFECYCLE.md` para garantir o cumprimento do fluxo de governança.
 
 ### Important project rules
 

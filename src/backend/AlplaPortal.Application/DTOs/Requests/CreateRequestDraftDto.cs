@@ -12,12 +12,12 @@ public class CreateRequestDraftDto
     [MaxLength(2000, ErrorMessage = "A descrição não pode exceder 2000 caracteres.")]
     public string Description { get; set; } = string.Empty;
 
-    [Required]
-    public int RequestTypeId { get; set; }
+    [Required(ErrorMessage = "O tipo de pedido é obrigatório.")]
+    public int? RequestTypeId { get; set; }
 
 
     [Required(ErrorMessage = "O grau de necessidade é obrigatório.")]
-    public int NeedLevelId { get; set; }
+    public int? NeedLevelId { get; set; }
 
     public int? CurrencyId { get; set; }
 
@@ -25,17 +25,16 @@ public class CreateRequestDraftDto
     public decimal EstimatedTotalAmount { get; set; }
 
     [Required(ErrorMessage = "O departamento é obrigatório.")]
-    public int DepartmentId { get; set; }
+    public int? DepartmentId { get; set; }
     
     [Required(ErrorMessage = "A empresa é obrigatória.")]
-    public int CompanyId { get; set; }
+    public int? CompanyId { get; set; }
     
     [Required(ErrorMessage = "A planta é obrigatória.")]
     public int? PlantId { get; set; }
     
     public int? CapexOpexClassificationId { get; set; }
     
-    [Required(ErrorMessage = "A data Necessário Até é obrigatória.")]
     public DateTime? NeedByDateUtc { get; set; }
 
     public int? SupplierId { get; set; }
