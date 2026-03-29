@@ -18,6 +18,7 @@ import {
 import { api } from '../../lib/api';
 import { useAuth } from '../../features/auth/AuthContext';
 import { Link } from 'react-router-dom';
+import { DropdownPortal } from '../../components/ui/DropdownPortal';
 
 interface UserListDto {
     id: string;
@@ -338,115 +339,119 @@ export default function UserManagement() {
 
             {/* Edit / Create Right-Side Drawer */}
             {isDrawerOpen && (
-                <div style={s.drawerOverlay} onClick={e => e.target === e.currentTarget && setIsDrawerOpen(false)}>
-                    <div style={s.drawer} className="animate-in slide-in-from-right duration-300">
-                        <div style={s.drawerHeader}>
-                            <h2 style={{ fontSize: '1.25rem', fontWeight: 900, textTransform: 'uppercase', margin: 0, color: 'var(--color-primary)' }}>
-                                {editingUser ? 'Editar Utilizador' : 'Novo Utilizador'}
-                            </h2>
-                            <button onClick={() => setIsDrawerOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5 }}><X size={24} /></button>
-                        </div>
-                        
-                        <form style={s.drawerBody} onSubmit={handleSave}>
-                            <section style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                                <label style={s.labelSm}>Identificação Base</label>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
-                                    <div>
-                                        <label style={{ fontSize: 11, fontWeight: 700, marginBottom: 4, display: 'block' }}>Nome Completo</label>
-                                        <input 
-                                            required style={{ ...s.input, width: '100%' }}
-                                            value={formData.fullName}
-                                            onChange={e => setFormData({...formData, fullName: e.target.value})}
-                                        />
+                <DropdownPortal>
+                    <div style={s.drawerOverlay} onClick={e => e.target === e.currentTarget && setIsDrawerOpen(false)}>
+                        <div style={s.drawer} className="animate-in slide-in-from-right duration-300">
+                            <div style={s.drawerHeader}>
+                                <h2 style={{ fontSize: '1.25rem', fontWeight: 900, textTransform: 'uppercase', margin: 0, color: 'var(--color-primary)' }}>
+                                    {editingUser ? 'Editar Utilizador' : 'Novo Utilizador'}
+                                </h2>
+                                <button onClick={() => setIsDrawerOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5 }}><X size={24} /></button>
+                            </div>
+                            
+                            <form style={s.drawerBody} onSubmit={handleSave}>
+                                <section style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                    <label style={s.labelSm}>Identificação Base</label>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
+                                        <div>
+                                            <label style={{ fontSize: 11, fontWeight: 700, marginBottom: 4, display: 'block' }}>Nome Completo</label>
+                                            <input 
+                                                required style={{ ...s.input, width: '100%' }}
+                                                value={formData.fullName}
+                                                onChange={e => setFormData({...formData, fullName: e.target.value})}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label style={{ fontSize: 11, fontWeight: 700, marginBottom: 4, display: 'block' }}>E-mail Corporativo</label>
+                                            <input 
+                                                required type="email" disabled={!!editingUser}
+                                                style={{ ...s.input, width: '100%', opacity: editingUser ? 0.6 : 1 }}
+                                                value={formData.email}
+                                                onChange={e => setFormData({...formData, email: e.target.value})}
+                                            />
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label style={{ fontSize: 11, fontWeight: 700, marginBottom: 4, display: 'block' }}>E-mail Corporativo</label>
-                                        <input 
-                                            required type="email" disabled={!!editingUser}
-                                            style={{ ...s.input, width: '100%', opacity: editingUser ? 0.6 : 1 }}
-                                            value={formData.email}
-                                            onChange={e => setFormData({...formData, email: e.target.value})}
-                                        />
-                                    </div>
-                                </div>
-                            </section>
+                                </section>
 
-                            <section style={{ padding: 16, border: '2px solid var(--color-border)', background: 'var(--color-bg-page)' }}>
-                                <label style={s.labelSm}>Estado da Conta</label>
-                                <div style={{ display: 'flex', gap: 24, marginTop: 12 }}>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>
-                                        <input type="radio" checked={formData.isActive} onChange={() => setFormData({...formData, isActive: true})} /> Ativo
-                                    </label>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>
-                                        <input type="radio" checked={!formData.isActive} onChange={() => setFormData({...formData, isActive: false})} /> Inativo
-                                    </label>
-                                </div>
-                            </section>
-
-                            <section>
-                                <label style={s.labelSm}>Funções e Permissões</label>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginTop: 8 }}>
-                                    {allRoles.map(role => (
-                                        <label key={role.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 10, border: '1px solid var(--color-border)', cursor: 'pointer', fontSize: 11, fontWeight: 700, background: formData.roleIds.includes(role.id) ? 'var(--color-primary)08' : '#fff' }}>
-                                            <input type="checkbox" checked={formData.roleIds.includes(role.id)} onChange={() => setFormData({...formData, roleIds: toggleId(formData.roleIds, role.id)})} />
-                                            {role.roleName}
+                                <section style={{ padding: 16, border: '2px solid var(--color-border)', background: 'var(--color-bg-page)' }}>
+                                    <label style={s.labelSm}>Estado da Conta</label>
+                                    <div style={{ display: 'flex', gap: 24, marginTop: 12 }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>
+                                            <input type="radio" checked={formData.isActive} onChange={() => setFormData({...formData, isActive: true})} /> Ativo
                                         </label>
-                                    ))}
-                                </div>
-                            </section>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>
+                                            <input type="radio" checked={!formData.isActive} onChange={() => setFormData({...formData, isActive: false})} /> Inativo
+                                        </label>
+                                    </div>
+                                </section>
 
-                            <section style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
-                                <div>
-                                    <label style={s.labelSm}>Escopo: Plantas</label>
-                                    <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--color-border)', padding: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                        {allPlants.map(p => (
-                                            <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                                                <input type="checkbox" checked={formData.plantIds.includes(p.id)} onChange={() => setFormData({...formData, plantIds: toggleId(formData.plantIds, p.id)})} />
-                                                {p.code} - {p.name}
+                                <section>
+                                    <label style={s.labelSm}>Funções e Permissões</label>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginTop: 8 }}>
+                                        {allRoles.map(role => (
+                                            <label key={role.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 10, border: '1px solid var(--color-border)', cursor: 'pointer', fontSize: 11, fontWeight: 700, background: formData.roleIds.includes(role.id) ? 'var(--color-primary)08' : '#fff' }}>
+                                                <input type="checkbox" checked={formData.roleIds.includes(role.id)} onChange={() => setFormData({...formData, roleIds: toggleId(formData.roleIds, role.id)})} />
+                                                {role.roleName}
                                             </label>
                                         ))}
                                     </div>
-                                </div>
-                                <div>
-                                    <label style={s.labelSm}>Escopo: Departamentos</label>
-                                    <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--color-border)', padding: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                        {allDepts.map(d => (
-                                            <label key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                                                <input type="checkbox" checked={formData.departmentIds.includes(d.id)} onChange={() => setFormData({...formData, departmentIds: toggleId(formData.departmentIds, d.id)})} />
-                                                {d.code} - {d.name}
-                                            </label>
-                                        ))}
-                                    </div>
-                                </div>
-                            </section>
-                        </form>
+                                </section>
 
-                        <div style={s.drawerFooter}>
-                            <button onClick={() => setIsDrawerOpen(false)} style={{ background: 'none', border: 'none', fontWeight: 800, textTransform: 'uppercase', fontSize: 12, cursor: 'pointer', color: 'var(--color-text-muted)' }}>Cancelar</button>
-                            <button onClick={handleSave} className="btn btn-primary">
-                                {editingUser ? 'Guardar Alterações' : 'Criar Utilizador'}
-                            </button>
+                                <section style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+                                    <div>
+                                        <label style={s.labelSm}>Escopo: Plantas</label>
+                                        <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--color-border)', padding: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            {allPlants.map(p => (
+                                                <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                                                    <input type="checkbox" checked={formData.plantIds.includes(p.id)} onChange={() => setFormData({...formData, plantIds: toggleId(formData.plantIds, p.id)})} />
+                                                    {p.code} - {p.name}
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label style={s.labelSm}>Escopo: Departamentos</label>
+                                        <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--color-border)', padding: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            {allDepts.map(d => (
+                                                <label key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                                                    <input type="checkbox" checked={formData.departmentIds.includes(d.id)} onChange={() => setFormData({...formData, departmentIds: toggleId(formData.departmentIds, d.id)})} />
+                                                    {d.code} - {d.name}
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </section>
+                            </form>
+
+                            <div style={s.drawerFooter}>
+                                <button onClick={() => setIsDrawerOpen(false)} style={{ background: 'none', border: 'none', fontWeight: 800, textTransform: 'uppercase', fontSize: 12, cursor: 'pointer', color: 'var(--color-text-muted)' }}>Cancelar</button>
+                                <button onClick={handleSave} className="btn btn-primary">
+                                    {editingUser ? 'Guardar Alterações' : 'Criar Utilizador'}
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
+                </DropdownPortal>
             )}
 
             {/* Temp Password Overlay */}
             {resultPassword && (
-                <div style={{ ...s.drawerOverlay, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <div style={{ background: '#fff', padding: 48, border: '4px solid var(--color-primary)', boxShadow: 'var(--shadow-brutal)', maxWidth: 440, textAlign: 'center' }}>
-                        <div style={{ color: 'var(--color-primary)', marginBottom: 24 }}><Key size={64} style={{ margin: '0 auto' }} /></div>
-                        <h2 style={{ fontSize: '1.5rem', fontWeight: 900, marginBottom: 12 }}>AUTENTICAÇÃO GERADA</h2>
-                        <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', fontWeight: 700, marginBottom: 24 }}>Copiue e guarde. Esta informação não será exibida novamente.</p>
-                        <div style={{ padding: 16, background: 'var(--color-bg-page)', border: '2px dashed var(--color-primary)', fontSize: '1.5rem', fontWeight: 900, letterSpacing: '0.2em', margin: '0 0 32px 0' }}>{resultPassword}</div>
-                        <button 
-                            className="btn btn-primary" style={{ width: '100%', padding: 16 }}
-                            onClick={async () => { await navigator.clipboard.writeText(resultPassword); setResultPassword(null); }}
-                        >
-                            FECHAR E COPIAR
-                        </button>
+                <DropdownPortal>
+                    <div style={{ ...s.drawerOverlay, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ background: '#fff', padding: 48, border: '4px solid var(--color-primary)', boxShadow: 'var(--shadow-brutal)', maxWidth: 440, textAlign: 'center' }}>
+                            <div style={{ color: 'var(--color-primary)', marginBottom: 24 }}><Key size={64} style={{ margin: '0 auto' }} /></div>
+                            <h2 style={{ fontSize: '1.5rem', fontWeight: 900, marginBottom: 12 }}>AUTENTICAÇÃO GERADA</h2>
+                            <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', fontWeight: 700, marginBottom: 24 }}>Copiue e guarde. Esta informação não será exibida novamente.</p>
+                            <div style={{ padding: 16, background: 'var(--color-bg-page)', border: '2px dashed var(--color-primary)', fontSize: '1.5rem', fontWeight: 900, letterSpacing: '0.2em', margin: '0 0 32px 0' }}>{resultPassword}</div>
+                            <button 
+                                className="btn btn-primary" style={{ width: '100%', padding: 16 }}
+                                onClick={async () => { await navigator.clipboard.writeText(resultPassword); setResultPassword(null); }}
+                            >
+                                FECHAR E COPIAR
+                            </button>
+                        </div>
                     </div>
-                </div>
+                </DropdownPortal>
             )}
         </div>
     );

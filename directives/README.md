@@ -21,6 +21,9 @@ Ao abrir uma nova tarefa, referencie explicitamente a diretiva aplicável no pro
 3. `regras_de_status_e_permissoes.md`
    - Regras funcionais para edição, ações condicionais por status e barreiras de backend
 
+4. `fechar_tarefa.md`
+   - SOP padronizado para revisão, versionamento e publicação de tarefas
+
 ## Regras padrão do projeto
 
 Sempre que aplicável, considerar estas instruções como padrão:

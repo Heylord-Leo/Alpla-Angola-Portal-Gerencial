@@ -2,15 +2,14 @@
 
 ## Current Version
 
-v2.9.12
+v2.9.13
 
 ## Version History
 
-- **2.9.12**: Fixed Line-Item Persistence Failure. Resolved a `DbUpdateException` (Database Constraint Violation) when adding, updating, or deleting line items. This was caused by missing mandatory fields (`ActorUserId`, `ActionTaken`, `NewStatusId`) in the `RequestStatusHistory` audit log entries created during these operations.
-- **2.9.11**: Buyer OCR & System Logs Auth. Standardized the use of `apiFetch` in the Buyer OCR upload flow and Admin System Logs to ensure consistent JWT token propagation, resolving various `401 Unauthorized` errors.
-- **2.9.10**: Auth Connectivity Fix. Restored API credential injection for the System Administrator Document Extraction Settings backend endpoints by migrating from native `fetch()` to authenticated `apiFetch()`.
-- **2.9.9**: Fixed missing EF Core migrations for NotificationStatuses and InformationalNotifications, preventing backend crashes that broke global data flows including document extraction.
-- **2.9.8**: Rollback: Payment Document-First Workflow. Reverted the "Document-First" creation flow for Payment Requests, restoring pre-existing strict validation constraints and legacy QuotationEntry integrations across the workspace.
+- **2.9.13**: Modal Layering Fix. Standardized z-index stacking for User Management, Approval, and Receiving modals using React Portals.
+- **2.9.12**: Line-Item Persistence Bug. Fixed audit log constraint violations during line-item updates.
+- **2.9.11**: Buyer OCR & Admin Logs Auth standardization.
+- **2.9.10**: Auth Connectivity Fix. Restored API credential injection for Admin settings.
 
 - **2.9.7**: Zero-Trust Authorization & Legacy Persona Purge. Complete removal of "Visualizar Como" (User Mode) simulation. Implemented centralized Role Constants and claims-based authorization across all module controllers and the frontend API layer.
 - **2.9.6**: Fixed visual display of auto-selected Plant when Company is changed.
@@ -47,38 +46,31 @@ Semantic Versioning (MAJOR.MINOR.PATCH)
 
 Active Development
 
-## Changelog
+## [v2.9.13] - 2026-03-29
+
+### Fixed
+- **Modal Layering & Stacking Context**: Resolved a critical UI conflict where the sticky Topbar (z-index 100) obscured modal dialogs and side drawers. Implemented `DropdownPortal` in `UserManagement.tsx`, `ApprovalModal.tsx`, and `ReceivingModal.tsx`.
+- **Import Resolution**: Fixed a naming collision in `UserManagement.tsx` between the `Link` icon and the `Link` routing component.
 
 ## [v2.9.12] - 2026-03-28
 
 ### Fixed
-- **Line-Item Persistence Bug**: Fixed a regression in `RequestsController` where adding, updating, or deleting line items failed with an Entity Framework persistence error. The root cause was identified as a database constraint violation in the `RequestStatusHistory` table; the logic was attempting to create audit log entries without providing mandatory non-nullable fields: `ActorUserId`, `ActionTaken`, and `NewStatusId`.
-- **Audit Consistency**: Enforced standardized `ActionTaken` codes (`ITEM_ADDED`, `ITEM_UPDATED`, `ITEM_REMOVED`) for all line-item lifecycle events.
+- **Line-Item Persistence Bug**: Fixed audit log entries missing mandatory fields in `RequestsController`.
 
-## [2.9.11] - 2026-03-28
-
-### Fixed
-- **Buyer OCR Authentication**: Standardized the quotation document upload flow in `BuyerItemsList.tsx` to use the centralized `api.attachments.upload` utility, ensuring consistent JWT token propagation and resolving `401 Unauthorized` errors.
-- **Admin Logs Authentication**: Refactored `SystemLogs.tsx` to replace raw `fetch()` calls with the authenticated `apiFetch()` wrapper, securing administrative access to backend logs.
-- **API Client Diagnostics**: Improved `handleApiError` in the frontend API client to provide more descriptive feedback for `401` (Unauthorized) and `403` (Forbidden) responses without exposing sensitive credential data.
-
-## [2.9.10] - 2026-03-28
+## [v2.9.11] - 2026-03-28
 
 ### Fixed
+- **Buyer OCR Authentication**: Standardized upload flow to use authenticated utility.
+- **Admin Logs Authentication**: Secured backend log access.
 
-- **Document Extraction Settings Auth**: Resolved a persistent `401 Unauthorized` issue on the `/settings/document-extraction` page. The frontend `api.ts` module was incorrectly using a raw `fetch()` instead of `apiFetch()` for `admin` routes, causing the requests to reach the backend without the user's `Authorization: Bearer` jwt token. The admin endpoint `DocumentExtractionSettingsController` correctly requires `System Administrator` roles, but the lack of a token caused immediate rejections. The OCR engine used in business screens was unaffected, as that endpoint used the correct authenticated pipeline.
-
-## [2.9.9] - 2026-03-28
+## [v2.9.10] - 2026-03-28
 
 ### Fixed
-
-- **Plant Auto-Selection Display**: Implemented localized state synchronization in the New Request screen. When a Company selection results in exactly one authorized Plant, the system now automatically selects and visibly displays that Plant in the dropdown, eliminating the "locked but empty" visual state.
-
-## [2.9.5] - 2026-03-28
+- **Document Extraction Settings Auth**: Resolved 401 Unauthorized issue by migrating to `apiFetch()`.
 
 ## Last Updated
 
-2026-03-28 (Compras & Logística Cockpit)
+2026-03-29 (Modal Layering Fix)
 
 ## Version Notes
 

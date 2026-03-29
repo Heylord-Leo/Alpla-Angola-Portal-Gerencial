@@ -1,6 +1,21 @@
 # Changelog
 
-## [Unreleased]
+## [v2.9.13] - 2026-03-29
+
+### Fixed
+- **Modal Layering & Stacking Context**: Resolved a critical UI conflict where the sticky Topbar (z-index 100) obscured modal dialogs and side drawers. Implemented `DropdownPortal` in `UserManagement.tsx`, `ApprovalModal.tsx`, and `ReceivingModal.tsx` to ensure overlays render at the `document.body` level, bypassing core layout stacking constraints.
+- **Import Resolution**: Fixed a naming collision in `UserManagement.tsx` between the `Link` icon (lucide-react) and the `Link` routing component (react-router-dom).
+
+## [v2.9.12] - 2026-03-28
+
+### Fixed
+- **Line-Item Persistence Bug**: Fixed a regression in `RequestsController` where adding, updating, or deleting line items failed with an Entity Framework persistence error due to missing mandatory audit fields in `RequestStatusHistory`.
+
+## [v2.9.11] - 2026-03-28
+
+### Fixed
+- **Buyer OCR Authentication**: Standardized the quotation document upload flow in `BuyerItemsList.tsx` to use the centralized `api.attachments.upload` utility, ensuring consistent JWT token propagation.
+- **Admin Logs Authentication**: Refactored `SystemLogs.tsx` to use `apiFetch()`, securing administrative access to backend logs.
 
 ## [v2.9.10] - 2026-03-28
 

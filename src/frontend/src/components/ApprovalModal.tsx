@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Feedback, FeedbackType } from './ui/Feedback';
+import { DropdownPortal } from './ui/DropdownPortal';
 
 export type ApprovalActionType = 
     | 'APPROVE' 
@@ -135,107 +136,109 @@ export function ApprovalModal({
     };
 
     return (
-        <AnimatePresence>
-            <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    backgroundColor: 'rgba(0,0,0,0.8)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 1000,
-                    padding: '20px'
-                }}
-            >
+        <DropdownPortal>
+            <AnimatePresence>
                 <motion.div
-                    initial={{ scale: 0.9, y: 20 }}
-                    animate={{ scale: 1, y: 0 }}
-                    className="modal-content"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
                     style={{
-                        backgroundColor: 'var(--color-bg-surface)',
-                        padding: '40px',
-                        borderRadius: 'var(--radius-md)',
-                        maxWidth: '600px',
-                        width: '100%',
-                        border: '4px solid var(--color-border-heavy)',
-                        boxShadow: 'var(--shadow-brutal)'
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        backgroundColor: 'rgba(0,0,0,0.8)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 1000,
+                        padding: '20px'
                     }}
                 >
-                    <h2 style={{ fontSize: '1.5rem', fontWeight: 900, marginBottom: '24px', color: 'var(--color-text-main)', textTransform: 'uppercase', letterSpacing: '-0.02em' }}>
-                        {getTitle()}
-                    </h2>
+                    <motion.div
+                        initial={{ scale: 0.9, y: 20 }}
+                        animate={{ scale: 1, y: 0 }}
+                        className="modal-content"
+                        style={{
+                            backgroundColor: 'var(--color-bg-surface)',
+                            padding: '40px',
+                            borderRadius: 'var(--radius-md)',
+                            maxWidth: '600px',
+                            width: '100%',
+                            border: '4px solid var(--color-border-heavy)',
+                            boxShadow: 'var(--shadow-brutal)'
+                        }}
+                    >
+                        <h2 style={{ fontSize: '1.5rem', fontWeight: 900, marginBottom: '24px', color: 'var(--color-text-main)', textTransform: 'uppercase', letterSpacing: '-0.02em' }}>
+                            {getTitle()}
+                        </h2>
 
-                    <p style={{ marginBottom: '24px', fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.95rem' }}>
-                        {getDescription()}
-                    </p>
+                        <p style={{ marginBottom: '24px', fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.95rem' }}>
+                            {getDescription()}
+                        </p>
 
-                    {showCommentField && (
-                        <div style={{ marginBottom: '32px' }}>
-                            <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
-                                {isCommentRequired ? 'Motivo / Observações (obrigatório)' : 'Comentário (opcional)'}
-                            </label>
-                            <textarea
-                                name="comment"
-                                value={comment}
-                                onChange={(e) => setComment(e.target.value)}
-                                placeholder="Digite aqui..."
-                                rows={4}
+                        {showCommentField && (
+                            <div style={{ marginBottom: '32px' }}>
+                                <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
+                                    {isCommentRequired ? 'Motivo / Observações (obrigatório)' : 'Comentário (opcional)'}
+                                </label>
+                                <textarea
+                                    name="comment"
+                                    value={comment}
+                                    onChange={(e) => setComment(e.target.value)}
+                                    placeholder="Digite aqui..."
+                                    rows={4}
+                                    style={{
+                                        ...inputStyle,
+                                        height: 'auto',
+                                        padding: '16px'
+                                    }}
+                                />
+                            </div>
+                        )}
+
+                        <Feedback
+                            type={feedback.type}
+                            message={feedback.message}
+                            onClose={onCloseFeedback}
+                        />
+
+                        <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
+                            <button
+                                onClick={onClose}
                                 style={{
-                                    ...inputStyle,
-                                    height: 'auto',
-                                    padding: '16px'
+                                    height: '48px', padding: '0 32px', background: 'none', border: '2px solid var(--color-border-heavy)',
+                                    cursor: 'pointer', fontWeight: 800, borderRadius: 'var(--radius-sm)',
+                                    fontFamily: 'var(--font-family-display)', fontSize: '0.875rem'
                                 }}
-                            />
+                            >
+                                CANCELAR
+                            </button>
+                            <button
+                                disabled={processing}
+                                onClick={() => onConfirm(type)}
+                                style={{
+                                    height: '48px',
+                                    padding: '0 40px',
+                                    backgroundColor: (type === 'REJECT' || type === 'DELETE' || type === 'DELETE_ITEM' || type === 'DELETE_QUOTATION' || type === 'CANCEL_REQUEST') ? 'var(--color-status-red)' : 'var(--color-primary)',
+                                    color: '#fff',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    fontWeight: 800,
+                                    borderRadius: 'var(--radius-sm)',
+                                    boxShadow: '4px 4px 0 var(--color-accent)',
+                                    fontFamily: 'var(--font-family-display)',
+                                    fontSize: '0.875rem',
+                                    opacity: processing ? 0.7 : 1
+                                }}
+                            >
+                                {processing ? 'PROCESSANDO...' : (isLastItem && type === 'ITEM_STATUS_CHANGE' ? 'OK, ENCERRAR PEDIDO, TODOS ITENS RECEBIDOS' : 'CONFIRMAR')}
+                            </button>
                         </div>
-                    )}
-
-                    <Feedback
-                        type={feedback.type}
-                        message={feedback.message}
-                        onClose={onCloseFeedback}
-                    />
-
-                    <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
-                        <button
-                            onClick={onClose}
-                            style={{
-                                height: '48px', padding: '0 32px', background: 'none', border: '2px solid var(--color-border-heavy)',
-                                cursor: 'pointer', fontWeight: 800, borderRadius: 'var(--radius-sm)',
-                                fontFamily: 'var(--font-family-display)', fontSize: '0.875rem'
-                            }}
-                        >
-                            CANCELAR
-                        </button>
-                        <button
-                            disabled={processing}
-                            onClick={() => onConfirm(type)}
-                            style={{
-                                height: '48px',
-                                padding: '0 40px',
-                                backgroundColor: (type === 'REJECT' || type === 'DELETE' || type === 'DELETE_ITEM' || type === 'DELETE_QUOTATION' || type === 'CANCEL_REQUEST') ? 'var(--color-status-red)' : 'var(--color-primary)',
-                                color: '#fff',
-                                border: 'none',
-                                cursor: 'pointer',
-                                fontWeight: 800,
-                                borderRadius: 'var(--radius-sm)',
-                                boxShadow: '4px 4px 0 var(--color-accent)',
-                                fontFamily: 'var(--font-family-display)',
-                                fontSize: '0.875rem',
-                                opacity: processing ? 0.7 : 1
-                            }}
-                        >
-                            {processing ? 'PROCESSANDO...' : (isLastItem && type === 'ITEM_STATUS_CHANGE' ? 'OK, ENCERRAR PEDIDO, TODOS ITENS RECEBIDOS' : 'CONFIRMAR')}
-                        </button>
-                    </div>
+                    </motion.div>
                 </motion.div>
-            </motion.div>
-        </AnimatePresence>
+            </AnimatePresence>
+        </DropdownPortal>
     );
 }
