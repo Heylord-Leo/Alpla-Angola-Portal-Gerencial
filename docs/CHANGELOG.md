@@ -1,5 +1,12 @@
 # Changelog
 
+## [v2.10.1] - 2026-03-30
+
+### Changed
+- **Modernized Login Screen**: Replaced the legacy GIF with a high-resolution animation (`login-animation-960w.gif`) and removed the redundant "Portal Gerencial" heading for a cleaner look.
+- **Request Creation Layout Refactor**: Moved the "Documentos de Apoio" attachment area from the bottom of the form to a contextual position directly below the "Descrição ou justificativa" field.
+- **Attachment UI Modernization**: Implemented a lighter, inline/sub-label treatment for attachments, replacing the heavy section card with a compact dropzone and a responsive grid layout for files.
+
 ## [v2.9.17] - 2026-03-29
 
 ### Fixed

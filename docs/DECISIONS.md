@@ -1021,3 +1021,18 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
     3. **Frontend Hardening**: Hide mutation actions in the Buyer Workspace for post-quotation requests.
 - **Consequences:** Guarantees commercial data consistency throughout the approval and operational lifecycle. Prevents accidental or unauthorized changes once stakeholders have begun the approval process. Improves auditability.
 
+---
+
+## DEC-074 — Contextual Attachment Placement in Request Creation
+
+- **Date:** 2026-03-30
+- **Status:** Accepted
+- **Context:** The "Documentos de Apoio" section in the Request Draft Creation form was located at the very bottom, creating a fragmented UX where users had to scroll away from the justification field to attach supporting files.
+- **Decision:** Move the attachment area directly below the "Descrição ou justificativa" field in the "Dados Gerais do Pedido" section.
+    1. **Integrated UI**: Removed the separate heavy section block.
+    2. **Inline Treatment**: Used a lighter inline/sub-label header ("Documentos de Apoio") instead of a full section header.
+    3. **Compact Dropzone**: Reduced the padding and visual weight of the upload dropzone to align with the justification field.
+- **Alternatives considered:** Keeping the separate section but moving it up. Rejected as it still felt like a disconnected block.
+- **Consequences:** Improves the natural flow of request explanation, reducing the likelihood of users forgetting to attach mandatory or supporting files. Makes the form feel more cohesive and modern.
+
+---

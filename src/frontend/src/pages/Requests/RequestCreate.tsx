@@ -432,6 +432,84 @@ export function RequestCreate() {
                             {renderFieldError('Description')}
                         </label>
 
+                        {/* Integrated Attachment Area - DEC-073 */}
+                        <div style={{ marginTop: '-8px', marginBottom: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                                <Paperclip size={16} style={{ color: 'var(--color-primary)' }} />
+                                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-main)', textTransform: 'uppercase', letterSpacing: '0.025em' }}>
+                                    Documentos de Apoio
+                                </span>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 400 }}>
+                                    (Opcional)
+                                </span>
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <div style={{ 
+                                    border: '2px dashed var(--color-border)', 
+                                    padding: '16px', 
+                                    textAlign: 'center', 
+                                    borderRadius: 'var(--radius-sm)',
+                                    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+                                    cursor: 'pointer',
+                                    position: 'relative',
+                                    transition: 'all 0.2s ease',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                }}>
+                                    <input 
+                                        type="file" 
+                                        multiple 
+                                        onChange={handleFileChange}
+                                        style={{
+                                            position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer'
+                                        }}
+                                    />
+                                    <div style={{ fontWeight: 700, fontSize: '0.75rem', color: 'var(--color-text-main)' }}>ADICIONAR DOCUMENTOS</div>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>PDF, JPG, PNG, DOCX (Máx 5MB)</div>
+                                </div>
+
+                                {attachments.length > 0 && (
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '8px' }}>
+                                        {attachments.map((file, idx) => (
+                                            <div key={idx} style={{ 
+                                                display: 'flex', 
+                                                justifyContent: 'space-between', 
+                                                alignItems: 'center', 
+                                                padding: '8px 12px', 
+                                                backgroundColor: 'white', 
+                                                border: '1px solid var(--color-border)', 
+                                                borderRadius: 'var(--radius-sm)',
+                                                boxShadow: '1px 1px 0px var(--color-border)'
+                                            }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                                                    <Paperclip size={14} style={{ flexShrink: 0 }} />
+                                                    <span style={{ 
+                                                        fontSize: '0.75rem', 
+                                                        fontWeight: 600, 
+                                                        whiteSpace: 'nowrap', 
+                                                        overflow: 'hidden', 
+                                                        textOverflow: 'ellipsis' 
+                                                    }}>
+                                                        {file.name}
+                                                    </span>
+                                                </div>
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => removeFile(idx)}
+                                                    style={{ color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', flexShrink: 0 }}
+                                                >
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
                              <label style={labelStyle}>
                                  Tipo de Pedido <span style={{ color: 'red' }}>*</span>
                                  <select
@@ -554,67 +632,6 @@ export function RequestCreate() {
                     </div>
                 </section>
 
-                {/* Section C: Documentos de Apoio */}
-                <section style={{ backgroundColor: 'var(--color-bg-surface)', padding: '32px', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-brutal)', border: '2px solid var(--color-border-heavy)' }}>
-                    <h2 style={sectionTitleStyle}>Documentos de Apoio</h2>
-                    <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '24px' }}>
-                        Anexe fotos da peça, especificações técnicas ou outros ficheiros para auxiliar o comprador.
-                    </p>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                        <div style={{ 
-                            border: '2px dashed var(--color-border)', 
-                            padding: '30px', 
-                            textAlign: 'center', 
-                            borderRadius: 'var(--radius-sm)',
-                            backgroundColor: 'white',
-                            cursor: 'pointer',
-                            position: 'relative'
-                        }}>
-                            <input 
-                                type="file" 
-                                multiple 
-                                onChange={handleFileChange}
-                                style={{
-                                    position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer'
-                                }}
-                            />
-                            <Paperclip size={24} style={{ color: 'var(--color-primary)', marginBottom: '10px' }} />
-                            <div style={{ fontWeight: 700, fontSize: '0.875rem' }}>CLIQUE OU ARRASTE ARQUIVOS PARA ANEXAR</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>PDF, JPG, PNG, DOCX (Máx 5MB por ficheiro)</div>
-                        </div>
-
-                        {attachments.length > 0 && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                {attachments.map((file, idx) => (
-                                    <div key={idx} style={{ 
-                                        display: 'flex', 
-                                        justifyContent: 'space-between', 
-                                        alignItems: 'center', 
-                                        padding: '12px 16px', 
-                                        backgroundColor: 'white', 
-                                        border: '1px solid var(--color-border)', 
-                                        borderRadius: 'var(--radius-sm)',
-                                        boxShadow: '2px 2px 0px var(--color-border)'
-                                    }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                            <Paperclip size={16} />
-                                            <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{file.name}</span>
-                                            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>({(file.size / (1024 * 1024)).toFixed(2)} MB)</span>
-                                        </div>
-                                        <button 
-                                            type="button" 
-                                            onClick={() => removeFile(idx)}
-                                            style={{ color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </section>
 
             </form>
         </motion.div >

@@ -49,8 +49,7 @@ const LoginPage: React.FC = () => {
         <div style={s.page}>
             <div style={s.card}>
                 <div style={s.header}>
-                    <img src="/logo-v2.gif" alt="ALPLA Logo" style={s.logo} />
-                    <h2 style={s.title}>Portal Gerencial</h2>
+                    <img src="/login-animation-960w.gif" alt="ALPLA Logo" style={s.logo} />
                     <p style={s.subtitle}>Acesso Corporativo</p>
                 </div>
 
