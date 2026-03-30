@@ -1036,3 +1036,17 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
 - **Consequences:** Improves the natural flow of request explanation, reducing the likelihood of users forgetting to attach mandatory or supporting files. Makes the form feel more cohesive and modern.
 
 ---
+---
+
+## DEC-074 — Restauração Condicional da Data de Necessidade
+
+- **Date:** 2026-03-30
+- **Status:** Accepted
+- **Context:** O campo "Data de Necessidade" (`NeedByDateUtc`) foi removido anteriormente mas precisava ser restaurado para pedidos de Cotação, seguindo uma regra de visibilidade condicional.
+- **Decision:** Restaurar o campo de forma integrada (reutilizando a estrutura de DTO/Entidade existente) com lógica condicional no frontend.
+    1. **Visibilidade**: Visível apenas quando `RequestTypeId` (ou Code) é `QUOTATION`.
+    2. **Obrigatoriedade**: Obrigatório no frontend e backend apenas para `QUOTATION`.
+    3. **UX**: Utilização de `AnimatePresence` para transição suave e posicionamento dentro do grid de "Dados Gerais".
+    4. **Payload**: Enviar `null` explicitamente quando o tipo não for `QUOTATION` ou o campo estiver oculto.
+- **Alternatives considered:** Criar um novo campo separado ou manter persistência mesmo quando oculto. Rejeitado para evitar inconsistência de dados.
+- **Consequences:** Garante que pedidos de Cotação tenham datas limite claras enquanto mantém o formulário simplificado para Pedidos de Pagamento.

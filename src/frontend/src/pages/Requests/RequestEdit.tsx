@@ -25,7 +25,7 @@ import { formatCurrencyAO, getRequestGuidance, formatDateTime } from '../../lib/
 import { CurrencyDto, LookupDto, UserDto, RequestStatusHistoryDto, RequestAttachmentDto, RequestLineItemDto, SavedQuotationDto } from '../../types';
 import { DateInput } from '../../components/DateInput';
 import { RequestAttachments } from '../../components/RequestAttachments';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { completeQuotationAction } from '../../lib/workflow';
 import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModal';
 import { RequestLineItemForm } from '../../components/RequestLineItemForm';
@@ -1369,6 +1369,34 @@ export function RequestEdit() {
                                 {renderFieldError('NeedLevelId')}
                             </label>
 
+                            <AnimatePresence>
+                                {(requestTypeCode === 'QUOTATION' || Number(formData.requestTypeId) === 1) && (
+                                    <motion.div
+                                        initial={{ opacity: 0, height: 0 }}
+                                        animate={{ opacity: 1, height: 'auto' }}
+                                        exit={{ opacity: 0, height: 0 }}
+                                        style={{ overflow: 'hidden' }}
+                                    >
+                                        <label style={labelStyle}>
+                                            Necessário até (Data limite) <span style={{ color: 'red' }}>*</span>
+                                            <DateInput
+                                                required
+                                                name="needByDateUtc"
+                                                value={formData.needByDateUtc}
+                                                onChange={(val) => {
+                                                    setFormData(prev => ({ ...prev, needByDateUtc: val }));
+                                                    clearFieldError('NeedByDateUtc');
+                                                }}
+                                                hasError={!!getFieldErrors('NeedByDateUtc')}
+                                                style={getInputStyle('NeedByDateUtc')}
+                                                disabled={!canEditHeader}
+                                            />
+                                            {renderFieldError('NeedByDateUtc')}
+                                        </label>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+
                             <label style={labelStyle}>
                                 Departamento <span style={{ color: 'red' }}>*</span>
                                 <select name="departmentId" value={formData.departmentId} onChange={handleChange} style={getInputStyle('DepartmentId')} disabled={!canEditHeader}>
@@ -1431,22 +1459,6 @@ export function RequestEdit() {
                             </label>
                         </div>
 
-                        <label style={labelStyle}>
-                            Necessário até (Data limite) <span style={{ color: 'red' }}>*</span>
-                            <DateInput
-                                required
-                                name="needByDateUtc"
-                                value={formData.needByDateUtc}
-                                onChange={(val) => {
-                                    setFormData(prev => ({ ...prev, needByDateUtc: val }));
-                                    clearFieldError('NeedByDateUtc');
-                                }}
-                                hasError={!!getFieldErrors('NeedByDateUtc')}
-                                style={getInputStyle('NeedByDateUtc')}
-                                disabled={!canEditHeader}
-                            />
-                            {renderFieldError('NeedByDateUtc')}
-                        </label>
                     </div>
                 </section>
 

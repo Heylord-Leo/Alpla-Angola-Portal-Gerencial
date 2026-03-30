@@ -4,10 +4,11 @@ import { Save, X, Paperclip, Trash2 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { FeedbackType } from '../../components/ui/Feedback';
 import { LookupDto, UserDto } from '../../types';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { RequestActionHeader, BreadcrumbItem } from './components/RequestActionHeader';
 import { scrollToFirstError } from '../../lib/validation';
 import { ROLES } from '../../constants/roles';
+import { DateInput } from '../../components/DateInput';
 
 
 export function RequestCreate() {
@@ -30,6 +31,7 @@ export function RequestCreate() {
         title: '',
         description: '',
         requestTypeId: '', 
+        needByDateUtc: '',
         needLevelId: '',
         estimatedTotalAmount: '',
         currencyId: 1,    // Defaulting to AOA
@@ -170,6 +172,24 @@ export function RequestCreate() {
         if (!formData.departmentId) newErrors['DepartmentId'] = ['O departamento é obrigatório.'];
         if (!formData.companyId) newErrors['CompanyId'] = ['A empresa é obrigatória.'];
         if (!formData.plantId) newErrors['PlantId'] = ['A planta é obrigatória.'];
+
+        // Conditional Validation: Data de Necessidade is mandatory for Cotação (TypeId === 1)
+        if (Number(formData.requestTypeId) === 1) {
+            if (!formData.needByDateUtc) {
+                newErrors['NeedByDateUtc'] = ['A data Necessário Até é obrigatória para pedidos de Cotação.'];
+            } else if (new Date(formData.needByDateUtc).getTime() < new Date().setHours(0, 0, 0, 0)) {
+                newErrors['NeedByDateUtc'] = ['A data Necessário Até não pode ser no passado.'];
+            }
+        }
+
+        // Conditional Validation: Data de Necessidade is mandatory for Cotação (TypeId === 1)
+        if (Number(formData.requestTypeId) === 1) {
+            if (!formData.needByDateUtc) {
+                newErrors['NeedByDateUtc'] = ['A data Necessário Até é obrigatória para pedidos de Cotação.'];
+            } else if (new Date(formData.needByDateUtc).getTime() < new Date().setHours(0, 0, 0, 0)) {
+                newErrors['NeedByDateUtc'] = ['A data Necessário Até não pode ser no passado.'];
+            }
+        }
         if (Object.keys(newErrors).length > 0) {
             setFieldErrors(newErrors);
             setFeedback({ type: 'error', message: 'Preencha todos os campos obrigatórios antes de continuar.' });
@@ -196,7 +216,9 @@ export function RequestCreate() {
             buyerId: formData.buyerId || null,
             areaApproverId: formData.areaApproverId || null,
             finalApproverId: formData.finalApproverId || null,
-            needByDateUtc: null // Will be handled in the next step
+            needByDateUtc: Number(formData.requestTypeId) === 1 && formData.needByDateUtc 
+                ? new Date(formData.needByDateUtc).toISOString() 
+                : null
         };
 
         try {
@@ -537,6 +559,33 @@ export function RequestCreate() {
                                 </select>
                                 {renderFieldError('NeedLevelId')}
                             </label>
+
+                            <AnimatePresence>
+                                {Number(formData.requestTypeId) === 1 && (
+                                    <motion.div
+                                        initial={{ opacity: 0, height: 0 }}
+                                        animate={{ opacity: 1, height: 'auto' }}
+                                        exit={{ opacity: 0, height: 0 }}
+                                        style={{ overflow: 'hidden' }}
+                                    >
+                                        <label style={labelStyle}>
+                                            Necessário até (Data limite) <span style={{ color: 'red' }}>*</span>
+                                            <DateInput
+                                                required
+                                                name="needByDateUtc"
+                                                value={formData.needByDateUtc}
+                                                onChange={(val) => {
+                                                    setFormData(prev => ({ ...prev, needByDateUtc: val }));
+                                                    clearFieldError('NeedByDateUtc');
+                                                }}
+                                                hasError={!!getFieldErrors('NeedByDateUtc')}
+                                                style={getInputStyle('NeedByDateUtc')}
+                                            />
+                                            {renderFieldError('NeedByDateUtc')}
+                                        </label>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
 
                             <label style={labelStyle}>
                                 Departamento <span style={{ color: 'red' }}>*</span>

@@ -125,6 +125,7 @@ A non-operational, instructional guide to the purchasing process.
 We use **Inline Form Validation** directly tied to the Backend responses as the project-wide standard. To ensure maximum productivity, users must never be navigated away from a form due to predictable field validations, and their partially-entered data must not be lost.
 
 - **Required Field Enforcement**: Added HTML5 `required` attributes and backend `[Required]` annotations for `Grau de Necessidade` and `Necessário Até` fields, ensuring users cannot save a request without providing these values. Inline error messages highlight missing fields and preserve entered data for correction.
+- **Conditional Visibility and Requirement**: Some fields (e.g., `Data de Necessidade`) are conditionally visible and required based on business rules (e.g., only for `QUOTATION` request types). These fields are excluded from validation when hidden and must be handled as `null` in the API payload if not applicable.
 
 ### Error Handling Paradigm
 

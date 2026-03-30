@@ -655,6 +655,16 @@ public class RequestsController : BaseController
         var requestTypeEntity = await _context.RequestTypes.FirstOrDefaultAsync(rt => rt.Id == dto.RequestTypeId);
         if (requestTypeEntity == null) return BadRequest("Tipo de pedido inválido.");
 
+        if (requestTypeEntity.Code == "QUOTATION" && !dto.NeedByDateUtc.HasValue)
+        {
+            return BadRequest(new ProblemDetails 
+            { 
+                Title = "Erro de Validação", 
+                Detail = "A Data de Necessidade é obrigatória para pedidos de Cotação.", 
+                Status = 400 
+            });
+        }
+
         var initialStatusCode = requestTypeEntity.Code == "QUOTATION" ? "WAITING_QUOTATION" : "DRAFT";
         var initialStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == initialStatusCode);
         if (initialStatus == null) return StatusCode(500, $"{initialStatusCode} status code not found in database lookup.");
@@ -834,6 +844,16 @@ public class RequestsController : BaseController
 
         var requestTypeEntity = await _context.RequestTypes.FirstOrDefaultAsync(rt => rt.Id == dto.RequestTypeId);
         if (requestTypeEntity == null) return BadRequest("Tipo de pedido inválido.");
+
+        if (requestTypeEntity.Code == "QUOTATION" && !dto.NeedByDateUtc.HasValue)
+        {
+            return BadRequest(new ProblemDetails 
+            { 
+                Title = "Erro de Validação", 
+                Detail = "A Data de Necessidade é obrigatória para pedidos de Cotação.", 
+                Status = 400 
+            });
+        }
 
         if (requestTypeEntity.Code == "PAYMENT" && !dto.SupplierId.HasValue)
         {

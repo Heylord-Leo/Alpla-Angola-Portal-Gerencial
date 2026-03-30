@@ -1,5 +1,15 @@
 # Changelog
 
+## [v2.10.2] - 2026-03-30
+
+### Added
+- **Conditional Need Date Restoration**: Re-introduced the "Data de Necessidade" field in the Request header, specifically for `QUOTATION` (Cotação) request types.
+- **Backend Validation**: Implemented server-side enforcement in `RequestsController` to ensure the date is mandatory and valid for quotations.
+
+### Changed
+- **Form Layout Refinement**: Integrated the date field into the primary "Dados Gerais" grid, improving visual alignment and grid efficiency.
+- **UX Animation**: Added smooth conditional transitions using `AnimatePresence` for a premium interface feel.
+
 ## [v2.10.1] - 2026-03-30
 
 ### Changed
