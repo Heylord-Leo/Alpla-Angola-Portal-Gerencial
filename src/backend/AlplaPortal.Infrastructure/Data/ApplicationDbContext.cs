@@ -90,6 +90,20 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<UserPlantScope>().HasKey(ups => new { ups.UserId, ups.PlantId });
         modelBuilder.Entity<UserDepartmentScope>().HasKey(uds => new { uds.UserId, uds.DepartmentId });
 
+        // Department Responsible User mapping (ambiguity resolution)
+        modelBuilder.Entity<Department>()
+            .HasOne(d => d.ResponsibleUser)
+            .WithMany()
+            .HasForeignKey(d => d.ResponsibleUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        // Standard User -> Department link
+        modelBuilder.Entity<User>()
+            .HasOne(u => u.Department)
+            .WithMany()
+            .HasForeignKey(u => u.DepartmentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         // Unique Constraints for Master Data
         modelBuilder.Entity<Unit>().HasIndex(u => u.Code).IsUnique();
         modelBuilder.Entity<Currency>().HasIndex(c => c.Code).IsUnique();

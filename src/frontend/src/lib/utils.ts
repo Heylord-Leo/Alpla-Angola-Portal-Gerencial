@@ -1,13 +1,15 @@
-export function formatCurrencyAO(amount: number | null | undefined): string {
+export function formatCurrencyAO(amount: number | null | undefined, currencyCode?: string): string {
     if (amount === null || amount === undefined || isNaN(amount)) {
-        return '0,00';
+        return currencyCode ? `${currencyCode} 0,00` : '0,00';
     }
 
     // Uses pt-AO explicitly to ensure '.' for thousands and ',' for decimal
-    return new Intl.NumberFormat('pt-AO', {
+    const formatted = new Intl.NumberFormat('pt-AO', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
     }).format(amount);
+
+    return currencyCode ? `${currencyCode} ${formatted}` : formatted;
 }
 
 export interface RequestGuidance {

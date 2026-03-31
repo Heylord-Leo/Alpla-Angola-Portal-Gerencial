@@ -13,4 +13,11 @@ public class DashboardSummaryDto
     public int AwaitingPayment { get; set; }
     public int AwaitingApproval { get; set; }
     public int CompletedRequests { get; set; }
+
+    public decimal FilteredTotal { get; set; }
+    public List<string> FilteredCurrencyCodes { get; set; } = new();
+
+    // Trend & Growth (MoM)
+    public decimal? FilteredTotalTrend { get; set; }
+    public string? FilteredTotalTrendLabel { get; set; }
 }

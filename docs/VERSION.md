@@ -2,14 +2,20 @@
 
 ## Current Version
 
-v2.10.9
+v2.11.3
 
 ## Version History
 
+- **2.11.3**: EF Core Query Optimization. Resolved non-deterministic warnings and Cartesian Explosion issues via explicit Ordering and `.AsSplitQuery()` in core request modules.
+
+- **2.11.2**: TOTAL FILTRADO KPI Trend (MoM). Added MTD vs PMTD comparison with multi-currency safety and subtle Layout Option A indicator.
+
+- **2.11.1**: TOTAL FILTRADO KPI Card. Replaced 'Finalizados' with monetary aggregate of filtered requests. Implemented multi-currency protection.
+
+- **2.11.0**: Automating Departmental Area Approvers (DEC-082). Integrated Department Responsible as default Area Approver. Added Responsible field to Department master data with role-based filtering and backend schema extension.
 - **2.10.9**: Proper Master Data UI Standardization. Switched to the system-standard `KebabMenu` component in all Master Data sections for full parity with the Requests list UI. 
 - **2.10.8**: Initial Master Data Row Action Migration.
-- **2.10.9**: Proper Master Data UI Standardization. Switched to the system-standard `KebabMenu` component in all Master Data sections for full parity with the Requests list UI.
-- **2.10.8**: Initial Master Data Row Action Migration.
+
 - **2.10.7**: Real Cost Centers & Plant-Based Filtering. Replaced test CCs with 5 operational Cost Centers (Viana 1/2/3). Added PlantId FK, mandatory plant selector in Master Data, and per-item CC/Plant validation in AddLineItem and UpdateLineItem.
 - **2.10.6**: Requester Hover UX. Added a contextual tooltip to the Request Number in the list to display the requester's name.
 - **2.10.5**: Payment Submission Fix & Line Item Refactor. Fixed 400 validation errors on submission for Payment requests and integrated mandatory Cost Center/IVA at the line item level.
@@ -38,8 +44,6 @@ v2.10.9
 - **2.8.0**: Account & Notification Modernization. Implemented a read-only Profile side drawer, integrated the "Alterar Palavra-passe" flow into the AppShell, and launched a real-time actionable notification engine for operational actors (Buyers, Approvers, Finance, Receiving).
 - **2.7.0**: UI/UX Standardization Pass. Brought Login and User Management screens to the standardized UI design. Converted User Management editing to a Drawer-based pattern.
 - **2.6.0**: User Management Administration UI. Integrated a high-density management table for users, roles, and plant/department scopes with stricter Local Manager subset logic.
-- **2.5.1**: "Aguardando Pagamento" KPI Card.
-- **2.5.0**: Sidebar & Navigation Redesign. Implemented a professional collapsible sidebar with dynamic logo headers and smooth layout transitions.
 - **2.4.1**: Synchronized Urgency Indicators. Integrated overdue and due-soon visual logic into the Buyer / Gestão de Cotações workspace with refined finalized status exclusions.
 - **2.4.0**: Formalized KPI Dashboard & Summary Cards Standard. Added normative directives and UI standards for robust dashboard patterns.
 - **2.1.0**: Management Dashboard KPIs. Integrated interactive KPI summary cards with a unified backend data flow and standardized design.
@@ -60,61 +64,35 @@ Semantic Versioning (MAJOR.MINOR.PATCH)
 
 Active Development
 
-## [v2.9.14] - 2026-03-29
+## [v2.11.3] - 2026-03-31
 
-### Fixed
+### Optimized
 
-- **Session Security**: Migrated authentication data (`auth_token`, `auth_user`) from `localStorage` to `sessionStorage`. This ensures that sessions are tied to the browser tab lifecycle and are automatically cleared when the tab or browser window is closed.
+- **EF Core Query Audit**: Resolved `FirstWithoutOrderByAndFilterWarning` and `MultipleCollectionIncludeWarning` (Cartesian Explosion) in the core `Requests` and `LineItems` modules.
+- **Deterministic Ordering**: Applied explicit `.OrderBy()` on all aggregate and lookup queries to ensure stable results across list views and dashboards.
+- **Query Splitting**: Integrated `.AsSplitQuery()` for high-complexity detail projections (Save, Submit, Cancel, Delete, Finalize) to eliminate performance degradation from broad Cartesian joins.
 
-## [v2.9.13] - 2026-03-29
-
-### Fixed
-
-- **Modal Layering & Stacking Context**: Resolved a critical UI conflict where the sticky Topbar (z-index 100) obscured modal dialogs and side drawers. Implemented `DropdownPortal` in `UserManagement.tsx`, `ApprovalModal.tsx`, and `ReceivingModal.tsx`.
-- **Import Resolution**: Fixed a naming collision in `UserManagement.tsx` between the `Link` icon and the `Link` routing component.
-
-## [v2.9.12] - 2026-03-28
-
-### Fixed
-- **Line-Item Persistence Bug**: Fixed audit log entries missing mandatory fields in `RequestsController`.
-
-## [v2.9.11] - 2026-03-28
-
-### Fixed
-- **Buyer OCR Authentication**: Standardized upload flow to use authenticated utility.
-- **Admin Logs Authentication**: Secured backend log access.
-
-## [v2.9.10] - 2026-03-28
-
-### Fixed
-- **Document Extraction Settings Auth**: Resolved 401 Unauthorized issue by migrating to `apiFetch()`.
-
-## [v2.9.17] - 2026-03-29
-
-### Fixed
-- **Quotation Workspace Filtering**: Implemented strict backend filtering to ensure the "Gestão de Cotações" view and counters exclusively reflect `QUOTATION` type requests, preventing data leakage from `PAYMENT` requests.
-- **Centralized Constants**: Introduced `RequestConstants` and `AttachmentConstants` to eliminate hardcoded strings in controllers and helpers.
+## [v2.11.2] - 2026-03-31
 
 ### Added
-- **Performance Optimization**: Added database indexes for `CreatedAtUtc` and `RequestId`/`IsDeleted` to improve query speed in the requests and line items modules.
 
-2026-03-29 (Quotation Locking Workflow)
+- **TOTAL FILTRADO KPI Card**: Replaced the "Finalizados" card with a monetary aggregate of currently filtered requests.
+- **Multi-Currency Protection**: Implemented a security mechanism to prevent silent mixing of currencies; the total is hidden (replaced by "Múltiplas moedas") if the filtered result contains more than one currency.
+- **Backend Aggregation**: Added high-performance server-side summation of `EstimatedTotalAmount` (or selected quotation amount) within the same API call used for list hydration.
+- **Refined KPICard Component**: Updated the core dashboard component to support non-numeric values, subtitles, and non-interactive states.
+- **Enhanced Currency Formatting**: Updated `formatCurrencyAO` to support optional currency code prefixing.
 
-## [v2.9.16] - 2026-03-29
+## [v2.11.2] - 2026-03-31
 
 ### Added
-- **Quotation Workflow Locking**: Implemented a mandatory boundary that makes quotations read-only once a request advances to `WAITING_AREA_APPROVAL` or beyond.
 
-### Fixed
-- **RequestsController Security**: Added missing status guards to `SaveQuotation` (POST) and `OcrExtract`, ensuring consistency with existing Update/Delete endpoints.
-- **Data Integrity**: Fixed a potential `NullReferenceException` in `SaveQuotation` by ensuring the `Status` entity is included in the EF Core query.
-
-### Changed
-- **Frontend UX**: Replaced disabled buttons with explicit hiding of mutation actions ("Editar", "Excluir", "Registrar Nova Cotação") in the "Gestão de Cotações" workspace for post-quotation requests.
+- **Automating Departmental Area Approvers (DEC-082)**: Integrated the "Department Responsible" as the default "Area Approver" in the request workflow.
+- **Master Data - Department Responsible**: Added a "Responsável" (Responsible User) field to the Department master data. It features a specialized user selector filtered by the `AREA_APPROVER` role.
+- **Backend Schema Extension**: Added `ResponsibleUserId` to the `Department` entity with full persistence and API support in `LookupsController`.
+- **Refined Master Data Edit Guard**: Updated the department edit logic to allow changing the responsible user even if the department is already referenced by historical requests, while still protecting structural fields like Name and Code.
 
 ## Version Notes
 
-- Introdução de Manutenção de Dados Mestres (Soft Delete, Prevenção de Duplicatas).
-- Novo fluxo contínuo de criação: Cabeçalho -> Itens de Linha.
-- Integração do "Grau de Necessidade" (Need Level) na entidade `Request`.
-
+- Manutenção de Auditoria e Performance de Banco de Dados.
+- Redução de Avisos de Query Não-Determinística (EF Core).
+- Prevenção de Explosão Cartesiana em Projeções Complexas.

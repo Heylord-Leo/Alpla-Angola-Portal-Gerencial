@@ -691,6 +691,7 @@ public class LineItemsController : BaseController
                 .Include(r => r.Quotations)
                     .ThenInclude(q => q.Items)
                         .ThenInclude(qi => qi.LineItemStatus)
+                .AsSplitQuery()
                 .FirstOrDefaultAsync(r => r.Id == requestId);
 
             if (request == null) return;

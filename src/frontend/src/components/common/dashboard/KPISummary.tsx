@@ -1,6 +1,7 @@
-import { ClipboardList, Clock, CheckCircle2, AlertCircle, DollarSign } from 'lucide-react';
+import { ClipboardList, Clock, AlertCircle, DollarSign, TrendingUp } from 'lucide-react';
 import { KPICard } from './KPICard';
 import { DashboardSummaryDto } from '../../../types';
+import { formatCurrencyAO } from '../../../lib/utils';
 
 interface KPISummaryProps {
     summary: DashboardSummaryDto;
@@ -43,12 +44,23 @@ export function KPISummary({ summary, activeFilter, onFilterChange }: KPISummary
             filter: 'Aguardando Pagamento'
         },
         {
-            id: 'finished',
-            label: 'Finalizados',
-            count: summary.completedRequests,
-            icon: CheckCircle2,
-            color: 'bg-emerald-400',
-            filter: 'Finalizados'
+            id: 'filtered-total',
+            label: 'Total Filtrado',
+            count: summary.filteredTotal,
+            icon: TrendingUp,
+            color: 'bg-emerald-500',
+            filter: 'FilteredTotal',
+            displayValue: summary.filteredCurrencyCodes.length > 1 
+                ? 'Múltiplas moedas' 
+                : summary.filteredCurrencyCodes.length === 1
+                    ? formatCurrencyAO(summary.filteredTotal, summary.filteredCurrencyCodes[0])
+                    : '0,00',
+            subtitle: summary.filteredCurrencyCodes.length > 1 
+                ? 'Refine os filtros para ver o total por moeda' 
+                : undefined,
+            nonInteractive: true,
+            trendValue: summary.filteredTotalTrend,
+            trendLabel: summary.filteredTotalTrendLabel
         }
     ];
 
@@ -70,6 +82,11 @@ export function KPISummary({ summary, activeFilter, onFilterChange }: KPISummary
                     onClick={() => onFilterChange(card.filter)}
                     color={card.color}
                     delay={index * 0.1}
+                    displayValue={card.displayValue}
+                    subtitle={card.subtitle}
+                    nonInteractive={card.nonInteractive}
+                    trendValue={(card as any).trendValue}
+                    trendLabel={(card as any).trendLabel}
                 />
             ))}
         </div>

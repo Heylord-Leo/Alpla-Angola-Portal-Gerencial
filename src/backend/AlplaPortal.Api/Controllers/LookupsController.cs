@@ -347,7 +347,7 @@ public class LookupsController : ControllerBase
 
         var items = await query
             .OrderBy(d => d.Name)
-            .Select(d => new { d.Id, d.Code, d.Name, d.IsActive })
+            .Select(d => new { d.Id, d.Code, d.Name, d.IsActive, d.ResponsibleUserId })
             .ToListAsync();
 
         return Ok(items);
@@ -357,13 +357,19 @@ public class LookupsController : ControllerBase
     [Authorize(Roles = "System Administrator")]
     public async Task<IActionResult> CreateDepartment([FromBody] CreateLookupDto dto)
     {
-        var entity = new Domain.Entities.Department { Code = dto.Code?.ToUpper() ?? string.Empty, Name = dto.Name, IsActive = true };
+        var entity = new Domain.Entities.Department 
+        { 
+            Code = dto.Code?.ToUpper() ?? string.Empty, 
+            Name = dto.Name, 
+            IsActive = true,
+            ResponsibleUserId = dto.ResponsibleUserId
+        };
         _context.Departments.Add(entity);
         
         try
         {
             await _context.SaveChangesAsync();
-            return Created($"/api/v1/lookups/departments/{entity.Id}", new { entity.Id, entity.Code, entity.Name, entity.IsActive });
+            return Created($"/api/v1/lookups/departments/{entity.Id}", new { entity.Id, entity.Code, entity.Name, entity.IsActive, entity.ResponsibleUserId });
         }
         catch (DbUpdateException ex)
         {
@@ -378,18 +384,22 @@ public class LookupsController : ControllerBase
         var entity = await _context.Departments.FindAsync(id);
         if (entity == null) return NotFound();
 
-        if (await _context.Requests.AnyAsync(r => r.DepartmentId == id))
+        // Relaxed guard: block only if NAME or CODE changed AND there is historical data
+        bool fundamentalFieldsChanged = entity.Name != dto.Name || (entity.Code != (dto.Code?.ToUpper() ?? string.Empty));
+        
+        if (fundamentalFieldsChanged && await _context.Requests.AnyAsync(r => r.DepartmentId == id))
         {
             return Conflict(new ProblemDetails
             {
                 Title = "Regra de Negócio Violada",
-                Detail = "Este registro já está em uso por pedidos históricos e não pode ser alterado. Por favor, desative-o e crie um novo para preservar o histórico.",
+                Detail = "Este registro já possui pedidos vinculados. O nome e o código não podem ser alterados para preservar a integridade do histórico. No entanto, o responsável pode ser atualizado normalmente.",
                 Status = 409
             });
         }
 
         entity.Code = dto.Code?.ToUpper() ?? string.Empty;
         entity.Name = dto.Name;
+        entity.ResponsibleUserId = dto.ResponsibleUserId;
 
         try
         {
@@ -902,6 +912,7 @@ public class CreateLookupDto
     public string? Code { get; set; }
     public string Name { get; set; } = string.Empty;
     public int CompanyId { get; set; } // Only used for Plants
+    public Guid? ResponsibleUserId { get; set; } // Only used for Departments
 }
 
 public class CreateSupplierDto

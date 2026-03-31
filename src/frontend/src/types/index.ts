@@ -159,6 +159,7 @@ export interface LookupDto {
     taxId?: string;
     portalCode?: string;
     primaveraCode?: string;
+    responsibleUserId?: string;
 }
 
 export interface SupplierSearchDto {
@@ -214,6 +215,11 @@ export interface DashboardSummaryDto {
     awaitingApproval: number;
     awaitingPayment: number;
     completedRequests: number;
+
+    filteredTotal: number;
+    filteredCurrencyCodes: string[];
+    filteredTotalTrend: number | null;
+    filteredTotalTrendLabel: string | null;
 }
 
 export interface PagedResult<T> {

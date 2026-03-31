@@ -410,6 +410,14 @@ export function RequestEdit() {
             setIvaRates(ivaData);
             setUsers(usersData);
 
+            // Auto-fill Area Approver on initial load IF empty - DEC-082
+            if (form.departmentId && !form.areaApproverId) {
+                const dept = dData.find(d => d.id === Number(form.departmentId));
+                if (dept && dept.responsibleUserId) {
+                    setFormData(prev => ({ ...prev, areaApproverId: dept.responsibleUserId }));
+                }
+            }
+
         } catch (err: any) {
             setFeedback({ type: 'error', message: err.message || 'Falha ao carregar pedido.' });
         } finally {
@@ -458,7 +466,19 @@ export function RequestEdit() {
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+        setFormData(prev => {
+            const next = { ...prev, [name]: value };
+
+            // Auto-fill Area Approver from Department - DEC-082
+            if (name === 'departmentId' && value) {
+                const dept = departments.find(d => d.id === Number(value));
+                if (dept && dept.responsibleUserId) {
+                    next.areaApproverId = dept.responsibleUserId;
+                }
+            }
+
+            return next;
+        });
         clearFieldError(name);
     };
 

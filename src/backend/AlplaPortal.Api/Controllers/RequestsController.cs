@@ -55,6 +55,7 @@ public class RequestsController : BaseController
                 InAdjustment = g.Count(r => r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment),
                 InAttention = g.Count(r => !terminalStates.Contains(r.Status!.Code) && r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < in4Days)
             })
+            .OrderBy(g => 1)
             .FirstOrDefaultAsync();
 
         return Ok(new DashboardSummaryDto
@@ -87,6 +88,7 @@ public class RequestsController : BaseController
                 PendingReceiving = g.Count(r => receivingStatuses.Contains(r.Status!.Code)),
                 Overdue = g.Count(r => !terminalStates.Contains(r.Status!.Code) && r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < today)
             })
+            .OrderBy(g => 1)
             .FirstOrDefaultAsync();
 
         var totalActive = stats?.TotalActive ?? 0;
@@ -226,6 +228,7 @@ public class RequestsController : BaseController
                 AwaitingPayment = g.Count(r => r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled),
                 Completed = g.Count(r => r.Status!.Code == "COMPLETED") // COMPLETED status not yet in constants
             })
+            .OrderBy(g => 1)
             .FirstOrDefaultAsync();
 
         var summary = new DashboardSummaryDto
@@ -251,6 +254,90 @@ public class RequestsController : BaseController
                 !terminalStates.Contains(r.Status!.Code) && 
                 r.NeedByDateUtc.HasValue && 
                 r.NeedByDateUtc.Value < in4Days);
+        }
+
+        // 3a. Calculate Filtered Total (Monetary Total)
+        // Materialize scalar amounts to avoid SQL Server's aggregate limitations 
+        // (Sum over subquery is not allowed in SQL)
+        var filteredAmounts = await query
+            .Select(r => r.SelectedQuotationId.HasValue 
+                ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId).Select(q => (decimal?)q.TotalAmount).FirstOrDefault() ?? 0
+                : r.EstimatedTotalAmount)
+            .ToListAsync();
+
+        var filteredTotal = filteredAmounts.Sum();
+
+        // 3b. Retrieve Distinct Currency Codes for Multi-currency Protection
+        // Running as a separate query ensures EF can safely translate the Distinct/ToList projection
+        var filteredCurrencyCodes = await query
+            .Select(r => r.SelectedQuotationId.HasValue 
+                ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId).Select(q => q.Currency).FirstOrDefault() 
+                : (r.Currency != null ? r.Currency.Code : null))
+            .Where(c => c != null)
+            .Distinct()
+            .ToListAsync();
+
+        summary.FilteredTotal = filteredTotal;
+        summary.FilteredCurrencyCodes = filteredCurrencyCodes ?? new List<string>();
+
+        // 3c. Calculate Filtered Trend (MTD vs PMTD)
+        var now = DateTime.UtcNow;
+        var currentMtdStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        
+        var prevMtdStart = currentMtdStart.AddMonths(-1);
+        var prevMtdEnd = now.AddMonths(-1);
+
+        // Current MTD Total & Currencies
+        var currentMtdAmounts = await query
+            .Where(r => r.CreatedAtUtc >= currentMtdStart && r.CreatedAtUtc <= now)
+            .Select(r => r.SelectedQuotationId.HasValue 
+                ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId).Select(q => (decimal?)q.TotalAmount).FirstOrDefault() ?? 0
+                : r.EstimatedTotalAmount)
+            .ToListAsync();
+        
+        var currentMtdCurrencies = await query
+            .Where(r => r.CreatedAtUtc >= currentMtdStart && r.CreatedAtUtc <= now)
+            .Select(r => r.SelectedQuotationId.HasValue 
+                ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId).Select(q => q.Currency).FirstOrDefault() 
+                : (r.Currency != null ? r.Currency.Code : null))
+            .Where(c => c != null)
+            .Distinct()
+            .ToListAsync();
+
+        // Previous MTD Total & Currencies
+        var prevMtdAmounts = await query
+            .Where(r => r.CreatedAtUtc >= prevMtdStart && r.CreatedAtUtc <= prevMtdEnd)
+            .Select(r => r.SelectedQuotationId.HasValue 
+                ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId).Select(q => (decimal?)q.TotalAmount).FirstOrDefault() ?? 0
+                : r.EstimatedTotalAmount)
+            .ToListAsync();
+
+        var prevMtdCurrencies = await query
+            .Where(r => r.CreatedAtUtc >= prevMtdStart && r.CreatedAtUtc <= prevMtdEnd)
+            .Select(r => r.SelectedQuotationId.HasValue 
+                ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId).Select(q => q.Currency).FirstOrDefault() 
+                : (r.Currency != null ? r.Currency.Code : null))
+            .Where(c => c != null)
+            .Distinct()
+            .ToListAsync();
+
+        var currentMtdTotal = currentMtdAmounts.Sum();
+        var prevMtdTotal = prevMtdAmounts.Sum();
+
+        // Safe Trend Calculation (Multi-currency and Zero-baseline checks)
+        bool isCurrentSafe = currentMtdCurrencies.Count == 1;
+        bool isPrevSafe = prevMtdCurrencies.Count == 1;
+        bool sameCurrency = isCurrentSafe && isPrevSafe && currentMtdCurrencies[0] == prevMtdCurrencies[0];
+
+        if (sameCurrency && prevMtdTotal > 0)
+        {
+            summary.FilteredTotalTrend = ((currentMtdTotal - prevMtdTotal) / prevMtdTotal) * 100;
+            summary.FilteredTotalTrendLabel = "vs mês anterior";
+        }
+        else
+        {
+            summary.FilteredTotalTrend = null;
+            summary.FilteredTotalTrendLabel = "Sem comparativo";
         }
 
         // 4. Final Projection and Pagination
@@ -484,6 +571,7 @@ public class RequestsController : BaseController
                     }).ToList()
                 }).OrderByDescending(q => q.CreatedAtUtc).ToList()
             })
+            .AsSplitQuery()
             .FirstOrDefaultAsync();
 
         if (request == null) return NotFound();
@@ -980,6 +1068,7 @@ public class RequestsController : BaseController
             .Include(r => r.RequestType)
             .Include(r => r.LineItems)
             .Include(r => r.Attachments)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (request == null) return NotFound();
@@ -1167,6 +1256,7 @@ public class RequestsController : BaseController
                 .ThenInclude(q => q.Items)
                     .ThenInclude(i => i.Unit)
             .Include(r => r.Attachments)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == id);
         
         if (request == null) return NotFound("Pedido não encontrado.");
@@ -1781,6 +1871,7 @@ public class RequestsController : BaseController
             .Include(r => r.RequestType)
             .Include(r => r.LineItems).ThenInclude(li => li.LineItemStatus)
             .Include(r => r.Attachments)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (request == null) return NotFound(new ProblemDetails { Title = "Pedido não encontrado.", Status = 404 });
@@ -2225,6 +2316,7 @@ public class RequestsController : BaseController
             .Include(r => r.LineItems)
             .Include(r => r.Attachments)
             .Include(r => r.StatusHistories)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (request == null) return NotFound();
@@ -2503,6 +2595,7 @@ public class RequestsController : BaseController
                 .Include(r => r.Quotations)
                     .ThenInclude(q => q.Items)
                         .ThenInclude(qi => qi.LineItemStatus)
+                .AsSplitQuery()
                 .FirstOrDefaultAsync(r => r.Id == id);
 
             if (request == null) return NotFound();
@@ -2619,6 +2712,7 @@ public class RequestsController : BaseController
             .Include(r => r.Quotations)
                 .ThenInclude(q => q.Items)
             .Include(r => r.Attachments)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (request == null) return NotFound();

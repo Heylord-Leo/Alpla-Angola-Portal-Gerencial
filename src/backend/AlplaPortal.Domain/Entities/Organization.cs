@@ -6,6 +6,9 @@ public class Department
     public string Name { get; set; } = string.Empty;
     public string? Code { get; set; }
     public bool IsActive { get; set; } = true;
+
+    public Guid? ResponsibleUserId { get; set; }
+    public User? ResponsibleUser { get; set; }
 }
 
 public class Company

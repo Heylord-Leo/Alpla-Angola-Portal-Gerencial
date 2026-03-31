@@ -1,5 +1,47 @@
 # Changelog
 
+## [v2.11.3] - 2026-03-31
+
+### Optimized
+
+- **EF Core Query Audit**: Resolved non-deterministic First/FirstOrDefault warnings and Multiple Collection Include warnings (Cartesian Explosion) in core request and line item modules.
+- **Deterministic Ordering**: Applied explicit `.OrderBy()` on all aggregate and lookup queries to ensure stable results across list views and dashboards.
+- **Query Splitting**: Integrated `.AsSplitQuery()` for high-complexity detail projections (Submit, Save, Delete, Cancel, Finalize) to eliminate performance degradation from broad Cartesian joins.
+
+## [v2.11.2] - 2026-03-31
+
+### Added
+
+- **TOTAL FILTRADO KPI Trend (MoM)**: Implemented Month-over-Month (MoM) trend indicator comparing current Month-to-Date (MTD) vs. same period last month.
+- **Trend Safety Logic**: Automatic neutral state ('Sem comparativo') when comparison is not meaningful.
+- **KPI Layout Option A**: Compact directional indicator and percentage delta.
+
+## [v2.11.1] - 2026-03-31
+
+### Added
+
+- **TOTAL FILTRADO KPI Card**: Replaced the "Finalizados" card with a monetary aggregate of currently filtered requests.
+- **Multi-Currency Protection**: Implemented a security mechanism to prevent silent mixing of currencies; the total is hidden (replaced by "Múltiplas moedas") if the filtered result contains more than one currency.
+- **Backend Aggregation**: Added high-performance server-side summation of `EstimatedTotalAmount` (or selected quotation amount) within the same API call used for list hydration.
+- **Refined KPICard Component**: Updated the core dashboard component to support non-numeric values, subtitles, and non-interactive states.
+- **Enhanced Currency Formatting**: Updated `formatCurrencyAO` to support optional currency code prefixing.
+
+## [v2.11.0] - 2026-03-31
+
+### Added
+
+- **Automating Departmental Area Approvers (DEC-082)**: Integrated the "Department Responsible" as the default "Area Approver" in the request workflow.
+- **Master Data - Department Responsible**: Added a "Responsável" (Responsible User) field to the Department master data. It features a specialized user selector filtered by the `AREA_APPROVER` role.
+- **Backend Schema Extension**: Added `ResponsibleUserId` to the `Department` entity with full persistence and API support in `LookupsController`.
+- **Refined Master Data Edit Guard**: Updated the department edit logic to allow changing the responsible user even if the department is already referenced by historical requests, while still protecting structural fields like Name and Code.
+
+### Changed
+
+- **Request Flow Auto-fill**:
+  - **New Requests**: Selecting a Department now automatically populates the "Aprovador de Área" field with the department's configured responsible user.
+  - **Request Editing**: The Area Approver is automatically filled on load if empty, and updated whenever the Department is changed by the user.
+  - **Manual Flexibility**: The auto-filled Area Approver remains manually editable to handle exceptions or vacation coverage.
+
 ## [v2.10.9] - 2026-03-31
 
 ### Fixed

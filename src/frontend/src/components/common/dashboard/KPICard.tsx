@@ -10,9 +10,27 @@ interface KPICardProps {
     onClick: () => void;
     color: string;
     delay?: number;
+    displayValue?: string | React.ReactNode;
+    subtitle?: string;
+    nonInteractive?: boolean;
+    trendValue?: number | null;
+    trendLabel?: string | null;
 }
 
-export function KPICard({ label, count, icon: Icon, isActive, onClick, color, delay = 0 }: KPICardProps) {
+export function KPICard({ 
+    label, 
+    count, 
+    icon: Icon, 
+    isActive, 
+    onClick, 
+    color, 
+    delay = 0,
+    displayValue,
+    subtitle,
+    nonInteractive = false,
+    trendValue,
+    trendLabel
+}: KPICardProps) {
     // Industrial color mapping
     const colorStyles: Record<string, { bg: string, border: string, iconBg: string }> = {
         'bg-blue-500': { bg: '#eff6ff', border: '#3b82f6', iconBg: '#3b82f6' },
@@ -38,7 +56,8 @@ export function KPICard({ label, count, icon: Icon, isActive, onClick, color, de
         minHeight: '140px',
         flex: 1,
         zIndex: isActive ? 10 : 1,
-        transform: isActive ? 'scale(1.02)' : 'scale(1)'
+        transform: (!nonInteractive && isActive) ? 'scale(1.02)' : 'scale(1)',
+        pointerEvents: nonInteractive ? 'none' : 'auto'
     };
 
     return (
@@ -46,9 +65,9 @@ export function KPICard({ label, count, icon: Icon, isActive, onClick, color, de
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay, type: "spring", stiffness: 100 }}
-            whileHover={{ y: -4, borderColor: 'var(--color-primary)', backgroundColor: 'white' }}
-            whileTap={{ scale: 0.98 }}
-            onClick={onClick}
+            whileHover={nonInteractive ? {} : { y: -4, borderColor: 'var(--color-primary)', backgroundColor: 'white' }}
+            whileTap={nonInteractive ? {} : { scale: 0.98 }}
+            onClick={nonInteractive ? undefined : onClick}
             style={cardStyle}
         >
             {/* Background Watermark Icon */}
@@ -78,12 +97,44 @@ export function KPICard({ label, count, icon: Icon, isActive, onClick, color, de
             </div>
 
             <div>
-                <div style={{ fontSize: '2rem', fontWeight: 900, letterSpacing: '-0.05em', color: 'var(--color-primary)', marginBottom: '4px', lineHeight: 1 }}>
-                    {count.toLocaleString()}
+                <div style={{ 
+                    fontSize: displayValue && String(displayValue).length > 15 ? '1.5rem' : '2rem', 
+                    fontWeight: 900, 
+                    letterSpacing: '-0.05em', 
+                    color: 'var(--color-primary)', 
+                    marginBottom: '4px', 
+                    lineHeight: 1,
+                    wordBreak: 'break-word'
+                }}>
+                    {displayValue !== undefined ? displayValue : count.toLocaleString()}
                 </div>
                 <div style={{ fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.15em', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>
                     {label}
                 </div>
+                
+                {/* Trend Indicator (Option A) */}
+                {(trendValue !== undefined || trendLabel === 'Sem comparativo') && (
+                    <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '4px', 
+                        marginTop: '6px',
+                        fontSize: '0.7rem',
+                        fontWeight: 700,
+                        color: (trendValue === null || trendValue === undefined) ? 'var(--color-text-muted)' : (trendValue > 0 ? '#10b981' : (trendValue < 0 ? '#f43f5e' : 'var(--color-text-muted)'))
+                    }}>
+                        {trendValue !== null && trendValue !== undefined && (
+                            <span>{trendValue > 0 ? '↑' : (trendValue < 0 ? '↓' : '→')} {Math.abs(trendValue).toFixed(1)}%</span>
+                        )}
+                        <span style={{ opacity: 0.8, fontWeight: 600 }}>{trendLabel}</span>
+                    </div>
+                )}
+
+                {subtitle && (
+                    <div style={{ fontSize: '0.6rem', fontWeight: 600, color: 'var(--color-text-muted)', marginTop: '4px', fontStyle: 'italic' }}>
+                        {subtitle}
+                    </div>
+                )}
             </div>
 
             {/* Selection indicator line */}

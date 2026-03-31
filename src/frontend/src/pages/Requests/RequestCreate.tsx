@@ -152,6 +152,14 @@ export function RequestCreate() {
                     next.companyId = String(selectedPlant.companyId);
                 }
             }
+
+            // Auto-fill Area Approver from Department - DEC-082
+            if (name === 'departmentId' && value) {
+                const dept = departments.find(d => d.id === Number(value));
+                if (dept && dept.responsibleUserId) {
+                    next.areaApproverId = dept.responsibleUserId;
+                }
+            }
             
             return next;
         });

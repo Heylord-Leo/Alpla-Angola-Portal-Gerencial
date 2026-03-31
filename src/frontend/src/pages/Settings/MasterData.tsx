@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../../lib/api';
-import { LookupDto, CurrencyDto } from '../../types';
+import { LookupDto, CurrencyDto, UserDto } from '../../types';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { KebabMenu } from '../../components/ui/KebabMenu';
+import { ROLES } from '../../constants/roles';
 import { Edit2, Power, PowerOff } from 'lucide-react';
 
 function debounce<T extends (...args: any[]) => void>(fn: T, delay: number) {
@@ -23,6 +24,7 @@ export function MasterData() {
     const [costCenters, setCostCenters] = useState<LookupDto[]>([]);
     const [companies, setCompanies] = useState<LookupDto[]>([]);
     const [ivaRates, setIvaRates] = useState<any[]>([]);
+    const [users, setUsers] = useState<UserDto[]>([]);
     const [loading, setLoading] = useState(true);
 
     // Form states
@@ -37,6 +39,7 @@ export function MasterData() {
         portalCode: '',
         primaveraCode: '',
         companyId: 0,
+        responsibleUserId: '',
         ratePercent: 0
     });
 
@@ -55,10 +58,11 @@ export function MasterData() {
                 api.lookups.getSuppliers(true),
                 api.lookups.getCostCenters(true),
                 api.lookups.getCompanies(true),
-                api.lookups.getIvaRates(false)
+                api.lookups.getIvaRates(false),
+                api.users.list()
             ]);
 
-            const [uRes, cRes, nRes, dRes, pRes, sRes, ccRes, coRes, ivaRes] = results;
+            const [uRes, cRes, nRes, dRes, pRes, sRes, ccRes, coRes, ivaRes, usersRes] = results;
 
             if (uRes.status === 'fulfilled') setUnits(uRes.value);
             if (cRes.status === 'fulfilled') setCurrencies(cRes.value);
@@ -69,13 +73,14 @@ export function MasterData() {
             if (ccRes.status === 'fulfilled') setCostCenters(ccRes.value);
             if (coRes.status === 'fulfilled') setCompanies(coRes.value);
             if (ivaRes.status === 'fulfilled') setIvaRates(ivaRes.value);
+            if (usersRes.status === 'fulfilled') setUsers(usersRes.value);
 
             // Check for failures
             const failures = results
                 .map((res, i) => ({ res, i }))
                 .filter(x => x.res.status === 'rejected')
                 .map(x => {
-                    const names = ['Unidades', 'Moedas', 'Níveis Necessidade', 'Departamentos', 'Plantas', 'Fornecedores', 'Centros Custo', 'Empresas'];
+                    const names = ['Unidades', 'Moedas', 'Níveis Necessidade', 'Departamentos', 'Plantas', 'Fornecedores', 'Centros Custo', 'Empresas', 'IVA', 'Utilizadores'];
                     return names[x.i];
                 });
 
@@ -126,6 +131,7 @@ export function MasterData() {
             primaveraCode: item.primaveraCode || '',
             // Plants use companyId; CostCenters reuse companyId to carry plantId
             companyId: type === 'costCenter' ? (item.plantId || 0) : (item.companyId || 0),
+            responsibleUserId: item.responsibleUserId || '',
             ratePercent: item.ratePercent || 0
         });
     };
@@ -142,7 +148,7 @@ export function MasterData() {
 
         setEditMode({ type: defaultType, id: null });
         setValidationErrors({});
-        setFormData({ code: '', name: '', symbol: '', allowsDecimalQuantity: false, taxId: '', portalCode: '', primaveraCode: '', companyId: 0, ratePercent: 0 });
+        setFormData({ code: '', name: '', symbol: '', allowsDecimalQuantity: false, taxId: '', portalCode: '', primaveraCode: '', companyId: 0, responsibleUserId: '', ratePercent: 0 });
     };
 
     const handleSave = async (e: React.FormEvent) => {
@@ -174,10 +180,11 @@ export function MasterData() {
                     await api.lookups.createNeedLevel({ code: formData.code, name: formData.name });
                 }
             } else if (activeTab === 'departments') {
+                const deptPayload = { code: formData.code, name: formData.name, responsibleUserId: formData.responsibleUserId || null as any };
                 if (editMode.id) {
-                    await api.lookups.updateDepartment(editMode.id, { code: formData.code, name: formData.name });
+                    await api.lookups.updateDepartment(editMode.id, deptPayload);
                 } else {
-                    await api.lookups.createDepartment({ code: formData.code, name: formData.name });
+                    await api.lookups.createDepartment(deptPayload);
                 }
             } else if (activeTab === 'plants') {
                 if (editMode.id) {
@@ -556,6 +563,31 @@ export function MasterData() {
                             </div>
                         )}
 
+                        {activeTab === 'departments' && (
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-main)', textTransform: 'uppercase', marginBottom: '6px' }}>Responsável (Aprovador de Área)</label>
+                                <select
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px',
+                                        backgroundColor: 'white',
+                                        border: '2px solid var(--color-border)',
+                                        fontSize: '0.85rem',
+                                        fontWeight: 600,
+                                        outline: 'none'
+                                    }}
+                                    value={formData.responsibleUserId}
+                                    onChange={e => setFormData({ ...formData, responsibleUserId: e.target.value })}
+                                >
+                                    <option value="">Selecione o Responsável...</option>
+                                    {users.filter(u => u.roles?.includes(ROLES.AREA_APPROVER)).map(u => (
+                                        <option key={u.id} value={u.id}>{u.fullName}</option>
+                                    ))}
+                                </select>
+                                <p style={{ marginTop: '4px', fontSize: '0.65rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>Este usuário será auto-preenchido como "Aprovador de Área" nos pedidos criados para este departamento.</p>
+                            </div>
+                        )}
+
                         <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
                             <button
                                 type="submit"
@@ -619,6 +651,9 @@ export function MasterData() {
                                 )}
                                 {activeTab === 'ivaRates' && (
                                     <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase' }}>% Taxa</th>
+                                )}
+                                {activeTab === 'departments' && (
+                                    <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase' }}>Responsável</th>
                                 )}
                                 <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase' }}>Estado</th>
                                 <th style={{ padding: '16px', textAlign: 'right', fontSize: '0.7rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase' }}>Ações</th>
@@ -714,6 +749,9 @@ export function MasterData() {
                                     <td style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>{d.id}</td>
                                     <td style={{ padding: '16px', fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-primary)' }}>{d.code}</td>
                                     <td style={{ padding: '16px', fontSize: '0.85rem', fontWeight: 600 }}>{d.name}</td>
+                                    <td style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                                        {users.find(u => u.id === d.responsibleUserId)?.fullName || '-'}
+                                    </td>
                                     <td style={{ padding: '16px', fontSize: '0.8rem' }}>
                                         <span className={`badge ${d.isActive ? 'badge-success' : 'badge-neutral'}`}>
                                             {d.isActive ? 'ATIVO' : 'INATIVO'}
