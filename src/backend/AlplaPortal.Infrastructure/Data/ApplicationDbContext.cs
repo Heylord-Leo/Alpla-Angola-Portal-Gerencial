@@ -101,6 +101,12 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Supplier>().HasIndex(s => s.Name).IsUnique();
         modelBuilder.Entity<Supplier>().HasIndex(s => s.PrimaveraCode).IsUnique().HasFilter("[PrimaveraCode] IS NOT NULL AND [PrimaveraCode] <> ''");
         modelBuilder.Entity<CostCenter>().HasIndex(c => c.Code).IsUnique();
+
+        modelBuilder.Entity<CostCenter>()
+            .HasOne(c => c.Plant)
+            .WithMany()
+            .HasForeignKey(c => c.PlantId)
+            .OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<RequestType>().HasIndex(rt => rt.Code).IsUnique();
         modelBuilder.Entity<Request>().HasIndex(r => r.RequestNumber).IsUnique().HasFilter("[RequestNumber] IS NOT NULL");
         modelBuilder.Entity<SystemCounter>().HasKey(sc => sc.Id);
@@ -267,9 +273,13 @@ public class ApplicationDbContext : DbContext
             new Supplier { Id = 2, Name = "Standard Supplier 01", PortalCode = "SUP-000002", IsActive = true }
         );
 
+        // Real operational Cost Centers — linked to Plants per allocation rules (DEC-078)
         modelBuilder.Entity<CostCenter>().HasData(
-            new CostCenter { Id = 1, Name = "CC-LOG-01", Code = "CC-LOG-01", IsActive = true },
-            new CostCenter { Id = 2, Name = "CC-ADM-01", Code = "CC-ADM-01", IsActive = true }
+            new CostCenter { Id = 1, Code = "PET1",  Name = "PET 1",  PlantId = 1, IsActive = true }, // Viana 1
+            new CostCenter { Id = 2, Code = "CAPS1", Name = "CAPS 1", PlantId = 1, IsActive = true }, // Viana 1
+            new CostCenter { Id = 3, Code = "PET2",  Name = "PET 2",  PlantId = 2, IsActive = true }, // Viana 2
+            new CostCenter { Id = 4, Code = "CAPS2", Name = "CAPS 2", PlantId = 2, IsActive = true }, // Viana 2
+            new CostCenter { Id = 5, Code = "SBM",   Name = "SBM",    PlantId = 3, IsActive = true }  // Viana 3
         );
     }
 }

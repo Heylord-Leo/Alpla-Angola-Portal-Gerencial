@@ -2,6 +2,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../../lib/api';
 import { LookupDto, CurrencyDto } from '../../types';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
+import { KebabMenu } from '../../components/ui/KebabMenu';
+import { Edit2, Power, PowerOff } from 'lucide-react';
 
 function debounce<T extends (...args: any[]) => void>(fn: T, delay: number) {
     let timeoutId: number | undefined;
@@ -122,7 +124,8 @@ export function MasterData() {
             taxId: item.taxId || '',
             portalCode: item.portalCode || item.code || '',
             primaveraCode: item.primaveraCode || '',
-            companyId: item.companyId || 0,
+            // Plants use companyId; CostCenters reuse companyId to carry plantId
+            companyId: type === 'costCenter' ? (item.plantId || 0) : (item.companyId || 0),
             ratePercent: item.ratePercent || 0
         });
     };
@@ -184,9 +187,10 @@ export function MasterData() {
                 }
             } else if (activeTab === 'costCenters') {
                 if (editMode.id) {
-                    await api.lookups.updateCostCenter(editMode.id, { code: formData.code, name: formData.name });
+                    // companyId field carries plantId for CostCenters
+                    await api.lookups.updateCostCenter(editMode.id, { code: formData.code, name: formData.name, companyId: formData.companyId });
                 } else {
-                    await api.lookups.createCostCenter({ code: formData.code, name: formData.name });
+                    await api.lookups.createCostCenter({ code: formData.code, name: formData.name, companyId: formData.companyId });
                 }
             } else if (activeTab === 'suppliers') {
                 const supplierPayload = {
@@ -527,6 +531,31 @@ export function MasterData() {
                             </div>
                         )}
 
+                        {activeTab === 'costCenters' && (
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-main)', textTransform: 'uppercase', marginBottom: '6px' }}>Planta Vinculada <span style={{ color: 'red' }}>*</span></label>
+                                <select
+                                    required
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px',
+                                        backgroundColor: 'white',
+                                        border: '2px solid var(--color-border)',
+                                        fontSize: '0.85rem',
+                                        fontWeight: 600,
+                                        outline: 'none'
+                                    }}
+                                    value={formData.companyId}
+                                    onChange={e => setFormData({ ...formData, companyId: parseInt(e.target.value) })}
+                                >
+                                    <option value="">Selecione a Planta...</option>
+                                    {plants.map((p: any) => (
+                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+
                         <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
                             <button
                                 type="submit"
@@ -585,6 +614,9 @@ export function MasterData() {
                                 {activeTab === 'plants' && (
                                     <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase' }}>Empresa</th>
                                 )}
+                                {activeTab === 'costCenters' && (
+                                    <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase' }}>Planta/Unidade</th>
+                                )}
                                 {activeTab === 'ivaRates' && (
                                     <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase' }}>% Taxa</th>
                                 )}
@@ -603,13 +635,21 @@ export function MasterData() {
                                             {u.isActive ? 'ATIVO' : 'INATIVO'}
                                         </span>
                                     </td>
-                                    <td style={{ padding: '16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                                            <button onClick={() => handleEdit(u, 'unit')} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', textTransform: 'uppercase' }}>Editar</button>
-                                            <button onClick={() => handleToggleActive(u.id, 'unit')} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', textTransform: 'uppercase' }}>
-                                                {u.isActive ? 'Desativar' : 'Ativar'}
-                                            </button>
-                                        </div>
+                                    <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                        <KebabMenu
+                                            options={[
+                                                {
+                                                    label: 'Editar',
+                                                    icon: <Edit2 size={16} />,
+                                                    onClick: () => handleEdit(u, 'unit')
+                                                },
+                                                {
+                                                    label: u.isActive ? 'Desativar' : 'Ativar',
+                                                    icon: u.isActive ? <PowerOff size={16} /> : <Power size={16} />,
+                                                    onClick: () => handleToggleActive(u.id, 'unit')
+                                                }
+                                            ]}
+                                        />
                                     </td>
                                 </tr>
                             ))}
@@ -623,13 +663,21 @@ export function MasterData() {
                                             {c.isActive ? 'ATIVO' : 'INATIVO'}
                                         </span>
                                     </td>
-                                    <td style={{ padding: '16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                                            <button onClick={() => handleEdit(c, 'currency')} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', textTransform: 'uppercase' }}>Editar</button>
-                                            <button onClick={() => handleToggleActive(c.id, 'currency')} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', textTransform: 'uppercase' }}>
-                                                {c.isActive ? 'Desativar' : 'Ativar'}
-                                            </button>
-                                        </div>
+                                    <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                        <KebabMenu
+                                            options={[
+                                                {
+                                                    label: 'Editar',
+                                                    icon: <Edit2 size={16} />,
+                                                    onClick: () => handleEdit(c, 'currency')
+                                                },
+                                                {
+                                                    label: c.isActive ? 'Desativar' : 'Ativar',
+                                                    icon: c.isActive ? <PowerOff size={16} /> : <Power size={16} />,
+                                                    onClick: () => handleToggleActive(c.id, 'currency')
+                                                }
+                                            ]}
+                                        />
                                     </td>
                                 </tr>
                             ))}
@@ -643,13 +691,21 @@ export function MasterData() {
                                             {n.isActive ? 'ATIVO' : 'INATIVO'}
                                         </span>
                                     </td>
-                                    <td style={{ padding: '16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                                            <button onClick={() => handleEdit(n, 'needLevel')} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', textTransform: 'uppercase' }}>Editar</button>
-                                            <button onClick={() => handleToggleActive(n.id, 'needLevel')} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', textTransform: 'uppercase' }}>
-                                                {n.isActive ? 'Desativar' : 'Ativar'}
-                                            </button>
-                                        </div>
+                                    <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                        <KebabMenu
+                                            options={[
+                                                {
+                                                    label: 'Editar',
+                                                    icon: <Edit2 size={16} />,
+                                                    onClick: () => handleEdit(n, 'needLevel')
+                                                },
+                                                {
+                                                    label: n.isActive ? 'Desativar' : 'Ativar',
+                                                    icon: n.isActive ? <PowerOff size={16} /> : <Power size={16} />,
+                                                    onClick: () => handleToggleActive(n.id, 'needLevel')
+                                                }
+                                            ]}
+                                        />
                                     </td>
                                 </tr>
                             ))}
@@ -663,13 +719,21 @@ export function MasterData() {
                                             {d.isActive ? 'ATIVO' : 'INATIVO'}
                                         </span>
                                     </td>
-                                    <td style={{ padding: '16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                                            <button onClick={() => handleEdit(d, 'department')} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', textTransform: 'uppercase' }}>Editar</button>
-                                            <button onClick={() => handleToggleActive(d.id, 'department')} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', textTransform: 'uppercase' }}>
-                                                {d.isActive ? 'Desativar' : 'Ativar'}
-                                            </button>
-                                        </div>
+                                    <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                        <KebabMenu
+                                            options={[
+                                                {
+                                                    label: 'Editar',
+                                                    icon: <Edit2 size={16} />,
+                                                    onClick: () => handleEdit(d, 'department')
+                                                },
+                                                {
+                                                    label: d.isActive ? 'Desativar' : 'Ativar',
+                                                    icon: d.isActive ? <PowerOff size={16} /> : <Power size={16} />,
+                                                    onClick: () => handleToggleActive(d.id, 'department')
+                                                }
+                                            ]}
+                                        />
                                     </td>
                                 </tr>
                             ))}
@@ -684,13 +748,21 @@ export function MasterData() {
                                             {p.isActive ? 'ATIVO' : 'INATIVO'}
                                         </span>
                                     </td>
-                                    <td style={{ padding: '16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                                            <button onClick={() => handleEdit(p, 'plant')} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', textTransform: 'uppercase' }}>Editar</button>
-                                            <button onClick={() => handleToggleActive(p.id, 'plant')} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', textTransform: 'uppercase' }}>
-                                                {p.isActive ? 'Desativar' : 'Ativar'}
-                                            </button>
-                                        </div>
+                                    <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                        <KebabMenu
+                                            options={[
+                                                {
+                                                    label: 'Editar',
+                                                    icon: <Edit2 size={16} />,
+                                                    onClick: () => handleEdit(p, 'plant')
+                                                },
+                                                {
+                                                    label: p.isActive ? 'Desativar' : 'Ativar',
+                                                    icon: p.isActive ? <PowerOff size={16} /> : <Power size={16} />,
+                                                    onClick: () => handleToggleActive(p.id, 'plant')
+                                                }
+                                            ]}
+                                        />
                                     </td>
                                 </tr>
                             ))}
@@ -699,18 +771,27 @@ export function MasterData() {
                                     <td style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>{c.id}</td>
                                     <td style={{ padding: '16px', fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-primary)' }}>{c.code}</td>
                                     <td style={{ padding: '16px', fontSize: '0.85rem', fontWeight: 600 }}>{c.name}</td>
+                                    <td style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>{(c as any).plantName || '-'}</td>
                                     <td style={{ padding: '16px', fontSize: '0.8rem' }}>
                                         <span className={`badge ${c.isActive ? 'badge-success' : 'badge-neutral'}`}>
                                             {c.isActive ? 'ATIVO' : 'INATIVO'}
                                         </span>
                                     </td>
-                                    <td style={{ padding: '16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                                            <button onClick={() => handleEdit(c, 'costCenter')} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', textTransform: 'uppercase' }}>Editar</button>
-                                            <button onClick={() => handleToggleActive(c.id, 'costCenter')} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', textTransform: 'uppercase' }}>
-                                                {c.isActive ? 'Desativar' : 'Ativar'}
-                                            </button>
-                                        </div>
+                                    <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                        <KebabMenu
+                                            options={[
+                                                {
+                                                    label: 'Editar',
+                                                    icon: <Edit2 size={16} />,
+                                                    onClick: () => handleEdit(c, 'costCenter')
+                                                },
+                                                {
+                                                    label: c.isActive ? 'Desativar' : 'Ativar',
+                                                    icon: c.isActive ? <PowerOff size={16} /> : <Power size={16} />,
+                                                    onClick: () => handleToggleActive(c.id, 'costCenter')
+                                                }
+                                            ]}
+                                        />
                                     </td>
                                 </tr>
                             ))}
@@ -725,13 +806,21 @@ export function MasterData() {
                                             {s.isActive ? 'ATIVO' : 'INATIVO'}
                                         </span>
                                     </td>
-                                    <td style={{ padding: '16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                                            <button onClick={() => handleEdit(s, 'supplier')} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', textTransform: 'uppercase' }}>Editar</button>
-                                            <button onClick={() => handleToggleActive(s.id, 'supplier')} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', textTransform: 'uppercase' }}>
-                                                {s.isActive ? 'Desativar' : 'Ativar'}
-                                            </button>
-                                        </div>
+                                    <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                        <KebabMenu
+                                            options={[
+                                                {
+                                                    label: 'Editar',
+                                                    icon: <Edit2 size={16} />,
+                                                    onClick: () => handleEdit(s, 'supplier')
+                                                },
+                                                {
+                                                    label: s.isActive ? 'Desativar' : 'Ativar',
+                                                    icon: s.isActive ? <PowerOff size={16} /> : <Power size={16} />,
+                                                    onClick: () => handleToggleActive(s.id, 'supplier')
+                                                }
+                                            ]}
+                                        />
                                     </td>
                                 </tr>
                             ))}
@@ -746,13 +835,21 @@ export function MasterData() {
                                             {i.isActive ? 'ATIVO' : 'INATIVO'}
                                         </span>
                                     </td>
-                                    <td style={{ padding: '16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                                            <button onClick={() => handleEdit(i, 'ivaRate')} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', textTransform: 'uppercase' }}>Editar</button>
-                                            <button onClick={() => handleToggleActive(i.id, 'ivaRate')} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', textTransform: 'uppercase' }}>
-                                                {i.isActive ? 'Desativar' : 'Ativar'}
-                                            </button>
-                                        </div>
+                                    <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                        <KebabMenu
+                                            options={[
+                                                {
+                                                    label: 'Editar',
+                                                    icon: <Edit2 size={16} />,
+                                                    onClick: () => handleEdit(i, 'ivaRate')
+                                                },
+                                                {
+                                                    label: i.isActive ? 'Desativar' : 'Ativar',
+                                                    icon: i.isActive ? <PowerOff size={16} /> : <Power size={16} />,
+                                                    onClick: () => handleToggleActive(i.id, 'ivaRate')
+                                                }
+                                            ]}
+                                        />
                                     </td>
                                 </tr>
                             ))}

@@ -118,11 +118,20 @@ export function RequestLineItemForm({
                         value={itemForm.costCenterId || ''}
                         onChange={e => { setItemForm({ ...itemForm, costCenterId: Number(e.target.value) }); clearFieldError('CostCenterId'); }}
                         style={getInputStyle('CostCenterId')}
+                        disabled={!itemForm.plantId}
                     >
-                        <option value="" disabled>Selecione o centro de custo...</option>
-                        {costCenters.filter(cc => cc.isActive || cc.id === itemForm.costCenterId).map(cc => (
-                            <option key={cc.id} value={cc.id}>{cc.code} - {cc.name}</option>
-                        ))}
+                        <option value="" disabled>
+                            {!itemForm.plantId
+                                ? 'Selecione primeiro a planta de destino'
+                                : (costCenters.filter(cc => (cc.isActive || cc.id === itemForm.costCenterId) && cc.plantId === itemForm.plantId).length === 0
+                                    ? 'Nenhum centro de custo para esta planta'
+                                    : 'Selecione o centro de custo...')}
+                        </option>
+                        {costCenters
+                            .filter(cc => (cc.isActive || cc.id === itemForm.costCenterId) && cc.plantId === itemForm.plantId)
+                            .map(cc => (
+                                <option key={cc.id} value={cc.id}>{cc.code} - {cc.name}</option>
+                            ))}
                     </select>
                     {renderFieldError('CostCenterId')}
                 </label>
@@ -148,7 +157,13 @@ export function RequestLineItemForm({
                     <select 
                         required={requestTypeCode !== 'PAYMENT'} 
                         value={itemForm.plantId || ''} 
-                        onChange={e => { setItemForm({ ...itemForm, plantId: Number(e.target.value) }); clearFieldError('PlantId'); }} 
+                        onChange={e => {
+                            const newPlantId = Number(e.target.value);
+                            // Clear CC when plant changes to prevent invalid plant/CC combinations
+                            setItemForm({ ...itemForm, plantId: newPlantId, costCenterId: null });
+                            clearFieldError('PlantId');
+                            clearFieldError('CostCenterId');
+                        }} 
                         style={getInputStyle('PlantId')}
                         disabled={!companyId}
                     >

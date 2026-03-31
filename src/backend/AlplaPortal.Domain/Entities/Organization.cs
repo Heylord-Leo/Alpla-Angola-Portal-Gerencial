@@ -42,4 +42,8 @@ public class CostCenter
     public string Name { get; set; } = string.Empty;
     public string Code { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
+
+    /// <summary>Plant this Cost Center belongs to. Required — every CC maps to exactly one plant.</summary>
+    public int PlantId { get; set; }
+    public Plant Plant { get; set; } = null!;
 }

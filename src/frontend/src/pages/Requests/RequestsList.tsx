@@ -539,13 +539,20 @@ export function RequestsList() {
                                                             <div style={{ width: '4px', height: '24px', backgroundColor: urgency.indicatorColor, borderRadius: '2px' }} />
                                                         </Tooltip>
                                                     )}
-                                                    <Link
-                                                        to={`/requests/${req.id}`}
-                                                        state={{ fromList: location.search }}
-                                                        onClick={(e) => e.stopPropagation()}
-                                                    >
-                                                        {req.requestNumber || 'PENDENTE'}
-                                                    </Link>
+                                                    <Tooltip content={
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                            <div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Solicitante</div>
+                                                            <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-primary)' }}>{req.requesterName || 'Não Definido'}</div>
+                                                        </div>
+                                                    }>
+                                                        <Link
+                                                            to={`/requests/${req.id}`}
+                                                            state={{ fromList: location.search }}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        >
+                                                            {req.requestNumber || 'PENDENTE'}
+                                                        </Link>
+                                                    </Tooltip>
                                                 </div>
                                             </td>
                                             <td style={{ textAlign: 'center' }}>

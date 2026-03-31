@@ -123,8 +123,8 @@ else
     app.UseExceptionHandler(); 
 }
 
-// Only force HTTPS redirect if we aren't running in a raw local HTTP profile to avoid "failed to determine port" warnings
-if (!app.Environment.IsDevelopment() || app.Configuration["ASPNETCORE_URLS"]?.Contains("https") == true || app.Environment.IsProduction())
+// Only force HTTPS redirect if we aren't in Development
+if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }

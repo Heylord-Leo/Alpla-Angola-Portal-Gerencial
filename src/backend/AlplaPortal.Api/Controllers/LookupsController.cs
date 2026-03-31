@@ -740,9 +740,14 @@ public class LookupsController : ControllerBase
 
     // Cost Centers
     [HttpGet("cost-centers")]
-    public async Task<IActionResult> GetCostCenters([FromQuery] bool includeInactive = false)
+    public async Task<IActionResult> GetCostCenters([FromQuery] int? plantId, [FromQuery] bool includeInactive = false)
     {
         var query = _context.CostCenters.AsQueryable();
+
+        if (plantId.HasValue)
+        {
+            query = query.Where(c => c.PlantId == plantId.Value);
+        }
 
         if (!includeInactive)
         {
@@ -751,16 +756,21 @@ public class LookupsController : ControllerBase
 
         var items = await query
             .OrderBy(c => c.Name)
-            .Select(c => new { c.Id, c.Code, c.Name, c.IsActive })
+            .Select(c => new { c.Id, c.Code, c.Name, c.IsActive, c.PlantId, PlantName = c.Plant.Name })
             .ToListAsync();
 
         return Ok(items);
     }
 
     [HttpGet("cost-centers/search")]
-    public async Task<IActionResult> SearchCostCenters([FromQuery] string? q, [FromQuery] int take = 20)
+    public async Task<IActionResult> SearchCostCenters([FromQuery] string? q, [FromQuery] int? plantId, [FromQuery] int take = 20)
     {
         var queryable = _context.CostCenters.Where(c => c.IsActive);
+
+        if (plantId.HasValue)
+        {
+            queryable = queryable.Where(c => c.PlantId == plantId.Value);
+        }
 
         if (!string.IsNullOrWhiteSpace(q) && q.Length >= 1)
         {
@@ -778,7 +788,7 @@ public class LookupsController : ControllerBase
         var results = await queryable
             .OrderBy(c => c.Name)
             .Take(take)
-            .Select(c => new { c.Id, c.Code, c.Name })
+            .Select(c => new { c.Id, c.Code, c.Name, c.PlantId })
             .ToListAsync();
 
         return Ok(results);
@@ -788,13 +798,24 @@ public class LookupsController : ControllerBase
     [Authorize(Roles = "System Administrator")]
     public async Task<IActionResult> CreateCostCenter([FromBody] CreateLookupDto dto)
     {
-        var entity = new Domain.Entities.CostCenter { Code = dto.Code?.ToUpper() ?? string.Empty, Name = dto.Name, IsActive = true };
+        if (dto.CompanyId == 0) // CompanyId field reused as PlantId for CostCenters
+        {
+            return BadRequest(new ProblemDetails { Title = "Erro de Validação", Detail = "O campo Planta é obrigatório para Centros de Custo." });
+        }
+
+        var plant = await _context.Plants.FindAsync(dto.CompanyId);
+        if (plant == null)
+        {
+            return BadRequest(new ProblemDetails { Title = "Erro de Validação", Detail = "Planta inválida." });
+        }
+
+        var entity = new Domain.Entities.CostCenter { Code = dto.Code?.ToUpper() ?? string.Empty, Name = dto.Name, PlantId = dto.CompanyId, IsActive = true };
         _context.CostCenters.Add(entity);
         
         try
         {
             await _context.SaveChangesAsync();
-            return Created($"/api/v1/lookups/cost-centers/{entity.Id}", new { entity.Id, entity.Code, entity.Name, entity.IsActive });
+            return Created($"/api/v1/lookups/cost-centers/{entity.Id}", new { entity.Id, entity.Code, entity.Name, entity.PlantId, entity.IsActive });
         }
         catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("IX_CostCenters_Code") == true)
         {
@@ -823,6 +844,13 @@ public class LookupsController : ControllerBase
                 Detail = "Este registro já está em uso por pedidos históricos e não pode ser alterado. Por favor, desative-o e crie um novo para preservar o histórico.",
                 Status = 409
             });
+        }
+
+        if (dto.CompanyId != 0)
+        {
+            var plant = await _context.Plants.FindAsync(dto.CompanyId);
+            if (plant == null) return BadRequest(new ProblemDetails { Title = "Erro de Validação", Detail = "Planta inválida." });
+            entity.PlantId = dto.CompanyId;
         }
 
         entity.Code = dto.Code?.ToUpper() ?? string.Empty;

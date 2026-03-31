@@ -1,5 +1,35 @@
 # Changelog
 
+## [v2.10.9] - 2026-03-31
+
+### Fixed
+- **Proper Master Data Standardization**: Replaced the previous ActionMenu variant with the actual system-standard `KebabMenu` component (with `DropdownPortal`) used in the Requests screen. This ensures 100% visual and behavioral parity, fixing alignment, padding, and interaction issues.
+- **Cost Centers Header Refinement**: Finalized the `Centros de Custo` table header with the "Planta/Unidade" label and correct column alignment.
+
+## [v2.10.8] - 2026-03-31
+
+### Added
+- **Master Data UI Standardization**: Initial migration of row actions to a kebab-style menu.
+## [v2.10.8] - 2026-03-31
+
+### Added
+- **Master Data UI Standardization**: Replaced textual row actions ("EDITAR", "DESATIVAR") with the standard kebab menu (`ActionMenu`) across all 8 Master Data sections, ensuring visual consistency with the Requests List.
+
+### Fixed
+- **Cost Centers Layout Alignment**: Corrected the `Centros de Custo` table header to include the "Planta/Unidade" column, fixing the previous misalignment where headers did not match the rendered row content.
+
+## [v2.10.7] - 2026-03-31
+
+### Added
+- **Real Cost Centers (DEC-078)**: Replaced test Cost Centers (`CC-LOG-01`, `CC-ADM-01`) with the 5 real operational Cost Centers: `PET 1` and `CAPS 1` (Viana 1), `PET 2` and `CAPS 2` (Viana 2), and `SBM` (Viana 3). Added `PlantId` FK to the `CostCenter` entity.
+- **Plant-Based Cost Center Filtering**: The Cost Center dropdown in the Request Line Item form now dynamically filters based on the selected Plant per item. Selecting a different plant clears the previously selected Cost Center to prevent invalid combinations.
+- **Backend Validation (per item)**: `AddLineItem` and `UpdateLineItem` now enforce that the selected Cost Center belongs to the same plant as the line item, returning a `400 Bad Request` if the rule is violated.
+- **Master Data — Cost Center UX**: The Centros de Custo tab now shows the linked Plant name in the table. The create/edit form includes a mandatory Plant selector.
+
+## [v2.10.6] - 2026-03-31
+
+### Added
+- **Requester Hover UX**: Added a contextual tooltip to the Request Number column in the Requests List. Users can now see the name of the requester by hovering over the request number, providing immediate ownership context without entering the details view.
 
 ## [v2.10.5] - 2026-03-30
 
@@ -1699,3 +1729,4 @@ esolved a 500 error during the "Concluir Cotação" action by seeding the missin
 ### Notes
 
 - Initial baseline version for project documentation structure
+

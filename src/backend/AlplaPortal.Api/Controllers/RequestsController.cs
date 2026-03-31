@@ -1961,6 +1961,21 @@ public class RequestsController : BaseController
             }
         }
 
+        // Cost Center / Plant consistency check (per item — DEC-078)
+        if (dto.CostCenterId.HasValue && dto.PlantId.HasValue)
+        {
+            var cc = await _context.CostCenters.FindAsync(dto.CostCenterId.Value);
+            if (cc == null || cc.PlantId != dto.PlantId.Value)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Regra de Negócio Violada",
+                    Detail = "O Centro de Custo selecionado não pertence à planta de destino do item.",
+                    Status = 400
+                });
+            }
+        }
+
         _context.RequestLineItems.Add(newItem);
 
         // Record item addition in history
@@ -2079,6 +2094,21 @@ public class RequestsController : BaseController
                 });
             }
             item.PlantId = dto.PlantId;
+        }
+
+        // Cost Center / Plant consistency check (per item — DEC-078)
+        if (dto.CostCenterId.HasValue && dto.PlantId.HasValue)
+        {
+            var cc = await _context.CostCenters.FindAsync(dto.CostCenterId.Value);
+            if (cc == null || cc.PlantId != dto.PlantId.Value)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Regra de Negócio Violada",
+                    Detail = "O Centro de Custo selecionado não pertence à planta de destino do item.",
+                    Status = 400
+                });
+            }
         }
 
         item.CostCenterId = dto.CostCenterId;

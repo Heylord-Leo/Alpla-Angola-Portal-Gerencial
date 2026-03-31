@@ -153,6 +153,8 @@ export interface LookupDto {
     name: string;
     isActive: boolean;
     companyId?: number;
+    plantId?: number;        // Used by CostCenter entries
+    plantName?: string;      // Used by CostCenter entries
     allowsDecimalQuantity?: boolean;
     taxId?: string;
     portalCode?: string;

@@ -21,7 +21,19 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
         ...options.headers,
         ...(token ? { 'Authorization': `Bearer ${token}` } : {})
     };
-    return fetch(url, { ...options, headers });
+
+    try {
+        return await fetch(url, { ...options, headers });
+    } catch (error: any) {
+        // Detailed error reporting for the browser console
+        console.error(`[API ERROR] ${options.method || 'GET'} ${url}:`, error);
+
+        // Map generic "Failed to fetch" to a more descriptive user error
+        throw new ApiError(
+            `Falha na ligação ao servidor (${API_BASE_URL}). Verifique se o servidor está online e acessível. (CORS ou Certificado SSL)`,
+            0
+        );
+    }
 }
 
 async function handleApiError(
@@ -706,8 +718,10 @@ export const api = {
             if (!res.ok) return handleApiError(res, 'Falha ao verificar unicidade do fornecedor.');
             return res.json();
         },
-        getCostCenters: async (includeInactive = false): Promise<any[]> => {
-            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/cost-centers?includeInactive=${includeInactive}`);
+        getCostCenters: async (includeInactive = false, plantId?: number): Promise<any[]> => {
+            const params = new URLSearchParams({ includeInactive: String(includeInactive) });
+            if (plantId) params.append('plantId', String(plantId));
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/cost-centers?${params.toString()}`);
             if (!res.ok) return handleApiError(res, 'Falha ao carregar centros de custo.');
             return res.json();
         },
@@ -716,7 +730,7 @@ export const api = {
             if (!res.ok) return handleApiError(res, 'Falha ao buscar centros de custo.');
             return res.json();
         },
-        createCostCenter: async (data: { code: string, name: string }): Promise<any> => {
+        createCostCenter: async (data: { code: string, name: string, companyId?: number }): Promise<any> => {
             const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/cost-centers`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -725,7 +739,7 @@ export const api = {
             if (!res.ok) return handleApiError(res, 'Falha ao criar centro de custo.');
             return res.json();
         },
-        updateCostCenter: async (id: number, data: { code: string, name: string }): Promise<void> => {
+        updateCostCenter: async (id: number, data: { code: string, name: string, companyId?: number }): Promise<void> => {
             const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/cost-centers/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
