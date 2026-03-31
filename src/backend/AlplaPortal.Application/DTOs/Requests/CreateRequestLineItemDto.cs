@@ -23,12 +23,19 @@ public class CreateRequestLineItemDto
 
     public int? CurrencyId { get; set; }
 
-    [Required(ErrorMessage = "A planta de destino é obrigatória.")]
     public int? PlantId { get; set; }
+
+    [Required(ErrorMessage = "O centro de custo é obrigatório.")]
+    public int? CostCenterId { get; set; }
+
+    [Required(ErrorMessage = "A taxa de IVA é obrigatória.")]
+    public int? IvaRateId { get; set; }
 
     [MaxLength(200)]
     public string? SupplierName { get; set; }
 
     [MaxLength(1000)]
     public string? Notes { get; set; }
+
+    public DateTime? DueDate { get; set; }
 }

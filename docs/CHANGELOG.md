@@ -1,5 +1,31 @@
 # Changelog
 
+
+## [v2.10.5] - 2026-03-30
+
+### Added
+- **Line Item Context Modernization**:
+  - Integrated mandatory **"Centro de Custo"** (Cost Center) and **"Taxa IVA"** (VAT Rate) fields at the line item level.
+  - Added new columns to the Line Items table in the Request Edit screen for immediate traceability.
+  - Updated backend entities and DTOs to enforce these fields as required (DEC-077).
+
+### Changed
+- **UI/UX Space Optimization**: Widened the Request Edit screen layout (increased `maxWidth` to 1440px) to better utilize horizontal space and improve readability.
+- **Request Item Form Refactor**:
+  - Removed the legacy **"Prioridade"** (Priority) field from the item form and table.
+  - Removed the redundant **"Moeda"** (Currency) visual block from the item form (now inherited from header context).
+
+## [v2.10.4] - 2026-03-30
+
+### Changed
+- **Validation Relaxation for Payment Requests (PAG)**:
+  - Made "Fornecedor" (Supplier) optional for Payment requests in both draft and submission stages.
+  - Made "Planta de destino" (Item Destination Plant) optional for items in Payment requests.
+  - Preserved strict validation for Quotation (COM) and other request types.
+  - Updated backend DTOs and Controller to support this conditional validation (DEC-076).
+
+## [v2.10.3] - 2026-03-30
+
 ## [v2.10.2] - 2026-03-30
 
 ### Added

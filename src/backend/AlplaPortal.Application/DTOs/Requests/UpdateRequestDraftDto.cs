@@ -12,12 +12,10 @@ public class UpdateRequestDraftDto
     [MaxLength(2000, ErrorMessage = "A descrição não pode exceder 2000 caracteres.")]
     public string Description { get; set; } = string.Empty;
 
-    [Required]
     public int RequestTypeId { get; set; }
 
 
-    [Required(ErrorMessage = "O grau de necessidade é obrigatório.")]
-    public int NeedLevelId { get; set; }
+    public int? NeedLevelId { get; set; }
 
     public int? CurrencyId { get; set; }
 
@@ -30,12 +28,10 @@ public class UpdateRequestDraftDto
     [Required(ErrorMessage = "A empresa é obrigatória.")]
     public int CompanyId { get; set; }
     
-    [Required(ErrorMessage = "A planta é obrigatória.")]
     public int? PlantId { get; set; }
     
     public int? CapexOpexClassificationId { get; set; }
     
-    [Required(ErrorMessage = "A data Necessário Até é obrigatória.")]
     public DateTime? NeedByDateUtc { get; set; }
 
     public int? SupplierId { get; set; }

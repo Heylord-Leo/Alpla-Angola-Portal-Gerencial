@@ -160,6 +160,7 @@ export function RequestEdit() {
     const [quotations, setQuotations] = useState<SavedQuotationDto[]>([]);
     const [selectedQuotationId, setSelectedQuotationId] = useState<string | null>(null);
     const [costCenters, setCostCenters] = useState<LookupDto[]>([]);
+    const [ivaRates, setIvaRates] = useState<LookupDto[]>([]);
 
     const hasAttachment = (typeCode: string) => {
         return attachments.some(a => a.attachmentTypeCode === typeCode && !(a as any).isDeleted);
@@ -233,16 +234,6 @@ export function RequestEdit() {
                 }
             }
 
-            const validPriorities = ['HIGH', 'MEDIUM', 'LOW'];
-            const itemPriority = (itemForm.itemPriority || '').toUpperCase();
-
-            if (!itemPriority || !validPriorities.includes(itemPriority)) {
-                setFieldErrors(prev => ({ ...prev, ItemPriority: ['Informe a prioridade do item.'] }));
-                setFeedback({ type: 'error', message: 'Informe a prioridade do item.' });
-                setItemSaving(false);
-                return;
-            }
-
             if (!selectedUnit) {
                 setFieldErrors(prev => ({ ...prev, UnitId: ['Informe a unidade do item.'] }));
                 setFeedback({ type: 'error', message: 'Informe a unidade do item.' });
@@ -250,12 +241,35 @@ export function RequestEdit() {
                 return;
             }
 
+            if (!itemForm.costCenterId) {
+                setFieldErrors(prev => ({ ...prev, CostCenterId: ['Informe o centro de custo.'] }));
+                setFeedback({ type: 'error', message: 'Informe o centro de custo.' });
+                setItemSaving(false);
+                return;
+            }
+
+            if (!itemForm.ivaRateId) {
+                setFieldErrors(prev => ({ ...prev, IvaRateId: ['Informe a taxa IVA.'] }));
+                setFeedback({ type: 'error', message: 'Informe a taxa IVA.' });
+                setItemSaving(false);
+                return;
+            }
+
+            if (requestTypeCode === 'PAYMENT' && !itemForm.dueDate) {
+                setFieldErrors(prev => ({ ...prev, DueDate: ['A Data de Vencimento é obrigatória para pedidos de pagamento.'] }));
+                setFeedback({ type: 'error', message: 'Informe a Data de Vencimento do item.' });
+                setItemSaving(false);
+                return;
+            }
+
             const payload = {
                 ...itemForm,
-                itemPriority: itemPriority,
                 quantity: Number(itemForm.quantity),
                 unitPrice: Number(itemForm.unitPrice),
                 unitId: selectedUnit.id,
+                costCenterId: Number(itemForm.costCenterId),
+                ivaRateId: Number(itemForm.ivaRateId),
+                dueDate: itemForm.dueDate || null,
                 currencyId: Number(formData.currencyId) // Enforce header currency
             };
             if (itemForm.id) {
@@ -375,7 +389,7 @@ export function RequestEdit() {
             setSupplierName(data.supplierName || '');
             setSupplierPortalCode(data.supplierPortalCode || '');
 
-            const [uData, cData, nData, dData, compData, plantData, ccData, usersData] = await Promise.all([
+            const [uData, cData, nData, dData, compData, plantData, ccData, ivaData, usersData] = await Promise.all([
                 api.lookups.getUnits(true),
                 api.lookups.getCurrencies(true),
                 api.lookups.getNeedLevels(true),
@@ -383,6 +397,7 @@ export function RequestEdit() {
                 api.lookups.getCompanies(true),
                 api.lookups.getPlants(undefined, true),
                 api.lookups.getCostCenters(true),
+                api.lookups.getIvaRates(true),
                 api.users.list()
             ]);
             setUnits(uData);
@@ -392,6 +407,7 @@ export function RequestEdit() {
             setCompanies(compData); 
             setPlants(plantData);
             setCostCenters(ccData);
+            setIvaRates(ivaData);
             setUsers(usersData);
 
         } catch (err: any) {
@@ -519,7 +535,9 @@ export function RequestEdit() {
             plantId: formData.plantId ? Number(formData.plantId) : null,
             capexOpexClassificationId: formData.capexOpexClassificationId ? Number(formData.capexOpexClassificationId) : null,
             supplierId: formData.supplierId ? Number(formData.supplierId) : null,
-            needByDateUtc: formData.needByDateUtc ? new Date(formData.needByDateUtc).toISOString() : null,
+            needByDateUtc: formData.needByDateUtc && !isNaN(new Date(formData.needByDateUtc).getTime()) 
+                ? new Date(formData.needByDateUtc).toISOString() 
+                : null,
             buyerId: formData.buyerId || null,
             areaApproverId: formData.areaApproverId || null,
             finalApproverId: formData.finalApproverId || null
@@ -565,11 +583,21 @@ export function RequestEdit() {
             return true;
         } catch (err: any) {
             if (err instanceof ApiError && err.fieldErrors) {
+                // Collect detailed field errors for better visibility
+                const errorMessages = Object.entries(err.fieldErrors)
+                    .map(([_field, msgs]) => `${msgs.join(', ')}`)
+                    .filter(msg => msg.length > 0);
+
+                const finalMessage = errorMessages.length > 0 
+                    ? `Erro de validação: ${errorMessages.join('. ')}`
+                    : (err.message || 'Existem campos preenchidos incorretamente.');
+
                 setFieldErrors(err.fieldErrors);
-                setFeedback({ type: 'error', message: err.message || 'Existem campos preenchidos incorretamente.' });
+                setFeedback({ 
+                    type: 'error', 
+                    message: finalMessage
+                });
                 scrollToFirstError(err.fieldErrors);
-                
-                // Highlight specific sections if relevant errors found
                 const errorKeys = Object.keys(err.fieldErrors).map(k => k.toLowerCase());
                 if (errorKeys.some(k => k.includes('proforma') || k.includes('attachment'))) {
                     setIsAttachmentsHighlighted(true);
@@ -853,7 +881,7 @@ export function RequestEdit() {
 
     if (loading) {
         return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '1000px', margin: '0 auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '1400px', margin: '0 auto' }}>
                 <Feedback type={feedback.type} message={feedback.message} onClose={() => setFeedback(prev => ({ ...prev, message: null }))} />
                 <div>Carregando detalhes...</div>
             </div>
@@ -991,7 +1019,7 @@ export function RequestEdit() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.4 }}
-            style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '1000px', margin: '0 auto' }}
+            style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', maxWidth: '1440px', margin: '0 auto', minWidth: 0 }}
         >
 
             {/* Sticky Header Unit - Feedback, Banners, and Main Action Header */}
@@ -1331,7 +1359,7 @@ export function RequestEdit() {
                             </label>
 
                             <label style={labelStyle}>
-                                Fornecedor {Number(formData.requestTypeId) === 2 && <span style={{ color: 'red' }}>*</span>}
+                                Fornecedor {Number(formData.requestTypeId) === 1 && <span style={{ color: 'red' }}>*</span>}
                                 <SupplierAutocomplete
                                     initialName={supplierName}
                                     initialPortalCode={supplierPortalCode}
@@ -1614,12 +1642,13 @@ export function RequestEdit() {
                             <thead>
                                 <tr>
                                     <th>#</th>
-                                    {!selectedQuotationId && <th>Prioridade</th>}
                                     <th>Descrição</th>
                                     <th style={{ textAlign: 'center' }}>Unid.</th>
                                     <th style={{ textAlign: 'right' }}>Qtd</th>
                                     {!selectedQuotationId && <th>Planta</th>}
                                     {!selectedQuotationId && <th>Centro Custo</th>}
+                                    {!selectedQuotationId && <th>IVA</th>}
+                                    {!selectedQuotationId && requestTypeCode === 'PAYMENT' && <th>Vencimento</th>}
                                     <th style={{ textAlign: 'right' }}>Preço Unit.</th>
                                     <th style={{ textAlign: 'right' }}>Total</th>
                                     {!selectedQuotationId && <th>Status</th>}
@@ -1647,52 +1676,23 @@ export function RequestEdit() {
                                     lineItems.map(item => (
                                         <tr key={item.id}>
                                             <td>{item.lineNumber}</td>
-                                            <td>
-                                                {/* Business priority badge */}
-                                                {(() => {
-                                                    const priorityMap: Record<string, { label: string; color: string; bg: string }> = {
-                                                        HIGH: { label: 'Alta', color: '#dc2626', bg: '#fee2e2' },
-                                                        MEDIUM: { label: 'Média', color: '#d97706', bg: '#fef3c7' },
-                                                        LOW: { label: 'Baixa', color: '#16a34a', bg: '#dcfce7' }
-                                                    };
-                                                    const p = priorityMap[item.itemPriority] || priorityMap['MEDIUM'];
-
-                                                    return (
-                                                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '999px', fontSize: '0.7rem', fontWeight: 700, color: p.color, backgroundColor: p.bg }}>
-                                                            {p.label}
-                                                        </span>
-                                                    );
-                                                })()}
-                                            </td>
                                             <td>{item.description}</td>
                                             <td style={{ textAlign: 'center' }}>{item.unit || '---'}</td>
                                             <td style={{ textAlign: 'right' }}>{item.quantity}</td>
                                             <td>{item.plantName || '---'}</td>
                                             <td>
-                                                {isAreaApprover && status === 'WAITING_AREA_APPROVAL' ? (
-                                                    <select
-                                                        value={item.costCenterId || ''}
-                                                        onChange={async (e) => {
-                                                            const ccId = e.target.value ? Number(e.target.value) : null;
-                                                            try {
-                                                                await api.lineItems.updateCostCenter(item.id, ccId);
-                                                                setFeedback({ type: 'success', message: 'Centro de custo atualizado.' });
-                                                                loadData();
-                                                            } catch (err: any) {
-                                                                setFeedback({ type: 'error', message: err.message });
-                                                            }
-                                                        }}
-                                                        style={{ padding: '4px', borderRadius: '4px', border: '1px solid #4f46e5', fontSize: '0.75rem', fontWeight: 600 }}
-                                                    >
-                                                        <option value="">-- Selecione --</option>
-                                                        {costCenters.map(cc => (
-                                                            <option key={cc.id} value={cc.id}>{cc.code} - {cc.name}</option>
-                                                        ))}
-                                                    </select>
-                                                ) : (
-                                                    <span style={{ fontSize: '0.75rem' }}>{item.costCenterCode || '---'}</span>
-                                                )}
+                                                <span style={{ fontSize: '0.75rem' }}>{item.costCenterCode || '---'}</span>
                                             </td>
+                                            <td>
+                                                <span style={{ fontSize: '0.75rem' }}>{item.ivaRatePercent != null ? `${item.ivaRatePercent}%` : '---'}</span>
+                                            </td>
+                                            {requestTypeCode === 'PAYMENT' && (
+                                                <td>
+                                                    <span style={{ fontSize: '0.75rem' }}>
+                                                        {item.dueDate ? new Date(item.dueDate).toLocaleDateString('pt-AO', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '---'}
+                                                    </span>
+                                                </td>
+                                            )}
                                             <td style={{ textAlign: 'right' }}>{formatCurrencyAO(item.unitPrice)}</td>
                                             <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatCurrencyAO(item.totalAmount)}</td>
                                             <td>
@@ -1754,12 +1754,13 @@ export function RequestEdit() {
                                 onSaveItem={handleSaveItem}
                                 itemSaving={itemSaving}
                                 units={units as any}
-                                currencies={currencies}
-                                currencyId={Number(formData.currencyId)}
                                 fieldErrors={fieldErrors}
                                 clearFieldError={clearFieldError}
                                 companyId={formData.companyId ? Number(formData.companyId) : null}
                                 plants={(plants || []).filter(p => !formData.companyId || Number(p.companyId) === Number(formData.companyId))}
+                                requestTypeCode={requestTypeCode || undefined}
+                                costCenters={costCenters}
+                                ivaRates={ivaRates}
                             />
                         </motion.div>
                     )}

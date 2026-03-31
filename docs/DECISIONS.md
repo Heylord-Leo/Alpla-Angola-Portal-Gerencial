@@ -1050,3 +1050,30 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
     4. **Payload**: Enviar `null` explicitamente quando o tipo não for `QUOTATION` ou o campo estiver oculto.
 - **Alternatives considered:** Criar um novo campo separado ou manter persistência mesmo quando oculto. Rejeitado para evitar inconsistência de dados.
 - **Consequences:** Garante que pedidos de Cotação tenham datas limite claras enquanto mantém o formulário simplificado para Pedidos de Pagamento.
+
+---
+
+## [2026-03-30] DEC-075: Request Form Layout Optimization
+
+- **Context:** The "Request Draft Creation" and "Request Edit/Details" screens were using a rigid, legacy `maxWidth: 1000px` shell. On modern desktop displays, this created excessive empty margins and an unnecessarily cramped experience for complex line item tables and multi-column forms.
+- **Decision:** Increased the effective width of the primary request form container to **1440px** and established a standard for responsive, wider form layouts in the portal.
+- **Implementation Detail:**
+    1.  Updated `RequestCreate.tsx` and `RequestEdit.tsx` to use `width: 100%, maxWidth: '1440px'`.
+    2.  Added `minWidth: 0` to top-level page containers to ensure flex/grid child stability.
+    3.  Maintained `margin: '0 auto'` for center-alignment on ultrawide displays.
+- **Alternatives considered:** Making the form fully fluid (100% width). Rejected because single-column fields or long descriptions become difficult to read when stretched beyond 1500px.
+- **Consequences:** More breathing room for the "Itens do Pedido" table, better utilization of the AppShell workspace, and improved visual consistency with the Requests List screen.
+
+---
+
+## [2026-03-30] DEC-076: Relaxing Validation for Payment Requests (PAG)
+
+- **Context:** In the "Payment Request" workflow, the "Fornecedor" (Supplier) and "Planta de destino" (Item Destination Plant) fields were strictly enforced at the draft and submission stages. This created a rigid experience for users who only had partial information at the start of the extraction or manual entry process.
+- **Decision:** Relaxed the validation for `SupplierId` (Request level) and `PlantId` (Line Item level) specifically for **Payment** request types.
+- **Implementation Detail:**
+    1.  Removed the `[Required]` attribute from `PlantId` in `CreateRequestLineItemDto` and `UpdateRequestLineItemDto`.
+    2.  Implemented manual, conditional `PlantId` validation in `RequestsController.cs` for non-Payment types.
+    3.  Removed hard-coded `SupplierId` requirement for Payment requests in `UpdateDraft` and `SubmitRequest` controller methods.
+    4.  Updated frontend components (`RequestEdit.tsx` and `RequestLineItemForm.tsx`) to make the visual mandatory indicators (red asterisks) and input `required` attributes conditional on the request type code.
+- **Alternatives considered:** Keeping the backend fields mandatory while only relaxing the frontend. Rejected because it would cause 400 Bad Request errors when saving valid partial drafts.
+- **Consequences:** More flexible "Draft-to-Submission" workflow for Payments, allowing for incomplete supplier or plant data when capturing from documents (OCR).

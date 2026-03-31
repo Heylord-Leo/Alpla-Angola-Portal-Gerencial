@@ -11,6 +11,7 @@ public class LineItemDetailsDto
     public decimal UnitPrice { get; set; }
     public decimal Total { get; set; }
     public string? Notes { get; set; }
+    public DateTime? DueDate { get; set; }
     public DateTime? UpdatedAtUtc { get; set; }
 
     // Parent Request Fields
@@ -59,6 +60,11 @@ public class LineItemDetailsDto
     public int? CostCenterId { get; set; }
     public string? CostCenterName { get; set; }
     public string? CostCenterCode { get; set; }
+
+    public int? IvaRateId { get; set; }
+    public string? IvaRateCode { get; set; }
+    public string? IvaRateName { get; set; }
+    public decimal? IvaRatePercent { get; set; }
 
     // Currency Fields
     public int? CurrencyId { get; set; }

@@ -88,9 +88,19 @@ public class RequestLineItemDto
     public int? PlantId { get; set; }
     public string? PlantName { get; set; }
 
+    public int? CostCenterId { get; set; }
+    public string? CostCenterName { get; set; }
+    public string? CostCenterCode { get; set; }
+
+    public int? IvaRateId { get; set; }
+    public string? IvaRateCode { get; set; }
+    public string? IvaRateName { get; set; }
+    public decimal? IvaRatePercent { get; set; }
+
     public int? SupplierId { get; set; }
     public int? CurrencyId { get; set; }
     public string? CurrencyCode { get; set; }
+    public DateTime? DueDate { get; set; }
 }
 
 public class RequestAttachmentDto

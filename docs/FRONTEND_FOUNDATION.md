@@ -312,7 +312,10 @@ The V1 API provides a `LineItemsController` to manage line items globally across
 
 ## Page Layout and Hierarchy (Header Architecture)
 
-The project utilizes a unified, presentational `RequestActionHeader` component to ensure a consistent top-of-page experience across all request-related screens (Create, Edit, View). This standardization prevents "similar but different" layouts and ensures that functional improvements apply globally.
+The project utilizes a unified, presentational `RequestActionHeader` component to ensure a consistent top-of-page experience across all request-related screens (Create, Edit, View). 
+
+1. **Standard Workspace Width (v2.10.3)**: Primary request forms use a responsive layout with `width: 100%` and a balanced `maxWidth: 1440px`. This prevents "cramped UI" syndrome on standard laptops and desktops while ensuring focused readability on ultrawide monitors.
+2. **AppShell Protection**: Containers must use `min-width: 0` to prevent horizontal overflow in the `AppShell`'s grid layout.
 
 ### RequestActionHeader Units
 

@@ -416,9 +416,17 @@ public class RequestsController : BaseController
                     DivergenceNotes = li.DivergenceNotes,
                     PlantId = li.PlantId,
                     PlantName = li.Plant != null ? li.Plant.Name : null,
+                    CostCenterId = li.CostCenterId,
+                    CostCenterName = li.CostCenter != null ? li.CostCenter.Name : null,
+                    CostCenterCode = li.CostCenter != null ? li.CostCenter.Code : null,
+                    IvaRateId = li.IvaRateId,
+                    IvaRateCode = li.IvaRate != null ? li.IvaRate.Code : null,
+                    IvaRateName = li.IvaRate != null ? li.IvaRate.Name : null,
+                    IvaRatePercent = li.IvaRate != null ? li.IvaRate.RatePercent : null,
                     SupplierId = li.SupplierId,
                     CurrencyId = li.CurrencyId,
-                    CurrencyCode = li.Currency != null ? li.Currency.Code : null
+                    CurrencyCode = li.Currency != null ? li.Currency.Code : null,
+                    DueDate = li.DueDate
                 }).ToList(),
 
                 Attachments = r.Attachments.Where(a => !a.IsDeleted).Select(a => new RequestAttachmentDto
@@ -855,15 +863,10 @@ public class RequestsController : BaseController
             });
         }
 
-        if (requestTypeEntity.Code == "PAYMENT" && !dto.SupplierId.HasValue)
-        {
-            return BadRequest(new ProblemDetails 
-            { 
-                Title = "Regra de Negócio Violada", 
-                Detail = "O fornecedor é obrigatório para pedidos de pagamento.", 
-                Status = 400 
-            });
-        }
+        // Supplier validation: only mandatory for non-PAYMENT types in specific stages if needed, 
+        // but for PAYMENT we are now relaxing the rule at this stage.
+        // Rule: If it's not PAYMENT, we might still want to check if it's required elsewhere.
+        // For now, removing the strict block for PAYMENT.
 
         if (dto.NeedByDateUtc.HasValue && dto.NeedByDateUtc.Value.Date < DateTime.UtcNow.Date)
         {
@@ -976,6 +979,7 @@ public class RequestsController : BaseController
             .Include(r => r.Status)
             .Include(r => r.RequestType)
             .Include(r => r.LineItems)
+            .Include(r => r.Attachments)
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (request == null) return NotFound();
@@ -995,19 +999,34 @@ public class RequestsController : BaseController
         // 2. Perform Submission Validation
         var errors = new List<string>();
 
-        // Submission Validation: Rely on mandatory field checks below
+        // Always-required header fields (both request types)
+        if (string.IsNullOrWhiteSpace(request.Title))
+            errors.Add("O título do pedido é obrigatório.");
+        if (string.IsNullOrWhiteSpace(request.Description))
+            errors.Add("A descrição do pedido é obrigatória.");
+        if (request.DepartmentId == 0)
+            errors.Add("O departamento é obrigatório.");
+        if (request.BuyerId == null || request.BuyerId == Guid.Empty)
+            errors.Add("O Comprador é obrigatório.");
+        if (request.AreaApproverId == null || request.AreaApproverId == Guid.Empty)
+            errors.Add("O Aprovador de Área é obrigatório.");
+        if (request.FinalApproverId == null || request.FinalApproverId == Guid.Empty)
+            errors.Add("O Aprovador Final é obrigatório.");
 
-        if (string.IsNullOrWhiteSpace(request.Title) || 
-            string.IsNullOrWhiteSpace(request.Description) ||
-            request.NeedLevelId == null || 
-            request.NeedByDateUtc == null || 
-            request.DepartmentId == 0 || 
-            request.BuyerId == null || request.BuyerId == Guid.Empty || 
-            request.AreaApproverId == null || request.AreaApproverId == Guid.Empty ||
-            request.FinalApproverId == null || request.FinalApproverId == Guid.Empty)
+        // QUOTATION: NeedByDateUtc is required at header level
+        if (request.RequestType!.Code == "QUOTATION" && request.NeedByDateUtc == null)
+            errors.Add("A Data de Necessidade (Necessário Até) é obrigatória para pedidos de Cotação.");
+
+        // PAYMENT: DueDate is required at item level (every active item must have it)
+        if (request.RequestType!.Code == "PAYMENT")
         {
-            errors.Add("Preencha os campos obrigatórios antes de submeter o pedido.");
+            var itemsMissingDueDate = request.LineItems
+                .Where(l => !l.IsDeleted && l.DueDate == null)
+                .ToList();
+            if (itemsMissingDueDate.Any())
+                errors.Add($"{itemsMissingDueDate.Count} item(ns) de pagamento sem Data de Vencimento. Edite cada item e preencha a data antes de submeter.");
         }
+
 
         // Conditional Item Validation
         // PAYMENT requests strictly require at least one item to submit.
@@ -1027,8 +1046,8 @@ public class RequestsController : BaseController
             if (request.EstimatedTotalAmount <= 0 && request.LineItems.Any(l => !l.IsDeleted))
                 errors.Add("O pedido deve possuir valor total maior que zero.");
             
-            if (!request.SupplierId.HasValue)
-                errors.Add("O fornecedor é obrigatório para pedidos de pagamento.");
+            // Supplier is no longer strictly mandatory at submission for PAYMENT requests
+            // as per DEC-076 / request for more flexibility in draft-to-submit flow.
         }
 
         // Mandatory Document Validation for Submission
@@ -1852,6 +1871,28 @@ public class RequestsController : BaseController
         }
 
         var unit = await _context.Units.FindAsync(dto.UnitId);
+
+        // Item Plant Validation: Mandatory for all types EXCEPT Payment (DEC-076)
+        if (request.RequestType?.Code != "PAYMENT" && !dto.PlantId.HasValue)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Erro de Validação",
+                Detail = "A planta de destino é obrigatória para este tipo de pedido.",
+                Status = 400
+            });
+        }
+
+        if (request.RequestType?.Code == "PAYMENT" && !dto.DueDate.HasValue)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Erro de Validação",
+                Detail = "A Data de Vencimento é obrigatória para itens de pagamento.",
+                Status = 400
+            });
+        }
+
         if (unit != null && !unit.AllowsDecimalQuantity && dto.Quantity.HasValue && dto.Quantity.Value % 1 != 0)
         {
             return Conflict(new ProblemDetails
@@ -1892,10 +1933,13 @@ public class RequestsController : BaseController
             TotalAmount = computedTotal,
             CurrencyId = request.RequestType?.Code == "QUOTATION" && dto.CurrencyId.HasValue ? dto.CurrencyId : request.CurrencyId,
             PlantId = dto.PlantId,
+            CostCenterId = dto.CostCenterId,
+            IvaRateId = dto.IvaRateId,
             LineItemStatusId = lineItemStatusId, // Auto-assigned, never from client
             SupplierId = request.RequestType?.Code == "PAYMENT" ? request.SupplierId : null,
             SupplierName = request.RequestType?.Code == "PAYMENT" ? null : dto.SupplierName,
             Notes = dto.Notes,
+            DueDate = dto.DueDate,
             IsDeleted = false,
             CreatedAtUtc = DateTime.UtcNow,
             CreatedByUserId = actorId
@@ -1976,6 +2020,28 @@ public class RequestsController : BaseController
         if (item == null) return NotFound(new ProblemDetails { Title = "Item não encontrado no pedido.", Status = 404 });
 
         var unit = await _context.Units.FindAsync(dto.UnitId);
+
+        // Item Plant Validation: Mandatory for all types EXCEPT Payment (DEC-076)
+        if (request.RequestType?.Code != "PAYMENT" && !dto.PlantId.HasValue)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Erro de Validação",
+                Detail = "A planta de destino é obrigatória para este tipo de pedido.",
+                Status = 400
+            });
+        }
+
+        if (request.RequestType?.Code == "PAYMENT" && !dto.DueDate.HasValue)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Erro de Validação",
+                Detail = "A Data de Vencimento é obrigatória para itens de pagamento.",
+                Status = 400
+            });
+        }
+
         if (unit != null && !unit.AllowsDecimalQuantity && dto.Quantity.HasValue && dto.Quantity.Value % 1 != 0)
         {
             return Conflict(new ProblemDetails
@@ -2014,6 +2080,11 @@ public class RequestsController : BaseController
             }
             item.PlantId = dto.PlantId;
         }
+
+        item.CostCenterId = dto.CostCenterId;
+        item.IvaRateId = dto.IvaRateId;
+        item.DueDate = dto.DueDate;
+
         // LineItemStatusId is intentionally NOT updated here — status is backend/buyer-controlled only
         if (request.RequestType?.Code == "PAYMENT")
         {

@@ -62,6 +62,11 @@ export interface RequestLineItemDto {
     costCenterId: number | null;
     costCenterName: string | null;
     costCenterCode: string | null;
+    ivaRateId: number | null;
+    ivaRateCode: string | null;
+    ivaRateName: string | null;
+    ivaRatePercent: number | null;
+    dueDate: string | null;
 }
 
 export interface SavedQuotationItemDto {

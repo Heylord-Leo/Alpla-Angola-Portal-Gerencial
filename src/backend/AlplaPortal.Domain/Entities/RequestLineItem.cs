@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace AlplaPortal.Domain.Entities;
 
 public class RequestLineItem
@@ -37,10 +39,17 @@ public class RequestLineItem
     public Supplier? Supplier { get; set; }
     public string? SupplierName { get; set; }
 
+    [Required]
     public int? CostCenterId { get; set; }
     public CostCenter? CostCenter { get; set; }
 
+    [Required]
+    public int? IvaRateId { get; set; }
+    public IvaRate? IvaRate { get; set; }
+
     public string? Notes { get; set; }
+    
+    public DateTime? DueDate { get; set; }
 
     // Receiving Fields
     public decimal ReceivedQuantity { get; set; }

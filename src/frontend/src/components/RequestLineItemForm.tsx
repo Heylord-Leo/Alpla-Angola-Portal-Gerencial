@@ -1,5 +1,5 @@
 import React from 'react';
-import { LookupDto, CurrencyDto, RequestLineItemDto } from '../types';
+import { LookupDto, RequestLineItemDto } from '../types';
 import { CurrencyInput } from './CurrencyInput';
 
 export interface RequestLineItemFormProps {
@@ -8,13 +8,13 @@ export interface RequestLineItemFormProps {
     onSaveItem: (e: React.FormEvent) => void;
     itemSaving: boolean;
     units: LookupDto[];
-    currencies: CurrencyDto[];
-    currencyId: number;
     fieldErrors: Record<string, string[]>;
     clearFieldError: (fieldName: string) => void;
     companyId: number | null;
     plants: LookupDto[];
     requestTypeCode?: string;
+    costCenters: LookupDto[];
+    ivaRates: LookupDto[];
 }
 
 export function RequestLineItemForm({
@@ -23,13 +23,13 @@ export function RequestLineItemForm({
     onSaveItem,
     itemSaving,
     units,
-    currencies,
-    currencyId,
     fieldErrors,
     clearFieldError,
     companyId,
     plants,
-    requestTypeCode
+    requestTypeCode,
+    costCenters,
+    ivaRates
 }: RequestLineItemFormProps) {
     const hasError = (fieldName: string) => {
         const normalizedField = fieldName.toLowerCase();
@@ -112,19 +112,19 @@ export function RequestLineItemForm({
                     {renderFieldError('Description')}
                 </label>
 
-                <label style={labelStyle}>Prioridade <span style={{ color: 'red' }}>*</span>
+                <label style={labelStyle}>Centro de Custo <span style={{ color: 'red' }}>*</span>
                     <select
                         required
-                        value={itemForm.itemPriority || ''}
-                        onChange={e => { setItemForm({ ...itemForm, itemPriority: e.target.value as RequestLineItemDto['itemPriority'] }); clearFieldError('ItemPriority'); }}
-                        style={getInputStyle('ItemPriority')}
+                        value={itemForm.costCenterId || ''}
+                        onChange={e => { setItemForm({ ...itemForm, costCenterId: Number(e.target.value) }); clearFieldError('CostCenterId'); }}
+                        style={getInputStyle('CostCenterId')}
                     >
-                        <option value="" disabled>Selecione a prioridade...</option>
-                        <option value="HIGH">Alta</option>
-                        <option value="MEDIUM">Média</option>
-                        <option value="LOW">Baixa</option>
+                        <option value="" disabled>Selecione o centro de custo...</option>
+                        {costCenters.filter(cc => cc.isActive || cc.id === itemForm.costCenterId).map(cc => (
+                            <option key={cc.id} value={cc.id}>{cc.code} - {cc.name}</option>
+                        ))}
                     </select>
-                    {renderFieldError('ItemPriority')}
+                    {renderFieldError('CostCenterId')}
                 </label>
 
                 <label style={labelStyle}>Qtd <span style={{ color: 'red' }}>*</span>
@@ -144,9 +144,9 @@ export function RequestLineItemForm({
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '20px', paddingBottom: '16px' }}>
-                <label style={labelStyle}>Planta de Destino <span style={{ color: 'red' }}>*</span>
+                <label style={labelStyle}>Planta de Destino {requestTypeCode !== 'PAYMENT' && <span style={{ color: 'red' }}>*</span>}
                     <select 
-                        required 
+                        required={requestTypeCode !== 'PAYMENT'} 
                         value={itemForm.plantId || ''} 
                         onChange={e => { setItemForm({ ...itemForm, plantId: Number(e.target.value) }); clearFieldError('PlantId'); }} 
                         style={getInputStyle('PlantId')}
@@ -175,41 +175,35 @@ export function RequestLineItemForm({
                     {renderFieldError('UnitPrice')}
                 </label>
 
-                {requestTypeCode === 'QUOTATION' ? (
-                    <label style={labelStyle}>Moeda <span style={{ color: 'red' }}>*</span>
-                        <select 
-                            required 
-                            value={itemForm.currencyId || ''} 
-                            onChange={e => { setItemForm({ ...itemForm, currencyId: Number(e.target.value) }); clearFieldError('CurrencyId'); }} 
-                            style={getInputStyle('CurrencyId')}
-                        >
-                            <option value="" disabled>Selecione a moeda...</option>
-                            {currencies.filter(c => c.isActive || c.id === itemForm.currencyId).map(c => (
-                                <option key={c.id} value={c.id}>{c.code} - {c.symbol}</option>
-                            ))}
-                        </select>
-                        {renderFieldError('CurrencyId')}
+                <label style={labelStyle}>Taxa IVA <span style={{ color: 'red' }}>*</span>
+                    <select
+                        required
+                        value={itemForm.ivaRateId || ''}
+                        onChange={e => { setItemForm({ ...itemForm, ivaRateId: Number(e.target.value) }); clearFieldError('IvaRateId'); }}
+                        style={getInputStyle('IvaRateId')}
+                    >
+                        <option value="" disabled>Selecione a taxa IVA...</option>
+                        {ivaRates.filter(tax => tax.isActive || tax.id === itemForm.ivaRateId).map(tax => (
+                            <option key={tax.id} value={tax.id}>{tax.name}</option>
+                        ))}
+                    </select>
+                    {renderFieldError('IvaRateId')}
+                </label>
+
+                {requestTypeCode === 'PAYMENT' && (
+                    <label style={labelStyle}>Data de Vencimento <span style={{ color: 'red' }}>*</span>
+                        <input
+                            required
+                            type="date"
+                            value={itemForm.dueDate ? itemForm.dueDate.substring(0, 10) : ''}
+                            onChange={e => {
+                                setItemForm({ ...itemForm, dueDate: e.target.value || null });
+                                clearFieldError('DueDate');
+                            }}
+                            style={getInputStyle('DueDate')}
+                        />
+                        {renderFieldError('DueDate')}
                     </label>
-                ) : (
-                    <div style={{ ...labelStyle, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                        <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-muted)', letterSpacing: '0.05em', marginBottom: '8px' }}>
-                            Moeda
-                        </span>
-                        <div style={{
-                            padding: '12px 14px',
-                            backgroundColor: 'var(--color-bg-page)',
-                            border: '1px solid var(--color-border)',
-                            borderRadius: 'var(--radius-sm)',
-                            fontSize: '0.875rem',
-                            fontWeight: 600,
-                            color: 'var(--color-text-main)'
-                        }}>
-                            {currencies.find(c => c.id === Number(currencyId))?.code || '---'}
-                        </div>
-                        <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>
-                            Herdada do cabeçalho
-                        </span>
-                    </div>
                 )}
 
                 <label style={{ ...labelStyle, gridColumn: 'span 2' }}>Notas / Observações
