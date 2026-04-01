@@ -57,4 +57,8 @@ public class RequestListItemDto
     
     public bool IsCancelled { get; set; }
     public Guid? SelectedQuotationId { get; set; }
+
+    // Context for Area Approval
+    public string? CostCenterCode { get; set; }
+    public string? CostCenterName { get; set; }
 }

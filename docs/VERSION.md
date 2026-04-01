@@ -2,10 +2,13 @@
 
 ## Current Version
 
-v2.11.5
+v2.12.2
 
 ## Version History
 
+- **2.12.2**: Role-Aware Decision Intelligence (DEC-084). Adapted DecisionInsightsPanel to provide contextually different emphasis for Area Approvers (Checklist de Legitimidade) and Final Approvers (Visão Financeira Comparativa). Role-based section reordering. No backend changes.
+- **2.12.1**: Resizable Approval Center Drawer. Implemented horizontal resizing with localStorage persistence and desktop-optimized reflow for decision insights.
+- **2.12.0**: Approval Center UX Refinement. Replaced stacked layout with a high-efficiency right-side drawer/panel workspace. Implemented auto-selection of next pending items and distinct queue-linked selection visual cues.
 - **2.11.5**: Fixed Cartesian Explosion in Quotation Management. Optimized backend hydration via `.AsSplitQuery()` to improve load times and resolve EF Core warnings.
 - **2.11.4**: Quotation Save Confirmation. Implemented mandatory UX confirmation prior to saving/updating quotations, with contextual messaging for OCR vs. Manual entries.
 - **2.11.3**: EF Core Query Optimization. Resolved non-deterministic warnings and Cartesian Explosion issues via explicit Ordering and `.AsSplitQuery()` in core request modules.
@@ -65,33 +68,6 @@ Semantic Versioning (MAJOR.MINOR.PATCH)
 ## Current Status
 
 Active Development
-
-## [v2.11.3] - 2026-03-31
-
-### Optimized
-
-- **EF Core Query Audit**: Resolved `FirstWithoutOrderByAndFilterWarning` and `MultipleCollectionIncludeWarning` (Cartesian Explosion) in the core `Requests` and `LineItems` modules.
-- **Deterministic Ordering**: Applied explicit `.OrderBy()` on all aggregate and lookup queries to ensure stable results across list views and dashboards.
-- **Query Splitting**: Integrated `.AsSplitQuery()` for high-complexity detail projections (Save, Submit, Cancel, Delete, Finalize) to eliminate performance degradation from broad Cartesian joins.
-
-## [v2.11.2] - 2026-03-31
-
-### Added
-
-- **TOTAL FILTRADO KPI Card**: Replaced the "Finalizados" card with a monetary aggregate of currently filtered requests.
-- **Multi-Currency Protection**: Implemented a security mechanism to prevent silent mixing of currencies; the total is hidden (replaced by "Múltiplas moedas") if the filtered result contains more than one currency.
-- **Backend Aggregation**: Added high-performance server-side summation of `EstimatedTotalAmount` (or selected quotation amount) within the same API call used for list hydration.
-- **Refined KPICard Component**: Updated the core dashboard component to support non-numeric values, subtitles, and non-interactive states.
-- **Enhanced Currency Formatting**: Updated `formatCurrencyAO` to support optional currency code prefixing.
-
-## [v2.11.2] - 2026-03-31
-
-### Added
-
-- **Automating Departmental Area Approvers (DEC-082)**: Integrated the "Department Responsible" as the default "Area Approver" in the request workflow.
-- **Master Data - Department Responsible**: Added a "Responsável" (Responsible User) field to the Department master data. It features a specialized user selector filtered by the `AREA_APPROVER` role.
-- **Backend Schema Extension**: Added `ResponsibleUserId` to the `Department` entity with full persistence and API support in `LookupsController`.
-- **Refined Master Data Edit Guard**: Updated the department edit logic to allow changing the responsible user even if the department is already referenced by historical requests, while still protecting structural fields like Name and Code.
 
 ## Version Notes
 

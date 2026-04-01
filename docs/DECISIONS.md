@@ -416,6 +416,37 @@ Purpose: record important technical and process decisions so future work preserv
 
 ---
 
+## DEC-083 — Side-Panel Workspace Pattern for Approvals
+
+- **Date:** 2026-04-01
+- **Status:** Accepted
+- **Context:** The previous stacked master-detail layout in the Approval Center felt disjointed and lacked visual focus. Users lost queue context when reviewing large requests, and the vertical stacking created a "long page" feel that hindered productivity.
+- **Decision:** Implement a side-panel (drawer) workspace pattern.
+    1. **Queue Visibility**: The main queue sections remain visible on the left, providing constant context.
+    2. **Drawer Rendering**: Details load into a `640px` right-side drawer using `DropdownPortal` to ensure it renders above all other UI layers.
+    3. **Strong Selection State**: Active rows in the queue use a `12px` accent border and unique background (`#eff6ff`) to clearly link the queue item to the open panel.
+    4. **Auto-Selection**: After a successful approval action, the system automatically refreshes and opens the next pending item in the same queue to maximize throughput.
+- **Alternatives considered:** Full-page navigation (rejected: loses queue context) or keeping the stacked layout (rejected: poor focus).
+- **Consequences:** Significantly improves the "triage" experience for approvers. Reduces context switching and clicks. Requires careful management of panel state (`isPanelOpen`) and selection synchronization.
+
+---
+
+## DEC-084 — Role-Aware Intelligence Pattern for Approval Center
+
+- **Date:** 2026-04-01
+- **Status:** Accepted
+- **Context:** The `DecisionInsightsPanel` rendered identical intelligence for both Area Approvers and Final Approvers. The decision context is fundamentally different: Area Approvers focus on legitimacy, necessity, and organizational fit, while Final Approvers focus on financial rationality and comparative history. A naive solution would fork the component or create two separate screens.
+- **Decision:** Implement role-aware conditional rendering within a single shared `DecisionInsightsPanel` component.
+    1. **Shared Foundation**: All three core blocks (Alerts, Department KPIs, Item Analysis) remain available to both roles.
+    2. **Context Banner**: A subtle top-of-panel indicator reinforces the decision lens without dominating the UI.
+    3. **Role-Specific Emphasis Blocks**: Each role receives a dedicated emphasis block — Area gets a "Checklist de Legitimidade" (informational, non-blocking), Final gets a "Visão Financeira Comparativa" (year totals, consolidated variation).
+    4. **Section Reordering**: Shared blocks render in different priority order per role to surface the most relevant information first.
+    5. **Lightweight Context Prop**: A `requestData` object passes minimal request context to the panel, avoiding coupling to the full `RequestDetailsDto`.
+- **Alternatives considered:** Forking into two separate panel components (rejected: duplication, maintenance burden). Single panel with no differentiation (rejected: suboptimal decision support for each role).
+- **Consequences:** Maintains a single component with shared visual language while providing contextually relevant decision support. Future role-specific enhancements can be added within the existing conditional structure without architectural changes.
+
+---
+
 ## Template for New Decisions
 
 ## DEC-[NNN] — [Short title]

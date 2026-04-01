@@ -168,7 +168,96 @@ public class RequestsController : BaseController
     }
 
 
-    [HttpGet]
+    [HttpGet("pending-approvals")]
+    public async Task<ActionResult<PendingApprovalsResponseDto>> GetPendingApprovals()
+    {
+        var userId = CurrentUserId;
+        var roles = CurrentUserRoles;
+        bool isAdmin = roles.Contains(RoleConstants.SystemAdministrator);
+        bool isFinalApprover = roles.Contains(RoleConstants.FinalApprover);
+
+        var query = await GetScopedRequestsQuery();
+        var today = DateTime.UtcNow.Date;
+        var tomorrow = today.AddDays(1);
+        var in4Days = today.AddDays(4);
+
+        // 1. Logic for Area Approvals
+        // Rules: status is WAITING_AREA_APPROVAL or WAITING_COST_CENTER
+        // Responsibility: either r.AreaApproverId matches or user is Admin
+        var areaStatuses = new[] { RequestConstants.Statuses.WaitingAreaApproval, RequestConstants.Statuses.WaitingCostCenter };
+        var areaQuery = query.Where(r => areaStatuses.Contains(r.Status!.Code));
+        if (!isAdmin)
+        {
+            areaQuery = areaQuery.Where(r => r.AreaApproverId == userId);
+        }
+
+        // 2. Logic for Final Approvals
+        // Rules: status is WAITING_FINAL_APPROVAL
+        // Responsibility: either user has Final Approver role or user is Admin
+        var finalStatuses = new[] { RequestConstants.Statuses.WaitingFinalApproval };
+        var finalQuery = query.Where(r => finalStatuses.Contains(r.Status!.Code));
+        if (!isAdmin && !isFinalApprover)
+        {
+            // If not admin and not final approver, show nothing in this queue
+            finalQuery = finalQuery.Where(r => false);
+        }
+
+        // 3. Execution and Projection
+        var areaTasks = await ProjectToListItem(areaQuery, today, tomorrow, in4Days);
+        var finalTasks = await ProjectToListItem(finalQuery, today, tomorrow, in4Days);
+
+        return Ok(new PendingApprovalsResponseDto
+        {
+            AreaApprovals = areaTasks,
+            FinalApprovals = finalTasks
+        });
+    }
+
+    private async Task<List<RequestListItemDto>> ProjectToListItem(IQueryable<Request> query, DateTime today, DateTime tomorrow, DateTime in4Days)
+    {
+        return await query
+            .OrderByDescending(r =>
+                (r.Status!.Code == "REJECTED" || r.Status.Code == "CANCELLED" ||
+                 r.Status.Code == "COMPLETED" || r.Status.Code == "QUOTATION_COMPLETED")
+                    ? -1
+                    : (r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < today) ? 3
+                    : (r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value >= today && r.NeedByDateUtc.Value < tomorrow) ? 2
+                    : (r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value >= tomorrow && r.NeedByDateUtc.Value < in4Days) ? 1
+                    : 0
+            )
+            .ThenByDescending(r => r.NeedLevelId ?? 0)
+            .ThenByDescending(r => r.CreatedAtUtc)
+            .Select(r => new RequestListItemDto
+            {
+                Id = r.Id,
+                RequestNumber = r.RequestNumber,
+                Title = r.Title,
+                StatusId = r.Status!.Id,
+                StatusName = r.Status.Name ?? string.Empty,
+                StatusCode = r.Status.Code ?? string.Empty,
+                StatusBadgeColor = r.Status.BadgeColor ?? string.Empty,
+                RequestTypeId = r.RequestType!.Id,
+                RequestTypeCode = r.RequestType.Code ?? string.Empty,
+                RequesterName = r.Requester.FullName ?? string.Empty,
+                DepartmentName = r.Department != null ? r.Department.Name : null,
+                PlantName = r.Plant != null ? r.Plant.Name : "---",
+                SupplierName = r.SelectedQuotationId.HasValue 
+                    ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => q.SupplierNameSnapshot).FirstOrDefault() 
+                    : (r.Supplier != null ? r.Supplier.Name : null),
+                EstimatedTotalAmount = r.SelectedQuotationId.HasValue 
+                    ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => (decimal?)q.TotalAmount).FirstOrDefault() ?? 0
+                    : r.EstimatedTotalAmount,
+                CurrencyCode = r.SelectedQuotationId.HasValue 
+                    ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => q.Currency).FirstOrDefault() 
+                    : (r.Currency != null ? r.Currency.Code : null),
+                NeedByDateUtc = r.NeedByDateUtc,
+                CreatedAtUtc = r.CreatedAtUtc,
+                // Added for Area Approval context
+                CostCenterCode = r.LineItems.Where(l => !l.IsDeleted && l.CostCenter != null).Select(l => l.CostCenter.Code).FirstOrDefault(),
+                CostCenterName = r.LineItems.Where(l => !l.IsDeleted && l.CostCenter != null).Select(l => l.CostCenter.Name).FirstOrDefault()
+            })
+            .ToListAsync();
+    }
     public async Task<ActionResult<RequestListResponseDto>> GetRequests(
         [FromQuery] string? search = null, 
         [FromQuery] string? statusIds = null,

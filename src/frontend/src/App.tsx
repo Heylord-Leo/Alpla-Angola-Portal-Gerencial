@@ -9,6 +9,7 @@ import ReceivingOperation from './pages/Receiving/ReceivingOperation';
 import { MasterData } from './pages/Settings/MasterData';
 import { DocumentExtractionSettings } from './pages/Settings/DocumentExtractionSettings';
 import PurchasingLandingPage from './pages/Purchasing/PurchasingLandingPage';
+import { ApprovalCenter } from './pages/Approvals/ApprovalCenter';
 
 import { Dashboard } from './pages/Dashboard/Dashboard';
 import { AdministratorWorkspace } from './pages/Admin/AdministratorWorkspace';
@@ -50,6 +51,7 @@ function AppContent() {
                 <Route path="/change-password" element={<ChangePasswordPage />} />
                 <Route path="/" element={<Navigate to="/requests" replace />} />
                 <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/approvals" element={<ApprovalCenter />} />
                 <Route path="/purchasing" element={<PurchasingLandingPage />} />
                 <Route path="/requests" element={<RequestsList />} />
                 <Route path="/requests/new" element={<RequestCreate />} />

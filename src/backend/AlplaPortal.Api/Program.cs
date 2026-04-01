@@ -6,6 +6,7 @@ using AlplaPortal.Infrastructure.Logging;
 using AlplaPortal.Infrastructure.Services;
 using AlplaPortal.Infrastructure.Services.Extraction;
 using AlplaPortal.Infrastructure.Services.Auth;
+using AlplaPortal.Infrastructure.Services.Approvals;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -31,6 +32,9 @@ builder.Services.AddScoped<AdminLogWriter>();
 
 // Notification Service
 builder.Services.AddScoped<INotificationService, NotificationService>();
+
+// Approval Intelligence
+builder.Services.AddScoped<IApprovalIntelligenceService, ApprovalIntelligenceService>();
 
 // Auth Services
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));

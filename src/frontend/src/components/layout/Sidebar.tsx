@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { FileText, Home, LogOut, Settings, List, ShoppingCart, ChevronDown, ChevronRight, Package, Activity, Network, ChevronLeft } from 'lucide-react';
+import { FileText, Home, LogOut, Settings, List, ShoppingCart, ChevronDown, ChevronRight, Package, Activity, Network, ChevronLeft, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 type NavItemType = 'link' | 'group' | 'action';
@@ -35,6 +35,13 @@ export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
             label: 'Dashboard',
             icon: <Home size={18} strokeWidth={2.5} />,
             to: '/dashboard'
+        },
+        {
+            id: 'approvals',
+            type: 'link',
+            label: 'Centro de Aprovações',
+            icon: <CheckCircle size={18} strokeWidth={2.5} />,
+            to: '/approvals'
         },
         ...((isAdmin || isLocalManager) ? [{
             id: 'administracao',

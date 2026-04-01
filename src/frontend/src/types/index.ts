@@ -38,6 +38,15 @@ export interface RequestListItemDto {
     createdAtUtc: string;
     isCancelled: boolean;
     selectedQuotationId: string | null;
+
+    // Context for Area Approval
+    costCenterCode?: string | null;
+    costCenterName?: string | null;
+}
+
+export interface PendingApprovalsResponseDto {
+    areaApprovals: RequestListItemDto[];
+    finalApprovals: RequestListItemDto[];
 }
 
 export interface RequestLineItemDto {
@@ -263,4 +272,43 @@ export interface PurchasingSummaryDto {
     awaitingPayment: number;
     pendingReceiving: number;
     attentionPoints: AttentionPointDto[];
+}
+
+export interface DecisionAlertDto {
+    type: string;
+    level: 'INFO' | 'WARNING' | 'CRITICAL' | 'ERROR' | 'DANGER';
+    message: string;
+    relatedItemId?: string;
+}
+
+export interface DepartmentIntelligenceDto {
+    monthAccumulatedTotal: number;
+    yearAccumulatedTotal: number;
+    monthApprovedCount: number;
+    currentRequestSharePercentage: number;
+    currency: string;
+}
+
+export interface ItemIntelligenceDto {
+    lineItemId: string;
+    description: string;
+    currentUnitPrice: number;
+    currency: string;
+    
+    // Historical
+    lastPaidPrice?: number;
+    averageHistoricalPrice?: number;
+    lastSupplierName?: string;
+    totalPurchaseCount: number;
+    variationVsLastPercentage?: number;
+    variationVsAvgPercentage?: number;
+    hasHistory: boolean;
+    matchType: string;
+}
+
+export interface ApprovalIntelligenceDto {
+    requestId: string;
+    items: ItemIntelligenceDto[];
+    departmentContext: DepartmentIntelligenceDto;
+    overallAlerts: DecisionAlertDto[];
 }

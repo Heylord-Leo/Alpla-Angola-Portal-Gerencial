@@ -22,6 +22,16 @@ For workspaces and complex forms, the project uses a standardized `CollapsibleSe
 4. **Default State**: Most workspaces should default to only the first or most relevant (e.g., "Pending") section being open. In the Request Edit form, the "ITENS DO PEDIDO" section defaults to **collapsed** on initial load to reduce vertical noise.
 5. **Guided Attention**: For critical workflow stages (e.g., `WAITING_AREA_APPROVAL`), specific sections may be automatically expanded, scrolled into view (with sticky-header offset), and briefly highlighted with a red pulse effect to guide the user's attention. This logic must only run once per record load.
 
+## Resizable Drawer Pattern (v2.12.1)
+
+To optimize information density on desktop screens, the Approval Center utilizes a **horizontally resizable side drawer**.
+
+1. **Desktop-Only Capability**: Resizing is exclusively enabled for viewports > 768px. On mobile, the drawer defaults to a fixed 100% width.
+2. **Persistence**: The user-selected width is stored in `localStorage` (`approvalDrawerWidth`) and restored upon page reload or drawer reopening.
+3. **Constraints**: To maintain layout integrity, the width is clamped between **520px** and **90vw**.
+4. **Resize UI**: A subtle 6px vertical handle on the drawer's left edge provides a high-hit-area interaction point without visual noise. It features a high-contrast highlighting of `var(--color-primary)` upon hover or drag.
+5. **Fluid Reflow**: Internal components must utilize responsive grid templates (e.g., `repeat(auto-fill, minmax(200px, 1fr))`) to ensure content adapts naturally as the drawer expands, preventing excessive white space.
+
 ## Modernization Stack (v2.0.0)
 
 The project has been modernized to support the Shell 2.0 architecture:
@@ -539,3 +549,21 @@ The Administrator Workspace provides a dedicated area for technical management a
 ---
 
 ## Operational Security Patterns
+
+---
+
+## Role-Aware Intelligence Pattern (DEC-084)
+
+The `DecisionInsightsPanel` in the Approval Center uses **conditional rendering** based on the `approvalStage` prop (`'AREA' | 'FINAL'`) to adapt its emphasis without component duplication.
+
+### Architecture
+- **Single Component**: `DecisionInsightsPanel` receives `approvalStage` and an optional `requestData` context object.
+- **Shared Foundation**: Alerts, Department KPIs, and Item Analysis blocks render for both roles.
+- **Role Emphasis Blocks**: Area gets `AreaEmphasisBlock` (Checklist de Legitimidade), Final gets `FinalEmphasisBlock` (Visão Financeira Comparativa).
+- **Section Reordering**: Shared blocks appear in different priority order per role.
+
+### Extension Rules
+- New role-specific sections should be added as conditional blocks within the existing component, not by forking.
+- The `requestData` prop should remain lightweight — pass only what the emphasis blocks need, never the full `RequestDetailsDto`.
+- Emphasis blocks are informational only — they must not introduce new approval blockers without a separate DEC entry.
+

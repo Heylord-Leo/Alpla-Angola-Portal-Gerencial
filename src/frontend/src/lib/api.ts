@@ -1,4 +1,4 @@
-import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, DocumentExtractionSettingsDto, RequestListResponseDto, PurchasingSummaryDto } from '../types';
+import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, DocumentExtractionSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto } from '../types';
 import { logger, FrontendComponentKey } from './logger';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
@@ -160,6 +160,11 @@ export const api = {
         getPurchasingSummary: async (): Promise<PurchasingSummaryDto> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/purchasing-summary`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar sumário de compras.');
+            return response.json();
+        },
+        getPendingApprovals: async (): Promise<PendingApprovalsResponseDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/pending-approvals`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar centro de aprovações.');
             return response.json();
         },
         list: async (
@@ -463,6 +468,25 @@ export const api = {
                 body: JSON.stringify({ receivedQuantity, divergenceNotes }),
             });
             if (!response.ok) return handleApiError(response, 'Falha ao registrar recebimento do item da cotação.');
+        }
+    },
+    approvals: {
+        getIntelligence: async (id: string): Promise<ApprovalIntelligenceDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/approvals/${id}/intelligence`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar inteligência de decisão.');
+            return response.json();
+        }
+    },
+    dev: {
+        seedIntelligence: async (): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/dev/seed-intelligence`, { method: 'POST' });
+            if (!response.ok) return handleApiError(response, 'Falha ao semear dados de inteligência.');
+            return response.json();
+        },
+        cleanupIntelligence: async (): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/dev/cleanup-intelligence`, { method: 'DELETE' });
+            if (!response.ok) return handleApiError(response, 'Falha ao limpar dados de inteligência.');
+            return response.json();
         }
     },
     notifications: {

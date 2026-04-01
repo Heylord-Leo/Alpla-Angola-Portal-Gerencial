@@ -14,7 +14,7 @@ public static class RequestConstants
         public const string WaitingQuotation = "WAITING_QUOTATION";
         public const string WaitingAreaApproval = "WAITING_AREA_APPROVAL";
         public const string WaitingFinalApproval = "WAITING_FINAL_APPROVAL";
-        public const string FinalApproved = "FINAL_APPROVED";
+        public const string FinalApproved = "APPROVED";
         public const string Rejected = "REJECTED";
         public const string Cancelled = "CANCELLED";
         public const string QuotationCompleted = "QUOTATION_COMPLETED";
