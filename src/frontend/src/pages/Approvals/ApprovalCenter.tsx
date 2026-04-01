@@ -1,16 +1,18 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../../lib/api';
-import { RequestListItemDto, RequestDetailsDto, PendingApprovalsResponseDto } from '../../types';
+import { RequestListItemDto, RequestDetailsDto, PendingApprovalsResponseDto, ItemIntelligenceDto } from '../../types';
 import { useAuth } from '../../features/auth/AuthContext';
 import { ROLES } from '../../constants/roles';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { ApprovalDetailPanel } from './ApprovalDetailPanel';
-import { AlertCircle, Building2, User, Landmark, ShieldCheck, Inbox, X, ChevronRight, ChevronLeft, History, Clock, TrendingUp } from 'lucide-react';
+import { DetailedHistoryPanel } from './components/DetailedHistoryPanel';
+import { AlertCircle, Building2, User, Landmark, ShieldCheck, Inbox, ChevronRight, History, Clock, TrendingUp } from 'lucide-react';
 import { formatDate, formatCurrencyAO, getUrgencyStyle } from '../../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DropdownPortal } from '../../components/ui/DropdownPortal';
 import { QueueSummary } from './components/QueueSummary';
+import { Tooltip } from '../../components/ui/Tooltip';
 
 // --- Types ---
 
@@ -35,6 +37,7 @@ export function ApprovalCenter() {
     const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
     const [selectedApprovalStage, setSelectedApprovalStage] = useState<ApprovalStage | null>(null);
     const [isPanelOpen, setIsPanelOpen] = useState(false);
+    const [selectedDetailedItem, setSelectedDetailedItem] = useState<ItemIntelligenceDto | null>(null);
 
     // Detail state
     const [detailLoading, setDetailLoading] = useState(false);
@@ -633,93 +636,73 @@ export function ApprovalCenter() {
                                 </div>
                             )}
 
-                            {/* Drawer Header */}
-                            <div style={{
-                                padding: '24px 32px',
-                                backgroundColor: 'var(--color-bg-page)',
-                                borderBottom: '4px solid black',
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center'
-                            }}>
-                                <div>
-                                    <div className="flex items-center gap-2 text-[10px] font-black uppercase text-zinc-400 mb-1 tracking-widest">
-                                        PEDIDO REVISÃO <ChevronRight size={10} /> {selectedApprovalStage === 'AREA' ? 'APROVAÇÃO ÁREA' : 'APROVAÇÃO FINAL'}
-                                    </div>
-                                    <div className="flex items-center gap-4">
-                                        <h2 style={{ fontSize: '1.5rem', fontWeight: 900, textTransform: 'uppercase', margin: 0, color: 'var(--color-primary)', fontStyle: 'italic' }}>
-                                            {detailData?.requestNumber || '...'}
-                                        </h2>
-
-                                        {/* Drawer Navigation Controls */}
-                                        {flatQueue.length > 1 && (
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '16px', paddingLeft: '16px', borderLeft: '1px solid var(--color-border)' }}>
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); handlePrev(); }}
-                                                    disabled={currentIndex === 0 || detailLoading}
-                                                    style={{
-                                                        padding: '4px 8px',
-                                                        border: '1.5px solid black',
-                                                        backgroundColor: 'white',
-                                                        opacity: currentIndex === 0 ? 0.3 : 1,
-                                                        cursor: currentIndex === 0 ? 'not-allowed' : 'pointer'
-                                                    }}
-                                                    title="Anterior (←)"
-                                                >
-                                                    <ChevronLeft size={16} />
-                                                </button>
-                                                
-                                                <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', minWidth: '40px', textAlign: 'center' }}>
-                                                    {currentIndex + 1} de {flatQueue.length}
-                                                </span>
-
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); handleNext(); }}
-                                                    disabled={currentIndex === flatQueue.length - 1 || detailLoading}
-                                                    style={{
-                                                        padding: '4px 8px',
-                                                        border: '1.5px solid black',
-                                                        backgroundColor: 'white',
-                                                        opacity: currentIndex === flatQueue.length - 1 ? 0.3 : 1,
-                                                        cursor: currentIndex === flatQueue.length - 1 ? 'not-allowed' : 'pointer'
-                                                    }}
-                                                    title="Próximo (→)"
-                                                >
-                                                    <ChevronRight size={16} />
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                                <button 
-                                    onClick={handleCloseDetail} 
-                                    className="p-2 border-2 border-black hover:bg-black hover:text-white transition-colors"
-                                >
-                                    <X size={24} />
-                                </button>
-                            </div>
 
                             {/* Drawer Content */}
-                            <div style={{ flex: 1, overflowY: 'auto' }}>
-                                {detailLoading ? (
-                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 24px', gap: '12px' }}>
-                                        <div style={{ width: '32px', height: '32px', border: '3px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                                        <span style={{ fontWeight: 700, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)', letterSpacing: '0.1em' }}>A Carregar Detalhes...</span>
-                                    </div>
-                                ) : detailData ? (
-                                    <div className="p-0">
-                                        <ApprovalDetailPanel
-                                            data={detailData}
-                                            approvalStage={selectedApprovalStage || 'AREA'}
-                                            isAreaApprover={isAreaApprover}
-                                            isFinalApprover={isFinalApprover}
-                                            onActionCompleted={handleActionCompleted}
-                                            onClose={handleCloseDetail}
-                                            onDataRefresh={refreshDetailData}
-                                            isDrawerContext={true}
-                                        />
-                                    </div>
-                                ) : null}
+                            <div style={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
+                                {/* Main Detail Panel with potential dimming */}
+                                <div style={{ 
+                                    flex: 1, 
+                                    opacity: selectedDetailedItem ? 0.3 : 1, 
+                                    filter: selectedDetailedItem ? 'blur(2px)' : 'none',
+                                    transition: 'all 0.3s ease',
+                                    pointerEvents: selectedDetailedItem ? 'none' : 'auto'
+                                }}>
+                                    {detailLoading ? (
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 24px', gap: '12px' }}>
+                                            <div style={{ width: '32px', height: '32px', border: '3px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                                            <span style={{ fontWeight: 700, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)', letterSpacing: '0.1em' }}>A Carregar Detalhes...</span>
+                                        </div>
+                                    ) : detailData ? (
+                                        <div className="p-0">
+                                            <ApprovalDetailPanel
+                                                data={detailData}
+                                                approvalStage={selectedApprovalStage || 'AREA'}
+                                                isAreaApprover={isAreaApprover}
+                                                isFinalApprover={isFinalApprover}
+                                                onActionCompleted={handleActionCompleted}
+                                                onClose={handleCloseDetail}
+                                                onDataRefresh={refreshDetailData}
+                                                isDrawerContext={true}
+                                                onDrillDown={(item) => setSelectedDetailedItem(item)}
+                                                onNext={handleNext}
+                                                onPrev={handlePrev}
+                                                currentIndex={currentIndex}
+                                                totalCount={flatQueue.length}
+                                            />
+                                        </div>
+                                    ) : null}
+                                </div>
+
+                                {/* Secondary Sliding Panel (Drill-down) */}
+                                <AnimatePresence>
+                                    {selectedDetailedItem && (
+                                        <motion.div
+                                            initial={{ x: '100%' }}
+                                            animate={{ x: 0 }}
+                                            exit={{ x: '100%' }}
+                                            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                                            style={{
+                                                position: 'absolute',
+                                                top: 0,
+                                                right: 0,
+                                                bottom: 0,
+                                                width: '100%',
+                                                zIndex: 150,
+                                                backgroundColor: 'white',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                boxShadow: '-10px 0 30px rgba(0,0,0,0.15)',
+                                                borderLeft: '4px solid black'
+                                            }}
+                                        >
+                                            <DetailedHistoryPanel 
+                                                item={selectedDetailedItem}
+                                                requestId={selectedRequestId!}
+                                                onClose={() => setSelectedDetailedItem(null)}
+                                            />
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </div>
                         </motion.div>
                     </DropdownPortal>
@@ -807,7 +790,19 @@ function ApprovalQueueSection({ title, icon, requests, showCostCenter, selectedI
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                             {isSelected && <ChevronRight size={16} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />}
                                             <div>
-                                                <div>{req.requestNumber}</div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    {req.requestNumber}
+                                                    {req.requestTypeCode === 'QUOTATION' && !req.selectedQuotationId && (
+                                                        <Tooltip
+                                                            variant="dark"
+                                                            content={
+                                                                <span style={{ fontWeight: 700, fontSize: '0.75rem' }}>Requer atenção na análise</span>
+                                                            }
+                                                        >
+                                                            <AlertCircle size={14} strokeWidth={2.5} style={{ color: '#f43f5e', flexShrink: 0, cursor: 'default' }} />
+                                                        </Tooltip>
+                                                    )}
+                                                </div>
                                                 <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 600, marginTop: '2px' }}>{formatDate(req.createdAtUtc)}</div>
                                             </div>
                                         </div>

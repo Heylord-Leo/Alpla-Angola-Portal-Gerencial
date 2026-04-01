@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
     User, Building2, Factory,
     Calendar, Landmark, Download,
@@ -45,6 +44,12 @@ export interface ApprovalDetailPanelProps {
     onClose: () => void;
     onDataRefresh: () => Promise<void>;
     isDrawerContext?: boolean;
+    onDrillDown?: (item: any) => void;
+    // Navigation props
+    onNext?: () => void;
+    onPrev?: () => void;
+    currentIndex?: number;
+    totalCount?: number;
 }
 
 // --- Component ---
@@ -54,9 +59,13 @@ export function ApprovalDetailPanel({
     approvalStage,
     onActionCompleted,
     onClose,
-    onDataRefresh
+    onDataRefresh,
+    onDrillDown,
+    onNext,
+    onPrev,
+    currentIndex,
+    totalCount
 }: ApprovalDetailPanelProps) {
-    const navigate = useNavigate();
 
     // Approval modal state
     const [showApprovalModal, setShowApprovalModal] = useState<{
@@ -221,8 +230,8 @@ export function ApprovalDetailPanel({
             style={{ backgroundColor: 'var(--color-bg-page)', minHeight: '100%' }}
         >
             {/* 1. DECISION HEADER (Sticky) */}
-            <DecisionHeader
-                requestNumber={data.requestNumber || data.id.substring(0, 8)}
+            <DecisionHeader 
+                requestNumber={data.requestNumber || ''}
                 requestTypeCode={data.requestTypeCode || ''}
                 statusCode={data.statusCode || ''}
                 statusName={data.statusName || ''}
@@ -232,13 +241,17 @@ export function ApprovalDetailPanel({
                 approvalStage={approvalStage}
                 onAction={(type) => setShowApprovalModal({ show: true, type })}
                 onClose={onClose}
-                onOpenRequest={() => navigate(`/requests/${data.id}`)}
+                onOpenRequest={() => window.open(`/requests/${data.id}`, '_blank')}
                 isApproveBlocked={isApproveBlocked}
                 showAdjustmentAction={showAdjustmentAction}
+                onNext={onNext}
+                onPrev={onPrev}
+                currentIndex={currentIndex}
+                totalCount={totalCount}
             />
 
             {/* Content Container */}
-            <div style={{ padding: '24px' }}>
+            <div style={{ padding: '24px 32px' }}>
                 
                 {/* 2. RESUMO PARA DECISÃO (Always Open) */}
                 <DecisionSection 
@@ -252,20 +265,26 @@ export function ApprovalDetailPanel({
                 {/* 3. INTELIGÊNCIA PARA DECISÃO (Phase 3A - Always Open) */}
                 <DecisionSection 
                     title="Inteligência para Decisão" 
-                    icon={<TrendingUp size={16} className="text-primary" />}
+                    icon={<TrendingUp size={16} className="text-black" />}
                     isCollapsible={false}
                 >
                     {loadingIntelligence ? (
-                        <div style={{ padding: '32px', textAlign: 'center', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                            <div className="flex flex-col items-center justify-center gap-3">
-                                <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Processando histórico...</span>
+                        <div style={{ 
+                            padding: '40px 24px', 
+                            textAlign: 'center', 
+                            backgroundColor: 'white', 
+                            border: '1.5px solid black' 
+                        }}>
+                            <div className="flex flex-col items-center justify-center gap-4">
+                                <div className="w-10 h-10 rounded-none border-4 border-black border-t-transparent animate-spin" />
+                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-black">Analizando Histórico...</span>
                             </div>
                         </div>
                     ) : intelligence ? (
                         <DecisionInsightsPanel 
                             intelligence={intelligence} 
                             approvalStage={approvalStage}
+                            onDrillDown={onDrillDown}
                             requestData={{
                                 description: data.description,
                                 supplierName: data.supplierName,
@@ -275,10 +294,10 @@ export function ApprovalDetailPanel({
                             }}
                         />
                     ) : (
-                        <div className="p-6 text-center bg-slate-50 border border-slate-100">
-                             <div className="flex flex-col items-center gap-2">
-                                <Target className="w-8 h-8 text-slate-200" />
-                                <span className="text-xs text-slate-400 font-medium">Dados de inteligência não disponíveis</span>
+                        <div className="p-8 text-center bg-gray-50 border-2 border-dashed border-gray-300">
+                             <div className="flex flex-col items-center gap-3">
+                                <Target className="w-8 h-8 text-gray-300" />
+                                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Dados de inteligência não disponíveis</span>
                              </div>
                         </div>
                     )}
@@ -288,19 +307,20 @@ export function ApprovalDetailPanel({
                 {isQuotation && !hasWinnerSelected && (
                     <DecisionSection 
                         title="Alertas / Pendências" 
-                        icon={<AlertCircle size={16} />}
+                        icon={<AlertCircle size={16} className="text-red-600" />}
                         isCollapsible={false}
                     >
                          <div style={{
-                            display: 'flex', alignItems: 'center', gap: '10px',
+                            display: 'flex', alignItems: 'center', gap: '12px',
                             padding: '16px',
-                            backgroundColor: '#fef2f2', border: '1px solid #ef4444',
-                            borderRadius: '0', fontSize: '0.85rem', fontWeight: 800,
-                            color: '#b91c1c'
+                            backgroundColor: 'var(--color-status-red-bg)', 
+                            border: '2px solid var(--color-status-red)',
+                            fontSize: '0.8rem', fontWeight: 800,
+                            color: 'var(--color-status-red)'
                         }}>
-                            <AlertCircle size={18} style={{ flexShrink: 0 }} />
-                            <span>
-                                Aprovação bloqueada: Uma cotação vencedora deve ser selecionada abaixo para prosseguir.
+                            <AlertCircle size={20} style={{ flexShrink: 0 }} />
+                            <span className="uppercase tracking-tight">
+                                Aprovação bloqueada: Uma cotação vencedora deve ser selecionada para prosseguir.
                             </span>
                         </div>
                     </DecisionSection>
@@ -316,8 +336,8 @@ export function ApprovalDetailPanel({
                         <p style={{
                             margin: 0, fontSize: '0.9rem', fontWeight: 600,
                             color: 'var(--color-text-main)', lineHeight: '1.6',
-                            padding: '16px', backgroundColor: '#fff',
-                            border: '1px solid var(--color-border)', borderRadius: '0',
+                            padding: '20px', backgroundColor: 'white',
+                            border: '1.5px solid black',
                             whiteSpace: 'pre-wrap'
                         }}>
                             {data.description}
@@ -370,26 +390,26 @@ export function ApprovalDetailPanel({
                     ) : (
                         <div style={{ overflowX: 'auto' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                                <thead style={{ backgroundColor: '#f9fafb', borderBottom: '2px solid black' }}>
+                                <thead style={{ backgroundColor: 'var(--color-bg-page)', borderBottom: '2px solid black' }}>
                                     <tr>
-                                        <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.65rem' }}>#</th>
-                                        <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.65rem' }}>Descrição</th>
-                                        <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.65rem' }}>Qtd</th>
-                                        <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.65rem' }}>Total</th>
+                                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.65rem', letterSpacing: '0.05em' }}>#</th>
+                                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.65rem', letterSpacing: '0.05em' }}>Descrição</th>
+                                        <th style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.65rem', letterSpacing: '0.05em' }}>Qtd</th>
+                                        <th style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.65rem', letterSpacing: '0.05em' }}>Total</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {data.lineItems.map((item) => (
-                                        <tr key={item.id} style={{ borderBottom: '1px solid var(--color-border-light)', backgroundColor: 'white' }}>
-                                            <td style={{ padding: '12px 16px', fontWeight: 800, color: 'var(--color-text-muted)' }}>{item.lineNumber}</td>
-                                            <td style={{ padding: '12px 16px', fontWeight: 700 }}>
-                                                <div>{item.description}</div>
-                                                <div style={{ fontSize: '10px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                                        <tr key={item.id} style={{ borderBottom: '1.5px solid black', backgroundColor: 'white' }}>
+                                            <td style={{ padding: '14px 16px', fontWeight: 800, color: 'var(--color-text-muted)' }}>{item.lineNumber}</td>
+                                            <td style={{ padding: '14px 16px', fontWeight: 700 }}>
+                                                <div className="font-black text-gray-900">{item.description}</div>
+                                                <div style={{ fontSize: '10px', color: 'var(--color-text-muted)', marginTop: '4px', fontWeight: 800, textTransform: 'uppercase' }}>
                                                     {item.unit || 'UN'} x {formatCurrencyAO(item.unitPrice)}
                                                 </div>
                                             </td>
-                                            <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700 }}>{item.quantity}</td>
-                                            <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 900 }}>{formatCurrencyAO(item.totalAmount)}</td>
+                                            <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 700 }}>{item.quantity}</td>
+                                            <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 900 }}>{formatCurrencyAO(item.totalAmount)}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -406,19 +426,19 @@ export function ApprovalDetailPanel({
                     defaultOpen={false}
                 >
                     <div style={{
-                        display: 'flex', flexDirection: 'column', gap: '16px',
-                        padding: '20px', backgroundColor: '#f8fafc', border: '1px solid black'
+                        display: 'flex', flexDirection: 'column', gap: '20px',
+                        padding: '24px', backgroundColor: 'white', border: '2px solid black'
                     }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Custo Estimado Total</span>
-                            <span style={{ fontSize: '1.4rem', fontWeight: 900, letterSpacing: '-0.02em' }}>
-                                {formatCurrencyAO(data.estimatedTotalAmount)} <span style={{ fontSize: '0.8rem', opacity: 0.6 }}>{data.currencyCode}</span>
+                            <span style={{ fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)' }}>Custo Estimado Total</span>
+                            <span style={{ fontSize: '1.6rem', fontWeight: 900, letterSpacing: '-0.02em', color: 'black' }}>
+                                {formatCurrencyAO(data.estimatedTotalAmount)} <span style={{ fontSize: '0.9rem', opacity: 0.5 }}>{data.currencyCode}</span>
                             </span>
                         </div>
                         {data.supplierPortalCode && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
-                                <span style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Código do Fornecedor</span>
-                                <span style={{ fontSize: '0.9rem', fontWeight: 900, fontFamily: 'monospace' }}>{data.supplierPortalCode}</span>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid black', paddingTop: '16px' }}>
+                                <span style={{ fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)' }}>Código do Fornecedor</span>
+                                <span style={{ fontSize: '0.9rem', fontWeight: 900, fontFamily: 'monospace', backgroundColor: 'var(--color-bg-page)', padding: '2px 8px', border: '1px solid black' }}>{data.supplierPortalCode}</span>
                             </div>
                         )}
                     </div>
@@ -442,20 +462,21 @@ export function ApprovalDetailPanel({
                             {data.attachments.map((att) => (
                                 <div key={att.id} style={{
                                     display: 'flex', alignItems: 'center', justifySelf: 'space-between',
-                                    padding: '16px 20px', borderBottom: '1px solid var(--color-border-light)'
+                                    padding: '16px 20px', borderBottom: '1.5px solid black'
                                 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: 0 }}>
                                         <div style={{ 
-                                            width: '32px', height: '32px', backgroundColor: '#f1f5f9', 
+                                            width: '36px', height: '36px', backgroundColor: 'var(--color-bg-page)', 
+                                            border: '1.5px solid black',
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 
                                         }}>
-                                            <Paperclip size={16} style={{ color: 'var(--color-text-muted)' }} />
+                                            <Paperclip size={18} style={{ color: 'black' }} />
                                         </div>
                                         <div style={{ minWidth: 0 }}>
-                                            <div style={{ fontWeight: 800, fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            <div style={{ fontWeight: 900, fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'black' }}>
                                                 {att.fileName}
                                             </div>
-                                            <div style={{ fontSize: '10px', color: 'var(--color-text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                                            <div style={{ fontSize: '10px', color: 'var(--color-text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em' }}>
                                                 {ATTACHMENT_TYPE_LABELS[att.attachmentTypeCode] || att.attachmentTypeCode} • Por {att.uploadedByName}
                                             </div>
                                         </div>
@@ -463,12 +484,13 @@ export function ApprovalDetailPanel({
                                     <button
                                         onClick={() => handleDownloadAttachment(att.id, att.fileName)}
                                         style={{
-                                            background: 'none', border: '1.5px solid black',
-                                            cursor: 'pointer', padding: '6px', marginLeft: '12px', display: 'flex'
+                                            background: 'white', border: '2px solid black',
+                                            cursor: 'pointer', padding: '8px', marginLeft: '12px', display: 'flex',
+                                            boxShadow: '2px 2px 0px rgba(0,0,0,1)'
                                         }}
-                                        className="hover:bg-black hover:text-white"
+                                        className="hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none transition-all"
                                     >
-                                        <Download size={14} />
+                                        <Download size={16} />
                                     </button>
                                 </div>
                             ))}
@@ -483,7 +505,7 @@ export function ApprovalDetailPanel({
                     isCollapsible={true}
                     defaultOpen={false}
                 >
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         {[
                             { label: 'Solicitante', name: data.requesterName, role: 'Buyer/User' },
                             { label: 'Comprador Atribuído', name: data.buyerName, role: 'Procurement' },
@@ -491,18 +513,18 @@ export function ApprovalDetailPanel({
                             { label: 'Aprovador Final', name: data.finalApproverName, role: 'C-Level / Admin' }
                         ].map((p, idx) => (
                             <div key={idx} style={{ 
-                                display: 'flex', alignItems: 'center', gap: '12px',
-                                padding: '12px', backgroundColor: '#fff', border: '1.5px solid var(--color-border)'
+                                display: 'flex', alignItems: 'center', gap: '14px',
+                                padding: '14px', backgroundColor: 'white', border: '2px solid black'
                             }}>
                                 <div style={{ 
-                                    width: '32px', height: '32px', backgroundColor: 'black', color: 'white',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 900
+                                    width: '36px', height: '36px', backgroundColor: 'black', color: 'white',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 900
                                 }}>
                                     {p.name?.substring(0, 2).toUpperCase() || '??'}
                                 </div>
                                 <div>
-                                    <div style={{ fontSize: '0.85rem', fontWeight: 900 }}>{p.name || 'Pendente'}</div>
-                                    <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>{p.label}</div>
+                                    <div style={{ fontSize: '0.9rem', fontWeight: 950, color: 'black' }}>{p.name || 'Pendente'}</div>
+                                    <div style={{ fontSize: '10px', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{p.label}</div>
                                 </div>
                             </div>
                         ))}

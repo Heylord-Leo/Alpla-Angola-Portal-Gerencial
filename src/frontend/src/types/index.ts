@@ -312,3 +312,17 @@ export interface ApprovalIntelligenceDto {
     departmentContext: DepartmentIntelligenceDto;
     overallAlerts: DecisionAlertDto[];
 }
+
+export interface HistoricalPurchaseRecordDto {
+    requestId: string;
+    requestNumber: string;
+    purchaseDate: string;
+    supplierName: string;
+    unitPrice: number;
+    currency: string;
+    isLastPurchase: boolean;
+    isUsedInAverage: boolean;
+    matchType: string;
+    plantName?: string;
+    departmentName?: string;
+}

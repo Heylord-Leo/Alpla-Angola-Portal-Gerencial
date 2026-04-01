@@ -4,7 +4,9 @@ import {
     ExternalLink, 
     X, 
     ArrowRightLeft,
-    AlertTriangle
+    AlertTriangle,
+    ChevronLeft,
+    ChevronRight
 } from 'lucide-react';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
 import { formatCurrencyAO } from '../../../lib/utils';
@@ -24,6 +26,12 @@ interface DecisionHeaderProps {
     onOpenRequest: () => void;
     isApproveBlocked: boolean;
     showAdjustmentAction: boolean;
+
+    // Navigation props
+    onNext?: () => void;
+    onPrev?: () => void;
+    currentIndex?: number;
+    totalCount?: number;
 }
 
 export function DecisionHeader({
@@ -39,9 +47,15 @@ export function DecisionHeader({
     onClose,
     onOpenRequest,
     isApproveBlocked,
-    showAdjustmentAction
+    showAdjustmentAction,
+    onNext,
+    onPrev,
+    currentIndex,
+    totalCount
 }: DecisionHeaderProps) {
     const isArea = approvalStage === 'AREA';
+
+    const hasNavigation = onNext && onPrev && totalCount !== undefined && totalCount > 1 && currentIndex !== undefined;
 
     return (
         <div style={{
@@ -53,40 +67,115 @@ export function DecisionHeader({
         }}>
             {/* --- Top Metadata Strip --- */}
             <div style={{
-                backgroundColor: 'black',
-                color: 'white',
-                padding: '10px 24px',
+                backgroundColor: 'var(--color-bg-page)',
+                color: 'black',
+                padding: '12px 24px',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between'
+                justifyContent: 'space-between',
+                borderBottom: '1px solid var(--color-border)',
+                borderLeft: `8px solid ${isArea ? 'var(--color-primary)' : '#10b981'}`
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                      <span style={{ 
-                        fontSize: '10px', 
+                        fontSize: '11px', 
                         fontWeight: 900, 
-                        color: isArea ? 'var(--color-primary-light)' : '#10b981',
+                        color: isArea ? 'var(--color-primary)' : '#059669',
                         letterSpacing: '0.05em',
                         textTransform: 'uppercase',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '6px'
                      }}>
-                        {isArea ? <ShieldAlert size={12} /> : <ShieldCheck size={12} />}
+                        {isArea ? <ShieldAlert size={14} /> : <ShieldCheck size={14} />}
                         {isArea ? 'Fase de Aprovação da Área' : 'Fase de Aprovação Final'}
                      </span>
-                     <div style={{ width: '1px', height: '12px', backgroundColor: 'rgba(255,255,255,0.2)' }} />
-                     <span style={{ fontSize: '11px', fontWeight: 700, opacity: 0.8 }}>
+                     <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--color-border)' }} />
+                     <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--color-text-muted)' }}>
                         {requestTypeCode}
                      </span>
-                </div>
+                 </div>
                 
-                <button 
-                    onClick={onClose} 
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.6)', padding: '2px', display: 'flex' }}
-                    title="Fechar detalhe"
-                >
-                    <X size={20} />
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    {/* Navigation - improved visibility but clearly secondary */}
+                    {hasNavigation && (
+                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onPrev?.(); }}
+                                disabled={currentIndex === 0}
+                                style={{
+                                    width: '32px',
+                                    height: '32px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    border: '2px solid black',
+                                    backgroundColor: 'white',
+                                    color: 'black',
+                                    opacity: currentIndex === 0 ? 0.2 : 1,
+                                    cursor: currentIndex === 0 ? 'not-allowed' : 'pointer',
+                                    boxShadow: currentIndex === 0 ? 'none' : '2px 2px 0px rgba(0,0,0,1)',
+                                    transition: 'all 0.1s'
+                                }}
+                                title="Anterior (←)"
+                            >
+                                <ChevronLeft size={18} strokeWidth={2.5} />
+                            </button>
+                            
+                            <span style={{ 
+                                fontSize: '0.75rem', 
+                                fontWeight: 900, 
+                                color: 'black', 
+                                minWidth: '50px', 
+                                textAlign: 'center',
+                                letterSpacing: '-0.02em'
+                            }}>
+                                {currentIndex + 1} <span style={{ opacity: 0.4, fontWeight: 500 }}>de</span> {totalCount}
+                            </span>
+
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onNext?.(); }}
+                                disabled={currentIndex === (totalCount - 1)}
+                                style={{
+                                    width: '32px',
+                                    height: '32px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    border: '2px solid black',
+                                    backgroundColor: 'white',
+                                    color: 'black',
+                                    opacity: currentIndex === (totalCount - 1) ? 0.2 : 1,
+                                    cursor: currentIndex === (totalCount - 1) ? 'not-allowed' : 'pointer',
+                                    boxShadow: currentIndex === (totalCount - 1) ? 'none' : '2px 2px 0px rgba(0,0,0,1)',
+                                    transition: 'all 0.1s'
+                                }}
+                                title="Próximo (→)"
+                            >
+                                <ChevronRight size={18} strokeWidth={2.5} />
+                            </button>
+                        </div>
+                    )}
+
+                    <div style={{ width: '2px', height: '24px', backgroundColor: 'var(--color-border)', margin: '0 4px' }} />
+
+                    <button 
+                        onClick={onClose} 
+                        style={{ 
+                            background: 'white', 
+                            border: '2px solid black', 
+                            cursor: 'pointer', 
+                            color: 'black', 
+                            padding: '4px', 
+                            display: 'flex',
+                            boxShadow: '2px 2px 0px rgba(0,0,0,1)',
+                            transition: 'all 0.1s'
+                        }}
+                        title="Fechar detalhe"
+                    >
+                        <X size={20} strokeWidth={3} />
+                    </button>
+                </div>
             </div>
 
             {/* --- Main Identity & Status --- */}

@@ -30,17 +30,18 @@ export function DecisionSection({
 
     return (
         <div style={{
-            backgroundColor: 'white',
+            backgroundColor: 'var(--color-bg-surface)',
             border: '2px solid black',
-            marginBottom: '16px',
+            boxShadow: 'var(--shadow-brutal)',
+            marginBottom: '20px',
             overflow: 'hidden'
         }}>
             {/* --- Section Header --- */}
             <div 
                 onClick={toggle}
                 style={{
-                    padding: '12px 20px',
-                    backgroundColor: '#fff',
+                    padding: '14px 20px',
+                    backgroundColor: 'var(--color-bg-page)',
                     borderBottom: (isCollapsible && isOpen) || !isCollapsible ? '2px solid black' : 'none',
                     display: 'flex',
                     alignItems: 'center',
@@ -49,38 +50,38 @@ export function DecisionSection({
                     userSelect: 'none'
                 }}
             >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     {icon && <span style={{ color: 'var(--color-primary)', display: 'flex' }}>{icon}</span>}
                     <span style={{ 
                         fontWeight: 900, 
-                        fontSize: '0.75rem', 
+                        fontSize: '0.85rem', 
                         textTransform: 'uppercase', 
-                        letterSpacing: '0.03em',
+                        letterSpacing: '0.04em',
                         color: 'black'
                     }}>
                         {title}
-                        {typeof count === 'number' && (
-                            <span style={{ 
-                                marginLeft: '8px', 
-                                backgroundColor: 'black', 
-                                color: 'white', 
-                                padding: '1px 6px', 
-                                borderRadius: '2px',
-                                fontSize: '0.65rem'
-                            }}>
-                                {count}
-                            </span>
-                        )}
                     </span>
+                    {typeof count === 'number' && (
+                        <span style={{ 
+                            marginLeft: '4px', 
+                            backgroundColor: 'black', 
+                            color: 'white', 
+                            padding: '2px 8px', 
+                            fontSize: '0.7rem',
+                            fontWeight: 800
+                        }}>
+                            {count}
+                        </span>
+                    )}
                 </div>
                 
                 {isCollapsible && (
                     <motion.div
                         animate={{ rotate: isOpen ? 180 : 0 }}
                         transition={{ duration: 0.2 }}
-                        style={{ display: 'flex', color: 'var(--color-text-muted)' }}
+                        style={{ display: 'flex', color: 'black' }}
                     >
-                        <ChevronDown size={18} />
+                        <ChevronDown size={18} strokeWidth={2.5} />
                     </motion.div>
                 )}
             </div>

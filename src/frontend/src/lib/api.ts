@@ -1,4 +1,4 @@
-import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, DocumentExtractionSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto } from '../types';
+import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, DocumentExtractionSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto } from '../types';
 import { logger, FrontendComponentKey } from './logger';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
@@ -474,6 +474,11 @@ export const api = {
         getIntelligence: async (id: string): Promise<ApprovalIntelligenceDto> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/approvals/${id}/intelligence`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar inteligência de decisão.');
+            return response.json();
+        },
+        getItemHistory: async (id: string, lineItemId: string): Promise<HistoricalPurchaseRecordDto[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/approvals/${id}/items/${lineItemId}/history`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar histórico detalhado do item.');
             return response.json();
         }
     },

@@ -2,6 +2,7 @@ import { RequestListItemDto } from '../../../types';
 import { formatCurrencyAO, getUrgencyStyle } from '../../../lib/utils';
 import { ClipboardList, Clock, AlertCircle, Wallet } from 'lucide-react';
 import { KPICard } from '../../../components/common/dashboard/KPICard';
+import { Tooltip } from '../../../components/ui/Tooltip';
 
 interface QueueSummaryProps {
     areaApprovals: RequestListItemDto[];
@@ -28,7 +29,7 @@ export function QueueSummary({ areaApprovals, finalApprovals }: QueueSummaryProp
         req.requestTypeCode === 'QUOTATION' && !req.selectedQuotationId
     ).length;
 
-    const cards = [
+    const cards: Array<{ id: string; label: string; count: number; icon: typeof ClipboardList; color: string; displayValue?: string; tooltip?: string }> = [
         {
             id: 'total',
             label: 'Total Pendente',
@@ -57,6 +58,7 @@ export function QueueSummary({ areaApprovals, finalApprovals }: QueueSummaryProp
             count: alertCount,
             icon: AlertCircle,
             color: 'bg-rose-500',
+            tooltip: 'Pedidos com pontos de atenção na análise.',
         },
     ];
 
@@ -68,20 +70,40 @@ export function QueueSummary({ areaApprovals, finalApprovals }: QueueSummaryProp
             marginBottom: '24px',
             width: '100%',
         }}>
-            {cards.map((card, index) => (
-                <KPICard
-                    key={card.id}
-                    label={card.label}
-                    count={card.count}
-                    icon={card.icon}
-                    isActive={false}
-                    onClick={() => {}}
-                    color={card.color}
-                    delay={index * 0.08}
-                    displayValue={card.displayValue}
-                    nonInteractive={true}
-                />
-            ))}
+            {cards.map((card, index) => {
+                const kpiElement = (
+                    <KPICard
+                        key={card.id}
+                        label={card.label}
+                        count={card.count}
+                        icon={card.icon}
+                        isActive={false}
+                        onClick={() => {}}
+                        color={card.color}
+                        delay={index * 0.08}
+                        displayValue={card.displayValue}
+                        nonInteractive={true}
+                    />
+                );
+
+                if ('tooltip' in card && card.tooltip) {
+                    return (
+                        <Tooltip
+                            key={card.id}
+                            content={
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    <div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Definição</div>
+                                    <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-primary)' }}>{card.tooltip}</div>
+                                </div>
+                            }
+                        >
+                            {kpiElement}
+                        </Tooltip>
+                    );
+                }
+
+                return kpiElement;
+            })}
         </div>
     );
 }

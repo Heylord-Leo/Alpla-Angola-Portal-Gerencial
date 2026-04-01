@@ -45,3 +45,18 @@ public class DecisionAlertDto
     public string Message { get; set; } = string.Empty;
     public Guid? RelatedItemId { get; set; }
 }
+
+public class HistoricalPurchaseRecordDto
+{
+    public Guid RequestId { get; set; }
+    public string RequestNumber { get; set; } = string.Empty;
+    public DateTime PurchaseDate { get; set; }
+    public string SupplierName { get; set; } = string.Empty;
+    public decimal UnitPrice { get; set; }
+    public string Currency { get; set; } = string.Empty;
+    public bool IsLastPurchase { get; set; }
+    public bool IsUsedInAverage { get; set; }
+    public string MatchType { get; set; } = "EXACT"; // "EXACT" or "APPROX"
+    public string? PlantName { get; set; }
+    public string? DepartmentName { get; set; }
+}

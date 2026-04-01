@@ -204,4 +204,64 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
 
         return alerts;
     }
+
+    public async Task<List<HistoricalPurchaseRecordDto>> GetItemHistoryAsync(Guid requestId, Guid lineItemId)
+    {
+        var item = await _context.RequestLineItems
+            .Include(li => li.Request)
+                .ThenInclude(r => r.Currency)
+            .FirstOrDefaultAsync(li => li.Id == lineItemId);
+
+        if (item == null) return new List<HistoricalPurchaseRecordDto>();
+
+        var normalizedDescription = (item.Description ?? string.Empty).Trim().ToLower();
+        var currentCurrency = item.Request.Currency?.Code;
+
+        var validStatuses = new[] 
+        { 
+            RequestConstants.Statuses.FinalApproved,
+            RequestConstants.Statuses.PoIssued,
+            RequestConstants.Statuses.PaymentRequestSent,
+            RequestConstants.Statuses.PaymentScheduled,
+            RequestConstants.Statuses.Paid,
+            RequestConstants.Statuses.PaymentCompleted
+        };
+
+        var historicalItems = await _context.RequestLineItems
+            .Include(li => li.Request)
+                .ThenInclude(r => r.Status)
+            .Include(li => li.Request)
+                .ThenInclude(r => r.Currency)
+            .Include(li => li.Request)
+                .ThenInclude(r => r.Plant)
+            .Include(li => li.Request)
+                .ThenInclude(r => r.Department)
+            .Where(li => !li.IsDeleted && 
+                         li.Description.Trim().ToLower() == normalizedDescription &&
+                         validStatuses.Contains(li.Request.Status!.Code) &&
+                         li.Request.Currency!.Code == currentCurrency &&
+                         li.RequestId != requestId)
+            .OrderByDescending(li => li.Request.CreatedAtUtc)
+            .Take(15)
+            .ToListAsync();
+
+        if (!historicalItems.Any()) return new List<HistoricalPurchaseRecordDto>();
+
+        var lastPurchaseId = historicalItems.First().Id;
+
+        return historicalItems.Select(li => new HistoricalPurchaseRecordDto
+        {
+            RequestId = li.RequestId,
+            RequestNumber = li.Request.RequestNumber,
+            PurchaseDate = li.Request.CreatedAtUtc,
+            SupplierName = li.SupplierName ?? "N/D",
+            UnitPrice = li.UnitPrice,
+            Currency = li.Request.Currency!.Code,
+            IsLastPurchase = li.Id == lastPurchaseId,
+            IsUsedInAverage = true, // Currently all same-description items are used in avg
+            MatchType = "APPROX", // Since it's description based
+            PlantName = li.Request.Plant?.Name,
+            DepartmentName = li.Request.Department?.Name
+        }).ToList();
+    }
 }

@@ -1,6 +1,5 @@
 import { AlertCircle, AlertTriangle, Info, Package, TrendingUp, TrendingDown, Minus, CheckCircle2, AlertOctagon, Eye, BarChart3 } from 'lucide-react';
 import { ApprovalIntelligenceDto, ItemIntelligenceDto } from '../../../types';
-import { DecisionSection } from './DecisionSection';
 
 // --- Interfaces ---
 
@@ -16,11 +15,12 @@ interface DecisionInsightsPanelProps {
     intelligence: ApprovalIntelligenceDto;
     approvalStage: 'AREA' | 'FINAL';
     requestData?: RequestContextData;
+    onDrillDown?: (item: ItemIntelligenceDto) => void;
 }
 
 // --- Main Component ---
 
-export function DecisionInsightsPanel({ intelligence, approvalStage, requestData }: DecisionInsightsPanelProps) {
+export function DecisionInsightsPanel({ intelligence, approvalStage, requestData, onDrillDown }: DecisionInsightsPanelProps) {
     if (!intelligence) return null;
 
     const { overallAlerts: alerts, departmentContext: dept, items: itemInsights } = intelligence;
@@ -29,7 +29,7 @@ export function DecisionInsightsPanel({ intelligence, approvalStage, requestData
     // --- Shared Section Renderers ---
 
     const alertsBlock = alerts && alerts.length > 0 ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <SectionLabel>Destaques de Atenção</SectionLabel>
             {alerts.map((alert, idx) => {
                 const isCritical = alert.level === 'CRITICAL' || alert.level === 'ERROR' || alert.level === 'DANGER';
@@ -40,17 +40,17 @@ export function DecisionInsightsPanel({ intelligence, approvalStage, requestData
                     <div key={idx} style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '12px',
-                        padding: '10px 16px',
-                        backgroundColor: 'var(--color-bg-page)',
-                        border: `1px solid var(--color-border)`,
-                        borderLeft: `4px solid ${borderColor}`,
-                        borderRadius: '0px'
+                        gap: '14px',
+                        padding: '12px 16px',
+                        backgroundColor: 'white',
+                        border: '2px solid black',
+                        borderLeft: `6px solid ${borderColor}`,
+                        boxShadow: '2px 2px 0px rgba(0,0,0,1)'
                     }}>
                         <div style={{ color: borderColor, display: 'flex' }}>
-                            {isCritical ? <AlertCircle size={16} /> : isWarning ? <AlertTriangle size={16} /> : <Info size={16} />}
+                            {isCritical ? <AlertCircle size={18} /> : isWarning ? <AlertTriangle size={18} /> : <Info size={18} />}
                         </div>
-                        <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'black' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 900, color: 'black', textTransform: 'uppercase', letterSpacing: '-0.01em' }}>
                             {alert.message}
                         </span>
                     </div>
@@ -60,12 +60,12 @@ export function DecisionInsightsPanel({ intelligence, approvalStage, requestData
     ) : null;
 
     const departmentBlock = dept ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <SectionLabel>Visão Departamental</SectionLabel>
             <div style={{ 
                 display: 'grid', 
-                gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', 
-                gap: '12px' 
+                gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', 
+                gap: '16px' 
             }}>
                 <KpiCard 
                     label="Acumulado Mês" 
@@ -80,11 +80,16 @@ export function DecisionInsightsPanel({ intelligence, approvalStage, requestData
     ) : null;
 
     const itemsBlock = itemInsights && itemInsights.length > 0 ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <SectionLabel>Análise por Item</SectionLabel>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {itemInsights.map((item, idx) => (
-                    <ItemCard key={idx} item={item} />
+                    <ItemCard 
+                        key={idx} 
+                        item={item} 
+                        onDrillDown={onDrillDown}
+                        isArea={isArea}
+                    />
                 ))}
             </div>
         </div>
@@ -97,32 +102,26 @@ export function DecisionInsightsPanel({ intelligence, approvalStage, requestData
         : [departmentBlock, alertsBlock, itemsBlock];      // Final: dept → alerts → items
 
     return (
-        <DecisionSection 
-            title="Inteligência para Decisão" 
-            icon={<Info size={18} />}
-            isCollapsible={false}
-        >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                
-                {/* --- CONTEXT BANNER --- */}
-                <ContextBanner approvalStage={approvalStage} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+            
+            {/* --- CONTEXT BANNER --- */}
+            <ContextBanner approvalStage={approvalStage} />
 
-                {/* --- ROLE-SPECIFIC EMPHASIS BLOCK --- */}
-                {isArea ? (
-                    <AreaEmphasisBlock 
-                        intelligence={intelligence} 
-                        requestData={requestData} 
-                    />
-                ) : (
-                    <FinalEmphasisBlock intelligence={intelligence} />
-                )}
+            {/* --- ROLE-SPECIFIC EMPHASIS BLOCK --- */}
+            {isArea ? (
+                <AreaEmphasisBlock 
+                    intelligence={intelligence} 
+                    requestData={requestData} 
+                />
+            ) : (
+                <FinalEmphasisBlock intelligence={intelligence} />
+            )}
 
-                {/* --- SHARED SECTIONS (role-ordered) --- */}
-                {orderedSections.map((section, idx) => section ? (
-                    <div key={idx}>{section}</div>
-                ) : null)}
-            </div>
-        </DecisionSection>
+            {/* --- SHARED SECTIONS (role-ordered) --- */}
+            {orderedSections.map((section, idx) => section ? (
+                <div key={idx}>{section}</div>
+            ) : null)}
+        </div>
     );
 }
 
@@ -139,20 +138,22 @@ function ContextBanner({ approvalStage }: { approvalStage: 'AREA' | 'FINAL' }) {
         <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '10px',
-            padding: '8px 14px',
-            backgroundColor: isArea ? '#eff6ff' : '#f0fdf4',
-            borderLeft: `3px solid ${isArea ? '#3b82f6' : '#22c55e'}`,
+            gap: '12px',
+            padding: '12px 18px',
+            backgroundColor: isArea ? 'var(--color-bg-page)' : 'var(--color-success-muted)',
+            border: '2px solid black',
+            borderLeft: `8px solid ${isArea ? 'var(--color-primary)' : 'var(--color-success)'}`,
+            boxShadow: 'var(--shadow-brutal)'
         }}>
-            <div style={{ display: 'flex', color: isArea ? '#3b82f6' : '#22c55e' }}>
-                {isArea ? <Eye size={14} /> : <BarChart3 size={14} />}
+            <div style={{ display: 'flex', color: 'black' }}>
+                {isArea ? <Eye size={18} strokeWidth={2.5} /> : <BarChart3 size={18} strokeWidth={2.5} />}
             </div>
             <span style={{ 
-                fontSize: '0.6rem', 
-                fontWeight: 900, 
+                fontSize: '0.7rem', 
+                fontWeight: 950, 
                 textTransform: 'uppercase', 
-                letterSpacing: '0.08em',
-                color: isArea ? '#1e40af' : '#166534'
+                letterSpacing: '0.1em',
+                color: 'black'
             }}>
                 {isArea ? 'Foco: Legitimidade e Necessidade' : 'Foco: Racionalidade Financeira'}
             </span>
@@ -190,7 +191,6 @@ function AreaEmphasisBlock({ intelligence, requestData }: {
         },
     ];
 
-    // Quotation readiness only relevant for QUOTATION requests
     if (isQuotationType) {
         items.push({
             label: 'Cotação Formalizada',
@@ -200,42 +200,43 @@ function AreaEmphasisBlock({ intelligence, requestData }: {
     }
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <SectionLabel>Checklist de Legitimidade</SectionLabel>
             <div style={{
-                border: '1px solid var(--color-border)',
+                border: '2px solid black',
                 backgroundColor: 'white',
-                overflow: 'hidden'
+                overflow: 'hidden',
+                boxShadow: 'var(--shadow-brutal)'
             }}>
                 {items.map((item, idx) => (
                     <div key={idx} style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '10px',
-                        padding: '10px 16px',
-                        borderBottom: idx < items.length - 1 ? '1px solid var(--color-border)' : 'none',
+                        gap: '12px',
+                        padding: '12px 20px',
+                        borderBottom: idx < items.length - 1 ? '1.5px solid black' : 'none',
                     }}>
                         <div style={{ display: 'flex', flexShrink: 0 }}>
                             {item.ok ? (
-                                <CheckCircle2 size={15} style={{ color: '#22c55e' }} />
+                                <CheckCircle2 size={16} strokeWidth={3} className="text-green-600" />
                             ) : (
-                                <AlertOctagon size={15} style={{ color: '#f59e0b' }} />
+                                <AlertOctagon size={16} strokeWidth={3} className="text-orange-500" />
                             )}
                         </div>
                         <span style={{ 
-                            fontSize: '0.7rem', 
-                            fontWeight: 800, 
+                            fontSize: '0.75rem', 
+                            fontWeight: 900, 
                             textTransform: 'uppercase', 
-                            letterSpacing: '0.02em',
-                            color: 'var(--color-text-muted)',
-                            minWidth: '110px'
+                            letterSpacing: '0.04em',
+                            color: 'black',
+                            minWidth: '120px'
                         }}>
                             {item.label}
                         </span>
                         <span style={{ 
-                            fontSize: '0.8rem', 
+                            fontSize: '0.85rem', 
                             fontWeight: 700, 
-                            color: item.ok ? 'black' : '#b45309',
+                            color: item.ok ? 'black' : 'var(--color-status-orange)',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap'
@@ -256,7 +257,6 @@ function FinalEmphasisBlock({ intelligence }: { intelligence: ApprovalIntelligen
     const itemsWithHistory = intelligence.items?.filter(i => i.hasHistory) || [];
     const totalItems = intelligence.items?.length || 0;
 
-    // Consolidated weighted variation: weighted by currentUnitPrice
     let consolidatedVariation: number | null = null;
     let variationCoverage = 0;
 
@@ -273,20 +273,19 @@ function FinalEmphasisBlock({ intelligence }: { intelligence: ApprovalIntelligen
     const totalPurchaseCount = itemsWithHistory.reduce((sum, i) => sum + i.totalPurchaseCount, 0);
 
     function getVariationStyle(variation: number) {
-        if (variation > 5) return { color: '#DC2626', icon: <TrendingUp size={14} /> };
-        if (variation < -5) return { color: '#16A34A', icon: <TrendingDown size={14} /> };
-        return { color: '#6B7280', icon: <Minus size={14} /> };
+        if (variation > 5) return { color: 'var(--color-status-red)', icon: <TrendingUp size={16} /> };
+        if (variation < -5) return { color: 'var(--color-status-green)', icon: <TrendingDown size={16} /> };
+        return { color: 'var(--color-text-muted)', icon: <Minus size={16} /> };
     }
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <SectionLabel>Visão Financeira Comparativa</SectionLabel>
             <div style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-                gap: '12px'
+                gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                gap: '16px'
             }}>
-                {/* Year accumulated total */}
                 {dept && (
                     <KpiCard
                         label="Acumulado Anual — Depto."
@@ -294,29 +293,28 @@ function FinalEmphasisBlock({ intelligence }: { intelligence: ApprovalIntelligen
                     />
                 )}
 
-                {/* Total historical purchases */}
                 <KpiCard
                     label="Compras Históricas"
                     value={totalPurchaseCount > 0 ? `${totalPurchaseCount} registro${totalPurchaseCount > 1 ? 's' : ''}` : 'Sem histórico'}
                     muted={totalPurchaseCount === 0}
                 />
 
-                {/* Consolidated variation */}
                 {consolidatedVariation !== null && (
                     <div style={{ 
-                        padding: '16px', 
+                        padding: '20px', 
                         border: '2px solid black', 
-                        backgroundColor: 'white' 
+                        backgroundColor: 'white',
+                        boxShadow: 'var(--shadow-brutal)'
                     }}>
-                        <div style={{ fontSize: '0.6rem', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+                        <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 900, letterSpacing: '0.1em', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
                             Variação Consolidada
                         </div>
                         <div style={{ 
                             display: 'flex', 
                             alignItems: 'center', 
-                            gap: '6px',
-                            fontSize: '1.25rem', 
-                            fontWeight: 900, 
+                            gap: '8px',
+                            fontSize: '1.5rem', 
+                            fontWeight: 950, 
                             color: getVariationStyle(consolidatedVariation).color 
                         }}>
                             {getVariationStyle(consolidatedVariation).icon}
@@ -324,13 +322,14 @@ function FinalEmphasisBlock({ intelligence }: { intelligence: ApprovalIntelligen
                         </div>
                         {variationCoverage < 100 && (
                             <div style={{ 
-                                fontSize: '0.55rem', 
+                                fontSize: '0.65rem', 
                                 color: 'var(--color-text-muted)', 
-                                fontWeight: 600, 
-                                marginTop: '4px',
-                                fontStyle: 'italic'
+                                fontWeight: 800, 
+                                marginTop: '6px',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.02em'
                             }}>
-                                Base: {variationCoverage.toFixed(0)}% dos itens com histórico
+                                Base: {variationCoverage.toFixed(0)}% dos itens
                             </div>
                         )}
                     </div>
@@ -347,13 +346,17 @@ function FinalEmphasisBlock({ intelligence }: { intelligence: ApprovalIntelligen
 function SectionLabel({ children }: { children: React.ReactNode }) {
     return (
         <div style={{ 
-            fontSize: '0.65rem', 
-            fontWeight: 700, 
+            fontSize: '0.7rem', 
+            fontWeight: 950, 
             textTransform: 'uppercase', 
-            letterSpacing: '0.05em', 
-            color: 'var(--color-text-muted)',
-            marginBottom: '4px'
+            letterSpacing: '0.15em', 
+            color: 'black',
+            marginBottom: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
         }}>
+            <div style={{ width: '4px', height: '12px', backgroundColor: 'var(--color-primary)' }} />
             {children}
         </div>
     );
@@ -362,77 +365,81 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 function KpiCard({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
     return (
         <div style={{ 
-            padding: '16px', 
+            padding: '20px', 
             border: '2px solid black', 
-            backgroundColor: 'white' 
+            backgroundColor: 'white',
+            boxShadow: 'var(--shadow-brutal)'
         }}>
-            <div style={{ fontSize: '0.6rem', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+            <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 900, letterSpacing: '0.1em', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
                 {label}
             </div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 900, color: muted ? 'var(--color-text-muted)' : 'black' }}>
+            <div style={{ fontSize: '1.5rem', fontWeight: 950, color: muted ? 'var(--color-text-muted)' : 'black', fontVariantNumeric: 'tabular-nums' }}>
                 {value}
             </div>
         </div>
     );
 }
 
-function ItemCard({ item }: { item: ItemIntelligenceDto }) {
+function ItemCard({ item, onDrillDown, isArea }: { item: ItemIntelligenceDto; onDrillDown?: (item: ItemIntelligenceDto) => void, isArea: boolean }) {
     const hasHistory = item.hasHistory;
     
     function getVariationStyle(variation: number) {
-        if (variation > 5) return { color: '#DC2626', icon: <TrendingUp size={12} /> };
-        if (variation < -5) return { color: '#16A34A', icon: <TrendingDown size={12} /> };
-        return { color: '#6B7280', icon: <Minus size={12} /> };
+        if (variation > 5) return { color: 'var(--color-status-red)', icon: <TrendingUp size={14} /> };
+        if (variation < -5) return { color: 'var(--color-status-green)', icon: <TrendingDown size={14} /> };
+        return { color: 'var(--color-text-muted)', icon: <Minus size={14} /> };
     }
 
     const variationStyle = getVariationStyle(item.variationVsAvgPercentage || 0);
 
     return (
         <div style={{ 
-            border: '1px solid var(--color-border)', 
+            border: '2px solid black', 
             backgroundColor: 'white',
-            padding: '16px'
+            padding: '20px',
+            position: 'relative',
+            boxShadow: 'var(--shadow-brutal)'
         }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                <span style={{ fontSize: '0.75rem', fontWeight: 900, color: 'black', textTransform: 'uppercase', maxWidth: '70%', lineHeight: '1.2' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+                <span style={{ fontSize: '0.9rem', fontWeight: 950, color: 'black', textTransform: 'uppercase', maxWidth: '70%', lineHeight: '1.1', letterSpacing: '-0.02em' }}>
                     {item.description}
                 </span>
                 <span style={{ 
-                    fontSize: '0.55rem', 
-                    fontWeight: 900, 
-                    padding: '2px 6px', 
-                    backgroundColor: hasHistory ? 'var(--color-primary)' : 'var(--color-status-gray)',
-                    color: 'white',
+                    fontSize: '0.6rem', 
+                    fontWeight: 950, 
+                    padding: '3px 8px', 
+                    backgroundColor: hasHistory ? 'black' : 'var(--color-bg-page)',
+                    border: '1.5px solid black',
+                    color: hasHistory ? 'white' : 'black',
                     textTransform: 'uppercase',
-                    letterSpacing: '0.02em'
+                    letterSpacing: '0.05em'
                 }}>
                     {hasHistory ? `${item.totalPurchaseCount}x Comprado` : 'Novo Item'}
                 </span>
             </div>
 
             {hasHistory ? (
-                <div style={{ marginBottom: '12px' }}>
+                <div style={{ marginBottom: '4px' }}>
                     <div style={{ 
                         display: 'grid', 
                         gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', 
-                        gap: '12px', 
-                        marginBottom: '12px' 
+                        gap: '16px', 
+                        marginBottom: '16px' 
                     }}>
                         <div>
-                            <div style={{ fontSize: '0.55rem', textTransform: 'uppercase', fontWeight: 700, color: 'var(--color-text-muted)', letterSpacing: '0.03em' }}>Último Preço</div>
-                            <div style={{ fontSize: '0.85rem', fontWeight: 900, color: 'black' }}>
+                            <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 900, color: 'var(--color-text-muted)', letterSpacing: '0.05em' }}>Último Preço</div>
+                            <div style={{ fontSize: '1rem', fontWeight: 950, color: 'black', fontVariantNumeric: 'tabular-nums' }}>
                                 {item.lastPaidPrice?.toLocaleString('pt-AO', { style: 'currency', currency: item.currency || 'AOA' })}
                             </div>
                         </div>
                         <div>
-                            <div style={{ fontSize: '0.55rem', textTransform: 'uppercase', fontWeight: 700, color: 'var(--color-text-muted)', letterSpacing: '0.03em' }}>Variação vs Média</div>
+                            <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 900, color: 'var(--color-text-muted)', letterSpacing: '0.05em' }}>Variação vs Média</div>
                             <div style={{ 
-                                fontSize: '0.85rem', 
-                                fontWeight: 900, 
+                                fontSize: '1rem', 
+                                fontWeight: 950, 
                                 color: variationStyle.color,
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '4px'
+                                gap: '6px'
                             }}>
                                 {variationStyle.icon}
                                 {(item.variationVsAvgPercentage || 0).toFixed(1)}%
@@ -440,30 +447,61 @@ function ItemCard({ item }: { item: ItemIntelligenceDto }) {
                         </div>
                     </div>
 
-                    {item.lastSupplierName && (
-                        <div style={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            gap: '6px', 
-                            paddingTop: '8px', 
-                            borderTop: '1px dashed var(--color-border)' 
-                        }}>
-                            <Package size={12} style={{ color: 'var(--color-text-muted)' }} />
-                            <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
-                                <span style={{ opacity: 0.6, textTransform: 'uppercase', marginRight: '4px' }}>Forn. anterior:</span>
-                                <span style={{ color: 'black', fontWeight: 800 }}>{item.lastSupplierName}</span>
-                            </span>
-                        </div>
-                    )}
+                    <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'space-between',
+                        paddingTop: '12px', 
+                        borderTop: '2px solid var(--color-bg-page)' 
+                    }}>
+                        {item.lastSupplierName && (
+                            <div style={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '8px' 
+                            }}>
+                                <Package size={14} style={{ color: 'black' }} />
+                                <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 800 }}>
+                                    <span style={{ opacity: 0.6, textTransform: 'uppercase', marginRight: '6px' }}>Forn. anterior:</span>
+                                    <span style={{ color: 'black', fontWeight: 950 }}>{item.lastSupplierName}</span>
+                                </span>
+                            </div>
+                        )}
+
+                        {onDrillDown && (
+                            <button 
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDrillDown(item);
+                                }}
+                                style={{
+                                    fontSize: '0.65rem',
+                                    fontWeight: 950,
+                                    textTransform: 'uppercase',
+                                    color: 'white',
+                                    backgroundColor: 'black',
+                                    border: '2px solid black',
+                                    padding: '6px 12px',
+                                    cursor: 'pointer',
+                                    boxShadow: '3px 3px 0px rgba(0,0,0,0.2)',
+                                    letterSpacing: '0.05em'
+                                }}
+                                className="hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none transition-all"
+                            >
+                                {isArea ? 'Analisar Histórico' : 'Ver Detalhes'}
+                            </button>
+                        )}
+                    </div>
                 </div>
             ) : (
                 <div style={{ 
-                    padding: '12px', 
+                    padding: '14px', 
                     backgroundColor: 'var(--color-bg-page)', 
-                    border: '1px dashed var(--color-border)',
-                    textAlign: 'center'
+                    border: '2px dashed var(--color-border)',
+                    textAlign: 'center',
+                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.05)'
                 }}>
-                    <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                         Sem histórico nesta moeda
                     </span>
                 </div>

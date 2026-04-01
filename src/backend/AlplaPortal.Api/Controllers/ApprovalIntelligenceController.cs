@@ -34,4 +34,11 @@ public class ApprovalIntelligenceController : BaseController
         
         return Ok(intelligence);
     }
+
+    [HttpGet("{id}/items/{lineItemId}/history")]
+    public async Task<ActionResult<List<HistoricalPurchaseRecordDto>>> GetItemHistory(Guid id, Guid lineItemId)
+    {
+        var history = await _intelligenceService.GetItemHistoryAsync(id, lineItemId);
+        return Ok(history);
+    }
 }
