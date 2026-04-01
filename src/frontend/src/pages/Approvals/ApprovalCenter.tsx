@@ -6,14 +6,18 @@ import { ROLES } from '../../constants/roles';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { ApprovalDetailPanel } from './ApprovalDetailPanel';
-import { Loader2, CheckCircle, AlertCircle, Building2, User, Landmark, ShieldCheck, Inbox, X, ChevronRight } from 'lucide-react';
-import { formatDate } from '../../lib/utils';
+import { AlertCircle, Building2, User, Landmark, ShieldCheck, Inbox, X, ChevronRight, ChevronLeft, History, Clock, TrendingUp } from 'lucide-react';
+import { formatDate, formatCurrencyAO, getUrgencyStyle } from '../../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DropdownPortal } from '../../components/ui/DropdownPortal';
+import { QueueSummary } from './components/QueueSummary';
 
 // --- Types ---
 
 type ApprovalStage = 'AREA' | 'FINAL';
+type SortMode = 'default' | 'oldest' | 'value_desc' | 'value_asc';
+
+const HIGH_VALUE_THRESHOLD = 500000;
 
 // --- Component ---
 
@@ -35,6 +39,110 @@ export function ApprovalCenter() {
     // Detail state
     const [detailLoading, setDetailLoading] = useState(false);
     const [detailData, setDetailData] = useState<RequestDetailsDto | null>(null);
+
+    // --- Triage State (Phase 4) ---
+    const [sortMode, setSortMode] = useState<SortMode>('default');
+    const [activeFilters, setActiveFilters] = useState<string[]>([]);
+
+    const toggleFilter = (filter: string) => {
+        setActiveFilters(prev => 
+            prev.includes(filter) ? prev.filter(f => f !== filter) : [...prev, filter]
+        );
+    };
+
+    // --- Filtered & Sorted Data ---
+    const filteredAndSortedData = React.useMemo(() => {
+        if (!data) return { area: [], final: [], flat: [] };
+
+        const applyFilters = (requests: RequestListItemDto[]) => {
+            return requests.filter(req => {
+                if (activeFilters.includes('urgent')) {
+                    const urgency = getUrgencyStyle(req.needByDateUtc, req.statusCode);
+                    if (!urgency || urgency.priority < 2) return false;
+                }
+                if (activeFilters.includes('high_value')) {
+                    if ((req.estimatedTotalAmount || 0) < HIGH_VALUE_THRESHOLD) return false;
+                }
+                if (activeFilters.includes('has_alert')) {
+                    if (req.requestTypeCode === 'QUOTATION' && req.selectedQuotationId) return false;
+                    if (req.requestTypeCode !== 'QUOTATION') return false;
+                }
+                return true;
+            });
+        };
+
+        const applySort = (requests: RequestListItemDto[]) => {
+            const list = [...requests];
+            switch (sortMode) {
+                case 'oldest':
+                    return list.sort((a, b) => new Date(a.createdAtUtc).getTime() - new Date(b.createdAtUtc).getTime());
+                case 'value_desc':
+                    return list.sort((a, b) => (b.estimatedTotalAmount || 0) - (a.estimatedTotalAmount || 0));
+                case 'value_asc':
+                    return list.sort((a, b) => (a.estimatedTotalAmount || 0) - (b.estimatedTotalAmount || 0));
+                default:
+                    return list; // Backend default
+            }
+        };
+
+        const areaRaw = data.areaApprovals || [];
+        const finalRaw = data.finalApprovals || [];
+
+        const areaProcessed = activeFilters.includes('final_only') ? [] : applySort(applyFilters(areaRaw));
+        const finalProcessed = activeFilters.includes('area_only') ? [] : applySort(applyFilters(finalRaw));
+
+        return {
+            area: areaProcessed,
+            final: finalProcessed,
+            flat: [...areaProcessed, ...finalProcessed]
+        };
+    }, [data, sortMode, activeFilters]);
+
+    const { area: areaApprovals, final: finalApprovals, flat: flatQueue } = filteredAndSortedData;
+
+    // --- Navigation Logic ---
+    const currentIndex = flatQueue.findIndex(r => r.id === selectedRequestId);
+    
+    const handleNext = () => {
+        if (currentIndex < flatQueue.length - 1) {
+            const next = flatQueue[currentIndex + 1];
+            // Determine if next is in area or final (must check processed lists)
+            const isArea = areaApprovals.some(r => r.id === next.id);
+            setSelectedRequestId(next.id);
+            setSelectedApprovalStage(isArea ? 'AREA' : 'FINAL');
+        }
+    };
+
+    const handlePrev = () => {
+        if (currentIndex > 0) {
+            const prev = flatQueue[currentIndex - 1];
+            const isArea = areaApprovals.some(r => r.id === prev.id);
+            setSelectedRequestId(prev.id);
+            setSelectedApprovalStage(isArea ? 'AREA' : 'FINAL');
+        }
+    };
+
+    // Keyboard navigation
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (!isPanelOpen || detailLoading) return;
+            
+            // Safeguard: do not navigate if user is typing in an input/textarea
+            const activeTag = document.activeElement?.tagName.toLowerCase();
+            if (activeTag === 'input' || activeTag === 'textarea' || document.activeElement?.getAttribute('contenteditable') === 'true') {
+                return;
+            }
+
+            if (e.key === 'ArrowRight') {
+                handleNext();
+            } else if (e.key === 'ArrowLeft') {
+                handlePrev();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isPanelOpen, detailLoading, handleNext, handlePrev]);
 
     // --- Drawer Resizing ---
     const [drawerWidth, setDrawerWidth] = useState(() => {
@@ -165,40 +273,69 @@ export function ApprovalCenter() {
         // Refresh the queue
         try {
             const newData = await api.requests.getPendingApprovals();
-            setData(newData);
+            // We need to find the "next" item based on the active filters and sort
+            // Since state updates are async, we re-apply the logic to the new data
+            
+            const areaFiltered = activeFilters.includes('final_only') ? [] : (newData.areaApprovals || []).filter(req => {
+                if (activeFilters.includes('urgent')) {
+                    const urgency = getUrgencyStyle(req.needByDateUtc, req.statusCode);
+                    if (!urgency || urgency.priority < 2) return false;
+                }
+                if (activeFilters.includes('high_value')) {
+                    if ((req.estimatedTotalAmount || 0) < HIGH_VALUE_THRESHOLD) return false;
+                }
+                if (activeFilters.includes('has_alert')) {
+                    if (req.requestTypeCode === 'QUOTATION' && req.selectedQuotationId) return false;
+                    if (req.requestTypeCode !== 'QUOTATION') return false;
+                }
+                return true;
+            });
 
-            // Determine next selection
-            const areaIds = new Set((newData.areaApprovals || []).map(r => r.id));
-            const finalIds = new Set((newData.finalApprovals || []).map(r => r.id));
+            const finalFiltered = activeFilters.includes('area_only') ? [] : (newData.finalApprovals || []).filter(req => {
+                if (activeFilters.includes('urgent')) {
+                    const urgency = getUrgencyStyle(req.needByDateUtc, req.statusCode);
+                    if (!urgency || urgency.priority < 2) return false;
+                }
+                if (activeFilters.includes('high_value')) {
+                    if ((req.estimatedTotalAmount || 0) < HIGH_VALUE_THRESHOLD) return false;
+                }
+                if (activeFilters.includes('has_alert')) {
+                    if (req.requestTypeCode === 'QUOTATION' && req.selectedQuotationId) return false;
+                    if (req.requestTypeCode !== 'QUOTATION') return false;
+                }
+                return true;
+            });
 
-            // Check if the actioned request is still in any queue (status changed but still pending my action)
-            if (selectedRequestId && (areaIds.has(selectedRequestId) || finalIds.has(selectedRequestId))) {
-                const isNowArea = areaIds.has(selectedRequestId);
-                setSelectedApprovalStage(isNowArea ? 'AREA' : 'FINAL');
-                await loadDetailData(selectedRequestId);
-            } else {
-                // Request left the queue — find next item in the SAME queue first
-                const sameQueue = selectedApprovalStage === 'AREA'
-                    ? (newData.areaApprovals || [])
-                    : (newData.finalApprovals || []);
-                
-                const otherQueue = selectedApprovalStage === 'AREA'
-                    ? (newData.finalApprovals || [])
-                    : (newData.areaApprovals || []);
-                
-                const otherStage: ApprovalStage = selectedApprovalStage === 'AREA' ? 'FINAL' : 'AREA';
+            const sortList = (list: RequestListItemDto[]) => {
+                const res = [...list];
+                switch (sortMode) {
+                    case 'oldest': return res.sort((a, b) => new Date(a.createdAtUtc).getTime() - new Date(b.createdAtUtc).getTime());
+                    case 'value_desc': return res.sort((a, b) => (b.estimatedTotalAmount || 0) - (a.estimatedTotalAmount || 0));
+                    case 'value_asc': return res.sort((a, b) => (a.estimatedTotalAmount || 0) - (b.estimatedTotalAmount || 0));
+                    default: return res;
+                }
+            };
 
-                if (sameQueue.length > 0) {
-                    setSelectedRequestId(sameQueue[0].id);
-                    // Stage remains the same
-                } else if (otherQueue.length > 0) {
-                    setSelectedRequestId(otherQueue[0].id);
-                    setSelectedApprovalStage(otherStage);
-                } else {
-                    // Both queues empty — close panel
-                    handleCloseDetail();
+            const newSortedArea = sortList(areaFiltered);
+            const newSortedFinal = sortList(finalFiltered);
+            const newFlatQueue = [...newSortedArea, ...newSortedFinal];
+
+            setData(newData); // Update the main data state
+            
+            if (newFlatQueue.length > 0) {
+                // Try to pick the item that now occupies the same index
+                const nextItem = newFlatQueue[currentIndex] || newFlatQueue[newFlatQueue.length - 1];
+                if (nextItem) {
+                    const isNewArea = newSortedArea.some(r => r.id === nextItem.id);
+                    setSelectedRequestId(nextItem.id);
+                    setSelectedApprovalStage(isNewArea ? 'AREA' : 'FINAL');
+                    // Detail data will be updated by the useEffect watching selectedRequestId
+                    return;
                 }
             }
+            
+            // If we fall through, close detail
+            handleCloseDetail();
         } catch (err) {
             console.error('Failed to refresh queue after action:', err);
             handleCloseDetail();
@@ -234,8 +371,8 @@ export function ApprovalCenter() {
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            <div style={{ padding: '60px', textAlign: 'center', color: 'var(--color-primary)', fontWeight: 700, fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                A Carregar Fila de Aprovações...
             </div>
         );
     }
@@ -243,80 +380,145 @@ export function ApprovalCenter() {
     const totalPending = (data?.areaApprovals?.length || 0) + (data?.finalApprovals?.length || 0);
 
     return (
-        <div className="p-6 max-w-7xl mx-auto space-y-8">
-            {/* Page Feedback */}
-            <Feedback
-                type={feedback.type}
-                message={feedback.message}
-                onClose={() => setFeedback(prev => ({ ...prev, message: null }))}
-            />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', minWidth: 0 }}>
+            {/* Feedback */}
+            {feedback.message && (
+                <div style={{ position: 'sticky', top: 'calc(var(--header-height) - 1rem)', zIndex: 10, backgroundColor: 'var(--color-bg-surface)', padding: '2rem 0 0 0', margin: '-2rem 0 0 0', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <Feedback type={feedback.type} message={feedback.message} onClose={() => setFeedback(prev => ({ ...prev, message: null }))} />
+                </div>
+            )}
 
             {/* Page Header */}
-            <header className="flex flex-col gap-2 border-b-4 border-black pb-4 mb-6">
-                <div className="flex items-center gap-3">
-                    <CheckCircle className="w-8 h-8 text-blue-600" />
-                    <h1 className="text-4xl font-black uppercase tracking-tighter italic">Centro de Aprovações</h1>
-                    {totalPending > 0 && (
-                        <span style={{
-                            backgroundColor: 'var(--color-primary)',
-                            color: 'white',
-                            padding: '4px 12px',
-                            fontWeight: 900,
-                            fontSize: '0.85rem',
-                            borderRadius: '0',
-                            boxShadow: '3px 3px 0 black'
-                        }}>
-                            {totalPending} PENDENTE{totalPending > 1 ? 'S' : ''}
-                        </span>
-                    )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '4px solid var(--color-primary)', paddingBottom: '16px', width: '100%', minWidth: 0 }}>
+                <div>
+                    <h1 style={{ margin: 0, fontSize: '2.5rem', color: 'var(--color-primary)' }}>Centro de Aprovações</h1>
+                    <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Workspace centralizado para decisões e aprovações de Procurement.</p>
                 </div>
-                <p className="text-zinc-600 font-medium">Workspace centralizado para decisões e aprovações de Procurement.</p>
-            </header>
+                {totalPending > 0 && (
+                    <span style={{ backgroundColor: 'var(--color-primary)', color: 'white', padding: '6px 16px', fontWeight: 800, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        {totalPending} PENDENTE{totalPending > 1 ? 'S' : ''}
+                    </span>
+                )}
+            </div>
 
-            {/* DEV TOOLS (Only in Local Development) */}
-            {import.meta.env.DEV && (
-                <div style={{
-                    display: 'flex', gap: '12px', padding: '16px',
-                    backgroundColor: '#fffbeb', border: '2px solid #fcd34d',
-                    marginBottom: '32px', boxShadow: '4px 4px 0px 0px rgba(0,0,0,0.05)'
-                }}>
-                    <div style={{
-                        backgroundColor: '#f59e0b', color: 'white',
-                        padding: '2px 8px', fontWeight: 900, fontSize: '0.65rem',
-                        textTransform: 'uppercase', alignSelf: 'center'
-                    }}>
-                        Dev Tools
+            {/* Queue Summary — KPI Cards (Phase 4) */}
+            <QueueSummary areaApprovals={data?.areaApprovals || []} finalApprovals={data?.finalApprovals || []} />
+
+            {/* Triage Controls — Filter Hub */}
+            <div style={{
+                backgroundColor: 'var(--color-bg-surface)',
+                padding: '16px',
+                boxShadow: 'var(--shadow-brutal)',
+                border: '2px solid var(--color-primary)',
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '16px',
+                alignItems: 'center'
+            }}>
+                {/* Sort controls */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', letterSpacing: '0.05em' }}>Ordenar:</span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                        {[
+                            { id: 'default', label: 'Urgência', icon: <Clock size={12} /> },
+                            { id: 'oldest', label: 'Mais Antigo', icon: <History size={12} /> },
+                            { id: 'value_desc', label: 'Maior Valor', icon: <TrendingUp size={12} /> }
+                        ].map(btn => (
+                            <button
+                                key={btn.id}
+                                onClick={() => setSortMode(btn.id as SortMode)}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '4px 12px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 700,
+                                    textTransform: 'uppercase',
+                                    border: `2px solid ${sortMode === btn.id ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                                    backgroundColor: sortMode === btn.id ? 'var(--color-primary)' : 'var(--color-bg-page)',
+                                    color: sortMode === btn.id ? 'var(--color-bg-surface)' : 'var(--color-text-main)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.1s'
+                                }}
+                            >
+                                {btn.icon} {btn.label}
+                            </button>
+                        ))}
                     </div>
-                    <button 
-                        onClick={handleSeedData}
-                        style={{
-                            backgroundColor: 'black', color: 'white', border: 'none',
-                            padding: '6px 12px', fontWeight: 800, fontSize: '0.75rem',
-                            textTransform: 'uppercase', cursor: 'pointer'
-                        }}
-                    >
-                        Semear Dados Inteligência
-                    </button>
-                    <button 
-                        onClick={handleCleanupData}
-                        style={{
-                            backgroundColor: 'transparent', color: 'black', border: '2px solid black',
-                            padding: '4px 10px', fontWeight: 800, fontSize: '0.75rem',
-                            textTransform: 'uppercase', cursor: 'pointer'
-                        }}
-                    >
-                        Limpar Dados Teste
-                    </button>
+                </div>
+
+                <div style={{ width: '1px', height: '28px', backgroundColor: 'var(--color-border)' }} />
+
+                {/* Filter chips */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', letterSpacing: '0.05em' }}>Filtrar:</span>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {[
+                            { id: 'urgent', label: 'Urgentes' },
+                            { id: 'high_value', label: 'Alto Valor' },
+                            { id: 'has_alert', label: 'Com Alerta' },
+                            { id: 'area_only', label: 'Apenas Área' },
+                            { id: 'final_only', label: 'Apenas Final' }
+                        ].map(filter => {
+                            const active = activeFilters.includes(filter.id);
+                            return (
+                                <button
+                                    key={filter.id}
+                                    onClick={() => toggleFilter(filter.id)}
+                                    style={{
+                                        padding: '4px 12px',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 700,
+                                        textTransform: 'uppercase',
+                                        border: `2px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                                        backgroundColor: active ? 'var(--color-primary)' : 'var(--color-bg-page)',
+                                        color: active ? 'var(--color-bg-surface)' : 'var(--color-text-main)',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.1s'
+                                    }}
+                                >
+                                    {filter.label}
+                                </button>
+                            );
+                        })}
+                        {activeFilters.length > 0 && (
+                            <button
+                                onClick={() => setActiveFilters([])}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: 'var(--color-text-muted)',
+                                    cursor: 'pointer',
+                                    fontWeight: 700,
+                                    textTransform: 'uppercase',
+                                    fontSize: '0.75rem',
+                                    whiteSpace: 'nowrap'
+                                }}
+                            >
+                                Limpar Filtros
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* DEV TOOLS — visually subordinate in dev only */}
+            {import.meta.env.DEV && (
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center', padding: '8px 12px', border: '1px dashed var(--color-border)', backgroundColor: 'var(--color-bg-page)' }}>
+                    <span style={{ fontSize: '0.6rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', letterSpacing: '0.05em', opacity: 0.6 }}>Dev</span>
+                    <button onClick={handleSeedData} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', fontWeight: 700, fontSize: '0.7rem', textTransform: 'uppercase', textDecoration: 'underline' }}>Semear Inteligência</button>
+                    <button onClick={handleCleanupData} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', fontWeight: 700, fontSize: '0.7rem', textTransform: 'uppercase', textDecoration: 'underline' }}>Limpar Dados</button>
                 </div>
             )}
 
             {/* QUEUE SECTIONS (Master) */}
-            <div className="space-y-12">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
                 {isAreaApprover && (
                     <ApprovalQueueSection
                         title="Aguardando minha aprovação de área"
-                        icon={<Building2 className="w-6 h-6" />}
-                        requests={data?.areaApprovals ?? []}
+                        icon={<Building2 size={20} />}
+                        requests={areaApprovals}
                         showCostCenter={true}
                         selectedId={selectedRequestId}
                         onRowSelect={(id) => handleRowSelect(id, 'AREA')}
@@ -326,8 +528,8 @@ export function ApprovalCenter() {
                 {isFinalApprover && (
                     <ApprovalQueueSection
                         title="Aguardando minha aprovação final"
-                        icon={<ShieldCheck className="w-6 h-6" />}
-                        requests={data?.finalApprovals ?? []}
+                        icon={<ShieldCheck size={20} />}
+                        requests={finalApprovals}
                         selectedId={selectedRequestId}
                         onRowSelect={(id) => handleRowSelect(id, 'FINAL')}
                     />
@@ -336,29 +538,19 @@ export function ApprovalCenter() {
 
             {/* No permissions message */}
             {!isAreaApprover && !isFinalApprover && (
-                <div className="p-12 text-center border-4 border-dashed border-zinc-200 rounded-lg">
-                    <AlertCircle className="w-12 h-12 text-zinc-300 mx-auto mb-4" />
-                    <h3 className="text-xl font-bold text-zinc-500">Sem Permissões de Aprovação</h3>
-                    <p className="text-zinc-400">Você não possui permissões para acessar as filas de aprovação.</p>
+                <div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--color-text-muted)', border: '4px dashed var(--color-border)', backgroundColor: 'var(--color-bg-surface)' }}>
+                    <AlertCircle size={64} strokeWidth={1.5} style={{ opacity: 0.2, margin: '0 auto 24px', color: 'var(--color-primary)' }} />
+                    <p style={{ fontWeight: 700, fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-main)' }}>Sem Permissões de Aprovação</p>
+                    <p style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>Você não possui perfil de aprovador no sistema.</p>
                 </div>
             )}
 
             {/* All-clear state */}
             {!selectedRequestId && totalPending === 0 && (isAreaApprover || isFinalApprover) && (
-                <div style={{
-                    padding: '48px',
-                    textAlign: 'center',
-                    border: '4px solid black',
-                    backgroundColor: '#f0fdf4',
-                    boxShadow: '8px 8px 0px 0px rgba(0,0,0,1)'
-                }}>
-                    <Inbox style={{ width: '48px', height: '48px', color: '#22c55e', margin: '0 auto 16px' }} />
-                    <h3 style={{ fontWeight: 900, fontSize: '1.2rem', textTransform: 'uppercase', color: 'var(--color-text-main)', marginBottom: '8px' }}>
-                        Tudo em dia!
-                    </h3>
-                    <p style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>
-                        Não há pedidos pendentes de aprovação no momento.
-                    </p>
+                <div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--color-text-muted)', border: '4px dashed var(--color-border)', backgroundColor: 'var(--color-bg-surface)' }}>
+                    <Inbox size={64} strokeWidth={1.5} style={{ opacity: 0.2, margin: '0 auto 24px', color: 'var(--color-primary)' }} />
+                    <p style={{ fontWeight: 700, fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-main)' }}>Tudo em dia!</p>
+                    <p style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>Não há pedidos pendentes de aprovação no momento.</p>
                 </div>
             )}
 
@@ -454,9 +646,50 @@ export function ApprovalCenter() {
                                     <div className="flex items-center gap-2 text-[10px] font-black uppercase text-zinc-400 mb-1 tracking-widest">
                                         PEDIDO REVISÃO <ChevronRight size={10} /> {selectedApprovalStage === 'AREA' ? 'APROVAÇÃO ÁREA' : 'APROVAÇÃO FINAL'}
                                     </div>
-                                    <h2 style={{ fontSize: '1.5rem', fontWeight: 900, textTransform: 'uppercase', margin: 0, color: 'var(--color-primary)', fontStyle: 'italic' }}>
-                                        {detailData?.requestNumber || '...'}
-                                    </h2>
+                                    <div className="flex items-center gap-4">
+                                        <h2 style={{ fontSize: '1.5rem', fontWeight: 900, textTransform: 'uppercase', margin: 0, color: 'var(--color-primary)', fontStyle: 'italic' }}>
+                                            {detailData?.requestNumber || '...'}
+                                        </h2>
+
+                                        {/* Drawer Navigation Controls */}
+                                        {flatQueue.length > 1 && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '16px', paddingLeft: '16px', borderLeft: '1px solid var(--color-border)' }}>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handlePrev(); }}
+                                                    disabled={currentIndex === 0 || detailLoading}
+                                                    style={{
+                                                        padding: '4px 8px',
+                                                        border: '1.5px solid black',
+                                                        backgroundColor: 'white',
+                                                        opacity: currentIndex === 0 ? 0.3 : 1,
+                                                        cursor: currentIndex === 0 ? 'not-allowed' : 'pointer'
+                                                    }}
+                                                    title="Anterior (←)"
+                                                >
+                                                    <ChevronLeft size={16} />
+                                                </button>
+                                                
+                                                <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', minWidth: '40px', textAlign: 'center' }}>
+                                                    {currentIndex + 1} de {flatQueue.length}
+                                                </span>
+
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleNext(); }}
+                                                    disabled={currentIndex === flatQueue.length - 1 || detailLoading}
+                                                    style={{
+                                                        padding: '4px 8px',
+                                                        border: '1.5px solid black',
+                                                        backgroundColor: 'white',
+                                                        opacity: currentIndex === flatQueue.length - 1 ? 0.3 : 1,
+                                                        cursor: currentIndex === flatQueue.length - 1 ? 'not-allowed' : 'pointer'
+                                                    }}
+                                                    title="Próximo (→)"
+                                                >
+                                                    <ChevronRight size={16} />
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                                 <button 
                                     onClick={handleCloseDetail} 
@@ -469,9 +702,9 @@ export function ApprovalCenter() {
                             {/* Drawer Content */}
                             <div style={{ flex: 1, overflowY: 'auto' }}>
                                 {detailLoading ? (
-                                    <div className="flex flex-col items-center justify-center p-24 gap-4">
-                                        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-                                        <span className="font-black text-xs uppercase text-zinc-400">Carregando detalhes...</span>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 24px', gap: '12px' }}>
+                                        <div style={{ width: '32px', height: '32px', border: '3px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                                        <span style={{ fontWeight: 700, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)', letterSpacing: '0.1em' }}>A Carregar Detalhes...</span>
                                     </div>
                                 ) : detailData ? (
                                     <div className="p-0">
@@ -512,102 +745,106 @@ interface ApprovalQueueSectionProps {
 function ApprovalQueueSection({ title, icon, requests, showCostCenter, selectedId, onRowSelect }: ApprovalQueueSectionProps) {
     if (requests.length === 0) {
         return (
-            <section className="space-y-4">
-                <div className="flex items-center gap-3 border-l-8 border-zinc-300 pl-4">
-                    <span className="p-2 bg-zinc-100 rounded text-zinc-500">{icon}</span>
-                    <h2 className="text-2xl font-black uppercase italic tracking-tight text-zinc-400">{title}</h2>
+            <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderLeft: '4px solid var(--color-border)', paddingLeft: '16px' }}>
+                    <span style={{ color: 'var(--color-text-muted)' }}>{icon}</span>
+                    <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', letterSpacing: '-0.02em' }}>{title}</h2>
                 </div>
-                <div className="p-8 text-center border-4 border-black bg-zinc-50 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
-                    <p className="text-zinc-500 font-bold uppercase tracking-widest text-sm">Nenhum pedido pendente nesta fila.</p>
+                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--color-text-muted)', border: '2px dashed var(--color-border)', backgroundColor: 'var(--color-bg-surface)' }}>
+                    <p style={{ fontWeight: 700, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Nenhum pedido pendente nesta fila.</p>
                 </div>
             </section>
         );
     }
 
     return (
-        <section className="space-y-4">
-            <div className="flex items-center gap-3 border-l-8 border-blue-600 pl-4">
-                <span className="p-2 bg-blue-50 rounded text-blue-600">{icon}</span>
-                <h2 className="text-2xl font-black uppercase italic tracking-tight">{title}</h2>
-                <span className="bg-black text-white px-3 py-0.5 font-bold text-sm rounded-full ml-auto">
+        <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Section title aligned with Pedidos pattern */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderLeft: '4px solid var(--color-primary)', paddingLeft: '16px' }}>
+                <span style={{ color: 'var(--color-primary)' }}>{icon}</span>
+                <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-main)', letterSpacing: '-0.02em' }}>{title}</h2>
+                <span style={{
+                    marginLeft: 'auto',
+                    backgroundColor: 'var(--color-primary)',
+                    color: 'white',
+                    padding: '2px 10px',
+                    fontWeight: 800,
+                    fontSize: '0.75rem'
+                }}>
                     {requests.length}
                 </span>
             </div>
 
-            <div className="overflow-hidden border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] bg-white">
-                <table className="w-full text-left border-collapse">
-                    <thead className="bg-black text-white uppercase text-xs font-black tracking-widest border-b-4 border-black">
+            {/* Table — matches Pedidos border/shadow pattern */}
+            <div style={{ overflowX: 'auto', width: '100%', border: '2px solid var(--color-primary)', boxShadow: 'var(--shadow-brutal)' }}>
+                <table style={{ border: 'none', boxShadow: 'none', minWidth: '900px' }}>
+                    <thead>
                         <tr>
-                            <th className="p-4 border-r-2 border-zinc-800">Pedido</th>
-                            <th className="p-4 border-r-2 border-zinc-800">Solicitante / Depto</th>
-                            {showCostCenter && <th className="p-4 border-r-2 border-zinc-800">Centro de Custo</th>}
-                            <th className="p-4 border-r-2 border-zinc-800 text-center">Tipo</th>
-                            <th className="p-4 border-r-2 border-zinc-800 text-right">Valor</th>
-                            <th className="p-4">Status</th>
+                            <th>Pedido</th>
+                            <th>Solicitante / Depto</th>
+                            {showCostCenter && <th>Centro de Custo</th>}
+                            <th style={{ textAlign: 'center' }}>Tipo</th>
+                            <th style={{ textAlign: 'right' }}>Valor</th>
+                            <th>Status</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y-4 divide-black">
+                    <tbody>
                         {requests.map((req) => {
                             const isSelected = selectedId === req.id;
 
                             return (
                                 <tr
                                     key={req.id}
+                                    className="hoverable-row"
                                     onClick={() => onRowSelect(req.id)}
-                                    className={`group cursor-pointer transition-all ${
-                                        isSelected
-                                            ? 'bg-blue-50'
-                                            : 'hover:bg-yellow-50'
-                                    }`}
-                                    style={isSelected ? {
-                                        borderLeft: '12px solid var(--color-primary)',
-                                        backgroundColor: '#eff6ff'
-                                    } : {}}
+                                    style={{
+                                        cursor: 'pointer',
+                                        borderLeft: isSelected ? '6px solid var(--color-primary)' : 'none',
+                                        backgroundColor: isSelected ? 'rgba(var(--color-primary-rgb), 0.03)' : undefined
+                                    }}
                                 >
-                                    <td className="p-4 border-r-2 border-black font-black italic text-lg leading-tight w-40 relative">
-                                        {req.requestNumber}
-                                        <div className="text-[10px] text-zinc-400 mt-1 not-italic font-medium">
-                                            {formatDate(req.createdAtUtc)}
-                                        </div>
-                                        {isSelected && (
-                                            <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                                                <ChevronRight className="text-blue-600 w-6 h-6" />
+                                    <td style={{ fontWeight: 800, color: 'var(--color-primary)' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            {isSelected && <ChevronRight size={16} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />}
+                                            <div>
+                                                <div>{req.requestNumber}</div>
+                                                <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 600, marginTop: '2px' }}>{formatDate(req.createdAtUtc)}</div>
                                             </div>
-                                        )}
-                                    </td>
-                                    <td className="p-4 border-r-2 border-black">
-                                        <div className="font-bold flex items-center gap-1.5 leading-tight">
-                                            <User className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
-                                            {req.requesterName}
                                         </div>
-                                        <div className="text-xs text-zinc-500 font-medium uppercase mt-1">
-                                            {req.departmentName || '---'}
+                                    </td>
+                                    <td>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                            <span style={{ fontWeight: 700, color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <User size={13} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />
+                                                {req.requesterName}
+                                            </span>
+                                            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>{req.departmentName || '---'}</span>
                                         </div>
                                     </td>
                                     {showCostCenter && (
-                                        <td className="p-4 border-r-2 border-black">
+                                        <td>
                                             {req.costCenterCode ? (
-                                                <div className="flex items-center gap-1.5 bg-zinc-100 px-2 py-1 border-2 border-black w-fit">
-                                                    <Landmark className="w-3.5 h-3.5 text-blue-600" />
-                                                    <span className="font-black text-xs">{req.costCenterCode}</span>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <Landmark size={13} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
+                                                    <span style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--color-text-main)' }}>{req.costCenterCode}</span>
                                                 </div>
                                             ) : (
-                                                <span className="text-zinc-300 italic text-xs">---</span>
+                                                <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem', fontStyle: 'italic' }}>---</span>
                                             )}
                                         </td>
                                     )}
-                                    <td className="p-4 border-r-2 border-black text-center">
-                                        <div className="font-black text-[10px] border-2 border-black bg-zinc-50 inline-block px-2 py-0.5 uppercase">
+                                    <td style={{ textAlign: 'center' }}>
+                                        <span style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', padding: '2px 8px', display: 'inline-block' }}>
                                             {req.requestTypeCode}
+                                        </span>
+                                    </td>
+                                    <td style={{ textAlign: 'right', fontWeight: 800 }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                                            <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>{req.currencyCode || 'AOA'}</span>
+                                            <span>{formatCurrencyAO(req.estimatedTotalAmount)}</span>
                                         </div>
                                     </td>
-                                    <td className="p-4 border-r-2 border-black text-right whitespace-nowrap">
-                                        <div className="text-xs font-black text-zinc-500 mb-0.5">{req.currencyCode || 'AKZ'}</div>
-                                        <div className="text-xl font-black leading-none">
-                                            {req.estimatedTotalAmount.toLocaleString('pt-PT', { minimumFractionDigits: 2 })}
-                                        </div>
-                                    </td>
-                                    <td className="p-4">
+                                    <td>
                                         <StatusBadge code={req.statusCode} name={req.statusName} color={req.statusBadgeColor} />
                                     </td>
                                 </tr>
