@@ -19,7 +19,8 @@ For workspaces and complex forms, the project uses a standardized `CollapsibleSe
 1. **Visual Pattern**: Sections feature a thick border (`border-2`), a brutalist shadow (`var(--shadow-brutal)`), and a high-contrast header toggle.
 2. **Controlled Animation**: Uses `motion/react` for smooth height transitions and `AnimatePresence` for clean dom mounting/unmounting.
 3. **Search Behavior**: When integrated with search, sections should automatically expand if they contain filtered results, and restore to their default state when search is cleared.
-4. **Default State**: Most workspaces should default to only the first or most relevant (e.g., "Pending") section being open.
+4. **Default State**: Most workspaces should default to only the first or most relevant (e.g., "Pending") section being open. In the Request Edit form, the "ITENS DO PEDIDO" section defaults to **collapsed** on initial load to reduce vertical noise.
+5. **Guided Attention**: For critical workflow stages (e.g., `WAITING_AREA_APPROVAL`), specific sections may be automatically expanded, scrolled into view (with sticky-header offset), and briefly highlighted with a red pulse effect to guide the user's attention. This logic must only run once per record load.
 
 ## Modernization Stack (v2.0.0)
 

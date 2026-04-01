@@ -1077,3 +1077,21 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
     4.  Updated frontend components (`RequestEdit.tsx` and `RequestLineItemForm.tsx`) to make the visual mandatory indicators (red asterisks) and input `required` attributes conditional on the request type code.
 - **Alternatives considered:** Keeping the backend fields mandatory while only relaxing the frontend. Rejected because it would cause 400 Bad Request errors when saving valid partial drafts.
 - **Consequences:** More flexible "Draft-to-Submission" workflow for Payments, allowing for incomplete supplier or plant data when capturing from documents (OCR).
+
+---
+
+## DEC-101 — Guided UX Attention Patterns
+
+- **Date:** 2026-04-01
+- **Status:** Accepted
+- **Context:** Complex forms like `RequestEdit` have multiple collapsible sections. In specific workflow stages (e.g., Area Approval), users need to be quickly guided to newly available or critical information (like Saved Quotations) without manual exploration.
+- **Decision:** Implement a standardized "Guided Attention" pattern for critical workflow transitions:
+    1. **Auto-Expand**: Automatically expand relevant `CollapsibleSection` components.
+    2. **Auto-Scroll**: Smoothly scroll the targeted section into the viewport with a fixed offset (e.g., `-220px`) to account for sticky headers and action bars.
+    3. **Visual Highlight**: Apply a temporary "pulse" or high-contrast border/shadow effect (e.g., Red glow) for 3-5 seconds.
+    4. **One-Time Execution**: Ensure the effect triggers only once per initial load of a specific record (using Ref-based flags) to avoid annoying re-triggers on local state updates.
+- **Alternatives considered:** Permanent banners or blocking pop-ups. Rejected as too invasive and disruptive to the industrial UI feel.
+- **Consequences:** Significantly improves task completion speed for approvers and buyers. Establishes a predictable pattern for guiding users through complex state-dependent forms.
+
+---
+

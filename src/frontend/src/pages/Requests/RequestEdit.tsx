@@ -55,13 +55,15 @@ export function RequestEdit() {
     const [sectionsOpen, setSectionsOpen] = useState({
         participants: false,
         finance: false,
-        items: true,
+        items: false,
         quotations: false,
         attachments: false,
         history: false
     });
 
     const quotationsSectionRef = useRef<HTMLDivElement>(null);
+    const hasGuidedAttentionRun = useRef<string | null>(null);
+    const [isQuotationsHighlighted, setIsQuotationsHighlighted] = useState(false);
 
     const toggleSection = (section: keyof typeof sectionsOpen) => {
         setSectionsOpen(prev => ({ ...prev, [section]: !prev[section] }));
@@ -386,8 +388,7 @@ export function RequestEdit() {
                 areaApproverId: data.areaApproverId || '',
                 finalApproverId: data.finalApproverId || ''
             };
-            setFormData(form);
-            setInitialFormData(form);
+
             setSupplierName(data.supplierName || '');
             setSupplierPortalCode(data.supplierPortalCode || '');
 
@@ -416,9 +417,13 @@ export function RequestEdit() {
             if (form.departmentId && !form.areaApproverId) {
                 const dept = dData.find(d => d.id === Number(form.departmentId));
                 if (dept && dept.responsibleUserId) {
-                    setFormData(prev => ({ ...prev, areaApproverId: dept.responsibleUserId }));
+                    form.areaApproverId = dept.responsibleUserId;
                 }
             }
+
+            // Set final form state and reference for dirty checking
+            setFormData(form);
+            setInitialFormData(form);
 
         } catch (err: any) {
             setFeedback({ type: 'error', message: err.message || 'Falha ao carregar pedido.' });
@@ -441,6 +446,40 @@ export function RequestEdit() {
             }
         }
     }, [loading, searchParams]);
+
+    // Handle Guided Attention for WAITING_AREA_APPROVAL - Phase 2 UX
+    useEffect(() => {
+        let highlightTimeout: any;
+        let scrollTimeout: any;
+
+        if (!loading && status === 'WAITING_AREA_APPROVAL' && id && hasGuidedAttentionRun.current !== id) {
+            // Mark as run for this specific request ID to avoid re-triggering on local state changes
+            hasGuidedAttentionRun.current = id;
+
+            // 1. Auto-expand section
+            setSectionsOpen(prev => ({ ...prev, quotations: true }));
+
+            // 2. Smooth scroll with offset for sticky header
+            scrollTimeout = setTimeout(() => {
+                if (quotationsSectionRef.current) {
+                    const yOffset = -220; // Accounts for sticky header + action bars
+                    const y = quotationsSectionRef.current.getBoundingClientRect().top + window.pageYOffset + yOffset;
+                    window.scrollTo({ top: y, behavior: 'smooth' });
+
+                    // 3. Trigger temporary highlight pulse
+                    setIsQuotationsHighlighted(true);
+                    highlightTimeout = setTimeout(() => {
+                        setIsQuotationsHighlighted(false);
+                    }, 4000); // 4 seconds pulse
+                }
+            }, 600); // Wait for expansion animation
+        }
+
+        return () => {
+            if (highlightTimeout) clearTimeout(highlightTimeout);
+            if (scrollTimeout) clearTimeout(scrollTimeout);
+        };
+    }, [loading, status, id]);
 
     const handleAttachmentRefresh = useCallback(() => {
         loadData();
@@ -1804,8 +1843,10 @@ export function RequestEdit() {
                         ref={quotationsSectionRef}
                         style={{ 
                             padding: '32px',
-                            transition: 'box-shadow 0.5s ease',
-                            boxShadow: 'none'
+                            transition: 'box-shadow 0.6s ease-in-out, border-color 0.6s ease-in-out',
+                            boxShadow: isQuotationsHighlighted ? 'inset 0 0 0 4px rgba(239, 68, 68, 0.2), 0 0 20px rgba(239, 68, 68, 0.15)' : 'none',
+                            border: isQuotationsHighlighted ? '2px solid #EF4444' : 'none',
+                            borderRadius: 'inherit'
                         }}
                     >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>

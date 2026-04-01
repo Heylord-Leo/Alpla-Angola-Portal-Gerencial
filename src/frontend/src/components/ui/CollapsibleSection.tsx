@@ -20,6 +20,7 @@ export function CollapsibleSection({ title, count, isOpen, onToggle, children }:
             overflow: 'hidden'
         }}>
             <button
+                type="button"
                 onClick={onToggle}
                 style={{
                     width: '100%',
