@@ -263,6 +263,7 @@ export function BuyerItemsList() {
                     latestAdjustmentActor: item.latestAdjustmentActor,
                     latestAdjustmentRole: item.latestAdjustmentRole,
                     latestAdjustmentDateUtc: item.latestAdjustmentDateUtc,
+                    requestStatusBadgeColor: item.requestStatusBadgeColor,
                     quotations: item.quotations || [],
                     items: []
                 };
@@ -742,6 +743,39 @@ export function BuyerItemsList() {
                 return;
             }
             
+            // If we reached here, validations passed and it's not a duplicate.
+            // Trigger Confirmation Modal before real save
+            setShowApprovalModal({ 
+                show: true, 
+                type: sourceType === 'UPLOAD' ? 'SAVE_QUOTATION_OCR' : 'SAVE_QUOTATION_MANUAL', 
+                requestId, 
+                itemId: null,
+                itemDescription: null,
+                newStatusCode: null,
+                hasProforma: false, 
+                hasSupplier: true, 
+                itemsCount: draft.items.length,
+                isLastItem: false,
+                quotationCount: 0,
+                hasCompleteQuotation: false
+            });
+        } catch (error: any) {
+            setFeedback({ type: 'error', message: error.message || 'Erro ao realizar validação.' });
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const executeSaveQuotation = async (requestId: string) => {
+        try {
+            setIsSaving(true);
+            const sourceType = addQuotationMode[requestId]; 
+            const editId = editingQuotationId[requestId];
+            const draft = quotationDrafts[requestId];
+            const currentProformaId = draftProformaFiles[requestId] 
+                ? (await api.attachments.upload(requestId, [draftProformaFiles[requestId]], 'PROFORMA')).id 
+                : (draft.proformaAttachmentId || null);
+
             const payload = {
                 supplierId: draft.supplierId,
                 supplierNameSnapshot: draft.supplierNameSnapshot,
@@ -749,7 +783,7 @@ export function BuyerItemsList() {
                 documentDate: draft.documentDate ? new Date(draft.documentDate).toISOString() : null,
                 currency: draft.currency,
                 discountAmount: draft.discountAmount || 0,
-                totalAmount: draft.totalAmount, // Ignored by backend technically, just for reference
+                totalAmount: draft.totalAmount, 
                 sourceType: editId ? undefined : (sourceType === 'UPLOAD' ? 'OCR' : 'MANUAL'),
                 sourceFileName: editId ? undefined : (sourceType === 'UPLOAD' ? (importSelectedFiles[requestId]?.[0]?.name || null) : null),
                 proformaAttachmentId: currentProformaId,
@@ -1000,6 +1034,8 @@ export function BuyerItemsList() {
                 // itemId here is the quotationId
                 await api.requests.deleteQuotation(requestId, itemId);
                 setFeedback({ type: 'success', message: 'Cotação excluída com sucesso.' });
+            } else if ((type === 'SAVE_QUOTATION_OCR' || type === 'SAVE_QUOTATION_MANUAL') && requestId) {
+                await executeSaveQuotation(requestId);
             }
             
             setShowApprovalModal({ show: false, type: null, requestId: null, itemId: null, itemDescription: null, newStatusCode: null, hasProforma: false, hasSupplier: false, itemsCount: 0, isLastItem: false, quotationCount: 0, hasCompleteQuotation: false });
@@ -1165,7 +1201,15 @@ export function BuyerItemsList() {
                                         </div>
                                         <div style={{ display: 'flex', flexDirection: 'column' }}>
                                             <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Status</span>
-                                            <span style={{ fontWeight: 700, color: 'var(--color-text-main)' }}>{group.requestStatusName}</span>
+                                            <span className={`badge badge-sm badge-${
+                                                 group.requestStatusBadgeColor === 'red' ? 'danger' :
+                                                 group.requestStatusBadgeColor === 'yellow' ? 'warning' :
+                                                 group.requestStatusBadgeColor === 'green' ? 'success' :
+                                                 group.requestStatusBadgeColor || 'neutral'
+                                             }`} style={{ alignSelf: 'flex-start', marginTop: '2px' }}>
+                                                 {group.requestStatusName}
+                                             </span>
+
                                         </div>
                                     </div>
 

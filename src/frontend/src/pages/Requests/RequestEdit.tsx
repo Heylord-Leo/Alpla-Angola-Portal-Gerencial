@@ -44,6 +44,7 @@ export function RequestEdit() {
     const [saving, setSaving] = useState(false);
     const [status, setStatus] = useState<string | null>(null);
     const [statusFullName, setStatusFullName] = useState<string | null>(null);
+    const [statusBadgeColor, setStatusBadgeColor] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [feedback, setFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'success', message: null });
     const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
@@ -359,6 +360,7 @@ export function RequestEdit() {
 
             setStatus(data.statusCode);
             setStatusFullName(data.statusName);
+            setStatusBadgeColor(data.statusBadgeColor);
             setLineItems(data.lineItems || []);
             setRequestTypeCode(data.requestTypeCode);
             setRequestNumber(data.requestNumber || null);
@@ -745,6 +747,7 @@ export function RequestEdit() {
             const data = await api.requests.get(id);
             setStatus(data.statusCode);
             setStatusFullName(data.statusName);
+            setStatusBadgeColor(data.statusBadgeColor);
             setStatusHistory(data.statusHistory || []);
 
         } catch (err: any) {
@@ -917,10 +920,12 @@ export function RequestEdit() {
         title: status === 'DRAFT' ? 'Editar Pedido' : isReworkStatus ? 'Reajustar Pedido' : 'Pedido',
         requestNumber,
         statusBadge: statusFullName && (
-            <span style={{
-                marginLeft: '8px', padding: '2px 8px', backgroundColor: '#f0f7ff',
-                color: '#0369a1', borderRadius: '4px', fontSize: '0.65rem', border: '1px solid #e0f2fe'
-            }}>
+            <span className={`badge badge-sm badge-${
+                statusBadgeColor === 'red' ? 'danger' :
+                statusBadgeColor === 'yellow' ? 'warning' :
+                statusBadgeColor === 'green' ? 'success' :
+                statusBadgeColor || 'neutral'
+            }`} style={{ marginLeft: '8px' }}>
                 {statusFullName}
             </span>
         ),

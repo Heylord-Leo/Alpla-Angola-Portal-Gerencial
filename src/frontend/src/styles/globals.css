@@ -239,6 +239,91 @@ tr:hover td {
     color: #fff;
 }
 
+.badge-cyan {
+    background-color: var(--color-status-cyan);
+    color: #fff;
+}
+
+.badge-blue {
+    background-color: var(--color-status-blue);
+    color: #fff;
+}
+
+.badge-indigo {
+    background-color: var(--color-status-indigo);
+    color: #fff;
+}
+
+.badge-amber {
+    background-color: var(--color-status-amber);
+    color: #fff;
+}
+
+.badge-orange {
+    background-color: var(--color-status-orange);
+    color: #fff;
+}
+
+.badge-purple {
+    background-color: var(--color-status-purple);
+    color: #fff;
+}
+
+.badge-teal {
+    background-color: var(--color-status-teal);
+    color: #fff;
+}
+
+.badge-emerald {
+    background-color: var(--color-status-emerald);
+    color: #fff;
+}
+
+.badge-slate {
+    background-color: var(--color-status-slate);
+    color: #fff;
+}
+
+.badge-sky {
+    background-color: var(--color-status-sky);
+    color: #fff;
+}
+
+.badge-lime {
+    background-color: var(--color-status-lime);
+    color: #fff;
+}
+
+.badge-rose {
+    background-color: var(--color-status-rose);
+    color: #fff;
+}
+
+.badge-violet {
+    background-color: var(--color-status-violet);
+    color: #fff;
+}
+
+.badge-fuchsia {
+    background-color: var(--color-status-fuchsia);
+    color: #fff;
+}
+
+.badge-stone {
+    background-color: var(--color-status-stone);
+    color: #fff;
+}
+
+.badge-zinc {
+    background-color: var(--color-status-zinc);
+    color: #fff;
+}
+
+.badge-carbon {
+    background-color: var(--color-status-carbon);
+    color: #fff;
+}
+
 .badge-orange {
     background-color: var(--color-status-orange);
     color: #fff;

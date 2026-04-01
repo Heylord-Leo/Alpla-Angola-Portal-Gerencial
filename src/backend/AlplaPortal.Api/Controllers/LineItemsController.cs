@@ -155,6 +155,7 @@ public class LineItemsController : BaseController
         
         var requestDetails = await _context.Requests
             .AsNoTracking()
+            .AsSplitQuery()
             .Where(r => uniqueRequestIds.Contains(r.Id))
             .Select(r => new
             {

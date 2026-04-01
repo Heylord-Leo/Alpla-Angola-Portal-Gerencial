@@ -163,15 +163,15 @@ public class ApplicationDbContext : DbContext
             new RequestStatus { Id = 8, Code = "WAITING_COST_CENTER", Name = "Inserir C.C", DisplayOrder = 9, BadgeColor = "yellow" },
             new RequestStatus { Id = 9, Code = "APPROVED", Name = "Aprovado", DisplayOrder = 10, BadgeColor = "green" },
             new RequestStatus { Id = 10, Code = "PROFORMA_INVOICE_INSERTED", Name = "Fatura Proforma Inserida", DisplayOrder = 11, BadgeColor = "slate" },
-            new RequestStatus { Id = 11, Code = "PO_REQUESTED", Name = "Solicitado P.O", DisplayOrder = 12, BadgeColor = "cyan" },
-            new RequestStatus { Id = 12, Code = "PO_ISSUED", Name = "P.O Emitida", DisplayOrder = 13, BadgeColor = "sky" },
+            new RequestStatus { Id = 11, Code = "PO_REQUESTED", Name = "Solicitado P.O", DisplayOrder = 12, BadgeColor = "sky" },
+            new RequestStatus { Id = 12, Code = "PO_ISSUED", Name = "P.O Emitida", DisplayOrder = 13, BadgeColor = "lime" },
             new RequestStatus { Id = 13, Code = "PAYMENT_REQUEST_SENT", Name = "Solicitação Pagamento Enviada", DisplayOrder = 14, BadgeColor = "rose" },
             new RequestStatus { Id = 14, Code = "PAYMENT_SCHEDULED", Name = "Pagamento Agendado", DisplayOrder = 15, BadgeColor = "violet" },
             new RequestStatus { Id = 15, Code = "PAYMENT_COMPLETED", Name = "Pagamento Realizado", DisplayOrder = 16, BadgeColor = "fuchsia" },
             new RequestStatus { Id = 16, Code = "WAITING_RECEIPT", Name = "Aguardando Recibo", DisplayOrder = 17, BadgeColor = "stone" },
-            new RequestStatus { Id = 21, Code = "IN_FOLLOWUP", Name = "Em Acompanhamento", DisplayOrder = 18, BadgeColor = "indigo" },
-            new RequestStatus { Id = 17, Code = "COMPLETED", Name = "Finalizado", DisplayOrder = 19, BadgeColor = "emerald" },
-            new RequestStatus { Id = 18, Code = "CANCELLED", Name = "Cancelado", DisplayOrder = 20, BadgeColor = "amber" },
+            new RequestStatus { Id = 21, Code = "IN_FOLLOWUP", Name = "Em Acompanhamento", DisplayOrder = 18, BadgeColor = "amber" },
+            new RequestStatus { Id = 17, Code = "COMPLETED", Name = "Finalizado", DisplayOrder = 19, BadgeColor = "carbon" },
+            new RequestStatus { Id = 18, Code = "CANCELLED", Name = "Cancelado", DisplayOrder = 20, BadgeColor = "zinc" },
             new RequestStatus { Id = 20, Code = "QUOTATION_COMPLETED", Name = "Cotação Concluída", DisplayOrder = 21, BadgeColor = "emerald", IsActive = false }
         );
 

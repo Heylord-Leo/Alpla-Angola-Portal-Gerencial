@@ -20,6 +20,8 @@ export type ApprovalActionType =
     | 'ITEM_STATUS_CHANGE'
     | 'CANCEL_REQUEST'
     | 'DUPLICATE_REQUEST'
+    | 'SAVE_QUOTATION_OCR'
+    | 'SAVE_QUOTATION_MANUAL'
     | null;
 
 interface ApprovalModalProps {
@@ -72,10 +74,11 @@ export function ApprovalModal({
             case 'MOVE_TO_RECEIPT': return 'Mover para Recibo';
             case 'FINALIZE': return 'Finalizar Pedido';
             case 'COMPLETE_QUOTATION': return 'Concluir Cotação';
-            case 'REQUEST_ADJUSTMENT': return 'Solicitar Reajuste';
             case 'ITEM_STATUS_CHANGE': return 'Confirmar Alteração de Status';
             case 'CANCEL_REQUEST': return 'Cancelar Pedido';
             case 'DUPLICATE_REQUEST': return 'Duplicar Pedido';
+            case 'SAVE_QUOTATION_OCR':
+            case 'SAVE_QUOTATION_MANUAL': return 'Confirmar salvamento';
             default: return '';
         }
     };
@@ -111,6 +114,8 @@ export function ApprovalModal({
                     : 'Deseja confirmar a alteração de status deste item? Esta ação requer uma observação obrigatória.';
             case 'CANCEL_REQUEST': return 'Tem certeza que deseja cancelar este pedido? Informe o motivo abaixo.';
             case 'DUPLICATE_REQUEST': return 'Deseja criar uma cópia deste pedido? Um novo rascunho será gerado com os mesmos dados básicos e itens, sem copiar o histórico ou anexos.';
+            case 'SAVE_QUOTATION_OCR': return 'A extração de informações via OCR não é 100% precisa. Você verificou todas as informações?';
+            case 'SAVE_QUOTATION_MANUAL': return 'Tem certeza de que todas as informações inseridas estão corretas?';
             default: return '';
         }
     };

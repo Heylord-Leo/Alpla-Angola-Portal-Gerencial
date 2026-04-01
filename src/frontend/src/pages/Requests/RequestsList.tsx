@@ -586,12 +586,11 @@ export function RequestsList() {
                                                         </div>
                                                     </div>
                                                 }>
-                                                    <span className={`badge badge-sm ${
-                                                        req.statusBadgeColor === 'yellow' || req.statusBadgeColor === 'amber' ? 'badge-warning' :
-                                                        req.statusBadgeColor === 'green' || req.statusBadgeColor === 'emerald' ? 'badge-success' :
-                                                        req.statusBadgeColor === 'red' || req.statusBadgeColor === 'rose' || req.statusBadgeColor === 'rejected' ? 'badge-danger' :
-                                                        req.statusBadgeColor === 'blue' || req.statusBadgeColor === 'sky' || req.statusBadgeColor === 'indigo' ? 'badge-info' :
-                                                        'badge-neutral'
+                                                    <span className={`badge badge-sm badge-${
+                                                        req.statusBadgeColor === 'red' ? 'danger' :
+                                                        req.statusBadgeColor === 'yellow' ? 'warning' :
+                                                        req.statusBadgeColor === 'green' ? 'success' :
+                                                        req.statusBadgeColor || 'neutral'
                                                     }`} title={`Código: ${req.statusCode}`}>
                                                         {req.statusName}
                                                     </span>
