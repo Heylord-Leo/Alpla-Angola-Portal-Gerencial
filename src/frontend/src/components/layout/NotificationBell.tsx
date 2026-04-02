@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { Z_INDEX } from '../../constants/ui';
 import { Bell, Info, AlertCircle, Clock, Shield, ShoppingCart, Package, CreditCard, Check, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../lib/api';
@@ -170,7 +171,7 @@ export function NotificationBell() {
                             backgroundColor: 'white',
                             border: '2px solid var(--color-primary)',
                             boxShadow: 'var(--shadow-brutal)',
-                            zIndex: 1002,
+                            zIndex: Z_INDEX.POPOVER as any,
                             padding: '0',
                             textAlign: 'left',
                             display: 'flex',

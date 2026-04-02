@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiFetch, API_BASE_URL } from '../../lib/api';
+import { Z_INDEX } from '../../constants/ui';
+import { DropdownPortal } from '../../components/ui/DropdownPortal';
 import {
-  FileText, Search, Eye, AlertTriangle, Info, XCircle,
+  FileText, Search, Eye, AlertTriangle, AlertCircle, Info, XCircle,
   ChevronLeft, ChevronRight, X, RefreshCw, ShieldAlert
 } from 'lucide-react';
 
@@ -169,7 +171,7 @@ export function SystemLogs() {
     td: { padding: '12px', borderBottom: '1px solid var(--color-border-light)', verticalAlign: 'top' as const },
     trHover: { background: 'var(--color-bg-surface)' },
     pagination: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, justifyContent: 'flex-end' } as React.CSSProperties,
-    modalOverlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', zIndex: 1000, padding: 24 },
+    modalOverlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', zIndex: Z_INDEX.MODAL, padding: 24 },
     modalBox: { background: '#fff', width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' as const, borderRadius: 0, border: '2px solid var(--color-border-heavy)', boxShadow: 'var(--shadow-brutal)', padding: 24 },
     labelSm: { fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4, display: 'block' },
     codeBlock: { background: 'var(--color-bg-main)', padding: 12, border: '1px solid var(--color-border)', fontSize: '0.75rem', fontFamily: 'monospace', whiteSpace: 'pre-wrap' as const, wordBreak: 'break-word' as const, overflowX: 'auto' as const },
@@ -316,95 +318,118 @@ export function SystemLogs() {
 
       {/* Detail Modal */}
       {selectedId !== null && (
-        <div style={s.modalOverlay} onClick={e => { if (e.target === e.currentTarget) setSelectedId(null); }}>
-          <div style={s.modalBox}>
-            {/* Modal header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>Detalhe do Log #{selectedId}</h2>
-              <button onClick={() => setSelectedId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280' }}>
-                <X size={20} />
-              </button>
-            </div>
-
-            {detailLoading && <p style={{ color: '#9ca3af', fontSize: 13 }}>A carregar...</p>}
-            {!detailLoading && !detail && <p style={{ color: '#ef4444', fontSize: 13 }}>Erro ao carregar detalhe.</p>}
-
-            {detail && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {/* Summary row */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div>
-                    <div style={s.labelSm}>Nível</div>
-                    <LevelBadge level={detail.level} />
-                  </div>
-                  <div>
-                    <div style={s.labelSm}>Data / Hora</div>
-                    <div style={{ fontSize: 13 }}>{formatDate(detail.timestampUtc)}</div>
-                  </div>
-                  <div>
-                    <div style={s.labelSm}>Tipo de Evento</div>
-                    <code style={{ fontSize: 12, background: '#f3f4f6', padding: '2px 6px', borderRadius: 4 }}>{detail.eventType}</code>
-                  </div>
-                  <div>
-                    <div style={s.labelSm}>Fonte</div>
-                    <div style={{ fontSize: 12, color: '#374151' }}>{detail.source}</div>
-                  </div>
-                  <div>
-                    <div style={s.labelSm}>Correlation ID</div>
-                    <code style={{ fontSize: 12, background: '#f3f4f6', padding: '2px 6px', borderRadius: 4 }}>{detail.correlationId ?? '—'}</code>
-                  </div>
-                  <div>
-                    <div style={s.labelSm}>Utilizador</div>
-                    <div style={{ fontSize: 13, color: '#374151' }}>{detail.userEmail ?? '—'}</div>
-                  </div>
-                </div>
-
-                {/* Message */}
-                <div>
-                  <div style={s.labelSm}>Mensagem</div>
-                  <div style={{ fontSize: 13, color: '#111', lineHeight: 1.5 }}>{detail.message}</div>
-                </div>
-
-                {/* Exception Detail */}
-                {detail.exceptionDetail && (
-                  <div>
-                    <div style={{ ...s.labelSm, color: '#dc2626' }}>Detalhe da Exceção</div>
-                    <div style={s.codeBlock}>{detail.exceptionDetail}</div>
-                  </div>
-                )}
-
-                {/* Payload */}
-                {detail.payload && (
-                  <div>
-                    <div style={s.labelSm}>Payload (sanitizado)</div>
-                    <div style={s.codeBlock}>
-                      {(() => {
-                        try { return JSON.stringify(JSON.parse(detail.payload!), null, 2); }
-                        catch { return detail.payload; }
-                      })()}
-                    </div>
-                  </div>
-                )}
-
-                {/* Correlation hint */}
-                {detail.correlationId && (
-                  <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: 12 }}>
-                    <div style={{ fontSize: 12, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Info size={13} />
-                      Para ver todos os eventos desta operação, pesquise pelo Correlation ID:&nbsp;
-                      <button
-                        style={{ fontFamily: 'monospace', fontSize: 11, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 4, padding: '1px 6px', cursor: 'pointer', color: '#1d4ed8' }}
-                        onClick={() => { setCorrelationId(detail.correlationId!); setSelectedId(null); fetchLogs(1); }}
-                      >
-                        {detail.correlationId}
-                      </button>
-                    </div>
-                  </div>
-                )}
+        <DropdownPortal>
+          <div style={s.modalOverlay} onClick={e => { if (e.target === e.currentTarget) setSelectedId(null); }}>
+            <div style={s.modalBox}>
+              {/* Modal header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0, textTransform: 'uppercase', color: 'var(--color-primary)' }}>Detalhe do Log #{selectedId}</h2>
+                <button onClick={() => setSelectedId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280' }}>
+                  <X size={24} />
+                </button>
               </div>
-            )}
+
+              {detailLoading && (
+                <div style={{ padding: '40px 0', textAlign: 'center', color: '#9ca3af', fontSize: 13, fontWeight: 600 }}>
+                  <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 12px', display: 'block' }} />
+                  Carregando detalhes...
+                </div>
+              )}
+              
+              {!detailLoading && !detail && (
+                <div style={{ padding: '40px 0', textAlign: 'center', color: '#ef4444', fontSize: 13, fontWeight: 700 }}>
+                  <AlertCircle size={24} style={{ margin: '0 auto 12px', display: 'block' }} />
+                  Erro ao carregar detalhes do log.
+                </div>
+              )}
+
+              {detail && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {/* Summary row */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <div style={s.labelSm}>Nível</div>
+                      <LevelBadge level={detail.level} />
+                    </div>
+                    <div>
+                      <div style={s.labelSm}>Data / Hora</div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>{formatDate(detail.timestampUtc)}</div>
+                    </div>
+                    <div>
+                      <div style={s.labelSm}>Tipo de Evento</div>
+                      <code style={{ fontSize: 12, background: '#f3f4f6', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>{detail.eventType}</code>
+                    </div>
+                    <div>
+                      <div style={s.labelSm}>Fonte</div>
+                      <div style={{ fontSize: 12, color: '#374151', fontWeight: 600 }}>{detail.source}</div>
+                    </div>
+                    <div>
+                      <div style={s.labelSm}>Correlation ID</div>
+                      <code style={{ fontSize: 12, background: '#f3f4f6', padding: '2px 6px', borderRadius: 4 }}>{detail.correlationId ?? '—'}</code>
+                    </div>
+                    <div>
+                      <div style={s.labelSm}>Utilizador</div>
+                      <div style={{ fontSize: 13, color: '#374151', fontWeight: 600 }}>{detail.userEmail ?? '—'}</div>
+                    </div>
+                  </div>
+
+                  {/* Message */}
+                  <div>
+                    <div style={s.labelSm}>Mensagem</div>
+                    <div style={{ fontSize: 13, color: '#111', lineHeight: 1.5, fontWeight: 500 }}>{detail.message}</div>
+                  </div>
+
+                  {/* Exception Detail */}
+                  {detail.exceptionDetail && (
+                    <div>
+                      <div style={{ ...s.labelSm, color: 'var(--color-status-red)' }}>Detalhe da Exceção</div>
+                      <div style={s.codeBlock}>{detail.exceptionDetail}</div>
+                    </div>
+                  )}
+
+                  {/* Payload */}
+                  {detail.payload && (
+                    <div>
+                      <div style={s.labelSm}>Payload (sanitizado)</div>
+                      <div style={s.codeBlock}>
+                        {(() => {
+                          try { return JSON.stringify(JSON.parse(detail.payload!), null, 2); }
+                          catch { return detail.payload; }
+                        })()}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Correlation hint */}
+                  {detail.correlationId && (
+                    <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: 12 }}>
+                      <div style={{ fontSize: 12, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Info size={13} />
+                        Para ver todos os eventos desta operação, pesquise pelo Correlation ID:&nbsp;
+                        <button
+                          style={{ fontFamily: 'monospace', fontSize: 11, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 4, padding: '1px 6px', cursor: 'pointer', color: '#1d4ed8', fontWeight: 700 }}
+                          onClick={() => { setCorrelationId(detail.correlationId!); setSelectedId(null); fetchLogs(1); }}
+                        >
+                          {detail.correlationId}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* Footer action */}
+              <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setSelectedId(null)}
+                  style={{ ...s.btnSecondary, background: 'var(--color-bg-page)' }}
+                >
+                  FECHAR
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
+        </DropdownPortal>
       )}
     </div>
   );

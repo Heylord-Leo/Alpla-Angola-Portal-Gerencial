@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MoreVertical } from 'lucide-react';
 import { DropdownPortal } from './DropdownPortal';
+import { Z_INDEX } from '../../constants/ui';
 
 export interface KebabOption {
     label: string;
@@ -36,7 +37,7 @@ export function KebabMenu({ options }: KebabMenuProps) {
                 boxShadow: 'var(--shadow-brutal)',
                 display: 'flex',
                 flexDirection: 'column',
-                zIndex: 9999,
+                zIndex: Z_INDEX.DROPDOWN as any,
                 padding: '4px 0'
             });
         }

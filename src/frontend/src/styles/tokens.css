@@ -62,4 +62,16 @@
   --shadow-md: none;
   --shadow-brutal: 6px 6px 0px var(--color-border-heavy);
   --focus-ring: 0 0 0 2px var(--color-bg-page), 0 0 0 4px var(--color-primary);
+
+  /* Z-Index Hierarchy (Standardized) */
+  --z-base: 1;
+  --z-dropdown: 500;
+  --z-popover: 1000;
+  --z-sticky: 1100;
+  --z-topbar: 1200;
+  --z-sidebar: 1250;
+  --z-drawer: 1400;
+  --z-modal: 1500;
+  --z-toast: 1600;
+  --z-tooltip: 1700;
 }

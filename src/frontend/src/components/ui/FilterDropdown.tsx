@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Filter, ChevronDown, Check } from 'lucide-react';
 import { DropdownPortal } from './DropdownPortal';
+import { Z_INDEX } from '../../constants/ui';
 
 export interface FilterOption {
     id: string | number;
@@ -44,7 +45,7 @@ export function FilterDropdown({ label, groups, options, selectedIds, onChange, 
                 boxShadow: 'var(--shadow-brutal)',
                 display: 'flex',
                 flexDirection: 'column',
-                zIndex: 9999
+                zIndex: Z_INDEX.DROPDOWN as any
             });
         }
     }, [isOpen]);

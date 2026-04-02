@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Z_INDEX } from '../../constants/ui';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, AlertTriangle } from 'lucide-react';
 import { DropdownPortal } from '../ui/DropdownPortal';
@@ -74,7 +75,7 @@ const ReceivingModal: React.FC<ReceivingModalProps> = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 1000,
+            zIndex: Z_INDEX.MODAL as any,
             padding: '20px'
           }}
         >

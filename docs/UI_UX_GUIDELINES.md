@@ -83,7 +83,17 @@ Implementation-ready tokens to maintain strict consistency.
   - `md`: `0 4px 6px -1px rgb(0 0 0 / 0.1)` — Dropdowns, popovers.
   - `lg`: `0 10px 15px -3px rgb(0 0 0 / 0.1)` — Modals, Drawers.
 - **Focus Ring:** `2px solid #004C90` with `2px` offset. Mandatory for accessibility.
-- **Z-index Scale:** Dropdowns (`10`), Sticky Headers (`20`), Topbar/Sidebar (`30`), Modals/Drawers (`40`), Toasts/Notifications (`50`).
+- **Z-index Scale (Standardized Hierarchy):**
+  - `Base`: 1
+  - `Overlay`: 10 (Sticky elements, small overlays)
+  - `Sidebar/Topbar`: 100-110 (Main shell)
+  - `Dropdown/Popover`: 1000
+  - `Drawer`: 1100
+  - `Modal`: 1200
+  - `Tooltip`: 1300
+  - `Toast/Notification`: 1400
+
+*Implementation Rule:* Use the `Z_INDEX` constants from `src/frontend/src/constants/ui.ts` bridged with `tokens.css` variables.
 
 ## E) Layout Standards (Desktop-First)
 

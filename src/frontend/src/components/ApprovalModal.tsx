@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Feedback, FeedbackType } from './ui/Feedback';
 import { DropdownPortal } from './ui/DropdownPortal';
+import { Z_INDEX } from '../constants/ui';
 
 export type ApprovalActionType = 
     | 'APPROVE' 
@@ -157,7 +158,7 @@ export function ApprovalModal({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        zIndex: 1000,
+                        zIndex: Z_INDEX.MODAL as any,
                         padding: '20px'
                     }}
                 >

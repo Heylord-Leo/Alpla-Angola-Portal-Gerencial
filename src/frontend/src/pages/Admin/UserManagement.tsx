@@ -19,6 +19,7 @@ import { api } from '../../lib/api';
 import { useAuth } from '../../features/auth/AuthContext';
 import { Link } from 'react-router-dom';
 import { DropdownPortal } from '../../components/ui/DropdownPortal';
+import { Z_INDEX } from '../../constants/ui';
 
 interface UserListDto {
     id: string;
@@ -190,7 +191,7 @@ export default function UserManagement() {
         td: { padding: '12px 16px', borderBottom: '1px solid var(--color-border)', verticalAlign: 'middle' as const },
         trHover: { background: 'var(--color-bg-page)' },
         badge: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase' as const, border: '1px solid currentColor' },
-        drawerOverlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'flex-end', zIndex: 1000 },
+        drawerOverlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'flex-end', zIndex: Z_INDEX.DRAWER },
         drawer: { background: '#fff', width: '100%', maxWidth: 560, height: '100vh', display: 'flex', flexDirection: 'column' as const, borderLeft: '4px solid var(--color-primary)', boxShadow: '-8px 0 24px rgba(0,0,0,0.2)' },
         drawerHeader: { padding: '24px', background: 'var(--color-bg-page)', borderBottom: '2px solid var(--color-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
         drawerBody: { flex: 1, overflowY: 'auto' as const, padding: '32px', display: 'flex', flexDirection: 'column' as const, gap: '24px' },

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { FileText, Home, LogOut, Settings, List, ShoppingCart, ChevronDown, ChevronRight, Package, Activity, Network, ChevronLeft, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Z_INDEX } from '../../constants/ui';
 
 type NavItemType = 'link' | 'group' | 'action';
 
@@ -321,7 +322,7 @@ export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
                     alignItems: 'center',
                     justifyContent: 'center',
                     cursor: 'pointer',
-                    zIndex: 200,
+                    zIndex: Z_INDEX.SIDEBAR as any,
                     padding: 0,
                     boxShadow: '2px 2px 0 var(--color-primary)',
                     borderRadius: '0', // Maintain brutalist look

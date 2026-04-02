@@ -12,6 +12,8 @@ import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModa
 import { QuickSupplierModal } from '../../components/Buyer/QuickSupplierModal';
 import { QuickCurrencyModal } from '../../components/Buyer/QuickCurrencyModal';
 import { Tooltip } from '../../components/ui/Tooltip';
+import { Z_INDEX } from '../../constants/ui';
+import { DropdownPortal } from '../../components/ui/DropdownPortal';
 import { SavedQuotationDto } from '../../types';
  
  // Step 9: Highlight animation
@@ -2286,7 +2288,8 @@ export function BuyerItemsList() {
                                                             const hasCompQ = group.quotations.some((q: SavedQuotationDto) => 
                                                                 (q.itemCount > 0) && (!!q.proformaAttachmentId) && (!!q.supplierId)
                                                             );
-                                                            handleCompleteQuotation(group.requestId, !!group.proformaId, !!group.requestSupplierId, group.items.length, qCount, hasCompQ);
+                                                            const totalItemsCount = group.items.length + group.quotations.reduce((acc: number, q: SavedQuotationDto) => acc + q.itemCount, 0);
+                                                            handleCompleteQuotation(group.requestId, !!group.proformaId, !!group.requestSupplierId, totalItemsCount, qCount, hasCompQ);
                                                         }}
                                                         disabled={isSaving}
                                                         className="btn-primary"
@@ -2430,47 +2433,49 @@ export function BuyerItemsList() {
 
             {/* Inline Delete Attachment Confirm Modal */}
             {deleteConfirm && (
-                <div style={{
-                    position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.55)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
-                }}>
+                <DropdownPortal>
                     <div style={{
-                        backgroundColor: 'var(--color-bg-surface)', borderRadius: 'var(--radius-md)',
-                        border: '2px solid var(--color-border-heavy)', boxShadow: 'var(--shadow-brutal)',
-                        padding: '32px', maxWidth: '440px', width: '90%', display: 'flex', flexDirection: 'column', gap: '20px'
+                        position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.55)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: Z_INDEX.MODAL as any
                     }}>
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
-                            <div style={{ width: '44px', height: '44px', borderRadius: '10px', backgroundColor: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                <Trash2 size={22} color="#ef4444" />
-                            </div>
-                            <div>
-                                <h3 style={{ margin: 0, fontFamily: 'var(--font-family-display)', fontWeight: 900, fontSize: '1.1rem', color: 'var(--color-text-main)' }}>Remover Documento</h3>
-                                <p style={{ margin: '8px 0 0 0', fontSize: '0.875rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
-                                    Tem certeza que deseja remover <strong style={{ color: 'var(--color-text-main)' }}>"{deleteConfirm?.fileName}"</strong>?
-                                </p>
-                                <div style={{ marginTop: '12px', padding: '10px', backgroundColor: '#fff7ed', border: '1px solid #ffedd5', borderRadius: '4px', fontSize: '0.8rem', color: '#9a3412', fontWeight: 600 }}>
-                                    <strong>IMPORTANTE:</strong> O documento proforma é obrigatório. Após a remoção, você deverá anexar um novo arquivo para poder salvar ou concluir a cotação.
+                        <div style={{
+                            backgroundColor: 'var(--color-bg-surface)', borderRadius: 'var(--radius-md)',
+                            border: '2px solid var(--color-border-heavy)', boxShadow: 'var(--shadow-brutal)',
+                            padding: '32px', maxWidth: '440px', width: '90%', display: 'flex', flexDirection: 'column', gap: '20px'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+                                <div style={{ width: '44px', height: '44px', borderRadius: '10px', backgroundColor: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                    <Trash2 size={22} color="#ef4444" />
+                                </div>
+                                <div>
+                                    <h3 style={{ margin: 0, fontFamily: 'var(--font-family-display)', fontWeight: 900, fontSize: '1.1rem', color: 'var(--color-text-main)' }}>Remover Documento</h3>
+                                    <p style={{ margin: '8px 0 0 0', fontSize: '0.875rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                                        Tem certeza que deseja remover <strong style={{ color: 'var(--color-text-main)' }}>"{deleteConfirm?.fileName}"</strong>?
+                                    </p>
+                                    <div style={{ marginTop: '12px', padding: '10px', backgroundColor: '#fff7ed', border: '1px solid #ffedd5', borderRadius: '4px', fontSize: '0.8rem', color: '#9a3412', fontWeight: 600 }}>
+                                        <strong>IMPORTANTE:</strong> O documento proforma é obrigatório. Após a remoção, você deverá anexar um novo arquivo para poder salvar ou concluir a cotação.
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-                            <button
-                                onClick={() => setDeleteConfirm(null)}
-                                disabled={isSaving}
-                                style={{ padding: '10px 20px', border: '2px solid var(--color-border-heavy)', borderRadius: 'var(--radius-sm)', background: 'none', fontWeight: 700, cursor: 'pointer', fontSize: '0.875rem' }}
-                            >
-                                Cancelar
-                            </button>
-                            <button
-                                onClick={confirmDeleteProforma}
-                                disabled={isSaving}
-                                style={{ padding: '10px 20px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: 700, cursor: isSaving ? 'wait' : 'pointer', fontSize: '0.875rem' }}
-                            >
-                                {isSaving ? 'Removendo...' : 'Remover'}
-                            </button>
+                            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                                <button
+                                    onClick={() => setDeleteConfirm(null)}
+                                    disabled={isSaving}
+                                    style={{ padding: '10px 20px', border: '2px solid var(--color-border-heavy)', borderRadius: 'var(--radius-sm)', background: 'none', fontWeight: 700, cursor: 'pointer', fontSize: '0.875rem' }}
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={confirmDeleteProforma}
+                                    disabled={isSaving}
+                                    style={{ padding: '10px 20px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: 700, cursor: isSaving ? 'wait' : 'pointer', fontSize: '0.875rem' }}
+                                >
+                                    {isSaving ? 'Removendo...' : 'Remover'}
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
+                </DropdownPortal>
             )}
             {/* Quick Supplier Modal (Step 6) */}
             <QuickSupplierModal
@@ -2489,24 +2494,25 @@ export function BuyerItemsList() {
             {/* Duplicate Supplier Resolution Modal (Step 9 Refresh) */}
             <AnimatePresence>
                 {duplicateSupplierModal.show && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        style={{
-                            position: 'fixed',
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            backgroundColor: 'rgba(0,0,0,0.8)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            zIndex: 2000,
-                            padding: '20px'
-                        }}
-                    >
+                    <DropdownPortal>
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            style={{
+                                position: 'fixed',
+                                top: 0,
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                backgroundColor: 'rgba(0,0,0,0.8)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                zIndex: Z_INDEX.MODAL as any,
+                                padding: '20px'
+                            }}
+                        >
                         <motion.div
                             initial={{ scale: 0.9, y: 20 }}
                             animate={{ scale: 1, y: 0 }}
@@ -2613,6 +2619,7 @@ export function BuyerItemsList() {
                             </div>
                         </motion.div>
                     </motion.div>
+                </DropdownPortal>
                 )}
             </AnimatePresence>
 

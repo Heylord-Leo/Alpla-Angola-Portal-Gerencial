@@ -1,3 +1,4 @@
+import { Z_INDEX } from '../../constants/ui';
 import { GlobalSearch } from './GlobalSearch';
 import { UserDropdown } from './UserDropdown';
 import { NotificationBell } from './NotificationBell';
@@ -20,7 +21,7 @@ export function Topbar() {
             padding: '0 3rem',
             position: 'sticky',
             top: 0,
-            zIndex: 100, // Elevated for dropdowns
+            zIndex: Z_INDEX.TOPBAR as any, // Elevated for dropdowns
             color: 'var(--color-bg-surface)',
             fontFamily: 'var(--font-family-display)'
         }}>

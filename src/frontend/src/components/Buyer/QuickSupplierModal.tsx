@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { X, Save, Building2, AlertCircle, RefreshCcw } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { Feedback, FeedbackType } from '../ui/Feedback';
+import { Z_INDEX } from '../../constants/ui';
+import { DropdownPortal } from '../ui/DropdownPortal';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface QuickSupplierModalProps {
@@ -77,39 +79,40 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
     };
 
     return (
-        <AnimatePresence>
-            <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    backgroundColor: 'rgba(0,0,0,0.8)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 2000,
-                    padding: '20px'
-                }}
-            >
+        <DropdownPortal>
+            <AnimatePresence>
                 <motion.div
-                    initial={{ scale: 0.9, y: 20 }}
-                    animate={{ scale: 1, y: 0 }}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
                     style={{
-                        backgroundColor: 'var(--color-bg-surface)',
-                        padding: '40px',
-                        borderRadius: 'var(--radius-md)',
-                        maxWidth: '500px',
-                        width: '100%',
-                        border: '4px solid var(--color-border-heavy)',
-                        boxShadow: 'var(--shadow-brutal)',
-                        position: 'relative'
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        backgroundColor: 'rgba(0,0,0,0.8)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: Z_INDEX.MODAL as any,
+                        padding: '20px'
                     }}
                 >
+                    <motion.div
+                        initial={{ scale: 0.9, y: 20 }}
+                        animate={{ scale: 1, y: 0 }}
+                        style={{
+                            backgroundColor: 'var(--color-bg-surface)',
+                            padding: '40px',
+                            borderRadius: 'var(--radius-md)',
+                            maxWidth: '500px',
+                            width: '100%',
+                            border: '4px solid var(--color-border-heavy)',
+                            boxShadow: 'var(--shadow-brutal)',
+                            position: 'relative'
+                        }}
+                    >
                     <button 
                         onClick={onClose}
                         style={{
@@ -215,8 +218,9 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
                             </button>
                         </div>
                     </form>
+                    </motion.div>
                 </motion.div>
-            </motion.div>
-        </AnimatePresence>
+            </AnimatePresence>
+        </DropdownPortal>
     );
 }

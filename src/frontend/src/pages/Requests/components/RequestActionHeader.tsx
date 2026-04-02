@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Feedback, FeedbackType } from '../../../components/ui/Feedback';
+import { Z_INDEX } from '../../../constants/ui';
 
 export interface BreadcrumbItem {
     label: string;
@@ -43,7 +44,7 @@ export const RequestActionHeader: React.FC<RequestActionHeaderProps> = ({
         <div style={{
             position: 'sticky',
             top: 'calc(var(--header-height) - 1rem)',
-            zIndex: 110,
+            zIndex: Z_INDEX.STICKY as any,
             backgroundColor: 'var(--color-bg-page)',
             margin: '-1rem -24px 0 -24px',
             padding: '8px 24px 0 24px',

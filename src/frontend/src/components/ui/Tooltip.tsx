@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { DropdownPortal } from './DropdownPortal';
+import { Z_INDEX } from '../../constants/ui';
 
 interface TooltipProps {
     children: React.ReactNode;
@@ -28,7 +29,7 @@ export function Tooltip({ children, content, variant = 'light' }: TooltipProps) 
                 border: isDark ? 'none' : '2px solid var(--color-primary)',
                 boxShadow: 'var(--shadow-brutal)',
                 padding: isDark ? '8px 12px' : '12px 16px',
-                zIndex: 10000,
+                zIndex: Z_INDEX.TOOLTIP as any,
                 pointerEvents: 'none',
                 minWidth: isDark ? 'auto' : '200px',
                 maxWidth: '350px',

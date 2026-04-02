@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, BookOpen, Info, AlertTriangle, PlayCircle, CheckCircle2, FileText } from 'lucide-react';
 import { DropdownPortal } from '../../../components/ui/DropdownPortal';
+import { Z_INDEX } from '../../../constants/ui';
 
 interface PurchasingHelpDrawerProps {
     isOpen: boolean;
@@ -96,7 +97,7 @@ export function PurchasingHelpDrawer({ isOpen, onClose }: PurchasingHelpDrawerPr
                             inset: 0,
                             backgroundColor: 'rgba(0, 0, 0, 0.4)',
                             backdropFilter: 'blur(4px)',
-                            zIndex: 1000,
+                            zIndex: Z_INDEX.DRAWER as any,
                             cursor: 'pointer'
                         }}
                     />
@@ -117,7 +118,7 @@ export function PurchasingHelpDrawer({ isOpen, onClose }: PurchasingHelpDrawerPr
                             backgroundColor: 'var(--color-bg-page)',
                             borderLeft: '4px solid var(--color-primary)',
                             boxShadow: '-8px 0 32px rgba(0, 0, 0, 0.15)',
-                            zIndex: 1001,
+                            zIndex: (Z_INDEX.DRAWER + 1) as any,
                             display: 'flex',
                             flexDirection: 'column'
                         }}

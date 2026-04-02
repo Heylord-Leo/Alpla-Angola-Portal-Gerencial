@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, AlertCircle, CheckCircle, Info, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Z_INDEX } from '../../constants/ui';
 
 export type FeedbackType = 'success' | 'error' | 'warning' | 'info';
 
@@ -95,7 +96,7 @@ export function Feedback({ type, message, autoCloseMs, onClose, isFixed = false 
           position: isFixed ? 'fixed' : 'relative',
           top: isFixed ? '106px' : undefined,
           right: isFixed ? '24px' : undefined,
-          zIndex: isFixed ? 9999 : undefined,
+          zIndex: isFixed ? Z_INDEX.TOAST : undefined,
           marginBottom: isFixed ? 0 : '16px',
           pointerEvents: 'auto'
         }}
@@ -136,7 +137,7 @@ export function Feedback({ type, message, autoCloseMs, onClose, isFixed = false 
         position: 'fixed',
         inset: 0,
         pointerEvents: 'none',
-        zIndex: 9999,
+        zIndex: Z_INDEX.TOAST,
         padding: '24px'
       }}>
         {content}

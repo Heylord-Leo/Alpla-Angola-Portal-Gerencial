@@ -67,7 +67,6 @@ export function AppShell({ children }: AppShellProps) {
                         minHeight: '70vh',
                         padding: '1rem',
                         position: 'relative',
-                        zIndex: 1,
                         minWidth: 0 // Crucial for grid/flex child consistency
                     }}
                 >

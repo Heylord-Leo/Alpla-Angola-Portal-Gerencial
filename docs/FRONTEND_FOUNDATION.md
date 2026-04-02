@@ -42,6 +42,18 @@ The project has been modernized to support the Shell 2.0 architecture:
 4. **Motion**: Transitioned from `framer-motion` to the modular `motion/react` package.
 5. **Sonner**: Introduced as the primary toast notification system, replacing ad-hoc feedback banners where appropriate.
 
+## Global UI Layering and Z-Index Standardization (v2.13.0)
+
+To prevent UI layering conflicts (e.g., modals appearing behind drawers or headers), the project enforces a centralized z-index hierarchy and root-rendering pattern.
+
+1. **Centralized Scale**: All `zIndex` values must reference the `Z_INDEX` constants in `src/frontend/src/constants/ui.ts`. This ensures a single source of truth bridged between CSS-in-JS and `tokens.css`.
+2. **Hierarchy Rules**:
+   - `Dropdown/Popover` (1000) < `Drawer` (1100) < `Modal` (1200) < `Toast/Tooltip` (1300+).
+   - This ensures that a confirmation modal triggered from within a drawer always renders above it.
+3. **DropdownPortal Usage**: All overlays (modals, fixed drawers, dropdowns, tooltips) MUST be rendered through the `DropdownPortal` component or `createPortal` to the document body.
+   - This escapes parent stacking contexts (like `AppShell` or `overflow: hidden` containers) and ensures predictable layering across the entire application.
+4. **Stacking Context Protection**: The `AppShell` main content area must NOT define a numeric `zIndex` (unless strictly isolated), to avoid trapping fixed-position children in a lower stacking context than the shell's headers.
+
 ## Request & Plant Model (v1.1.25)
 
 To support multi-plant allocation while maintaining institutional boundaries, the project uses a **Company-Level Request** model.

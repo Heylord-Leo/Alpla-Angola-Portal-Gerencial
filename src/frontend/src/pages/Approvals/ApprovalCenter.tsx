@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { Z_INDEX } from '../../constants/ui';
 import { api } from '../../lib/api';
 import { RequestListItemDto, RequestDetailsDto, PendingApprovalsResponseDto, ItemIntelligenceDto } from '../../types';
 import { useAuth } from '../../features/auth/AuthContext';
@@ -600,7 +601,7 @@ export function ApprovalCenter() {
                                 backgroundColor: 'white',
                                 borderLeft: '6px solid var(--color-primary)',
                                 boxShadow: '-8px 0 32px rgba(0,0,0,0.2)',
-                                zIndex: 1001,
+                                zIndex: Z_INDEX.DRAWER as any,
                                 display: 'flex',
                                 flexDirection: 'column'
                             }}
@@ -618,7 +619,7 @@ export function ApprovalCenter() {
                                         bottom: 0,
                                         width: '12px',
                                         cursor: 'col-resize',
-                                        zIndex: 1002,
+                                        zIndex: (Z_INDEX.DRAWER + 1) as any,
                                         display: 'flex',
                                         justifyContent: 'center',
                                         transition: 'all 0.2s ease'
