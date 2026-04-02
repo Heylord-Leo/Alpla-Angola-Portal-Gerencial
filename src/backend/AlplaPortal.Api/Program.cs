@@ -11,6 +11,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Collections.Concurrent;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -37,6 +40,7 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IApprovalIntelligenceService, ApprovalIntelligenceService>();
 
 // Auth Services
+builder.Services.Configure<SecurityOptions>(builder.Configuration.GetSection("Security"));
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IJwtService, JwtService>();
@@ -68,6 +72,52 @@ if (jwtOptions != null && !string.IsNullOrEmpty(jwtOptions.Secret))
         };
     });
 }
+
+// Rate Limiting — Phase 2: Login IP-based Throttling
+builder.Services.AddRateLimiter(options =>
+{
+    // Use a simple in-memory tracker for log throttling (one log per window per IP)
+    var lastLogTimes = new ConcurrentDictionary<string, DateTime>();
+
+    options.AddFixedWindowLimiter("LoginPolicy", opt =>
+    {
+        opt.PermitLimit = builder.Configuration.GetValue<int>("Security:RateLimiting:PermitLimit", 10);
+        opt.Window = TimeSpan.FromMinutes(builder.Configuration.GetValue<int>("Security:RateLimiting:WindowMinutes", 1));
+        opt.QueueLimit = 0;
+    });
+
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.OnRejected = async (context, token) =>
+    {
+        var securityOptions = builder.Configuration.GetSection("Security:RateLimiting").Get<RateLimitingOptions>();
+        var ip = context.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+        // Throttled Logging: Only log once per minute per IP to avoid flooding
+        var now = DateTime.UtcNow;
+        if (lastLogTimes.TryGetValue(ip, out var lastLog) && (now - lastLog).TotalMinutes < 1)
+        {
+            // Skip logging but still reject
+        }
+        else
+        {
+            lastLogTimes[ip] = now;
+            var adminLogWriter = context.HttpContext.RequestServices.GetRequiredService<AdminLogWriter>();
+            await adminLogWriter.WriteAsync("Warning", "Auth", "IP_RATE_LIMITED", $"Login attempt throttled for IP: {ip}");
+        }
+
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            context.HttpContext.Response.Headers.RetryAfter = retryAfter.TotalSeconds.ToString();
+        }
+
+        await context.HttpContext.Response.WriteAsJsonAsync(new { message = "Muitas tentativas. Tente novamente em breve." }, token);
+    };
+});
+
+// Configure Forwarded Headers for IP resolution behind proxies (disabled by default for safety)
+// builder.Services.Configure<ForwardedHeadersOptions>(options => { options.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto; });
 
 // Health checks
 builder.Services.AddHealthChecks();
@@ -134,6 +184,8 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseCors("LocalFrontend");
+
+app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();

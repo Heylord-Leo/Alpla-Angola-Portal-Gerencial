@@ -6,7 +6,7 @@
 2. **Identification Neutrality**: Frontend logic must never infer the business "Type" (Payment vs. Quotation) from the request number prefix. Always use the explicit `requestTypeCode` or `requestTypeId` supplied by the API.
 3. **URL Safety**: Request identifiers containing slashes are used strictly for visual display and searching. Technical routing and API calls must utilize the immutable Guid `Id`.
 4. **Modular Navigation Architecture**: The application uses a grouped navigation structure to organize features by business module (e.g., Compras).
-    - **Groups**: Non-navigable containers that expand/collapse. They auto-expand if a child route is active.
+    - **Groups**: Non-navigable containers that expand/collapse following an **Accordion (Single-Open)** model. Only one group can be expanded at a time in the main sidebar; expanding a new group automatically collapses the previous one. They still auto-expand if a child route is active.
     - **Active States**: Parent groups show a subtle "group active" highlight (light background) when a child is active, while the specific child link shows the "strong" highlight (primary color background + brutalist shadow).
     - **Configuration**: The sidebar is driven by a `MENU_ITEMS` configuration array in `Sidebar.tsx`, supporting `link`, `group`, and `action` types for easy scalability.
     - **Two-Zone Layout**: The sidebar is split into a **Navigation Zone** (top, scrollable) and a **System Actions Zone** (bottom, fixed). This ensures critical actions like "Sair" and "Configurações" are always reachable regardless of menu length.
@@ -255,22 +255,14 @@ The Buyer Workspace (`BuyerItemsList.tsx`) is the central hub for managing procu
 Beginning in v2.0.0, the portal adopted the **Shell 2.0 (Modern Industrial)** layout, featuring a collapsible navigation system and an optimized workspace area.
 
 ### Core Shell Components
-1. **Collapsible Sidebar**:
-    - **Dynamic Width**: Toggles between `240px` (expanded) and `80px` (collapsed) using a React-managed state (`isCollapsed`).
-    - **Visuals**: Clean white background with silver borders, moving away from high-contrast black/blue containers for a more spacious feel.
-    - **Icons**: Standardized on `lucide-react` for all shell-level navigation items.
-2. **Fixed Topbar**:
-    - **Backdrop Blur**: Uses `backdrop-blur-md` and semi-transparent white background (`white/80`) for a premium "glass" effect.
-    - **Responsive Alignment**: Topbar alignment updates correctly in response to sidebar expanded/collapsed state to maintain visual balance.
-3. **AppShell Structural Grid**:
-    - **Layout Strategy**: Utilizes a full-viewport root CSS Grid (`grid-template-columns: var(--sidebar-width) 1fr`) to ensure shell continuity.
-    - **Viewport-Bounded Sidebar**: The sidebar is anchored using `position: sticky; top: 0; height: 100vh;` to remain fixed during document-level scrolling.
-    - **Internal Sidebar Zones**:
-        - **Header**: Fixed top area for brand identification.
-        - **Navigation**: Centrally scrollable area (`flex:1`, `overflow-y:auto`) for module access.
-        - **Footer**: Anchored utility zone for system actions (Logout) and dynamic versioning.
-    - **Content Protection**: Max-width constraints are applied only to the internal content area, never to the shell frame.
     - **Transitions**: Smooth CSS transitions (`0.3s ease`) applied to grid columns and internal offsets.
+4. **Sidebar Hover Flyouts (v2.18.0)**:
+    - **Contextual Navigation**: When collapsed, hovering over a navigation icon triggers a lateral flyout panel.
+    - **Content**: Displays the section name as a header and all available child links (subsections) with their respective icons.
+    - **Stability**: Implements a 150ms "anti-flicker" delay. The flyout remains open while the pointer is over either the icon or the flyout itself.
+    - **Viewport Awareness**: The flyout automatically calculates its vertical position to stay within the viewport, shifting upwards if necessary for items at the bottom of the sidebar.
+    - **Click Fallback**: Clicking a collapsed icon provides a robust fallback by navigating to the item's direct link or its first available child, ensuring navigation is possible even if hover interactions are restricted.
+    - **Portal Rendering**: Uses `DropdownPortal` to render overlays at the body level, escaping the sidebar's `overflow: hidden` constraint.
 
 ### Component Preservation Rule
 1. **Black Box Data**: Redesigned UI components (e.g., `MasterData.tsx`, `DocumentExtractionSettings.tsx`) must completely preserve underlying API queries, mutation hooks, custom debounced inline-validations, RBAC evaluations, and localized error handling behavior. 

@@ -4,7 +4,7 @@ import {
     Calendar, Landmark, Download,
     Paperclip, AlertCircle, List, FileText, 
     MessageSquare, Users, History as HistoryIcon, DollarSign,
-    Target, TrendingUp
+    Target, TrendingUp, CheckCircle
 } from 'lucide-react';
 import { RequestDetailsDto, ApprovalIntelligenceDto } from '../../types';
 import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModal';
@@ -83,11 +83,21 @@ export function ApprovalDetailPanel({
     const [intelligence, setIntelligence] = useState<ApprovalIntelligenceDto | null>(null);
     const [loadingIntelligence, setLoadingIntelligence] = useState(false);
 
+    // Business Control: Cost Center Selection (DEC-085)
+    const [costCenters, setCostCenters] = useState<any[]>([]);
+    const [selectedCostCenterId, setSelectedCostCenterId] = useState<string | null>(null);
+
     useEffect(() => {
         if (data.id) {
             fetchIntelligence();
         }
     }, [data.id]);
+
+    useEffect(() => {
+        if (approvalStage === 'AREA' && data.plantId) {
+            fetchCostCenters(data.plantId);
+        }
+    }, [approvalStage, data.plantId]);
 
     const fetchIntelligence = async () => {
         setLoadingIntelligence(true);
@@ -101,6 +111,15 @@ export function ApprovalDetailPanel({
         }
     };
 
+    const fetchCostCenters = async (plantId: number) => {
+        try {
+            const list = await api.lookups.getCostCenters(false, plantId);
+            setCostCenters(list);
+        } catch (err) {
+            console.error('Failed to fetch cost centers:', err);
+        }
+    };
+
     // --- Computed ---
     const isQuotation = data.requestTypeCode === 'QUOTATION';
     const isPayment = data.requestTypeCode === 'PAYMENT';
@@ -109,6 +128,33 @@ export function ApprovalDetailPanel({
 
     const isAreaApprovalStage = data.statusCode === 'WAITING_AREA_APPROVAL';
     const isFinalApprovalStage = data.statusCode === 'WAITING_FINAL_APPROVAL';
+
+    // PAYMENT CC State Logic (DEC-085 refinement)
+    const lineItemCCs = data.lineItems || [];
+    const ccIds = lineItemCCs.map(item => item.costCenterId).filter((id): id is number => id !== null && id !== undefined);
+    const uniqueCCIds = Array.from(new Set(ccIds));
+    
+    // A PAYMENT request is considered UNIFIED if ALL items share exactly the same non-null Cost Center
+    const paymentCCState: 'UNIFIED' | 'MISSING' | 'INCONSISTENT' = 
+        uniqueCCIds.length === 1 && ccIds.length === lineItemCCs.length ? 'UNIFIED' :
+        uniqueCCIds.length > 1 ? 'INCONSISTENT' : 'MISSING';
+
+    const hasValidatedPaymentCC = isPayment && paymentCCState === 'UNIFIED';
+
+    // Auto-select unified CC for PAYMENT so the approveArea payload is consistent
+    useEffect(() => {
+        if (hasValidatedPaymentCC && uniqueCCIds.length === 1) {
+            setSelectedCostCenterId(uniqueCCIds[0].toString());
+        }
+    }, [hasValidatedPaymentCC, data.id]);
+
+    useEffect(() => {
+        // Fetch only if lookup is actually needed (Quotation, Missing CC, or Conflict)
+        const needsLookup = isQuotation || (isPayment && (paymentCCState === 'MISSING' || paymentCCState === 'INCONSISTENT'));
+        if (approvalStage === 'AREA' && data.plantId && needsLookup) {
+            fetchCostCenters(data.plantId);
+        }
+    }, [approvalStage, data.plantId, isQuotation, isPayment, paymentCCState]);
 
     // Winner selection is enabled for QUOTATION requests when the approver is in their decision stage
     const canSelectWinner = isQuotation && (
@@ -158,11 +204,23 @@ export function ApprovalDetailPanel({
         if (!action) return;
 
         // Validate winner selection for QUOTATION approve
-        if (action === 'APPROVE' && isQuotation) {
-            const selected = data.quotations?.find(q => q.isSelected);
-            if (!selected) {
-                setModalFeedback({ type: 'error', message: 'É necessário selecionar uma cotação vencedora antes de aprovar.' });
+        if (action === 'APPROVE') {
+            // DEC-085: Cost Center is mandatory for Area Approval
+            // Refined: For PAYMENT, if it's already unified, we allow it.
+            if (approvalStage === 'AREA' && !selectedCostCenterId) {
+                setModalFeedback({ 
+                    type: 'error', 
+                    message: 'A seleção do Centro de Custo é obrigatória para prosseguir com a aprovação.' 
+                });
                 return;
+            }
+
+            if (isQuotation) {
+                const selected = data.quotations?.find(q => q.isSelected);
+                if (!selected) {
+                    setModalFeedback({ type: 'error', message: 'É necessário selecionar uma cotação vencedora antes de aprovar.' });
+                    return;
+                }
             }
         }
 
@@ -184,7 +242,7 @@ export function ApprovalDetailPanel({
 
             if (action === 'APPROVE') {
                 result = isArea
-                    ? await api.requests.approveArea(data.id, approvalComment, data.quotations?.find(q => q.isSelected)?.id)
+                    ? await api.requests.approveArea(data.id, approvalComment, data.quotations?.find(q => q.isSelected)?.id, selectedCostCenterId || undefined)
                     : await api.requests.approveFinal(data.id, approvalComment);
             } else if (action === 'REJECT') {
                 result = isArea
@@ -218,7 +276,66 @@ export function ApprovalDetailPanel({
         { label: 'Planta', value: data.plantName, icon: <Factory size={12} /> },
         { label: 'Necessário Até', value: data.needByDateUtc ? formatDate(data.needByDateUtc) : '---', icon: <Calendar size={12} /> },
         { label: 'Fornecedor Atual', value: data.supplierName },
-        { label: 'Centro de Custo', value: data.costCenterCode, icon: <Landmark size={12} /> },
+        { 
+            label: 'Centro de Custo', 
+            value: approvalStage === 'AREA' ? (
+                hasValidatedPaymentCC ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div style={{ 
+                            padding: '8px 12px', 
+                            backgroundColor: 'white', 
+                            border: '1.5px solid black',
+                            fontSize: '0.8rem',
+                            fontWeight: 900
+                        }}>
+                             [{data.lineItems[0].costCenterCode}] {data.lineItems[0].costCenterName}
+                        </div>
+                        <div className="flex items-center gap-1 text-[9px] font-black tracking-wider text-green-600 uppercase">
+                            <CheckCircle size={10} /> Validado
+                        </div>
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <select
+                            value={selectedCostCenterId || ''}
+                            onChange={(e) => setSelectedCostCenterId(e.target.value)}
+                            className="w-full text-xs font-black uppercase text-black"
+                            style={{
+                                padding: '6px 10px',
+                                border: selectedCostCenterId ? '2px solid black' : '2px solid var(--color-status-red)',
+                                borderRadius: '0',
+                                backgroundColor: 'white',
+                                outline: 'none',
+                                cursor: 'pointer',
+                                appearance: 'auto',
+                                boxShadow: selectedCostCenterId ? 'none' : '2px 2px 0px var(--color-status-red-bg)'
+                            }}
+                        >
+                            <option value="">Selecione...</option>
+                            {costCenters.map(cc => (
+                                <option key={cc.id} value={cc.id}>
+                                    [{cc.code}] {cc.name}
+                                </option>
+                            ))}
+                        </select>
+                        {isPayment && paymentCCState === 'INCONSISTENT' ? (
+                            <div className="flex items-center gap-1 text-[9px] font-black tracking-wider text-red-600 uppercase">
+                                <AlertCircle size={10} /> Conflito: Unificação Obrigatória
+                            </div>
+                        ) : !selectedCostCenterId ? (
+                            <div className="flex items-center gap-1 text-[9px] font-black tracking-wider text-red-600 uppercase">
+                                <AlertCircle size={10} /> Decisão Obrigatória
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-1 text-[9px] font-black tracking-wider text-green-600 uppercase">
+                                <CheckCircle size={10} /> Validado
+                            </div>
+                        )}
+                    </div>
+                )
+            ) : data.costCenterCode || (data.lineItems?.[0]?.costCenterCode ? `[${data.lineItems[0].costCenterCode}]` : '---'), 
+            icon: <Landmark size={12} /> 
+        },
         { label: 'Grau Necessidade', value: data.needLevelName }
     ];
 

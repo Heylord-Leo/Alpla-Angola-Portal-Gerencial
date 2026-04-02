@@ -1,5 +1,6 @@
-import { AlertCircle, AlertTriangle, Info, Package, TrendingUp, TrendingDown, Minus, CheckCircle2, AlertOctagon, Eye, BarChart3 } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Info, Package, TrendingUp, TrendingDown, Minus, CheckCircle2, AlertOctagon, Eye, BarChart3, HelpCircle } from 'lucide-react';
 import { ApprovalIntelligenceDto, ItemIntelligenceDto } from '../../../types';
+import { Tooltip } from '../../../components/ui/Tooltip';
 
 // --- Interfaces ---
 
@@ -70,10 +71,12 @@ export function DecisionInsightsPanel({ intelligence, approvalStage, requestData
                 <KpiCard 
                     label="Acumulado Mês" 
                     value={dept.monthAccumulatedTotal.toLocaleString('pt-AO', { style: 'currency', currency: dept.currency || 'AOA' })} 
+                    tooltip="Total de gastos do departamento no mês atual (considerando pedidos já aprovados)."
                 />
                 <KpiCard 
                     label="Impacto Orçame." 
                     value={`${dept.currentRequestSharePercentage.toFixed(1)}%`} 
+                    tooltip="Percentual que este pedido consome do volume total de gastos do mês para o seu departamento."
                 />
             </div>
         </div>
@@ -290,6 +293,7 @@ function FinalEmphasisBlock({ intelligence }: { intelligence: ApprovalIntelligen
                     <KpiCard
                         label="Acumulado Anual — Depto."
                         value={dept.yearAccumulatedTotal.toLocaleString('pt-AO', { style: 'currency', currency: dept.currency || 'AOA' })}
+                        tooltip="Soma de todos os gastos aprovados para este departamento no ano civil corrente."
                     />
                 )}
 
@@ -297,6 +301,7 @@ function FinalEmphasisBlock({ intelligence }: { intelligence: ApprovalIntelligen
                     label="Compras Históricas"
                     value={totalPurchaseCount > 0 ? `${totalPurchaseCount} registro${totalPurchaseCount > 1 ? 's' : ''}` : 'Sem histórico'}
                     muted={totalPurchaseCount === 0}
+                    tooltip="Quantidade de vezes que itens com a mesma descrição foram comprados anteriormente no portal."
                 />
 
                 {consolidatedVariation !== null && (
@@ -306,8 +311,13 @@ function FinalEmphasisBlock({ intelligence }: { intelligence: ApprovalIntelligen
                         backgroundColor: 'white',
                         boxShadow: 'var(--shadow-brutal)'
                     }}>
-                        <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 900, letterSpacing: '0.1em', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
-                            Variação Consolidada
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                            <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 900, letterSpacing: '0.1em', color: 'var(--color-text-muted)' }}>
+                                Variação Consolidada
+                            </div>
+                            <Tooltip content="Média ponderada da variação de preço dos itens deste pedido em relação aos preços médios praticados no histórico.">
+                                <HelpCircle size={12} className="text-gray-400 cursor-help" />
+                            </Tooltip>
                         </div>
                         <div style={{ 
                             display: 'flex', 
@@ -362,22 +372,41 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
     );
 }
 
-function KpiCard({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
-    return (
+function KpiCard({ label, value, muted, tooltip }: { label: string; value: string; muted?: boolean; tooltip?: string }) {
+    const cardContent = (
         <div style={{ 
             padding: '20px', 
             border: '2px solid black', 
             backgroundColor: 'white',
-            boxShadow: 'var(--shadow-brutal)'
+            boxShadow: 'var(--shadow-brutal)',
+            height: '100%'
         }}>
-            <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 900, letterSpacing: '0.1em', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
-                {label}
+            <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '6px', 
+                marginBottom: '8px' 
+            }}>
+                <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 900, letterSpacing: '0.1em', color: 'var(--color-text-muted)' }}>
+                    {label}
+                </div>
+                {tooltip && <HelpCircle size={12} className="text-gray-400" />}
             </div>
             <div style={{ fontSize: '1.5rem', fontWeight: 950, color: muted ? 'var(--color-text-muted)' : 'black', fontVariantNumeric: 'tabular-nums' }}>
                 {value}
             </div>
         </div>
     );
+
+    if (tooltip) {
+        return (
+            <Tooltip content={tooltip}>
+                {cardContent}
+            </Tooltip>
+        );
+    }
+
+    return cardContent;
 }
 
 function ItemCard({ item, onDrillDown, isArea }: { item: ItemIntelligenceDto; onDrillDown?: (item: ItemIntelligenceDto) => void, isArea: boolean }) {

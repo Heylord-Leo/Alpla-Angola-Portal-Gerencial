@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { FileText, Home, LogOut, Settings, List, ShoppingCart, ChevronDown, ChevronRight, Package, Activity, Network, ChevronLeft, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Z_INDEX } from '../../constants/ui';
+import { DropdownPortal } from '../ui/DropdownPortal';
 
 type NavItemType = 'link' | 'group' | 'action';
 
@@ -26,8 +27,15 @@ interface SidebarProps {
 
 export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
     const location = useLocation() as { pathname: string; state: { fromList?: string } | null };
-    const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+    const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
     const { isAdmin, isLocalManager, logout } = useAuth();
+    
+    // Hover Flyout State
+    const [hoveredItem, setHoveredItem] = useState<NavItem | null>(null);
+    const [hoverRect, setHoverRect] = useState<DOMRect | null>(null);
+    const [sidebarRect, setSidebarRect] = useState<DOMRect | null>(null);
+    const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const sidebarRef = useRef<HTMLElement>(null);
 
     const MENU_ITEMS: NavItem[] = [
         {
@@ -139,45 +147,63 @@ export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
     // Auto-expand groups if child is active - but only if sidebar is expanded
     useEffect(() => {
         if (!isExpanded) {
-            setExpandedGroups({});
+            setExpandedGroupId(null);
             return;
         }
 
-        const newExpanded = { ...expandedGroups };
-        let changed = false;
-
-        MENU_ITEMS.forEach(item => {
+        // Find the group that should be expanded based on active children
+        const activeGroup = MENU_ITEMS.find(item => {
             if (item.type === 'group' && item.children) {
                 const isChildActive = item.children.some(child => child.to && location.pathname.startsWith(child.to.split('?')[0]));
                 const isParentActive = item.to && (location.pathname === item.to || location.pathname.startsWith(item.to + '/'));
-                if ((isChildActive || isParentActive) && !expandedGroups[item.id]) {
-                    newExpanded[item.id] = true;
-                    changed = true;
-                }
+                return isChildActive || isParentActive;
             }
+            return false;
         });
 
-        if (changed) {
-            setExpandedGroups(newExpanded);
+        if (activeGroup && expandedGroupId !== activeGroup.id) {
+            setExpandedGroupId(activeGroup.id);
         }
     }, [location.pathname, isExpanded]);
 
     const toggleGroup = (id: string) => {
         if (!isExpanded) {
             onToggle();
-            setExpandedGroups({ [id]: true });
+            setExpandedGroupId(id);
             return;
         }
-        setExpandedGroups(prev => ({ ...prev, [id]: !prev[id] }));
+        setExpandedGroupId(prev => (prev === id ? null : id));
     };
 
     const handleLogout = () => {
         logout();
     };
 
+    const handleItemMouseEnter = (item: NavItem, event: React.MouseEvent) => {
+        if (isExpanded) return;
+        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+        setHoveredItem(item);
+        setHoverRect(event.currentTarget.getBoundingClientRect());
+        setSidebarRect(sidebarRef.current?.getBoundingClientRect() || null);
+    };
+
+    const handleItemMouseLeave = () => {
+        if (isExpanded) return;
+        hoverTimeoutRef.current = setTimeout(() => {
+            setHoveredItem(null);
+            setHoverRect(null);
+        }, 150);
+    };
+
+    const handleFlyoutMouseEnter = () => {
+        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    };
+
     return (
         <div style={{ position: 'relative', height: '100%' }}>
-            <aside style={{
+            <aside 
+                ref={sidebarRef}
+                style={{
                 backgroundColor: 'var(--color-bg-surface)',
                 border: '2px solid var(--color-primary)',
                 boxShadow: 'var(--shadow-brutal)',
@@ -254,11 +280,15 @@ export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
                     )}
 
                     {MENU_ITEMS.map(item => (
-                        <React.Fragment key={item.id}>
+                        <div 
+                            key={item.id}
+                            onMouseEnter={(e) => handleItemMouseEnter(item, e)}
+                            onMouseLeave={handleItemMouseLeave}
+                        >
                             {item.type === 'group' ? (
                                 <SidebarGroup
                                     item={item}
-                                    isExpanded={!!expandedGroups[item.id]}
+                                    isExpanded={expandedGroupId === item.id}
                                     onToggle={() => toggleGroup(item.id)}
                                     currentPath={location.pathname}
                                     isSidebarExpanded={isExpanded}
@@ -271,7 +301,7 @@ export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
                                     isSidebarExpanded={isExpanded}
                                 />
                             )}
-                        </React.Fragment>
+                        </div>
                     ))}
                 </nav>
 
@@ -332,7 +362,103 @@ export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
             >
                 {isExpanded ? <ChevronLeft size={16} strokeWidth={3} /> : <ChevronRight size={16} strokeWidth={3} />}
             </button>
+
+            {/* Hover Flyout */}
+            <SidebarFlyout 
+                item={hoveredItem}
+                rect={hoverRect}
+                sidebarRect={sidebarRect}
+                onMouseEnter={handleFlyoutMouseEnter}
+                onMouseLeave={handleItemMouseLeave}
+            />
         </div>
+    );
+}
+
+function SidebarFlyout({ item, rect, sidebarRect, onMouseEnter, onMouseLeave }: {
+    item: NavItem | null;
+    rect: DOMRect | null;
+    sidebarRect: DOMRect | null;
+    onMouseEnter: () => void;
+    onMouseLeave: () => void;
+}) {
+    if (!item || !rect || !sidebarRect) return null;
+
+    // Viewport-aware positioning
+    const PADDING = 16;
+    const HORIZONTAL_GAP = 12;
+    const estimatedHeight = (item.children?.length || 1) * 45 + 50; // Dynamic height estimate
+    let top = rect.top;
+    
+    // Check if it goes beyond the bottom of the viewport
+    if (top + estimatedHeight > window.innerHeight - PADDING) {
+        top = Math.max(PADDING, window.innerHeight - estimatedHeight - PADDING);
+    }
+
+    return (
+        <DropdownPortal>
+            <motion.div
+                onMouseEnter={onMouseEnter}
+                onMouseLeave={onMouseLeave}
+                initial={{ opacity: 0, x: 5 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 5 }}
+                transition={{ duration: 0.15 }}
+                style={{
+                    position: 'fixed',
+                    top: `${top}px`,
+                    left: `${sidebarRect.right + HORIZONTAL_GAP}px`,
+                    backgroundColor: 'var(--color-bg-surface)',
+                    border: '2px solid var(--color-primary)',
+                    boxShadow: 'var(--shadow-brutal)',
+                    zIndex: Z_INDEX.SIDEBAR as any, // Same as sidebar but portal handles layering
+                    display: 'flex',
+                    flexDirection: 'column',
+                    minWidth: '220px',
+                    pointerEvents: 'auto'
+                }}
+            >
+                {/* Flyout Header */}
+                <div style={{
+                    padding: '0.75rem 1rem',
+                    borderBottom: '2px solid var(--color-primary)',
+                    backgroundColor: 'rgba(var(--color-primary-rgb), 0.05)',
+                    fontWeight: 800,
+                    fontSize: '0.75rem',
+                    textTransform: 'uppercase',
+                    color: 'var(--color-primary)',
+                    letterSpacing: '0.05em'
+                }}>
+                    {item.label}
+                </div>
+
+                {/* Flyout Links */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: '0.5rem' }}>
+                    {item.children && item.children.length > 0 ? (
+                        item.children.map(child => (
+                            <SidebarLink
+                                key={child.id}
+                                to={child.to!}
+                                icon={child.icon}
+                                label={child.label}
+                                isSidebarExpanded={true} // Forces labels in flyout links
+                                isNested
+                            />
+                        ))
+                    ) : (
+                        item.to && (
+                            <SidebarLink
+                                to={item.to}
+                                icon={item.icon}
+                                label="Visualizar"
+                                isSidebarExpanded={true}
+                                isNested
+                            />
+                        )
+                    )}
+                </div>
+            </motion.div>
+        </DropdownPortal>
     );
 }
 
@@ -349,9 +475,18 @@ function SidebarGroup({ item, isExpanded, onToggle, currentPath, isSidebarExpand
     const isActive = isChildActive || isParentActive;
 
     const handleClick = () => {
+        if (!isSidebarExpanded) {
+            // Click Fallback in Collapsed Mode: Navigate to first child or its own link if available
+            if (item.to) {
+                navigate(item.to);
+            } else if (item.children && item.children[0]?.to) {
+                navigate(item.children[0].to);
+            }
+            return;
+        }
+
         if (item.to) {
             navigate(item.to);
-            // If clicking group with link, also ensure it's expanded
             if (!isExpanded) onToggle();
         } else {
             onToggle();
@@ -363,42 +498,42 @@ function SidebarGroup({ item, isExpanded, onToggle, currentPath, isSidebarExpand
             <button
                 onClick={handleClick}
                 aria-expanded={isExpanded}
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: isSidebarExpanded ? 'space-between' : 'center',
-                        width: '100%',
-                        padding: '0.75rem 1rem',
-                        backgroundColor: isActive ? 'rgba(var(--color-primary-rgb), 0.1)' : 'transparent',
-                        border: '2px solid transparent',
-                        color: isActive ? 'var(--color-primary)' : 'var(--color-text-main)',
-                        cursor: 'pointer',
-                        fontWeight: isActive ? 700 : 600,
-                        fontFamily: 'var(--font-family-body)',
-                        fontSize: '0.9rem',
-                        borderRadius: '0',
-                        textAlign: 'left',
-                        transition: 'all 0.2s ease'
-                    }}
-                    title={isSidebarExpanded ? "" : item.label}
-                >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        <motion.div style={{ display: 'flex' }}>
-                            {item.icon}
-                        </motion.div>
-                        {isSidebarExpanded && item.label}
-                    </div>
-                    {isSidebarExpanded && (isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />)}
-                </button>
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: isSidebarExpanded ? 'space-between' : 'center',
+                    width: '100%',
+                    padding: '0.75rem 1rem',
+                    backgroundColor: isActive ? 'rgba(var(--color-primary-rgb), 0.1)' : 'transparent',
+                    border: '2px solid transparent',
+                    color: isActive ? 'var(--color-primary)' : 'var(--color-text-main)',
+                    cursor: 'pointer',
+                    fontWeight: isActive ? 700 : 600,
+                    fontFamily: 'var(--font-family-body)',
+                    fontSize: '0.9rem',
+                    borderRadius: '0',
+                    textAlign: 'left',
+                    transition: 'all 0.2s ease'
+                }}
+                title={isSidebarExpanded ? "" : item.label}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <motion.div style={{ display: 'flex' }}>
+                        {item.icon}
+                    </motion.div>
+                    {isSidebarExpanded && item.label}
+                </div>
+                {isSidebarExpanded && (isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />)}
+            </button>
 
             <AnimatePresence>
-                {isExpanded && (
+                {isExpanded && isSidebarExpanded && (
                     <motion.div
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
                         transition={{ duration: 0.2, ease: 'easeInOut' }}
-                        style={{ overflow: 'hidden', paddingLeft: isSidebarExpanded ? '1rem' : '0', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}
+                        style={{ overflow: 'hidden', paddingLeft: '1rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}
                     >
                         {item.children?.map(child => (
                             <SidebarLink
@@ -443,7 +578,8 @@ function SidebarLink({ to, icon, label, isSidebarExpanded, isNested }: {
                 border: isActive ? '2px solid var(--color-primary)' : '2px solid transparent',
                 boxShadow: isActive ? 'var(--shadow-brutal)' : 'none',
                 transition: 'all 0.15s ease-out',
-                marginBottom: isNested ? '0' : '0.25rem'
+                marginBottom: isNested ? '0' : (isSidebarExpanded ? '0.25rem' : '0'),
+                width: '100%'
             })}
             title={isSidebarExpanded ? "" : label}
         >

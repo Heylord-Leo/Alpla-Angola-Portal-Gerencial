@@ -2535,7 +2535,7 @@ public class RequestsController : BaseController
     [HttpPost("{id}/area-approval/approve")]
     public async Task<IActionResult> ApproveArea(Guid id, [FromBody] ApprovalActionDto dto)
     {
-        return await ProcessAreaApproval(id, "APPROVE", "WAITING_FINAL_APPROVAL", dto.Comment, dto.SelectedQuotationId);
+        return await ProcessAreaApproval(id, "APPROVE", "WAITING_FINAL_APPROVAL", dto.Comment, dto.SelectedQuotationId, dto.CostCenterId);
     }
 
     [HttpPost("{id}/area-approval/reject")]
@@ -2544,7 +2544,7 @@ public class RequestsController : BaseController
         if (string.IsNullOrWhiteSpace(dto.Comment))
             return BadRequest(new ProblemDetails { Title = "Comentário Obrigatório", Detail = "Informe o motivo da rejeição.", Status = 400 });
 
-        return await ProcessAreaApproval(id, "REJECT", "REJECTED", dto.Comment, dto.SelectedQuotationId);
+        return await ProcessAreaApproval(id, "REJECT", "REJECTED", dto.Comment, dto.SelectedQuotationId, dto.CostCenterId);
     }
 
     [HttpPost("{id}/area-approval/request-adjustment")]
@@ -2553,7 +2553,7 @@ public class RequestsController : BaseController
         if (string.IsNullOrWhiteSpace(dto.Comment))
             return BadRequest(new ProblemDetails { Title = "Comentário Obrigatório", Detail = "Informe o motivo do reajuste.", Status = 400 });
 
-        return await ProcessAreaApproval(id, "REQUEST_ADJUSTMENT", "AREA_ADJUSTMENT", dto.Comment, dto.SelectedQuotationId);
+        return await ProcessAreaApproval(id, "REQUEST_ADJUSTMENT", "AREA_ADJUSTMENT", dto.Comment, dto.SelectedQuotationId, dto.CostCenterId);
     }
 
     [HttpPost("{id}/final-approval/approve")]
@@ -2630,7 +2630,7 @@ public class RequestsController : BaseController
         return await ApplyStatusChangeAndSyncItemsAsync(request, targetStatusCode, action, historyComment, successMessage, actorId);
     }
 
-    private async Task<IActionResult> ProcessAreaApproval(Guid id, string action, string targetStatusCode, string? comment, Guid? selectedQuotationId)
+    private async Task<IActionResult> ProcessAreaApproval(Guid id, string action, string targetStatusCode, string? comment, Guid? selectedQuotationId, int? costCenterId)
     {
         var actorId = CurrentUserId;
 
@@ -2641,6 +2641,7 @@ public class RequestsController : BaseController
         var request = await _context.Requests
             .Include(r => r.RequestType)
             .Include(r => r.Status)
+            .Include(r => r.LineItems)
             .FirstOrDefaultAsync(r => r.Id == id);
 
         // Winner Selection Validation (only for Quotation Approve)
@@ -2669,6 +2670,15 @@ public class RequestsController : BaseController
             }
 
             request.SelectedQuotationId = selectedQuotationId;
+        }
+
+        // Cost Center Propagation (DEC-085: Unified allocation across all line items)
+        if (request != null && action == "APPROVE" && costCenterId.HasValue)
+        {
+            foreach (var item in request.LineItems)
+            {
+                item.CostCenterId = costCenterId.Value;
+            }
         }
 
         if (request == null) return NotFound();

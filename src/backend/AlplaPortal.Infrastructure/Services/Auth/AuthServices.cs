@@ -9,6 +9,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using AlplaPortal.Infrastructure.Logging;
 
 namespace AlplaPortal.Infrastructure.Services.Auth;
 
@@ -87,12 +88,21 @@ public class AuthService : IAuthService
     private readonly ApplicationDbContext _context;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtService _jwtService;
+    private readonly SecurityOptions _securityOptions;
+    private readonly AdminLogWriter _adminLogWriter;
 
-    public AuthService(ApplicationDbContext context, IPasswordHasher passwordHasher, IJwtService jwtService)
+    public AuthService(
+        ApplicationDbContext context, 
+        IPasswordHasher passwordHasher, 
+        IJwtService jwtService,
+        IOptions<SecurityOptions> securityOptions,
+        AdminLogWriter adminLogWriter)
     {
         _context = context;
         _passwordHasher = passwordHasher;
         _jwtService = jwtService;
+        _securityOptions = securityOptions.Value;
+        _adminLogWriter = adminLogWriter;
     }
 
     public async Task<LoginResponse?> LoginAsync(LoginRequest request)
@@ -101,10 +111,41 @@ public class AuthService : IAuthService
             .Where(u => u.Email == request.Email && u.IsActive)
             .FirstOrDefaultAsync();
 
+        // 1. Check if account is currently locked
+        if (user != null && user.LockoutEndUtc.HasValue && user.LockoutEndUtc > DateTime.UtcNow)
+        {
+            await _adminLogWriter.WriteAsync("Warning", "Auth", "LOGIN_BLOCKED", 
+                $"Login attempt for locked account: {request.Email}");
+            
+            // Generic message for Phase 1 to avoid enumeration confirmation of lockout status per-user
+            throw new UnauthorizedAccessException("Tentativas excedidas ou conta bloqueada temporariamente. Tente novamente mais tarde.");
+        }
+
+        // 2. Validate credentials
         if (user == null || string.IsNullOrEmpty(user.PasswordHash) || !_passwordHasher.VerifyPassword(request.Password, user.PasswordHash))
         {
-            return null;
+            if (user != null)
+            {
+                user.AccessFailedCount++;
+                
+                if (user.AccessFailedCount >= _securityOptions.Authentication.MaxFailedAttempts)
+                {
+                    user.LockoutEndUtc = DateTime.UtcNow.AddMinutes(_securityOptions.Authentication.LockoutDurationMinutes);
+                    await _adminLogWriter.WriteAsync("Warning", "Auth", "ACCOUNT_LOCKED", 
+                        $"Account {user.Email} locked for {_securityOptions.Authentication.LockoutDurationMinutes} minutes due to multiple failures.");
+                }
+                
+                await _context.SaveChangesAsync();
+            }
+
+            // Generic error message for both wrong password and non-existent user
+            return null; 
         }
+
+        // 3. Successful login - Reset security counters
+        user.AccessFailedCount = 0;
+        user.LockoutEndUtc = null;
+        user.LastLoginAt = DateTime.UtcNow;
 
         var roles = await _context.UserRoleAssignments
             .Where(ura => ura.UserId == user.Id)
@@ -113,8 +154,7 @@ public class AuthService : IAuthService
             .ToListAsync();
 
         var token = _jwtService.GenerateToken(user, roles);
-
-        user.LastLoginAt = DateTime.UtcNow;
+        
         await _context.SaveChangesAsync();
 
         return new LoginResponse

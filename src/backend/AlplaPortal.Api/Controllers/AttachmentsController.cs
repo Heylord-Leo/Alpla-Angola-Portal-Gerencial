@@ -2,10 +2,13 @@ using AlplaPortal.Domain.Entities;
 using AlplaPortal.Infrastructure.Data;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
 using AlplaPortal.Domain.Constants;
 using System.IO;
+using System.Text.RegularExpressions;
+using AlplaPortal.Application.Models.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace AlplaPortal.Api.Controllers;
 
@@ -15,9 +18,11 @@ namespace AlplaPortal.Api.Controllers;
 public class AttachmentsController : BaseController
 {
     private readonly string _storagePath;
+    private readonly SecurityOptions _securityOptions;
 
-    public AttachmentsController(ApplicationDbContext context, IWebHostEnvironment env) : base(context)
+    public AttachmentsController(ApplicationDbContext context, IWebHostEnvironment env, IOptions<SecurityOptions> securityOptions) : base(context)
     {
+        _securityOptions = securityOptions.Value;
         // Local storage path for V1: c:\dev\alpla-portal\data\attachments
         _storagePath = Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "..", "..", "data", "attachments"));
         if (!Directory.Exists(_storagePath))
@@ -51,7 +56,39 @@ public class AttachmentsController : BaseController
 
         if (filesToProcess.Count == 0) return BadRequest("Nenhum arquivo enviado.");
 
-        // 0. Validation: Upload permission based on Status, Request Type and Attachment Type
+        // 0. Security Validation: Whitelist and Size
+        foreach (var f in filesToProcess)
+        {
+            var extension = Path.GetExtension(f.FileName).ToLowerInvariant();
+            
+            // a) Check Whitelist
+            if (!_securityOptions.Upload.AllowedExtensions.Contains(extension))
+            {
+                return BadRequest($"Extensão de arquivo não permitida: {extension}. Tipos permitidos: {string.Join(", ", _securityOptions.Upload.AllowedExtensions)}");
+            }
+
+            // b) Check Blocklist (Second layer)
+            if (_securityOptions.Upload.BlockedExtensions.Contains(extension))
+            {
+                return BadRequest("O ficheiro enviado contém uma extensão proibida por motivos de segurança.");
+            }
+
+            // c) Check Size
+            if (f.Length > _securityOptions.Upload.MaxFileSizeBytes)
+            {
+                return BadRequest($"O ficheiro {f.FileName} excede o limite de tamanho permitido (máximo {(_securityOptions.Upload.MaxFileSizeBytes / (1024 * 1024))}MB).");
+            }
+
+            // d) Content-Type consistency (Basic signal)
+            bool isTypeConsistent = CheckContentTypeConsistency(extension, f.ContentType);
+            if (!isTypeConsistent)
+            {
+                 // We don't block yet to avoid false positives, but we log it as a warning
+                 Console.WriteLine($"[SECURITY WARNING] Extension/Mime mismatch: {extension} vs {f.ContentType} for file {f.FileName}");
+            }
+        }
+
+        // 1. Validation: Upload permission based on Status, Request Type and Attachment Type
         bool isUploadable = false;
         string detail = "Não é permitido carregar este tipo de documento no estágio atual do workflow.";
         string statusCode = request.Status!.Code;
@@ -102,8 +139,8 @@ public class AttachmentsController : BaseController
         {
             // 1. Generate local storage path
             var fileId = Guid.NewGuid();
-            var extension = Path.GetExtension(f.FileName);
-            var storageFileName = $"{fileId}{extension}";
+            var extension = Path.GetExtension(f.FileName).ToLowerInvariant();
+            var storageFileName = $"{fileId}{extension}"; // Guaranteed unique and extension-safe
             var filePath = Path.Combine(_storagePath, storageFileName);
 
             using (var stream = new FileStream(filePath, FileMode.Create))
@@ -111,15 +148,18 @@ public class AttachmentsController : BaseController
                 await f.CopyToAsync(stream);
             }
 
+            // Sanitized name for display/audit
+            var sanitizedDisplayFileName = SanitizeFileName(f.FileName);
+
             // 2. Create Attachment record
             var attachment = new RequestAttachment
             {
                 Id = fileId,
                 RequestId = requestId,
-                FileName = f.FileName,
+                FileName = sanitizedDisplayFileName, // Audit-safe and display-safe
                 FileExtension = extension,
                 FileSizeMBytes = (decimal)f.Length / (1024 * 1024),
-                StorageReference = storageFileName,
+                StorageReference = storageFileName, // Physical link
                 AttachmentTypeCode = typeCode,
                 UploadedByUserId = actorId,
                 UploadedAtUtc = DateTime.UtcNow,
@@ -264,5 +304,45 @@ public class AttachmentsController : BaseController
         await _context.SaveChangesAsync();
 
         return NoContent();
+    }
+
+    private string SanitizeFileName(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName)) return "unnamed_file";
+
+        // 1. Get name and extension separatly to avoid messing with the dot
+        string nameOnly = Path.GetFileNameWithoutExtension(fileName);
+        string extension = Path.GetExtension(fileName);
+
+        // 2. Remove any character that is not alphanumeric, space, hyphen or underscore
+        // This prevents path traversal (../) and other malicious character injections in UI
+        string sanitized = Regex.Replace(nameOnly, @"[^a-zA-Z0-9\s-_]", "");
+        
+        // 3. Replace spaces with underscores and trim
+        sanitized = sanitized.Replace(" ", "_").Trim();
+
+        if (string.IsNullOrEmpty(sanitized)) sanitized = "file";
+
+        // 4. Truncate if too long (max 100 chars for DB safety)
+        if (sanitized.Length > 100) sanitized = sanitized.Substring(0, 100);
+
+        return sanitized + extension.ToLowerInvariant();
+    }
+
+    private bool CheckContentTypeConsistency(string extension, string contentType)
+    {
+        // Basic mapping of allowed extensions to expected MIME types
+        // This is a "soft" check in Phase 1
+        return extension switch
+        {
+            ".pdf" => contentType == "application/pdf",
+            ".jpg" or ".jpeg" => contentType == "image/jpeg",
+            ".png" => contentType == "image/png",
+            ".docx" => contentType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".doc" => contentType == "application/msword",
+            ".xlsx" => contentType == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ".xls" => contentType == "application/vnd.ms-excel",
+            _ => true // Skip for others or if unknown
+        };
     }
 }

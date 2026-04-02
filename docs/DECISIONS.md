@@ -1142,3 +1142,50 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
 
 ---
 
+## DEC-086 — Security Hardening Phase 1: Uploads & Login Protection
+
+- **Date:** 2026-04-02
+- **Status:** Accepted
+- **Context:** Following a security audit, two critical gaps were identified: the lack of file upload restrictions and the absence of brute-force protection during authentication.
+- **Decision:** Implement a "Minimum Safe" baseline for Phase 1:
+    1.  **Attachment Uploads**:
+        *   **Whitelist-only**: Only `.pdf`, `.jpg`, `.jpeg`, `.png`, `.doc`, `.docx`, `.xls`, `.xlsx` are allowed.
+        *   **Size Limit**: Enforced at **15MB** per file.
+        *   **Filename Sanitization**: Original filenames are sanitized (removing non-alphanumeric/hyphen/underscore) before storage in the DB to prevent UI injection and path traversal risks.
+        *   **Physical Storage**: Files are stored using GUIDs, completely decoupling the physical filename from user input.
+        *   **MIME Signal**: Basic `ContentType` consistency check is implemented as a secondary signal, not a hard blocking rule.
+    2.  **Login Protection**:
+        *   **Lockout Policy**: Accounts are temporarily locked for **15 minutes** after **5 failed attempts**.
+        *   **Generic Error Messages**: Failed logins return a generic unauthorized message to prevent user enumeration.
+        *   **Audit Logging**: Lockout events and blocked attempts are logged to the `AdminLogEntries` for SOC review.
+- **Consequences:** Legacy files remains accessible. User experience is slightly impacted by lockout, but generic messaging maintains high privacy. Future hardening (IP-based throttling, deep MIME inspection) is planned for Phase 2.
+
+---
+
+## DEC-087 — Security Hardening Phase 2: IP-Based Rate Limiting
+
+- **Date:** 2026-04-02
+- **Status:** Accepted
+- **Context:** While Phase 1 addressed user-specific lockouts, it left the system vulnerable to distributed brute-force attacks against non-existent users and resource exhaustion at the API edge.
+- **Decision:** Implement IP-based rate limiting using ASP.NET Core built-in middleware.
+    1.  **Strict Policy (LoginPolicy)**: Applied exclusively to `AuthController.Login`.
+    2.  **Thresholds**: 10 permits per 1-minute fixed window per Remote IP.
+    3.  **Localhost Configuration**: Rate limiting is configurable for localhost (disabled by default in Dev, but enabled via `Security:RateLimiting:EnableForLocalhost`) to allow local validation.
+    4.  **Generic Rejection**: Returns `429 Too Many Requests` with a generic message: "Muitas tentativas. Tente novamente em breve."
+    5.  **Throttled Audit Logging**: Logs `IP_RATE_LIMITED` to `AdminLogEntries` once per minute per IP to prevent audit log flooding.
+    6.  **Safe IP Resolution**: Relies on `RemoteIpAddress`. Forwarded headers are only trusted if `ForwardedHeadersOptions` are explicitly configured for a trusted proxy.
+- **Consequences:** Provides a high-performance first line of defense. Reduces database and CPU load during brute-force campaigns. Minimal impact on legitimate users behind shared NATs due to the generous 10/min threshold.
+
+---
+
+## DEC-090 — Cost Center Refinement: PAYMENT vs QUOTATION Behavior
+
+- **Date:** 2026-04-02
+- **Status:** Accepted
+- **Context:** DEC-085 introduced mandatory Cost Center selection for Area Approvers. However, for **PAYMENT** requests, Cost Centers are often pre-defined during the requisition/item phase. Forcing a re-selection for already valid data is redundant. Conversely, **QUOTATION** requests often lack a definitive CC until the approval stage.
+- **Decision:** Implement a conditional validation and display logic in the Approval Center:
+    1. **Unified PAYMENT**: If all line items in a PAYMENT request share the same non-null Cost Center, the field is rendered as **Read-Only** with a green "Validado" badge. Approval is not blocked.
+    2. **Inconsistent PAYMENT**: If a PAYMENT request has items with different Cost Centers, it is treated as a data conflict. The UI shows a red **"Conflito: Unificação Obrigatória"** warning and forces the approver to select one, which then propagates to all items (consistent with DEC-085's unification goal).
+    3. **Missing/QUOTATION**: If data is missing or it is a QUOTATION request, the standard mandatory dropdown behavior remains.
+- **Consequences:** Reduces friction for the most common PAYMENT scenarios while maintaining strict financial integrity for edge cases and quotations. Ensures all approved requests leave the Area stage with a unified, valid Cost Center.
+

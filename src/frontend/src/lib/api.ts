@@ -280,13 +280,13 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao duplicar o pedido.');
             return response.json();
         },
-        approveArea: async (id: string, comment?: string, selectedQuotationId?: string): Promise<{ message: string; statusCode: string }> => {
+        approveArea: async (id: string, comment?: string, selectedQuotationId?: string, costCenterId?: string): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/area-approval/approve`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ comment, selectedQuotationId }),
+                body: JSON.stringify({ comment, selectedQuotationId, costCenterId }),
             });
             if (!response.ok) return handleApiError(response, 'Falha ao aprovar o pedido.');
             return response.json();

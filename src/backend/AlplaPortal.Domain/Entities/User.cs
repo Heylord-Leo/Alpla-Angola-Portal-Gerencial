@@ -13,6 +13,10 @@ public class User
     public DateTime? LastLoginAt { get; set; }
     public string? ExternalId { get; set; }
 
+    // Security Phase 1: Login Protection
+    public int AccessFailedCount { get; set; }
+    public DateTime? LockoutEndUtc { get; set; }
+
     public int? DepartmentId { get; set; }
     public Department? Department { get; set; }
 
