@@ -65,6 +65,24 @@ To support multi-plant allocation while maintaining institutional boundaries, th
     - **Backend**: Strict verification of company-plant ownership is performed during line item creation/update.
 4. **Company Locking**: Once a request has at least one line item, the `Company` field becomes read-only in the header to prevent data inconsistency.
 
+## Copy Request Flow (v2.14.0)
+
+The "Copy Request" feature allows a user to create a new request using an existing one as a template. To maintain data integrity and prevent abandoned drafts, this flow follows specific business and routing rules.
+
+1. **Routing**: The copy action initiates a navigation to `/requests/new?copyFrom={id}`. This is handled by `RequestCreate.tsx`, which serves as the "Copy Mode" owner.
+2. **Business Data Prefilling**: Only header-level business fields that define the request structure are copied:
+   - **Copied**: Title (original), Description, Request Type, Need Level, Department, Company, Plant, Buyer, Area Approver, Final Approver.
+   - **NOT Copied**: Requester (sets to current user), Request ID/Number, Status, Currency, NeedByDate, Line Items, Values/Totals, Supplier, Attachments, Quotations, History.
+3. **Title Composition**: The frontend automatically composes the new title as: `Cópia {SourceRequestNumber} {OriginalTitle}`.
+4. **Description Warning**: A mandatory amber warning banner is displayed below the description: *"Atenção: Esta descrição foi copiada do pedido original. Revise o conteúdo antes de submeter..."*.
+5. **NeedByDate Enforcement**: This field always comes blank. The user must explicitly enter a new date for the copy, subject to standard validation.
+6. **Currency Logic**: Currency is NOT copied. It defaults to the system's internal default (AOA) and is not emphasized as a "copied" field.
+7. **UX & Identity**:
+   - **Breadcrumb**: Shows `Dashboard > Pedidos > Cópia de Pedido`.
+   - **Page Title**: Updates to `Cópia de Pedido`.
+   - **Secondary Action**: `CANCELAR` is replaced by `DESCARTAR CÓPIA` to clarify that no persisted record is being deleted.
+   - **Navigation Protection**: Standard `beforeunload` protection applies if the form has been touched.
+
 ## Dashboard de Compras (v1.1.17)
 
 The Compras Dashboard serves as the entry point for the module, combining real-time operational oversight with navigation shortcuts, quick actions, and an interactive educational guide.

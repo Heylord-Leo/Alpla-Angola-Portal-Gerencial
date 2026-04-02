@@ -682,6 +682,44 @@ public class RequestsController : BaseController
         return Ok(request);
     }
 
+    [HttpGet("{id}/template")]
+    public async Task<ActionResult<CreateRequestDraftDto>> GetRequestTemplate(Guid id)
+    {
+        var request = await _context.Requests
+            .AsNoTracking()
+            .Include(r => r.LineItems.Where(li => !li.IsDeleted))
+                .ThenInclude(li => li.Unit)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (request == null) return NotFound();
+
+        // Strict Strip: Return only business data for a new request draft
+        var template = new CreateRequestDraftDto
+        {
+            Title = request.Title, // Frontend composes copy title: Cópia {SourceRequestNumber} {OriginalTitle}
+            Description = request.Description,
+            RequestTypeId = request.RequestTypeId,
+            NeedLevelId = request.NeedLevelId,
+            CurrencyId = null, // Not copied: quotation handled by buyer, payment handled in item step
+            EstimatedTotalAmount = 0, // Reset: no items = no total
+            DepartmentId = request.DepartmentId,
+            CompanyId = request.CompanyId,
+            PlantId = request.PlantId,
+            CapexOpexClassificationId = null, // Not copied: downstream process data
+            NeedByDateUtc = null, // Must be explicitly re-entered for the new request
+            
+            // Participants SHOULD remain copied as they represent the same business structure
+            BuyerId = request.BuyerId,
+            AreaApproverId = request.AreaApproverId,
+            FinalApproverId = request.FinalApproverId,
+
+            LineItems = new List<RequestLineItemDto>(), // Only header is copied at creation stage
+            SourceRequestNumber = request.RequestNumber
+        };
+
+        return Ok(template);
+    }
+
     [HttpGet("{id}/timeline")]
     public async Task<ActionResult<RequestTimelineDto>> GetRequestTimeline(Guid id)
     {
@@ -922,6 +960,43 @@ public class RequestsController : BaseController
             SubmittedAtUtc = requestTypeEntity.Code == "QUOTATION" ? DateTime.UtcNow : null,
             IsCancelled = false
         };
+
+        // 4.1. Bulk add Line Items if provided (Copy flow)
+        if (dto.LineItems != null && dto.LineItems.Any())
+        {
+            var units = await _context.Units.AsNoTracking().ToListAsync();
+            var lineItems = new List<RequestLineItem>();
+            decimal totalAmount = 0;
+
+            foreach (var itemDto in dto.LineItems)
+            {
+                var unit = units.FirstOrDefault(u => u.Code == itemDto.Unit);
+                var item = new RequestLineItem
+                {
+                    Id = Guid.NewGuid(),
+                    RequestId = request.Id,
+                    LineNumber = itemDto.LineNumber,
+                    ItemPriority = itemDto.ItemPriority,
+                    Description = itemDto.Description,
+                    Quantity = itemDto.Quantity,
+                    UnitId = unit?.Id ?? units.FirstOrDefault(u => u.Code == "EA")?.Id ?? 1, // Fallback to EA
+                    UnitPrice = itemDto.UnitPrice,
+                    TotalAmount = itemDto.Quantity * itemDto.UnitPrice,
+                    Notes = itemDto.Notes,
+                    PlantId = itemDto.PlantId ?? request.PlantId,
+                    CostCenterId = itemDto.CostCenterId,
+                    IvaRateId = itemDto.IvaRateId,
+                    CurrencyId = itemDto.CurrencyId ?? request.CurrencyId,
+                    LineItemStatusId = null, // Initial state
+                    IsDeleted = false,
+                    CreatedAtUtc = DateTime.UtcNow
+                };
+                lineItems.Add(item);
+                totalAmount += item.TotalAmount;
+            }
+            request.LineItems = lineItems;
+            request.EstimatedTotalAmount = totalAmount;
+        }
 
         _context.Requests.Add(request);
 

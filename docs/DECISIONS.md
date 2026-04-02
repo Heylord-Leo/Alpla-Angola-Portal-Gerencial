@@ -447,6 +447,21 @@ Purpose: record important technical and process decisions so future work preserv
 
 ---
 
+## DEC-085 — Anti-Accumulative Copy Request Flow
+
+- **Date:** 2026-04-02
+- **Status:** Accepted
+- **Context:** The previous "Copy" feature was broken, simply redirecting to a blank "New Request" screen. Furthermore, copying needs to be careful not to generate abandoned draft records or leak sensitive operational data (prices, items, status) from the source request.
+- **Decision:** Implement a template-driven, frontend-first copy flow.
+    1. **Frontend-Owned Mapping**: `RequestCreate.tsx` becomes the owner of the copy flow via `/requests/new?copyFrom={id}`. It fetches a "Template" from the backend and maps it into ephemeral form state.
+    2. **Strategic Field Exclusion**: Only header-level structure is copied. Line items, currency, need-by date, and requester are explicitly excluded to ensure the resulting request is a fresh business need.
+    3. **No Automatic Persistence**: Unlike a typical "New" flow that might create a draft ID immediately, the copy flow remains purely in the browser's memory until the user clicks "Submeter". This prevents database pollution with abandoned copies.
+    4. **UX Safeguards**: Replaces standard "Cancel" with "Descartar Cópia" to clarify the ephemeral nature of the unsaved copy. Adds a mandatory warning banner for the copied description.
+- **Alternatives considered:** Copying everything including items and creating a persisted Draft immediately (rejected: high risk of data leakage and DB bloat).
+- **Consequences:** Ensures a clean, reliable duplication process. Reduces backend load by avoiding redundant draft creation. Requires users to re-enter items, which serves as a necessary validation of the new need.
+
+---
+
 ## Template for New Decisions
 
 ## DEC-[NNN] — [Short title]
@@ -460,6 +475,7 @@ Purpose: record important technical and process decisions so future work preserv
 - **Supersedes / Superseded by:** [DEC-XXX] (if applicable)
 
 ---
+
 
 ## DEC-020 — Item Priority as a Business Classification
 

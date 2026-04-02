@@ -295,17 +295,8 @@ export function RequestsList() {
     const handleActionConfirm = async (action: ApprovalActionType) => {
         if (!showApprovalModal.requestId) return;
         if (action === 'DUPLICATE_REQUEST') {
-            setApprovalProcessing(true);
-            try {
-                const result = await api.requests.duplicate(showApprovalModal.requestId);
-                setFeedback({ type: 'success', message: 'Pedido duplicado com sucesso.' });
-                navigate(`/requests/${result.id}/edit`);
-            } catch (err: any) {
-                setModalFeedback({ type: 'error', message: err.message || 'Erro ao duplicar pedido.' });
-            } finally {
-                setApprovalProcessing(false);
-                setShowApprovalModal({ show: false, type: null, requestId: null });
-            }
+            setShowApprovalModal({ show: false, type: null, requestId: null });
+            navigate(`/requests/new?copyFrom=${showApprovalModal.requestId}`);
         }
     };
 

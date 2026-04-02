@@ -193,9 +193,13 @@ export const api = {
             return response.json();
         },
         get: async (id: string): Promise<RequestDetailsDto> => {
-
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar detalhes do pedido.');
+            return response.json();
+        },
+        getTemplate: async (id: string): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/template`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar modelo para cópia.');
             return response.json();
         },
         getTimeline: async (id: string): Promise<RequestTimelineDto> => {

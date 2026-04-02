@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.15.0] - 2026-04-02
+
+### Added
+- **Anti-Accumulative Copy Request Flow**: Implemented a robust "Copy Request" feature that uses a template-driven, frontend-first approach.
+- **Strategic Data Exclusion**: The copy flow explicitly strips downstream operational data (items, currency, need-by date, attachments) to ensure the new request starts as a clean business need.
+- **Title Composition**: Automatically generates the new title in the format `Cópia {SourceNumber} {OriginalTitle}`.
+- **Ephemeral Draft State**: Copied requests exist only in the browser's memory until the user explicitly submits them, preventing database pollution from abandoned copies.
+- **UX Safeguards**: Replaced "Cancelar" with "Descartar Cópia" in copy mode and added a mandatory warning banner for the copied description.
+- **Navigation Protection**: Implemented `beforeunload` protection to prevent accidental loss of copied/edited data.
+
+### Changed
+- **Backend Template Mapping**: Updated `RequestsController.GetRequestTemplate` and `CreateRequestDraftDto` to support source request identification and title composition.
+
 ## [2.14.0] - 2026-04-02
 
 ### Added

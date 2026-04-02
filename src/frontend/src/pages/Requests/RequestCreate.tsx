@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { Save, X, Paperclip, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { Save, X, Paperclip, Trash2, AlertTriangle } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { FeedbackType } from '../../components/ui/Feedback';
 import { LookupDto, UserDto } from '../../types';
@@ -13,8 +13,15 @@ import { DateInput } from '../../components/DateInput';
 
 export function RequestCreate() {
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const location = useLocation() as { state: { fromList?: string } | null };
+    
+    // Copy Mode Detection
+    const copyFromId = searchParams.get('copyFrom');
+    const isCopyMode = !!copyFromId;
+
     const [loading, setLoading] = useState(false);
+    const [isTemplateLoading, setIsTemplateLoading] = useState(false);
     const [feedback, setFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'error', message: null });
     const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
     const [requestTypes, setRequestTypes] = useState<any[]>([]);
@@ -34,7 +41,7 @@ export function RequestCreate() {
         needByDateUtc: '',
         needLevelId: '',
         estimatedTotalAmount: '',
-        currencyId: 1,    // Defaulting to AOA
+        currencyId: 1,    // Internal implementation default (Implementation detail, not a copied field)
         departmentId: '',
         companyId: '',
         plantId: '',
@@ -43,7 +50,24 @@ export function RequestCreate() {
         finalApproverId: ''
     });
 
-    React.useEffect(() => {
+    const initialFormDataRef = useRef(formData);
+
+    // Navigation Away Protection
+    useEffect(() => {
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            const isDirty = JSON.stringify(formData) !== JSON.stringify(initialFormDataRef.current);
+            if (isDirty && !loading) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [formData, loading]);
+
+    // Load Lookups
+    useEffect(() => {
         async function loadLookups() {
             try {
                 setIsScopeLoading(true);
@@ -72,6 +96,43 @@ export function RequestCreate() {
         loadLookups();
     }, []);
 
+    // Handle Copy Mode Data Fetching
+    useEffect(() => {
+        if (!isCopyMode || isScopeLoading || plants.length === 0) return;
+
+        async function loadTemplate() {
+            try {
+                setIsTemplateLoading(true);
+                const data = await api.requests.getTemplate(copyFromId!);
+                
+                setFormData(prev => {
+                    const next = {
+                        ...prev,
+                        title: `Cópia ${data.sourceRequestNumber} ${data.title}`,
+                        description: data.description || '',
+                        requestTypeId: data.requestTypeId ? String(data.requestTypeId) : '',
+                        needLevelId: data.needLevelId ? String(data.needLevelId) : '',
+                        departmentId: data.departmentId ? String(data.departmentId) : '',
+                        companyId: data.companyId ? String(data.companyId) : '',
+                        plantId: data.plantId ? String(data.plantId) : '',
+                        buyerId: data.buyerId || '',
+                        areaApproverId: data.areaApproverId || '',
+                        finalApproverId: data.finalApproverId || '',
+                        // Specifically NOT copied: currencyId (stays default 1), needByDateUtc (stays blank)
+                    };
+                    initialFormDataRef.current = next;
+                    return next;
+                });
+            } catch (err: any) {
+                setFeedback({ type: 'error', message: err.message || 'Falha ao carregar pedido para cópia.' });
+            } finally {
+                setIsTemplateLoading(false);
+            }
+        }
+
+        loadTemplate();
+    }, [isCopyMode, copyFromId, isScopeLoading, plants.length]);
+
     // Derived filtered data based on user scope
     const filteredPlants = plants.filter(p => allowedPlantCodes.includes(p.code));
     const filteredCompanies = companies.filter(c => 
@@ -84,8 +145,8 @@ export function RequestCreate() {
     const finalApprovers = users.filter(u => u.roles?.includes(ROLES.FINAL_APPROVER));
 
     // Auto-selection of Company/Plant based on restricted scope
-    React.useEffect(() => {
-        if (isScopeLoading || plants.length === 0 || companies.length === 0) return;
+    useEffect(() => {
+        if (isScopeLoading || isTemplateLoading || plants.length === 0 || companies.length === 0 || isCopyMode) return;
 
         setFormData(prev => {
             const next = { ...prev };
@@ -103,7 +164,7 @@ export function RequestCreate() {
 
             return next;
         });
-    }, [isScopeLoading, plants.length, companies.length, filteredPlants.length, filteredCompanies.length]);
+    }, [isScopeLoading, isTemplateLoading, plants.length, companies.length, filteredPlants.length, filteredCompanies.length, isCopyMode]);
 
     const clearFieldError = (fieldName: string) => {
         setFieldErrors(prev => {
@@ -340,9 +401,9 @@ export function RequestCreate() {
         breadcrumbs: [
             { label: 'Dashboard', to: '/' },
             { label: 'Pedidos', to: `/requests${location.state?.fromList || ''}` },
-            { label: 'Novo Rascunho' }
+            { label: isCopyMode ? 'Cópia de Pedido' : 'Novo Rascunho' }
         ] as BreadcrumbItem[],
-        title: 'Novo Rascunho',
+        title: isCopyMode ? 'Cópia de Pedido' : 'Novo Rascunho',
         secondaryActions: (
             <button
                 type="button"
@@ -353,13 +414,13 @@ export function RequestCreate() {
                     fontWeight: 800, fontFamily: 'var(--font-family-display)', fontSize: '0.75rem', color: 'var(--color-text-main)'
                 }}
             >
-                <X size={14} /> CANCELAR
+                <X size={14} /> {isCopyMode ? 'DESCARTAR CÓPIA' : 'CANCELAR'}
             </button>
         ),
         primaryActions: (
             <button
                 onClick={handleSubmit}
-                disabled={loading}
+                disabled={loading || isTemplateLoading}
                 className="btn-primary"
                 style={{ height: '36px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', borderRadius: 'var(--radius-sm)' }}
             >
@@ -367,7 +428,7 @@ export function RequestCreate() {
                 {loading ? 'GERANDO...' : (
                     Number(formData.requestTypeId) === 1 ? 'CRIAR PEDIDO' : 
                     Number(formData.requestTypeId) === 2 ? 'GERAR PEDIDO' : 
-                    'CRIAR RASCUNHO'
+                    isCopyMode ? 'CRIAR RASCUNHO' : 'CRIAR RASCUNHO'
                 )}
             </button>
         ),
@@ -459,6 +520,28 @@ export function RequestCreate() {
                                 placeholder="Explique o motivo e os detalhes primários..."
                                 style={{ ...getInputStyle('Description'), resize: 'vertical' }}
                             />
+                            {isCopyMode && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: -10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    style={{
+                                        marginTop: '12px',
+                                        padding: '12px 16px',
+                                        backgroundColor: '#FFFBEB',
+                                        border: '2px solid #F59E0B',
+                                        borderRadius: 'var(--radius-sm)',
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                        gap: '12px'
+                                    }}
+                                >
+                                    <AlertTriangle size={18} style={{ color: '#D97706', flexShrink: 0, marginTop: '2px' }} />
+                                    <div style={{ fontSize: '0.8rem', color: '#92400E', fontWeight: 500, lineHeight: '1.4' }}>
+                                        <strong>Atenção:</strong> Esta descrição foi copiada do pedido original. 
+                                        Revise o conteúdo antes de submeter para confirmar que ele ainda corresponde à necessidade atual.
+                                    </div>
+                                </motion.div>
+                            )}
                             {renderFieldError('Description')}
                         </label>
 

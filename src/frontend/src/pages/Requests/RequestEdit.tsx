@@ -39,102 +39,29 @@ export function RequestEdit() {
     const { id } = useParams<{ id: string }>();
     const location = useLocation();
     const [searchParams] = useSearchParams();
+    const { user } = useAuth();
+    
+    // Derived Configuration
+    const copyFromId = searchParams.get('copyFrom');
+    const isCopyMode = !!copyFromId && !id;
 
+    // --- State Declarations ---
+
+    // UI/Loading State
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [status, setStatus] = useState<string | null>(null);
-    const [statusFullName, setStatusFullName] = useState<string | null>(null);
-    const [statusBadgeColor, setStatusBadgeColor] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [feedback, setFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'success', message: null });
     const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
-    const itemsSectionRef = useRef<HTMLDivElement>(null);
-    const [isItemsHighlighted, setIsItemsHighlighted] = useState(false);
-    const [isAttachmentsHighlighted, setIsAttachmentsHighlighted] = useState(false);
-
-    const [sectionsOpen, setSectionsOpen] = useState({
-        participants: false,
-        finance: false,
-        items: false,
-        quotations: false,
-        attachments: false,
-        history: false
-    });
-
-    const quotationsSectionRef = useRef<HTMLDivElement>(null);
-    const hasGuidedAttentionRun = useRef<string | null>(null);
-    const [isQuotationsHighlighted, setIsQuotationsHighlighted] = useState(false);
-
-    const toggleSection = (section: keyof typeof sectionsOpen) => {
-        setSectionsOpen(prev => ({ ...prev, [section]: !prev[section] }));
-    };
+    
+    // Status & Identity
+    const [status, setStatus] = useState<string | null>(null);
+    const [statusFullName, setStatusFullName] = useState<string | null>(null);
+    const [statusBadgeColor, setStatusBadgeColor] = useState<string | null>(null);
     const [requestTypeCode, setRequestTypeCode] = useState<string | null>(null);
     const [requestNumber, setRequestNumber] = useState<string | null>(null);
-    const [initialFormData, setInitialFormData] = useState<any>(null); // This holds the object literal used in the form
-
-    const { user } = useAuth();
-
-    // Permissions based on real roles
-    const isBuyer = user?.roles.includes(ROLES.BUYER);
-    const isAreaApprover = user?.roles.includes(ROLES.AREA_APPROVER);
-    const isFinalApprover = user?.roles.includes(ROLES.FINAL_APPROVER);
-    const isFinance = user?.roles.includes(ROLES.FINANCE);
-    const isReceiving = user?.roles.includes(ROLES.RECEIVING);
-
-    // Approval & Operational State
-    const [showApprovalModal, setShowApprovalModal] = useState<{
-        show: boolean,
-        type: ApprovalActionType
-    }>({ show: false, type: null });
-    const [approvalComment, setApprovalComment] = useState('');
-    const [approvalProcessing, setApprovalProcessing] = useState(false);
-    const [modalFeedback, setModalFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'error', message: null });
-    const isReworkStatus = status === 'AREA_ADJUSTMENT' || status === 'FINAL_ADJUSTMENT';
-    const isQuotationStage = status === 'WAITING_QUOTATION';
-    const isOperationalStage = ['APPROVED', 'PO_ISSUED', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'WAITING_QUOTATION'].includes(status || '');
-    const isFinalizedStatus = ['COMPLETED', 'REJECTED', 'CANCELLED', 'QUOTATION_COMPLETED'].includes(status || '');
-
-    const isDraftEditable = status === 'DRAFT' || isReworkStatus;
-    const isQuotationPartiallyEditable = status === 'WAITING_QUOTATION';
-    const isFullyReadOnly = !isDraftEditable && !isQuotationPartiallyEditable;
-
-    // Precision booleans for operational gating
-
-
-    const canEditHeader = status === 'DRAFT' || isReworkStatus;
-    const canEditSupplier = status === 'DRAFT' || isReworkStatus;
-    const canEditItems = status === 'DRAFT' || isReworkStatus;
-    const canManageAttachments = status !== null && !isFinalizedStatus;
-    const canExecuteOperationalAction = isOperationalStage || isQuotationStage;
-
-    // canEdit legacy flag (primarily controls items and save button accessibility)
-    const canEdit = canEditItems;
-
-    useEffect(() => {
-        const focus = searchParams.get('focus');
-
-        if (location.state?.successMessage) {
-            setFeedback({ type: 'success', message: location.state.successMessage });
-            // Replace state so refresh doesn't trigger it again
-            window.history.replaceState({}, document.title);
-        }
-
-        if (location.state?.successMessage || focus === 'items') {
-            // Auto-scroll and highlight the line items section
-            setTimeout(() => {
-                itemsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                setIsItemsHighlighted(true);
-                setTimeout(() => setIsItemsHighlighted(false), 5000); // 5 seconds highlight
-
-                // If query param exists, remove it without refreshing to keep URL clean
-                if (focus === 'items') {
-                    const newUrl = window.location.pathname;
-                    window.history.replaceState({}, document.title, newUrl);
-                }
-            }, 300); // slight delay to ensure UI rendered
-        }
-    }, [location.state, location.search, searchParams]);
-
+    
+    // Form Data
     const [formData, setFormData] = useState({
         title: '',
         description: '',
@@ -152,22 +79,82 @@ export function RequestEdit() {
         areaApproverId: '',
         finalApproverId: ''
     });
+    const [initialFormData, setInitialFormData] = useState<any>(null);
     const [supplierName, setSupplierName] = useState('');
     const [supplierPortalCode, setSupplierPortalCode] = useState('');
 
+    // Items & Quotations
     const [lineItems, setLineItems] = useState<RequestLineItemDto[]>([]);
     const [itemForm, setItemForm] = useState<Partial<RequestLineItemDto> | null>(null);
     const [itemSaving, setItemSaving] = useState(false);
+    const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
     const [statusHistory, setStatusHistory] = useState<RequestStatusHistoryDto[]>([]);
     const [attachments, setAttachments] = useState<RequestAttachmentDto[]>([]);
     const [quotations, setQuotations] = useState<SavedQuotationDto[]>([]);
     const [selectedQuotationId, setSelectedQuotationId] = useState<string | null>(null);
+
+    // Master Data
+    const [units, setUnits] = useState<LookupDto[]>([]);
+    const [currencies, setCurrencies] = useState<CurrencyDto[]>([]);
+    const [needLevels, setNeedLevels] = useState<LookupDto[]>([]);
+    const [departments, setDepartments] = useState<LookupDto[]>([]);
+    const [companies, setCompanies] = useState<any[]>([]);
+    const [plants, setPlants] = useState<LookupDto[]>([]);
     const [costCenters, setCostCenters] = useState<LookupDto[]>([]);
     const [ivaRates, setIvaRates] = useState<LookupDto[]>([]);
+    const [users, setUsers] = useState<UserDto[]>([]);
 
-    const hasAttachment = (typeCode: string) => {
-        return attachments.some(a => a.attachmentTypeCode === typeCode && !(a as any).isDeleted);
-    };
+    // Layout State
+    const [sectionsOpen, setSectionsOpen] = useState({
+        participants: false,
+        finance: false,
+        items: false,
+        quotations: false,
+        attachments: false,
+        history: false
+    });
+    const [isItemsHighlighted, setIsItemsHighlighted] = useState(false);
+    const [isAttachmentsHighlighted, setIsAttachmentsHighlighted] = useState(false);
+    const [isQuotationsHighlighted, setIsQuotationsHighlighted] = useState(false);
+
+    // Refs
+    const itemsSectionRef = useRef<HTMLDivElement>(null);
+    const quotationsSectionRef = useRef<HTMLDivElement>(null);
+    const hasGuidedAttentionRun = useRef<string | null>(null);
+
+    // Modals
+    const [showApprovalModal, setShowApprovalModal] = useState<{
+        show: boolean,
+        type: ApprovalActionType
+    }>({ show: false, type: null });
+    const [approvalComment, setApprovalComment] = useState('');
+    const [approvalProcessing, setApprovalProcessing] = useState(false);
+    const [modalFeedback, setModalFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'error', message: null });
+
+    // --- Derived Operational Logic ---
+
+    // Permissions based on real roles
+    const isBuyer = user?.roles.includes(ROLES.BUYER);
+    const isAreaApprover = user?.roles.includes(ROLES.AREA_APPROVER);
+    const isFinalApprover = user?.roles.includes(ROLES.FINAL_APPROVER);
+    const isFinance = user?.roles.includes(ROLES.FINANCE);
+    const isReceiving = user?.roles.includes(ROLES.RECEIVING);
+    
+    const isReworkStatus = status === 'AREA_ADJUSTMENT' || status === 'FINAL_ADJUSTMENT';
+    const isQuotationStage = status === 'WAITING_QUOTATION';
+    const isOperationalStage = ['APPROVED', 'PO_ISSUED', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'WAITING_QUOTATION'].includes(status || '');
+    const isFinalizedStatus = ['COMPLETED', 'REJECTED', 'CANCELLED', 'QUOTATION_COMPLETED'].includes(status || '');
+
+    const isDraftEditable = status === 'DRAFT' || isReworkStatus || isCopyMode;
+    const isQuotationPartiallyEditable = status === 'WAITING_QUOTATION';
+    const isFullyReadOnly = !isDraftEditable && !isQuotationPartiallyEditable;
+
+    const canEditHeader = status === 'DRAFT' || isReworkStatus || isCopyMode;
+    const canEditSupplier = status === 'DRAFT' || isReworkStatus || isCopyMode;
+    const canEditItems = status === 'DRAFT' || isReworkStatus || isCopyMode;
+    const canManageAttachments = status !== null && !isFinalizedStatus && !isCopyMode;
+    const canExecuteOperationalAction = (isOperationalStage || isQuotationStage) && !isCopyMode;
+    const canEdit = canEditItems;
 
     const canCancelRequest = useMemo(() => {
         if (!status) return false;
@@ -200,38 +187,111 @@ export function RequestEdit() {
             if (hasOperationalDocs) return false;
             return true;
         }
-        
         return false;
     }, [status, requestTypeCode, formData.supplierId, attachments, lineItems]);
 
-    // Master Data
-    const [units, setUnits] = useState<LookupDto[]>([]);
-    const [currencies, setCurrencies] = useState<CurrencyDto[]>([]);
-    const [needLevels, setNeedLevels] = useState<LookupDto[]>([]);
-    const [departments, setDepartments] = useState<LookupDto[]>([]);
-    const [companies, setCompanies] = useState<any[]>([]);
-    const [plants, setPlants] = useState<LookupDto[]>([]);
-    const [users, setUsers] = useState<UserDto[]>([]);
+    // --- Hooks & Effects ---
+
+    // Navigation Away Protection - DEC-082
+    useEffect(() => {
+        const isHeaderDirty = initialFormData && JSON.stringify(formData) !== JSON.stringify(initialFormData);
+        const isItemsDirty = lineItems.length > 0 && isCopyMode; // In copy mode, having items is "dirty" vs nothing
+        const hasUnsavedChanges = isHeaderDirty || isItemsDirty;
+
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            if (hasUnsavedChanges && !saving && !submitting) {
+                e.preventDefault();
+                e.returnValue = ''; // Required for most browsers
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [formData, initialFormData, lineItems, isCopyMode, saving, submitting]);
+
+    // Initialization: handle feedback and focus highlighting
+    useEffect(() => {
+        const focus = searchParams.get('focus');
+
+        if (location.state?.successMessage) {
+            setFeedback({ type: 'success', message: location.state.successMessage });
+            window.history.replaceState({}, document.title);
+        }
+
+        if (location.state?.successMessage || focus === 'items') {
+            setTimeout(() => {
+                itemsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                setIsItemsHighlighted(true);
+                setTimeout(() => setIsItemsHighlighted(false), 5000);
+
+                if (focus === 'items') {
+                    const newUrl = window.location.pathname;
+                    window.history.replaceState({}, document.title, newUrl);
+                }
+            }, 300);
+        }
+    }, [location.state, location.search, searchParams]);
+
+    // Guided Attention for specific statuses
+    useEffect(() => {
+        let highlightTimeout: any;
+        let scrollTimeout: any;
+
+        if (!loading && status === 'WAITING_AREA_APPROVAL' && id && hasGuidedAttentionRun.current !== id) {
+            hasGuidedAttentionRun.current = id;
+            setSectionsOpen(prev => ({ ...prev, quotations: true }));
+
+            scrollTimeout = setTimeout(() => {
+                if (quotationsSectionRef.current) {
+                    const yOffset = -220; 
+                    const y = quotationsSectionRef.current.getBoundingClientRect().top + window.pageYOffset + yOffset;
+                    window.scrollTo({ top: y, behavior: 'smooth' });
+
+                    setIsQuotationsHighlighted(true);
+                    highlightTimeout = setTimeout(() => {
+                        setIsQuotationsHighlighted(false);
+                    }, 4000);
+                }
+            }, 600);
+        }
+
+        return () => {
+            if (highlightTimeout) clearTimeout(highlightTimeout);
+            if (scrollTimeout) clearTimeout(scrollTimeout);
+        };
+    }, [loading, status, id]);
+
+    // --- Action Handlers ---
+
+    const toggleSection = (section: keyof typeof sectionsOpen) => {
+        setSectionsOpen(prev => ({ ...prev, [section]: !prev[section] }));
+    };
+
+    const hasAttachment = (typeCode: string) => {
+        return attachments.some(a => a.attachmentTypeCode === typeCode && !(a as any).isDeleted);
+    };
+
+    const handleAttachmentRefresh = useCallback(() => {
+        loadData();
+    }, []);
 
     const handleSaveItem = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!id || !itemForm) return;
+        if (!itemForm) return;
+
+        if (!id && !isCopyMode) return;
+
         setItemSaving(true);
         setFeedback({ type: 'error', message: null });
         setFieldErrors({});
+
         try {
-            // Find the ID of the selected unit from its code to map it back to the backend UnitId integer
             const selectedUnit = units.find(u => u.code === itemForm.unit);
 
-            // Unit Decimal Validation
             if (selectedUnit && !selectedUnit.allowsDecimalQuantity) {
-                // If it has a decimal point or comma, and the fractional part is not strictly .00, reject it.
-                // An easier check is just ensuring the float parses equal to the int
                 const qtyVal = Number(itemForm.quantity);
                 if (!Number.isInteger(qtyVal)) {
-                    setFieldErrors({
-                        Quantity: [`A unidade '${selectedUnit.code}' não permite quantidades fracionadas(decimais).`]
-                    });
+                    setFieldErrors({ Quantity: [`A unidade '${selectedUnit.code}' não permite quantidades fracionadas(decimais).`] });
                     setItemSaving(false);
                     return;
                 }
@@ -239,28 +299,18 @@ export function RequestEdit() {
 
             if (!selectedUnit) {
                 setFieldErrors(prev => ({ ...prev, UnitId: ['Informe a unidade do item.'] }));
-                setFeedback({ type: 'error', message: 'Informe a unidade do item.' });
                 setItemSaving(false);
                 return;
             }
 
             if (!itemForm.costCenterId) {
                 setFieldErrors(prev => ({ ...prev, CostCenterId: ['Informe o centro de custo.'] }));
-                setFeedback({ type: 'error', message: 'Informe o centro de custo.' });
                 setItemSaving(false);
                 return;
             }
 
             if (!itemForm.ivaRateId) {
                 setFieldErrors(prev => ({ ...prev, IvaRateId: ['Informe a taxa IVA.'] }));
-                setFeedback({ type: 'error', message: 'Informe a taxa IVA.' });
-                setItemSaving(false);
-                return;
-            }
-
-            if (requestTypeCode === 'PAYMENT' && !itemForm.dueDate) {
-                setFieldErrors(prev => ({ ...prev, DueDate: ['A Data de Vencimento é obrigatória para pedidos de pagamento.'] }));
-                setFeedback({ type: 'error', message: 'Informe a Data de Vencimento do item.' });
                 setItemSaving(false);
                 return;
             }
@@ -273,26 +323,40 @@ export function RequestEdit() {
                 costCenterId: Number(itemForm.costCenterId),
                 ivaRateId: Number(itemForm.ivaRateId),
                 dueDate: itemForm.dueDate || null,
-                currencyId: Number(formData.currencyId) // Enforce header currency
+                currencyId: Number(formData.currencyId)
             };
-            if (itemForm.id) {
-                await api.requests.updateLineItem(id, itemForm.id, payload);
+
+            if (isCopyMode) {
+                let nextItems = [...lineItems];
+                const tempId = itemForm.id || `temp-${Date.now()}`;
+                
+                if (itemForm.id) {
+                    nextItems = nextItems.map(it => it.id === itemForm.id ? { ...it, ...payload } : it);
+                } else {
+                    nextItems.push({ ...payload, id: tempId } as any);
+                }
+                
+                setLineItems(nextItems);
+                const newTotal = nextItems.reduce((acc, it) => acc + (Number(it.quantity) * Number(it.unitPrice)), 0);
+                setFormData(prev => ({ ...prev, estimatedTotalAmount: newTotal.toString() }));
+                setItemForm(null);
+                setFeedback({ type: 'success', message: 'Item atualizado (em memória).' });
             } else {
-                await api.requests.createLineItem(id, payload);
+                if (itemForm.id) {
+                    await api.requests.updateLineItem(id!, itemForm.id, payload);
+                } else {
+                    await api.requests.createLineItem(id!, payload);
+                }
+                const data = await api.requests.get(id!);
+                setLineItems(data.lineItems || []);
+                setFormData(prev => ({ ...prev, estimatedTotalAmount: data.estimatedTotalAmount?.toString() || '0' }));
+                setItemForm(null);
+                setFeedback({ type: 'success', message: 'Item salvo com sucesso.' });
             }
-            // Refetch to cleanly pick up the server's new total & list
-            const data = await api.requests.get(id);
-            setLineItems(data.lineItems || []);
-            setFormData(prev => ({ ...prev, estimatedTotalAmount: data.estimatedTotalAmount?.toString() || '0' }));
-            setItemForm(null);
-            setFeedback({ type: 'success', message: 'Item salvo com sucesso.' });
         } catch (err: any) {
             if (err instanceof ApiError && err.fieldErrors) {
                 setFieldErrors(err.fieldErrors);
                 setFeedback({ type: 'error', message: err.message || 'Existem campos inválidos no item.' });
-                scrollToFirstError(err.fieldErrors, '#items-section-container');
-                setIsItemsHighlighted(true);
-                setTimeout(() => setIsItemsHighlighted(false), 5000);
             } else {
                 setFeedback({ type: 'error', message: err.message || 'Erro ao salvar o item.' });
             }
@@ -301,25 +365,33 @@ export function RequestEdit() {
         }
     };
 
-    const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-
     const handleDeleteItem = async (itemId: string) => {
-        if (!id) return;
+        if (!id && !isCopyMode) return;
         setPendingDeleteId(itemId);
         setShowApprovalModal({ show: true, type: 'DELETE_ITEM' });
     };
 
     const executeDeleteItem = async () => {
-        if (!id || !pendingDeleteId) return;
-        try {
-            await api.requests.deleteLineItem(id, pendingDeleteId);
-            const data = await api.requests.get(id);
-            setLineItems(data.lineItems || []);
-            setFormData(prev => ({ ...prev, estimatedTotalAmount: data.estimatedTotalAmount?.toString() || '0' }));
-            setFeedback({ type: 'success', message: 'Item excluído com sucesso.' });
+        if (!pendingDeleteId) return;
+        if (isCopyMode) {
+            const nextItems = lineItems.filter(it => it.id !== pendingDeleteId);
+            setLineItems(nextItems);
+            const newTotal = nextItems.reduce((acc, it) => acc + (Number(it.quantity) * Number(it.unitPrice)), 0);
+            setFormData(prev => ({ ...prev, estimatedTotalAmount: newTotal.toString() }));
+            setFeedback({ type: 'success', message: 'Item removido da cópia.' });
             setPendingDeleteId(null);
-        } catch (err: any) {
-            setFeedback({ type: 'error', message: err.message || 'Erro ao excluir o item.' });
+        } else {
+            if (!id) return;
+            try {
+                await api.requests.deleteLineItem(id, pendingDeleteId);
+                const data = await api.requests.get(id);
+                setLineItems(data.lineItems || []);
+                setFormData(prev => ({ ...prev, estimatedTotalAmount: data.estimatedTotalAmount?.toString() || '0' }));
+                setFeedback({ type: 'success', message: 'Item excluído com sucesso.' });
+                setPendingDeleteId(null);
+            } catch (err: any) {
+                setFeedback({ type: 'error', message: err.message || 'Erro ao excluir o item.' });
+            }
         }
     };
 
@@ -328,20 +400,20 @@ export function RequestEdit() {
             e.preventDefault();
             e.stopPropagation();
         }
-
+        if (isCopyMode) {
+            navigate('/requests', { replace: true });
+            return;
+        }
         if (!id) {
             setFeedback({ type: 'error', message: 'ID do pedido não localizado.' });
             return;
         }
-
-        // Standardized Modal Confirmation
         setShowApprovalModal({ show: true, type: 'DELETE' });
     };
 
     const executeDeleteRequest = async () => {
         setSaving(true);
         setFeedback({ type: 'info', message: 'Excluindo rascunho...' });
-
         try {
             await api.requests.remove(id!);
             navigate('/requests', {
@@ -355,21 +427,36 @@ export function RequestEdit() {
     };
 
     const loadData = useCallback(async () => {
-        if (!id) return;
+        if (!id && !isCopyMode) return;
         try {
             setLoading(true);
-            const data = await api.requests.get(id);
-
-            setStatus(data.statusCode);
-            setStatusFullName(data.statusName);
-            setStatusBadgeColor(data.statusBadgeColor);
-            setLineItems(data.lineItems || []);
-            setRequestTypeCode(data.requestTypeCode);
-            setRequestNumber(data.requestNumber || null);
-            setStatusHistory(data.statusHistory || []);
-            setAttachments(data.attachments || []);
-            setQuotations(data.quotations || []);
-            setSelectedQuotationId(data.selectedQuotationId || null);
+            let data: any;
+            
+            if (isCopyMode) {
+                data = await api.requests.getTemplate(copyFromId!);
+                setStatus('COPY_MODE'); // Virtual status
+                setStatusFullName('Novo Pedido (Cópia)');
+                setStatusBadgeColor('var(--color-status-draft-bg)');
+                setLineItems(data.lineItems || []);
+                setRequestTypeCode(data.requestTypeId === 2 ? 'PAYMENT' : 'QUOTATION');
+                setRequestNumber(null);
+                setStatusHistory([]);
+                setAttachments([]);
+                setQuotations([]);
+                setSelectedQuotationId(null);
+            } else {
+                data = await api.requests.get(id!);
+                setStatus(data.statusCode);
+                setStatusFullName(data.statusName);
+                setStatusBadgeColor(data.statusBadgeColor);
+                setLineItems(data.lineItems || []);
+                setRequestTypeCode(data.requestTypeCode);
+                setRequestNumber(data.requestNumber || null);
+                setStatusHistory(data.statusHistory || []);
+                setAttachments(data.attachments || []);
+                setQuotations(data.quotations || []);
+                setSelectedQuotationId(data.selectedQuotationId || null);
+            }
 
             const form = {
                 title: data.title || '',
@@ -389,8 +476,10 @@ export function RequestEdit() {
                 finalApproverId: data.finalApproverId || ''
             };
 
-            setSupplierName(data.supplierName || '');
-            setSupplierPortalCode(data.supplierPortalCode || '');
+            if (!isCopyMode) {
+                setSupplierName(data.supplierName || '');
+                setSupplierPortalCode(data.supplierPortalCode || '');
+            }
 
             const [uData, cData, nData, dData, compData, plantData, ccData, ivaData, usersData] = await Promise.all([
                 api.lookups.getUnits(true),
@@ -413,7 +502,6 @@ export function RequestEdit() {
             setIvaRates(ivaData);
             setUsers(usersData);
 
-            // Auto-fill Area Approver on initial load IF empty - DEC-082
             if (form.departmentId && !form.areaApproverId) {
                 const dept = dData.find(d => d.id === Number(form.departmentId));
                 if (dept && dept.responsibleUserId) {
@@ -421,70 +509,14 @@ export function RequestEdit() {
                 }
             }
 
-            // Set final form state and reference for dirty checking
             setFormData(form);
             setInitialFormData(form);
-
         } catch (err: any) {
             setFeedback({ type: 'error', message: err.message || 'Falha ao carregar pedido.' });
         } finally {
             setLoading(false);
         }
-    }, [id]);
-
-    // Handle Scroll Focus from Search Params
-    useEffect(() => {
-        const focus = searchParams.get('focus');
-        if (!loading && focus) {
-            if (focus === 'items') {
-                setSectionsOpen(prev => ({ ...prev, items: true }));
-                setTimeout(() => {
-                    itemsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    setIsItemsHighlighted(true);
-                    setTimeout(() => setIsItemsHighlighted(false), 3000);
-                }, 500);
-            }
-        }
-    }, [loading, searchParams]);
-
-    // Handle Guided Attention for WAITING_AREA_APPROVAL - Phase 2 UX
-    useEffect(() => {
-        let highlightTimeout: any;
-        let scrollTimeout: any;
-
-        if (!loading && status === 'WAITING_AREA_APPROVAL' && id && hasGuidedAttentionRun.current !== id) {
-            // Mark as run for this specific request ID to avoid re-triggering on local state changes
-            hasGuidedAttentionRun.current = id;
-
-            // 1. Auto-expand section
-            setSectionsOpen(prev => ({ ...prev, quotations: true }));
-
-            // 2. Smooth scroll with offset for sticky header
-            scrollTimeout = setTimeout(() => {
-                if (quotationsSectionRef.current) {
-                    const yOffset = -220; // Accounts for sticky header + action bars
-                    const y = quotationsSectionRef.current.getBoundingClientRect().top + window.pageYOffset + yOffset;
-                    window.scrollTo({ top: y, behavior: 'smooth' });
-
-                    // 3. Trigger temporary highlight pulse
-                    setIsQuotationsHighlighted(true);
-                    highlightTimeout = setTimeout(() => {
-                        setIsQuotationsHighlighted(false);
-                    }, 4000); // 4 seconds pulse
-                }
-            }, 600); // Wait for expansion animation
-        }
-
-        return () => {
-            if (highlightTimeout) clearTimeout(highlightTimeout);
-            if (scrollTimeout) clearTimeout(scrollTimeout);
-        };
-    }, [loading, status, id]);
-
-    const handleAttachmentRefresh = useCallback(() => {
-        loadData();
-    }, [loadData]);
-
+    }, [id, isCopyMode, copyFromId]);
 
     useEffect(() => {
         loadData();
@@ -525,7 +557,7 @@ export function RequestEdit() {
 
     const handleSubmit = async (e?: React.FormEvent): Promise<boolean> => {
         if (e) e.preventDefault();
-        if (!id) return false;
+        if (!id && !isCopyMode) return false;
 
         // Manual Validation for Required Fields
         const newErrors: Record<string, string[]> = {};
@@ -580,9 +612,10 @@ export function RequestEdit() {
             return false;
         }
 
-        setSaving(true);
-        setFeedback({ type: 'error', message: null });
-        setFieldErrors({});
+        if (isCopyMode) {
+            // No persistence for Copy Mode until SUBMIT
+            return true;
+        }
 
         const payload = {
             title: formData.title,
@@ -605,10 +638,10 @@ export function RequestEdit() {
         };
 
         try {
-            await api.requests.updateDraft(id, payload);
+            await api.requests.updateDraft(id!, payload);
 
             // Refetch to ensure frontend state (especially total) is perfectly in sync with backend logic
-            const updated = await api.requests.get(id);
+            const updated = await api.requests.get(id!);
             setLineItems(updated.lineItems || []);
             setFormData(prev => ({
                 ...prev,
@@ -797,7 +830,7 @@ export function RequestEdit() {
     };
 
     const handleSubmitRequest = async () => {
-        if (!id) return;
+        if (!id && !isCopyMode) return;
 
         // Rework Validation: Rely on mandatory field and attachment checks below
 
@@ -860,16 +893,31 @@ export function RequestEdit() {
 
     const executeSubmit = async () => {
         setSubmitting(true);
-        setFeedback({ type: 'info', message: isReworkStatus ? 'Reenviando pedido...' : 'Submetendo pedido...' });
+        setFeedback({ type: 'info', message: isCopyMode ? 'Criando pedido da cópia...' : (isReworkStatus ? 'Reenviando pedido...' : 'Submetendo pedido...') });
 
         try {
-            const result = await api.requests.submit(id!);
+            let result;
+            if (isCopyMode) {
+                // Atomic creation with bulk items
+                const payload = {
+                    ...formData,
+                    requestTypeId: Number(formData.requestTypeId),
+                    lineItems: lineItems.map(it => ({
+                        ...it,
+                        id: undefined // Don't send temp/old IDs
+                    }))
+                };
+                result = await api.requests.create(payload);
+                // The backend CreateRequest now supports bulk items and returns full details
+                // We navigate to /requests table as requested in copy flow
+            } else {
+                result = await api.requests.submit(id!);
+            }
 
-            const successMessage = result.message || (requestTypeCode === 'QUOTATION'
+            const successMessage = result?.message || (requestTypeCode === 'QUOTATION'
                 ? 'Pedido enviado para cotação com sucesso.'
                 : 'Pedido enviado para aprovação da área com sucesso.');
 
-            // Redirect to list as per requirement
             navigate('/requests', {
                 replace: true,
                 state: { successMessage }
@@ -1006,20 +1054,20 @@ export function RequestEdit() {
             <>
                 <button
                     type="button"
-                    onClick={() => navigate(`/requests${location.state?.fromList || ''}`)}
+                    onClick={() => navigate(`/requests`)}
                     style={{
                         height: '36px', padding: '0 12px', borderRadius: 'var(--radius-sm)', border: '2px solid var(--color-border-heavy)',
                         backgroundColor: 'var(--color-bg-page)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
                         fontWeight: 800, fontFamily: 'var(--font-family-display)', fontSize: '0.75rem', color: 'var(--color-text-main)'
                     }}
                 >
-                    {status === 'DRAFT' ? <><X size={14} /> CANCELAR</> : <><ArrowLeft size={14} /> VOLTAR</>}
+                    {isCopyMode ? <><X size={14} /> DESCARTAR CÓPIA</> : (status === 'DRAFT' ? <><X size={14} /> CANCELAR</> : <><ArrowLeft size={14} /> VOLTAR</>)}
                 </button>
             </>
         ),
         primaryActions: (
             <>
-                {status === 'DRAFT' && (
+                {status === 'DRAFT' && !isCopyMode && (
                     <button
                         type="button"
                         onClick={() => handleDeleteRequest()}
@@ -1047,7 +1095,7 @@ export function RequestEdit() {
                         <X size={14} /> CANCELAR PEDIDO
                     </button>
                 )}
-                {(isDraftEditable || isQuotationPartiallyEditable) && (
+                {(isDraftEditable || isQuotationPartiallyEditable) && !isCopyMode && (
                     <button
                         onClick={handleSubmit}
                         disabled={saving}
@@ -1889,7 +1937,7 @@ export function RequestEdit() {
                     <RequestAttachments
                         id="attachments-section"
                         highlight={isAttachmentsHighlighted}
-                        requestId={id!}
+                        requestId={id || ''}
                         attachments={attachments}
                         canEdit={canManageAttachments}
                         onRefresh={handleAttachmentRefresh}

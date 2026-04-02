@@ -43,4 +43,11 @@ public class CreateRequestDraftDto
     public Guid? BuyerId { get; set; }
     public Guid? AreaApproverId { get; set; }
     public Guid? FinalApproverId { get; set; }
+
+    public List<RequestLineItemDto>? LineItems { get; set; }
+
+    /// <summary>
+    /// For copy flow title composition: Cópia {SourceRequestNumber} {OriginalTitle}
+    /// </summary>
+    public string? SourceRequestNumber { get; set; }
 }
