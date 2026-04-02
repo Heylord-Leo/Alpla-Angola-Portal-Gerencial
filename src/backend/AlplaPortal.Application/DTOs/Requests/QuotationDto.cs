@@ -45,6 +45,7 @@ public class SavedQuotationDto
     public decimal TotalIvaAmount { get; set; }
     public decimal TotalAmount { get; set; }
     public decimal TotalTaxableBase { get; set; }
+    public decimal TotalDiscountAmount { get; set; }
     public string SourceType { get; set; } = string.Empty;
     public string? SourceFileName { get; set; }
     public Guid? ProformaAttachmentId { get; set; }

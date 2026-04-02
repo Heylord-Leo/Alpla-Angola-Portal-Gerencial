@@ -1,5 +1,15 @@
 # Changelog
 
+All notable changes to this project will be documented in this file.
+
+## [2.13.3] - 2026-04-02
+
+### Fixed
+
+- **Finance**: Corrected Quotation IVA calculation logic. IVA is now calculated on the net taxable amount (Gross - Discount) instead of the Gross subtotal.
+- **Finance**: Populated `TotalTaxableBase` and `TotalDiscountAmount` in the Quotation entity and DTOs for consistent UI representation.
+- **UI**: Updated `QuotationEntry` and `BuyerItemsList` to reflect the corrected calculation logic in the summary footers.
+
 ## [v2.13.2] - 2026-04-01
 
 ### Added

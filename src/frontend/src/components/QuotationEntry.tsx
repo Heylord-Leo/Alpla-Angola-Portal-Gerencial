@@ -182,8 +182,14 @@ export function QuotationEntry({
             const ivaPercent = selectedIva ? selectedIva.ratePercent : 0;
             iva += Math.round(itemGross * (ivaPercent / 100) * 100) / 100;
         });
-        const total = gross + iva - (d.discountAmount || 0);
-        return Math.max(0, Math.round(total * 100) / 100);
+
+        const discount = d.discountAmount || 0;
+        const taxableBase = Math.max(0, gross - discount);
+        const discountRatio = gross > 0 ? (taxableBase / gross) : 1;
+        const adjustedIva = Math.round(iva * discountRatio * 100) / 100;
+        const total = Math.round((taxableBase + adjustedIva) * 100) / 100;
+
+        return Math.max(0, total);
     };
 
     const updateHeader = (field: keyof QuotationDraft, value: any) => {
@@ -522,11 +528,28 @@ export function QuotationEntry({
                                 <div className="space-y-2 relative">
                                     <div className="flex justify-between text-slate-400 font-bold text-xs uppercase tracking-widest">
                                         <span>Total s/ IVA</span>
-                                        <span>{formatCurrencyAO(draft.totalAmount + draft.discountAmount - draft.items.reduce((s, it) => s + (it.totalPrice - (it.quantity * it.unitPrice)), 0))} {draft.currency || 'AOA'}</span>
+                                        {(() => {
+                                            const gross = draft.items.reduce((sum, item) => sum + ((item.quantity||0) * (item.unitPrice||0)), 0);
+                                            const discount = draft.discountAmount || 0;
+                                            const taxableBase = Math.max(0, gross - discount);
+                                            return <span>{formatCurrencyAO(taxableBase)} {draft.currency || 'AOA'}</span>;
+                                        })()}
                                     </div>
                                     <div className="flex justify-between text-slate-400 font-bold text-xs uppercase tracking-widest pb-2 border-b border-white/10">
                                         <span>Total IVA</span>
-                                        <span>{formatCurrencyAO(draft.items.reduce((s, it) => s + (it.totalPrice - (it.quantity * it.unitPrice)), 0))} {draft.currency || 'AOA'}</span>
+                                        {(() => {
+                                            const gross = draft.items.reduce((sum, item) => sum + ((item.quantity||0) * (item.unitPrice||0)), 0);
+                                            const iva = draft.items.reduce((sum, item) => {
+                                                const itemGross = (item.quantity||0) * (item.unitPrice||0);
+                                                const selectedIva = ivaRates.find(r => r.id === item.ivaRateId);
+                                                const ivaPercent = selectedIva ? selectedIva.ratePercent : 0;
+                                                return sum + Math.round(itemGross * (ivaPercent / 100) * 100) / 100;
+                                            }, 0);
+                                            const discount = draft.discountAmount || 0;
+                                            const taxableBase = Math.max(0, gross - discount);
+                                            const ratio = gross > 0 ? (taxableBase / gross) : 1;
+                                            return <span>{formatCurrencyAO(Math.round(iva * ratio * 100) / 100)} {draft.currency || 'AOA'}</span>;
+                                        })()}
                                     </div>
                                     <div className="flex justify-between items-center pt-2">
                                         <span className="font-black uppercase text-xs tracking-tighter">Valor Líquido</span>

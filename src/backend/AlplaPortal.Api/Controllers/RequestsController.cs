@@ -1444,15 +1444,24 @@ public class RequestsController : BaseController
             });
         }
 
-        quotation.TotalGrossAmount = quotation.Items.Sum(i => i.GrossSubtotal);
-        quotation.TotalIvaAmount = quotation.Items.Sum(i => i.IvaAmount);
+        decimal totalGross = quotation.Items.Sum(i => i.GrossSubtotal);
+        decimal totalRawIva = quotation.Items.Sum(i => i.IvaAmount);
         
-        // Apply quotation-level discount
+        // Apply quotation-level discount safely
         if (dto.DiscountAmount < 0) return BadRequest("O valor do desconto não pode ser negativo.");
-        if (dto.DiscountAmount > quotation.TotalGrossAmount + quotation.TotalIvaAmount) return BadRequest("O desconto não pode exceder o valor bruto total e IVA.");
+        if (dto.DiscountAmount > totalGross) return BadRequest("O desconto não pode exceder o subtotal bruto.");
         
         quotation.DiscountAmount = Math.Round(dto.DiscountAmount, 2);
-        quotation.TotalAmount = Math.Round(quotation.TotalGrossAmount + quotation.TotalIvaAmount - quotation.DiscountAmount, 2);
+        quotation.TotalGrossAmount = Math.Round(totalGross, 2);
+        quotation.TotalDiscountAmount = quotation.DiscountAmount;
+        
+        decimal taxableBase = Math.Max(0, totalGross - quotation.DiscountAmount);
+        quotation.TotalTaxableBase = Math.Round(taxableBase, 2);
+        
+        decimal discountRatio = totalGross > 0 ? (taxableBase / totalGross) : 1m;
+        quotation.TotalIvaAmount = Math.Round(totalRawIva * discountRatio, 2);
+        
+        quotation.TotalAmount = Math.Round(quotation.TotalTaxableBase + quotation.TotalIvaAmount, 2);
 
         _context.Quotations.Add(quotation);
 
@@ -1494,6 +1503,8 @@ public class RequestsController : BaseController
             DocumentDate = quotation.DocumentDate,
             Currency = quotation.Currency,
             TotalGrossAmount = quotation.TotalGrossAmount,
+            TotalDiscountAmount = quotation.TotalDiscountAmount,
+            TotalTaxableBase = quotation.TotalTaxableBase,
             DiscountAmount = quotation.DiscountAmount,
             TotalIvaAmount = quotation.TotalIvaAmount,
             TotalAmount = quotation.TotalAmount,
@@ -1625,15 +1636,24 @@ public class RequestsController : BaseController
             });
         }
 
-        quotation.TotalGrossAmount = _context.QuotationItems.Local.Where(qi => qi.QuotationId == quotation.Id).Sum(i => i.GrossSubtotal);
-        quotation.TotalIvaAmount = _context.QuotationItems.Local.Where(qi => qi.QuotationId == quotation.Id).Sum(i => i.IvaAmount);
+        decimal totalGross = _context.QuotationItems.Local.Where(qi => qi.QuotationId == quotation.Id).Sum(i => i.GrossSubtotal);
+        decimal totalRawIva = _context.QuotationItems.Local.Where(qi => qi.QuotationId == quotation.Id).Sum(i => i.IvaAmount);
         
         // Apply quotation-level discount safely
         if (dto.DiscountAmount < 0) return BadRequest("O valor do desconto não pode ser negativo.");
-        if (dto.DiscountAmount > quotation.TotalGrossAmount + quotation.TotalIvaAmount) return BadRequest("O desconto não pode exceder o valor bruto total e IVA.");
+        if (dto.DiscountAmount > totalGross) return BadRequest("O desconto não pode exceder o subtotal bruto.");
         
         quotation.DiscountAmount = Math.Round(dto.DiscountAmount, 2);
-        quotation.TotalAmount = Math.Round(quotation.TotalGrossAmount + quotation.TotalIvaAmount - quotation.DiscountAmount, 2);
+        quotation.TotalGrossAmount = Math.Round(totalGross, 2);
+        quotation.TotalDiscountAmount = quotation.DiscountAmount;
+        
+        decimal taxableBase = Math.Max(0, totalGross - quotation.DiscountAmount);
+        quotation.TotalTaxableBase = Math.Round(taxableBase, 2);
+        
+        decimal discountRatio = totalGross > 0 ? (taxableBase / totalGross) : 1m;
+        quotation.TotalIvaAmount = Math.Round(totalRawIva * discountRatio, 2);
+        
+        quotation.TotalAmount = Math.Round(quotation.TotalTaxableBase + quotation.TotalIvaAmount, 2);
 
 
         // Audit Trail entry for traceability
@@ -1687,6 +1707,8 @@ public class RequestsController : BaseController
             DocumentDate = quotation.DocumentDate,
             Currency = quotation.Currency,
             TotalGrossAmount = quotation.TotalGrossAmount,
+            TotalDiscountAmount = quotation.TotalDiscountAmount,
+            TotalTaxableBase = quotation.TotalTaxableBase,
             DiscountAmount = quotation.DiscountAmount,
             TotalIvaAmount = quotation.TotalIvaAmount,
             TotalAmount = quotation.TotalAmount,
