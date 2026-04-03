@@ -28,20 +28,20 @@ const LoginPage: React.FC = () => {
 
     const s = {
         page: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--color-bg-page)', padding: '24px' },
-        card: { maxWidth: '440px', width: '100%', backgroundColor: 'var(--color-bg-surface)', border: '2px solid var(--color-primary)', boxShadow: 'var(--shadow-brutal)', padding: '48px 40px', display: 'flex', flexDirection: 'column' as const, gap: '32px' },
-        header: { textAlign: 'center' as const, display: 'flex', flexDirection: 'column' as const, gap: '12px' },
-        logo: { maxWidth: '240px', margin: '0 auto', marginBottom: '8px' },
+        card: { maxWidth: '440px', width: '100%', backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-premium)', borderRadius: 'var(--radius-lg)', padding: '48px 40px', display: 'flex', flexDirection: 'column' as const, gap: '32px' },
+        header: { textAlign: 'center' as const, display: 'flex', flexDirection: 'column' as const, gap: '16px' },
+        logo: { maxWidth: '180px', margin: '0 auto' },
         title: { margin: 0, fontSize: '1.25rem', fontWeight: 900, color: 'var(--color-primary)', textTransform: 'uppercase' as const, letterSpacing: '0.05em' },
-        subtitle: { fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.1em' },
+        subtitle: { fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.15em', opacity: 0.7 },
         form: { display: 'flex', flexDirection: 'column' as const, gap: '24px' },
         fieldGroup: { display: 'flex', flexDirection: 'column' as const, gap: '8px' },
-        label: { fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em' },
+        label: { fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em' },
         inputWrapper: { position: 'relative' as const },
-        iconLeft: { position: 'absolute' as const, left: '14px', top: '14px', color: 'var(--color-primary)', opacity: 0.6 },
-        iconRight: { position: 'absolute' as const, right: '14px', top: '14px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' },
-        input: { width: '100%', padding: '12px 16px 12px 42px', border: '2px solid var(--color-border)', fontSize: '0.9rem', fontWeight: 600, transition: 'all 0.2s', outline: 'none' },
-        inputFocus: { borderColor: 'var(--color-primary)', boxShadow: '4px 4px 0px var(--color-border-heavy)' },
-        errorBox: { backgroundColor: 'var(--color-status-red)08', border: '2px solid var(--color-status-red)', padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: '12px', color: 'var(--color-status-red)', fontSize: '0.85rem', fontWeight: 700, borderRadius: '4px' },
+        iconLeft: { position: 'absolute' as const, left: '16px', top: '13px', color: 'var(--color-primary)', opacity: 0.5 },
+        iconRight: { position: 'absolute' as const, right: '16px', top: '13px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' },
+        input: { width: '100%', padding: '12px 16px 12px 48px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: '0.95rem', fontWeight: 500, transition: 'all 0.2s', outline: 'none', backgroundColor: '#fcfcfc' },
+        inputFocus: { borderColor: 'var(--color-primary)', boxShadow: '0 0 0 4px rgba(var(--color-primary-rgb), 0.1)', backgroundColor: '#fff' },
+        errorBox: { backgroundColor: 'rgba(var(--color-status-red-rgb), 0.05)', border: '1px solid var(--color-status-red)', padding: '14px 16px', display: 'flex', alignItems: 'flex-start', gap: '12px', color: 'var(--color-status-red)', fontSize: '0.85rem', fontWeight: 600, borderRadius: 'var(--radius-md)' },
         footer: { textAlign: 'center' as const, pt: '16px' }
     };
 
@@ -102,18 +102,24 @@ const LoginPage: React.FC = () => {
                         type="submit"
                         disabled={isLoading}
                         className="btn btn-primary"
-                        style={{ width: '100%', padding: '14px', fontSize: '1rem', marginTop: '8px' }}
+                        style={{ 
+                            width: '100%', 
+                            padding: '16px', 
+                            fontSize: '0.85rem', 
+                            fontWeight: 900, 
+                            textTransform: 'uppercase', 
+                            letterSpacing: '0.08em', 
+                            cursor: 'pointer',
+                            borderRadius: 'var(--radius-md)',
+                            boxShadow: 'var(--shadow-md)'
+                        }}
                     >
-                        {isLoading ? (
-                            <Loader2 className="animate-spin" />
-                        ) : (
-                            "Iniciar Sessão"
-                        )}
+                        {isLoading ? <Loader2 className="animate-spin" size={20} /> : "Entrar no Portal"}
                     </button>
                 </form>
 
-                <div style={{ textAlign: 'center', opacity: 0.6, fontSize: '0.65rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                    &copy; {new Date().getFullYear()} ALPLA Angola. Todos os direitos reservados.
+                <div style={{ textAlign: 'center', marginTop: '32px', opacity: 0.5, fontSize: '0.65rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                    &copy; {new Date().getFullYear()} ALPLA. Todos os direitos reservados.
                 </div>
             </div>
         </div>

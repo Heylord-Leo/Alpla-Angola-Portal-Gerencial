@@ -130,7 +130,7 @@ const ReceivingOperation: React.FC = () => {
   const handleConfirmFinalize = async () => {
     try {
         setFinalizeProcessing(true);
-        await api.requests.finalize(request!.id, 'RECEIVING', finalizeComment);
+        await api.requests.finalize(request!.id, finalizeComment);
         setFinalizeModalOpen(false);
         navigate('/receiving/workspace', { state: { successMessage: 'Pedido finalizado com sucesso.' } });
     } catch (err: any) {
@@ -153,14 +153,15 @@ const ReceivingOperation: React.FC = () => {
 
   const cardStyle = {
     backgroundColor: 'var(--color-bg-surface)',
-    border: '2px solid var(--color-primary)',
-    boxShadow: 'var(--shadow-brutal)',
+    border: '1px solid var(--color-border)',
+    boxShadow: 'var(--shadow-sm)',
+    borderRadius: 'var(--radius-md)',
     overflow: 'hidden' as const
   };
 
   const sectionHeaderStyle = {
     padding: '16px 24px',
-    borderBottom: '2px solid var(--color-primary)',
+    borderBottom: '1px solid var(--color-border)',
     backgroundColor: 'var(--color-bg-page)',
     display: 'flex',
     justifyContent: 'space-between',
@@ -179,7 +180,7 @@ const ReceivingOperation: React.FC = () => {
         feedback={feedback}
         onCloseFeedback={() => setFeedback({ ...feedback, message: null })}
         statusBadge={
-            <div className="badge" style={{ borderColor: 'var(--color-primary)', color: 'var(--color-primary)', backgroundColor: 'transparent' }}>
+            <div className="badge" style={{ color: 'var(--color-primary)', backgroundColor: 'rgba(var(--color-primary-rgb), 0.05)', border: '1px solid var(--color-primary)' }}>
                 {request.statusName}
             </div>
         }
@@ -222,7 +223,7 @@ const ReceivingOperation: React.FC = () => {
                   <div>TIPO: <span style={{ color: 'var(--color-text-main)' }}>{request.requestTypeName}</span></div>
               </div>
           </div>
-          <div style={{ backgroundColor: 'var(--color-bg-page)', padding: '16px', border: '2px solid var(--color-border)', textAlign: 'right' }}>
+          <div style={{ backgroundColor: 'var(--color-bg-page)', padding: '16px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', textAlign: 'right' }}>
               <div style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>Unidade de Negócio</div>
               <div style={{ fontSize: '0.9rem', fontWeight: 900, color: 'var(--color-primary)', textTransform: 'uppercase' }}>
                   {request.companyName} / {request.plantName || 'N/A'}
@@ -316,7 +317,7 @@ const ReceivingOperation: React.FC = () => {
                   <span>Conferência</span>
                   <span>{operationalItems.filter((i: any) => i.statusCode === 'RECEIVED').length} / {operationalItems.length} ITENS</span>
               </div>
-              <div style={{ width: '100%', backgroundColor: 'var(--color-bg-page)', height: '12px', border: '2px solid var(--color-primary)', display: 'flex', padding: '2px' }}>
+              <div style={{ width: '100%', backgroundColor: 'var(--color-bg-page)', height: '10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', display: 'flex', padding: '2px', overflow: 'hidden' }}>
                   {operationalItems.map((item: any) => (
                       <div 
                           key={item.id} 

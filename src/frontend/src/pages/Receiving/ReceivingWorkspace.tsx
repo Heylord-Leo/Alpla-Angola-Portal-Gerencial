@@ -119,20 +119,28 @@ export function ReceivingWorkspace() {
     const renderTable = (data: RequestListItemDto[]) => {
         if (data.length === 0) {
             return (
-                <div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg-page)' }}>
-                    <Package size={48} style={{ opacity: 0.1, margin: '0 auto 16px' }} />
-                    <p style={{ fontWeight: 700, fontSize: '0.8rem', textTransform: 'uppercase' }}>Nenhum pedido nesta categoria.</p>
+                <div style={{ 
+                    padding: '80px 20px', 
+                    textAlign: 'center', 
+                    color: 'var(--color-text-muted)', 
+                    backgroundColor: '#fafafa',
+                    border: '1px dashed var(--color-border)',
+                    borderRadius: 'var(--radius-lg)',
+                    margin: '20px'
+                }}>
+                    <Package size={48} style={{ opacity: 0.2, margin: '0 auto 16px', color: 'var(--color-primary)' }} />
+                    <p style={{ fontWeight: 900, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Nenhum pedido nesta operacionalização.</p>
                 </div>
             );
         }
 
         return (
-            <table style={{ minWidth: '1000px', margin: 0 }}>
+            <table style={{ minWidth: '1000px', margin: 0, borderCollapse: 'collapse' }}>
                 <thead>
                     <tr>
-                        <th style={{ textAlign: 'center', width: '100px' }}>Ação</th>
+                        <th style={{ textAlign: 'center', width: '100px' }}>Operação</th>
                         <th>Número</th>
-                        <th>Tipo de Operação</th>
+                        <th>Tipo</th>
                         <th>Título do Pedido</th>
                         <th>Empresa</th>
                         <th>Status</th>
@@ -146,12 +154,12 @@ export function ReceivingWorkspace() {
                                 <Link 
                                     to={`/receiving/operation/${req.id}`} 
                                     className={(req.statusCode === 'COMPLETED' || req.statusCode === 'FINALIZADO') ? "btn-secondary" : "btn-primary"} 
-                                    style={{ padding: '6px 12px', fontSize: '0.7rem', textDecoration: 'none' }}
+                                    style={{ padding: '8px 16px', fontSize: '0.65rem', fontWeight: 900, letterSpacing: '0.05em' }}
                                 >
                                     {(req.statusCode === 'COMPLETED' || req.statusCode === 'FINALIZADO') ? 'VISUALIZAR' : 'RECEBER'}
                                 </Link>
                             </td>
-                            <td style={{ fontWeight: 800, color: 'var(--color-primary)' }}>{req.requestNumber}</td>
+                            <td style={{ fontWeight: 900, color: 'var(--color-primary)', letterSpacing: '0.02em' }}>{req.requestNumber}</td>
                             <td style={{ fontWeight: 600 }}>{req.requestTypeName}</td>
                             <td>{req.title}</td>
                             <td>{req.companyName}</td>
@@ -179,14 +187,14 @@ export function ReceivingWorkspace() {
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%' }}>
             {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '4px solid var(--color-primary)', paddingBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '1px solid var(--color-border)', paddingBottom: '24px' }}>
                 <div>
-                    <h1 style={{ margin: 0, fontSize: '2.5rem', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <h1 style={{ margin: 0, fontSize: '2.5rem', color: 'var(--color-primary)', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '16px' }}>
                         <Package size={40} />
                         Workspace de Recebimento
                     </h1>
-                    <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                        Pedidos aguardando conferência e entrada de materiais.
+                    <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', fontSize: '0.8rem', opacity: 0.8 }}>
+                        Gestão operacional de entrada de materiais e conferência de pedidos.
                     </p>
                 </div>
             </div>
@@ -198,9 +206,15 @@ export function ReceivingWorkspace() {
             </div>
 
             {/* Search */}
-            <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '16px', boxShadow: 'var(--shadow-brutal)', border: '2px solid var(--color-primary)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: 'var(--color-bg-page)', padding: '0 16px', border: '2px solid var(--color-border)' }}>
-                    <Search size={20} color="var(--color-primary)" strokeWidth={2.5} />
+            <div style={{ 
+                backgroundColor: 'var(--color-bg-surface)', 
+                padding: '24px', 
+                borderRadius: 'var(--radius-lg)', 
+                border: '1px solid var(--color-border)',
+                boxShadow: 'var(--shadow-sm)'
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#fcfcfc', padding: '0 16px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
+                    <Search size={20} color="var(--color-primary)" strokeWidth={2.5} style={{ opacity: 0.6 }} />
                     <input
                         type="text"
                         placeholder="BUSCAR NO RECEBIMENTO..."

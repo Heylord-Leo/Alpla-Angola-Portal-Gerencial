@@ -33,12 +33,17 @@ if (chip.activeCodes.length > 0 && selectedCodes.every(c => chip.activeCodes.inc
 }
 ```
 
-## 5. Visual & Animation Standards
-
-- **Entry**: Subtle `Initial -> Animate` entry using Framer Motion (restrained slide/fade).
-- **Hover**: Lift effect and deepening shadow (`hover:-translate-y-1 hover:shadow-xl`).
-- **Watermark**: Icons should be rendered as low-opacity decorative watermarks in the card background.
-- **Brutalist Tone**: Maintain high-contrast borders and sharp elevation consistent with the "ALPLA Industrial Brutalist" identity.
+## 5. Modern Corporate Tone
+ 
+- Use the **Shell 2.0** layout (collapsible navigation).
+- **Cards**: Refined borders, soft elevations, 8px-12px rounded corners.
+- **Emphasis**:
+    - **Active Cards**: May use blue (`var(--color-primary)`) for borders or active indicators.
+    - **Default Cards**: Must remain visually lighter and neutral using surface background tokens.
+    - **Status Cards**: Green (Success) or Red (Alerts) cards must use the same radius and elevation tokens to maintain family consistency.
+- **Typography**: Refined hierarchy (Futura for headings, Helvetica/Inter for data).
+- **Responsive**: Full grid-aware reflow.
+Use CSS Grid with `repeat(auto-fit, minmax(240px, 1fr))` to ensure layout stability across screen sizes.
 
 ## 6. Architecture
 

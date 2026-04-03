@@ -7,7 +7,7 @@
 3. **URL Safety**: Request identifiers containing slashes are used strictly for visual display and searching. Technical routing and API calls must utilize the immutable Guid `Id`.
 4. **Modular Navigation Architecture**: The application uses a grouped navigation structure to organize features by business module (e.g., Compras).
     - **Groups**: Non-navigable containers that expand/collapse following an **Accordion (Single-Open)** model. Only one group can be expanded at a time in the main sidebar; expanding a new group automatically collapses the previous one. They still auto-expand if a child route is active.
-    - **Active States**: Parent groups show a subtle "group active" highlight (light background) when a child is active, while the specific child link shows the "strong" highlight (primary color background + brutalist shadow).
+    - **Active States**: Parent groups show a subtle "group active" highlight (light background) when a child is active, while the specific child link shows the "strong" highlight (primary color background + soft elevation).
     - **Configuration**: The sidebar is driven by a `MENU_ITEMS` configuration array in `Sidebar.tsx`, supporting `link`, `group`, and `action` types for easy scalability.
     - **Two-Zone Layout**: The sidebar is split into a **Navigation Zone** (top, scrollable) and a **System Actions Zone** (bottom, fixed). This ensures critical actions like "Sair" and "Configurações" are always reachable regardless of menu length.
     - **Independent Scrolling**: The navigation zone manages its own internal scrollbar. The sidebar container itself is full-height and its scrolling is decoupled from the main page content.
@@ -16,11 +16,12 @@
 
 For workspaces and complex forms, the project uses a standardized `CollapsibleSection` component (`src/frontend/src/components/ui/CollapsibleSection.tsx`) to manage information density.
 
-1. **Visual Pattern**: Sections feature a thick border (`border-2`), a brutalist shadow (`var(--shadow-brutal)`), and a high-contrast header toggle.
+1. **Visual Pattern**: Sections feature a refined border (`border-1`), a soft elevation, and a clear header toggle.
 2. **Controlled Animation**: Uses `motion/react` for smooth height transitions and `AnimatePresence` for clean dom mounting/unmounting.
 3. **Search Behavior**: When integrated with search, sections should automatically expand if they contain filtered results, and restore to their default state when search is cleared.
 4. **Default State**: Most workspaces should default to only the first or most relevant (e.g., "Pending") section being open. In the Request Edit form, the "ITENS DO PEDIDO" section defaults to **collapsed** on initial load to reduce vertical noise.
-5. **Guided Attention**: For critical workflow stages (e.g., `WAITING_AREA_APPROVAL`), specific sections may be automatically expanded, scrolled into view (with sticky-header offset), and briefly highlighted with a red pulse effect to guide the user's attention. This logic must only run once per record load.
+5. **Guided Attention**: For critical workflow stages (e.g., `WAITING_AREA_APPROVAL`), specific sections may be automatically expanded, scrolled into view (with sticky-header offset), and briefly highlighted with a soft pulse effect to guide the user's attention. This logic must only run once per record load.
+6. **Migration Guidance**: Legacy screens may temporarily coexist with "Industrial Brutalist" styles (0px radius, heavy shadows). All new or refactored components must strictly follow the Modern Corporate standard (8px-12px radius, soft elevations).
 
 ## Resizable Drawer Pattern (v2.12.1)
 
@@ -93,7 +94,7 @@ Uses real backend data to provide immediate visibility into the module's state.
 
 1. **Clickable Operational Cards**:
     - All summary cards are actionable shortcuts. Clicking a card navigates the user to a pre-filtered view in the `Requests List` or `Buyer Items` workspace.
-    - **Hover Effects**: Clickable cards feature a subtle upward movement and a stronger shadow (`var(--shadow-brutal-hover)`) to signal interactivity.
+    - **Hover Effects**: Clickable cards feature a subtle upward movement and a soft elevation to signal interactivity.
     - **Navigation Logic**:
         - **Aguardando Cotação**: Navigates to `/buyer/items?requestStatus=WAITING_QUOTATION`.
         - **Em Atenção**: Navigates to `/requests?isAttention=true`.
@@ -246,7 +247,7 @@ The Buyer Workspace (`BuyerItemsList.tsx`) is the central hub for managing procu
 
 - **Stage 10.5: Refactor da UI de Recebimento**:
   - **Standardized Header**: Integrado o componente `RequestActionHeader` na tela de Operação de Recebimento, unificando breadcrumbs, títulos e feedbacks.
-  - **Brutalist Design Alignment**: Atualização visual completa para seguir o padrão industrial do portal (sombras pesadas, botões uppercase, bordas marcadas).
+  - **Modern Corporate Design Alignment**: Visual update to follow the refined corporate standard (soft elevations, uppercase buttons, clean borders).
   - **Identidade Preservada**: Alinhamento com o layout shell do portal sem perder a identidade funcional da operação de recebimento.
 - **Correção de Prefixo**: Corrigido bug visual de prefixo duplo "REQ REQ-" nos números de pedido.
 
@@ -288,7 +289,7 @@ The Receiving Workspace (`ReceivingWorkspace.tsx`) and Operation (`ReceivingOper
    - `PAYMENT` Request -> Uses `RequestLineItems`.
    - `QUOTATION` Request -> Uses items from the **Winning Quotation**.
 3. **Item Conference**: A specialized grid allows recording `ReceivedQuantity` and `DivergenceNotes` for each item.
-4. **Layout Standardization**: The page utilizes the unified `RequestActionHeader` to provide a consistent header, breadcrumb, and action experience, following the portal's standard shell and brutalist design language.
+4. **Layout Standardization**: The page utilizes the unified `RequestActionHeader` to provide a consistent header, breadcrumb, and action experience, following the portal's standard shell and Modern Corporate design language.
 5. **Status Sync**: Updating an item automatically recalculates the overall request status:
    - If any item is `PARTIALLY_RECEIVED` or `PENDING` while others are finished, the request moves to `IN_FOLLOWUP`.
    - Once all items are `RECEIVED`, the "Finalizar Pedido" action becomes available to move the request to `COMPLETED`.
@@ -320,7 +321,7 @@ To improve focus and operational clarity, the quotation area within the expanded
 
 - **Duplicate Supplier Prevention (v1.1.34)**: If a buyer attempts to save a quotation for a supplier that already has a quotation in the same request, the system triggers a **Duplicate Supplier Resolution Modal**.
   - **Overlay Pattern**: The modal renders as a centered overlay with a dark backdrop and high z-index (2000), ensuring it is never clipped or hidden behind footer elements.
-  - **Brutalist UI**: Uses the same visual language as `QuickSupplierModal` (sharp borders, brutal shadows, uppercase headers).
+  - **Corporate UI**: Uses the same visual language as `QuickSupplierModal` (refined borders, soft elevations, uppercase headers).
   - **Conflict Resolution**: Displays a comparison between the current draft and the existing quotation (Doc #, Date, Value) to help the buyer decide whether to replace or cancel.
   - **Atomic Replacement**: Replacing an existing quotation is an atomic backend operation that ensures the old quotation and its proforma are removed only after the new one is successfully persisted.
 
@@ -368,11 +369,7 @@ All primary action buttons in the sticky header and modals must follow these sta
 
 User actions that result in permanent changes or status transitions must use project-standard "Brutalist" modals instead of browser-native `window.confirm()`.
 
-- **Standard Actions**: Guard "Salvar Mudanças", "Submeter Pedido", "Reenviar Pedido", "Excluir Rascunho", "Duplicar Pedido", and all Approval actions with these modals.
-- **Visual Consistency**: Modals must feature:
-  - **Uppercase Titles**: (e.g., "CONFIRMAR EXCLUSÃO").
-  - **Centered Actions**: Primary and Cancel buttons centered in the modal footer.
-  - **Brutalist Inputs**: Textareas and inputs must use `var(--shadow-brutal)` and consistent padding.
+  - **Corporate Modals**: Textareas and inputs must use soft elevations and consistent padding.
 - **Implementation**: Utilize the standardized `showApprovalModal` pattern in components.
 
 ### Workflow Utilities (`src/frontend/src/lib/workflow.ts`)
@@ -413,7 +410,7 @@ To avoid duplicating complex transition logic, shared validations and backend ca
 
 For fields requiring selection from large datasets (e.g., Suppliers, Materials), the **Skybow Tabular Searchable Dropdown** pattern is the project standard:
 
-1. **Visual Consistency**: The closed state (trigger) must look identical to standard form selects (height, border, brutalist shadow).
+1. **Visual Consistency**: The closed state (trigger) must look identical to standard form selects (height, border, soft elevation).
 2. **Tabular Results**: Results are displayed in a structured mini-table with explicit headers (e.g., `Portal`, `Primavera`, `Descrição`) and aligned columns.
 3. **Selection Logic**: Use `onMouseDown` for row selection to avoid race conditions with blur/click-outside events. The entire row must be selectable.
 4. **Integrated Search**: The search box is located *inside* the dropdown panel, not as the trigger itself. This box must `autoFocus` on open.
@@ -565,7 +562,7 @@ The Administrator Workspace provides a dedicated area for technical management a
 ### Layout & Consistency
 
 - **Header Patterns**: Admin pages follow the project's standard header hierarchy (Breadcrumbs > Icon + Title > Subtitle).
-- **Navigation Tiles**: The main Admin Hub utilizes high-contrast tiles with brutalist shadows (`var(--shadow-brutal)`) and upward hover transitions to maintain visual alignment with the Dashboard and Workspace patterns.
+- **Navigation Tiles**: The main Admin Hub utilizes high-contrast tiles with soft elevations and upward hover transitions to maintain visual alignment with the Dashboard and Workspace patterns.
 - **Section Isolation**: Administrative functionality is isolated within the `/admin` path to maintain a clean separation between business operations and system management.
 
 ---

@@ -13,13 +13,14 @@ interface QuickActionItemProps {
 function QuickActionItem({ label, icon, description, onClick, color = 'var(--color-primary)' }: QuickActionItemProps) {
     return (
         <motion.button
-            whileHover={{ y: -2, boxShadow: `6px 6px 0px ${color}`, transition: { duration: 0.1 } }}
+            whileHover={{ y: -2, boxShadow: 'var(--shadow-md)', transition: { duration: 0.1 } }}
             whileTap={{ scale: 0.98 }}
             onClick={onClick}
             style={{
                 backgroundColor: 'var(--color-bg-surface)',
-                border: `2px solid ${color}`,
-                boxShadow: `4px 4px 0px ${color}`,
+                border: '1px solid var(--color-border)',
+                boxShadow: 'var(--shadow-sm)',
+                borderRadius: 'var(--radius-lg)',
                 padding: '1.25rem',
                 display: 'flex',
                 alignItems: 'center',
@@ -43,7 +44,7 @@ function QuickActionItem({ label, icon, description, onClick, color = 'var(--col
             <div style={{ flex: 1 }}>
                 <div style={{ 
                     fontSize: '1rem', 
-                    fontWeight: 800, 
+                    fontWeight: 900, 
                     textTransform: 'uppercase', 
                     color: 'var(--color-text-main)',
                     letterSpacing: '-0.01em',
@@ -61,16 +62,7 @@ function QuickActionItem({ label, icon, description, onClick, color = 'var(--col
                 </div>
             </div>
             
-            {/* Minimal decoration */}
-            <div style={{ 
-                position: 'absolute', 
-                top: 0, 
-                right: 0, 
-                width: '8px', 
-                height: '8px', 
-                backgroundColor: color,
-                clipPath: 'polygon(0 0, 100% 0, 100% 100%)'
-            }} />
+            {/* Removed corner clip-path for premium clean look */}
         </motion.button>
     );
 }
@@ -108,10 +100,11 @@ export function QuickActions() {
                 <h2 style={{ 
                     margin: 0, 
                     fontSize: '1.25rem', 
-                    fontWeight: 800, 
+                    fontWeight: 900, 
                     textTransform: 'uppercase',
                     borderLeft: '4px solid var(--color-primary)',
-                    paddingLeft: '1rem'
+                    paddingLeft: '1rem',
+                    letterSpacing: '-0.01em'
                 }}>
                     Ações Rápidas
                 </h2>

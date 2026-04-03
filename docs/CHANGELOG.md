@@ -2,6 +2,58 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.23.0] - 2026-04-03
+
+### Added
+- **Buyer Notifications for Updates**: Implemented automatic informational notifications for the assigned buyer when a requester modifies a request in `WAITING_QUOTATION` status. Includes a concise summary of changed fields.
+- **Notification Service Extension**: Extended `INotificationService` with `CreateNotificationAsync` for discrete informational messaging.
+
+### Fixed
+- **Controlled Edit Persistence (Hotfix)**: Resolved a critical regression where requester edits in the "Aguardando Cotação" stage failed to persist.
+- **Safe Comparison Logic**: Implemented `.Trim()` and null-coalescing in backend comparisons to ensure reliable change detection and history audit trails.
+- **Backend Build Regression**: Corrected invalid `IsDeleted` property access on the `Quotation` entity across multiple controller methods.
+
+### Changed
+- **Requests List UX Restoration**:
+  - Restored Request Number as a clickable link for direct navigation.
+  - Optimized column widths: increased "Número" and reduced "Ações" for better content fit.
+- **Smart Dirty Check**: Added a pre-modal check to `RequestEdit.tsx` to prevent unnecessary save confirmations when no header changes are detected.
+
+## [2.22.0] - 2026-04-03
+
+## [2.21.0] - 2026-04-03
+
+### Added
+
+- **Modern Corporate Visual Foundation (Phase 1)**:
+  - New design tokens for border radii (`sm: 4px`, `md: 8px`, `lg: 12px`).
+  - Standardized **Soft Elevation** tokens (`--shadow-sm`, `--shadow-md`, `--shadow-lg`).
+  - Standardized **Border** tokens (`--color-border: rgba(0,0,0,0.1)`).
+- **Core Component Refactor**:
+  - `KPICard`: Executive-focused layout with soft elevation and neutral baselines.
+  - `Sidebar`: Refined active states, thin borders, and modernized flyout menus.
+  - `Topbar`: Reduced accent border and added subtle shadow.
+  - `AppShell`: Replaced brutalist grid/borders with refined, rounded containers.
+
+### Changed
+
+- **Global Styling**:
+  - Reduced button and form borders to `1px`.
+  - Softened table borders and density while maintaining readability.
+  - Removed brutalist hard-shadow offsets across the application.
+- **Visual Alignment**:
+  - Updated `collapsibleSection` and `badge` styles to follow the new radii standards.
+## Current Version
+
+v2.23.0
+
+## Version History
+
+- **2.23.0**: Request Edit Persistence & Buyer Notifications. Hotfixed the controlled-edit persistence regression and implemented automatic buyer notifications for requester updates in the quotation stage. Restored clickable request numbers and optimized list column widths.
+- **2.22.0**: Modern Corporate UI Refinement (Phase 2). Significant interactive and visual elevation across high-traffic operational screens (Dashboard, Requests, Receiving). Replaced brutalist remnants with Soft Elevation and premium typography.
+ Blue is now strictly reserved as an accent for actions and highlights.
+- **v2.20.0**: Official Design Direction Transition. Formally transitioned the project from "Industrial Brutalist" to Modern Corporate. UI/UX Guidelines updated to emphasize soft elevations, refined borders, and rounded corners.
+
 ## [v2.19.0] - 2026-04-02
 
 ### Added

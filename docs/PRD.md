@@ -82,7 +82,7 @@ O sistema V1 contempla 5 perfis de uso práticos:
 
 - **Desempenho (Performance):** Resposta média aceitável de 2 a 4 segundos em consultas de lista nas condições da rede local. Validações e salvamento de ações básicas devem conferir resposta sistêmica (UI) quase imediata.
 - **Auditoria Segura:** Em nenhum momento a base deve subscrever eventos. Uma requisição que é rejeitada e posteriormente retorna não remove seu passado, senão anexa um novo evento temporal.
-- **UI/UX:** O desenho de interface obedece a um design padronizado denominado "Utilitário Bruto / Clean Industrial". É obrigatória a legibilidade profunda com cores concisas e foco exclusivo no objetivo central.
+- **UI/UX:** O desenho de interface obedece a um design padronizado denominado "**Modern Corporate**". É obrigatória a legibilidade profunda com cores concisas, tipografia refinada e foco exclusivo no objetivo central, utilizando elevações suaves e hierarquia clara.
 - **Segurança (Security):** Checagens (RBAC) precisam envolver tanto regras de interface do lado cliente, quanto bloqueios rígidos em solicitações de servidor. Validação e sanitização mandatórias nos anexos enviados ao sistema.
 - **Confiança e Resiliência:** Evitar cliques acidentais ou duplo-clicks em botões de "Salvar/Submeter" prevenindo dados replicados. Erraticidade (falhas de login, uploads mal formados) de retornar alertas amigáveis aos usuários.
 

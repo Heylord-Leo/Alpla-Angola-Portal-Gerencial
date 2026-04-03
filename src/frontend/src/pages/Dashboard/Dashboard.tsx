@@ -68,13 +68,28 @@ export function Dashboard() {
                         <LayoutDashboard size={24} />
                     </div>
                     <div>
-                        <h1 style={{ margin: 0, fontSize: '2rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.02em' }}>
-                            Dashboard de Compras
-                        </h1>
-                        <p style={{ margin: 0, color: 'var(--color-text-muted)', fontWeight: 500 }}>
-                            Visão geral operacional e entendimento do fluxo de compras
-                        </p>
-                    </div>
+                    <h1 style={{ 
+                        margin: 0, 
+                        fontSize: '2.5rem', 
+                        fontWeight: 900, 
+                        color: 'var(--color-primary)',
+                        letterSpacing: '-0.02em',
+                        lineHeight: 1
+                    }}>
+                        Cockpit Gerencial
+                    </h1>
+                    <p style={{ 
+                        margin: '8px 0 0', 
+                        color: 'var(--color-text-muted)', 
+                        fontWeight: 800, 
+                        letterSpacing: '0.1em', 
+                        textTransform: 'uppercase',
+                        fontSize: '0.8rem',
+                        opacity: 0.8
+                    }}>
+                        Visão consolidada das operações de suprimentos
+                    </p>
+                </div>
                 </div>
             </header>
 
@@ -155,23 +170,55 @@ export function Dashboard() {
             <QuickActions />
 
             {/* Section 2.7: Attention List */}
-            <AttentionList />
+            <section style={{ 
+                backgroundColor: 'var(--color-bg-surface)', 
+                padding: '24px', 
+                borderRadius: 'var(--radius-lg)', 
+                border: '1px solid var(--color-border)',
+                boxShadow: 'var(--shadow-sm)',
+                marginTop: '1rem'
+            }}>
+                <header style={{ marginBottom: '20px' }}>
+                    <h2 style={{ 
+                        margin: 0, 
+                        fontSize: '1.25rem', 
+                        fontWeight: 900, 
+                        textTransform: 'uppercase',
+                        borderLeft: '4px solid var(--color-primary)',
+                        paddingLeft: '1rem',
+                        letterSpacing: '-0.01em'
+                    }}>
+                        Atenção Requerida
+                    </h2>
+                </header>
+                <AttentionList />
+            </section>
 
             {/* Section 3: Interactive Workflow */}
-            <section style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <section style={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: '1.5rem',
+                backgroundColor: 'rgba(var(--color-primary-rgb), 0.02)',
+                padding: '32px',
+                borderRadius: 'var(--radius-lg)',
+                border: '1px solid rgba(var(--color-primary-rgb), 0.05)',
+                marginTop: '1rem'
+            }}>
                 <header>
                     <h2 style={{ 
                         margin: 0, 
                         fontSize: '1.25rem', 
-                        fontWeight: 800, 
+                        fontWeight: 900, 
                         textTransform: 'uppercase',
                         borderLeft: '4px solid var(--color-primary)',
-                        paddingLeft: '1rem'
+                        paddingLeft: '1rem',
+                        letterSpacing: '-0.01em'
                     }}>
                         Workflow Interativo
                     </h2>
-                    <p style={{ margin: '0.25rem 0 0 1.25rem', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-                        Entenda como funciona o fluxo de compras e as responsabilidades de cada etapa
+                    <p style={{ margin: '0.5rem 0 0 1.25rem', color: 'var(--color-text-muted)', fontSize: '0.9rem', fontWeight: 500 }}>
+                        Guia visual do fluxo de suprimentos e responsabilidades operacionais
                     </p>
                 </header>
 

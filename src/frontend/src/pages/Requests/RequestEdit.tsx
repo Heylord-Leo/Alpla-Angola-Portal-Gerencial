@@ -149,9 +149,11 @@ export function RequestEdit() {
     const isQuotationPartiallyEditable = status === 'WAITING_QUOTATION';
     const isFullyReadOnly = !isDraftEditable && !isQuotationPartiallyEditable;
 
-    const canEditHeader = status === 'DRAFT' || isReworkStatus || isCopyMode;
-    const canEditSupplier = status === 'DRAFT' || isReworkStatus || isCopyMode;
-    const canEditItems = status === 'DRAFT' || isReworkStatus || isCopyMode;
+    const hasSavedQuotations = quotations.length > 0;
+
+    const canEditHeader = isDraftEditable || isQuotationPartiallyEditable;
+    const canEditSupplier = isDraftEditable || (isQuotationPartiallyEditable && !hasSavedQuotations);
+    const canEditItems = isDraftEditable || (isQuotationPartiallyEditable && !hasSavedQuotations);
     const canManageAttachments = status !== null && !isFinalizedStatus && !isCopyMode;
     const canExecuteOperationalAction = (isOperationalStage || isQuotationStage) && !isCopyMode;
     const canEdit = canEditItems;
@@ -555,7 +557,7 @@ export function RequestEdit() {
         clearFieldError(name);
     };
 
-    const handleSubmit = async (e?: React.FormEvent): Promise<boolean> => {
+    const handleSubmit = async (e?: React.FormEvent, forceFeedback: boolean = false): Promise<boolean> => {
         if (e) e.preventDefault();
         if (!id && !isCopyMode) return false;
 
@@ -601,6 +603,7 @@ export function RequestEdit() {
 
         // Optimization: For manual saves, prevent no-op API calls
         const isHeaderDirty = initialFormData && JSON.stringify(formData) !== JSON.stringify(initialFormData);
+        
         if (e && !isHeaderDirty) {
             setFeedback({ type: 'info', message: 'Nenhuma alteração detectada para salvar.' });
             return true;
@@ -611,6 +614,9 @@ export function RequestEdit() {
             setShowApprovalModal({ show: true, type: 'SAVE' });
             return false;
         }
+
+        // If forceFeedback is true (modal confirmation), we proceed even if e is dummy or null
+        // because the dirty check was already verified at the moment the modal was opened.
 
         if (isCopyMode) {
             // No persistence for Copy Mode until SUBMIT
@@ -637,6 +643,7 @@ export function RequestEdit() {
             finalApproverId: formData.finalApproverId || null
         };
 
+        setSaving(true);
         try {
             await api.requests.updateDraft(id!, payload);
 
@@ -648,8 +655,8 @@ export function RequestEdit() {
                 estimatedTotalAmount: updated.estimatedTotalAmount?.toString() || '0'
             }));
 
-            // Only show success if this was a manual save (has e)
-            if (e) {
+            // Only show success if this was a manual save (has e or forceFeedback)
+            if (e || forceFeedback) {
 
                 const isPayment = Number(formData.requestTypeId) === 2 || requestTypeCode === 'PAYMENT';
                 const hasNoItems = lineItems.length === 0;
@@ -657,7 +664,7 @@ export function RequestEdit() {
                 if (isPayment && hasNoItems) {
                     setFeedback({
                         type: 'success',
-                        message: 'Rascunho salvo. Adicione os itens para poder submeter o pedido.'
+                        message: id ? 'Pedido atualizado. Adicione os itens para poder submeter.' : 'Rascunho salvo. Adicione os itens para poder submeter o pedido.'
                     });
                     // Auto-scroll and highlight the line items section
                     setTimeout(() => {
@@ -668,10 +675,10 @@ export function RequestEdit() {
                 } else if (!isPayment && hasNoItems) {
                     setFeedback({
                         type: 'success',
-                        message: 'Rascunho salvo. Itens serão inseridos na tela "Gestão de Cotações".',
+                        message: id ? 'Pedido atualizado com sucesso.' : 'Rascunho salvo. Itens serão inseridos na tela "Gestão de Cotações".',
                     });
                 } else {
-                    setFeedback({ type: 'success', message: 'Rascunho salvo com sucesso.' });
+                    setFeedback({ type: 'success', message: 'Pedido atualizado com sucesso.' });
                 }
             }
             return true;
@@ -779,8 +786,10 @@ export function RequestEdit() {
                     ? await api.requests.requestAdjustmentArea(id, approvalComment)
                     : await api.requests.requestAdjustmentFinal(id, approvalComment);
             } else if (action === 'SAVE') {
-                await handleSubmit();
-                setShowApprovalModal({ show: false, type: null });
+                const success = await handleSubmit(undefined, true);
+                if (success) {
+                    setShowApprovalModal({ show: false, type: null });
+                }
                 return;
             } else if (action === 'SUBMIT') {
                 await executeSubmit();
@@ -934,19 +943,21 @@ export function RequestEdit() {
     const inputStyle = {
         width: '100%',
         padding: '12px 14px',
-        borderRadius: 'var(--radius-sm)',
-        border: '1px solid var(--color-border-heavy)',
-        boxShadow: 'var(--shadow-brutal)'
+        borderRadius: 'var(--radius-md)',
+        border: '1px solid var(--color-border)',
+        boxShadow: 'var(--shadow-sm)',
+        transition: 'all 0.2s',
+        backgroundColor: '#fcfcfc'
     };
 
     const sectionTitleStyle: React.CSSProperties = {
-        fontSize: '1rem',
+        fontSize: '0.85rem',
         fontWeight: 900,
         textTransform: 'uppercase',
-        letterSpacing: '0.05em',
-        color: 'var(--color-text-main)',
+        letterSpacing: '0.08em',
+        color: 'var(--color-primary)',
         paddingBottom: '12px',
-        borderBottom: '2px solid var(--color-border)',
+        borderBottom: '1px solid var(--color-border)',
         marginBottom: '24px',
         display: 'flex',
         alignItems: 'center',
@@ -986,7 +997,7 @@ export function RequestEdit() {
 
     const getInputStyle = (fieldName: string) => ({
         ...inputStyle,
-        ...(getFieldErrors(fieldName) ? { borderColor: '#EF4444', backgroundColor: '#FEF2F2', boxShadow: '3px 3px 0px #EF4444' } : {})
+        ...(getFieldErrors(fieldName) ? { borderColor: '#EF4444', backgroundColor: '#FEF2F2', boxShadow: '0 0 0 4px rgba(239, 68, 68, 0.1)' } : {})
     });
 
     if (loading) {
@@ -1056,9 +1067,10 @@ export function RequestEdit() {
                     type="button"
                     onClick={() => navigate(`/requests`)}
                     style={{
-                        height: '36px', padding: '0 12px', borderRadius: 'var(--radius-sm)', border: '2px solid var(--color-border-heavy)',
-                        backgroundColor: 'var(--color-bg-page)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
-                        fontWeight: 800, fontFamily: 'var(--font-family-display)', fontSize: '0.75rem', color: 'var(--color-text-main)'
+                        height: '36px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)',
+                        backgroundColor: 'var(--color-bg-surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
+                        fontWeight: 800, fontFamily: 'var(--font-family-display)', fontSize: '0.7rem', color: 'var(--color-text-main)',
+                        boxShadow: 'var(--shadow-sm)', transition: 'all 0.2s'
                     }}
                 >
                     {isCopyMode ? <><X size={14} /> DESCARTAR CÓPIA</> : (status === 'DRAFT' ? <><X size={14} /> CANCELAR</> : <><ArrowLeft size={14} /> VOLTAR</>)}
@@ -1087,9 +1099,10 @@ export function RequestEdit() {
                         onClick={() => setShowApprovalModal({ show: true, type: 'CANCEL_REQUEST' })}
                         disabled={saving || submitting}
                         style={{
-                            height: '36px', padding: '0 12px', borderRadius: 'var(--radius-sm)', border: '2px solid #EF4444',
-                            backgroundColor: 'var(--color-bg-page)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
-                            fontWeight: 800, fontFamily: 'var(--font-family-display)', color: '#EF4444', fontSize: '0.75rem'
+                            height: '36px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: '1px solid #EF4444',
+                            backgroundColor: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
+                            fontWeight: 800, fontFamily: 'var(--font-family-display)', color: '#EF4444', fontSize: '0.7rem',
+                            boxShadow: 'var(--shadow-sm)', transition: 'all 0.2s'
                         }}
                     >
                         <X size={14} /> CANCELAR PEDIDO
@@ -1392,9 +1405,25 @@ export function RequestEdit() {
                 flexDirection: 'column',
                 gap: '32px'
             }}>
+                {isQuotationPartiallyEditable && (
+                    <div style={{ 
+                        margin: '0 0 24px', padding: '16px', borderRadius: 'var(--radius-lg)', 
+                        backgroundColor: '#f0f9ff', border: '1px solid #0ea5e9',
+                        display: 'flex', alignItems: 'center', gap: '16px'
+                    }}>
+                        <ShieldCheck size={24} color="#0ea5e9" />
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontWeight: 800, fontSize: '0.85rem', color: '#0369a1', textTransform: 'uppercase' }}>
+                                Modo de Edição Parcial Ativo
+                            </span>
+                            <span style={{ fontSize: '0.8rem', color: '#0c4a6e' }}>
+                                O pedido está em fase de cotação. Você pode ajustar o título, descrição e justificativa. 
+                                {hasSavedQuotations ? ' Os itens e fornecedor estão bloqueados por existirem cotações salvas.' : ' Itens e fornecedor permanecem editáveis até que a primeira cotação seja registrada.'}
+                            </span>
+                        </div>
+                    </div>
+                )}
 
-
-                {/* Section A: Dados Gerais do Pedido */}
                 <section style={{ backgroundColor: 'var(--color-bg-surface)', padding: '32px', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-brutal)', border: '2px solid var(--color-border-heavy)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', borderBottom: '3px solid var(--color-primary)', paddingBottom: '12px' }}>
                         <h2 style={{ ...sectionTitleStyle, borderBottom: 'none', marginBottom: 0, paddingBottom: 0, marginTop: 0, fontSize: '1.1rem', fontWeight: 900 }}>Dados Gerais do Pedido</h2>
@@ -1462,7 +1491,7 @@ export function RequestEdit() {
                                     value={formData.requestTypeId}
                                     onChange={handleChange}
                                     style={getInputStyle('RequestTypeId')}
-                                    disabled={!canEditHeader || status !== 'DRAFT'}
+                                    disabled={!canEditHeader || isQuotationPartiallyEditable || status !== 'DRAFT'}
                                 >
                                     <option value={1}>COTAÇÃO (COM)</option>
                                     <option value={2}>PAGAMENTO (PAG)</option>
@@ -1556,9 +1585,9 @@ export function RequestEdit() {
                                     onChange={handleChange} 
                                     style={{
                                         ...getInputStyle('CompanyId'),
-                                        ...(lineItems.length > 0 || !canEditHeader ? { backgroundColor: 'var(--color-bg-page)', cursor: 'not-allowed', opacity: 0.8 } : {})
+                                        ...(lineItems.length > 0 || isQuotationPartiallyEditable || !canEditHeader ? { backgroundColor: 'var(--color-bg-page)', cursor: 'not-allowed', opacity: 0.8 } : {})
                                     }}
-                                    disabled={!canEditHeader || lineItems.length > 0}
+                                    disabled={!canEditHeader || isQuotationPartiallyEditable || lineItems.length > 0}
                                 >
                                     <option value="">-- Selecione --</option>
                                     {companies.filter(c => c.isActive || Number(formData.companyId) === c.id).map(c => (
@@ -1581,9 +1610,9 @@ export function RequestEdit() {
                                     onChange={handleChange} 
                                     style={{
                                         ...getInputStyle('PlantId'),
-                                        ...(!formData.companyId || !canEditHeader ? { backgroundColor: 'var(--color-bg-page)', cursor: 'not-allowed', opacity: 0.8 } : {})
+                                        ...(!formData.companyId || isQuotationPartiallyEditable || !canEditHeader ? { backgroundColor: 'var(--color-bg-page)', cursor: 'not-allowed', opacity: 0.8 } : {})
                                     }}
-                                    disabled={!canEditHeader || !formData.companyId}
+                                    disabled={!canEditHeader || isQuotationPartiallyEditable || !formData.companyId}
                                 >
                                     <option value="">-- Selecione --</option>
                                     {plants.filter(p => (p.isActive && (!formData.companyId || p.companyId === Number(formData.companyId))) || formData.plantId === p.id.toString()).map(p => (
@@ -1617,7 +1646,7 @@ export function RequestEdit() {
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
                             <label style={labelStyle}>
                                 Comprador Atribuído <span style={{ color: 'red' }}>*</span>
-                                <select name="buyerId" value={formData.buyerId} onChange={handleChange} style={getInputStyle('BuyerId')} disabled={!canEditHeader}>
+                                <select name="buyerId" value={formData.buyerId} onChange={handleChange} style={getInputStyle('BuyerId')} disabled={!canEditHeader || isQuotationPartiallyEditable}>
                                     <option value="">-- Selecione --</option>
                                     {users.map(u => (
                                         <option key={u.id} value={u.id}>{u.fullName}</option>
@@ -1628,7 +1657,7 @@ export function RequestEdit() {
 
                             <label style={labelStyle}>
                                 Aprovador de Área <span style={{ color: 'red' }}>*</span>
-                                <select name="areaApproverId" value={formData.areaApproverId} onChange={handleChange} style={getInputStyle('AreaApproverId')} disabled={!canEditHeader}>
+                                <select name="areaApproverId" value={formData.areaApproverId} onChange={handleChange} style={getInputStyle('AreaApproverId')} disabled={!canEditHeader || isQuotationPartiallyEditable}>
                                     <option value="">-- Selecione --</option>
                                     {users.map(u => (
                                         <option key={u.id} value={u.id}>{u.fullName}</option>
@@ -1639,7 +1668,7 @@ export function RequestEdit() {
 
                             <label style={labelStyle}>
                                 Aprovador Final <span style={{ color: 'red' }}>*</span>
-                                <select name="finalApproverId" value={formData.finalApproverId} onChange={handleChange} style={getInputStyle('FinalApproverId')} disabled={!canEditHeader}>
+                                <select name="finalApproverId" value={formData.finalApproverId} onChange={handleChange} style={getInputStyle('FinalApproverId')} disabled={!canEditHeader || isQuotationPartiallyEditable}>
                                     <option value="">-- Selecione --</option>
                                     {users.map(u => (
                                         <option key={u.id} value={u.id}>{u.fullName}</option>

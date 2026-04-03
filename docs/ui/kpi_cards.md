@@ -2,14 +2,17 @@
 
 This document defines the official visual and interactive standard for KPI (Key Performance Indicator) and summary cards in the Alpla Portal. These cards provide high-level operational visibility and navigation shortcuts across the application.
 
-## 1. Visual Language: "Industrial Brutalist"
-
-The design follows the project's core "Industrial Brutalist" aesthetic, emphasizing clarity, high-contrast hierarchy, and functional elegance.
-
-- **Borders**: Thick, high-contrast borders (e.g., `border-2 border-slate-900`).
-- **Elevation**: Distinct shadows that deepen upon interaction (`shadow-md` -> `shadow-xl`).
+## 1. Visual Language: "Modern Corporate"
+ 
+The design follows the project's core "Modern Corporate" aesthetic, emphasizing modularity, professional hierarchy, and refined visual density.
+ 
+- **Borders**: Refined, low-contrast borders (e.g., `border-1 border-slate-200`).
+- **Elevation**: Soft, diffused elevations ("Soft Elevation") that respond subtly to interaction.
 - **Watermark Symbols**: Large, low-opacity icons positioned in the bottom-right of the card to provide visual context without cluttering the foreground.
-- **Color Palette**: Solid, curated colors (e.g., Alpla Blue, Amber, Rose, Emerald) used to categorize modules and request stages.
+- **Color Palette & Emphasis**:
+    - **Default State**: Cards should remain visually lighter and more neutral using `--color-bg-surface`.
+    - **Active/Focused State**: May use **Blue emphasis** (e.g., Alpla Deep Blue border or indicator) to signal current selection or primary focus.
+    - **Status Indicators**: Comparative or status-specific cards (Green for Success, Red for Alerts) must belong to the same visual family, using consistent radii and elevation.
 
 ## 2. Interaction & Feedback
 

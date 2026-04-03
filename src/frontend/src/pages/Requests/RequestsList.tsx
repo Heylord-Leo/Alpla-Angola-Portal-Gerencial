@@ -1,16 +1,16 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Link, useLocation, useSearchParams, useNavigate } from 'react-router-dom';
-import { Plus, Search, FileText, X, Eye, Copy, DollarSign, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Search, FileText, X, Eye, Copy, DollarSign, User, Clock, AlertTriangle } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
-import { formatCurrencyAO, getRequestGuidance, getUrgencyStyle } from '../../lib/utils';
+import { formatCurrencyAO, getRequestGuidance, getUrgencyStyle, formatDate } from '../../lib/utils';
 import { RequestListItemDto, DashboardSummaryDto } from '../../types';
-import { RequestTimelineInline } from './components/RequestTimelineInline';
 import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModal';
 import { FilterDropdown, FilterGroup } from '../../components/ui/FilterDropdown';
 import { KebabMenu } from '../../components/ui/KebabMenu';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { KPISummary } from '../../components/common/dashboard/KPISummary';
+import { RequestTimelineInline } from './components/RequestTimelineInline';
 
 // Quick Chip Definitions
 const QUICK_CHIPS = [
@@ -47,7 +47,7 @@ export function RequestsList() {
     const navigate = useNavigate();
     const [showApprovalModal, setShowApprovalModal] = useState<{ show: boolean, type: ApprovalActionType, requestId: string | null }>({ show: false, type: null, requestId: null });
     const [approvalComment, setApprovalComment] = useState('');
-    const [approvalProcessing, setApprovalProcessing] = useState(false);
+    const [approvalProcessing] = useState(false);
     const [modalFeedback, setModalFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'success', message: null });
 
     // Filter URL Parsing
@@ -316,7 +316,7 @@ export function RequestsList() {
             )}
 
             {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '4px solid var(--color-primary)', paddingBottom: '16px', width: '100%', minWidth: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '1px solid var(--color-border)', paddingBottom: '16px', width: '100%', minWidth: 0 }}>
                 <div>
                     <h1 style={{ margin: 0, fontSize: '2.5rem', color: 'var(--color-primary)' }}>Pedidos de Compras e Pagamentos</h1>
                     <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Gerencie e acompanhe todos os pedidos corporativos.</p>
@@ -336,26 +336,44 @@ export function RequestsList() {
             )}
 
             {/* Filter Hub */}
-            <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '16px', boxShadow: 'var(--shadow-brutal)', border: '2px solid var(--color-primary)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                
-                {/* Row 1: Search & Reset */}
-                <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, backgroundColor: 'var(--color-bg-page)', padding: '0 16px', border: '2px solid var(--color-border)', minWidth: 0 }}>
-                        <Search size={20} color="var(--color-primary)" strokeWidth={2.5} />
-                        <input
-                            type="text"
-                            placeholder="BUSCAR POR NÚMERO OU TÍTULO..."
-                            value={searchInput}
-                            onChange={(e) => setSearchInput(e.target.value)}
-                            style={{ border: 'none', outline: 'none', width: '100%', fontSize: '0.85rem', padding: '12px 0', backgroundColor: 'transparent', fontWeight: 600, color: 'var(--color-primary)', textTransform: 'uppercase' }}
-                        />
+            <div style={{ 
+                backgroundColor: 'var(--color-bg-surface)', 
+                padding: '24px', 
+                borderRadius: 'var(--radius-lg)', 
+                border: '1px solid var(--color-border)',
+                boxShadow: 'var(--shadow-sm)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '20px'
+            }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h2 style={{ 
+                        margin: 0, 
+                        fontSize: '1rem', 
+                        fontWeight: 900, 
+                        textTransform: 'uppercase', 
+                        letterSpacing: '0.05em',
+                        color: 'var(--color-primary)'
+                    }}>
+                        Filtros e Busca
+                    </h2>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)' }}>
+                        {totalCount} PEDIDOS ENCONTRADOS
                     </div>
-                    {hasFilters && (
-                        <button onClick={clearAllFilters} style={{ 
-                            background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', 
-                            fontWeight: 700, textTransform: 'uppercase', fontSize: '0.85rem', whiteSpace: 'nowrap'
-                        }}>
-                            Limpar Filtros
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#fcfcfc', padding: '0 16px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', transition: 'all 0.2s' }}>
+                    <Search size={20} color="var(--color-primary)" strokeWidth={2.5} style={{ opacity: 0.6 }} />
+                    <input
+                        type="text"
+                        placeholder="BUSCAR POR NÚMERO, TÍTULO OU FORNECEDOR..."
+                        value={searchInput}
+                        onChange={(e) => setSearchInput(e.target.value)}
+                        style={{ border: 'none', outline: 'none', width: '100%', fontSize: '0.9rem', padding: '16px 0', backgroundColor: 'transparent', fontWeight: 600, color: 'var(--color-text-main)' }}
+                    />
+                    {searchInput && (
+                        <button onClick={() => setSearchInput('')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                            <X size={18} />
                         </button>
                     )}
                 </div>
@@ -392,6 +410,14 @@ export function RequestsList() {
                         selectedIds={statusIds}
                         onChange={(ids) => handleFilterChange('statusIds', ids)}
                     />
+                    {hasFilters && (
+                        <button onClick={clearAllFilters} style={{ 
+                            background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', 
+                            fontWeight: 700, textTransform: 'uppercase', fontSize: '0.85rem', whiteSpace: 'nowrap'
+                        }}>
+                            Limpar Filtros
+                        </button>
+                    )}
                 </div>
 
                 {/* Row 3: Quick Chips */}
@@ -407,7 +433,8 @@ export function RequestsList() {
                                         padding: '4px 12px',
                                         backgroundColor: isActive ? 'var(--color-primary)' : 'var(--color-bg-page)',
                                         color: isActive ? 'var(--color-bg-surface)' : 'var(--color-text-main)',
-                                        border: `2px solid ${isActive ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                                        border: `1px solid ${isActive ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                                        borderRadius: 'var(--radius-md)',
                                         fontWeight: 700,
                                         fontSize: '0.75rem',
                                         textTransform: 'uppercase',
@@ -425,11 +452,11 @@ export function RequestsList() {
                 {/* Row 4: Active Filter Tags (excludes empty search) */}
                 {activeFilterChips.length > 0 && (
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', paddingTop: '8px' }}>
-                        {activeFilterChips.map(chip => (
+                        {activeFilterChips.map((chip: any) => (
                             <span key={chip.key} style={{
                                 display: 'inline-flex', alignItems: 'center', gap: '6px',
                                 padding: '4px 8px', backgroundColor: 'var(--color-bg-surface)',
-                                border: '1px solid var(--color-primary)', color: 'var(--color-primary)',
+                                border: '1px solid var(--color-primary)', borderRadius: 'var(--radius-md)', color: 'var(--color-primary)',
                                 fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase'
                             }}>
                                 {chip.label}
@@ -456,7 +483,13 @@ export function RequestsList() {
             {/* Legend & Table Area */}
             <div style={{ display: 'flex', flexDirection: 'column' }}>
 
-                <div style={{ overflowX: 'auto', width: '100%', border: '2px solid var(--color-primary)', boxShadow: 'var(--shadow-brutal)' }}>
+                <div style={{ 
+                        backgroundColor: 'var(--color-bg-surface)', 
+                        border: '1px solid var(--color-border)', 
+                        borderRadius: 'var(--radius-lg)', 
+                        boxShadow: 'var(--shadow-sm)',
+                        overflow: 'hidden' 
+                    }}>
                 {loading ? (
                     <div style={{ padding: '60px', textAlign: 'center', color: 'var(--color-primary)', fontWeight: 700, fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
                         A Carregar Sistema...
@@ -478,22 +511,23 @@ export function RequestsList() {
                         )}
                     </div>
                 ) : (
-                    <table style={{ border: 'none', boxShadow: 'none', minWidth: '1200px' }}>
+                    <table style={{ minWidth: '1200px', margin: 0, borderCollapse: 'collapse' }}>
                         <thead>
                             <tr>
-                                <th>Número</th>
-                                <th style={{ textAlign: 'center' }}>Tipo</th>
-                                <th>Título</th>
-                                <th>Organização</th>
+                                <th style={{ width: '80px', textAlign: 'center' }}>Ações</th>
+                                <th style={{ width: '180px' }}>Número</th>
+                                <th>Título do Pedido</th>
+                                <th>Tipo</th>
+                                <th>Empresa/Planta</th>
+                                <th style={{ width: '150px' }}>Data Limite</th>
                                 <th>Status</th>
-                                <th style={{ textAlign: 'right' }}>Valor</th>
-                                <th style={{ textAlign: 'center' }}>Ações</th>
+                                <th style={{ textAlign: 'right' }}>Valor Estimado</th>
                             </tr>
                         </thead>
                         <tbody>
                             {requests.map(req => {
-                                const urgency = getUrgencyStyle(req.needByDateUtc, req.statusCode);
                                 const guidance = getRequestGuidance(req.statusCode, req.requestTypeCode);
+                                const urgency = getUrgencyStyle(req.needByDateUtc, req.statusCode);
 
                                 return (
                                     <React.Fragment key={req.id}>
@@ -506,52 +540,43 @@ export function RequestsList() {
                                             }}
                                             onClick={() => toggleRow(req.id)}
                                         >
-                                            <td style={{ fontWeight: 800, color: 'var(--color-primary)' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                    <div 
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            toggleRow(req.id);
-                                                        }}
-                                                        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--color-text-muted)' }}
-                                                    >
-                                                        {expandedRequestId === req.id ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                                                    </div>
-                                                    {urgency && (
-                                                        <Tooltip 
-                                                            variant="dark" 
-                                                            content={
-                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
-                                                                    <div style={{ width: '10px', height: '10px', backgroundColor: urgency.indicatorColor }} />
-                                                                    <span style={{ fontWeight: 800, fontSize: '0.75rem' }}>{urgency.description}</span>
-                                                                </div>
-                                                            }
-                                                        >
-                                                            <div style={{ width: '4px', height: '24px', backgroundColor: urgency.indicatorColor, borderRadius: '2px' }} />
-                                                        </Tooltip>
-                                                    )}
-                                                    <Tooltip content={
-                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                            <div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Solicitante</div>
-                                                            <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-primary)' }}>{req.requesterName || 'Não Definido'}</div>
-                                                        </div>
-                                                    }>
-                                                        <Link
-                                                            to={`/requests/${req.id}`}
-                                                            state={{ fromList: location.search }}
-                                                            onClick={(e) => e.stopPropagation()}
-                                                        >
-                                                            {req.requestNumber || 'PENDENTE'}
-                                                        </Link>
-                                                    </Tooltip>
-                                                </div>
+                                            <td style={{ textAlign: 'center' }}>
+                                                 <KebabMenu
+                                                    options={[
+                                                        {
+                                                            label: 'Visualizar',
+                                                            icon: <Eye size={16} />,
+                                                            onClick: () => navigate(`/requests/${req.id}`)
+                                                        },
+                                                        {
+                                                            label: 'Copiar',
+                                                            icon: <Copy size={16} />,
+                                                            onClick: () => setShowApprovalModal({ show: true, type: 'DUPLICATE_REQUEST', requestId: req.id })
+                                                        }
+                                                    ]}
+                                                />
                                             </td>
+                                            <td 
+                                                style={{ fontWeight: 900, color: 'var(--color-primary)', letterSpacing: '0.02em' }}
+                                                onClick={(e) => { e.stopPropagation(); navigate(`/requests/${req.id}`); }}
+                                            >
+                                                <Tooltip content={
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <User size={14} color="var(--color-primary)" />
+                                                        <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>{req.requesterName}</span>
+                                                    </div>
+                                                }>
+                                                    <span style={{ cursor: 'pointer', borderBottom: '1px solid var(--color-primary)' }}>
+                                                        {req.requestNumber}
+                                                    </span>
+                                                </Tooltip>
+                                            </td>
+                                            <td>{req.title}</td>
                                             <td style={{ textAlign: 'center' }}>
                                                 <Tooltip content={<span style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: '0.75rem' }}>{req.requestTypeName}</span>}>
                                                     {req.requestTypeCode === 'PAYMENT' ? <DollarSign size={20} color="#10b981" /> : <FileText size={20} color="var(--color-primary)" />}
                                                 </Tooltip>
                                             </td>
-                                            <td>{req.title}</td>
                                             <td>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                                     <span style={{ fontWeight: 700, color: 'var(--color-text-main)' }}>
@@ -563,6 +588,28 @@ export function RequestsList() {
                                                         <span style={{ fontWeight: 700, color: 'var(--color-primary)' }}>{req.plantName || '---'}</span>
                                                     </div>
                                                 </div>
+                                            </td>
+                                            <td>
+                                                <Tooltip content={urgency ? urgency.description : 'Data de necessidade solicitada'}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        {urgency ? (
+                                                            urgency.priority === 3 ? (
+                                                                <AlertTriangle size={16} color={urgency.indicatorColor} />
+                                                            ) : (
+                                                                <Clock size={16} color={urgency.indicatorColor} />
+                                                            )
+                                                        ) : (
+                                                            <div style={{ width: '16px' }} />
+                                                        )}
+                                                        <span style={{ 
+                                                            fontWeight: 800, 
+                                                            color: urgency ? urgency.indicatorColor : 'var(--color-text-main)',
+                                                            fontSize: '0.85rem'
+                                                        }}>
+                                                            {formatDate(req.needByDateUtc)}
+                                                        </span>
+                                                    </div>
+                                                </Tooltip>
                                             </td>
                                             <td>
                                                 <Tooltip content={
@@ -587,32 +634,16 @@ export function RequestsList() {
                                                     </span>
                                                 </Tooltip>
                                             </td>
-                                            <td style={{ textAlign: 'right', fontWeight: 800 }}>
-                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-                                                    <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>{req.currencyCode}</span>
-                                                    <span>{formatCurrencyAO(req.estimatedTotalAmount)}</span>
-                                                </div>
-                                            </td>
-                                            <td style={{ textAlign: 'center' }}>
-                                                 <KebabMenu
-                                                    options={[
-                                                        {
-                                                            label: 'Visualizar',
-                                                            icon: <Eye size={16} />,
-                                                            onClick: () => navigate(`/requests/${req.id}`)
-                                                        },
-                                                        {
-                                                            label: 'Copiar',
-                                                            icon: <Copy size={16} />,
-                                                            onClick: () => setShowApprovalModal({ show: true, type: 'DUPLICATE_REQUEST', requestId: req.id })
-                                                        }
-                                                    ]}
-                                                />
+                                            <td style={{ textAlign: 'right', fontWeight: 900, color: 'var(--color-text-main)', fontSize: '0.95rem' }}>
+                                                <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--color-text-muted)', marginRight: '4px' }}>
+                                                    {req.currencyCode}
+                                                </span>
+                                                {formatCurrencyAO(req.estimatedTotalAmount)}
                                             </td>
                                         </tr>
-                                         {expandedRequestId === req.id && (
-                                            <tr key={`${req.id}-timeline`}>
-                                                <td colSpan={7} style={{ padding: '0', backgroundColor: 'var(--color-bg-page)' }}>
+                                        {expandedRequestId === req.id && (
+                                            <tr key={`${req.id}-details`}>
+                                                <td colSpan={8} style={{ padding: '0', backgroundColor: 'var(--color-bg-page)' }}>
                                                     <div style={{ padding: '24px 32px', borderTop: '1px solid var(--color-border)', backgroundColor: 'rgba(var(--color-primary-rgb), 0.02)' }}>
                                                         <RequestTimelineInline requestId={req.id} />
                                                     </div>
@@ -620,7 +651,7 @@ export function RequestsList() {
                                             </tr>
                                         )}
                                     </React.Fragment>
-                                )
+                                );
                             })}
                         </tbody>
                     </table>
@@ -655,10 +686,11 @@ export function RequestsList() {
                         alignItems: 'center',
                         padding: '16px',
                         backgroundColor: 'var(--color-bg-surface)',
-                        border: '2px solid var(--color-border)',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: 'var(--radius-lg)',
                         width: '100%',
                         minWidth: 0,
-                        boxShadow: 'var(--shadow-brutal)'
+                        boxShadow: 'var(--shadow-sm)'
                     }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <span style={{ fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.9rem', textTransform: 'uppercase' }}>Itens por página:</span>

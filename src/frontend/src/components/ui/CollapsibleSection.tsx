@@ -14,8 +14,9 @@ export function CollapsibleSection({ title, count, isOpen, onToggle, children }:
     return (
         <div style={{ 
             backgroundColor: 'var(--color-bg-surface)', 
-            border: '2px solid var(--color-primary)', 
-            boxShadow: 'var(--shadow-brutal)',
+            border: '1px solid var(--color-border)', 
+            boxShadow: 'var(--shadow-soft)',
+            borderRadius: 'var(--radius-md)',
             marginBottom: '16px',
             overflow: 'hidden'
         }}>
@@ -27,33 +28,33 @@ export function CollapsibleSection({ title, count, isOpen, onToggle, children }:
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    padding: '16px 24px',
-                    backgroundColor: 'var(--color-bg-page)',
+                    padding: '12px 20px',
+                    backgroundColor: isOpen ? 'rgba(var(--color-primary-rgb), 0.04)' : 'transparent',
                     border: 'none',
-                    borderBottom: isOpen ? '2px solid var(--color-primary)' : 'none',
+                    borderBottom: isOpen ? '1px solid var(--color-border)' : 'none',
                     cursor: 'pointer',
                     textAlign: 'left',
-                    transition: 'background-color 0.2s'
+                    transition: 'all 0.2s'
                 }}
             >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    {isOpen ? <ChevronDown size={20} color="var(--color-primary)" strokeWidth={3} /> : <ChevronRight size={20} color="var(--color-primary)" strokeWidth={3} />}
+                    {isOpen ? <ChevronDown size={18} color="var(--color-primary)" strokeWidth={2.5} /> : <ChevronRight size={18} color="var(--color-primary)" strokeWidth={2.5} />}
                     <span style={{ 
-                        fontSize: '1rem', 
+                        fontSize: '0.8rem', 
                         fontWeight: 900, 
                         color: 'var(--color-primary)', 
                         textTransform: 'uppercase',
-                        letterSpacing: '0.05em'
+                        letterSpacing: '0.08em'
                     }}>
                         {title}
                     </span>
                     <span style={{ 
                         backgroundColor: 'var(--color-primary)', 
                         color: 'white', 
-                        padding: '2px 8px', 
-                        fontSize: '0.75rem', 
-                        fontWeight: 800,
-                        borderRadius: '0'
+                        padding: '2px 10px', 
+                        fontSize: '0.65rem', 
+                        fontWeight: 900,
+                        borderRadius: '100px' /* Pill shape for count */
                     }}>
                         {count}
                     </span>

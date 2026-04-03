@@ -294,6 +294,35 @@ public class NotificationService : INotificationService
         }
     }
 
+    public async Task CreateNotificationAsync(Guid userId, string title, string message, string type, string targetPath)
+    {
+        try
+        {
+            var notification = new InformationalNotification
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                Title = title,
+                Message = message,
+                Type = type,
+                TargetPath = targetPath,
+                IsRead = false,
+                IsDismissed = false,
+                CreatedAtUtc = DateTime.UtcNow
+            };
+
+            _context.InformationalNotifications.Add(notification);
+            await _context.SaveChangesAsync();
+            
+            _logger.LogInformation("Informational notification created for User {UserId}: {Title}", userId, title);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create informational notification for User {UserId}.", userId);
+            throw; // Re-throw to allow controller to handle or log at higher level if needed
+        }
+    }
+
     private async Task<IQueryable<Request>> GetScopedRequestsQueryInternal(Guid userId, List<string> roles)
     {
         if (roles.Contains("System Administrator"))

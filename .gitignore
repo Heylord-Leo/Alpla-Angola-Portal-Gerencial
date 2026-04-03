@@ -9,6 +9,7 @@ build/
 .next/
 out/
 [Pp]ublish/
+*.tsbuildinfo
 
 # Logs and temporary files
 *.log
@@ -36,6 +37,8 @@ _ReSharper*/
 # IDEs and Editors
 .vscode/
 .idea/
+.vs/
+.vite/
 *.swp
 *.swo
 *.sublime-project

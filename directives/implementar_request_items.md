@@ -45,7 +45,7 @@ O usuário deve poder:
 
 - usar **grid/lista primeiro** para os itens
 - manter UX simples, limpa e coerente com o portal atual
-- **Migração Shell 2.0**: Para novos componentes (v2), utilizar `TailwindCSS` mapeado rigorosamente para `tokens.css`. Não criar CSS customizado fora do padrão.
+- **Migração Shell 2.0**: Para novos componentes (v2), utilizar `TailwindCSS` mapeado rigorosamente para `tokens.css` seguindo o design **Modern Corporate** (8px-12px radius, soft elevations). Não criar CSS customizado fora do padrão.
 - não redesenhar partes não relacionadas da tela
 - reutilizar o padrão de feedback já adotado no projeto
 

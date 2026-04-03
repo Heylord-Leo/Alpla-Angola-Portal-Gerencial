@@ -23,16 +23,19 @@ public class RequestsController : BaseController
     private readonly IDocumentExtractionService _extractionService;
     private readonly AdminLogWriter _adminLog;
     private readonly ILogger<RequestsController> _logger;
+    private readonly INotificationService _notificationService;
 
     public RequestsController(
         ApplicationDbContext context, 
         IDocumentExtractionService extractionService, 
         AdminLogWriter adminLog,
-        ILogger<RequestsController> logger) : base(context)
+        ILogger<RequestsController> logger,
+        INotificationService notificationService) : base(context)
     {
         _extractionService = extractionService;
         _adminLog = adminLog;
         _logger = logger;
+        _notificationService = notificationService;
     }
 
 
@@ -1084,6 +1087,7 @@ public class RequestsController : BaseController
         var request = await _context.Requests
             .Include(r => r.Status)
             .Include(r => r.LineItems)
+            .Include(r => r.Quotations)
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (request == null)
@@ -1092,7 +1096,8 @@ public class RequestsController : BaseController
         }
 
         // 3. Status Rule: Only DRAFT, Adjustment or WAITING_QUOTATION statuses can be edited
-        if (request.Status!.Code != "DRAFT" && request.Status!.Code != "AREA_ADJUSTMENT" && request.Status!.Code != "FINAL_ADJUSTMENT" && request.Status!.Code != "WAITING_QUOTATION")
+        var statusCode = request.Status!.Code;
+        if (statusCode != "DRAFT" && statusCode != "AREA_ADJUSTMENT" && statusCode != "FINAL_ADJUSTMENT" && statusCode != "WAITING_QUOTATION")
         {
             return Conflict(new ProblemDetails 
             { 
@@ -1115,11 +1120,6 @@ public class RequestsController : BaseController
             });
         }
 
-        // Supplier validation: only mandatory for non-PAYMENT types in specific stages if needed, 
-        // but for PAYMENT we are now relaxing the rule at this stage.
-        // Rule: If it's not PAYMENT, we might still want to check if it's required elsewhere.
-        // For now, removing the strict block for PAYMENT.
-
         if (dto.NeedByDateUtc.HasValue && dto.NeedByDateUtc.Value.Date < DateTime.UtcNow.Date)
         {
             return BadRequest(new ProblemDetails 
@@ -1131,78 +1131,114 @@ public class RequestsController : BaseController
         }
 
         // 4. Update Header Fields and Track Changes
+        bool isQuotationStage = statusCode == "WAITING_QUOTATION";
+        bool hasQuotations = request.Quotations.Any();
+        var changedFields = new List<string>();
         bool changed = false;
-        bool isQuotationStage = request.Status!.Code == "WAITING_QUOTATION";
 
-        if (!isQuotationStage)
+        // --- Safe Fields (Always editable in allowed statuses) ---
+        var newTitle = dto.Title?.Trim() ?? "";
+        if ((request.Title?.Trim() ?? "") != newTitle) { request.Title = newTitle; changedFields.Add("Título"); changed = true; }
+        
+        var newDescription = dto.Description?.Trim() ?? "";
+        if ((request.Description?.Trim() ?? "") != newDescription) { request.Description = newDescription; changedFields.Add("Descrição"); changed = true; }
+        if (request.NeedLevelId != dto.NeedLevelId) { request.NeedLevelId = dto.NeedLevelId; changedFields.Add("Urgência"); changed = true; }
+        if (request.DepartmentId != dto.DepartmentId) { request.DepartmentId = dto.DepartmentId; changedFields.Add("Departamento"); changed = true; }
+        if (request.NeedByDateUtc != dto.NeedByDateUtc) { request.NeedByDateUtc = dto.NeedByDateUtc; changedFields.Add("Data Necessidade"); changed = true; }
+        if (request.CapexOpexClassificationId != dto.CapexOpexClassificationId) { request.CapexOpexClassificationId = dto.CapexOpexClassificationId; changedFields.Add("Classificação"); changed = true; }
+
+        // --- Restricted Fields in Quotation Stage ---
+        if (isQuotationStage)
         {
-            if (request.Title != dto.Title) { request.Title = dto.Title; changed = true; }
-            if (request.Description != dto.Description) { request.Description = dto.Description; changed = true; }
-            if (request.RequestTypeId != dto.RequestTypeId) { request.RequestTypeId = dto.RequestTypeId; changed = true; }
-            if (request.NeedLevelId != dto.NeedLevelId) { request.NeedLevelId = dto.NeedLevelId; changed = true; }
-            
-            if (request.CurrencyId != dto.CurrencyId)
+            // Block structural workflow changes
+            if (request.RequestTypeId != dto.RequestTypeId || 
+                request.BuyerId != dto.BuyerId || 
+                request.AreaApproverId != dto.AreaApproverId || 
+                request.FinalApproverId != dto.FinalApproverId ||
+                request.PlantId != dto.PlantId ||
+                request.CompanyId != dto.CompanyId)
             {
-                if (request.LineItems.Any(l => !l.IsDeleted))
-                {
-                    return Conflict(new ProblemDetails 
-                    { 
-                        Title = "Regra de Negócio Violada", 
-                        Detail = "Não é possível alterar a moeda de um pedido que já possui itens. Exclua os itens primeiro se desejar alterar a moeda.",
-                        Status = 409
-                    });
-                }
-                request.CurrencyId = dto.CurrencyId;
-                changed = true;
+                return BadRequest(new ProblemDetails 
+                { 
+                    Title = "Ação Bloqueada", 
+                    Detail = "Não é possível alterar o tipo, planta, empresa ou participantes do fluxo enquanto o pedido está em cotação.", 
+                    Status = 400 
+                });
             }
-
-            if (request.DepartmentId != dto.DepartmentId) { request.DepartmentId = dto.DepartmentId; changed = true; }
+        }
+        else
+        {
+            // Normal Draft/Adjustment rules
+            if (request.RequestTypeId != dto.RequestTypeId) { request.RequestTypeId = dto.RequestTypeId; changedFields.Add("Tipo de Pedido"); changed = true; }
+            if (request.BuyerId != dto.BuyerId) { request.BuyerId = dto.BuyerId; changedFields.Add("Comprador"); changed = true; }
+            if (request.AreaApproverId != dto.AreaApproverId) { request.AreaApproverId = dto.AreaApproverId; changedFields.Add("Aprovador Área"); changed = true; }
+            if (request.FinalApproverId != dto.FinalApproverId) { request.FinalApproverId = dto.FinalApproverId; changedFields.Add("Aprovador Final"); changed = true; }
+            if (request.PlantId != dto.PlantId) { request.PlantId = dto.PlantId; changedFields.Add("Planta"); changed = true; }
             
             if (request.CompanyId != dto.CompanyId)
             {
                 if (request.LineItems.Any(l => !l.IsDeleted))
                 {
-                    return BadRequest(new ProblemDetails
-                    {
-                        Title = "Regra de Negócio Violada",
-                        Detail = "Não é possível alterar a empresa de um pedido que já possui itens. Exclua os itens primeiro.",
-                        Status = 400
-                    });
+                    return BadRequest(new ProblemDetails { Title = "Regra de Negócio Violada", Detail = "Não é possível alterar a empresa com itens presentes.", Status = 400 });
                 }
-                request.CompanyId = dto.CompanyId;
-                changed = true;
+                request.CompanyId = dto.CompanyId; changedFields.Add("Empresa"); changed = true;
             }
-            if (request.PlantId != dto.PlantId) { request.PlantId = dto.PlantId; changed = true; }
-            if (request.CapexOpexClassificationId != dto.CapexOpexClassificationId) { request.CapexOpexClassificationId = dto.CapexOpexClassificationId; changed = true; }
-            if (request.NeedByDateUtc != dto.NeedByDateUtc) { request.NeedByDateUtc = dto.NeedByDateUtc; changed = true; }
-            if (request.BuyerId != dto.BuyerId) { request.BuyerId = dto.BuyerId; changed = true; }
-            if (request.AreaApproverId != dto.AreaApproverId) { request.AreaApproverId = dto.AreaApproverId; changed = true; }
-            if (request.FinalApproverId != dto.FinalApproverId) { request.FinalApproverId = dto.FinalApproverId; changed = true; }
         }
 
+        // --- Currency Logic ---
+        if (request.CurrencyId != dto.CurrencyId)
+        {
+            if (isQuotationStage || request.LineItems.Any(l => !l.IsDeleted))
+            {
+                return Conflict(new ProblemDetails 
+                { 
+                    Title = "Regra de Negócio Violada", 
+                    Detail = "Não é possível alterar a moeda de um pedido que já possui itens ou está em cotação.",
+                    Status = 409
+                });
+            }
+            request.CurrencyId = dto.CurrencyId;
+            changedFields.Add("Moeda");
+            changed = true;
+        }
+
+        // --- Supplier Logic ---
         if (request.SupplierId != dto.SupplierId)
         {
-            // Hardening rule: For QUOTATION type, SupplierId must not be editable through this general endpoint once no longer in DRAFT
-            if (requestTypeEntity.Code == "QUOTATION" && request.Status!.Code != "DRAFT")
+            if (isQuotationStage && hasQuotations)
             {
                 return BadRequest(new ProblemDetails 
                 { 
                     Title = "Ação Bloqueada", 
-                    Detail = "Para pedidos de Cotação, o fornecedor não pode ser alterado manualmente após o rascunho. Ele será definido pela seleção da cotação vencedora no fluxo de cotações.", 
+                    Detail = "O fornecedor não pode ser alterado pois já existem cotações salvas.", 
                     Status = 400 
                 });
             }
+
+            if (requestTypeEntity.Code == "QUOTATION" && statusCode != "DRAFT" && statusCode != "AREA_ADJUSTMENT" && statusCode != "FINAL_ADJUSTMENT")
+            {
+                 return BadRequest(new ProblemDetails 
+                 { 
+                     Title = "Ação Bloqueada", 
+                     Detail = "Para pedidos de Cotação, o fornecedor não pode ser alterado manualmente nesta fase.", 
+                     Status = 400 
+                 });
+            }
+
             request.SupplierId = dto.SupplierId; 
+            changedFields.Add("Fornecedor");
             changed = true; 
         }
 
         if (changed)
         {
-            // 5. Update Audit
             request.UpdatedAtUtc = DateTime.UtcNow;
             request.UpdatedByUserId = actorId;
 
-            // 6. Record history entry for substantive changes
+            var comment = isQuotationStage 
+                ? $"Alteração parcial em fase de cotação. Campos modificados: {string.Join(", ", changedFields)}."
+                : $"Dados básicos alterados. Campos modificados: {string.Join(", ", changedFields)}.";
+
             var history = new RequestStatusHistory
             {
                 Id = Guid.NewGuid(),
@@ -1211,13 +1247,34 @@ public class RequestsController : BaseController
                 ActionTaken = "DADOS_ALTERADOS",
                 PreviousStatusId = request.StatusId,
                 NewStatusId = request.StatusId,
-                Comment = "Dados básicos ou parâmetros do pedido alterados pelo usuário.",
+                Comment = comment,
                 CreatedAtUtc = DateTime.UtcNow
             };
             _context.RequestStatusHistories.Add(history);
         }
 
         await _context.SaveChangesAsync();
+
+        // Notification: Notify assigned buyer in WAITING_QUOTATION status if changes occurred
+        if (changed && statusCode == "WAITING_QUOTATION" && request.BuyerId.HasValue)
+        {
+            try
+            {
+                var fieldSummary = string.Join(", ", changedFields);
+                await _notificationService.CreateNotificationAsync(
+                    request.BuyerId.Value,
+                    "Pedido alterado em Aguardando Cotação",
+                    $"O pedido {request.RequestNumber} foi atualizado pelo solicitante. Campos alterados: {fieldSummary}.",
+                    NotificationTypes.Info,
+                    $"/requests/{request.Id}"
+                );
+            }
+            catch (Exception ex)
+            {
+                // Non-critical failure for the main update flow, but should be logged
+                _logger.LogWarning(ex, "Failed to send buyer notification for Request {RequestNumber} update.", request.RequestNumber);
+            }
+        }
 
         return NoContent();
     }
@@ -2133,9 +2190,20 @@ public class RequestsController : BaseController
             .Include(r => r.Status)
             .Include(r => r.RequestType)
             .Include(r => r.LineItems)
+            .Include(r => r.Quotations)
             .FirstOrDefaultAsync(r => r.Id == requestId);
 
         if (request == null) return NotFound(new ProblemDetails { Title = "Pedido não encontrado.", Status = 404 });
+
+        if (request.Status!.Code == "WAITING_QUOTATION" && request.Quotations.Any())
+        {
+            return Conflict(new ProblemDetails 
+            { 
+                Title = "Ação Bloqueada", 
+                Detail = "Não é possível adicionar itens pois já existem cotações salvas para este pedido.", 
+                Status = 409 
+            });
+        }
 
         if (request.Status!.Code != "DRAFT" && request.Status!.Code != "AREA_ADJUSTMENT" && request.Status!.Code != "FINAL_ADJUSTMENT" && request.Status!.Code != "WAITING_QUOTATION")
         {
@@ -2294,9 +2362,20 @@ public class RequestsController : BaseController
             .Include(r => r.Status)
             .Include(r => r.RequestType)
             .Include(r => r.LineItems)
+            .Include(r => r.Quotations)
             .FirstOrDefaultAsync(r => r.Id == requestId);
 
         if (request == null) return NotFound(new ProblemDetails { Title = "Pedido não encontrado.", Status = 404 });
+
+        if (request.Status!.Code == "WAITING_QUOTATION" && request.Quotations.Any())
+        {
+            return Conflict(new ProblemDetails 
+            { 
+                Title = "Ação Bloqueada", 
+                Detail = "Não é possível editar itens pois já existem cotações salvas para este pedido.", 
+                Status = 409 
+            });
+        }
 
         if (request.Status!.Code != "DRAFT" && request.Status!.Code != "AREA_ADJUSTMENT" && request.Status!.Code != "FINAL_ADJUSTMENT" && request.Status!.Code != "WAITING_QUOTATION")
         {
@@ -2445,9 +2524,20 @@ public class RequestsController : BaseController
         var request = await _context.Requests
             .Include(r => r.Status)
             .Include(r => r.LineItems)
+            .Include(r => r.Quotations)
             .FirstOrDefaultAsync(r => r.Id == requestId);
 
         if (request == null) return NotFound();
+
+        if (request.Status!.Code == "WAITING_QUOTATION" && request.Quotations.Any())
+        {
+            return Conflict(new ProblemDetails 
+            { 
+                Title = "Ação Bloqueada", 
+                Detail = "Não é possível excluir itens pois já existem cotações salvas para este pedido.", 
+                Status = 409 
+            });
+        }
 
         if (request.Status!.Code != "DRAFT" && request.Status!.Code != "AREA_ADJUSTMENT" && request.Status!.Code != "FINAL_ADJUSTMENT" && request.Status!.Code != "WAITING_QUOTATION")
         {

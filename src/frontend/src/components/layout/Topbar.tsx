@@ -14,7 +14,7 @@ export function Topbar() {
         <header style={{
             height: '64px',
             backgroundColor: 'var(--color-primary)',
-            borderBottom: '4px solid var(--color-accent)',
+            borderBottom: '1px solid rgba(0, 0, 0, 0.1)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -23,7 +23,8 @@ export function Topbar() {
             top: 0,
             zIndex: Z_INDEX.TOPBAR as any, // Elevated for dropdowns
             color: 'var(--color-bg-surface)',
-            fontFamily: 'var(--font-family-display)'
+            fontFamily: 'var(--font-family-display)',
+            boxShadow: 'var(--shadow-sm)'
         }}>
             {/* Left Zone: Minimal Context (Branding handled by Sidebar) */}
             <div style={{ display: 'flex', alignItems: 'center', width: '260px' }}>

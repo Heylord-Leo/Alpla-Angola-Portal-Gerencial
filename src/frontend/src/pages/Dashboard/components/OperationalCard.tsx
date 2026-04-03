@@ -15,28 +15,31 @@ export function OperationalCard({ label, value, helperText, icon, color = 'var(-
         <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            whileHover={onClick ? { y: -2, boxShadow: `6px 6px 0px ${color}`, transition: { duration: 0.1 } } : {}}
+            whileHover={onClick ? { y: -2, boxShadow: 'var(--shadow-md)', transition: { duration: 0.1 } } : {}}
             onClick={onClick}
             style={{
                 backgroundColor: 'var(--color-bg-surface)',
-                border: `2px solid ${color}`,
-                boxShadow: `4px 4px 0px ${color}`,
+                border: '1px solid var(--color-border)',
+                boxShadow: 'var(--shadow-sm)',
+                borderRadius: 'var(--radius-lg)',
                 padding: '1.5rem',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '0.5rem',
+                gap: '0.75rem',
                 position: 'relative',
                 overflow: 'hidden',
-                cursor: onClick ? 'pointer' : 'default'
+                cursor: onClick ? 'pointer' : 'default',
+                transition: 'border-color 0.2s'
             }}
         >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <span style={{ 
-                    fontSize: '0.75rem', 
+                    fontSize: '0.7rem', 
                     fontWeight: 700, 
                     textTransform: 'uppercase', 
-                    letterSpacing: '0.05em',
-                    color: 'var(--color-text-muted)'
+                    letterSpacing: '0.08em',
+                    color: 'var(--color-text-muted)',
+                    opacity: 0.8
                 }}>
                     {label}
                 </span>
@@ -45,7 +48,7 @@ export function OperationalCard({ label, value, helperText, icon, color = 'var(-
 
             <div style={{ 
                 fontSize: '2rem', 
-                fontWeight: 800, 
+                fontWeight: 900, 
                 fontFamily: 'var(--font-family-display)',
                 color: 'var(--color-text-main)',
                 lineHeight: 1
@@ -64,15 +67,15 @@ export function OperationalCard({ label, value, helperText, icon, color = 'var(-
                 </div>
             )}
             
-            {/* Decorative corner accent */}
+            {/* Subtle left-border emphasis instead of clip-path corner */}
             <div style={{ 
                 position: 'absolute', 
-                bottom: 0, 
-                right: 0, 
-                width: '12px', 
-                height: '12px', 
+                left: 0, 
+                top: '25%', 
+                bottom: '25%', 
+                width: '4px', 
                 backgroundColor: color,
-                clipPath: 'polygon(100% 0, 0 100%, 100% 100%)'
+                borderRadius: '0 4px 4px 0'
             }} />
         </motion.div>
     );

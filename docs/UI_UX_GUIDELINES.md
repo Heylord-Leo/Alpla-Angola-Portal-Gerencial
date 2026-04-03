@@ -9,7 +9,11 @@ This document defines the visual foundation and user experience standards for th
 The visual style is a **Modern Corporate** identity, designed for premium internal efficiency while respecting the global ALPLA brand.
 
 - **Corporate Brand Identity (ALPLA Shell 2.0):** Adopts the official refined corporate color palette (Deep Blue), high-end typographic hierarchy (Montserrat), and a professional, fluid tone.
-- **Layout & Structure:** Adopts a clean, card-based structural containment with soft elevations, rounded corners, and a collapsible sidebar navigation for maximized workspace.
+- **Layout & Structure:** Adopts a clean, card-based structural containment with soft elevations, rounded corners (8px-12px), and a collapsible sidebar navigation for maximized workspace.
+- **Migration Guidance:**
+    - Legacy screens may temporarily coexist with older "Industrial Brutalist" styles.
+    - All new or refactored screens must strictly follow the Modern Corporate standard.
+    - Migration of legacy components will happen in phased cycles.
 
 ## B) Color Palette
 
@@ -78,10 +82,10 @@ Implementation-ready tokens to maintain strict consistency.
   - `8px` (Main buttons, inputs, components)
   - `12px` (Cards, Modals, content containers)
   - `9999px` (Pills, Badges, Avatars)
-- **Shadows (Depth):**
-  - `sm`: `0 1px 2px 0 rgb(0 0 0 / 0.05)` — Interactive cards.
-  - `md`: `0 4px 6px -1px rgb(0 0 0 / 0.1)` — Dropdowns, popovers.
-  - `lg`: `0 10px 15px -3px rgb(0 0 0 / 0.1)` — Modals, Drawers.
+- **Shadows (Soft Elevation):**
+  - `sm`: `0 1px 2px 0 rgb(0 0 0 / 0.05)` — Interactive cards and surface containers.
+  - `md`: `0 4px 6px -1px rgb(0 0 0 / 0.1)` — Dropdowns, popovers, and elevated states.
+  - `lg`: `0 10px 15px -3px rgb(0 0 0 / 0.1)` — Modals, Drawers, and high-level overlays.
 - **Focus Ring:** `2px solid #004C90` with `2px` offset. Mandatory for accessibility.
 - **Z-index Scale (Standardized Hierarchy):**
   - `Base`: 1
@@ -180,5 +184,5 @@ For users staring at the screen for 8 hours a day:
 As of the **Shell 2.0** redesign phases, Tailwind CSS v4 is used as a functional styling extension mapped to existing CSS variables (`tokens.css`) via the `@tailwindcss/postcss` plugin.
 
 1. **No-Prefix Strategy**: Tailwind utilities are applied natively without a prefix (e.g., `flex`, `p-4`, `bg-white`).
-2. **Variable Mapping**: Base colors, spacing, typography, and Brutalist shadows from `tokens.css` are configured as themes in `tailwind.config.js` (e.g., `theme: { colors: { 'portal-primary': 'var(--color-primary)' } }`).
+2. **Variable Mapping**: Base colors, spacing, typography, and soft elevation tokens from `tokens.css` are configured as themes in `tailwind.config.js` (e.g., `theme: { colors: { 'portal-primary': 'var(--color-primary)' } }`).
 3. **Restricted Usage**: Tailwind is strictly confined to new `V2` components or modernized redesign bounds (e.g., `AdministratorWorkspace`, `MasterData`, `SystemLogs`). Do not inject Tailwind into legacy core structural wrappers or globally redefine fundamental elements in `index.css`.

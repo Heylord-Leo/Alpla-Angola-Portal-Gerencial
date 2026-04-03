@@ -31,15 +31,15 @@ export function KPICard({
     trendValue,
     trendLabel
 }: KPICardProps) {
-    // Industrial color mapping
-    const colorStyles: Record<string, { bg: string, border: string, iconBg: string }> = {
-        'bg-blue-500': { bg: '#eff6ff', border: '#3b82f6', iconBg: '#3b82f6' },
-        'bg-amber-500': { bg: '#fffbeb', border: '#f59e0b', iconBg: '#f59e0b' },
-        'bg-rose-500': { bg: '#fff1f2', border: '#f43f5e', iconBg: '#f43f5e' },
-        'bg-emerald-500': { bg: '#ecfdf5', border: '#10b981', iconBg: '#10b981' }
+    // Modern Corporate color mapping
+    const colorStyles: Record<string, { bg: string, border: string, iconBg: string, iconBorder: string }> = {
+        'bg-blue-500': { bg: '#f8fafc', border: '#e2e8f0', iconBg: '#0ea5e9', iconBorder: '#bae6fd' },
+        'bg-amber-500': { bg: '#fffbeb', border: '#fef3c7', iconBg: '#f59e0b', iconBorder: '#fde68a' },
+        'bg-rose-500': { bg: '#fff1f2', border: '#ffe4e6', iconBg: '#f43f5e', iconBorder: '#fecdd3' },
+        'bg-emerald-500': { bg: '#f0fdf4', border: '#dcfce7', iconBg: '#10b981', iconBorder: '#a7f3d0' }
     };
 
-    const palette = colorStyles[color] || { bg: '#f8fafc', border: '#cbd5e1', iconBg: '#64748b' };
+    const palette = colorStyles[color] || { bg: '#f8fafc', border: '#e2e8f0', iconBg: 'var(--color-primary)', iconBorder: 'rgba(0, 77, 144, 0.1)' };
 
     const cardStyle: React.CSSProperties = {
         position: 'relative',
@@ -48,15 +48,16 @@ export function KPICard({
         justifyContent: 'space-between',
         padding: '24px',
         cursor: 'pointer',
-        border: `2px solid ${isActive ? 'var(--color-primary)' : palette.border}`,
-        backgroundColor: isActive ? 'white' : palette.bg,
-        boxShadow: isActive ? '8px 8px 0px 0px rgba(0,0,0,1)' : '4px 4px 0px 0px rgba(0,0,0,0.05)',
+        border: isActive ? '1px solid var(--color-primary)' : `1px solid ${palette.border}`,
+        borderRadius: 'var(--radius-lg)',
+        backgroundColor: 'var(--color-bg-surface)',
+        boxShadow: isActive ? 'var(--shadow-card)' : 'var(--shadow-soft)',
         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         overflow: 'hidden',
         minHeight: '140px',
         flex: 1,
         zIndex: isActive ? 10 : 1,
-        transform: (!nonInteractive && isActive) ? 'scale(1.02)' : 'scale(1)',
+        transform: (!nonInteractive && isActive) ? 'translateY(-2px)' : 'translateY(0)',
         pointerEvents: nonInteractive ? 'none' : 'auto'
     };
 
@@ -77,15 +78,15 @@ export function KPICard({
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '16px' }}>
                 <div style={{ 
-                    padding: '8px', 
-                    border: '2px solid black', 
+                    padding: '10px', 
+                    borderRadius: 'var(--radius-md)',
                     backgroundColor: palette.iconBg, 
-                    boxShadow: '2px 2px 0px 0px rgba(0,0,0,1)',
+                    boxShadow: `0 4px 10px rgba(0,0,0,0.1)`,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center'
                 }}>
-                    <Icon size={20} color="white" />
+                    <Icon size={18} color="white" strokeWidth={2.5} />
                 </div>
                 {isActive && (
                     <motion.div 
@@ -99,16 +100,16 @@ export function KPICard({
             <div>
                 <div style={{ 
                     fontSize: displayValue && String(displayValue).length > 15 ? '1.5rem' : '2rem', 
-                    fontWeight: 900, 
-                    letterSpacing: '-0.05em', 
+                    fontWeight: 800, 
+                    letterSpacing: '-0.02em', 
                     color: 'var(--color-primary)', 
-                    marginBottom: '4px', 
+                    marginBottom: '2px', 
                     lineHeight: 1,
                     wordBreak: 'break-word'
                 }}>
                     {displayValue !== undefined ? displayValue : count.toLocaleString()}
                 </div>
-                <div style={{ fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.15em', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>
+                <div style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>
                     {label}
                 </div>
                 

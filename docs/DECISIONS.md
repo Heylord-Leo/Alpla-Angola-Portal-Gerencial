@@ -4,6 +4,44 @@ Purpose: record important technical and process decisions so future work preserv
 
 ---
 
+## DEC-091 — Official Move to Modern Corporate Design Language
+
+- **Date:** 2026-04-03
+- **Status:** Accepted
+- **Context:** The project's visual direction needed to evolve from the initial "Industrial Brutalist" phase to a more professional, premium, and executive-focused design standard that aligns with ALPLA's global corporate identity.
+- **Decision:** Officially transition the portal's UI/UX direction to **Modern Corporate**.
+    - **New Default Standards**:
+        - **Rounded Corners**: 8px or 12px as the new standard (replacing the 0px default).
+        - **Soft Elevations**: Low-opacity, diffused shadows (replacing the "brutal" high-contrast shadows).
+        - **Subtle Borders**: Lighter borders (Slate 200) for containers, avoiding heavy default blue borders.
+        - **Blue as Accent**: Blue is strictly reserved for primary actions, indicators, and focus states.
+    - **Retired Standards**:
+        - **Industrial Brutalist** is no longer the official direction.
+        - **0px radius** is deprecated as a default.
+        - **Brutal/Heavy shadows** are no longer used for base components.
+        - **Heavy blue borders** on all containers are discontinued.
+    - **Migration Policy**: Existing screens will coexist with the new standards and be migrated in phases. All new or refactored screens must follow the Modern Corporate direction.
+- **Alternatives considered:** Maintaining Industrial Brutalist (rejected as less suitable for a broad corporate audience).
+- **Consequences:** Provides a more premium and accessible interface. Requires a phased refactor of core design tokens and shell components in the next implementation cycle.
+
+---
+
+## DEC-092 — Modern Corporate UI Refinement (Phase 2 Implementation)
+
+- **Date:** 2026-04-03
+- **Status:** Accepted
+- **Context:** Following the establishment of the visual foundation (Phase 1), the system required a second phase of focused refinement on core operational screens (Dashboard, Requests List, Request Edit, Receiving Workspace) to ensure high-fidelity corporate standards and premium interactive quality.
+- **Decision:** Implement specialized refinements across high-traffic operational areas:
+    - **Premium Shadows**: Introduced `var(--shadow-premium)` (a multi-layered, ultra-soft indigo-tinted shadow) for primary entrance points like the Login card and Dashboard summary sections.
+    - **Typography Density**: Standardized on `900` font-weight for all primary screen headers and section titles to create a strong, authoritative hierarchy.
+    - **Header Consolidation**: Replaced fragmented header styles with a unified "Page Header" pattern featuring subtle bottom borders and consistent vertical rhythm.
+    - **Operational List Refinement**: Transitioned the `RequestsList` from a high-contrast grid to a "Soft-Row" pattern—using `8px` rounded corners, lighter borders (`0.08` opacity), and subtle hover backgrounds.
+    - **Interactive States**: Standardized hover/focus states to use soft tints of the corporate blue palette instead of the previous high-contrast brutalist borders.
+- **Alternatives considered:** Full-page redesigns (rejected as too disruptive to existing user workflows).
+- **Consequences:** Results in a significantly more mature and cohesive enterprise-grade interface. Maintains operational density while improving overall visual comfort and perceived quality.
+
+---
+
 ## DEC-072 — Structural Root Grid for Shell Continuity
 
 - **Date:** 2026-03-26

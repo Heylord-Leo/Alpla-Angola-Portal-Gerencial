@@ -205,8 +205,8 @@ export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
                 ref={sidebarRef}
                 style={{
                 backgroundColor: 'var(--color-bg-surface)',
-                border: '2px solid var(--color-primary)',
-                boxShadow: 'var(--shadow-brutal)',
+                borderRight: '1px solid var(--color-border)',
+                boxShadow: 'var(--shadow-sm)',
                 display: 'flex',
                 flexDirection: 'column',
                 width: isExpanded ? '260px' : '80px',
@@ -218,7 +218,7 @@ export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
                 {/* Header Zone with Logo */}
                 <div style={{
                     height: '90px',
-                    borderBottom: '2px solid var(--color-primary)',
+                    borderBottom: '1px solid var(--color-border)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: isExpanded ? 'space-between' : 'center',
@@ -306,7 +306,7 @@ export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
                 </nav>
 
                 {/* Bottom Zone: System Actions (Fixed) */}
-                <div style={{ borderTop: '2px solid var(--color-primary)', backgroundColor: 'rgba(var(--color-primary-rgb), 0.02)' }}>
+                <div style={{ borderTop: '1px solid var(--color-border)', backgroundColor: 'rgba(var(--color-primary-rgb), 0.02)' }}>
                     <button
                         className="logout-btn"
                         onClick={handleLogout}
@@ -330,7 +330,7 @@ export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
                             letterSpacing: '0.05em',
                             transition: 'all 0.2s'
                         }}>
-                        <LogOut size={18} strokeWidth={3} />
+                        <LogOut size={18} strokeWidth={2.5} />
                         {isExpanded && "Sair"}
                     </button>
                 </div>
@@ -347,20 +347,20 @@ export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
                     width: '28px',
                     height: '28px',
                     backgroundColor: 'var(--color-bg-surface)',
-                    border: '2px solid var(--color-primary)',
+                    border: '1px solid var(--color-border)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     cursor: 'pointer',
                     zIndex: Z_INDEX.SIDEBAR as any,
                     padding: 0,
-                    boxShadow: '2px 2px 0 var(--color-primary)',
-                    borderRadius: '0', // Maintain brutalist look
+                    boxShadow: 'var(--shadow-sm)',
+                    borderRadius: 'var(--radius-full)',
                     transition: 'all 0.2s ease'
                 }}
                 title={isExpanded ? "Recolher Menu" : "Expandir Menu"}
             >
-                {isExpanded ? <ChevronLeft size={16} strokeWidth={3} /> : <ChevronRight size={16} strokeWidth={3} />}
+                {isExpanded ? <ChevronLeft size={16} strokeWidth={2.5} /> : <ChevronRight size={16} strokeWidth={2.5} />}
             </button>
 
             {/* Hover Flyout */}
@@ -409,21 +409,23 @@ function SidebarFlyout({ item, rect, sidebarRect, onMouseEnter, onMouseLeave }: 
                     top: `${top}px`,
                     left: `${sidebarRect.right + HORIZONTAL_GAP}px`,
                     backgroundColor: 'var(--color-bg-surface)',
-                    border: '2px solid var(--color-primary)',
-                    boxShadow: 'var(--shadow-brutal)',
+                    border: '1px solid var(--color-border)',
+                    boxShadow: 'var(--shadow-lg)',
+                    borderRadius: 'var(--radius-md)',
                     zIndex: Z_INDEX.SIDEBAR as any, // Same as sidebar but portal handles layering
                     display: 'flex',
                     flexDirection: 'column',
                     minWidth: '220px',
-                    pointerEvents: 'auto'
+                    pointerEvents: 'auto',
+                    overflow: 'hidden'
                 }}
             >
                 {/* Flyout Header */}
                 <div style={{
                     padding: '0.75rem 1rem',
-                    borderBottom: '2px solid var(--color-primary)',
+                    borderBottom: '1px solid var(--color-border)',
                     backgroundColor: 'rgba(var(--color-primary-rgb), 0.05)',
-                    fontWeight: 800,
+                    fontWeight: 700,
                     fontSize: '0.75rem',
                     textTransform: 'uppercase',
                     color: 'var(--color-primary)',
@@ -569,17 +571,19 @@ function SidebarLink({ to, icon, label, isSidebarExpanded, isNested }: {
                 justifyContent: isSidebarExpanded ? 'flex-start' : 'center',
                 gap: '0.75rem',
                 padding: isNested ? (isSidebarExpanded ? '0.6rem 1rem' : '0.6rem 0') : (isSidebarExpanded ? '0.75rem 1rem' : '0.75rem 0'),
-                color: isActive ? 'var(--color-bg-surface)' : 'var(--color-text-main)',
+                color: isActive ? 'white' : 'var(--color-text-main)',
                 backgroundColor: isActive ? 'var(--color-primary)' : 'transparent',
                 fontWeight: isActive ? 700 : 500,
                 textDecoration: 'none',
                 fontFamily: 'var(--font-family-body)',
                 fontSize: isNested ? '0.85rem' : '0.9rem',
-                border: isActive ? '2px solid var(--color-primary)' : '2px solid transparent',
-                boxShadow: isActive ? 'var(--shadow-brutal)' : 'none',
+                border: 'none',
+                borderRadius: 'var(--radius-md)',
+                boxShadow: isActive ? 'var(--shadow-sm)' : 'none',
                 transition: 'all 0.15s ease-out',
                 marginBottom: isNested ? '0' : (isSidebarExpanded ? '0.25rem' : '0'),
-                width: '100%'
+                width: isSidebarExpanded ? 'calc(100% - 1rem)' : '100%',
+                margin: isSidebarExpanded ? '0 auto' : '0'
             })}
             title={isSidebarExpanded ? "" : label}
         >

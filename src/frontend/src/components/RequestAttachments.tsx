@@ -28,7 +28,8 @@ const TYPE_LABELS: Record<string, string> = {
     'PROFORMA': 'Proforma',
     'PO': 'P.O',
     'PAYMENT_SCHEDULE': 'Cronograma de Pagamento',
-    'PAYMENT_PROOF': 'Comprovante de Pagamento'
+    'PAYMENT_PROOF': 'Comprovante de Pagamento',
+    'SUPPORTING': 'Documentos de Apoio'
 };
 
 export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
@@ -49,6 +50,8 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
 
         switch (typeCode) {
             case 'PROFORMA':
+                return ['DRAFT', 'AREA_ADJUSTMENT', 'FINAL_ADJUSTMENT', 'WAITING_QUOTATION'].includes(status);
+            case 'SUPPORTING':
                 return ['DRAFT', 'AREA_ADJUSTMENT', 'FINAL_ADJUSTMENT', 'WAITING_QUOTATION'].includes(status);
             case 'PO':
                 return ['APPROVED', 'PO_ISSUED', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT'].includes(status);

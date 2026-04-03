@@ -12,9 +12,9 @@
   --color-bg-page: #F3F4F6;
   /* Stark industrial light gray */
   --color-bg-surface: #FFFFFF;
-  --color-border: #D1D5DB;
+  --color-border: rgba(0, 0, 0, 0.08); /* Refined softer border */
   --color-border-heavy: #004d90;
-  /* Corporate blue borders for brutalist effect */
+  --color-primary-rgb: 0, 77, 144;
 
   --color-text-main: #111827;
   --color-text-muted: #4B5563;
@@ -49,19 +49,34 @@
   --font-family-display: "Futura", "Space Grotesk", system-ui, sans-serif;
   --font-family-body: "Inter", "Helvetica Neue", system-ui, sans-serif;
 
+  --font-weight-light: 300;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-black: 900;
+
   /* Layout Dimensions */
   --header-height: 90px;
 
-  /* Radii & Shadows (Industrial = Sharp, 0px radius to break 'Safe Harbor' trend) */
-  --radius-sm: 0px;
-  --radius-md: 0px;
-  --radius-lg: 0px;
+  /* Radii (Modern Corporate Consistency) */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
 
-  /* Brutalist/Industrial Shadows */
-  --shadow-sm: none;
-  --shadow-md: none;
-  --shadow-brutal: 6px 6px 0px var(--color-border-heavy);
-  --focus-ring: 0 0 0 2px var(--color-bg-page), 0 0 0 4px var(--color-primary);
+  /* Soft Elevation (Subtle & Professional) */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-premium: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  
+  /* Semantic Shadows */
+  --shadow-soft: var(--shadow-md);
+  --shadow-card: var(--shadow-lg);
+  --shadow-brutal: var(--shadow-soft); /* Conceptually retired, mapped to soft */
+  
+  --focus-ring: 0 0 0 2px var(--color-bg-page), 0 0 0 4px rgba(0, 77, 144, 0.3);
 
   /* Z-Index Hierarchy (Standardized) */
   --z-base: 1;

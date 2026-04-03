@@ -62,16 +62,15 @@ export function AppShell({ children }: AppShellProps) {
                     transition={{ duration: 0.5, ease: 'easeOut' }}
                     style={{
                         backgroundColor: 'var(--color-bg-surface)',
-                        border: '2px solid var(--color-primary)',
-                        boxShadow: 'var(--shadow-brutal)',
+                        border: '1px solid var(--color-border)',
+                        boxShadow: 'var(--shadow-soft)',
+                        borderRadius: 'var(--radius-lg)',
                         minHeight: '70vh',
-                        padding: '1rem',
+                        padding: '1.5rem',
                         position: 'relative',
                         minWidth: 0 // Crucial for grid/flex child consistency
                     }}
                 >
-                    {/* Decorative geometric accent */}
-                    <div style={{ position: 'absolute', top: '-2px', left: '-2px', width: '20px', height: '20px', backgroundColor: 'var(--color-primary)' }} />
                     {children || <Outlet />}
                 </motion.main>
             </div>
