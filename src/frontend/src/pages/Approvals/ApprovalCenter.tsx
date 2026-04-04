@@ -619,7 +619,7 @@ export function ApprovalCenter() {
                                         bottom: 0,
                                         width: '12px',
                                         cursor: 'col-resize',
-                                        zIndex: (Z_INDEX.DRAWER + 1) as any,
+                                        zIndex: `calc(${Z_INDEX.DRAWER} + 1)` as any,
                                         display: 'flex',
                                         justifyContent: 'center',
                                         transition: 'all 0.2s ease'

@@ -88,7 +88,7 @@ export function UserProfileDrawer({ isOpen, onClose }: UserProfileDrawerProps) {
                                 backgroundColor: 'var(--color-bg-page)',
                                 borderLeft: '4px solid var(--color-primary)',
                                 boxShadow: '-8px 0 32px rgba(0, 0, 0, 0.15)',
-                                zIndex: (Z_INDEX.DRAWER + 1) as any,
+                                zIndex: `calc(${Z_INDEX.DRAWER} + 1)` as any,
                                 display: 'flex',
                                 flexDirection: 'column'
                             }}

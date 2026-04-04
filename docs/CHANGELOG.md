@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.27.1] - 2026-04-04
+
+### Fixed
+- **Drawer Layering Logic**: Resolved a systemic bug where `Z_INDEX` constants (strings) were being incremented in JavaScript, resulting in invalid CSS values. Replaced with valid `calc()` expressions in:
+  - `UserProfileDrawer.tsx` (Fixed "Meu Perfil" visibility)
+  - `ApprovalCenter.tsx` (Fixed resize handle visibility)
+  - `PurchasingHelpDrawer.tsx` (Fixed "Manual de Operação" visibility)
+
 ## [2.27.0] - 2026-04-04
 
 ### Added

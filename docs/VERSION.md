@@ -2,10 +2,21 @@
 
 ## Current Version
 
-v2.27.0
+v2.27.1
+
+## [2.27.1] - 2026-04-04
+
+### Fixed
+- **Drawer Layering Logic**: Resolved a systemic bug where `Z_INDEX` constants (strings) were being incremented in JavaScript, resulting in invalid CSS values. Replaced with valid `calc()` expressions in:
+  - `UserProfileDrawer.tsx` (Fixed "Meu Perfil" visibility)
+  - `ApprovalCenter.tsx` (Fixed resize handle visibility)
+  - `PurchasingHelpDrawer.tsx` (Fixed "Manual de Operação" visibility)
+
+## [2.27.0] - 2026-04-04
 
 ## Version History
 
+- **2.27.1**: Z-Index Layering Hotfix. Corrected a systemic bug in z-index calculation that caused drawer content to fall behind backdrops in User Profile, Approval Center, and Purchasing Help panels.
 - **2.27.0**: Scoped Admin Controls & Global Search Refinement. Implemented a restricted role-assignment matrix for Local Managers, allowing they to assign Area Approver within their scope. Enforced strict plant/department data filtering in User Management and Receiving. Fixed high-contrast search placeholder styling.
 - **2.26.0**: Instruction Layer Cleanup & Baseline Rebuild. Consolidated fragmented permission and status rules into unified directives. Streamlined the process lifecycle and reorganized legacy documentation into reference storage.
 - **2.25.1**: Tooltip Positioning Fix. Optimized the shared `Tooltip` component API to support explicit side-anchoring and alignment, resolving overflow regressions in the User Management drawer.
