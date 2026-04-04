@@ -20,6 +20,7 @@ import UserManagement from './pages/Admin/UserManagement';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import LoginPage from './pages/LoginPage';
 import ChangePasswordPage from './pages/ChangePasswordPage';
+import { ROLES } from './constants/roles';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const { isAuthenticated, user } = useAuth();
@@ -35,10 +36,19 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
 }
 
-function AdminRoute({ children }: { children: React.ReactNode }) {
-    const { isAdmin, isAuthenticated } = useAuth();
+function AdminRoute({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) {
+    const { user, isAuthenticated, isAdmin } = useAuth();
     if (!isAuthenticated) return <Navigate to="/login" replace />;
-    if (!isAdmin) return <Navigate to="/dashboard" replace />;
+    
+    // If explicit roles are provided, check them
+    if (allowedRoles) {
+        const hasRole = user?.roles.some(role => allowedRoles.includes(role));
+        if (!hasRole && !isAdmin) return <Navigate to="/dashboard" replace />;
+    } else {
+        // Fallback to strict Admin
+        if (!isAdmin) return <Navigate to="/dashboard" replace />;
+    }
+    
     return <>{children}</>;
 }
 
@@ -67,7 +77,7 @@ function AppContent() {
                 {/* Administrator Workspace Routes */}
                 <Route path="/admin/workspace" element={<AdminRoute><AdministratorWorkspace /></AdminRoute>} />
                 <Route path="/admin/logs" element={<AdminRoute><SystemLogs /></AdminRoute>} />
-                <Route path="/admin/users" element={<AdminRoute><UserManagement /></AdminRoute>} />
+                <Route path="/admin/users" element={<AdminRoute allowedRoles={[ROLES.LOCAL_MANAGER]}><UserManagement /></AdminRoute>} />
                 <Route path="/admin/diagnosis" element={<AdminRoute><ServiceDiagnosis /></AdminRoute>} />
                 <Route path="/admin/health" element={<AdminRoute><IntegrationHealth /></AdminRoute>} />
             </Route>

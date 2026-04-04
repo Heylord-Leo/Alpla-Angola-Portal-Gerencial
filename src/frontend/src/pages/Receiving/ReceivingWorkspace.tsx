@@ -2,12 +2,14 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, Package, X } from 'lucide-react';
 import { api } from '../../lib/api';
+import { useAuth } from '../../features/auth/AuthContext';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { formatCurrencyAO } from '../../lib/utils';
 import { RequestListItemDto } from '../../types';
 import { CollapsibleSection } from '../../components/ui/CollapsibleSection';
 
 export function ReceivingWorkspace() {
+    const { user: currentUser } = useAuth();
     const [requests, setRequests] = useState<RequestListItemDto[]>([]);
     const [loading, setLoading] = useState(true);
     const [feedback, setFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'success', message: null });
@@ -57,12 +59,38 @@ export function ReceivingWorkspace() {
                 return;
             }
 
-            // 3. Fetch requests using the IDs
+            // 3. Scope Filtering Logic
+            let plantIdsString = '';
+            let departmentIdsString = '';
+            
+            const isSystemAdmin = currentUser?.roles.includes('System Administrator');
+            
+            if (!isSystemAdmin) {
+                const [allPlants, allDepts] = await Promise.all([
+                    api.lookups.getPlants(),
+                    api.lookups.getDepartments()
+                ]);
+                
+                const filteredPlantIds = allPlants
+                    .filter((p: any) => currentUser?.plants?.includes(p.code))
+                    .map((p: any) => String(p.id));
+                
+                const filteredDeptIds = allDepts
+                    .filter((d: any) => currentUser?.departments?.includes(d.code))
+                    .map((d: any) => String(d.id));
+                
+                plantIdsString = filteredPlantIds.join(',');
+                departmentIdsString = filteredDeptIds.join(',');
+            }
+
+            // 4. Fetch requests using the IDs
             const data = await api.requests.list(
                 searchInput, 
                 { 
                     statusIds: targetStatusIds,
                     typeIds: targetTypeIds,
+                    plantIds: plantIdsString || undefined,
+                    departmentIds: departmentIdsString || undefined,
                     isAttention: false
                 }, 
                 1, 

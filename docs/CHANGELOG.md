@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.27.0] - 2026-04-04
+
+### Added
+- **Scoped Admin Controls (DEC-095)**: Implemented role-based authority restrictions for Local Managers.
+  - Empowered `Local Managers` to assign `Area Approver` and operational roles (`Requester`, `Receiving`, `Import`, `Viewer`).
+  - Strictly restricted assignment of governance roles (`Buyer`, `Finance`, `Contracts`, etc.) to System Administrators.
+  - Enforced scope-based filtering: Managers only see and assign plants/departments within their authorized boundary (e.g., `V1`, `V3`).
+- **Receiving Workspace Scope Filtering**: Enforced plant/department data isolation in the Receiving module based on the logged-in user's profile.
+
+### Fixed
+- **Global Search Readability**: Scoped `::placeholder` styling to the header context (`.header-global-search`), ensuring high contrast on the dark topbar without leaking into light-surface search fields.
+- **User Listing Visibility**: Harmonized Name/Code matching logic in User Management filtering, ensuring newly created scoped users are immediately visible to their managers.
+- **Dynamic Master Data Loading**: Refactored admin forms to wait for `currentUser` profile initialization before populating filtered lookup options.
+
+### Changed
+- **Unified Navigation Governance**: Refactored navigation configuration to use role-based eligibility arrays, preventing unauthorized module discovery via group-level inheritance.
+
 ## [2.26.0] - 2026-04-04
 
 ### Changed

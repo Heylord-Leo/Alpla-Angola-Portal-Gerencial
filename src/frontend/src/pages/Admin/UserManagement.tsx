@@ -64,11 +64,17 @@ export default function UserManagement() {
     const [resultPassword, setResultPassword] = useState<string | null>(null);
 
     const isSystemAdmin = currentUser?.roles.includes('System Administrator');
+    const isLocalManager = currentUser?.roles.includes('Local Manager');
 
     useEffect(() => {
         loadData();
-        loadMasterData();
     }, []);
+
+    useEffect(() => {
+        if (currentUser) {
+            loadMasterData();
+        }
+    }, [currentUser]);
 
     async function loadData() {
         setIsLoading(true);
@@ -91,21 +97,68 @@ export default function UserManagement() {
                 api.lookups.getDepartments()
             ]);
             
-            // Filter roles for Local Manager
-            const filteredRoles = isSystemAdmin 
-                ? roles 
+            const managerAssignableRoles = [
+                'Requester', 
+                'Receiving', 
+                'Viewer / Management', 
+                'Import', 
+                'Area Approver'
+            ];
+
+            const filteredRoles = isSystemAdmin
+                ? roles
+                : isLocalManager
+                ? roles.filter((r: any) => managerAssignableRoles.includes(r.roleName))
                 : roles.filter((r: any) => ![ 'System Administrator', 'Local Manager' ].includes(r.roleName));
 
+            // Filter plants and departments for Local Manager scope (Case-insensitive Code match)
+            const filteredPlants = isSystemAdmin
+                ? plants
+                : plants.filter((p: any) => 
+                    currentUser?.plants?.some((code: string) => 
+                        code.toLowerCase() === (p.code || '').toLowerCase()
+                    )
+                );
+
+            const filteredDepts = isSystemAdmin
+                ? depts
+                : depts.filter((d: any) => 
+                    currentUser?.departments?.some((code: string) => 
+                        code.toLowerCase() === (d.code || '').toLowerCase()
+                    )
+                );
+
             setAllRoles(filteredRoles);
-            setAllPlants(plants);
-            setAllDepts(depts);
+            setAllPlants(filteredPlants);
+            setAllDepts(filteredDepts);
         } catch (err: any) {
             console.error('Failed to load master data', err);
         }
     }
 
     const filteredUsers = useMemo(() => {
+        // Pre-map allowed names/codes for efficient lookup
+        const allowedPlantNames = allPlants.map(p => (p.name || '').toLowerCase());
+        const allowedDeptNames = allDepts.map(d => (d.name || '').toLowerCase());
+        const allowedPlantCodes = allPlants.map(p => (p.code || '').toLowerCase());
+        const allowedDeptCodes = allDepts.map(d => (d.code || '').toLowerCase());
+
         return users.filter(u => {
+            // Scope Filter for Local Managers: must share at least one plant or department
+            if (!isSystemAdmin && currentUser) {
+                const hasPlantMatch = u.plants.some(p => {
+                    const val = (p || '').toLowerCase();
+                    return allowedPlantNames.includes(val) || allowedPlantCodes.includes(val);
+                });
+
+                const hasDeptMatch = u.departments.some(d => {
+                    const val = (d || '').toLowerCase();
+                    return allowedDeptNames.includes(val) || allowedDeptCodes.includes(val);
+                });
+
+                if (!hasPlantMatch && !hasDeptMatch) return false;
+            }
+
             const matchesSearch = u.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
                                  u.email.toLowerCase().includes(searchTerm.toLowerCase());
             const matchesStatus = statusFilter === 'all' || 
@@ -113,7 +166,7 @@ export default function UserManagement() {
                                  (statusFilter === 'inactive' && !u.isActive);
             return matchesSearch && matchesStatus;
         });
-    }, [users, searchTerm, statusFilter]);
+    }, [users, searchTerm, statusFilter, isSystemAdmin, currentUser, allPlants, allDepts]);
 
     async function handleOpenCreate() {
         setEditingUser(null);

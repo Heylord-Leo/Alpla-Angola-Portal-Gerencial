@@ -6,6 +6,8 @@ interface User {
   email: string;
   fullName: string;
   roles: string[];
+  plants: string[];
+  departments: string[];
   mustChangePassword: boolean;
 }
 

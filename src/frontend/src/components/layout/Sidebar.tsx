@@ -1,24 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { FileText, Home, LogOut, Settings, List, ShoppingCart, ChevronDown, ChevronRight, Package, Activity, Network, ChevronLeft, CheckCircle } from 'lucide-react';
+import { LogOut, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Z_INDEX } from '../../constants/ui';
 import { DropdownPortal } from '../ui/DropdownPortal';
 
-type NavItemType = 'link' | 'group' | 'action';
-
-interface NavItem {
-    id: string;
-    type: NavItemType;
-    label: string;
-    icon: React.ReactNode;
-    to?: string;
-    onClick?: () => void;
-    children?: NavItem[];
-}
-
 import { useAuth } from '../../features/auth/AuthContext';
-import { Shield } from 'lucide-react';
+import { getNavigationConfig, NavItem } from '../../constants/navigation';
 
 interface SidebarProps {
     isExpanded: boolean;
@@ -28,121 +16,16 @@ interface SidebarProps {
 export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
     const location = useLocation() as { pathname: string; state: { fromList?: string } | null };
     const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
-    const { isAdmin, isLocalManager, logout } = useAuth();
+    const { user, logout } = useAuth();
     
-    // Hover Flyout State
+    // Header Flyout State
     const [hoveredItem, setHoveredItem] = useState<NavItem | null>(null);
     const [hoverRect, setHoverRect] = useState<DOMRect | null>(null);
     const [sidebarRect, setSidebarRect] = useState<DOMRect | null>(null);
     const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const sidebarRef = useRef<HTMLElement>(null);
 
-    const MENU_ITEMS: NavItem[] = [
-        {
-            id: 'dashboard',
-            type: 'link',
-            label: 'Dashboard',
-            icon: <Home size={18} strokeWidth={2.5} />,
-            to: '/dashboard'
-        },
-        {
-            id: 'approvals',
-            type: 'link',
-            label: 'Centro de Aprovações',
-            icon: <CheckCircle size={18} strokeWidth={2.5} />,
-            to: '/approvals'
-        },
-        ...((isAdmin || isLocalManager) ? [{
-            id: 'administracao',
-            type: 'group',
-            label: 'Administração',
-            icon: <Shield size={18} strokeWidth={2.5} />,
-            children: [
-                {
-                    id: 'admin-workspace',
-                    type: 'link',
-                    label: 'Workspace',
-                    icon: <Shield size={18} strokeWidth={2.5} />,
-                    to: '/admin/workspace'
-                },
-                ...(isAdmin ? [
-                    {
-                        id: 'admin-logs',
-                        type: 'link',
-                        label: 'Logs do Sistema',
-                        icon: <FileText size={18} strokeWidth={2.5} />,
-                        to: '/admin/logs'
-                    },
-                    {
-                        id: 'admin-diagnosis',
-                        type: 'link',
-                        label: 'Diagnóstico de Serviços',
-                        icon: <Activity size={18} strokeWidth={2.5} />,
-                        to: '/admin/diagnosis'
-                    },
-                    {
-                        id: 'admin-health',
-                        type: 'link',
-                        label: 'Saúde das Integrações',
-                        icon: <Network size={18} strokeWidth={2.5} />,
-                        to: '/admin/health'
-                    }
-                ] : [])
-            ]
-        } as NavItem] : []),
-        {
-            id: 'compras-logistica',
-            type: 'group',
-            label: 'Compras & Logística',
-            to: '/purchasing',
-            icon: <ShoppingCart size={18} strokeWidth={2.5} />,
-            children: [
-                {
-                    id: 'pedidos',
-                    type: 'link',
-                    label: 'Pedidos',
-                    icon: <FileText size={18} strokeWidth={2.5} />,
-                    to: `/requests${location.state?.fromList || ''}`
-                },
-                {
-                    id: 'itens-pedido',
-                    type: 'link',
-                    label: 'Gestão de Cotações',
-                    icon: <List size={18} strokeWidth={2.5} />,
-                    to: '/buyer/items'
-                },
-                {
-                    id: 'recebimento',
-                    type: 'link',
-                    label: 'Recebimento',
-                    icon: <Package size={18} strokeWidth={2.5} />,
-                    to: '/receiving/workspace'
-                }
-            ]
-        },
-        ...(isAdmin ? [{
-            id: 'configuracoes',
-            type: 'group',
-            label: 'Configurações',
-            icon: <Settings size={18} strokeWidth={2.5} />,
-            children: [
-                {
-                    id: 'dados-mestres',
-                    type: 'link',
-                    label: 'Dados Mestres',
-                    icon: <List size={18} strokeWidth={2.5} />,
-                    to: '/settings/master-data'
-                },
-                {
-                    id: 'extracao-documentos',
-                    type: 'link',
-                    label: 'Extração Docs',
-                    icon: <FileText size={18} strokeWidth={2.5} />,
-                    to: '/settings/document-extraction'
-                }
-            ]
-        } as NavItem] : [])
-    ];
+    const MENU_ITEMS = getNavigationConfig(user?.roles || []);
 
     // Auto-expand groups if child is active - but only if sidebar is expanded
     useEffect(() => {
