@@ -15,6 +15,9 @@ import { Tooltip } from '../../components/ui/Tooltip';
 import { Z_INDEX } from '../../constants/ui';
 import { DropdownPortal } from '../../components/ui/DropdownPortal';
 import { SavedQuotationDto } from '../../types';
+
+const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
+const ALLOWED_EXTENSIONS_MSG = "PDF, JPG, JPEG, PNG, DOC, DOCX, XLS e XLSX";
  
  // Step 9: Highlight animation
  const highlightStyles = `
@@ -339,6 +342,17 @@ export function BuyerItemsList() {
 
     const handleImportFiles = async (requestId: string, files: File[]) => {
         if (files.length === 0) return;
+
+        // Preemptive Client-side Extension Validation
+        const file = files[0];
+        const ext = file.name.split('.').pop()?.toLowerCase() || '';
+        if (!ALLOWED_EXTENSIONS.includes(ext)) {
+            setFeedback({ 
+                type: 'error', 
+                message: `Arquivo não permitido. Formatos aceitos: ${ALLOWED_EXTENSIONS_MSG}.` 
+            });
+            return;
+        }
         
         setIsProcessingOcr(prev => ({ ...prev, [requestId]: true }));
         setOcrErrors(prev => ({ ...prev, [requestId]: null }));
@@ -720,6 +734,17 @@ export function BuyerItemsList() {
                 }
 
                 if (fileToUpload) {
+                    // Preemptive Client-side Extension Validation
+                    const ext = fileToUpload.name.split('.').pop()?.toLowerCase() || '';
+                    if (!ALLOWED_EXTENSIONS.includes(ext)) {
+                        setFeedback({ 
+                            type: 'error', 
+                            message: `Arquivo não permitido. Formatos aceitos: ${ALLOWED_EXTENSIONS_MSG}.` 
+                        });
+                        setIsSaving(false);
+                        return;
+                    }
+
                     const uploaded = await api.attachments.upload(requestId, [fileToUpload], 'PROFORMA');
                     if (uploaded && uploaded.length > 0) {
                         currentProformaId = uploaded[0].id;
@@ -732,9 +757,10 @@ export function BuyerItemsList() {
                     setIsSaving(false);
                     return;
                 }
-            } catch (attError) {
+            } catch (attError: any) {
                 console.error("Failed to upload proforma:", attError);
-                setFeedback({ type: 'error', message: 'Falha ao processar o upload do documento.' });
+                const errorMsg = attError.response?.data?.detail || attError.message || 'Falha ao processar o upload do documento.';
+                setFeedback({ type: 'error', message: errorMsg });
                 setIsSaving(false);
                 return;
             }
@@ -1441,13 +1467,13 @@ export function BuyerItemsList() {
                                                                             <div style={{ marginTop: '32px', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#fff' }}>
                                                                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                                                                                     <thead>
-                                                                                         <tr style={{ backgroundColor: 'var(--color-primary)', borderBottom: '2px solid rgba(0,0,0,0.1)' }}>
-                                                                                             <th style={{ padding: '12px', textAlign: 'left', fontWeight: 900, textTransform: 'uppercase', color: '#fff', fontSize: '0.75rem', letterSpacing: '0.05em' }}>Descrição do Item</th>
-                                                                                            <th style={{ padding: '12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', color: '#fff', fontSize: '0.75rem', letterSpacing: '0.05em', width: '60px' }}>Qtd</th>
-                                                                                            <th style={{ padding: '12px', textAlign: 'center', fontWeight: 900, textTransform: 'uppercase', color: '#fff', fontSize: '0.75rem', letterSpacing: '0.05em', width: '60px' }}>Unid.</th>
-                                                                                            <th style={{ padding: '12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', color: '#fff', fontSize: '0.75rem', letterSpacing: '0.05em', width: '100px' }}>P. Unit</th>
-                                                                                            <th style={{ padding: '12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', color: '#fff', fontSize: '0.75rem', letterSpacing: '0.05em', width: '100px' }}>IVA</th>
-                                                                                            <th style={{ padding: '12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', color: '#fff', fontSize: '0.75rem', letterSpacing: '0.05em', width: '120px' }}>Total do Item</th>
+                                                                                         <tr style={{ backgroundColor: 'var(--color-bg-page)', borderBottom: '2px solid var(--color-border)' }}>
+                                                                                             <th style={{ padding: '12px', textAlign: 'left', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em' }}>Descrição do Item</th>
+                                                                                            <th style={{ padding: '12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', width: '60px' }}>Qtd</th>
+                                                                                            <th style={{ padding: '12px', textAlign: 'center', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', width: '60px' }}>Unid.</th>
+                                                                                            <th style={{ padding: '12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', width: '100px' }}>P. Unit</th>
+                                                                                            <th style={{ padding: '12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', width: '100px' }}>IVA</th>
+                                                                                            <th style={{ padding: '12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', width: '120px' }}>Total do Item</th>
                                                                                         </tr>
                                                                                     </thead>
                                                                                     <tbody>

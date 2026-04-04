@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.25.1] - 2026-04-04
+
+### Fixed
+- **Tooltip Overflow**: Resolved UI clipping in the User Management drawer by implementing an explicit placement API in the shared `Tooltip` component and applying inward alignment for role-specific help text.
+
+## [2.25.0] - 2026-04-04
+
+### Added
+- **Role Selection UX**: Implemented contextual help for the "Funções e Permissões" section in User Management.
+  - Added a centralized `ROLE_DESCRIPTIONS` mapping for role definitions in `roles.ts`.
+  - Integrated `Tooltip` and `Info` icons for every role option in the Create/Edit drawer.
+- **Enhanced Role Constants**: Restored `ROLES` as the definitive shared source for role keys while safely augmenting it with descriptions.
+
+### Fixed
+- **White Screen Regression**: Restored the `ROLES` export in `src/frontend/src/constants/roles.ts`, resolving a critical build failure that prevented the application from rendering.
+- **Table Header UX**: Standardized header contrast in `BuyerItemsList.tsx` and `MasterData.tsx` to align with the Modern Corporate design.
+
+
 ## [2.23.0] - 2026-04-03
 
 ### Added
@@ -45,10 +63,13 @@ All notable changes to this project will be documented in this file.
   - Updated `collapsibleSection` and `badge` styles to follow the new radii standards.
 ## Current Version
 
-v2.23.0
+v2.25.1
 
 ## Version History
 
+- **2.25.1**: Tooltip Positioning Fix. Optimized the shared `Tooltip` component API to support explicit side-anchoring and alignment, resolving overflow regressions in the User Management drawer.
+- **2.25.0**: Role Selection UX & UI Stability. Implemented contextual role tooltips for User Management and fixed a critical white screen regression by restoring the core `ROLES` constant. Standardized table header readability across operational modules.
+- **2.24.0**: Brand Identity & Favicon Integration. Implemented a comprehensive favicon set based on the "A2 P-G" corporate logo, replacing the default Vite identity. Optimized for various devices (mobile, desktop, apple-touch). Also fixed a critical table header readability bug in the Master Data module.
 - **2.23.0**: Request Edit Persistence & Buyer Notifications. Hotfixed the controlled-edit persistence regression and implemented automatic buyer notifications for requester updates in the quotation stage. Restored clickable request numbers and optimized list column widths.
 - **2.22.0**: Modern Corporate UI Refinement (Phase 2). Significant interactive and visual elevation across high-traffic operational screens (Dashboard, Requests, Receiving). Replaced brutalist remnants with Soft Elevation and premium typography.
  Blue is now strictly reserved as an accent for actions and highlights.
@@ -168,7 +189,7 @@ v2.23.0
 - **Drawer Header Redesign**: Replaced the heavy black header bar with a lighter, neutral surface with an 8px contextual left-accent border (blue for Area, green for Final). Improved prev/next navigation controls as 32px brutalist buttons.
 - **History Panel Transition**: Replaced the "giant top-mounted slab" with a focused sliding sub-view using backdrop dimming and blur for maintained user focus.
 
-## [v2.13.0] - 2026-04-01
+## [2.13.0] - 2026-04-01
 
 ### Changed
 
@@ -182,7 +203,7 @@ v2.23.0
 - **Loading & Empty States**: Standardized all feedback states with uppercase text patterns and design tokens.
 - **Dev Tools Footprint**: Minimized the visual dominance of development tools to reduce UI noise.
 
-## [v2.12.2] - 2026-04-01
+## [2.12.2] - 2026-04-01
 
 ### Added
 
@@ -193,7 +214,7 @@ v2.23.0
 - **Role-Based Section Reordering**: Shared intelligence blocks (Alerts, Department KPIs, Item Analysis) render in different priority order per approval stage — Area prioritizes alerts, Final prioritizes financial context.
 - **Extracted Reusable Primitives**: Internal refactor of `SectionLabel`, `KpiCard`, and `ItemCard` sub-components for consistency and maintainability.
 
-## [v2.12.1] - 2026-04-01
+## [2.12.1] - 2026-04-01
 
 ### Added
 
@@ -201,7 +222,25 @@ v2.23.0
 - **Persistent Width**: Support for saving and restoring drawer width via `localStorage` (`approvalDrawerWidth`).
 - **Responsive Layout Reflow**: Optimized `DecisionInsightsPanel` (Visão Departamental and Análise por Item) to adapt naturally to varied drawer widths using responsive grid templates.
 - **Interactive UI Handle**: Added a subtle, reactive resize handle on the left edge with high-hit-area hitboxes and hover indicators.
-- **Intelligence Section Refinement**: Complete UI/UX refactor of the decision support panel in the Approval Center drawer.
+- **Consequences:** Provides a more premium and accessible interface. Requires a phased refactor of core design tokens and shell components in the next implementation cycle.
+
+---
+
+## DEC-093 — Role-Specific Contextual Help (User Management)
+
+- **Date:** 2026-04-04
+- **Status:** Accepted
+- **Context:** Administrators adding or editing users often require clarity on the specific permissions associated with each system role to ensure correct assignment and internal compliance.
+- **Decision:** Implement hover-activated tooltips for the role selection list in the User Management drawer.
+    - **Implementation**:
+        - Create a centralized `ROLE_DESCRIPTIONS` constant in `roles.ts` using `ROLES` keys as indices.
+        - Utilize the system's `Tooltip` component and `Info` (circle-help) icons next to each role checkbox.
+        - **Guardrail**: The structural `ROLES` constant MUST remain exported as the shared source of truth for logic to prevent architectural regressions (e.g., white screen).
+- **Alternatives considered:** Static text under each role (rejected: adds too much vertical noise).
+- **Consequences:** Improves administrative usability without cluttering the UI. Establishes a- **Tooltip**: Provides contextual help via standard information icons or trigger wrappers.
+    - **API**: Supports `side` ('top', 'bottom', 'left', 'right') and `align` ('start', 'center', 'end') for precise placement control in restricted containers (e.g., Drawers).
+    - **Default**: `side="top"`, `align="center"`.
+**: Complete UI/UX refactor of the decision support panel in the Approval Center drawer.
 - **Information Architecture**: Structured intelligence into three executive sections: `Destaques de Atenção`, `Visão Departamental`, and `Análise por Item`.
 - **Item-Specific Intelligence Cards**: Implemented distinct, border-accented cards for each line item, featuring purchase frequency badges, price variation grids, and previous supplier highlights.
 - **Executive Typography**: Applied `font-black` (900 weight) to metrics and `text-[9px]` uppercase tracking to labels for maximum readability and hierarchy.

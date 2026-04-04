@@ -13,12 +13,15 @@ import {
     Building2,
     Lock,
     X,
-    RefreshCw
+    RefreshCw,
+    Info
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../features/auth/AuthContext';
 import { Link } from 'react-router-dom';
 import { DropdownPortal } from '../../components/ui/DropdownPortal';
+import { Tooltip } from '../../components/ui/Tooltip';
+import { ROLE_DESCRIPTIONS } from '../../constants/roles';
 import { Z_INDEX } from '../../constants/ui';
 
 interface UserListDto {
@@ -187,7 +190,7 @@ export default function UserManagement() {
         labelSm: { fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4, display: 'block' },
         tableContainer: { overflowX: 'auto' as const, border: '2px solid var(--color-primary)', boxShadow: 'var(--shadow-brutal)', background: '#fff' },
         table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: '0.85rem' },
-        th: { padding: '12px 16px', background: 'var(--color-primary)', color: '#fff', fontWeight: 800, textAlign: 'left' as const, fontSize: '0.75rem', letterSpacing: '0.05em', textTransform: 'uppercase' as const, border: '1px solid var(--color-primary)' },
+        th: { padding: '12px 16px', background: 'var(--color-bg-page)', color: 'var(--color-text-main)', fontWeight: 800, textAlign: 'left' as const, fontSize: '0.75rem', letterSpacing: '0.05em', textTransform: 'uppercase' as const, borderBottom: '1px solid var(--color-border)' },
         td: { padding: '12px 16px', borderBottom: '1px solid var(--color-border)', verticalAlign: 'middle' as const },
         trHover: { background: 'var(--color-bg-page)' },
         badge: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase' as const, border: '1px solid currentColor' },
@@ -388,11 +391,27 @@ export default function UserManagement() {
 
                                 <section>
                                     <label style={s.labelSm}>Funções e Permissões</label>
+                                    <p style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginBottom: 8, fontWeight: 600, lineHeight: 1.4 }}>
+                                        Selecione uma ou mais funções para definir o que este utilizador poderá fazer no sistema. Passe o mouse no ícone de informação para ver a descrição de cada função.
+                                    </p>
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginTop: 8 }}>
-                                        {allRoles.map(role => (
-                                            <label key={role.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 10, border: '1px solid var(--color-border)', cursor: 'pointer', fontSize: 11, fontWeight: 700, background: formData.roleIds.includes(role.id) ? 'var(--color-primary)08' : '#fff' }}>
-                                                <input type="checkbox" checked={formData.roleIds.includes(role.id)} onChange={() => setFormData({...formData, roleIds: toggleId(formData.roleIds, role.id)})} />
-                                                {role.roleName}
+                                        {allRoles.map((role, idx) => (
+                                            <label key={role.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: 10, border: '1px solid var(--color-border)', cursor: 'pointer', fontSize: 11, fontWeight: 700, background: formData.roleIds.includes(role.id) ? 'var(--color-primary)08' : '#fff' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                    <input type="checkbox" checked={formData.roleIds.includes(role.id)} onChange={() => setFormData({...formData, roleIds: toggleId(formData.roleIds, role.id)})} />
+                                                    {role.roleName}
+                                                </div>
+                                                {ROLE_DESCRIPTIONS[role.roleName] && (
+                                                    <Tooltip 
+                                                        content={ROLE_DESCRIPTIONS[role.roleName]}
+                                                        side="top"
+                                                        align={idx % 2 === 0 ? 'start' : 'end'}
+                                                    >
+                                                        <div style={{ display: 'flex', alignItems: 'center', padding: '2px' }} title="Clique ou passe o mouse para mais detalhes">
+                                                            <Info size={14} style={{ opacity: 0.5, cursor: 'help' }} />
+                                                        </div>
+                                                    </Tooltip>
+                                                )}
                                             </label>
                                         ))}
                                     </div>

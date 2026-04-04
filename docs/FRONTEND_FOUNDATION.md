@@ -23,6 +23,17 @@ For workspaces and complex forms, the project uses a standardized `CollapsibleSe
 5. **Guided Attention**: For critical workflow stages (e.g., `WAITING_AREA_APPROVAL`), specific sections may be automatically expanded, scrolled into view (with sticky-header offset), and briefly highlighted with a soft pulse effect to guide the user's attention. This logic must only run once per record load.
 6. **Migration Guidance**: Legacy screens may temporarily coexist with "Industrial Brutalist" styles (0px radius, heavy shadows). All new or refactored components must strictly follow the Modern Corporate standard (8px-12px radius, soft elevations).
 
+## Contextual Help and Accessibility (v2.24.0)
+
+To assist users in complex administrative tasks, the project utilizes contextual help tooltips for sensitive fields like "Funções e Permissões".
+
+1. **Centralized Definitions**: Role descriptions are maintained in a central repository (`src/frontend/src/constants/roles.ts`). This ensures that the same explanation is provided across all administrative screens (Create, Edit, and Profile).
+2. **Accessible Tooltips**: The `Tooltip` component (`src/frontend/src/components/ui/Tooltip.tsx`) supports multi-modal triggers:
+   - **Hover**: Standard desktop interaction for immediate feedback.
+   - **Focus (Tab)**: Enables keyboard-only users and screen readers to access help text by tabbing into the `Info` icon.
+3. **Visual Identity**: Help icons use the `Info` component from `lucide-react` at a standard `size={14}`, with a subtle `opacity: 0.5` to avoid visual clutter while remaining discoverable.
+4. **Tooltips via Portal**: All tooltips must be rendered through the `DropdownPortal` pattern to ensure they are never clipped by parent containers with `overflow: hidden`.
+
 ## Resizable Drawer Pattern (v2.12.1)
 
 To optimize information density on desktop screens, the Approval Center utilizes a **horizontally resizable side drawer**.

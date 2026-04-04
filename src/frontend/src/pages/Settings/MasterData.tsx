@@ -629,34 +629,34 @@ export function MasterData() {
                     overflow: 'hidden'
                 }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
-                        <thead style={{ backgroundColor: 'var(--color-bg-page)', borderBottom: '2px solid var(--color-border)' }}>
+                        <thead>
                             <tr>
-                                <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase' }}>
+                                <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>
                                     {activeTab === 'suppliers' ? 'Cód. Portal' : 'ID'}
                                 </th>
-                                <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase' }}>
+                                <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>
                                     {activeTab === 'suppliers' ? 'Cód. Primavera' : 'Código'}
                                 </th>
-                                <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase' }}>
+                                <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>
                                     {activeTab === 'currencies' ? 'Símbolo' : 'Nome'}
                                 </th>
                                 {activeTab === 'suppliers' && (
-                                    <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase' }}>NIF</th>
+                                    <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>NIF</th>
                                 )}
                                 {activeTab === 'plants' && (
-                                    <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase' }}>Empresa</th>
+                                    <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Empresa</th>
                                 )}
                                 {activeTab === 'costCenters' && (
-                                    <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase' }}>Planta/Unidade</th>
+                                    <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Planta/Unidade</th>
                                 )}
                                 {activeTab === 'ivaRates' && (
-                                    <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase' }}>% Taxa</th>
+                                    <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>% Taxa</th>
                                 )}
                                 {activeTab === 'departments' && (
-                                    <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase' }}>Responsável</th>
+                                    <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Responsável</th>
                                 )}
-                                <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase' }}>Estado</th>
-                                <th style={{ padding: '16px', textAlign: 'right', fontSize: '0.7rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase' }}>Ações</th>
+                                <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Estado</th>
+                                <th style={{ padding: '16px', textAlign: 'right', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Ações</th>
                             </tr>
                         </thead>
                         <tbody style={{ backgroundColor: 'white' }}>
