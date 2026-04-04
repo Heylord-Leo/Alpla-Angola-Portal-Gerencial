@@ -1,32 +1,32 @@
-# Visão Geral do Projeto Alpla Gerencial
+# Alpla Gerencial Project Overview
 
-## Objetivo
+## Objective
 
-Portal interno para gestão de Pedidos de Compras e Pagamentos da Alpla Angola. O sistema digitaliza o fluxo completo: criação de pedidos, aprovações multi-nível, controle financeiro e rastreabilidade de auditoria.
+Internal portal for Purchasing and Payment Request management for Alpla Angola. The system digitizes the full flow: request creation, multi-level approvals, financial control, and audit traceability.
 
-## Escopo
+## Scope
 
-- **Funcionalidades Implementadas (V1.1)**:
-  - Pedidos de compra (Cotação) e pagamento (Pagamento) com fluxo de aprovação multi-etapa.
-  - Gestão de Cotações (itens de pedido, fornecedores e centros de custo).
-  - Upload de anexos (Proforma, P.O, Comprovantes) integrado ao workflow.
-  - OCR para extração automática de dados de faturas proformas.
-  - Dados Mestres gerenciáveis: Unidades, Moedas, Graus de Necessidade, Departamentos, Plantas, Fornecedores, Centros de Custo.
-  - Dashboard operacional com resumo de status e guia interativo.
-- **Limitações (V1.1)**: Sem integração bidirecional em tempo real com Primavera/AlplaPROD (apenas snapshots).
+- **Implemented Features (V1.1)**:
+  - Purchase (Quotation) and Payment requests with multi-stage approval workflow.
+  - Quotation Management (line items, suppliers, and cost centers).
+  - Attachment upload (Proforma, P.O, Proofs) integrated into the workflow.
+  - OCR for automatic data extraction from proforma invoices.
+  - Managed Master Data: Units, Currencies, Needs, Departments, Plants, Suppliers, Cost Centers.
+  - Operational Dashboard with status summaries and interactive guide.
+- **Current Limitations (V1.1)**: No real-time bidirectional integration with Primavera/AlplaPROD (snapshots only).
 
-## Estrutura de Pastas
+## Folder Structure
 
-- `docs/` – Documentação do projeto
-- `src/frontend/` – SPA React (Vite + TypeScript)
-- `src/backend/` – ASP.NET Core 8 Web API + EF Core
-- `tests/` – Testes automatizados (Unitários e de Integração)
+- `docs/` – Project documentation.
+- `src/frontend/` – React SPA (Vite + TypeScript).
+- `src/backend/` – ASP.NET Core 8 Web API + EF Core.
+- `tests/` – Automated tests (Unit and Integration).
 
-## Próximos Passos
+## Next Steps
 
-1. Estágio 10 Concluído: Introdução do Workspace de Recebimento.
-2. Iniciar Estágio 11: Notificações via e-mail/Teams.
-3. Dashboards analíticos avançados.
+1. Stage 10 Completed: Introduction of Receiving Workspace.
+2. Start Stage 11: Email/Teams notifications.
+3. Advanced analytical dashboards.
 
-- **Versão Atual**: v1.1.41 (Stage 10 - Workspace de Recebimento)
-- **Status**: Estável (Workspace de Recebimento e Role RECEIVING Implementados)
+- **Current Version**: v1.1.41 (Stage 10 - Receiving Workspace)
+- **Status**: Stable (Receiving Workspace and RECEIVING Role Implemented)

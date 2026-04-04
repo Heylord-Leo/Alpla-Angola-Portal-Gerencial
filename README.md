@@ -1,32 +1,34 @@
-# Alpla Angola Gerencial
+# Alpla Angola Gerencial - Portal
 
-## Visão Geral
+## Overview
 
-Este repositório contém a estrutura principal do projeto **Alpla Angola Gerencial**. O foco principal é fornecer um ambiente automatizado e organizado usando a arquitetura de agentes **DOE** (Directives, Orchestration, Execution), separando intenção, decisão e execução determinística.
+This repository contains the core structure of the **Alpla Angola Gerencial** project. The main focus is to provide an automated and organized environment using the **DOE** (Directives, Orchestration, Execution) agent architecture, separating intention, decision, and deterministic execution.
 
-## Estrutura de Pastas
+## Folder Structure
 
-### Estrutura DOE (Core)
+### DOE Architecture (Core)
 
-- `directives/` – Instruções e manuais em formato Markdown (SOPs, o que o agente deve fazer).
-- `execution/` – Scripts Python executáveis e determinísticos focados em processos (como fazer).
-- `.tmp/` – Arquivos temporários, de log (`.tmp/logs/`) e artefatos de processo gerados em tempo de execução (ignorados pelo git).
+- `directives/` – Instructions and manuals in Markdown format (SOPs, defines what the agent should do).
+- `execution/` – Executable and deterministic Python scripts focused on processes (defines how to do it).
+- `.tmp/` – Temporary files, logs (`.tmp/logs/`), and process artifacts generated at runtime (ignored by git).
 
-### Pastas de Suporte
+### Support Folders
 
-- `docs/` – Documentação geral do projeto. Recomendamos começar lendo `docs/PROJECT_OVERVIEW.md`.
-- `src/` – Módulos e código-fonte com lógicas reutilizáveis.
-- `tests/` – Testes automatizados.
-- `data/` – Dados locais persistentes de referência ou exemplos (fixtures).
-- `configs/` – Arquivos de configuração e templates. (Use `.env` para dados sensíveis).
+- `docs/` – General project documentation. Start by reading `docs/PROJECT_OVERVIEW.md`.
+- `src/` – Modules and source code with reusable logic.
+- `tests/` – Automated tests.
+- `data/` – Persistent local reference data or examples (fixtures).
+- `configs/` – Configuration files and templates (Use `.env` for sensitive data).
 
-## Como Começar (Setup Básico)
+## Getting Started (Basic Setup)
 
-1. **Clone o repositório** para sua máquina local.
-2. **Configure o Ambiente**:
-   - Copie o arquivo `.env.example` para criar o seu `.env`.
-   - Preencha as variáveis de ambiente necessárias (nunca faça commit do `.env`).
-3. **Instale as dependências** pertinentes para os scripts Python em `execution/` e `src/`.
-4. **Leia os Documentos**:
-   - Veja `docs/PROJECT_OVERVIEW.md` para entender o escopo do projeto.
-   - Leia `directives/README.md` e `execution/README.md` para as regras de desenvolvimento do modelo DOE.
+1. **Clone the repository** to your local machine.
+2. **Configure the Environment**:
+   - Copy `.env.example` to create your `.env` file.
+   - Fill in the required environment variables (never commit the `.env` file).
+3. **Install Dependencies** for the Python scripts in `execution/` and `src/`.
+4. **Read the Documentation**:
+   - See `docs/PROJECT_OVERVIEW.md` to understand the project scope.
+   - Read `directives/README.md` and `execution/README.md` for DOE development rules.
+5. **Agent Governance**:
+   - Refer to `AGENTS.md` for core execution guardrails and priorities.

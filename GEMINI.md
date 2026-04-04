@@ -1,34 +1,40 @@
 # Alpla Angola - Portal Gerencial | Agent Instructions
 
-> This file is the source of truth for AI execution behavior in this project. It is mirrored across `GEMINI.md`, `CLAUDE.md`, and `AGENTS.md`.
+> [!IMPORTANT]
+> This file is the primary source of truth for agent execution behavior. It is mirrored across `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`.
 
-## 1. Mandatory Task Lifecycle (Root SOP)
+## 1. Execution Priorities
+
+- **Process-Driven**: Always follow the mandatory task lifecycle before implementation.
+- **Spec-Driven (SDD)**: Create or update an `implementation_plan.md` for every non-trivial task.
+- **Reference Integrity**: Update only what is truly impacted, maintaining high documentation standards.
+- **Safety First**: Commits and pushes are strictly reserved for the `/task-publish` workflow.
+
+## 2. Mandatory Task Lifecycle (Root SOP)
 
 All task execution in this repository MUST follow the standard operating procedure defined in:
 👉 **[directives/SOP_TASK_LIFECYCLE.md](file:///C:/dev/alpla-portal/directives/SOP_TASK_LIFECYCLE.md)**
 
 **Summary of Enforcement:**
-- **Analyze & Plan**: Always present an implementation plan for non-trivial tasks.
-- **Guidance Checks**: Read `directives/*.md`, `docs/*.md`, and `docs/DECISIONS.md` before implementation.
-- **Stop & Validate**: Implementation must stop and wait for manual user validation.
-- **No Default Persistence**: Commits and pushes are strictly reserved for the `/task-publish` workflow.
+- **Analyze & Plan**: Present an implementation plan for non-trivial presentations.
+- **Guidance Checks**: Review active baseline rules in `directives/`:
+    - `RULE_WORKFLOW_PERMISSIONS.md` (Status & Stages)
+    - `RULE_KPI_DASHBOARD.md` (UI Consistency)
+    - `RULE_ORDER_NUMBERING.md` (Business Identifiers)
+    - `RULE_REGRESSION_DEBUGGING.md` (Fix Analysis)
+- **Document Integrity**: Update `docs/` and `CHANGELOG.md` following Documentation Hygiene rules.
+- **Stop & Validate**: Stop implementation and wait for manual user validation.
 
-## 2. The 3-Layer Architecture
+## 3. The 3-Layer Architecture
 
-1.  **Layer 1: Directive (What to do)**: SOPs in `directives/`.
-2.  **Layer 2: Orchestration (Decision making)**: The AI agent.
-3.  **Layer 3: Execution (Doing the work)**: Deterministic scripts in `.agents/scripts/` (if any).
-
-## 3. Project Governance
-
-- **Source of Truth**: `docs/CHANGELOG.md` is the primary record for project history and versioning.
-- **Documentation Hygiene**: Update only what is truly impacted, maintaining high markdown standards.
-- **Security Check**: For any authentication or session logic, refer to `FRONTEND_FOUNDATION.md` and `SOP_TASK_LIFECYCLE.md`.
+1.  **Layer 1: Directive (What to do)**: Structured SOPs and Rules in `directives/`.
+2.  **Layer 2: Orchestration (Agent)**: You, the AI assistant.
+3.  **Layer 3: Execution (Workflows)**: Operational prompts in `.agents/workflows/`.
 
 ## 4. Standard Commands
 
-- **`/task-review`**: Read-only status check and analysis of changes.
-- **`/task-publish`**: Formalizes the release, bumps version, and performs `git commit`/`git push`.
+- **`/task-review`**: Read-only status check and impact analysis.
+- **`/task-publish`**: Formalizes the release, updates versioning, and performs Git persistence.
 
 ---
-*For more details on specific features or architecture, refer to the `docs/` directory.*
+*For design philosophy and architecture, refer to [docs/agent-system/ARCHITECTURE.md](file:///C:/dev/alpla-portal/docs/agent-system/ARCHITECTURE.md).*

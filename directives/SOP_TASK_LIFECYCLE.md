@@ -7,6 +7,7 @@ This directive defines the mandatory standard operating procedure (SOP) for all 
 All tasks must follow this sequential flow:
 
 1. **Analyze**: Understand the user's intent, the affected components, and the technical context.
+    - If the task is a fix for a recent regression, consult **`directives/RULE_REGRESSION_DEBUGGING.md`**.
 2. **Plan**: Draft an implementation plan for any non-trivial task. Request user approval before proceeding.
 3. **Guidance Check**: Review relevant project governance and architectural files:
     - `directives/*.md`

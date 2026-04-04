@@ -1,50 +1,44 @@
 # Antigravity Directives - Alpla Angola Portal Gerencial
 
-Este pacote reúne diretivas base para orientar o Antigravity com mais consistência no projeto **Alpla Angola Portal Gerencial**.
+This package gathers base directives to guide the Antigravity AI assistant with more consistency in the **Alpla Angola Portal Gerencial** project.
 
-## Como usar
+## How to Use
 
-Ao abrir uma nova tarefa, referencie explicitamente a diretiva aplicável no prompt, por exemplo:
+When starting a new task, explicitly reference the applicable directive in the prompt, for example:
+- "Follow `SOP_TASK_LIFECYCLE.md`"
+- "Respect `RULE_WORKFLOW_PERMISSIONS.md`"
+- "Apply `RULE_KPI_DASHBOARD.md`"
 
-- Siga `implementar_request_items.md`
-- Aplique também `regras_de_documentacao.md`
-- Respeite `regras_de_status_e_permissoes.md`
+## Included Directives (Active Baseline)
 
-## Diretivas incluídas
+### Process SOPs (Standard Operating Procedures)
+0. `SOP_TASK_LIFECYCLE.md` (MANDATORY: Analyze, Plan, Guidance Check, Stop/Validate)
+1. `SOP_TASK_CLOSING.md` (Task Review and Publication/Git persistency, includes Doc Hygiene)
 
-0. `SOP_TASK_LIFECYCLE.md`
-   - **MANDATÓRIO**: SOP de ciclo de vida de tarefa (Análise, Plano, Checks e Fechamento Seguro)
+### Domain Rules
+2. `RULE_WORKFLOW_PERMISSIONS.md` (Unified Status/Stage and Action permissions)
+3. `RULE_KPI_DASHBOARD.md` (KPI card consistency and interaction)
+4. `RULE_ORDER_NUMBERING.md` (Unique and secure request numbering)
+5. `RULE_REGRESSION_DEBUGGING.md` (Investigating and fixing recent breaks)
 
-1. `implementar_request_items.md`
-   - Implementação do vertical slice de itens do pedido (`RequestLineItem`) dentro de `RequestEdit`
+## Reference and Legacy Materials
 
-2. `regras_de_documentacao.md`
-   - Regras para manutenção mínima e precisa da documentação do projeto
+For historical context or specific milestone validation, refer to:
+- `docs/rules/reference/SOP_VERTICAL_SLICE_VALIDATION.md`
+- `docs/rules/legacy/RULE_ITEM_IMPLEMENTATION.md`
+- `docs/rules/legacy/SOP_POST_CREATE_FLOW.md`
 
-3. `regras_de_status_e_permissoes.md`
-   - Regras funcionais para edição, ações condicionais por status e barreiras de backend
+## Default Project Rules
 
-4. `fechar_tarefa.md`
-   - SOP padronizado para revisão, versionamento e publicação de tarefas
+Always start a task by reading `SOP_TASK_LIFECYCLE.md` to ensure governance compliance.
 
-## Regras padrão do projeto
+### Important Project Rules
+- Do NOT work on deployment.
+- Focus only on the specific feature or correction requested.
+- If you find a directly related issue in the same flow, fix it too.
 
-Sempre que abrir uma nova tarefa, o primeiro passo deve ser a leitura de `SOP_TASK_LIFECYCLE.md` para garantir o cumprimento do fluxo de governança.
-
-### Important project rules
-
-- do not work on deployment
-- focus only on this conditional UX correction
-- if you find a directly related issue in the same post-create flow, fix it too
-
-### Documentation maintenance
-
-If this changes the documented UX behavior, update only what is truly impacted, especially:
-
-- `FRONTEND_FOUNDATION.md`
-- `CHANGELOG.md`
-- `DECISIONS.md` (if needed)
-
-## Observação
-
-Estas diretivas não substituem o contexto do ticket atual. Elas servem para reduzir ambiguidade, manter consistência arquitetural e evitar retrabalho.
+### Documentation Hygiene
+If a change affects documented UX behavior, update only what is truly impacted, especially:
+- `docs/FRONTEND_FOUNDATION.md`
+- `docs/CHANGELOG.md`
+- `docs/DECISIONS.md` (if needed)

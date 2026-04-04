@@ -394,6 +394,200 @@ Purpose: record important technical and process decisions so future work preserv
 
 - **Date:** 2026-02-28
 - **Status:** Accepted
+---
+
+## DEC-049 — Exceção de Edição de Fornecedor em Aguardando Cotação
+
+- **Date:** 2026-03-03
+- **Status:** Accepted
+- **Context:** Na etapa `WAITING_QUOTATION` (Aguardando Cotação), o pedido é tecnicamente bloqueado para edição de cabeçalho (para preservar a intenção original do solicitante). No entanto, a seleção do fornecedor e o upload da Proforma são requisitos obrigatórios para a conclusão desta etapa pelo Comprador.
+- **Decision:** Implementar uma exceção de permissão cirúrgica para o campo **Fornecedor** durante a etapa de cotação.
+  - **Frontend**: Introduzir a flag `canEditSupplier` que inclui `WAITING_QUOTATION`, permitindo que o `SupplierAutocomplete` permaneça editável.
+  - **Backend**: Atualizar `UpdateRequestDraft` para permitir a alteração de `SupplierId` quando o pedido estiver em `WAITING_QUOTATION`, enquanto continua bloqueando alterações em outros campos do cabeçalho.
+- **Consequences:** Melhora a fluidez do workflow de cotação. Garante que os dados necessários para a transição estejam disponíveis no sistema antes da conclusão. Mantém a segurança do cabeçalho contra alterações não autorizadas em outros campos críticos (Departamento, Planta, etc).
+
+---
+
+- **Date:** 2026-03-01
+- **Status:** Accepted
+- **Context:** Requests in `WAITING_QUOTATION` status were initially read-only. However, the Buyer needs to refine request data and insert final quotation values (prices, specific line items) before completion.
+- **Decision:** Define `WAITING_QUOTATION` as an **active operational editing stage**. Hide the read-only banner and enable form/item mutations. Structural integrity is preserved by locking the `RequestType` field after the initial creation.
+- **Consequences:** Provides the necessary flexibility for the Buyer to complete their procurement duties within the portal, while maintaining workflow invariants.
+
+- **Date:** 2026-02-27
+- **Status:** Accepted
+- **Context:** Deciding how to present API response statuses (successes and errors) to users on very tall, scrolling Request forms so they are never lost off-screen.
+- **Decision:** Use a sticky `Feedback` component positioned in the top action bar. Re-map successes and errors via React `Location` state on navigations to ensure they persist across route hops.
+- **Consequences:** Guarantees that users always see the result of their actions immediately, regardless of scroll position, and provides a unified "Feedback" language throughout the application.
+
+---
+
+## DEC-011 — Permanent Use of Portuguese for Status and History Visibility
+
+- **Date:** 2026-03-01
+- **Status:** Accepted
+- **Context:** Deciding on the language for user-facing audit logs and status names in the workflow.
+- **Decision:** While internal status codes remain in stable English (e.g., `WAITING_AREA_APPROVAL`), all display names and history comments must be strictly in Portuguese for readability and business clarity.
+- **Consequences:** Ensures the application feels native to the primary users in Angola while maintaining a predictable development environment.
+
+---
+
+## DEC-012 — Temporary Permission Model for Area Approval (v0.9.5)
+
+- **Date:** 2026-03-01
+- **Status:** Accepted (Temporary)
+- **Context:** Implementing workflow actions before a full role-based access control (RBAC) / JWT authentication system is in place.
+- **Decision:** For v0.9.5, approval actions (Approve, Reject, Request Adjustment) are visible to any user who can access the `RequestEdit` page for a request in the `WAITING_AREA_APPROVAL` status. Hardcode `dev@alpla.com` as the actor in history logs.
+- **Consequences:** Allows testing and early use of the workflow logic, with the explicit understanding that proper actor/permission enforcement is a mandatory next phase.
+
+---
+
+## DEC-013 — AREA_ADJUSTMENT Semantic Grounding
+
+- **Date:** 2026-03-01
+- **Status:** Accepted
+- **Context:** Reusing the `AREA_ADJUSTMENT` status code for the "Solicitar Reajuste" action.
+- **Decision:** In the context of the Area Approval workflow for PAYMENT requests, the internal code `AREA_ADJUSTMENT` specifically represents the "Reajuste A.A" (Solicitor Rework) stage.
+- **Consequences:** UI labels, badges, and history entries must always use the Portuguese term "Reajuste A.A" to maintain semantic clarity for the user, even if the backend code is more generic.
+- **Decision:** Embed explicit, standardized text feedback banners natively inside `position: 'sticky'` layout containers anchoring to the top viewport edge. For cross-page transitions (like returning after draft creation), rely on `react-router-dom` `Location.state` payloads to render context cleanly on mount.
+- **Consequences:** Provides massive UX clarity. Prevents users from wondering "did my save work?" when the form reloads.
+
+---
+
+## DEC-011 — Consolidating Urgency and Priority Fields
+
+- **Date:** 2026-02-26
+- **Status:** Accepted
+- **Context:** The Request Header originally contained both `Prioridade` and `Grau de Necessidade`, creating semantic overlap and UX ambiguity. Additionally, line items lacked a way to express relative importance within a single Request.
+- **Decision:** Drop the `Priority` Master Data entirely from the `Request` header. Rely exclusively on `NeedLevel` (rename UI label to "Grau de Necessidade do Pedido"). Introduce a separate, numeric `ItemPriority` (int) field onto `RequestLineItem` to allow users to rank items 1-N.
+- **Consequences:** Eliminates confusion over what makes a request "Urgent" vs "Critical". Enables item-by-item triage for buyers. Requires a breaking EF Core schema migration (dropped Priority table).
+
+---
+
+## DEC-012 — Request Form Logical Sections & Validations
+
+- **Date:** 2026-02-27
+- **Status:** Accepted
+- **Context:** The Request UI forms were vertically overwhelming and prone to submitting without fundamental identifiers like "Operation Type" or crucial "Workflow Participants".
+- **Decision:** Break the Request form visually into semantic containers: General, Participants, and Financials. Force `Tipo de Pedido` and all Approvers to trigger explicit inline validations. Restrict manual editing of the `Estimated Total Amount` field so it inherently tracks Line Items mathematically.
+- **Consequences:** Provides a significantly more guided, fail-proof experience. Mitigates accidental draft submissions without approvers.
+
+---
+
+## DEC-013 — URL-Driven List State Preservation
+
+- **Date:** 2026-02-27
+- **Status:** Accepted
+- **Context:** Deciding how to preserve complex list filter states (page size, search terms, status filters) when users navigate away to edit/view a Detail record and then navigate "back".
+- **Decision:** Shift list state out of React local memory directly into the URL query string via `useSearchParams()`. When moving into a Detail/Edit view, append that query string inside `react-router-dom`'s `Location.state` (`{ fromList: location.search }`). Any "Cancel" or "Return" actions from the Detail view re-apply that exact payload onto the `/requests` routing destination.
+- **Consequences:** Creates a robust, natively bookmarkable list implementation. Allows users to confidently deep-dive into items directly out of paginated sub-filters without fear of losing their exact scroll/search coordinates.
+
+---
+
+## DEC-014 — Department and Plant as Managed Master Data
+
+- **Date:** 2026-02-27
+- **Status:** Accepted
+- **Context:** The Request header required two new organizational classification fields — Departamento (Department) and Planta (Plant). The initial temptation was to implement them as free-text inputs to ship faster.
+- **Decision:** Implement both as proper Master Data entities (`Department`, `Plant`) with `Id`, `Code`, `Name`, `IsActive` following the standard defined in `MASTER_DATA_GUIDELINES.md`. Both are selectable in the Request form via managed dropdowns and fully maintainable in the `Dados Mestres` settings area.
+- **Alternatives considered:** Free-text fields on the Request (rejected — no referential integrity, no filtering/aggregation support, no governance over valid values).
+- **Consequences:** Requires a DB migration, new API endpoints, and UI management screens. Trade-off is worthwhile for data consistency, future reporting, and alignment with the enterprise data model.
+
+---
+
+## DEC-015 — Supplier as Managed Master Data
+
+- **Date:** 2026-02-27
+- **Status:** Accepted
+- **Context:** Deciding how to store Supplier information on the Request.
+- **Decision:** Implement `Supplier` as a managed Master Data entity (`Id`, `Code`, `Name`, `TaxId`, `IsActive`). This facilitates data integrity, prevents typos in payment processing, and enables future ERP synchronization via `TaxId` (NIF).
+- **Consequences:** Requires a dedicated management UI and DB table. Significantly improves financial auditing and consistency.
+
+---
+
+## DEC-016 — Request Type Standardization (QUOTATION/PAYMENT)
+
+- **Date:** 2026-02-27
+- **Status:** Accepted
+- **Context:** The business model requires exactly two flows: asking for a price (Quotation) vs processing a known invoice (Payment).
+- **Decision:** Standardize on two core `RequestType` codes: `QUOTATION` and `PAYMENT`. Rename legacy "Purchase" label to "Quotation".
+- **Stage 5 Workflow Correction**: Unified post-PO operational flow. Both `QUOTATION` and `PAYMENT` requests now follow the `PO_ISSUED -> PAYMENT_SCHEDULED -> PAYMENT_COMPLETED -> WAITING_RECEIPT` sequence. Removed direct bypass for Quotation requests.
+- **Stage 5 Contract Alignment**: Final alignment pass completing DTO projections and removing fragile `any` mappings.
+- **Consequences:** Simplifies UI conditional logic. `Supplier` is only required for `PAYMENT` requests.
+
+## DEC-017: Conditional Post-Creation Navigation
+
+**Date:** 2026-02-27  
+**Status:** Approved  
+**Context:** Creating a `QUOTATION` request is often an administrative step before a longer commercial process. Creating a `PAYMENT` request usually implies immediate entry of line items.  
+**Decision:** We use a conditional redirect in `RequestCreate.tsx`:
+
+- `QUOTATION` (Code-based check) -> Redirect to `/requests` (List).
+- `PAYMENT` (Code-based check) -> Redirect to `/edit` (Item Entry).
+- **Superseded by:** DEC-045 (Consolidated Redirection)
+**Consequences:** Improved UX flow tailored to business necessity. Success message persistence is handled via React Router state and captured by the List component.
+
+---
+
+## DEC-065: Quotation Editor Mode Separation
+
+**Context**: A regression caused new quotation flows to inherit the "Edit Mode" UI (badge, title, update button) if a previous edit session had been active for the same request.
+
+**Decision**:
+
+1. Explicitly reset `editingQuotationId`, `draftProformaFiles`, and `quotationDrafts` state for the specific `requestId` when starting a new manual or OCR flow.
+2. Update `handleResetToSelect` (cancel/back logic) to also perform a full state cleanup for the request.
+3. Differentiate the UI titles ("Registrar Nova Cotação" vs "Editar Cotação") to provide clear visual feedback to the buyer.
+
+**Consequences**:
+
+- Guaranteed clean state for every new quotation attempt.
+- Prevents UI state "leaks" between different operational actions on the same Request.
+- Improves scanability and reduces buyer confusion regarding the current operation.
+
+---
+
+## DEC-024 — Master Data Feedback and Inline Validation
+
+- **Date:** 2026-03-01
+- **Status:** Accepted
+- **Context:** Deciding how to standardize feedback and validation across Master Data screens to match the Request screens.
+- **Decision:**
+    1. Integrate the `Feedback.tsx` component into all Master Data screens for post-action messaging (success/error).
+    2. Implement debounced inline uniqueness validation for critical fields (like Supplier Name and PrimaveraCode) to prevent submission failures.
+    3. Standardize the "Brutalist" input styling for all Master Data form fields.
+- **Consequences:** Provides a cohesive brand identity and UX patterns across the entire portal. Reduces user frustration by providing immediate validation feedback before form submission.
+
+---
+
+## DEC-025 — Searchable Dropdown Pattern (Combobox)
+
+- **Date:** 2026-02-28
+- **Status:** Accepted
+- **Context:** Large master data sets (like Suppliers) require a selection mechanism that scales beyond simple dropdowns but feels more integrated than detached autocompletes.
+- **Decision:** Standardize on a "Searchable Dropdown" (Combobox) pattern for large lookups:
+    1. **Immediate Feedback**: Open options on focus/click even if the query is empty.
+    2. **Integrated Search**: Filter results live as the user types within the same dropdown container.
+    3. **Visual Structure**: Use formatted results (e.g., `[Code] Name`) to ensure unique identification in the list.
+    4. **Chevron Indicator**: Add a visual cue (Chevron) to signify dropdown behavior.
+- **Consequences:** Provides a familiar "Dropdown" experience for users while maintaining the performance and scalability of an async search.
+
+---
+
+## DEC-018 — Persistent Request Numbering Strategy
+
+- **Date:** 2026-02-27
+- **Status:** Accepted
+- **Context:** Deleting drafts caused the system to reuse sequential numbers because the previous logic depended on counting existing records. This resulted in duplicate request numbers.
+- **Decision:** Use a dedicated `SystemCounters` table to store persistent, monotonically increasing counters. Every request type has its own counter key per day (e.g., `REQ_NO_QUOTATION_20260227`). The number allocation is decoupled from the `Requests` table content.
+- **Consequences:** Ensures non-reusable and unique request numbers even after record deletion. Gaps in the sequence are expected and acceptable. Added a database-level unique index on `RequestNumber` as a final safeguard.
+
+---
+
+## DEC-019 — Single Currency Enforcement & Header Edit Lock
+
+- **Date:** 2026-02-28
+- **Status:** Accepted
 - **Context:** Mixed currencies within a single purchase request create accounting complexity and ambiguity in total calculations. Additionally, changing the request currency after items already exist would invalidate the consistency of those items.
 - **Decision:**
     1. Enforce exactly one currency per request (defined at the header level).
@@ -403,17 +597,17 @@ Purpose: record important technical and process decisions so future work preserv
 
 ---
 
-## DEC-063 — Stage 8.5: Consolidação de Propriedade e Seleção de Cotação
+## DEC-063 — Stage 8.5: Ownership Consolidation and Quotation Selection
 
 - **Date:** 2026-03-22
 - **Status:** Accepted
-- **Context:** O sistema continha regras híbridas de transição onde a responsabilidade pela seleção da cotação vencedora e edição de centros de custo estava ambígua entre Comprador e Aprovadores.
+- **Context:** The system contained hybrid transition rules where responsibility for selecting the winning quotation and editing cost centers was ambiguous between the Buyer and Approvers.
 - **Decision:**
-    1. **Quotation-First Model**: Para pedidos de COTAÇÃO, o fornecedor oficial é derivado da cotação selecionada. O `SupplierId` no cabeçalho do pedido é tratado como transitório e ignorado em favor da cotação vencedora.
-    2. **Winner Selection**: A seleção da cotação vencedora é movida exclusivamente para o **Aprovador Final** na etapa `WAITING_FINAL_APPROVAL`. O Comprador não seleciona mais o vencedor no Workspace de Itens.
-    3. **Cost Center Ownership**: A edição de centros de custo nos itens de linha é movida do Comprador para o **Aprovador de Área** na etapa `WAITING_AREA_APPROVAL`.
-    4. **Role-Based detail view**: Introduzida a capacidade de alternar a visualização (`userMode`) no detalhe do pedido para permitir que o usuário atue em diferentes papéis se possuir as permissões necessárias (Simulado via `X-User-Mode`).
-- **Consequences:** Garante separação de deveres (SoD) clara. Reduz o erro humano ao centralizar decisões financeiras (Vencedor, Centro de Custo) nos aprovadores, deixando a execução operacional com o comprador.
+    1. **Quotation-First Model**: For QUOTATION requests, the official supplier is derived from the selected quotation. The `SupplierId` in the request header is treated as transient and ignored in favor of the winning quotation.
+    2. **Winner Selection**: Winning quotation selection is moved exclusively to the **Final Approver** at the `WAITING_FINAL_APPROVAL` stage. The Buyer no longer selects the winner in the Items Workspace.
+    3. **Cost Center Ownership**: Line item cost center editing is moved from the Buyer to the **Area Approver** at the `WAITING_AREA_APPROVAL` stage.
+    4. **Role-Based detail view**: Introduced the ability to toggle the view (`userMode`) in the request detail to allow users to act in different roles if they have the necessary permissions (Simulated via `X-User-Mode`).
+- **Consequences:** Ensures clear Separation of Duties (SoD). Reduces human error by centralizing financial decisions (Winner, Cost Center) with approvers, leaving operational execution to the buyer.
 
 ---
 
@@ -514,271 +708,6 @@ Purpose: record important technical and process decisions so future work preserv
 
 ---
 
-
-## DEC-020 — Item Priority as a Business Classification
-
-- **Date:** 2026-02-28
-- **Status:** Accepted
-- **Context:** The original `ItemPriority` field was a numeric manual input with no business meaning.
-- **Decision:** Replace `int ItemPriority` with `string` storing one of: `HIGH`, `MEDIUM`, `LOW`. Backend validates/normalizes; frontend shows a select with labels `Alta`/`Média`/`Baixa`. `LineNumber` remains the technical row-order indicator, separate from business priority.
-- **Alternatives considered:** C# enum, a DB lookup table.
-- **Consequences:** Static codes are stable and simpler than a table. A migration with safe SQL data conversion handles existing int values. Priority displayed as a colored badge in the item grid.
-
----
-
-## DEC-021 — Line Item Status as Master Data, Backend-Assigned
-
-- **Date:** 2026-02-28
-- **Status:** Accepted
-- **Context:** Each line item needs a lifecycle status. Status must not be freely set by the requester.
-- **Decision:** `LineItemStatus` is a proper master data table (7 statuses). `AddLineItem` auto-assigns initial status based on parent `RequestType.Code`: `QUOTATION` → `WAITING_QUOTATION`, `PAYMENT` → `PENDING`. Status never accepted from client DTOs. `UpdateLineItem` preserves existing status. Requester sees status as a read-only badge.
-- **Alternatives considered:** C# enum, plain string field.
-- **Consequences:** Consistent with existing master data patterns. Supports future buyer-controlled editing (planned for next phase).
-
----
-
-## DEC-050 — Inline Request Status Timeline
-
-- **Date:** 2026-03-03
-- **Status:** Accepted
-- **Context:** Users required quick visibility into request progression directly from the list view to reduce context switching.
-- **Decision:** Implement an expandable table row in `RequestsList.tsx` that renders a `RequestTimelineInline` component.
-  - **Logic**: Component fetches data from a dedicated `/timeline` endpoint which maps internal statuses to high-level workflow stages.
-  - **UI (v0.9.19)**: Redesigned as a high-fidelity horizontal visual timeline with segmented connectors and state-aware markers (Completed/Current/Pending).
-- **Consequences:** Provides immediate transparency. Uses lazy-loading and `stopPropagation` to maintain performance and prevent navigation conflicts. Horizontal layout handles long labels and many steps via responsive overflow.
-
----
-
-## DEC-022 — Supplier Identification: PortalCode and PrimaveraCode
-
-- **Date:** 2026-02-28
-- **Status:** Accepted
-- **Context:** Preparation for future ERP (Primavera) integration while maintaining local autonomy.
-- **Decision:** Split supplier code into two fields: `PortalCode` (internal, unique, required) and `PrimaveraCode` (external ERP code, optional).
-- **Consequences:** Enables seamless future linkage with the ERP while allowing the Portal to manage local suppliers that might not yet exist in the ERP.
-
----
-
--3. **Table Wrapping**: Wide tables must always be wrapped in a `div` with `overflow-x: auto` and `width: 100%`. The table itself should have a stable `min-width` (e.g., `1200px`) to preserve readability.
-
-## Document Attachments and Multi-File Validation
-
-1. **Typed Interaction**: All file uploads must be categorized by a functional type (`PROFORMA`, `PO`, etc.). The UI must group files by these categories to guide the user naturally.
-2. **Workflow Convergence**: Transition buttons are conditionally enabled or backend-validated against the presence of required file types. The rule is: *At least one valid, non-deleted attachment of the required type must exist*.
-3. **Audit History Trail**: Every legal attachment addition must be mirrored as a `RequestStatusHistory` entry using the standard `DOCUMENTO ADICIONADO` action. These entries must inherit the request's current status to maintain a strictly linear time-based audit journey in the main history UI.
-4. **Deletion Guard**: File deletion is a mutation that is strictly blocked once a request moves past the initial engagement phases (`DRAFT`, `WAITING_QUOTATION`, or Rework). This prevents "ghost" documents where a request appears approved without the required evidence.
-
----
-
-## DEC-023 — Async Supplier Search Pattern (Autocomplete)
-
-- **Date:** 2026-02-28
-- **Status:** Accepted
-- **Context:** As the supplier master grows (thousands of records), a standard dropdown becomes unusable and slow.
-- **Decision:** Replace standard supplier dropdown with a dedicated `SupplierAutocomplete` component. It uses an async lookup endpoint (`/api/v1/lookups/suppliers/search`), implements a 300ms debounce, and requires at least 3 characters to trigger search. Results are limited to 20 for performance.
-- **Consequences:** Provides a high-performance, scalable UX. Reduces initial page load weight by not fetching the entire supplier list upfront.
-
-## DEC-026 — Formal Request Submission Pattern (Draft -> Submitted)
-
-- **Date:** 2026-03-01
-- **Status:** Accepted
-- **Context:** Requests must transition from a flexible "Draft" state to a stable "Submitted" state to enter the formal business workflow.
-- **Decision:**
-    1. Introduce a stable `SUBMITTED` status code in master data.
-    2. Implement a dedicated `POST /requests/{id}/submit` endpoint for this transition.
-    3. Backend enforces comprehensive completeness validation during submission (Header fields, Item existence, Positive Total).
-    4. Transition is audited via `RequestStatusHistory` and marked with `SubmittedAtUtc`.
-- **Consequences:** Provides a clear "point of no return" for the requester, ensuring data stability during the approval phases.
-
----
-
-## DEC-027 — Conditional Supplier Requirement Rule
-
-- **Date:** 2026-03-01
-- **Status:** Accepted
-- **Context:** Deciding if a Supplier is mandatory at the point of submission.
-- **Decision:**
-  - For `QUOTATION` (COM) requests: Supplier is **optional**. The buyer is responsible for finding the supplier.
-  - For `PAYMENT` (PAG) requests: Supplier is **mandatory**. The requester must define who is being paid.
-- **Consequences:** Aligns with current Alpla Angola procurement practices. Frontend and backend both enforce this logic dynamically based on `RequestType.Code`.
-
----
-
-## DEC-028 — Post-Submission Mutation Lock (Read-Only)
-
-- **Date:** 2026-03-01
-- **Status:** Accepted
-- **Context:** Once a request is submitted, it should not be modified by the requester to ensure approvers are reviewing a static, reliable document.
-- **Decision:** All backend endpoints that mutate a Request or its Line Items (`PUT /requests/{id}/draft`, `POST /requests/{id}/line-items`, etc.) must return `409 Conflict` if the current status is not `DRAFT`. The frontend similarly disables all inputs and hides action buttons (Save, Delete, Add Item) for non-DRAFT requests.
-- **Consequences:** Guarantees data integrity throughout the workflow lifecycle. Requires users to ask for a "Reject/Rework" (future V2) if changes are needed after submission.
-
----
-
-## DEC-029 — Conditional Line Item Requirement for Submission
-
-- **Date:** 2026-03-01
-- **Status:** Accepted
-- **Context:** In the quotation flow, a buyer might be responsible for adding items later, while in a payment flow, the items must be defined upfront.
-- **Decision:**
-  - **PAYMENT** (PAG) requests strictly require at least one line item before submission.
-  - **QUOTATION** (COM) requests allow submission with zero items.
-- **Superseded by:** DEC-045 (Mandatory Items for All)
-- **Consequences:** Improves flexibility for buyers in the Quotation flow while maintaining strict control for Payments. Frontend provides conditional helper text and blocks submission only for PAYMENT if empty.
-
----
-
-## DEC-031 — Post-Submit Workflow Transitions (v0.9.4)
-
-- **Date:** 2026-03-01
-- **Status:** Accepted
-- **Context:** Requests must transition directly to business-relevant statuses after submission:
-  - `PAYMENT` -> `WAITING_AREA_APPROVAL` ("Aguardando Aprovação da Área")
-  - `QUOTATION` -> `WAITING_QUOTATION` ("Aguardando Cotação")
-- **Decision:** Implement these direct transitions based on `RequestType.Code` immediately after a successful submission.
-- **Consequences:** Streamlines the workflow, moving requests directly into the appropriate next business state without an intermediate, non-functional "SUBMITTED" display state.
-
----
-
-## DEC-032 — Read-Only Enforcement for Non-Drafts (v0.9.4)
-
-- **Date:** 2026-03-01
-- **Status:** Accepted
-- **Context:** Once a request is no longer in `DRAFT` status, the UI must strictly enforce read-only mode, hiding all action buttons (Save, Submit, Add Item) and disabling all input fields.
-- **Decision:** Implement this read-only enforcement via component re-use in `RequestEdit.tsx` and related forms. All mutation actions (buttons, input fields) are conditionally rendered or disabled if the request status is not `DRAFT`.
-- **Consequences:** Prevents unauthorized modifications to requests that are already in a formal workflow, ensuring data integrity and consistency for approvers.
-
----
-
-## DEC-033 — Technical Role of "SUBMITTED" Status (v0.9.4)
-
-- **Date:** 2026-03-01
-- **Status:** Accepted
-- **Context:** Clarifying the purpose and visibility of the `SUBMITTED` status.
-- **Decision:** The `SUBMITTED` status exists only as an internal/technical audit step in the `RequestStatusHistory`. It must never be the visible functional state in the workflow UI. After submission, the request immediately transitions to a business-relevant status (e.g., `WAITING_AREA_APPROVAL` or `WAITING_QUOTATION`).
-- **Consequences:** Simplifies the user's understanding of the request's current state by presenting only actionable business statuses. Maintains a clear audit trail of the submission event.
-
----
-
-## DEC-030 — Standardized Portuguese UI Text for Request Workflow
-
-- **Date:** 2026-03-01
-- **Status:** Accepted
-- **Context:** Need for a unified and professional Portuguese terminology across all primary request actions and feedback.
-- **Decision:** Enforce the following exact strings:
-  - **SALVAR PEDIDO** (Create Action)
-  - **SALVAR MUDANÇAS**, **SUBMETER PEDIDO**, **EXCLUIR RASCUNHO**, **CANCELAR** (Edit Actions)
-  - **Rascunho salvo com sucesso.** (Save Feedback)
-  - **Preencha os campos obrigatórios antes de submeter o pedido.** (Header Validation)
-  - **Para submeter, o pedido deve conter pelo menos um item.** (Item Validation)
-- **Consequences:** Ensures consistency and a professional feel for the portal's user interface.
-
----
-
-## DEC-034 — Semantic Grounding of FINAL_ADJUSTMENT (v0.9.6)
-
-- **Date:** 2026-03-01
-- **Status:** Accepted
-- **Context:** Deciding how to present the `FINAL_ADJUSTMENT` state to the user in the Final Approval workflow.
-- **Decision:** The internal status `FINAL_ADJUSTMENT` is semantically grounded as **"Reajuste A.F"** (Aprovação Final) in the UI.
-- **Consequences:** UI labels, badges, and history logs must consistently use the label "Reajuste A.F". It represents a request for rework initiated by the Final Approver.
-
----
-
-## DEC-035 — Item Form Mandatory Field UX (v0.9.6)
-
-- **Date:** 2026-03-01
-- **Status:** Accepted
-- **Context:** Ensuring data quality for mandatory fields in the Item insertion/edit form.
-- **Decision:**
-    1. Mandatory selects (`Prioridade`, `Unidade`) must start empty (`''`) for new items.
-    2. They must display an explicit empty placeholder (e.g., "Selecione a unidade...").
-    3. Both client-side and server-side validation must block submission if these are not explicitly selected by the user.
-
----
-
-## DEC-036 — Request Rework / Adjustment Workflow (v0.9.7)
-
-- **Date:** 2026-03-01
-- **Status:** Accepted
-- **Context:** Requests returned for adjustment (`AREA_ADJUSTMENT` or `FINAL_ADJUSTMENT`) must be editable by the requester so they can fix issues and resubmit.
-- **Decision:**
-    1. **Editability**: Mutation guards (Backend) and UI input states (Frontend) are relaxed to allow edits if the request is in an adjustment status (AA or AF).
-    2. **Resubmission Path**: `SubmitRequest` logic is updated to return the request to the *corresponding* approval stage rather than restarting from the beginning.
-    3. **Guidance Banner**: A Portuguese notification banner is shown at the top of the form during rework statuses to guide the user.
-    4. **Audit Logging**: Resubmissions are logged as `RESUBMIT` in history with context-aware comments.
-
----
-
-## DEC-037 — Rework Resubmission Real-Change Requirement (v0.9.8)
-
-- **Date:** 2026-03-01
-- **Status:** Accepted
-- **Context:** To prevent premature resubmission, requests in rework status must be genuinely modified before they can be sent back to approval.
-- **Decision:**
-    1. **Change Tracking**: The backend `RequestsController.UpdateDraft` now compares incoming values with persisted ones and only updates `UpdatedAtUtc` if a field actually changed.
-    2. **Authoritative Validation**: The `SubmitRequest` endpoint verifies that `request.UpdatedAtUtc` is strictly greater than the `CreatedAtUtc` of the latest `REQUEST_ADJUSTMENT` action in the status history.
-    3. **Frontend Guard**: `RequestEdit.tsx` tracks `isDirty` and `hasSavedChanges` state to block the "REENVIAR PEDIDO" button if no session edits occurred, providing immediate Portuguese feedback: "É necessário realizar pelo menos uma alteração antes de reenviar o pedido."
-- **Consequences:** Prevents "no-op" resubmissions and ensures the rework cycle contains actual progress.
-
----
-
----
-
-## DEC-040 — Visual Standardization of Request Workflow (v0.9.11)
-
-- **Date:** 2026-03-01
-- **Status:** Accepted
-- **Context:** Ensuring a consistent "brutalist" design system and professional UX across all request screens (View, Edit, Rework, Approval).
-- **Decision:**
-    1. **Unified Banner System**: Status and Context banners now share the same padding (12px 24px), icon alignment, and border styles while preserving semantic differentiation via background colors and specific icons (ShieldCheck vs ShieldAlert).
-    2. **Standardized Header Action Bar**: Unified buttons to 44px height (secondary) and 48px height (primary/approval) with uppercase labels and consistent font weights (800).
-    3. **Page & Section Hierarchy**: Rigidly enforced levels (Page Title: 1.8rem, Section Title: 1.1rem) across all screens.
-    4. **Confirmation Modal UX**: Standardized modal titles to uppercase and added "brutalist" input styling for approval comments. Centered action buttons for clearer focus.
-- **Consequences:** Provides a highly professional, integrated feel for the application's most critical workflow. Enhances scannability and reduces cognitive load by establishing stable UI patterns.
-
-## DEC-041: Request Workflow UI/UX Refinements (v0.9.12)
-
-- **Date:** 2026-03-01
-- **Status:** Approved
-- **Context:** Need to improve the clarity of ownership and prioritization in the request workflow.
-- **Decision:**
-    1. **Banner Relocation**: Moved the responsibility/next-action banner below the header to allow natural scrolling.
-    2. **Label Standardization**: Changed "CANCELAR" to "VOLTAR" for existing requests.
-    3. **Visibility Enhancement**: Displayed Request Number prominently in the header.
-    4. **Smart Priority Sorting**: Implemented status-aware sorting and urgency highlighting, excluding finalized requests (`REJECTED`, `CANCELLED`).
-- **Consequences:** Reduces visual noise in the sticky header and helps users focus on active, high-urgency tasks. Ensures secondary sorting is robust by using `createdAtUtc`.
-
----
-
-## DEC-042: Post-Approval Operational Pipeline Normalization (v0.9.13)
-
-- **Date:** 2026-03-01
-- **Status:** Accepted
-- **Context:** The post-approval workflow for PAYMENT requests requires a clear operational sequence (PO Emission -> Scheduling -> Payment -> Receipt).
-- **Decision:**
-    1. **Semantic Sequence**: Normalized the transition flow to ensure the business meaning is unambiguous: `PAYMENT_COMPLETED` (Backend confirmed) -> `WAITING_RECEIPT` (Operational verification) -> `COMPLETED` (Finalized).
-    2. **Operational Action Bar**: Introduced a standalone, sticky **AÇÕES OPERACIONAIS** section in `RequestEdit.tsx`. This bar is strictly isolated from approval/rework actions to prevent role confusion and visual clutter.
-    3. **Status Definition Update**: Redefined `APPROVED` as an active "Working" status rather than a "Finalized" status. Urgency highlights now persist through the operational stages until the request reaches the definitive `COMPLETED` state.
-- **Consequences:** Provides a robust, multi-step operational tracking system for finance and procurement teams. Ensures the portal remains a source of truth for the physical execution of approved payments.
-- **Supersedes**: DEC-011 and DEC-041 regarding "Finalized" status definitions.
-
----
-
-## DEC-043: Quotation Lifecycle and Financeiro Branching (v1.0.0+)
-
-- **Date:** 2026-03-01
-- **Status:** Accepted
-- **Context:** Deciding on the lifecycle for Quotation requests and the operational branching for Payments.
-- **Decision:**
-    1. **Quotation Lifecycle**: Quotation completion no longer leads to a terminal state. Instead, it advances to `WAITING_AREA_APPROVAL`. This ensures stakeholder review before finalization.
-    2. **Financeiro Branching isolation**: In the `PO_ISSUED` status, the Financeiro role can choose between **PAGAR** (direct to `PAYMENT_COMPLETED`) or **AGENDAR PAGAMENTO** (to `PAYMENT_SCHEDULED`).
-  - **Superseded by DEC-051**: This flow is now unified for both `PAYMENT` and `QUOTATION` types to ensure full financial traceability.
-    1. **Finalized Status Behavior**: Finalized statuses (`COMPLETED`, `REJECTED`, `CANCELLED`) are excluded from urgency highlights. `QUOTATION_COMPLETED` is downgraded to an internal audit state and is no longer part of the standard finalizing path.
-- **Consequências:** Ensina a um fluxo de negócio mais robusto para cotações enquanto mantém ramificações claras para todos os pedidos após aprovação.
-
----
-
-## DEC-044: Workflow-Driven Typed Attachments
 
 - **Date:** 2026-03-01
 - **Status:** Accepted
