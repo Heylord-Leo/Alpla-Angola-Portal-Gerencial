@@ -234,7 +234,7 @@ export function GlobalSearch() {
                     opacity: 1 !important;
                 }
                 input:focus::placeholder {
-                    color: var(--color-text-muted) !important;
+                    color: var(--color-placeholder-focus) !important;
                 }
             `}</style>
         </div>

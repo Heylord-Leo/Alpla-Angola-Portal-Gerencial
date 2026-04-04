@@ -77,6 +77,13 @@
   --shadow-brutal: var(--shadow-soft); /* Conceptually retired, mapped to soft */
   
   --focus-ring: 0 0 0 2px var(--color-bg-page), 0 0 0 4px rgba(0, 77, 144, 0.3);
+  
+  /* Placeholder & Form Field States (WCAG Standard Contrast) */
+  --color-placeholder: #6B7280;
+  --color-placeholder-focus: #4B5563;
+  --color-field-disabled-bg: #F9FAFB;
+  --color-field-disabled-text: #9CA3AF;
+  --color-field-readonly-bg: #F3F4F6;
 
   /* Z-Index Hierarchy (Standardized) */
   --z-base: 1;

@@ -177,8 +177,23 @@ A non-operational, instructional guide to the purchasing process.
 
 We use **Inline Form Validation** directly tied to the Backend responses as the project-wide standard. To ensure maximum productivity, users must never be navigated away from a form due to predictable field validations, and their partially-entered data must not be lost.
 
-- **Required Field Enforcement**: Added HTML5 `required` attributes and backend `[Required]` annotations for `Grau de Necessidade` and `Necessário Até` fields, ensuring users cannot save a request without providing these values. Inline error messages highlight missing fields and preserve entered data for correction.
+- **Required Field Enforcement**: Added HTML5 `required` attributes and backend `[Required]` annotations for `Grau de Necessidade` e `Necessário Até` fields, ensuring users cannot save a request without providing these values. Inline error messages highlight missing fields and preserve entered data for correction.
 - **Conditional Visibility and Requirement**: Some fields (e.g., `Data de Necessidade`) are conditionally visible and required based on business rules (e.g., only for `QUOTATION` request types). These fields are excluded from validation when hidden and must be handled as `null` in the API payload if not applicable.
+
+## Form Field and Placeholder Standards (v2.25.0)
+
+To ensure maximum legibility and accessibility (WCAG AA Compliance), form fields and placeholders must follow these styling rules:
+
+1. **Placeholder Contrast**: Never use opacity (e.g., `0.5`) for placeholder text. Instead, use the resolved semantic tokens:
+   - `--color-placeholder`: Standard high-contrast color for inactive/unfilled fields.
+   - `--color-placeholder-focus`: A distinct, even higher-contrast color when the field is active.
+2. **Text Normalization**: Use `text-transform: none` for placeholder text to improve readability, especially in long-form fields or multiline textareas. Avoid global `uppercase` on placeholders.
+3. **Empty States (Native Selects)**: Native `<select>` elements with an empty or "-- Selecione --" initial value must visually mimic a placeholder. Use the `:has(option[value=""]:checked)` selector pattern to apply `--color-placeholder`.
+4. **Field States**:
+   - **Disabled**: Use `var(--color-field-disabled-bg)` for background and `var(--color-text-field-disabled)` for text.
+   - **Read-Only**: Use `var(--color-field-readonly-bg)` for background.
+   - **Error**: Use `#EF4444` borders and `#FEF2F2` background (standard project error colors).
+5. **Hierarchy**: Centralize these rules in `globals.css` and `tokens.css`. Component-level overrides must be used only sparingly and should still reference the global semantic tokens.
 
 ### Error Handling Paradigm
 

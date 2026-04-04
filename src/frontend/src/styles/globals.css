@@ -153,16 +153,30 @@ textarea {
     color: var(--color-text-main);
 }
 
+/* Base Placeholder Styling */
 input::placeholder,
 textarea::placeholder {
-    color: var(--color-text-muted);
-    opacity: 0.5;
+    color: var(--color-placeholder);
+    opacity: 1; /* Reset transparency */
     font-weight: 400;
-    text-transform: uppercase;
-    font-size: 0.75rem;
-    letter-spacing: 0.05em;
+    text-transform: none; /* Normalized for better readability */
+    font-size: 0.85rem;
+    letter-spacing: 0.02em;
 }
 
+/* Native Select Placeholder (Unselected State) */
+select:invalid,
+select:has(option[value=""]:checked),
+select.placeholder-state {
+    color: var(--color-placeholder);
+}
+
+/* Ensure selected options are dark even if select is "placeholder" styled */
+select option {
+    color: var(--color-text-main);
+}
+
+/* Field States */
 input:focus,
 select:focus,
 textarea:focus {
@@ -170,6 +184,33 @@ textarea:focus {
     border-color: var(--color-primary);
     box-shadow: 0 0 0 4px rgba(var(--color-primary-rgb), 0.1);
     background-color: #fff;
+}
+
+input:focus::placeholder,
+textarea:focus::placeholder {
+    color: var(--color-placeholder-focus);
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+    background-color: var(--color-field-disabled-bg);
+    color: var(--color-field-disabled-text);
+    cursor: not-allowed;
+    border-color: var(--color-border);
+    opacity: 0.7;
+}
+
+input[readonly],
+textarea[readonly] {
+    background-color: var(--color-field-readonly-bg);
+    cursor: default;
+}
+
+/* Error State (Standardized) */
+.field-error,
+input:invalid:not(:placeholder-shown) {
+    border-color: var(--color-status-red) !important;
 }
 
 /* Sharp Table styling */

@@ -2,9 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.27.1] - 2026-04-04
+## [2.28.0] - 2026-04-04
+
+### Added
+
+- **Placeholder & Field Legibility Design Tokens**: Introduced specific semantic tokens in `tokens.css` for form fields:
+  - `--color-placeholder`: High-contrast grey for inactive placeholders.
+  - `--color-placeholder-focus`: Increased contrast when the field is focused.
+  - `--color-field-disabled-bg` & `--color-text-field-disabled`: Standardized colors for disabled inputs.
+  - `--color-field-readonly-bg`: Visual distinction for read-only fields.
 
 ### Fixed
+
+- **Project-Wide Accessibility Audit (Placeholders)**: Remediated low-contrast placeholder rendering by removing opacity-based transparency and relying on resolved high-contrast tokens.
+- **Form Readability Normalization**: Removed global `uppercase` text-transform from placeholders and custom autocompletes to improve legibility for long-form examples.
+- **Native Select Placeholder State**: Standardized the "-- Selecione --" (empty) state in native `<select>` elements using the `:has()` selector to mirror text input placeholder styling.
+- **Autocomplete Component Standardization**: Updated `CostCenterAutocomplete` and `SupplierAutocomplete` to use new tokens and follow the global accessibility standard.
+
+## [2.27.1] - 2026-04-04
+
+### Fixed (2.27.1)
 - **Drawer Layering Logic**: Resolved a systemic bug where `Z_INDEX` constants (strings) were being incremented in JavaScript, resulting in invalid CSS values. Replaced with valid `calc()` expressions in:
   - `UserProfileDrawer.tsx` (Fixed "Meu Perfil" visibility)
   - `ApprovalCenter.tsx` (Fixed resize handle visibility)

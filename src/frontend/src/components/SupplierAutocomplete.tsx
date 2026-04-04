@@ -134,8 +134,8 @@ export function SupplierAutocomplete({
         border: `2px solid ${hasError ? '#EF4444' : 'var(--color-border-heavy)'}`,
         boxShadow: hasError ? '6px 6px 0px #EF4444' : 'var(--shadow-brutal)',
         fontSize: '0.875rem',
-        color: selectedDisplay ? 'var(--color-text-main)' : 'var(--color-text-muted)',
-        backgroundColor: hasError ? '#FEF2F2' : '#ffffff',
+        color: selectedDisplay ? 'var(--color-text-main)' : 'var(--color-placeholder)',
+        backgroundColor: hasError ? '#FEF2F2' : disabled ? 'var(--color-field-disabled-bg)' : '#ffffff',
         cursor: disabled ? 'not-allowed' : 'pointer',
         display: 'flex',
         alignItems: 'center',
@@ -258,7 +258,7 @@ export function SupplierAutocomplete({
                 tabIndex={disabled ? -1 : 0}
                 data-field={name}
             >
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: '8px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.02em', fontSize: '0.85rem' }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: '8px', fontWeight: 500, textTransform: 'none', letterSpacing: '0.01em', fontSize: '0.85rem' }}>
                     {selectedDisplay || placeholder}
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
