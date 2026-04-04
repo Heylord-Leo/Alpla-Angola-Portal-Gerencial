@@ -153,21 +153,27 @@ textarea {
     color: var(--color-text-main);
 }
 
-/* Base Placeholder Styling */
+/* Base Placeholder Styling - Balanced Contrast */
 input::placeholder,
 textarea::placeholder {
     color: var(--color-placeholder);
-    opacity: 1; /* Reset transparency */
+    opacity: 1; /* Reset browser transparency defaults */
     font-weight: 400;
     text-transform: none; /* Normalized for better readability */
     font-size: 0.85rem;
     letter-spacing: 0.02em;
 }
 
-/* Native Select Placeholder (Unselected State) */
+/* Specific helper for high-contrast on dark backgrounds (Header Search) */
+.placeholder-light::placeholder {
+    color: rgba(255, 255, 255, 0.95);
+    opacity: 1;
+}
+
+/* Native Select Placeholder (Unselected State) - Enforced Visibility */
 select:invalid,
-select:has(option[value=""]:checked),
-select.placeholder-state {
+select:has(option[value=""]:checked):not(:focus),
+select.placeholder-state:not(:focus) {
     color: var(--color-placeholder);
 }
 

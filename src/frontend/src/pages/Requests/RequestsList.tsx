@@ -366,7 +366,7 @@ export function RequestsList() {
                     <Search size={20} color="var(--color-primary)" strokeWidth={2.5} style={{ opacity: 0.6 }} />
                     <input
                         type="text"
-                        placeholder="BUSCAR POR NÚMERO, TÍTULO OU FORNECEDOR..."
+                        placeholder="Buscar por número, título ou fornecedor..."
                         value={searchInput}
                         onChange={(e) => setSearchInput(e.target.value)}
                         style={{ border: 'none', outline: 'none', width: '100%', fontSize: '0.9rem', padding: '16px 0', backgroundColor: 'transparent', fontWeight: 600, color: 'var(--color-text-main)' }}

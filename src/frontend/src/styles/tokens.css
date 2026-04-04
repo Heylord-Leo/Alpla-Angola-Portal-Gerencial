@@ -79,8 +79,8 @@
   --focus-ring: 0 0 0 2px var(--color-bg-page), 0 0 0 4px rgba(0, 77, 144, 0.3);
   
   /* Placeholder & Form Field States (WCAG Standard Contrast) */
-  --color-placeholder: #6B7280;
-  --color-placeholder-focus: #4B5563;
+  --color-placeholder: #5B6676; /* WCAG AA compliant on white */
+  --color-placeholder-focus: #374151;
   --color-field-disabled-bg: #F9FAFB;
   --color-field-disabled-text: #9CA3AF;
   --color-field-readonly-bg: #F3F4F6;

@@ -67,26 +67,27 @@ export function GlobalSearch() {
             style={{ 
                 position: 'relative', 
                 width: '100%', 
-                maxWidth: '440px',
+                maxWidth: '600px',
                 zIndex: 101 
             }}
         >
-            <div style={{
+            <div style={{ 
                 display: 'flex',
                 alignItems: 'center',
                 gap: '12px',
                 padding: '10px 16px',
-                backgroundColor: isFocused ? 'var(--color-bg-surface)' : 'rgba(255, 255, 255, 0.15)',
-                border: isFocused ? '2px solid var(--color-accent)' : '1px solid rgba(255, 255, 255, 0.2)',
+                backgroundColor: isFocused ? 'white' : 'rgba(255, 255, 255, 0.2)',
+                border: isFocused ? '2px solid var(--color-accent)' : '1px solid rgba(255, 255, 255, 0.25)',
                 boxShadow: isFocused ? 'var(--shadow-md)' : 'none',
                 transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                 borderRadius: 'var(--radius-md)',
                 cursor: 'text'
             }} onClick={() => setIsFocused(true)}>
-                <Search size={18} style={{ color: isFocused ? 'var(--color-primary)' : 'rgba(255, 255, 255, 0.9)' }} />
+                <Search size={18} style={{ color: isFocused ? 'var(--color-primary)' : 'rgba(255, 255, 255, 0.95)' }} />
                 <input 
                     type="text"
                     placeholder="Pesquisar módulos... (Ctrl + K)"
+                    className={!isFocused ? 'placeholder-light' : ''}
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onFocus={() => setIsFocused(true)}
@@ -228,13 +229,6 @@ export function GlobalSearch() {
                 }
                 .search-result-item:hover span {
                     color: var(--color-secondary) !important;
-                }
-                input::placeholder {
-                    color: rgba(255, 255, 255, 0.9) !important;
-                    opacity: 1 !important;
-                }
-                input:focus::placeholder {
-                    color: var(--color-placeholder-focus) !important;
                 }
             `}</style>
         </div>
