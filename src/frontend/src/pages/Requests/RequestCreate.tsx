@@ -3,11 +3,10 @@ import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Save, X, Paperclip, Trash2, AlertTriangle } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { FeedbackType } from '../../components/ui/Feedback';
-import { LookupDto, UserDto } from '../../types';
+import { LookupDto } from '../../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RequestActionHeader, BreadcrumbItem } from './components/RequestActionHeader';
 import { scrollToFirstError } from '../../lib/validation';
-import { ROLES } from '../../constants/roles';
 import { DateInput } from '../../components/DateInput';
 
 
@@ -29,7 +28,6 @@ export function RequestCreate() {
     const [departments, setDepartments] = useState<LookupDto[]>([]);
     const [companies, setCompanies] = useState<any[]>([]);
     const [plants, setPlants] = useState<any[]>([]);
-    const [users, setUsers] = useState<UserDto[]>([]);
     const [allowedPlantCodes, setAllowedPlantCodes] = useState<string[]>([]);
     const [isScopeLoading, setIsScopeLoading] = useState(true);
     const [attachments, setAttachments] = useState<File[]>([]);
@@ -71,12 +69,11 @@ export function RequestCreate() {
         async function loadLookups() {
             try {
                 setIsScopeLoading(true);
-                const [levelsData, departmentsData, companiesData, plantsData, usersData, rtData, meData] = await Promise.all([
+                const [levelsData, departmentsData, companiesData, plantsData, rtData, meData] = await Promise.all([
                     api.lookups.getNeedLevels(true),
                     api.lookups.getDepartments(true),
                     api.lookups.getCompanies(true),
                     api.lookups.getPlants(undefined, true),
-                    api.users.list(),
                     api.lookups.getRequestTypes(true),
                     api.users.me()
                 ]);
@@ -84,7 +81,6 @@ export function RequestCreate() {
                 setDepartments(departmentsData);
                 setCompanies(companiesData);
                 setPlants(plantsData);
-                setUsers(usersData);
                 setRequestTypes(rtData);
                 setAllowedPlantCodes(meData.plants || []);
             } catch (err) {
@@ -139,10 +135,7 @@ export function RequestCreate() {
         filteredPlants.some(p => p.companyId === c.id)
     );
 
-    // Filter participants by their specific roles
-    const buyers = users.filter(u => u.roles?.includes(ROLES.BUYER));
-    const areaApprovers = users.filter(u => u.roles?.includes(ROLES.AREA_APPROVER));
-    const finalApprovers = users.filter(u => u.roles?.includes(ROLES.FINAL_APPROVER));
+
 
     // Auto-selection of Company/Plant based on restricted scope
     useEffect(() => {
@@ -233,9 +226,6 @@ export function RequestCreate() {
         // Manual Validation for Required Fields
         const newErrors: Record<string, string[]> = {};
         if (!formData.requestTypeId) newErrors['RequestTypeId'] = ['O Tipo de Pedido é obrigatório.'];
-        if (!formData.buyerId) newErrors['BuyerId'] = ['O Comprador Atribuído é obrigatório. (Selecione um comprador)'];
-        if (!formData.areaApproverId) newErrors['AreaApproverId'] = ['O Aprovador de Área é obrigatório.'];
-        if (!formData.finalApproverId) newErrors['FinalApproverId'] = ['O Aprovador Final é obrigatório.'];
         // New required checks
         if (!formData.needLevelId) newErrors['NeedLevelId'] = ['O grau de necessidade é obrigatório.'];
         if (!formData.departmentId) newErrors['DepartmentId'] = ['O departamento é obrigatório.'];
@@ -726,49 +716,6 @@ export function RequestCreate() {
                                 {renderFieldError('PlantId')}
                             </label>
                         </div>
-                    </div>
-                </section>
-
-                {/* Section B: Participantes do Fluxo */}
-                <section style={{ backgroundColor: 'var(--color-bg-surface)', padding: '32px', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-brutal)', border: '2px solid var(--color-border-heavy)' }}>
-                    <h2 style={sectionTitleStyle}>Participantes do Fluxo</h2>
-                    <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '24px' }}>
-                        Nota: O Solicitante será preenchido automaticamente com o seu usuário logado atual.
-                    </p>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
-                        <label style={labelStyle}>
-                            Comprador Atribuído <span style={{ color: 'red' }}>*</span>
-                            <select name="buyerId" value={formData.buyerId} onChange={handleChange} style={getInputStyle('BuyerId')}>
-                                <option value="">-- Selecione --</option>
-                                {buyers.map(u => (
-                                    <option key={u.id} value={u.id}>{u.fullName}</option>
-                                ))}
-                            </select>
-                            {renderFieldError('BuyerId')}
-                        </label>
-
-                        <label style={labelStyle}>
-                            Aprovador de Área <span style={{ color: 'red' }}>*</span>
-                            <select name="areaApproverId" value={formData.areaApproverId} onChange={handleChange} style={getInputStyle('AreaApproverId')}>
-                                <option value="">-- Selecione --</option>
-                                {areaApprovers.map(u => (
-                                    <option key={u.id} value={u.id}>{u.fullName}</option>
-                                ))}
-                            </select>
-                            {renderFieldError('AreaApproverId')}
-                        </label>
-
-                        <label style={labelStyle}>
-                            Aprovador Final <span style={{ color: 'red' }}>*</span>
-                            <select name="finalApproverId" value={formData.finalApproverId} onChange={handleChange} style={getInputStyle('FinalApproverId')}>
-                                <option value="">-- Selecione --</option>
-                                {finalApprovers.map(u => (
-                                    <option key={u.id} value={u.id}>{u.fullName}</option>
-                                ))}
-                            </select>
-                            {renderFieldError('FinalApproverId')}
-                        </label>
                     </div>
                 </section>
 

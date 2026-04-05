@@ -4,12 +4,27 @@ Purpose: record important technical and process decisions so future work preserv
 
 ---
 
+## DEC-093 — Company-Level Final Approver Resolution
+
+- **Date:** 2026-04-04
+- **Status:** Accepted
+- **Context:** Workflow participants were previously manually selected by the requester, leading to errors and inconsistent business logic. Specifically, the "Final Approver" role was broad, and the system lacked a way to resolve a specific user responsible for a given company.
+- **Decision:** Implement **System-Resolved Actor Model** for the Final Approver.
+    1. **Source of Truth**: The `Company` entity now holds a `FinalApproverUserId` field.
+    2. **UI Management**: Extended the "Dados Mestres" UI with an "Empresas" tab, allowing administrators to manage companies and assign their respective Final Approvers.
+    3. **Enforcement**: Workflow resolution in `RequestsController` is now strictly bound to this company-level mapping. Submission fails safely if no approver is assigned to the company.
+    4. **Role Filtering**: The user selection for the company approver is restricted to users with the `Final Approver` role.
+- **Alternatives considered:** Falling back to "any user with Final Approver role" (rejected: lacks accountability and predictability). Manual selection (rejected: prone to user error).
+- **Consequences:** Ensures deterministic workflow resolution. Eliminates "missing participant" errors at submission time for properly configured companies. Centralizes governance of approval authority within the Master Data administrative workspace.
+
+---
+
 ## DEC-091 — Official Move to Modern Corporate Design Language
 
 - **Date:** 2026-04-03
 - **Status:** Accepted
-- **Context:** The project's visual direction needed to evolve from the initial "Industrial Brutalist" phase to a more professional, premium, and executive-focused design standard that aligns with ALPLA's global corporate identity.
-- **Decision:** Officially transition the portal's UI/UX direction to **Modern Corporate**.
+- **Context:** The "Industrial Brutalist" aesthetic served the MVP well but lacks the premium feel and information density required for the next phase of the Portal.
+- **Decision:** Explicitly transition to a **Modern Corporate** design system.
     - **New Default Standards**:
         - **Rounded Corners**: 8px or 12px as the new standard (replacing the 0px default).
         - **Soft Elevations**: Low-opacity, diffused shadows (replacing the "brutal" high-contrast shadows).

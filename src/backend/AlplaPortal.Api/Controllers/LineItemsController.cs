@@ -68,6 +68,20 @@ public class LineItemsController : BaseController
             filteredRequests = filteredRequests.Where(r => r.Status!.Code == requestStatus);
         }
 
+        if (owner == "unassigned")
+        {
+            filteredRequests = filteredRequests.Where(r => r.BuyerId == null);
+        }
+        else if (owner == "me")
+        {
+            var currentUserId = CurrentUserId;
+            filteredRequests = filteredRequests.Where(r => r.BuyerId == currentUserId);
+        }
+        else if (!string.IsNullOrWhiteSpace(owner) && Guid.TryParse(owner, out var ownerId))
+        {
+            filteredRequests = filteredRequests.Where(r => r.BuyerId == ownerId);
+        }
+
         // Project to a combined structure for filtering
         var dbQuery = filteredRequests.SelectMany(
             r => r.LineItems.Where(li => !li.IsDeleted).DefaultIfEmpty(),
@@ -132,6 +146,7 @@ public class LineItemsController : BaseController
                 RequestCurrencyCode = x.Request.Currency != null ? x.Request.Currency.Code : null,
                 RequestUpdatedAtUtc = x.Request.UpdatedAtUtc,
                 RequestCreatedAtUtc = x.Request.CreatedAtUtc,
+                RequestBuyerId = x.Request.BuyerId,
                 
                 // Line Item specific flat fields
                 ItemPlantName = x.LineItem != null && x.LineItem.Plant != null ? x.LineItem.Plant.Name : null,
@@ -281,6 +296,8 @@ public class LineItemsController : BaseController
                 RequestSupplierName = x.RequestSupplierName,
                 RequestSupplierCode = x.RequestSupplierCode,
                 
+                BuyerId = x.RequestBuyerId,
+
                 CostCenterId = x.LineItem != null ? x.LineItem.CostCenterId : null,
                 CostCenterName = x.ItemCostCenterName,
                 CostCenterCode = x.ItemCostCenterCode,

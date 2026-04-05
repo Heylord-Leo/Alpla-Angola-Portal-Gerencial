@@ -365,6 +365,13 @@ export const api = {
             });
             if (!response.ok) return handleApiError(response, 'Falha ao atualizar fornecedor do pedido.');
         },
+        assignBuyer: async (id: string): Promise<{ message: string; statusCode: string }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/assign-buyer`, {
+                method: 'POST'
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao atribuir o pedido para si.');
+            return response.json();
+        },
         schedulePayment: async (id: string, comment?: string): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/operational/schedule-payment`, {
                 method: 'POST',
@@ -710,6 +717,27 @@ export const api = {
             if (!res.ok) return handleApiError(res, 'Falha ao carregar empresas.');
             return res.json();
         },
+        createCompany: async (data: any): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/companies`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao salvar empresa.');
+            return res.json();
+        },
+        updateCompany: async (id: number, data: any): Promise<void> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/companies/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao alterar empresa.');
+        },
+        toggleCompany: async (id: number): Promise<void> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/companies/${id}/toggle-active`, { method: 'PUT' });
+            if (!res.ok) return handleApiError(res, 'Falha ao alternar estado da empresa.');
+        },
         getSuppliers: async (includeInactive = false): Promise<any[]> => {
             const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers?includeInactive=${includeInactive}`);
             if (!res.ok) return handleApiError(res, 'Falha ao carregar fornecedores.');
@@ -823,7 +851,7 @@ export const api = {
             requestStatus?: string, 
             plant?: number, 
             department?: number, 
-            filters?: { ivaRateId?: number, ivaRatePercent?: number, grossSubtotal?: number, ivaAmount?: number, lineTotal?: number }, 
+            filters?: { ivaRateId?: number, ivaRatePercent?: number, grossSubtotal?: number, ivaAmount?: number, lineTotal?: number, owner?: string }, 
             page: number = 1, 
             pageSize: number = 20
         ): Promise<{ data: any[], totalCount: number, page: number, pageSize: number }> => {
@@ -838,6 +866,7 @@ export const api = {
             if (filters?.grossSubtotal !== undefined) params.append('grossSubtotal', String(filters.grossSubtotal));
             if (filters?.ivaAmount !== undefined) params.append('ivaAmount', String(filters.ivaAmount));
             if (filters?.lineTotal !== undefined) params.append('lineTotal', String(filters.lineTotal));
+            if (filters?.owner) params.append('owner', filters.owner);
             params.append('page', page.toString());
             params.append('pageSize', pageSize.toString());
 

@@ -28,8 +28,8 @@ export function MasterData() {
     const [loading, setLoading] = useState(true);
 
     // Form states
-    const [activeTab, setActiveTab] = useState<'units' | 'currencies' | 'needLevels' | 'departments' | 'plants' | 'suppliers' | 'costCenters' | 'ivaRates'>('units');
-    const [editMode, setEditMode] = useState<{ type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate', id: number | null }>({ type: 'unit', id: null });
+    const [activeTab, setActiveTab] = useState<'units' | 'currencies' | 'needLevels' | 'departments' | 'plants' | 'suppliers' | 'costCenters' | 'ivaRates' | 'companies'>('units');
+    const [editMode, setEditMode] = useState<{ type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company', id: number | null }>({ type: 'unit', id: null });
     const [formData, setFormData] = useState({
         code: '',
         name: '',
@@ -40,6 +40,7 @@ export function MasterData() {
         primaveraCode: '',
         companyId: 0,
         responsibleUserId: '',
+        finalApproverUserId: '',
         ratePercent: 0
     });
 
@@ -118,7 +119,7 @@ export function MasterData() {
         loadData();
     }, []);
 
-    const handleEdit = (item: any, type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate') => {
+    const handleEdit = (item: any, type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company') => {
         setEditMode({ type, id: item.id });
         setValidationErrors({});
         setFormData({
@@ -132,12 +133,13 @@ export function MasterData() {
             // Plants use companyId; CostCenters reuse companyId to carry plantId
             companyId: type === 'costCenter' ? (item.plantId || 0) : (item.companyId || 0),
             responsibleUserId: item.responsibleUserId || '',
+            finalApproverUserId: item.finalApproverUserId || '',
             ratePercent: item.ratePercent || 0
         });
     };
 
     const handleCancel = () => {
-        let defaultType: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' = 'unit';
+        let defaultType: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company' = 'unit';
         if (activeTab === 'currencies') defaultType = 'currency';
         if (activeTab === 'needLevels') defaultType = 'needLevel';
         if (activeTab === 'departments') defaultType = 'department';
@@ -145,10 +147,11 @@ export function MasterData() {
         if (activeTab === 'suppliers') defaultType = 'supplier';
         if (activeTab === 'costCenters') defaultType = 'costCenter';
         if (activeTab === 'ivaRates') defaultType = 'ivaRate';
+        if (activeTab === 'companies') defaultType = 'company';
 
         setEditMode({ type: defaultType, id: null });
         setValidationErrors({});
-        setFormData({ code: '', name: '', symbol: '', allowsDecimalQuantity: false, taxId: '', portalCode: '', primaveraCode: '', companyId: 0, responsibleUserId: '', ratePercent: 0 });
+        setFormData({ code: '', name: '', symbol: '', allowsDecimalQuantity: false, taxId: '', portalCode: '', primaveraCode: '', companyId: 0, responsibleUserId: '', finalApproverUserId: '', ratePercent: 0 });
     };
 
     const handleSave = async (e: React.FormEvent) => {
@@ -217,6 +220,13 @@ export function MasterData() {
                 } else {
                     await api.lookups.createIvaRate({ code: formData.code, name: formData.name, ratePercent: formData.ratePercent });
                 }
+            } else if (activeTab === 'companies') {
+                const companyPayload = { name: formData.name, finalApproverUserId: formData.finalApproverUserId || null as any };
+                if (editMode.id) {
+                    await api.lookups.updateCompany(editMode.id, companyPayload);
+                } else {
+                    await api.lookups.createCompany(companyPayload);
+                }
             }
             await loadData();
             setFeedback({ message: 'Registo salvo com sucesso.', type: 'success' });
@@ -226,7 +236,7 @@ export function MasterData() {
         }
     };
 
-    const handleToggleActive = async (id: number, type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate') => {
+    const handleToggleActive = async (id: number, type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company') => {
         try {
             setFeedback(null);
             if (type === 'unit') await api.lookups.toggleUnit(id);
@@ -236,6 +246,7 @@ export function MasterData() {
             else if (type === 'plant') await api.lookups.togglePlant(id);
             else if (type === 'costCenter') await api.lookups.toggleCostCenter(id);
             else if (type === 'ivaRate') await api.lookups.toggleIvaRate(id);
+            else if (type === 'company') await api.lookups.toggleCompany(id);
             else await api.lookups.toggleSupplier(id);
             await loadData();
             setFeedback({ message: 'Estado alterado com sucesso.', type: 'success' });
@@ -276,7 +287,8 @@ export function MasterData() {
                     { id: 'plants', label: 'Plantas' },
                     { id: 'suppliers', label: 'Fornecedores' },
                     { id: 'costCenters', label: 'Centros de Custo' },
-                    { id: 'ivaRates', label: 'Taxas de IVA' }
+                    { id: 'ivaRates', label: 'Taxas de IVA' },
+                    { id: 'companies', label: 'Empresas' }
                 ].map((tab) => (
                     <button
                         key={tab.id}
@@ -333,7 +345,8 @@ export function MasterData() {
                                             activeTab === 'costCenters' ? 'Centro de Custo' :
                                                 activeTab === 'suppliers' ? 'Fornecedor' :
                                                     activeTab === 'ivaRates' ? 'Taxa de IVA' :
-                                                        'Grau de Necessidade'
+                                                        activeTab === 'companies' ? 'Empresa' :
+                                                            'Grau de Necessidade'
                         }
                     </h2>
                     <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -384,7 +397,7 @@ export function MasterData() {
                                     )}
                                 </div>
                             </>
-                        ) : (
+                        ) : activeTab === 'companies' ? null : (
                             <div>
                                 <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-main)', textTransform: 'uppercase', marginBottom: '6px' }}>Código</label>
                                 <input
@@ -588,6 +601,31 @@ export function MasterData() {
                             </div>
                         )}
 
+                        {activeTab === 'companies' && (
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-main)', textTransform: 'uppercase', marginBottom: '6px' }}>Aprovador Final</label>
+                                <select
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px',
+                                        backgroundColor: 'white',
+                                        border: '2px solid var(--color-border)',
+                                        fontSize: '0.85rem',
+                                        fontWeight: 600,
+                                        outline: 'none'
+                                    }}
+                                    value={formData.finalApproverUserId}
+                                    onChange={e => setFormData({ ...formData, finalApproverUserId: e.target.value })}
+                                >
+                                    <option value="">Selecione o Aprovador Final...</option>
+                                    {users.filter(u => u.roles?.includes(ROLES.FINAL_APPROVER)).map(u => (
+                                        <option key={u.id} value={u.id}>{u.fullName}</option>
+                                    ))}
+                                </select>
+                                <p style={{ marginTop: '4px', fontSize: '0.65rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>Este usuário será o responsável pela aprovação final de todos os pedidos desta empresa.</p>
+                            </div>
+                        )}
+
                         <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
                             <button
                                 type="submit"
@@ -635,10 +673,10 @@ export function MasterData() {
                                     {activeTab === 'suppliers' ? 'Cód. Portal' : 'ID'}
                                 </th>
                                 <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>
-                                    {activeTab === 'suppliers' ? 'Cód. Primavera' : 'Código'}
+                                    {activeTab === 'suppliers' ? 'Cód. Primavera' : activeTab === 'companies' ? 'ID' : 'Código'}
                                 </th>
                                 <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>
-                                    {activeTab === 'currencies' ? 'Símbolo' : 'Nome'}
+                                    {activeTab === 'currencies' ? 'Símbolo' : activeTab === 'companies' ? 'Empresa' : 'Nome'}
                                 </th>
                                 {activeTab === 'suppliers' && (
                                     <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>NIF</th>
@@ -654,6 +692,9 @@ export function MasterData() {
                                 )}
                                 {activeTab === 'departments' && (
                                     <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Responsável</th>
+                                )}
+                                {activeTab === 'companies' && (
+                                    <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Aprovador Final</th>
                                 )}
                                 <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Estado</th>
                                 <th style={{ padding: '16px', textAlign: 'right', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Ações</th>
@@ -885,6 +926,37 @@ export function MasterData() {
                                                     label: i.isActive ? 'Desativar' : 'Ativar',
                                                     icon: i.isActive ? <PowerOff size={16} /> : <Power size={16} />,
                                                     onClick: () => handleToggleActive(i.id, 'ivaRate')
+                                                }
+                                            ]}
+                                        />
+                                    </td>
+                                </tr>
+                            ))}
+                            {activeTab === 'companies' && companies.map((c) => (
+                                <tr key={c.id} style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: !c.isActive ? 'rgba(var(--color-bg-page-rgb), 0.5)' : 'inherit' }}>
+                                    <td style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>{c.id}</td>
+                                    <td style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}> - </td>
+                                    <td style={{ padding: '16px', fontSize: '0.85rem', fontWeight: 600 }}>{c.name}</td>
+                                    <td style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                                        {users.find(u => u.id === (c as any).finalApproverUserId)?.fullName || '-'}
+                                    </td>
+                                    <td style={{ padding: '16px', fontSize: '0.8rem' }}>
+                                        <span className={`badge ${c.isActive ? 'badge-success' : 'badge-neutral'}`}>
+                                            {c.isActive ? 'ATIVO' : 'INATIVO'}
+                                        </span>
+                                    </td>
+                                    <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                        <KebabMenu
+                                            options={[
+                                                {
+                                                    label: 'Editar',
+                                                    icon: <Edit2 size={16} />,
+                                                    onClick: () => handleEdit(c, 'company')
+                                                },
+                                                {
+                                                    label: c.isActive ? 'Desativar' : 'Ativar',
+                                                    icon: c.isActive ? <PowerOff size={16} /> : <Power size={16} />,
+                                                    onClick: () => handleToggleActive(c.id, 'company')
                                                 }
                                             ]}
                                         />

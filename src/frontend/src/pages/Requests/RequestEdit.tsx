@@ -22,7 +22,7 @@ import { ROLES } from '../../constants/roles';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { SupplierAutocomplete } from '../../components/SupplierAutocomplete';
 import { formatCurrencyAO, getRequestGuidance, formatDateTime } from '../../lib/utils';
-import { CurrencyDto, LookupDto, UserDto, RequestStatusHistoryDto, RequestAttachmentDto, RequestLineItemDto, SavedQuotationDto } from '../../types';
+import { CurrencyDto, LookupDto, RequestStatusHistoryDto, RequestAttachmentDto, RequestLineItemDto, SavedQuotationDto } from '../../types';
 import { DateInput } from '../../components/DateInput';
 import { RequestAttachments } from '../../components/RequestAttachments';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -102,11 +102,10 @@ export function RequestEdit() {
     const [plants, setPlants] = useState<LookupDto[]>([]);
     const [costCenters, setCostCenters] = useState<LookupDto[]>([]);
     const [ivaRates, setIvaRates] = useState<LookupDto[]>([]);
-    const [users, setUsers] = useState<UserDto[]>([]);
+
 
     // Layout State
     const [sectionsOpen, setSectionsOpen] = useState({
-        participants: false,
         finance: false,
         items: false,
         quotations: false,
@@ -483,7 +482,7 @@ export function RequestEdit() {
                 setSupplierPortalCode(data.supplierPortalCode || '');
             }
 
-            const [uData, cData, nData, dData, compData, plantData, ccData, ivaData, usersData] = await Promise.all([
+            const [uData, cData, nData, dData, compData, plantData, ccData, ivaData] = await Promise.all([
                 api.lookups.getUnits(true),
                 api.lookups.getCurrencies(true),
                 api.lookups.getNeedLevels(true),
@@ -491,8 +490,7 @@ export function RequestEdit() {
                 api.lookups.getCompanies(true),
                 api.lookups.getPlants(undefined, true),
                 api.lookups.getCostCenters(true),
-                api.lookups.getIvaRates(true),
-                api.users.list()
+                api.lookups.getIvaRates(true)
             ]);
             setUnits(uData);
             setCurrencies(cData);
@@ -502,7 +500,6 @@ export function RequestEdit() {
             setPlants(plantData);
             setCostCenters(ccData);
             setIvaRates(ivaData);
-            setUsers(usersData);
 
             if (form.departmentId && !form.areaApproverId) {
                 const dept = dData.find(d => d.id === Number(form.departmentId));
@@ -564,9 +561,7 @@ export function RequestEdit() {
         // Manual Validation for Required Fields
         const newErrors: Record<string, string[]> = {};
         if (!formData.requestTypeId) newErrors['RequestTypeId'] = ['O Tipo de Pedido é obrigatório.'];
-        if (!formData.buyerId) newErrors['BuyerId'] = ['O Comprador Atribuído é obrigatório.'];
-        if (!formData.areaApproverId) newErrors['AreaApproverId'] = ['O Aprovador de Área é obrigatório.'];
-        if (!formData.finalApproverId) newErrors['FinalApproverId'] = ['O Aprovador Final é obrigatório.'];
+
 
         // New required checks
         if (!formData.needLevelId) newErrors['NeedLevelId'] = ['O grau de necessidade é obrigatório.'];
@@ -1631,54 +1626,7 @@ export function RequestEdit() {
                     </div>
                 </section>
 
-                {/* Section B: Participantes do Fluxo */}
-                <CollapsibleSection
-                    title="Participantes do Fluxo"
-                    count={3}
-                    isOpen={sectionsOpen.participants}
-                    onToggle={() => toggleSection('participants')}
-                >
-                    <div style={{ padding: '32px' }}>
-                        <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '24px' }}>
-                            Nota: O Solicitante será preenchido automaticamente com o seu usuário logado atual.
-                        </p>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
-                            <label style={labelStyle}>
-                                Comprador Atribuído <span style={{ color: 'red' }}>*</span>
-                                <select name="buyerId" value={formData.buyerId} onChange={handleChange} style={getInputStyle('BuyerId')} disabled={!canEditHeader || isQuotationPartiallyEditable}>
-                                    <option value="">-- Selecione --</option>
-                                    {users.map(u => (
-                                        <option key={u.id} value={u.id}>{u.fullName}</option>
-                                    ))}
-                                </select>
-                                {renderFieldError('BuyerId')}
-                            </label>
-
-                            <label style={labelStyle}>
-                                Aprovador de Área <span style={{ color: 'red' }}>*</span>
-                                <select name="areaApproverId" value={formData.areaApproverId} onChange={handleChange} style={getInputStyle('AreaApproverId')} disabled={!canEditHeader || isQuotationPartiallyEditable}>
-                                    <option value="">-- Selecione --</option>
-                                    {users.map(u => (
-                                        <option key={u.id} value={u.id}>{u.fullName}</option>
-                                    ))}
-                                </select>
-                                {renderFieldError('AreaApproverId')}
-                            </label>
-
-                            <label style={labelStyle}>
-                                Aprovador Final <span style={{ color: 'red' }}>*</span>
-                                <select name="finalApproverId" value={formData.finalApproverId} onChange={handleChange} style={getInputStyle('FinalApproverId')} disabled={!canEditHeader || isQuotationPartiallyEditable}>
-                                    <option value="">-- Selecione --</option>
-                                    {users.map(u => (
-                                        <option key={u.id} value={u.id}>{u.fullName}</option>
-                                    ))}
-                                </select>
-                                {renderFieldError('FinalApproverId')}
-                            </label>
-                        </div>
-                    </div>
-                </CollapsibleSection>
 
                 {/* Section C: Resumo Financeiro do Pedido */}
                 <CollapsibleSection

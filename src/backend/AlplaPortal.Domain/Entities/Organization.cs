@@ -16,6 +16,9 @@ public class Company
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
+    
+    public Guid? FinalApproverUserId { get; set; }
+    public User? FinalApproverUser { get; set; }
 }
 
 public class Plant

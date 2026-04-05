@@ -935,6 +935,9 @@ public class RequestsController : BaseController
         var requestNumber = $"REQ-{dateStr}-{seqNumber:D3}";
 
         // 4. Construct the Request Entity
+        var department = await _context.Departments.FirstOrDefaultAsync(d => d.Id == dto.DepartmentId!.Value);
+        var company = await _context.Companies.FirstOrDefaultAsync(c => c.Id == dto.CompanyId!.Value);
+
         var request = new Request
         {
             Id = Guid.NewGuid(),
@@ -952,9 +955,9 @@ public class RequestsController : BaseController
             NeedByDateUtc = dto.NeedByDateUtc,
             
             SupplierId = dto.SupplierId,
-            BuyerId = dto.BuyerId,
-            AreaApproverId = dto.AreaApproverId,
-            FinalApproverId = dto.FinalApproverId,
+            BuyerId = dto.BuyerId, // Let it be null
+            AreaApproverId = department?.ResponsibleUserId, // Auto-resolved
+            FinalApproverId = company?.FinalApproverUserId, // Auto-resolved
             
             StatusId = initialStatus.Id,
             RequesterId = actorId,
@@ -1171,8 +1174,20 @@ public class RequestsController : BaseController
             // Normal Draft/Adjustment rules
             if (request.RequestTypeId != dto.RequestTypeId) { request.RequestTypeId = dto.RequestTypeId; changedFields.Add("Tipo de Pedido"); changed = true; }
             if (request.BuyerId != dto.BuyerId) { request.BuyerId = dto.BuyerId; changedFields.Add("Comprador"); changed = true; }
-            if (request.AreaApproverId != dto.AreaApproverId) { request.AreaApproverId = dto.AreaApproverId; changedFields.Add("Aprovador Área"); changed = true; }
-            if (request.FinalApproverId != dto.FinalApproverId) { request.FinalApproverId = dto.FinalApproverId; changedFields.Add("Aprovador Final"); changed = true; }
+            
+            // Auto-resolve AreaApprover if Department changed
+            if (request.DepartmentId != dto.DepartmentId)
+            {
+                var newDept = await _context.Departments.FirstOrDefaultAsync(d => d.Id == dto.DepartmentId);
+                request.AreaApproverId = newDept?.ResponsibleUserId;
+            }
+            
+            // Auto-resolve FinalApprover if Company changed
+            if (request.CompanyId != dto.CompanyId)
+            {
+                var newComp = await _context.Companies.FirstOrDefaultAsync(c => c.Id == dto.CompanyId);
+                request.FinalApproverId = newComp?.FinalApproverUserId;
+            }
             if (request.PlantId != dto.PlantId) { request.PlantId = dto.PlantId; changedFields.Add("Planta"); changed = true; }
             
             if (request.CompanyId != dto.CompanyId)
@@ -1309,6 +1324,17 @@ public class RequestsController : BaseController
         // 2. Perform Submission Validation
         var errors = new List<string>();
 
+        // Resolving workflow actors from master-data
+        if (request.Department != null && request.Department.ResponsibleUserId.HasValue)
+        {
+            request.AreaApproverId = request.Department.ResponsibleUserId;
+        }
+
+        if (request.Company != null && request.Company.FinalApproverUserId.HasValue)
+        {
+            request.FinalApproverId = request.Company.FinalApproverUserId;
+        }
+
         // Always-required header fields (both request types)
         if (string.IsNullOrWhiteSpace(request.Title))
             errors.Add("O título do pedido é obrigatório.");
@@ -1316,12 +1342,15 @@ public class RequestsController : BaseController
             errors.Add("A descrição do pedido é obrigatória.");
         if (request.DepartmentId == 0)
             errors.Add("O departamento é obrigatório.");
-        if (request.BuyerId == null || request.BuyerId == Guid.Empty)
-            errors.Add("O Comprador é obrigatório.");
+            
+        // BuyerId validation removed (now allows unassigned requests)
+        
+        // Ensure structural rules are enforced AFTER resolution
         if (request.AreaApproverId == null || request.AreaApproverId == Guid.Empty)
-            errors.Add("O Aprovador de Área é obrigatório.");
+            errors.Add("Não foi possível determinar o Aprovador de Área. Verifique se o Departamento selecionado tem um responsável definido no cadastro.");
+            
         if (request.FinalApproverId == null || request.FinalApproverId == Guid.Empty)
-            errors.Add("O Aprovador Final é obrigatório.");
+            errors.Add("Não foi possível determinar o Aprovador Final. Verifique se a Empresa correspondente possui um aprovador final definido no cadastro.");
 
         // QUOTATION: NeedByDateUtc is required at header level
         if (request.RequestType!.Code == "QUOTATION" && request.NeedByDateUtc == null)
@@ -1411,6 +1440,71 @@ public class RequestsController : BaseController
         };
 
         return await ApplyStatusChangeAndSyncItemsAsync(request, targetStatusCode, actionTaken, historyComment, successMessage, actorId);
+    }
+
+    [HttpPost("{id}/assign-buyer")]
+    public async Task<IActionResult> AssignBuyer(Guid id, [FromQuery] Guid? targetUserId = null)
+    {
+        var actorId = CurrentUserId;
+        var user = await _context.Users.FindAsync(actorId);
+        if (user == null) return Unauthorized();
+
+        var request = await _context.Requests
+            .Include(r => r.Status)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (request == null) return NotFound(new ProblemDetails { Title = "Pedido não encontrado", Status = 404 });
+
+        // Only allow assignment if it's currently unassigned. Re-assignment should be a different flow/check if needed
+        // but the prompt says: "If role/permissions already support it, allow reassignment by authorized users only"
+        // Let's allow administrators to reassign, or buyers to self-assign if it's unassigned.
+        var isSystemAdmin = CurrentUserRoles.Contains(RoleConstants.SystemAdministrator);
+        var isLocalManager = CurrentUserRoles.Contains(RoleConstants.LocalManager);
+        var canReassign = isSystemAdmin || isLocalManager;
+        
+        if (request.BuyerId.HasValue && !canReassign && request.BuyerId.Value != actorId)
+        {
+            return Conflict(new ProblemDetails 
+            { 
+                Title = "Ação Bloqueada", 
+                Detail = "Este pedido já está atribuído a outro comprador. O reencaminhamento só é permitido por coordenadores.", 
+                Status = 409 
+            });
+        }
+
+        var newBuyerId = targetUserId ?? actorId;
+        
+        if (request.BuyerId == newBuyerId)
+        {
+             return Ok(new { Message = "O comprador já está atribuído a este recurso." }); // Idempotent
+        }
+
+        request.BuyerId = newBuyerId;
+        request.UpdatedAtUtc = DateTime.UtcNow;
+        request.UpdatedByUserId = actorId;
+
+        // History entry
+        var targetUser = newBuyerId == actorId ? user : await _context.Users.FindAsync(newBuyerId);
+        var historyComment = newBuyerId == actorId 
+            ? "O comprador assumiu a responsabilidade pelo pedido." 
+            : $"O pedido foi atribuído ao comprador {targetUser?.FullName}.";
+
+        var history = new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = request.Id,
+            ActorUserId = actorId,
+            ActionTaken = "COMPRADOR_ATRIBUIDO",
+            PreviousStatusId = request.StatusId,
+            NewStatusId = request.StatusId,
+            Comment = historyComment,
+            CreatedAtUtc = DateTime.UtcNow
+        };
+        _context.RequestStatusHistories.Add(history);
+
+        await _context.SaveChangesAsync();
+
+        return NoContent();
     }
 
     [HttpPost("{id}/ocr-extract")]

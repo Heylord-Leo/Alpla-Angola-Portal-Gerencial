@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, Search, Filter, FileText, CheckCircle2, X, Pencil, Trash2, ArrowLeft, AlertCircle, RefreshCcw, Hash, Calendar } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, Search, Filter, FileText, CheckCircle2, X, Pencil, Trash2, ArrowLeft, AlertCircle, RefreshCcw, Hash, Calendar, UserPlus } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { formatCurrencyAO, formatDate, getUrgencyStyle } from '../../lib/utils';
@@ -153,6 +153,7 @@ export function BuyerItemsList() {
     const searchTerm = searchParams.get('search') || '';
     const itemStatus = searchParams.get('itemStatus') || '';
     const requestStatus = searchParams.get('requestStatus') || '';
+    const owner = searchParams.get('owner') || 'todos';
     const page = Number(searchParams.get('page')) || 1;
     const pageSize = Number(searchParams.get('pageSize')) || 20;
 
@@ -224,7 +225,16 @@ export function BuyerItemsList() {
     const loadData = async () => {
         try {
             setLoading(true);
-            const response = await api.lineItems.list(searchTerm, itemStatus, requestStatus, undefined, undefined, undefined, page, pageSize);
+            const response = await api.lineItems.list(
+                searchTerm, 
+                itemStatus, 
+                requestStatus, 
+                undefined, 
+                undefined, 
+                { owner: owner === 'todos' ? undefined : owner }, 
+                page, 
+                pageSize
+            );
             setItems(response.data || []);
             setTotalCount(response.totalCount || 0);
         } catch (err: any) {
@@ -237,7 +247,7 @@ export function BuyerItemsList() {
     // Main Data Fetch
     useEffect(() => {
         loadData();
-    }, [searchTerm, itemStatus, requestStatus, page, pageSize]);
+    }, [searchTerm, itemStatus, requestStatus, owner, page, pageSize]);
 
     // --- GROUPING & UI HELPERS ---
 
@@ -269,6 +279,7 @@ export function BuyerItemsList() {
                     latestAdjustmentRole: item.latestAdjustmentRole,
                     latestAdjustmentDateUtc: item.latestAdjustmentDateUtc,
                     requestStatusBadgeColor: item.requestStatusBadgeColor,
+                    buyerId: item.buyerId,
                     quotations: item.quotations || [],
                     items: []
                 };
@@ -1089,6 +1100,19 @@ export function BuyerItemsList() {
         }
     };
 
+    const handleAssignToMe = async (requestId: string) => {
+        try {
+            setIsSaving(true);
+            await api.requests.assignBuyer(requestId);
+            setFeedback({ type: 'success', message: 'Pedido atribuído a você com sucesso.' });
+            loadData();
+        } catch (err: any) {
+            setFeedback({ type: 'error', message: err.message || 'Erro ao atribuir pedido.' });
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     // --- RENDER HELPERS ---
 
     const groupedRequests = groupItemsByRequest(items);
@@ -1123,6 +1147,28 @@ export function BuyerItemsList() {
                     <h1 style={{ margin: 0, fontSize: '2.5rem', color: 'var(--color-primary)' }}>Gestão de Cotações</h1>
                     <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Visualize e gerencie os itens solicitados e suas cotações em um único workspace.</p>
                 </div>
+            </div>
+
+            {/* Filter Tabs */}
+            <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid var(--color-border)', marginTop: '-8px' }}>
+                <button 
+                    onClick={() => updateParams({ owner: 'todos', page: 1 })}
+                    style={{ padding: '8px 16px', border: 'none', borderBottom: owner === 'todos' ? '4px solid var(--color-primary)' : '4px solid transparent', backgroundColor: 'transparent', fontWeight: 800, color: owner === 'todos' ? 'var(--color-primary)' : 'var(--color-text-muted)', cursor: 'pointer', textTransform: 'uppercase', marginBottom: '-2px' }}
+                >
+                    Todos
+                </button>
+                <button 
+                    onClick={() => updateParams({ owner: 'unassigned', page: 1 })}
+                    style={{ padding: '8px 16px', border: 'none', borderBottom: owner === 'unassigned' ? '4px solid var(--color-primary)' : '4px solid transparent', backgroundColor: 'transparent', fontWeight: 800, color: owner === 'unassigned' ? 'var(--color-primary)' : 'var(--color-text-muted)', cursor: 'pointer', textTransform: 'uppercase', marginBottom: '-2px' }}
+                >
+                    Não Atribuídos
+                </button>
+                <button 
+                    onClick={() => updateParams({ owner: 'me', page: 1 })}
+                    style={{ padding: '8px 16px', border: 'none', borderBottom: owner === 'me' ? '4px solid var(--color-primary)' : '4px solid transparent', backgroundColor: 'transparent', fontWeight: 800, color: owner === 'me' ? 'var(--color-primary)' : 'var(--color-text-muted)', cursor: 'pointer', textTransform: 'uppercase', marginBottom: '-2px' }}
+                >
+                    Meus Pedidos
+                </button>
             </div>
 
             {/* Toolbar */}
@@ -1259,12 +1305,29 @@ export function BuyerItemsList() {
                                                 {formatDate(group.needByDateUtc)}
                                             </span>
                                         </div>
+                                        {!group.buyerId && (
+                                            <span className="badge" style={{ backgroundColor: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', borderRadius: '4px', boxShadow: '2px 2px 0px rgba(0,0,0,0.05)' }}>
+                                                Não Atribuído
+                                            </span>
+                                        )}
                                         <span className={`badge ${actionBadge.className}`} style={{
                                             borderRadius: '4px',
                                             boxShadow: '2px 2px 0px rgba(0,0,0,0.1)'
                                         }}>
                                             {actionBadge.label}
                                         </span>
+                                        {!group.buyerId && (
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); handleAssignToMe(group.requestId); }}
+                                                disabled={isSaving}
+                                                style={{ 
+                                                    backgroundColor: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '4px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 800, cursor: isSaving ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '4px', textTransform: 'uppercase', boxShadow: '2px 2px 0px rgba(0,0,0,0.15)' 
+                                                }}
+                                                title="Reivindicar pedido para mim"
+                                            >
+                                                <UserPlus size={14} /> Atribuir a Mim
+                                            </button>
+                                        )}
                                         <Link
                                             to={`/requests/${group.requestId}`}
                                             onClick={(e) => e.stopPropagation()}

@@ -28,6 +28,7 @@ public class LineItemDetailsDto
     public string RequestTypeCode { get; set; } = string.Empty;
     public string RequestTypeName { get; set; } = string.Empty;
     public int? CompanyId { get; set; }
+    public Guid? BuyerId { get; set; }
 
     // Proforma Info (Group-level) - supports multiple files
     public Guid? ProformaId { get; set; }         // kept for backward compatibility (first/latest)

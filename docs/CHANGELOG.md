@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.29.0] - 2026-04-04
+
+### Added
+
+- **Company Master Data Management**: Implemented a new "Empresas" tab in the Master Data UI to manage legal entities.
+  - Supports full CRUD operations (Create, Read, Update, Toggle Active).
+  - Integrated a User Lookup filtered by the `Final Approver` role for company-level assignment.
+  - Implemented protection against renaming companies already associated with historical requests.
+- **Backend CRUD for Companies**: Extended `LookupsController.cs` with robust endpoints for company management, including `FinalApproverUserId` support.
+
+### Changed
+
+- **System-Resolved Final Approver (DEC-093)**: Replaced manual requester-side actor selection with deterministic backend resolution based on the selected company.
+- **Workflow Submission Gating**: Enhanced `RequestsController.cs` validation to strictly require a company-level Final Approver assignment before allowing submission.
+
 ## [2.28.0] - 2026-04-04
 
 ### Added
@@ -115,10 +130,11 @@ All notable changes to this project will be documented in this file.
   - Updated `collapsibleSection` and `badge` styles to follow the new radii standards.
 ## Current Version
 
-v2.26.0
+v2.29.0
 
 ## Version History
 
+- **2.29.0**: Company Master Data & Final Approver Resolution. Implemented centralized company management and deterministic approval resolution, eliminating manual selection errors.
 - **2.26.0**: Instruction Layer Cleanup & Baseline Rebuild. Consolidated fragmented permission and status rules into unified directives. Streamlined the process lifecycle and reorganized legacy documentation into reference storage.
 - **2.25.1**: Tooltip Positioning Fix. Optimized the shared `Tooltip` component API to support explicit side-anchoring and alignment, resolving overflow regressions in the User Management drawer.
 - **2.25.0**: Role Selection UX & UI Stability. Implemented contextual role tooltips for User Management and fixed a critical white screen regression by restoring the core `ROLES` constant. Standardized table header readability across operational modules.
@@ -227,7 +243,7 @@ v2.26.0
 - **Alert Visibility — KPI Tooltip**: Added a hover tooltip to the "Com Alertas" KPI card in the Approval Center dashboard, explaining its meaning ("Pedidos com pontos de atenção na análise."). Reuses the portal-standard `Tooltip` component with structured content (label + definition).
 - **Alert Visibility — Row Indicator**: Added a discreet `AlertCircle` icon (14px, rose) next to the request number in approval queue table rows for QUOTATION requests missing a selected winner. Includes a dark-variant tooltip on hover ("Requer atenção na análise"). No backend changes — reuses existing client-side alert condition.
 
-## [v2.13.1] - 2026-04-01
+## [2.13.1] - 2026-04-01
 
 ### Added
 

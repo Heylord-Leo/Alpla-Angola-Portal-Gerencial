@@ -22,6 +22,17 @@ For workspaces and complex forms, the project uses a standardized `CollapsibleSe
 4. **Default State**: Most workspaces should default to only the first or most relevant (e.g., "Pending") section being open. In the Request Edit form, the "ITENS DO PEDIDO" section defaults to **collapsed** on initial load to reduce vertical noise.
 5. **Guided Attention**: For critical workflow stages (e.g., `WAITING_AREA_APPROVAL`), specific sections may be automatically expanded, scrolled into view (with sticky-header offset), and briefly highlighted with a soft pulse effect to guide the user's attention. This logic must only run once per record load.
 6. **Migration Guidance**: Legacy screens may temporarily coexist with "Industrial Brutalist" styles (0px radius, heavy shadows). All new or refactored components must strictly follow the Modern Corporate standard (8px-12px radius, soft elevations).
+  - **New Default Standards**:
+    - **Rounded Corners**: 8px or 12px as the new standard (replacing the 0px default).
+    - **Soft Elevations**: Low-opacity, diffused shadows (replacing the "brutal" high-contrast shadows).
+    - **Subtle Borders**: Lighter borders (Slate 200) for containers, avoiding heavy default blue borders.
+    - **Blue as Accent**: Blue is strictly reserved for primary actions, indicators, and focus states.
+  - **Retired Standards**:
+    - **Industrial Brutalist** is no longer the official direction.
+    - **0px radius** is deprecated as a default.
+    - **Brutal/Heavy shadows** are no longer used for base components.
+    - **Heavy blue borders** on all containers are discontinued.
+  - **Migration Policy**: Existing screens will coexist with the new standards and be migrated in phases. All new or refactored screens must follow the Modern Corporate direction.
 
 ## Contextual Help and Accessibility (v2.24.0)
 
@@ -611,4 +622,28 @@ The `DecisionInsightsPanel` in the Approval Center uses **conditional rendering*
 - New role-specific sections should be added as conditional blocks within the existing component, not by forking.
 - The `requestData` prop should remain lightweight — pass only what the emphasis blocks need, never the full `RequestDetailsDto`.
 - Emphasis blocks are informational only — they must not introduce new approval blockers without a separate DEC entry.
+
+
+---
+
+## System-Resolved Workflow Actors (v2.29.0)
+
+To minimize cognitive load on Requesters and ensure strict adherence to approval hierarchies, the frontend no longer provides manual actor selection:
+
+1. **Area Approvers & Final Approvers**: These are strictly resolved by backend logic during submission based on the selected Department and Company, preventing bypasses.
+2. **Buyer Self-Assignment**: Buyers are no longer manually picked by the Requester. New requests are created unbound (unassigned). 
+3. **Unassigned Queue**: The BuyerItemsList.tsx Workspace groups unbound requests under a 'Não Atribuídos' tab. Active buyers monitor this queue and use the 'Atribuir a Mim' action to claim operational ownership of the request.
+
+## Company Master Data (v2.30.0)
+
+To support the system-resolved workflow actors, the "Dados Mestres" area now includes a dedicated "Empresas" tab.
+
+1. **Company Listing**: Displays all companies with their ID, Name, and assigned Final Approver.
+2. **Final Approver Assignment**:
+    - **Filtered Selection**: The Final Approver field within the company form is a searchable dropdown that only displays users with the **Final Approver** role (`ROLES.FINAL_APPROVER`).
+    - **Persistence**: This assignment is the authoritative source for the `FinalApproverUserId` used during request submission.
+3. **CRUD Behavior**:
+    - **Name Locking**: For existing companies, the `Nome` field is read-only if the company is already referenced by historical requests, preserving data integrity.
+    - **Active/Inactive**: Companies can be toggled via the standard `handleToggleActive` pattern.
+4. **Integration**: The `Companies` master data powers the plant-filtering logic and the header-level company selection in the Request Create/Edit forms.
 

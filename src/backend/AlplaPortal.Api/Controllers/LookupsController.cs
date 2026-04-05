@@ -328,10 +328,79 @@ public class LookupsController : ControllerBase
 
         var items = await query
             .OrderBy(c => c.Name)
-            .Select(c => new { c.Id, c.Name, c.IsActive })
+            .Select(c => new { c.Id, c.Name, c.IsActive, c.FinalApproverUserId })
             .ToListAsync();
 
         return Ok(items);
+    }
+
+    [HttpPost("companies")]
+    [Authorize(Roles = "System Administrator")]
+    public async Task<IActionResult> CreateCompany([FromBody] CreateLookupDto dto)
+    {
+        var entity = new Domain.Entities.Company 
+        { 
+            Name = dto.Name, 
+            IsActive = true,
+            FinalApproverUserId = dto.FinalApproverUserId
+        };
+        _context.Companies.Add(entity);
+        
+        try
+        {
+            await _context.SaveChangesAsync();
+            return Created($"/api/v1/lookups/companies/{entity.Id}", new { entity.Id, entity.Name, entity.IsActive, entity.FinalApproverUserId });
+        }
+        catch (DbUpdateException ex)
+        {
+            return StatusCode(500, new ProblemDetails { Title = "Erro ao criar Empresa", Detail = ex.InnerException?.Message ?? ex.Message });
+        }
+    }
+
+    [HttpPut("companies/{id}")]
+    [Authorize(Roles = "System Administrator")]
+    public async Task<IActionResult> UpdateCompany(int id, [FromBody] CreateLookupDto dto)
+    {
+        var entity = await _context.Companies.FindAsync(id);
+        if (entity == null) return NotFound();
+
+        // Relaxed guard: block only if NAME changed AND there is historical data
+        bool fundamentalFieldsChanged = entity.Name != dto.Name;
+        
+        if (fundamentalFieldsChanged && await _context.Requests.AnyAsync(r => r.CompanyId == id))
+        {
+            return Conflict(new ProblemDetails
+            {
+                Title = "Regra de Negócio Violada",
+                Detail = "Este registro já possui pedidos vinculados. O nome não pode ser alterado para preservar a integridade do histórico. No entanto, o aprovador final pode ser atualizado normalmente.",
+                Status = 409
+            });
+        }
+
+        entity.Name = dto.Name;
+        entity.FinalApproverUserId = dto.FinalApproverUserId;
+
+        try
+        {
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+        catch (DbUpdateException ex)
+        {
+            return StatusCode(500, new ProblemDetails { Title = "Erro ao atualizar Empresa", Detail = ex.InnerException?.Message ?? ex.Message });
+        }
+    }
+
+    [HttpPut("companies/{id}/toggle-active")]
+    [Authorize(Roles = "System Administrator")]
+    public async Task<IActionResult> ToggleCompanyActive(int id)
+    {
+        var entity = await _context.Companies.FindAsync(id);
+        if (entity == null) return NotFound();
+        
+        entity.IsActive = !entity.IsActive;
+        await _context.SaveChangesAsync();
+        return NoContent();
     }
 
     // Departments
@@ -913,6 +982,7 @@ public class CreateLookupDto
     public string Name { get; set; } = string.Empty;
     public int CompanyId { get; set; } // Only used for Plants
     public Guid? ResponsibleUserId { get; set; } // Only used for Departments
+    public Guid? FinalApproverUserId { get; set; } // Only used for Companies
 }
 
 public class CreateSupplierDto
