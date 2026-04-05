@@ -14,7 +14,8 @@ import { QuickCurrencyModal } from '../../components/Buyer/QuickCurrencyModal';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { Z_INDEX } from '../../constants/ui';
 import { DropdownPortal } from '../../components/ui/DropdownPortal';
-import { SavedQuotationDto } from '../../types';
+import { SavedQuotationDto, IvaRate, Unit, OcrDraft, OcrDraftItem } from '../../types';
+import { useOcrProcessor } from '../../hooks/useOcrProcessor';
 
 const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
 const ALLOWED_EXTENSIONS_MSG = "PDF, JPG, JPEG, PNG, DOC, DOCX, XLS e XLSX";
@@ -31,46 +32,10 @@ const ALLOWED_EXTENSIONS_MSG = "PDF, JPG, JPEG, PNG, DOC, DOCX, XLS e XLSX";
  }
  `;
 
-export interface IvaRate {
-    id: number;
-    code: string;
-    name: string;
-    ratePercent: number;
-    isActive: boolean;
-}
+// Interfaces for Lookups moved to types/index.ts
 
-export interface Unit {
-    id: number;
-    code: string;
-    name: string;
-    allowsDecimalQuantity: boolean;
-}
-
-interface QuotationDraftItem {
-    lineNumber: number;
-    description: string;
-    quantity: number;
-    unitId: number | null;
-    unit?: string; // Raw extracted unit string from OCR
-    unitPrice: number;
-    ivaRateId: number | null;
-    taxRate?: number; // Raw extracted tax percentage for suggestion hint
-    totalPrice: number; // Front-end calculated preview
-}
-
-interface QuotationDraft {
-    supplierId: number | null;
-    supplierNameSnapshot: string;
-    supplierTaxId?: string;
-    documentNumber: string;
-    documentDate: string;
-    currency: string;
-    extractedCurrency?: string; // Raw extracted currency for suggestion hint
-    discountAmount: number; // Front-end user input
-    totalAmount: number; // Front-end calculated preview
-    proformaAttachmentId?: string; // Links attachment implicitly
-    items: QuotationDraftItem[];
-}
+type QuotationDraftItem = OcrDraftItem;
+type QuotationDraft = OcrDraft;
 
 
 export function BuyerItemsList() {
@@ -159,6 +124,8 @@ export function BuyerItemsList() {
 
     const [searchInput, setSearchInput] = useState(searchTerm);
     const [totalCount, setTotalCount] = useState(0);
+
+    const { mapOcrResultToDraft, calculateItemTotal, calculateDraftTotal } = useOcrProcessor(ivaRates, units, currencies);
 
     const location = useLocation();
     const locationState = location.state as { successMessage?: string, fromList?: string } | null;
@@ -385,109 +352,8 @@ export function BuyerItemsList() {
             const result = await api.requests.ocrExtract(requestId, files[0]);
             setOcrResults(prev => ({ ...prev, [requestId]: result }));
 
-            // Map OCR results to our Draft structure
-            const suggestions = result.integration?.headerSuggestions;
-            const extractedSupplierName = suggestions?.supplierName?.value || '';
-            const extractedSupplierTaxId = suggestions?.supplierTaxId?.value || '';
-            
-            // Part A: Supplier Matching
-            let matchedSupplierId: number | null = null;
-            if (extractedSupplierName) {
-                try {
-                    const searchResults = await api.lookups.searchSuppliers(extractedSupplierName);
-                    // Find exact or close match
-                    const match = searchResults.find((s: any) => s.name.toLowerCase().trim() === extractedSupplierName.toLowerCase().trim());
-                    if (match) {
-                        matchedSupplierId = match.id;
-                    }
-                } catch (e) {
-                    console.error("Supplier matching failed", e);
-                }
-            }
-
-            // Plausibility check for Tax ID (NIF in Angola is usually 9 digits or starting with letters for companies)
-            const isTaxIdPlausible = extractedSupplierTaxId && extractedSupplierTaxId.length >= 5;
-
-            const resolveCurrencyAlias = (val: string | undefined) => {
-                if (!val) return '';
-                const normalized = val.trim().toUpperCase().replace(/\.$/, '');
-                
-                if (currencies.some(c => c.code.toUpperCase() === normalized)) return normalized;
-
-                const aliases: Record<string, string[]> = {
-                    'AOA': ['AKZ', 'KWANZA'],
-                    'USD': ['US$', 'DÓLAR', 'DOLAR'],
-                    'EUR': ['€', 'EURO']
-                };
-
-                for (const [code, items] of Object.entries(aliases)) {
-                    if (items.includes(normalized) && currencies.some(c => c.code.toUpperCase() === code)) {
-                        return code;
-                    }
-                }
-                return '';
-            };
-
-            const resolveUnitAlias = (val: string | undefined): number | null => {
-                if (!val) return null;
-                const normalized = val.trim().toUpperCase().replace(/\.$/, '');
-
-                const directMatch = units.find(u => 
-                    u.code.toUpperCase() === normalized || 
-                    u.name.toUpperCase() === normalized
-                );
-                if (directMatch) return directMatch.id;
-
-                const unitAliases: Record<string, string[]> = {
-                    'UN': ['UN', 'UND', 'UNID', 'UNIDADE', 'EA', 'EACH', 'PC', 'PCS', 'PÇ', 'PÇS'],
-                    'KG': ['KG', 'KGS', 'QUILO', 'QUILOGRAMA', 'KILO', 'KILOGRAM', 'KILOGRAMS'],
-                    'L': ['L', 'LT', 'LTS', 'LITRO', 'LITROS', 'LITER', 'LITERS'],
-                    'M': ['M', 'MT', 'MTS', 'METRO', 'METROS', 'METER', 'METERS'],
-                    'CX': ['CX', 'CXA', 'CAIXA', 'CAIXAS', 'BOX', 'BOXES', 'CTN', 'CARTON']
-                };
-
-                for (const [canonicalCode, aliases] of Object.entries(unitAliases)) {
-                    if (aliases.includes(normalized)) {
-                        const matchedUnit = units.find(u => u.code.toUpperCase() === canonicalCode);
-                        if (matchedUnit) return matchedUnit.id;
-                    }
-                }
-                return null;
-            };
-
-            const initialDraft: QuotationDraft = {
-                supplierId: matchedSupplierId,
-                supplierNameSnapshot: extractedSupplierName,
-                supplierTaxId: isTaxIdPlausible ? extractedSupplierTaxId : '',
-                documentNumber: suggestions?.documentNumber?.value || '',
-                documentDate: suggestions?.documentDate?.value || '',
-                currency: resolveCurrencyAlias(suggestions?.currency?.value),
-                extractedCurrency: suggestions?.currency?.value,
-                discountAmount: suggestions?.discountAmount?.value || 0,
-                totalAmount: suggestions?.grandTotal?.value || 0,
-                proformaAttachmentId: attachmentId, // Part B: Link the persisted file
-                items: (result.integration?.lineItemSuggestions || []).map((item: any, index: number) => {
-                    const extractedUnit = item.unit || '';
-                    const matchedUnitId = resolveUnitAlias(extractedUnit);
-
-                    return {
-                        lineNumber: index + 1,
-                        description: item.description || '',
-                        quantity: item.quantity || 1,
-                        unitId: matchedUnitId,
-                        unit: extractedUnit,
-                        unitPrice: item.unitPrice || 0,
-                        ivaRateId: (() => {
-                            const rate = item.taxRate;
-                            if (rate === undefined || rate === null) return null;
-                            const matched = ivaRates.find(r => Math.abs(r.ratePercent - rate) < 0.01);
-                            return matched ? matched.id : null;
-                        })(),
-                        taxRate: item.taxRate,
-                        totalPrice: item.totalPrice || (item.quantity || 1) * (item.unitPrice || 0)
-                    };
-                })
-            };
+            // Use shared OCR processor
+            const initialDraft = await mapOcrResultToDraft(result, attachmentId);
 
             setQuotationDrafts(prev => ({ ...prev, [requestId]: initialDraft }));
             setQuotationFlowStep(prev => ({ ...prev, [requestId]: 'EDIT_QUOTATION' }));
@@ -521,23 +387,13 @@ export function BuyerItemsList() {
             const updatedItems = [...draft.items];
             updatedItems[index] = { ...updatedItems[index], [field]: value };
             
-            // Recalculate deterministic line logic exactly like the backend
-            const item = updatedItems[index];
-
-            const safeQty = item.quantity || 0;
-            const safePrice = item.unitPrice || 0;
-            const grossSubtotal = Math.round(safeQty * safePrice * 100) / 100;
-            
-            const selectedIva = ivaRates.find(r => r.id === item.ivaRateId);
-            const ivaPercent = selectedIva ? selectedIva.ratePercent : 0;
-            const ivaAmount = Math.round(grossSubtotal * (ivaPercent / 100) * 100) / 100;
-            
-            item.totalPrice = Math.round((grossSubtotal + ivaAmount) * 100) / 100;
+            // Recalculate deterministic line logic using shared hook logic
+            updatedItems[index].totalPrice = calculateItemTotal(updatedItems[index]);
 
             draft.items = updatedItems;
             
             // Recalculate quotation total internally if needed
-            draft.totalAmount = recalculateQuotationTotal(draft);
+            draft.totalAmount = calculateDraftTotal(draft);
             
             return {
                 ...prev,
@@ -549,30 +405,12 @@ export function BuyerItemsList() {
     const handleUpdateQuotationDiscount = (requestId: string, val: number) => {
         setQuotationDrafts(prev => {
             const draft = { ...prev[requestId], discountAmount: val };
-            draft.totalAmount = recalculateQuotationTotal(draft);
+            draft.totalAmount = calculateDraftTotal(draft);
             return { ...prev, [requestId]: draft };
         });
     };
 
-    const recalculateQuotationTotal = (draft: QuotationDraft) => {
-        let gross = 0;
-        let iva = 0;
-        draft.items.forEach(item => {
-            const itemGross = Math.round((item.quantity || 0) * (item.unitPrice || 0) * 100) / 100;
-            gross += itemGross;
-            const selectedIva = ivaRates.find(r => r.id === item.ivaRateId);
-            const ivaPercent = selectedIva ? selectedIva.ratePercent : 0;
-            iva += Math.round(itemGross * (ivaPercent / 100) * 100) / 100;
-        });
-
-        const discount = draft.discountAmount || 0;
-        const taxableBase = Math.max(0, gross - discount);
-        const discountRatio = gross > 0 ? (taxableBase / gross) : 1;
-        const adjustedIva = Math.round(iva * discountRatio * 100) / 100;
-        const total = Math.round((taxableBase + adjustedIva) * 100) / 100;
-
-        return Math.max(0, total);
-    };
+    // Local calculation logic moved to shared useOcrProcessor hook
 
     const handleAddQuotationItem = (requestId: string) => {
         setQuotationDrafts(prev => {
@@ -619,89 +457,11 @@ export function BuyerItemsList() {
         });
     };
 
-    const handleRestoreOcrOriginal = (requestId: string) => {
+    const handleRestoreOcrOriginal = async (requestId: string) => {
         const result = ocrResults[requestId];
         if (!result) return;
 
-            const resolveCurrencyAlias = (val: string | undefined) => {
-                if (!val) return '';
-                const normalized = (val || '').trim().toUpperCase().replace(/\.$/, '');
-                
-                if (currencies.some(c => c.code.toUpperCase() === normalized)) return normalized;
-
-                const aliases: Record<string, string[]> = {
-                    'AOA': ['AKZ', 'KWANZA'],
-                    'USD': ['US$', 'DÓLAR', 'DOLAR'],
-                    'EUR': ['€', 'EURO']
-                };
-
-                for (const [code, items] of Object.entries(aliases)) {
-                    if (items.includes(normalized) && currencies.some(c => c.code.toUpperCase() === code)) {
-                        return code;
-                    }
-                }
-                return '';
-            };
-
-            const resolveUnitAlias = (val: string | undefined): number | null => {
-                if (!val) return null;
-                const normalized = val.trim().toUpperCase().replace(/\.$/, '');
-
-                const directMatch = units.find(u => 
-                    u.code.toUpperCase() === normalized || 
-                    u.name.toUpperCase() === normalized
-                );
-                if (directMatch) return directMatch.id;
-
-                const unitAliases: Record<string, string[]> = {
-                    'UN': ['UN', 'UND', 'UNID', 'UNIDADE', 'EA', 'EACH', 'PC', 'PCS', 'PÇ', 'PÇS'],
-                    'KG': ['KG', 'KGS', 'QUILO', 'QUILOGRAMA', 'KILO', 'KILOGRAM', 'KILOGRAMS'],
-                    'L': ['L', 'LT', 'LTS', 'LITRO', 'LITROS', 'LITER', 'LITERS'],
-                    'M': ['M', 'MT', 'MTS', 'METRO', 'METROS', 'METER', 'METERS'],
-                    'CX': ['CX', 'CXA', 'CAIXA', 'CAIXAS', 'BOX', 'BOXES', 'CTN', 'CARTON']
-                };
-
-                for (const [canonicalCode, aliases] of Object.entries(unitAliases)) {
-                    if (aliases.includes(normalized)) {
-                        const matchedUnit = units.find(u => u.code.toUpperCase() === canonicalCode);
-                        if (matchedUnit) return matchedUnit.id;
-                    }
-                }
-                return null;
-            };
-
-        const originalDraft: QuotationDraft = {
-            supplierId: null,
-            supplierNameSnapshot: result.integration.headerSuggestions.supplierName || '',
-            documentNumber: result.integration.headerSuggestions.documentNumber || '',
-            documentDate: result.integration.headerSuggestions.documentDate || '',
-            currency: resolveCurrencyAlias(result.integration.headerSuggestions.currency),
-            extractedCurrency: typeof result.integration.headerSuggestions.currency === 'string' ? result.integration.headerSuggestions.currency : undefined,
-            discountAmount: result.integration.headerSuggestions.discountAmount?.value || 0,
-            totalAmount: result.integration.headerSuggestions.totalAmount || 0,
-            items: (result.integration.lineItemSuggestions || []).map((item: any, index: number) => {
-                const extractedUnit = item.unit || '';
-                const matchedUnitId = resolveUnitAlias(extractedUnit);
-
-                return {
-                    lineNumber: index + 1,
-                    description: item.description || '',
-                    quantity: item.quantity || 1,
-                    unitId: matchedUnitId,
-                    unit: extractedUnit,
-                    unitPrice: item.unitPrice || 0,
-                    ivaRateId: (() => {
-                        const rate = item.taxRate;
-                        if (rate === undefined || rate === null) return null;
-                        const matched = ivaRates.find(r => Math.abs(r.ratePercent - rate) < 0.01);
-                        return matched ? matched.id : null;
-                    })(),
-                    taxRate: item.taxRate,
-                    totalPrice: (item.quantity || 1) * (item.unitPrice || 0)
-                };
-            })
-        };
-
+        const originalDraft = await mapOcrResultToDraft(result);
         setQuotationDrafts(prev => ({ ...prev, [requestId]: originalDraft }));
     };
 

@@ -437,6 +437,16 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao processar OCR do documento.', 'OcrSettings');
             return response.json();
         },
+        directOcrExtract: async (file: File): Promise<any> => {
+            const formData = new FormData();
+            formData.append('file', file);
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/direct-ocr`, {
+                method: 'POST',
+                body: formData,
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao processar OCR do documento.');
+            return response.json();
+        },
         saveQuotation: async (requestId: string, quotation: any, replaceQuotationId?: string): Promise<any> => {
             const url = replaceQuotationId 
                 ? `${API_BASE_URL}/api/v1/requests/${requestId}/quotations?replaceQuotationId=${replaceQuotationId}`

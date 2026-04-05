@@ -517,7 +517,7 @@ public class RequestsController : BaseController
         });
     }
 
-    [HttpGet("{id}")]
+    [HttpGet("{id:guid}")]
     public async Task<ActionResult<RequestDetailsDto>> GetRequest(Guid id)
     {
         // To avoid massive cartesian product and improve performance, we project into the DTO directly.
@@ -685,7 +685,7 @@ public class RequestsController : BaseController
         return Ok(request);
     }
 
-    [HttpGet("{id}/template")]
+    [HttpGet("{id:guid}/template")]
     public async Task<ActionResult<CreateRequestDraftDto>> GetRequestTemplate(Guid id)
     {
         var request = await _context.Requests
@@ -723,7 +723,7 @@ public class RequestsController : BaseController
         return Ok(template);
     }
 
-    [HttpGet("{id}/timeline")]
+    [HttpGet("{id:guid}/timeline")]
     public async Task<ActionResult<RequestTimelineDto>> GetRequestTimeline(Guid id)
     {
         var request = await _context.Requests
@@ -974,6 +974,7 @@ public class RequestsController : BaseController
             var lineItems = new List<RequestLineItem>();
             decimal totalAmount = 0;
 
+            int currentLine = 1;
             foreach (var itemDto in dto.LineItems)
             {
                 var unit = units.FirstOrDefault(u => u.Code == itemDto.Unit);
@@ -981,7 +982,7 @@ public class RequestsController : BaseController
                 {
                     Id = Guid.NewGuid(),
                     RequestId = request.Id,
-                    LineNumber = itemDto.LineNumber,
+                    LineNumber = itemDto.LineNumber > 0 ? itemDto.LineNumber : currentLine++,
                     ItemPriority = itemDto.ItemPriority,
                     Description = itemDto.Description,
                     Quantity = itemDto.Quantity,
@@ -1294,7 +1295,7 @@ public class RequestsController : BaseController
         return NoContent();
     }
 
-    [HttpPost("{id}/submit")]
+    [HttpPost("{id:guid}/submit")]
     public async Task<IActionResult> SubmitRequest(Guid id)
     {
         var actorId = CurrentUserId;
@@ -1380,6 +1381,13 @@ public class RequestsController : BaseController
             errors.Add("Para submeter, o pedido deve conter pelo menos um item.");
         }
 
+        // Hardening: Ensure all items have Cost Center and IVA Rate before submission (DEC-096)
+        var incompleteItems = request.LineItems.Where(l => !l.IsDeleted && (l.CostCenterId == null || l.IvaRateId == null)).ToList();
+        if (incompleteItems.Any())
+        {
+            errors.Add($"Os itens do pedido {string.Join(", ", incompleteItems.Select(i => i.LineNumber))} estão incompletos. Informe o Centro de Custo e a taxa IVA antes de submeter.");
+        }
+
         if (request.RequestType!.Code == "PAYMENT")
         {
             if (request.EstimatedTotalAmount <= 0 && request.LineItems.Any(l => !l.IsDeleted))
@@ -1442,7 +1450,7 @@ public class RequestsController : BaseController
         return await ApplyStatusChangeAndSyncItemsAsync(request, targetStatusCode, actionTaken, historyComment, successMessage, actorId);
     }
 
-    [HttpPost("{id}/assign-buyer")]
+    [HttpPost("{id:guid}/assign-buyer")]
     public async Task<IActionResult> AssignBuyer(Guid id, [FromQuery] Guid? targetUserId = null)
     {
         var actorId = CurrentUserId;
@@ -1507,7 +1515,7 @@ public class RequestsController : BaseController
         return NoContent();
     }
 
-    [HttpPost("{id}/ocr-extract")]
+    [HttpPost("{id:guid}/ocr-extract")]
     public async Task<ActionResult<OcrExtractionResultDto>> OcrExtract(Guid id, IFormFile file)
     {
         if (file == null || file.Length == 0)
@@ -1558,7 +1566,41 @@ public class RequestsController : BaseController
         }
     }
 
-    [HttpPost("{id}/quotations")]
+    [HttpPost("direct-ocr")]
+    public async Task<ActionResult<OcrExtractionResultDto>> DirectOcrExtract(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+        {
+            return BadRequest("Nenhum arquivo enviado.");
+        }
+
+        try
+        {
+            // Trigger Extraction directly without Request ID check
+            using var stream = file.OpenReadStream();
+            var internalResult = await _extractionService.ExtractAsync(stream, file.FileName);
+
+            // Map back to legacy DTO to preserve frontend compatibility
+            var legacyResult = ExtractionMapper.MapToLegacyOcrResult(internalResult);
+
+            return Ok(legacyResult);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during direct document extraction");
+            return StatusCode(500, new OcrExtractionResultDto
+            {
+                Success = false,
+                Status = new OcrStatusDto
+                {
+                    Code = "PORTAL_ERROR",
+                    QualityScore = 0
+                }
+            });
+        }
+    }
+
+    [HttpPost("{id:guid}/quotations")]
     public async Task<ActionResult<SavedQuotationDto>> SaveQuotation(Guid id, [FromQuery] Guid? replaceQuotationId, [FromBody] SaveQuotationRequestDto dto)
     {
         var actorId = CurrentUserId;
@@ -2035,7 +2077,7 @@ public class RequestsController : BaseController
 
         return NoContent();
     }
-    [HttpPost("{id}/duplicate")]
+    [HttpPost("{id:guid}/duplicate")]
     public async Task<IActionResult> DuplicateRequest(Guid id)
     {
         var actorId = CurrentUserId;
@@ -2196,7 +2238,7 @@ public class RequestsController : BaseController
         }
     }
 
-    [HttpPost("{id}/cancel")]
+    [HttpPost("{id:guid}/cancel")]
     public async Task<IActionResult> CancelRequest(Guid id, [FromQuery] string? mode, [FromBody] CancelRequestDto dto)
     {
         var actorId = CurrentUserId;
@@ -2273,7 +2315,7 @@ public class RequestsController : BaseController
         return await ApplyStatusChangeAndSyncItemsAsync(request, "CANCELLED", "CANCELLED", historyComment, "Pedido cancelado com sucesso.", actorId);
     }
 
-    [HttpPost("{requestId}/line-items")]
+    [HttpPost("{requestId:guid}/line-items")]
     public async Task<IActionResult> AddLineItem(Guid requestId, [FromBody] CreateRequestLineItemDto dto)
     {
         var actorId = CurrentUserId;

@@ -1171,3 +1171,31 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
     3. **Missing/QUOTATION**: If data is missing or it is a QUOTATION request, the standard mandatory dropdown behavior remains.
 - **Consequences:** Reduces friction for the most common PAYMENT scenarios while maintaining strict financial integrity for edge cases and quotations. Ensures all approved requests leave the Area stage with a unified, valid Cost Center.
 
+---
+
+## DEC-096 — Payment OCR Intake & Shared Hook
+
+- **Date:** 2026-04-05
+- **Status:** Accepted
+- **Context:** Automated document extraction was needed for the "Payment" request type before the request exists in the database. Existing OCR logic was coupled to the Quotation workspace and required a RequestId.
+- **Decision:**
+    1. **Direct OCR Endpoint**: Created `POST /api/requests/direct-ocr` for document extraction without a RequestId.
+    2. **Shared Hook (`useOcrProcessor`)**: Refactored extraction logic into a reusable hook for both Quotation and Payment flows.
+    3. **Interactive Review**: Implemented a "Payment Draft" review area in `RequestCreate.tsx` to allow users to verify extracted data before persistence.
+- **Consequences:** Provides a high-efficiency entry point for invoice-based payments while reusing stable extraction logic.
+
+---
+
+## DEC-097 — Relaxed Persistence for Payment OCR Drafts
+
+- **Date:** 2026-04-05
+- **Status:** Accepted
+- **Context:** Payment OCR often extracts items without all business-mandatory data (Cost Center, IVA Rate). Forcing these fields at the initial draft creation step caused 500 errors and prevented saving progress.
+- **Decision:**
+    1. **Relaxed Entity Constraints**: Removed `[Required]` from `CostCenterId` and `IvaRateId` in `RequestLineItem`.
+    2. **Nullable Database Columns**: Implemented migration `RelaxLineItemOptionalFieldsForDrafts` to make these columns nullable.
+    3. **Deterministic Sequencing**: Enforced `LineNumber` assignment (incremental) during creation to ensure structural integrity.
+    4. **Submission Gating**: Added strict server-side validation in `SubmitRequest` to ensure all line items have mandatory business fields before the request enters the workflow.
+- **Consequences:** Enables a "Save Now, Complete Later" UX for complex OCR extractions. Prevents persistence crashes while maintaining strict financial governance at the submission boundary.
+
+

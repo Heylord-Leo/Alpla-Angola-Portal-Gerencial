@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.31.0] - 2026-04-05
+
+### Fixed
+
+- **Payment OCR Draft Persistence (DEC-097)**: Resolved a 500 error when creating Payment requests from OCR-extracted items.
+  - Relaxed entity-level mandatory constraints for `CostCenterId` and `IvaRateId` on `RequestLineItem`, making them nullable in the database.
+  - Implemented deterministic `LineNumber` assignment (incremental index + 1) during the draft creation payload and backend processing.
+  - Deferred strict business validation to the `SubmitRequest` stage, ensuring a request cannot progress beyond `DRAFT` status if mandatory fields are missing.
+  - Corrected calculation of `EstimatedTotalAmount` in the draft creation flow to reflect OCR-extracted item totals.
+
+## [2.30.0] - 2026-04-05
+
+### Added
+
+- **Payment OCR Intake (DEC-096)**: Implemented automated document extraction for the "Payment" request type.
+  - Contextual OCR dropzone in `RequestCreate.tsx` that appears when "Payment" is selected.
+  - Automated mapping of invoice data (Number, Date, Currency, Items) to the request draft.
+  - Interactive item review and editing before initial draft generation.
+  - New backend endpoint `direct-ocr` in `RequestsController.cs` for ID-less document extraction.
+- **Shared OCR Processing Hook**: Refactored quotation-specific OCR logic into a reusable `useOcrProcessor.ts` hook.
+  - Decoupled normalization and field mapping from UI components.
+  - Centralized calculation logic for IVA and totals.
+
+### Changed
+
+- **Quotation OCR Refactor**: Migrated `BuyerItemsList.tsx` to use the shared `useOcrProcessor` hook, ensuring logic parity across flows.
+
 ## [2.29.0] - 2026-04-04
 
 ### Added
@@ -130,11 +157,9 @@ All notable changes to this project will be documented in this file.
   - Updated `collapsibleSection` and `badge` styles to follow the new radii standards.
 ## Current Version
 
-v2.29.0
-
-## Version History
-
-- **2.29.0**: Company Master Data & Final Approver Resolution. Implemented centralized company management and deterministic approval resolution, eliminating manual selection errors.
+- **v2.31.0**: Payment OCR Persistence Fix (DEC-097). Relaxed DB constraints for Cost Center and IVA on draft line items, deferring strict validation to the submission stage.
+- **v2.30.0**: Payment OCR Intake & Shared Hook (DEC-096). Implemented automated document extraction for Payment requests and refactored OCR logic into a shared hook.
+- **v2.29.0**: Company Master Data & Final Approver Resolution. Implemented centralized company management and deterministic approval resolution, eliminating manual selection errors.
 - **2.26.0**: Instruction Layer Cleanup & Baseline Rebuild. Consolidated fragmented permission and status rules into unified directives. Streamlined the process lifecycle and reorganized legacy documentation into reference storage.
 - **2.25.1**: Tooltip Positioning Fix. Optimized the shared `Tooltip` component API to support explicit side-anchoring and alignment, resolving overflow regressions in the User Management drawer.
 - **2.25.0**: Role Selection UX & UI Stability. Implemented contextual role tooltips for User Management and fixed a critical white screen regression by restoring the core `ROLES` constant. Standardized table header readability across operational modules.
@@ -295,7 +320,16 @@ v2.29.0
 
 ---
 
-## DEC-093 — Role-Specific Contextual Help (User Management)
+## DEC-096 — Shared OCR Processing & Direct Extraction
+
+- **Date:** 2026-04-05
+- **Status:** Accepted
+- **Context:** The "Payment" request type requires automated data entry from invoices before the request is officially created. Existing OCR logic was tightly coupled to the Quotation workspace and required a Request ID.
+- **Decision:** 
+    - Abstract OCR normalization and mapping into a shared `useOcrProcessor` hook.
+    - Implement a `direct-ocr` backend endpoint that skips request-specific validation for initial extraction.
+    - Use an isolated "Payment Draft" state in `RequestCreate.tsx` to allow user review before persistence.
+- **Consequences:** Ensures consistency between Quotation and Payment extraction logic. Reduces code duplication and enables a "fast-track" creation flow for payment-intensive workflows.
 
 - **Date:** 2026-04-04
 - **Status:** Accepted
@@ -354,6 +388,11 @@ v2.29.0
 ### Changed
 
 - **Default State**: A seção "ITENS DO PEDIDO" agora inicia colapsada por padrão para reduzir o ruído visual inicial.
+
+### 6.2 Hooks
+
+- **`useOcrProcessor`**: Shared hook for normalizing and mapping OCR results to request drafts. Used in both `RequestCreate.tsx` (Payment flow) and `BuyerItemsList.tsx` (Quotation flow).
+- **`useFeedback`**: Centralized hook for managing top-level feedback messages (success, error, warning).
 
 ### Fixed
 

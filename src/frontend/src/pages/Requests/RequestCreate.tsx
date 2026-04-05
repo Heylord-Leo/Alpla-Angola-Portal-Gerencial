@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Save, X, Paperclip, Trash2, AlertTriangle } from 'lucide-react';
+import { Save, X, Paperclip, Trash2, AlertTriangle, FileText, RefreshCw, UploadCloud, CheckCircle2 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { FeedbackType } from '../../components/ui/Feedback';
-import { LookupDto } from '../../types';
+import { LookupDto, IvaRate, Unit, CurrencyDto, OcrDraft, OcrDraftItem } from '../../types';
+import { useOcrProcessor } from '../../hooks/useOcrProcessor';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RequestActionHeader, BreadcrumbItem } from './components/RequestActionHeader';
 import { scrollToFirstError } from '../../lib/validation';
@@ -31,6 +32,16 @@ export function RequestCreate() {
     const [allowedPlantCodes, setAllowedPlantCodes] = useState<string[]>([]);
     const [isScopeLoading, setIsScopeLoading] = useState(true);
     const [attachments, setAttachments] = useState<File[]>([]);
+    
+    // Payment OCR States
+    const [ivaRates, setIvaRates] = useState<IvaRate[]>([]);
+    const [units, setUnits] = useState<Unit[]>([]);
+    const [currencies, setCurrencies] = useState<CurrencyDto[]>([]);
+    const [isOcrLoading, setIsOcrLoading] = useState(false);
+    const [paymentDraft, setPaymentDraft] = useState<OcrDraft | null>(null);
+    const [ocrFile, setOcrFile] = useState<File | null>(null);
+
+    const { mapOcrResultToDraft, calculateItemTotal, calculateDraftTotal } = useOcrProcessor(ivaRates, units, currencies);
 
     const [formData, setFormData] = useState({
         title: '',
@@ -39,7 +50,7 @@ export function RequestCreate() {
         needByDateUtc: '',
         needLevelId: '',
         estimatedTotalAmount: '',
-        currencyId: 1,    // Internal implementation default (Implementation detail, not a copied field)
+        currencyId: 1,    // Internal implementation default
         departmentId: '',
         companyId: '',
         plantId: '',
@@ -69,13 +80,16 @@ export function RequestCreate() {
         async function loadLookups() {
             try {
                 setIsScopeLoading(true);
-                const [levelsData, departmentsData, companiesData, plantsData, rtData, meData] = await Promise.all([
+                const [levelsData, departmentsData, companiesData, plantsData, rtData, meData, ivaData, unitsData, currenciesData] = await Promise.all([
                     api.lookups.getNeedLevels(true),
                     api.lookups.getDepartments(true),
                     api.lookups.getCompanies(true),
                     api.lookups.getPlants(undefined, true),
                     api.lookups.getRequestTypes(true),
-                    api.users.me()
+                    api.users.me(),
+                    api.lookups.getIvaRates(true),
+                    api.lookups.getUnits(true),
+                    api.lookups.getCurrencies(true)
                 ]);
                 setNeedLevels(levelsData);
                 setDepartments(departmentsData);
@@ -83,6 +97,9 @@ export function RequestCreate() {
                 setPlants(plantsData);
                 setRequestTypes(rtData);
                 setAllowedPlantCodes(meData.plants || []);
+                setIvaRates(ivaData);
+                setUnits(unitsData);
+                setCurrencies(currenciesData);
             } catch (err) {
                 console.error('Falha ao carregar dados auxiliares', err);
             } finally {
@@ -114,7 +131,6 @@ export function RequestCreate() {
                         buyerId: data.buyerId || '',
                         areaApproverId: data.areaApproverId || '',
                         finalApproverId: data.finalApproverId || '',
-                        // Specifically NOT copied: currencyId (stays default 1), needByDateUtc (stays blank)
                     };
                     initialFormDataRef.current = next;
                     return next;
@@ -144,13 +160,11 @@ export function RequestCreate() {
         setFormData(prev => {
             const next = { ...prev };
             
-            // Case A: Only 1 authorized plant in total
             if (filteredPlants.length === 1) {
                 const soloPlant = filteredPlants[0];
                 next.plantId = String(soloPlant.id);
                 next.companyId = String(soloPlant.companyId);
             } 
-            // Case B: Multiple plants but only 1 authorized company
             else if (filteredCompanies.length === 1 && !next.companyId) {
                 next.companyId = String(filteredCompanies[0].id);
             }
@@ -183,15 +197,70 @@ export function RequestCreate() {
         setAttachments(prev => prev.filter((_, i) => i !== index));
     };
 
+    const handleOcrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files?.[0]) return;
+        const file = e.target.files[0];
+        setOcrFile(file);
+        setIsOcrLoading(true);
+        setFeedback({ type: 'error', message: null });
+
+        try {
+            const result = await api.requests.directOcrExtract(file);
+            const draft = await mapOcrResultToDraft(result);
+            setPaymentDraft(draft);
+        } catch (err: any) {
+            console.error("OCR Extraction failed", err);
+            setFeedback({ type: 'error', message: err.message || 'Falha na extração OCR do documento.' });
+        } finally {
+            setIsOcrLoading(false);
+            e.target.value = '';
+        }
+    };
+
+    const handleUpdateOcrDraft = (field: keyof OcrDraft, value: any) => {
+        setPaymentDraft(prev => {
+            if (!prev) return null;
+            const next = { ...prev, [field]: value };
+            if (field === 'discountAmount' || field === 'items') {
+                next.totalAmount = calculateDraftTotal(next);
+            }
+            return next;
+        });
+    };
+
+    const handleUpdateOcrItem = (index: number, field: keyof OcrDraftItem, value: any) => {
+        setPaymentDraft(prev => {
+            if (!prev) return null;
+            const nextItems = [...prev.items];
+            nextItems[index] = { ...nextItems[index], [field]: value };
+            
+            if (field === 'quantity' || field === 'unitPrice' || field === 'ivaRateId') {
+                nextItems[index].totalPrice = calculateItemTotal(nextItems[index]);
+            }
+            
+            const next = { ...prev, items: nextItems };
+            next.totalAmount = calculateDraftTotal(next);
+            return next;
+        });
+    };
+
+    const handleRemoveOcrItem = (index: number) => {
+        setPaymentDraft(prev => {
+            if (!prev) return null;
+            const nextItems = prev.items.filter((_, i) => i !== index);
+            const next = { ...prev, items: nextItems };
+            next.totalAmount = calculateDraftTotal(next);
+            return next;
+        });
+    };
+
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFormData(prev => {
             const next = { ...prev, [name]: value };
-            // Clear plant if company explicitly changes
             if (name === 'companyId') {
-                next.plantId = ''; // Start by clearing
+                next.plantId = '';
                 if (value) {
-                    // Auto-select the matching plant if only one is authorized for the selected company
                     const plantsForCompany = filteredPlants.filter(p => p.companyId === Number(value));
                     if (plantsForCompany.length === 1) {
                         next.plantId = String(plantsForCompany[0].id);
@@ -199,7 +268,6 @@ export function RequestCreate() {
                 }
             }
             
-            // Auto-select company if plant is explicitly chosen and not already aligned
             if (name === 'plantId' && value) {
                 const selectedPlant = plants.find(p => p.id === Number(value));
                 if (selectedPlant) {
@@ -207,7 +275,6 @@ export function RequestCreate() {
                 }
             }
 
-            // Auto-fill Area Approver from Department - DEC-082
             if (name === 'departmentId' && value) {
                 const dept = departments.find(d => d.id === Number(value));
                 if (dept && dept.responsibleUserId) {
@@ -223,16 +290,13 @@ export function RequestCreate() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        // Manual Validation for Required Fields
         const newErrors: Record<string, string[]> = {};
         if (!formData.requestTypeId) newErrors['RequestTypeId'] = ['O Tipo de Pedido é obrigatório.'];
-        // New required checks
         if (!formData.needLevelId) newErrors['NeedLevelId'] = ['O grau de necessidade é obrigatório.'];
         if (!formData.departmentId) newErrors['DepartmentId'] = ['O departamento é obrigatório.'];
         if (!formData.companyId) newErrors['CompanyId'] = ['A empresa é obrigatória.'];
         if (!formData.plantId) newErrors['PlantId'] = ['A planta é obrigatória.'];
 
-        // Conditional Validation: Data de Necessidade is mandatory for Cotação (TypeId === 1)
         if (Number(formData.requestTypeId) === 1) {
             if (!formData.needByDateUtc) {
                 newErrors['NeedByDateUtc'] = ['A data Necessário Até é obrigatória para pedidos de Cotação.'];
@@ -241,18 +305,9 @@ export function RequestCreate() {
             }
         }
 
-        // Conditional Validation: Data de Necessidade is mandatory for Cotação (TypeId === 1)
-        if (Number(formData.requestTypeId) === 1) {
-            if (!formData.needByDateUtc) {
-                newErrors['NeedByDateUtc'] = ['A data Necessário Até é obrigatória para pedidos de Cotação.'];
-            } else if (new Date(formData.needByDateUtc).getTime() < new Date().setHours(0, 0, 0, 0)) {
-                newErrors['NeedByDateUtc'] = ['A data Necessário Até não pode ser no passado.'];
-            }
-        }
         if (Object.keys(newErrors).length > 0) {
             setFieldErrors(newErrors);
             setFeedback({ type: 'error', message: 'Preencha todos os campos obrigatórios antes de continuar.' });
-            // Scroll to first error and focus
             scrollToFirstError(newErrors);
             return;
         }
@@ -261,13 +316,12 @@ export function RequestCreate() {
         setFeedback({ type: 'error', message: null });
         setFieldErrors({});
 
-        // Prepare payload parsing numbers and nulls properly
         const payload = {
             title: formData.title,
             description: formData.description,
             requestTypeId: Number(formData.requestTypeId),
             needLevelId: formData.needLevelId ? Number(formData.needLevelId) : null,
-            estimatedTotalAmount: 0, // Always 0 on create
+            estimatedTotalAmount: 0,
             currencyId: formData.currencyId ? Number(formData.currencyId) : null,
             departmentId: formData.departmentId ? Number(formData.departmentId) : null,
             companyId: formData.companyId ? Number(formData.companyId) : null,
@@ -277,15 +331,31 @@ export function RequestCreate() {
             finalApproverId: formData.finalApproverId || null,
             needByDateUtc: Number(formData.requestTypeId) === 1 && formData.needByDateUtc 
                 ? new Date(formData.needByDateUtc).toISOString() 
-                : null
+                : null,
+            lineItems: Number(formData.requestTypeId) === 2 && paymentDraft ? paymentDraft.items.map((item, index) => ({
+                lineNumber: index + 1,
+                description: item.description,
+                quantity: item.quantity,
+                unitId: item.unitId,
+                unit: item.unit,
+                unitPrice: item.unitPrice,
+                ivaRateId: item.ivaRateId,
+                totalAmount: item.totalPrice,
+                currencyId: currencies.find(c => c.code === paymentDraft.currency)?.id || formData.currencyId,
+                plantId: Number(formData.plantId),
+                costCenterId: null,
+                itemPriority: 'MEDIUM'
+            })) : []
         };
 
         try {
             const result = await api.requests.create(payload);
 
-            // Step 2: Upload attachments if any
-            if (attachments.length > 0) {
-                await api.attachments.upload(result.id, attachments, 'SUPPORTING');
+            const allAttachments = [...attachments];
+            if (ocrFile) allAttachments.push(ocrFile);
+
+            if (allAttachments.length > 0) {
+                await api.attachments.upload(result.id, allAttachments, 'SUPPORTING');
             }
 
             const isQuotation = Number(formData.requestTypeId) === 1;
@@ -361,7 +431,6 @@ export function RequestCreate() {
         letterSpacing: '0.05em'
     };
 
-    // Helper for rendering inline error texts
     const getFieldErrors = (fieldName: string) => {
         if (!fieldErrors) return null;
         const normalizedField = fieldName.toLowerCase();
@@ -427,29 +496,18 @@ export function RequestCreate() {
     };
 
     return (
-
         <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.4 }}
             style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', maxWidth: '1440px', margin: '0 auto', minWidth: 0 }}
         >
-
             <RequestActionHeader {...headerProps} />
 
-            {/* User Scope Guardrail */}
             {!isScopeLoading && allowedPlantCodes.length === 0 && (
                 <div style={{
-                    backgroundColor: '#FEF2F2',
-                    border: '2px solid #EF4444',
-                    padding: '24px',
-                    borderRadius: 'var(--radius-sm)',
-                    boxShadow: 'var(--shadow-brutal)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '12px',
-                    alignItems: 'center',
-                    textAlign: 'center'
+                    backgroundColor: '#FEF2F2', border: '2px solid #EF4444', padding: '24px', borderRadius: 'var(--radius-sm)',
+                    boxShadow: 'var(--shadow-brutal)', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', textAlign: 'center'
                 }}>
                     <div style={{ color: '#EF4444', fontWeight: 800, fontSize: '1.25rem' }}>ACESSO RESTRITO</div>
                     <p style={{ color: 'var(--color-text-main)', fontSize: '0.875rem', maxWidth: '500px' }}>
@@ -468,19 +526,13 @@ export function RequestCreate() {
                 </div>
             )}
 
-            {/* Form Card */}
             <form 
                 onSubmit={handleSubmit} 
                 style={{
                     display: allowedPlantCodes.length === 0 ? 'none' : 'flex',
-                    flexDirection: 'column',
-                    gap: '32px',
-                    opacity: isScopeLoading ? 0.5 : 1,
-                    pointerEvents: isScopeLoading ? 'none' : 'auto'
+                    flexDirection: 'column', gap: '32px', opacity: isScopeLoading ? 0.5 : 1, pointerEvents: isScopeLoading ? 'none' : 'auto'
                 }}
             >
-
-                {/* Section A: Dados Gerais do Pedido */}
                 <section style={{ backgroundColor: 'var(--color-bg-surface)', padding: '32px', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-brutal)', border: '2px solid var(--color-border-heavy)' }}>
                     <h2 style={sectionTitleStyle}>Dados Gerais do Pedido</h2>
 
@@ -488,13 +540,8 @@ export function RequestCreate() {
                         <label style={labelStyle}>
                             Título do Pedido <span style={{ color: 'red' }}>*</span>
                             <input
-                                required
-                                type="text"
-                                name="title"
-                                value={formData.title}
-                                onChange={handleChange}
-                                placeholder="Ex: Aquisição de Laptops para TI"
-                                style={getInputStyle('Title')}
+                                required type="text" name="title" value={formData.title} onChange={handleChange}
+                                placeholder="Ex: Aquisição de Laptops para TI" style={getInputStyle('Title')}
                             />
                             {renderFieldError('Title')}
                         </label>
@@ -502,27 +549,15 @@ export function RequestCreate() {
                         <label style={labelStyle}>
                             Descrição ou Justificativa <span style={{ color: 'red' }}>*</span>
                             <textarea
-                                required
-                                name="description"
-                                value={formData.description}
-                                onChange={handleChange}
-                                rows={4}
-                                placeholder="Explique o motivo e os detalhes primários..."
-                                style={{ ...getInputStyle('Description'), resize: 'vertical' }}
+                                required name="description" value={formData.description} onChange={handleChange} rows={4}
+                                placeholder="Explique o motivo e os detalhes primários..." style={{ ...getInputStyle('Description'), resize: 'vertical' }}
                             />
                             {isCopyMode && (
                                 <motion.div
-                                    initial={{ opacity: 0, y: -10 }}
-                                    animate={{ opacity: 1, y: 0 }}
+                                    initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
                                     style={{
-                                        marginTop: '12px',
-                                        padding: '12px 16px',
-                                        backgroundColor: '#FFFBEB',
-                                        border: '2px solid #F59E0B',
-                                        borderRadius: 'var(--radius-sm)',
-                                        display: 'flex',
-                                        alignItems: 'flex-start',
-                                        gap: '12px'
+                                        marginTop: '12px', padding: '12px 16px', backgroundColor: '#FFFBEB',
+                                        border: '2px solid #F59E0B', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'flex-start', gap: '12px'
                                     }}
                                 >
                                     <AlertTriangle size={18} style={{ color: '#D97706', flexShrink: 0, marginTop: '2px' }} />
@@ -535,40 +570,24 @@ export function RequestCreate() {
                             {renderFieldError('Description')}
                         </label>
 
-                        {/* Integrated Attachment Area - DEC-073 */}
                         <div style={{ marginTop: '-8px', marginBottom: '8px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                                 <Paperclip size={16} style={{ color: 'var(--color-primary)' }} />
                                 <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-main)', textTransform: 'uppercase', letterSpacing: '0.025em' }}>
                                     Documentos de Apoio
                                 </span>
-                                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 400 }}>
-                                    (Opcional)
-                                </span>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 400 }}>(Opcional)</span>
                             </div>
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                 <div style={{ 
-                                    border: '2px dashed var(--color-border)', 
-                                    padding: '16px', 
-                                    textAlign: 'center', 
-                                    borderRadius: 'var(--radius-sm)',
-                                    backgroundColor: 'rgba(255, 255, 255, 0.5)',
-                                    cursor: 'pointer',
-                                    position: 'relative',
-                                    transition: 'all 0.2s ease',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'center',
-                                    gap: '4px'
+                                    border: '2px dashed var(--color-border)', padding: '16px', textAlign: 'center', borderRadius: 'var(--radius-sm)',
+                                    backgroundColor: 'rgba(255, 255, 255, 0.5)', cursor: 'pointer', position: 'relative', transition: 'all 0.2s ease',
+                                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px'
                                 }}>
                                     <input 
-                                        type="file" 
-                                        multiple 
-                                        onChange={handleFileChange}
-                                        style={{
-                                            position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer'
-                                        }}
+                                        type="file" multiple onChange={handleFileChange}
+                                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }}
                                     />
                                     <div style={{ fontWeight: 700, fontSize: '0.75rem', color: 'var(--color-text-main)' }}>ADICIONAR DOCUMENTOS</div>
                                     <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>PDF, JPG, PNG, DOCX (Máx 5MB)</div>
@@ -578,32 +597,17 @@ export function RequestCreate() {
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '8px' }}>
                                         {attachments.map((file, idx) => (
                                             <div key={idx} style={{ 
-                                                display: 'flex', 
-                                                justifyContent: 'space-between', 
-                                                alignItems: 'center', 
-                                                padding: '8px 12px', 
-                                                backgroundColor: 'white', 
-                                                border: '1px solid var(--color-border)', 
-                                                borderRadius: 'var(--radius-sm)',
-                                                boxShadow: '1px 1px 0px var(--color-border)'
+                                                display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                                                padding: '8px 12px', backgroundColor: 'white', border: '1px solid var(--color-border)', 
+                                                borderRadius: 'var(--radius-sm)', boxShadow: '1px 1px 0px var(--color-border)'
                                             }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                                                     <Paperclip size={14} style={{ flexShrink: 0 }} />
-                                                    <span style={{ 
-                                                        fontSize: '0.75rem', 
-                                                        fontWeight: 600, 
-                                                        whiteSpace: 'nowrap', 
-                                                        overflow: 'hidden', 
-                                                        textOverflow: 'ellipsis' 
-                                                    }}>
+                                                    <span style={{ fontSize: '0.75rem', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                         {file.name}
                                                     </span>
                                                 </div>
-                                                <button 
-                                                    type="button" 
-                                                    onClick={() => removeFile(idx)}
-                                                    style={{ color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', flexShrink: 0 }}
-                                                >
+                                                <button type="button" onClick={() => removeFile(idx)} style={{ color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', flexShrink: 0 }}>
                                                     <Trash2 size={14} />
                                                 </button>
                                             </div>
@@ -613,21 +617,164 @@ export function RequestCreate() {
                             </div>
                         </div>
 
-                             <label style={labelStyle}>
-                                 Tipo de Pedido <span style={{ color: 'red' }}>*</span>
-                                 <select
-                                     name="requestTypeId"
-                                     value={formData.requestTypeId}
-                                     onChange={handleChange}
-                                     style={getInputStyle('RequestTypeId')}
+                         <label style={labelStyle}>
+                             Tipo de Pedido <span style={{ color: 'red' }}>*</span>
+                             <select name="requestTypeId" value={formData.requestTypeId} onChange={handleChange} style={getInputStyle('RequestTypeId')}>
+                                 <option value="">-- Selecione --</option>
+                                 {requestTypes.filter(rt => rt.isActive).map(rt => (
+                                     <option key={rt.id} value={rt.id}>{rt.name}</option>
+                                 ))}
+                             </select>
+                             {renderFieldError('RequestTypeId')}
+                         </label>
+
+                         <AnimatePresence>
+                             {Number(formData.requestTypeId) === 2 && (
+                                 <motion.div
+                                     initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                                     style={{ overflow: 'hidden' }}
                                  >
-                                     <option value="">-- Selecione --</option>
-                                     {requestTypes.filter(rt => rt.isActive).map(rt => (
-                                         <option key={rt.id} value={rt.id}>{rt.name}</option>
-                                     ))}
-                                 </select>
-                                 {renderFieldError('RequestTypeId')}
-                             </label>
+                                     <div style={{ 
+                                         marginBottom: '32px', padding: '24px', backgroundColor: 'var(--color-bg-page)', 
+                                         border: '2px dashed var(--color-primary)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-brutal-sm)'
+                                     }}>
+                                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                                             <div style={{ 
+                                                 width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'var(--color-primary)', 
+                                                 display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' 
+                                             }}>
+                                                 <FileText size={20} />
+                                             </div>
+                                             <div>
+                                                 <h3 style={{ fontSize: '0.875rem', fontWeight: 800, textTransform: 'uppercase', margin: 0 }}>Input de Documento (OCR)</h3>
+                                                 <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: '2px 0 0 0' }}>Anexe a fatura ou nota para preenchimento automático</p>
+                                             </div>
+                                         </div>
+
+                                         {!paymentDraft ? (
+                                             <label style={{ 
+                                                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', 
+                                                 padding: '32px', border: '2px dashed var(--color-border)', borderRadius: 'var(--radius-sm)',
+                                                 cursor: isOcrLoading ? 'wait' : 'pointer', backgroundColor: 'white', transition: 'all 0.2s ease'
+                                             }}>
+                                                 <input type="file" onChange={handleOcrUpload} disabled={isOcrLoading} style={{ display: 'none' }} />
+                                                 {isOcrLoading ? (
+                                                     <>
+                                                         <RefreshCw size={32} className="animate-spin" style={{ color: 'var(--color-primary)' }} />
+                                                         <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>PROCESSANDO DOCUMENTO...</span>
+                                                     </>
+                                                 ) : (
+                                                     <>
+                                                         <UploadCloud size={32} style={{ color: 'var(--color-border-heavy)' }} />
+                                                         <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>CLIQUE OU ARRASTE A FATURA</span>
+                                                         <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>PDF, JPG ou PNG</span>
+                                                     </>
+                                                 )}
+                                             </label>
+                                         ) : (
+                                             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                                                 <div style={{ 
+                                                     display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                                                     padding: '12px 16px', backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', 
+                                                     borderRadius: 'var(--radius-sm)', marginBottom: '16px' 
+                                                 }}>
+                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#166534' }}>
+                                                         <CheckCircle2 size={16} />
+                                                         <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>DADOS EXTRAÍDOS COM SUCESSO</span>
+                                                         <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>({ocrFile?.name})</span>
+                                                     </div>
+                                                     <button 
+                                                        type="button"
+                                                        onClick={() => { setPaymentDraft(null); setOcrFile(null); }}
+                                                        style={{ fontSize: '0.7rem', fontWeight: 800, color: '#166534', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+                                                     >
+                                                         TROCAR ARQUIVO
+                                                     </button>
+                                                 </div>
+
+                                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+                                                     <label style={{ ...labelStyle, marginBottom: 0 }}>
+                                                         Nº Documento
+                                                         <input type="text" value={paymentDraft.documentNumber} onChange={(e) => handleUpdateOcrDraft('documentNumber', e.target.value)} style={inputStyle} />
+                                                     </label>
+                                                     <label style={{ ...labelStyle, marginBottom: 0 }}>
+                                                         Data
+                                                         <input type="text" value={paymentDraft.documentDate} onChange={(e) => handleUpdateOcrDraft('documentDate', e.target.value)} style={inputStyle} placeholder="AAAA-MM-DD" />
+                                                     </label>
+                                                     <label style={{ ...labelStyle, marginBottom: 0 }}>
+                                                         Moeda
+                                                         <select value={paymentDraft.currency} onChange={(e) => handleUpdateOcrDraft('currency', e.target.value)} style={inputStyle}>
+                                                             <option value="">--</option>
+                                                             {currencies.map(c => <option key={c.id} value={c.code}>{c.code}</option>)}
+                                                         </select>
+                                                     </label>
+                                                     <label style={{ ...labelStyle, marginBottom: 0 }}>
+                                                         Total s/ IVA
+                                                         <input type="number" value={paymentDraft.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)} disabled style={{ ...inputStyle, backgroundColor: '#F9FAFB' }} />
+                                                     </label>
+                                                 </div>
+
+                                                 <div style={{ overflowX: 'auto', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
+                                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
+                                                         <thead>
+                                                             <tr style={{ backgroundColor: 'var(--color-bg-page)', borderBottom: '1px solid var(--color-border)' }}>
+                                                                 <th style={{ padding: '8px', textAlign: 'left', fontWeight: 800 }}>DESCRIÇÃO</th>
+                                                                 <th style={{ padding: '8px', textAlign: 'center', width: '60px', fontWeight: 800 }}>QTD</th>
+                                                                 <th style={{ padding: '8px', textAlign: 'right', width: '100px', fontWeight: 800 }}>P. UNIT</th>
+                                                                 <th style={{ padding: '8px', textAlign: 'center', width: '100px', fontWeight: 800 }}>IVA</th>
+                                                                 <th style={{ padding: '8px', textAlign: 'right', width: '100px', fontWeight: 800 }}>TOTAL</th>
+                                                                 <th style={{ padding: '8px', textAlign: 'center', width: '40px' }}></th>
+                                                             </tr>
+                                                         </thead>
+                                                         <tbody>
+                                                             {paymentDraft.items.map((item, idx) => ({
+                                                                 ...item,
+                                                                 lineNumber: idx + 1
+                                                             })).map((item, idx) => (
+                                                                 <tr key={idx} style={{ borderBottom: '1px solid var(--color-border-light)' }}>
+                                                                     <td style={{ padding: '4px 8px' }}>
+                                                                         <input type="text" value={item.description} onChange={(e) => handleUpdateOcrItem(idx, 'description', e.target.value)} style={{ ...inputStyle, padding: '6px 8px', marginTop: 0 }} />
+                                                                     </td>
+                                                                     <td style={{ padding: '4px 8px' }}>
+                                                                         <input type="number" value={item.quantity} onChange={(e) => handleUpdateOcrItem(idx, 'quantity', Number(e.target.value))} style={{ ...inputStyle, padding: '6px 8px', marginTop: 0, textAlign: 'center' }} />
+                                                                     </td>
+                                                                     <td style={{ padding: '4px 8px' }}>
+                                                                         <input type="number" value={item.unitPrice} onChange={(e) => handleUpdateOcrItem(idx, 'unitPrice', Number(e.target.value))} style={{ ...inputStyle, padding: '6px 8px', marginTop: 0, textAlign: 'right' }} />
+                                                                     </td>
+                                                                     <td style={{ padding: '4px 8px' }}>
+                                                                         <select value={item.ivaRateId || ''} onChange={(e) => handleUpdateOcrItem(idx, 'ivaRateId', Number(e.target.value))} style={{ ...inputStyle, padding: '6px 8px', marginTop: 0 }}>
+                                                                             <option value="">0%</option>
+                                                                             {ivaRates.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                                                         </select>
+                                                                     </td>
+                                                                     <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 700 }}>
+                                                                         {item.totalPrice.toLocaleString('pt-PT', { minimumFractionDigits: 2 })}
+                                                                     </td>
+                                                                     <td style={{ padding: '4px 8px', textAlign: 'center' }}>
+                                                                         <button type="button" onClick={() => handleRemoveOcrItem(idx)} style={{ color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer' }}>
+                                                                             <Trash2 size={14} />
+                                                                         </button>
+                                                                     </td>
+                                                                 </tr>
+                                                             ))}
+                                                         </tbody>
+                                                         <tfoot>
+                                                             <tr style={{ backgroundColor: '#F9FAFB', fontWeight: 800 }}>
+                                                                 <td colSpan={4} style={{ padding: '12px 16px', textAlign: 'right' }}>TOTAL DO PEDIDO ({paymentDraft.currency}):</td>
+                                                                 <td style={{ padding: '12px 16px', textAlign: 'right', color: 'var(--color-primary)', fontSize: '0.85rem' }}>
+                                                                     {paymentDraft.totalAmount.toLocaleString('pt-PT', { minimumFractionDigits: 2 })}
+                                                                 </td>
+                                                                 <td></td>
+                                                             </tr>
+                                                         </tfoot>
+                                                     </table>
+                                                 </div>
+                                             </motion.div>
+                                         )}
+                                     </div>
+                                 </motion.div>
+                             )}
+                         </AnimatePresence>
 
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '24px' }}>
                             <label style={labelStyle}>
@@ -644,17 +791,13 @@ export function RequestCreate() {
                             <AnimatePresence>
                                 {Number(formData.requestTypeId) === 1 && (
                                     <motion.div
-                                        initial={{ opacity: 0, height: 0 }}
-                                        animate={{ opacity: 1, height: 'auto' }}
-                                        exit={{ opacity: 0, height: 0 }}
+                                        initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
                                         style={{ overflow: 'hidden' }}
                                     >
                                         <label style={labelStyle}>
                                             Necessário até (Data limite) <span style={{ color: 'red' }}>*</span>
                                             <DateInput
-                                                required
-                                                name="needByDateUtc"
-                                                value={formData.needByDateUtc}
+                                                required name="needByDateUtc" value={formData.needByDateUtc}
                                                 onChange={(val) => {
                                                     setFormData(prev => ({ ...prev, needByDateUtc: val }));
                                                     clearFieldError('NeedByDateUtc');
@@ -682,16 +825,11 @@ export function RequestCreate() {
                              <label style={labelStyle}>
                                 Empresa <span style={{ color: 'red' }}>*</span>
                                 <select 
-                                    name="companyId" 
-                                    value={formData.companyId} 
-                                    onChange={handleChange} 
-                                    style={getInputStyle('CompanyId')}
+                                    name="companyId" value={formData.companyId} onChange={handleChange} style={getInputStyle('CompanyId')}
                                     disabled={filteredCompanies.length <= 1}
                                 >
                                     <option value="">-- Selecione --</option>
-                                    {filteredCompanies.map(c => (
-                                        <option key={c.id} value={c.id}>{c.name}</option>
-                                    ))}
+                                    {filteredCompanies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                 </select>
                                 {renderFieldError('CompanyId')}
                             </label>
@@ -699,18 +837,13 @@ export function RequestCreate() {
                             <label style={labelStyle}>
                                 Planta <span style={{ color: 'red' }}>*</span>
                                 <select 
-                                    name="plantId" 
-                                    value={formData.plantId} 
-                                    onChange={handleChange} 
-                                    style={getInputStyle('PlantId')}
+                                    name="plantId" value={formData.plantId} onChange={handleChange} style={getInputStyle('PlantId')}
                                     disabled={filteredPlants.length <= 1 || (!!formData.companyId && filteredPlants.filter(p => Number(formData.companyId) === p.companyId).length <= 1)}
                                 >
                                     <option value="">-- Selecione --</option>
                                     {filteredPlants
                                         .filter(p => p.isActive && (!formData.companyId || p.companyId === Number(formData.companyId)))
-                                        .map(p => (
-                                            <option key={p.id} value={p.id}>{p.name}</option>
-                                        ))
+                                        .map(p => <option key={p.id} value={p.id}>{p.name}</option>)
                                     }
                                 </select>
                                 {renderFieldError('PlantId')}
@@ -718,8 +851,6 @@ export function RequestCreate() {
                         </div>
                     </div>
                 </section>
-
-
             </form>
         </motion.div >
     );

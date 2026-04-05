@@ -39,11 +39,9 @@ public class RequestLineItem
     public Supplier? Supplier { get; set; }
     public string? SupplierName { get; set; }
 
-    [Required]
     public int? CostCenterId { get; set; }
     public CostCenter? CostCenter { get; set; }
 
-    [Required]
     public int? IvaRateId { get; set; }
     public IvaRate? IvaRate { get; set; }
 
