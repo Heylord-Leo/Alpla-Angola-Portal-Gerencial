@@ -1002,7 +1002,13 @@ public class RequestsController : BaseController
                 totalAmount += item.TotalAmount;
             }
             request.LineItems = lineItems;
-            request.EstimatedTotalAmount = totalAmount;
+            
+            // For Payment requests (DRAFT with OCR), the frontend sends an
+            // IVA+discount-inclusive total. Preserve it instead of overwriting.
+            if (requestTypeEntity.Code != "PAYMENT")
+            {
+                request.EstimatedTotalAmount = totalAmount;
+            }
         }
 
         _context.Requests.Add(request);

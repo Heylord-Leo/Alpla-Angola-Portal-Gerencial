@@ -2,8 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.31.0] - 2026-04-05
+## [2.32.0] - 2026-04-05
 
+### Fixed
+
+- **Payment OCR Flow UX & Mapping Refinement**: Resolved data mapping and UX bugs between the OCR upload and the persisted draft.
+  - **Loading UX**: Implemented a responsive loading overlay during OCR processing and disabled premature form submission.
+  - **Supplier Persistence**: Fixed a missing payload mapping, ensuring the OCR-resolved Supplier ID is correctly passed to the backend and preserved in the draft.
+  - **Total Consistency**: Preserved the OCR-derived, IVA/discount-inclusive final total during Payment draft creation by passing it from the frontend and explicitly preventing backend sum-based reassignment for the `PAYMENT` request type.
+  - **Currency Passthrough**: Correctly mapped the OCR-extracted currency alias to the draft payload.
+
+### Known Limitations (Explicitly Acknowledged)
+
+- **Interim Discount Handling**: Surcharges and penalties are currently folded into the total by the OCR service and are not structurally extracted. Explicit discount values are temporarily appended to the Request `Description` as a traceability workaround. A dedicated `DiscountAmount` (and scalable financial adjustment architecture) is required for a final business-model solution.
+- **Company Prefill**: The system currently employs a deterministic scope-based fallback (auto-selecting the only available company for restricted users). It does **not** employ true OCR-based company matching, as the `Company` entity lacks a `TaxId` necessary for correlation.
+
+## [2.31.0] - 2026-04-05
 ### Fixed
 
 - **Payment OCR Draft Persistence (DEC-097)**: Resolved a 500 error when creating Payment requests from OCR-extracted items.

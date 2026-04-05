@@ -318,11 +318,18 @@ export function RequestCreate() {
 
         const payload = {
             title: formData.title,
-            description: formData.description,
+            description: Number(formData.requestTypeId) === 2 && paymentDraft && paymentDraft.discountAmount > 0
+                ? `${formData.description}\n\n[Desconto OCR: ${paymentDraft.discountAmount.toLocaleString('pt-PT', { minimumFractionDigits: 2 })} ${paymentDraft.currency}]`
+                : formData.description,
             requestTypeId: Number(formData.requestTypeId),
             needLevelId: formData.needLevelId ? Number(formData.needLevelId) : null,
-            estimatedTotalAmount: 0,
-            currencyId: formData.currencyId ? Number(formData.currencyId) : null,
+            estimatedTotalAmount: Number(formData.requestTypeId) === 2 && paymentDraft
+                ? paymentDraft.totalAmount : 0,
+            currencyId: Number(formData.requestTypeId) === 2 && paymentDraft?.currency
+                ? (currencies.find(c => c.code === paymentDraft.currency)?.id || Number(formData.currencyId) || null)
+                : (formData.currencyId ? Number(formData.currencyId) : null),
+            supplierId: Number(formData.requestTypeId) === 2 && paymentDraft?.supplierId
+                ? paymentDraft.supplierId : null,
             departmentId: formData.departmentId ? Number(formData.departmentId) : null,
             companyId: formData.companyId ? Number(formData.companyId) : null,
             plantId: formData.plantId ? Number(formData.plantId) : null,
@@ -479,7 +486,7 @@ export function RequestCreate() {
         primaryActions: (
             <button
                 onClick={handleSubmit}
-                disabled={loading || isTemplateLoading}
+                disabled={loading || isTemplateLoading || isOcrLoading}
                 className="btn-primary"
                 style={{ height: '36px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', borderRadius: 'var(--radius-sm)' }}
             >
@@ -636,8 +643,24 @@ export function RequestCreate() {
                                  >
                                      <div style={{ 
                                          marginBottom: '32px', padding: '24px', backgroundColor: 'var(--color-bg-page)', 
-                                         border: '2px dashed var(--color-primary)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-brutal-sm)'
+                                         border: '2px dashed var(--color-primary)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-brutal-sm)',
+                                         position: 'relative'
                                      }}>
+                                         {isOcrLoading && (
+                                             <motion.div
+                                                 initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                                                 style={{
+                                                     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                                                     backgroundColor: 'rgba(255, 255, 255, 0.8)', zIndex: 10,
+                                                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                                     borderRadius: 'var(--radius-sm)', backdropFilter: 'blur(2px)'
+                                                 }}
+                                             >
+                                                 <RefreshCw size={40} className="animate-spin" style={{ color: 'var(--color-primary)', marginBottom: '16px' }} />
+                                                 <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--color-primary)' }}>PROCESSANDO OCR...</div>
+                                                 <div style={{ fontSize: '0.8rem', color: 'var(--color-text-main)', marginTop: '8px' }}>Analisando documento, aguarde...</div>
+                                             </motion.div>
+                                         )}
                                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
                                              <div style={{ 
                                                  width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'var(--color-primary)', 
