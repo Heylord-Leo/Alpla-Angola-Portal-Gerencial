@@ -83,8 +83,17 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
 
     const mapOcrResultToDraft = async (result: any, attachmentId?: string): Promise<OcrDraft> => {
         const suggestions = result.integration?.headerSuggestions;
-        const extractedSupplierName = suggestions?.supplierName?.value || suggestions?.supplierName || '';
-        const extractedSupplierTaxId = suggestions?.supplierTaxId?.value || suggestions?.supplierTaxId || '';
+        
+        // Safe primitive extractor: ensures we never return the raw OcrValueDto wrapper
+        // If the wrapper doesn't exist, or its .value is undefined/null, we fall back to the safe default
+        const getSafeValue = <T>(field: any, fallback: T): T => {
+            if (field === undefined || field === null) return fallback;
+            if (field.value !== undefined && field.value !== null) return field.value as T;
+            return fallback;
+        };
+
+        const extractedSupplierName = getSafeValue<string>(suggestions?.supplierName, '');
+        const extractedSupplierTaxId = getSafeValue<string>(suggestions?.supplierTaxId, '');
         
         // Part A: Supplier Matching
         let matchedSupplierId: number | null = null;
@@ -98,18 +107,21 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
             }
         }
 
-        const isTaxIdPlausible = extractedSupplierTaxId && extractedSupplierTaxId.length >= 5;
+        const isTaxIdPlausible = extractedSupplierTaxId && typeof extractedSupplierTaxId === 'string' && extractedSupplierTaxId.length >= 5;
+
+        // Extract currency from backend property 'currencyCode'
+        const extractedCurrency = getSafeValue<string>(suggestions?.currencyCode, '');
 
         const draft: OcrDraft = {
             supplierId: matchedSupplierId,
             supplierNameSnapshot: extractedSupplierName,
             supplierTaxId: isTaxIdPlausible ? extractedSupplierTaxId : '',
-            documentNumber: suggestions?.documentNumber?.value || suggestions?.documentNumber || '',
-            documentDate: suggestions?.documentDate?.value || suggestions?.documentDate || '',
-            currency: resolveCurrencyAlias(suggestions?.currency?.value || suggestions?.currency),
-            extractedCurrency: suggestions?.currency?.value || suggestions?.currency,
-            discountAmount: suggestions?.discountAmount?.value || suggestions?.discountAmount || 0,
-            totalAmount: suggestions?.grandTotal?.value || suggestions?.totalAmount || 0,
+            documentNumber: getSafeValue<string>(suggestions?.documentNumber, ''),
+            documentDate: getSafeValue<string>(suggestions?.date, ''), // backend uses 'date'
+            currency: resolveCurrencyAlias(extractedCurrency),
+            extractedCurrency: extractedCurrency,
+            discountAmount: getSafeValue<number>(suggestions?.discountAmount, 0),
+            totalAmount: getSafeValue<number>(suggestions?.totalAmount, 0),
             proformaAttachmentId: attachmentId,
             items: (result.integration?.lineItemSuggestions || []).map((item: any, index: number) => {
                 const extractedUnit = item.unit || '';
@@ -134,7 +146,8 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
 
                 return {
                     ...baseItem,
-                    totalPrice: item.totalPrice || calculateItemTotal(baseItem)
+                    // backend uses 'totalAmount' for line item price
+                    totalPrice: item.totalAmount ?? calculateItemTotal(baseItem)
                 };
             })
         };

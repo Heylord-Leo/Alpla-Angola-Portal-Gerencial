@@ -40,6 +40,7 @@ export function RequestCreate() {
     const [isOcrLoading, setIsOcrLoading] = useState(false);
     const [paymentDraft, setPaymentDraft] = useState<OcrDraft | null>(null);
     const [ocrFile, setOcrFile] = useState<File | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const { mapOcrResultToDraft, calculateItemTotal, calculateDraftTotal } = useOcrProcessor(ivaRates, units, currencies);
 
@@ -198,8 +199,8 @@ export function RequestCreate() {
     };
 
     const handleOcrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!e.target.files?.[0]) return;
-        const file = e.target.files[0];
+        const file = e.target.files?.[0];
+        if (!file) return;
         setOcrFile(file);
         setIsOcrLoading(true);
         setFeedback({ type: 'error', message: null });
@@ -213,7 +214,9 @@ export function RequestCreate() {
             setFeedback({ type: 'error', message: err.message || 'Falha na extração OCR do documento.' });
         } finally {
             setIsOcrLoading(false);
-            e.target.value = '';
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
         }
     };
 
@@ -638,29 +641,58 @@ export function RequestCreate() {
                          <AnimatePresence>
                              {Number(formData.requestTypeId) === 2 && (
                                  <motion.div
-                                     initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                                     style={{ overflow: 'hidden' }}
+                                     initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                                     style={{ position: 'relative' }}
                                  >
                                      <div style={{ 
                                          marginBottom: '32px', padding: '24px', backgroundColor: 'var(--color-bg-page)', 
                                          border: '2px dashed var(--color-primary)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-brutal-sm)',
                                          position: 'relative'
                                      }}>
+                                         <AnimatePresence>
                                          {isOcrLoading && (
                                              <motion.div
-                                                 initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                                                 key="ocr-loading-overlay"
+                                                 initial={{ opacity: 0 }} 
+                                                 animate={{ opacity: 1 }}
+                                                 exit={{ opacity: 0 }}
+                                                 transition={{ duration: 0.2 }}
                                                  style={{
                                                      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                                                     backgroundColor: 'rgba(255, 255, 255, 0.8)', zIndex: 10,
+                                                     backgroundColor: 'rgba(255, 255, 255, 0.95)', zIndex: 20,
                                                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                                                      borderRadius: 'var(--radius-sm)', backdropFilter: 'blur(2px)'
                                                  }}
                                              >
-                                                 <RefreshCw size={40} className="animate-spin" style={{ color: 'var(--color-primary)', marginBottom: '16px' }} />
-                                                 <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--color-primary)' }}>PROCESSANDO OCR...</div>
-                                                 <div style={{ fontSize: '0.8rem', color: 'var(--color-text-main)', marginTop: '8px' }}>Analisando documento, aguarde...</div>
+                                                 <motion.div
+                                                     animate={{ rotate: [0, 360] }}
+                                                     transition={{ repeat: Infinity, ease: "linear", duration: 1.5 }}
+                                                     style={{ marginBottom: '16px', display: 'flex' }}
+                                                 >
+                                                     <RefreshCw size={40} style={{ color: 'var(--color-primary)' }} />
+                                                 </motion.div>
+                                                 
+                                                 <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--color-primary)', letterSpacing: '0.05em' }}>
+                                                     PROCESSANDO OCR...
+                                                 </div>
+                                                 
+                                                 <div style={{ width: '140px', height: '4px', backgroundColor: 'var(--color-border)', borderRadius: '2px', overflow: 'hidden', margin: '16px 0' }}>
+                                                     <motion.div
+                                                         animate={{ x: ['-100%', '200%'] }}
+                                                         transition={{ repeat: Infinity, ease: 'easeInOut', duration: 1.5 }}
+                                                         style={{ width: '50%', height: '100%', backgroundColor: 'var(--color-primary)' }}
+                                                     />
+                                                 </div>
+
+                                                 <div style={{ fontSize: '0.8rem', color: 'var(--color-text-main)', display: 'flex', gap: '2px' }}>
+                                                     <span>Analisando documento, aguarde</span>
+                                                     <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1.5, times: [0, 0.5, 1] }}>.</motion.span>
+                                                     <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1.5, times: [0, 0.75, 1], delay: 0.2 }}>.</motion.span>
+                                                     <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1.5, times: [0, 1, 0], delay: 0.4 }}>.</motion.span>
+                                                 </div>
                                              </motion.div>
                                          )}
+                                         </AnimatePresence>
                                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
                                              <div style={{ 
                                                  width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'var(--color-primary)', 
@@ -680,11 +712,13 @@ export function RequestCreate() {
                                                  padding: '32px', border: '2px dashed var(--color-border)', borderRadius: 'var(--radius-sm)',
                                                  cursor: isOcrLoading ? 'wait' : 'pointer', backgroundColor: 'white', transition: 'all 0.2s ease'
                                              }}>
-                                                 <input type="file" onChange={handleOcrUpload} disabled={isOcrLoading} style={{ display: 'none' }} />
+                                                 <input type="file" ref={fileInputRef} onChange={handleOcrUpload} disabled={isOcrLoading} style={{ display: 'none' }} />
                                                  {isOcrLoading ? (
                                                      <>
-                                                         <RefreshCw size={32} className="animate-spin" style={{ color: 'var(--color-primary)' }} />
-                                                         <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>PROCESSANDO DOCUMENTO...</span>
+                                                         <div style={{ opacity: 0.3 }}>
+                                                             <UploadCloud size={32} style={{ color: 'var(--color-border-heavy)' }} />
+                                                         </div>
+                                                         <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-muted)' }}>PROCESSANDO...</span>
                                                      </>
                                                  ) : (
                                                      <>
@@ -695,7 +729,16 @@ export function RequestCreate() {
                                                  )}
                                              </label>
                                          ) : (
-                                             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                                             <div 
+                                                 id="ocr-success-container"
+                                                 data-testid="ocr-success-container"
+                                                 style={{ 
+                                                     padding: '16px', 
+                                                     borderRadius: '12px', 
+                                                     backgroundColor: 'white',
+                                                     display: 'block'
+                                                 }}
+                                             >
                                                  <div style={{ 
                                                      display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
                                                      padding: '12px 16px', backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', 
@@ -718,22 +761,22 @@ export function RequestCreate() {
                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
                                                      <label style={{ ...labelStyle, marginBottom: 0 }}>
                                                          Nº Documento
-                                                         <input type="text" value={paymentDraft.documentNumber} onChange={(e) => handleUpdateOcrDraft('documentNumber', e.target.value)} style={inputStyle} />
+                                                         <input type="text" value={String(paymentDraft.documentNumber || '')} onChange={(e) => handleUpdateOcrDraft('documentNumber', e.target.value)} style={inputStyle} />
                                                      </label>
                                                      <label style={{ ...labelStyle, marginBottom: 0 }}>
                                                          Data
-                                                         <input type="text" value={paymentDraft.documentDate} onChange={(e) => handleUpdateOcrDraft('documentDate', e.target.value)} style={inputStyle} placeholder="AAAA-MM-DD" />
+                                                         <input type="text" value={String(paymentDraft.documentDate || '')} onChange={(e) => handleUpdateOcrDraft('documentDate', e.target.value)} style={inputStyle} placeholder="AAAA-MM-DD" />
                                                      </label>
                                                      <label style={{ ...labelStyle, marginBottom: 0 }}>
                                                          Moeda
-                                                         <select value={paymentDraft.currency} onChange={(e) => handleUpdateOcrDraft('currency', e.target.value)} style={inputStyle}>
+                                                         <select value={String(paymentDraft.currency || '')} onChange={(e) => handleUpdateOcrDraft('currency', e.target.value)} style={inputStyle}>
                                                              <option value="">--</option>
                                                              {currencies.map(c => <option key={c.id} value={c.code}>{c.code}</option>)}
                                                          </select>
                                                      </label>
                                                      <label style={{ ...labelStyle, marginBottom: 0 }}>
                                                          Total s/ IVA
-                                                         <input type="number" value={paymentDraft.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)} disabled style={{ ...inputStyle, backgroundColor: '#F9FAFB' }} />
+                                                         <input type="number" value={(paymentDraft.items || []).reduce((sum, item) => sum + ((item?.quantity || 0) * (item?.unitPrice || 0)), 0)} disabled style={{ ...inputStyle, backgroundColor: '#F9FAFB' }} />
                                                      </label>
                                                  </div>
 
@@ -750,49 +793,58 @@ export function RequestCreate() {
                                                              </tr>
                                                          </thead>
                                                          <tbody>
-                                                             {paymentDraft.items.map((item, idx) => ({
-                                                                 ...item,
-                                                                 lineNumber: idx + 1
-                                                             })).map((item, idx) => (
-                                                                 <tr key={idx} style={{ borderBottom: '1px solid var(--color-border-light)' }}>
-                                                                     <td style={{ padding: '4px 8px' }}>
-                                                                         <input type="text" value={item.description} onChange={(e) => handleUpdateOcrItem(idx, 'description', e.target.value)} style={{ ...inputStyle, padding: '6px 8px', marginTop: 0 }} />
-                                                                     </td>
-                                                                     <td style={{ padding: '4px 8px' }}>
-                                                                         <input type="number" value={item.quantity} onChange={(e) => handleUpdateOcrItem(idx, 'quantity', Number(e.target.value))} style={{ ...inputStyle, padding: '6px 8px', marginTop: 0, textAlign: 'center' }} />
-                                                                     </td>
-                                                                     <td style={{ padding: '4px 8px' }}>
-                                                                         <input type="number" value={item.unitPrice} onChange={(e) => handleUpdateOcrItem(idx, 'unitPrice', Number(e.target.value))} style={{ ...inputStyle, padding: '6px 8px', marginTop: 0, textAlign: 'right' }} />
-                                                                     </td>
-                                                                     <td style={{ padding: '4px 8px' }}>
-                                                                         <select value={item.ivaRateId || ''} onChange={(e) => handleUpdateOcrItem(idx, 'ivaRateId', Number(e.target.value))} style={{ ...inputStyle, padding: '6px 8px', marginTop: 0 }}>
-                                                                             <option value="">0%</option>
-                                                                             {ivaRates.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                                                                         </select>
-                                                                     </td>
-                                                                     <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 700 }}>
-                                                                         {item.totalPrice.toLocaleString('pt-PT', { minimumFractionDigits: 2 })}
-                                                                     </td>
-                                                                     <td style={{ padding: '4px 8px', textAlign: 'center' }}>
-                                                                         <button type="button" onClick={() => handleRemoveOcrItem(idx)} style={{ color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer' }}>
-                                                                             <Trash2 size={14} />
-                                                                         </button>
+                                                             {!(paymentDraft.items && paymentDraft.items.length > 0) ? (
+                                                                 <tr style={{ borderBottom: '1px solid var(--color-border-light)' }}>
+                                                                     <td colSpan={6} style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                                                                         <span style={{ fontWeight: 800, display: 'block', marginBottom: '4px' }}>Nenhum item válido identificado no documento</span>
+                                                                         <span style={{ fontSize: '0.8rem' }}>Adicione as linhas manualmente abaixo</span>
                                                                      </td>
                                                                  </tr>
-                                                             ))}
+                                                             ) : (
+                                                                 (paymentDraft.items || []).map((item, idx) => ({
+                                                                     ...item,
+                                                                     lineNumber: idx + 1
+                                                                 })).map((item, idx) => (
+                                                                     <tr key={idx} style={{ borderBottom: '1px solid var(--color-border-light)' }}>
+                                                                         <td style={{ padding: '4px 8px' }}>
+                                                                             <input type="text" value={String(item.description || '')} onChange={(e) => handleUpdateOcrItem(idx, 'description', e.target.value)} style={{ ...inputStyle, padding: '6px 8px', marginTop: 0 }} />
+                                                                         </td>
+                                                                         <td style={{ padding: '4px 8px' }}>
+                                                                             <input type="number" value={item.quantity || 0} onChange={(e) => handleUpdateOcrItem(idx, 'quantity', Number(e.target.value))} style={{ ...inputStyle, padding: '6px 8px', marginTop: 0, textAlign: 'center' }} />
+                                                                         </td>
+                                                                         <td style={{ padding: '4px 8px' }}>
+                                                                             <input type="number" value={item.unitPrice || 0} onChange={(e) => handleUpdateOcrItem(idx, 'unitPrice', Number(e.target.value))} style={{ ...inputStyle, padding: '6px 8px', marginTop: 0, textAlign: 'right' }} />
+                                                                         </td>
+                                                                         <td style={{ padding: '4px 8px' }}>
+                                                                             <select value={item.ivaRateId || ''} onChange={(e) => handleUpdateOcrItem(idx, 'ivaRateId', Number(e.target.value))} style={{ ...inputStyle, padding: '6px 8px', marginTop: 0 }}>
+                                                                                 <option value="">0%</option>
+                                                                                 {ivaRates.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                                                             </select>
+                                                                         </td>
+                                                                         <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 700 }}>
+                                                                             {(Number(item.totalPrice) || 0).toLocaleString('pt-PT', { minimumFractionDigits: 2 })}
+                                                                         </td>
+                                                                         <td style={{ padding: '4px 8px', textAlign: 'center' }}>
+                                                                             <button type="button" onClick={() => handleRemoveOcrItem(idx)} style={{ color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer' }}>
+                                                                                 <Trash2 size={14} />
+                                                                             </button>
+                                                                         </td>
+                                                                     </tr>
+                                                                 ))
+                                                             )}
                                                          </tbody>
                                                          <tfoot>
                                                              <tr style={{ backgroundColor: '#F9FAFB', fontWeight: 800 }}>
-                                                                 <td colSpan={4} style={{ padding: '12px 16px', textAlign: 'right' }}>TOTAL DO PEDIDO ({paymentDraft.currency}):</td>
+                                                                 <td colSpan={4} style={{ padding: '12px 16px', textAlign: 'right' }}>TOTAL DO PEDIDO ({String(paymentDraft.currency || '')}):</td>
                                                                  <td style={{ padding: '12px 16px', textAlign: 'right', color: 'var(--color-primary)', fontSize: '0.85rem' }}>
-                                                                     {paymentDraft.totalAmount.toLocaleString('pt-PT', { minimumFractionDigits: 2 })}
+                                                                     {(Number(paymentDraft.totalAmount) || 0).toLocaleString('pt-PT', { minimumFractionDigits: 2 })}
                                                                  </td>
                                                                  <td></td>
                                                              </tr>
                                                          </tfoot>
                                                      </table>
                                                  </div>
-                                             </motion.div>
+                                             </div>
                                          )}
                                      </div>
                                  </motion.div>

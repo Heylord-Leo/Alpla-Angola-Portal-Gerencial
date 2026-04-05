@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.33.0] - 2026-04-05
+
+### Fixed
+
+- **Payment OCR Rendering Regression**: Resolved the "grey block" failure where the OCR success section was visually hidden after extraction.
+  - Removed `overflow: hidden` and height-restricted animations from the parent container that were clipping the expanded result table.
+  - Stabilized the success branch by transitioning from `motion.div` to a standard `div` with an explicit ID.
+  - Hardened state transitions to ensure the UI paints immediately upon receiving the mapped draft.
+
 ## [2.32.0] - 2026-04-05
 
 ### Fixed
