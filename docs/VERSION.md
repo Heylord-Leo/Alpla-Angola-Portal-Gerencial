@@ -2,7 +2,7 @@
 
 ## Current Version
 
-v2.33.0
+v2.33.1
 
 ## [2.29.0] - 2026-04-04
 
@@ -38,6 +38,7 @@ v2.33.0
 
 ## Version History
 
+- **2.33.1**: Payment OCR Navigation White Screen Fix. Resolved a critical WAAPI crash caused by invalid animation offsets in RequestCreate. Added ErrorBoundary and visible loading spinner to RequestEdit for improved reliability and feedback.
 - **2.33.0**: Payment OCR Rendering Regression. Resolved the "grey block" failure by removing overflow:hidden clipping and stabilizing the success branch container.
 - **2.32.0**: Payment OCR Flow UX & Mapping Refinement. Resolved data mapping and UX bugs between the OCR upload and the persisted draft. Preserved OCR-derived final total and fixed supplier persistence. (Known Limitations: Discount handling is interim via description notes, and company prefill relies on deterministic scope fallback, not OCR tax ID matching).
 - **2.31.0**: Payment OCR Persistence Fix (DEC-097). Relaxed DB constraints for Cost Center and IVA on draft line items, deferring strict validation to the submission stage.

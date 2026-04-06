@@ -404,6 +404,11 @@ tr:hover td {
     color: #fff;
 }
 
+/* Loading Spinner */
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
 /* Section Highlighting */
 .pulse-highlight {
     animation: section-pulse 2s ease-in-out;

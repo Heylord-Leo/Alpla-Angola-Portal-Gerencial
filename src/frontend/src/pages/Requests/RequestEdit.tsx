@@ -39,6 +39,7 @@ export function RequestEdit() {
     const { id } = useParams<{ id: string }>();
     const location = useLocation();
     const [searchParams] = useSearchParams();
+
     const { user } = useAuth();
     
     // Derived Configuration
@@ -210,28 +211,62 @@ export function RequestEdit() {
         return () => window.removeEventListener('beforeunload', handleBeforeUnload);
     }, [formData, initialFormData, lineItems, isCopyMode, saving, submitting]);
 
-    // Initialization: handle feedback and focus highlighting
-    useEffect(() => {
-        const focus = searchParams.get('focus');
+    // --- Page Initialization & State Cleanup ---
+    // Ref-guarded state consumption prevents race conditions and infinite navigate loops
+    const hasConsentedState = useRef(false);
 
+    useEffect(() => {
+        // Only process persistent state from location ONCE per mount
+        if (hasConsentedState.current) {
+            return;
+        }
+        
+        hasConsentedState.current = true;
+
+        const focus = searchParams.get('focus');
+        let shouldReplaceState = false;
+        let newState = { ...(location.state || {}) } as any;
+        let newSearchParams = new URLSearchParams(searchParams);
+
+        // 1. Process Success Message (Post-Create/Post-Edit)
         if (location.state?.successMessage) {
             setFeedback({ type: 'success', message: location.state.successMessage });
-            window.history.replaceState({}, document.title);
+            delete newState.successMessage;
+            shouldReplaceState = true;
         }
 
+        // 2. Process Highlight Focus (Post-Create redirect or explicit focus param)
         if (location.state?.successMessage || focus === 'items') {
-            setTimeout(() => {
-                itemsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                setIsItemsHighlighted(true);
-                setTimeout(() => setIsItemsHighlighted(false), 5000);
+            if (focus === 'items') {
+                newSearchParams.delete('focus');
+                shouldReplaceState = true;
+            }
 
-                if (focus === 'items') {
-                    const newUrl = window.location.pathname;
-                    window.history.replaceState({}, document.title, newUrl);
+            const timer = setTimeout(() => {
+                if (itemsSectionRef.current) {
+                    itemsSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    setIsItemsHighlighted(true);
+                    setTimeout(() => setIsItemsHighlighted(false), 5000);
                 }
-            }, 300);
+            }, 500);
+            return () => clearTimeout(timer);
         }
-    }, [location.state, location.search, searchParams]);
+
+        // 3. Clear transient state from History to avoid replay on refresh
+        if (shouldReplaceState) {
+            // Delay navigation slightly to ensure hydration stability
+            setTimeout(() => {
+                navigate({
+                    pathname: location.pathname,
+                    search: newSearchParams.toString()
+                }, { 
+                    replace: true, 
+                    state: newState 
+                });
+            }, 0);
+        }
+    }, [location.pathname, location.search, location.state, navigate, searchParams]);
+
 
     // Guided Attention for specific statuses
     useEffect(() => {
@@ -432,6 +467,7 @@ export function RequestEdit() {
         try {
             setLoading(true);
             let data: any;
+
             
             if (isCopyMode) {
                 data = await api.requests.getTemplate(copyFromId!);
@@ -458,6 +494,7 @@ export function RequestEdit() {
                 setQuotations(data.quotations || []);
                 setSelectedQuotationId(data.selectedQuotationId || null);
             }
+
 
             const form = {
                 title: data.title || '',
@@ -492,6 +529,7 @@ export function RequestEdit() {
                 api.lookups.getCostCenters(true),
                 api.lookups.getIvaRates(true)
             ]);
+            
             setUnits(uData);
             setCurrencies(cData);
             setNeedLevels(nData);
@@ -500,6 +538,7 @@ export function RequestEdit() {
             setPlants(plantData);
             setCostCenters(ccData);
             setIvaRates(ivaData);
+
 
             if (form.departmentId && !form.areaApproverId) {
                 const dept = dData.find(d => d.id === Number(form.departmentId));
@@ -515,11 +554,13 @@ export function RequestEdit() {
         } finally {
             setLoading(false);
         }
+
     }, [id, isCopyMode, copyFromId]);
 
     useEffect(() => {
         loadData();
     }, [loadData]);
+
 
     const today = new Date().toISOString().split('T')[0];
 
@@ -995,11 +1036,31 @@ export function RequestEdit() {
         ...(getFieldErrors(fieldName) ? { borderColor: '#EF4444', backgroundColor: '#FEF2F2', boxShadow: '0 0 0 4px rgba(239, 68, 68, 0.1)' } : {})
     });
 
+
     if (loading) {
         return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '1400px', margin: '0 auto' }}>
                 <Feedback type={feedback.type} message={feedback.message} onClose={() => setFeedback(prev => ({ ...prev, message: null }))} />
-                <div>Carregando detalhes...</div>
+                <div style={{ padding: '20px', textAlign: 'center', backgroundColor: '#fff', borderRadius: '8px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-sm)' }}>
+                    <div style={{ width: '40px', height: '40px', border: '3px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px auto' }}></div>
+                    <div style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>Carregando detalhes do pedido...</div>
+                </div>
+            </div>
+        );
+    }
+
+    // Defensive Guard: If data failed to load and we're not in copy mode, avoid white-screen crash
+    // We check initialFormData as it's only populated after a successful loadData cycle.
+    if (!loading && !initialFormData && !isCopyMode) {
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '1400px', margin: '100px auto', textAlign: 'center' }}>
+                <Feedback type={feedback.type} message={feedback.message || 'Erro ao carregar o pedido.'} onClose={() => setFeedback(prev => ({ ...prev, message: null }))} />
+                <div style={{ fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '1.25rem' }}>O pedido solicitado não pôde ser encontrado ou carregado.</div>
+                <div style={{ color: 'var(--color-text-muted)' }}>Isso pode ocorrer se o pedido foi excluído ou se há um problema de conexão.</div>
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '24px' }}>
+                    <button onClick={() => window.location.reload()} className="btn-primary" style={{ padding: '10px 24px' }}>Tentar Novamente</button>
+                    <button onClick={() => navigate('/requests')} className="btn-secondary" style={{ padding: '10px 24px' }}>Voltar para a Lista</button>
+                </div>
             </div>
         );
     }

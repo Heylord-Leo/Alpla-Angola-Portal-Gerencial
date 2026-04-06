@@ -189,6 +189,7 @@ export interface OcrDraft {
     supplierTaxId?: string;
     documentNumber: string;
     documentDate: string;
+    dueDate?: string;
     currency: string;
     extractedCurrency?: string; // Raw extracted currency for suggestion hint
     discountAmount: number; // Front-end user input

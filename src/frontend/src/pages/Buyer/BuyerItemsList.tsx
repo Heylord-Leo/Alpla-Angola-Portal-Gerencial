@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams, useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, Search, Filter, FileText, CheckCircle2, X, Pencil, Trash2, ArrowLeft, AlertCircle, RefreshCcw, Hash, Calendar, UserPlus } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
@@ -40,6 +40,7 @@ type QuotationDraft = OcrDraft;
 
 export function BuyerItemsList() {
     const [searchParams, setSearchParams] = useSearchParams();
+    const navigate = useNavigate();
 
     const [items, setItems] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -134,9 +135,11 @@ export function BuyerItemsList() {
         if (locationState?.successMessage) {
             setFeedback({ type: 'success', message: locationState.successMessage });
             // Replace state so refresh doesn't trigger it again
-            window.history.replaceState({}, document.title);
+            const newState = { ...locationState };
+            delete newState.successMessage;
+            navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: newState });
         }
-    }, [locationState]);
+    }, [locationState, navigate, location.pathname, location.search]);
 
     // Helper to safely update URL parameters
     const updateParams = (updates: Record<string, string | number | null>) => {

@@ -34,6 +34,9 @@ public class OcrHeaderSuggestionsDto
     [JsonPropertyName("documentDate")]
     public OcrValueDto<string>? Date { get; set; }
 
+    [JsonPropertyName("dueDate")]
+    public OcrValueDto<string>? DueDate { get; set; }
+
     [JsonPropertyName("currency")]
     public OcrValueDto<string>? CurrencyCode { get; set; }
 

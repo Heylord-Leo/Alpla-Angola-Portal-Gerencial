@@ -2,6 +2,7 @@ import { ReactNode, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from '../components/layout/Sidebar';
 import { Topbar } from '../components/layout/Topbar';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { motion } from 'framer-motion';
 
 interface AppShellProps {
@@ -71,7 +72,7 @@ export function AppShell({ children }: AppShellProps) {
                         minWidth: 0 // Crucial for grid/flex child consistency
                     }}
                 >
-                    {children || <Outlet />}
+                    {children || <ErrorBoundary fallbackName="AppShell.Outlet"><Outlet /></ErrorBoundary>}
                 </motion.main>
             </div>
         </div>

@@ -319,29 +319,35 @@ export function RequestCreate() {
         setFeedback({ type: 'error', message: null });
         setFieldErrors({});
 
+        const safeCurrencyId = Number(formData.currencyId) || 1;
+        const safePlantId = Number(formData.plantId) || 0;
+
         const payload = {
             title: formData.title,
             description: Number(formData.requestTypeId) === 2 && paymentDraft && paymentDraft.discountAmount > 0
                 ? `${formData.description}\n\n[Desconto OCR: ${paymentDraft.discountAmount.toLocaleString('pt-PT', { minimumFractionDigits: 2 })} ${paymentDraft.currency}]`
                 : formData.description,
             requestTypeId: Number(formData.requestTypeId),
-            needLevelId: formData.needLevelId ? Number(formData.needLevelId) : null,
-            estimatedTotalAmount: Number(formData.requestTypeId) === 2 && paymentDraft
-                ? paymentDraft.totalAmount : 0,
-            currencyId: Number(formData.requestTypeId) === 2 && paymentDraft?.currency
-                ? (currencies.find(c => c.code === paymentDraft.currency)?.id || Number(formData.currencyId) || null)
-                : (formData.currencyId ? Number(formData.currencyId) : null),
-            supplierId: Number(formData.requestTypeId) === 2 && paymentDraft?.supplierId
-                ? paymentDraft.supplierId : null,
-            departmentId: formData.departmentId ? Number(formData.departmentId) : null,
-            companyId: formData.companyId ? Number(formData.companyId) : null,
-            plantId: formData.plantId ? Number(formData.plantId) : null,
+            needLevelId: Number(formData.needLevelId),
+            currencyId: paymentDraft && Number(formData.requestTypeId) === 2 
+                ? (currencies.find(c => c.code === paymentDraft.currency)?.id || safeCurrencyId)
+                : safeCurrencyId,
+            estimatedTotalAmount: paymentDraft && Number(formData.requestTypeId) === 2 
+                ? paymentDraft.totalAmount 
+                : (Number(formData.estimatedTotalAmount) || 0),
+            departmentId: Number(formData.departmentId),
+            companyId: Number(formData.companyId),
+            plantId: safePlantId,
+            capexOpexClassificationId: (formData as any).capexOpexClassificationId ? Number((formData as any).capexOpexClassificationId) : null,
+            supplierId: Number(formData.requestTypeId) === 2 && paymentDraft?.supplierId 
+                ? paymentDraft.supplierId 
+                : ((formData as any).supplierId ? Number((formData as any).supplierId) : null),
+            needByDateUtc: formData.needByDateUtc && !isNaN(new Date(formData.needByDateUtc).getTime()) 
+                ? new Date(formData.needByDateUtc).toISOString() 
+                : null,
             buyerId: formData.buyerId || null,
             areaApproverId: formData.areaApproverId || null,
             finalApproverId: formData.finalApproverId || null,
-            needByDateUtc: Number(formData.requestTypeId) === 1 && formData.needByDateUtc 
-                ? new Date(formData.needByDateUtc).toISOString() 
-                : null,
             lineItems: Number(formData.requestTypeId) === 2 && paymentDraft ? paymentDraft.items.map((item, index) => ({
                 lineNumber: index + 1,
                 description: item.description,
@@ -351,8 +357,9 @@ export function RequestCreate() {
                 unitPrice: item.unitPrice,
                 ivaRateId: item.ivaRateId,
                 totalAmount: item.totalPrice,
-                currencyId: currencies.find(c => c.code === paymentDraft.currency)?.id || formData.currencyId,
-                plantId: Number(formData.plantId),
+                dueDate: paymentDraft.dueDate ? new Date(paymentDraft.dueDate).toISOString() : null,
+                currencyId: currencies.find(c => c.code === paymentDraft.currency)?.id || safeCurrencyId,
+                plantId: safePlantId,
                 costCenterId: null,
                 itemPriority: 'MEDIUM'
             })) : []
@@ -361,11 +368,15 @@ export function RequestCreate() {
         try {
             const result = await api.requests.create(payload);
 
-            const allAttachments = [...attachments];
-            if (ocrFile) allAttachments.push(ocrFile);
+            // 1. Upload generic supporting documents
+            if (attachments.length > 0) {
+                await api.attachments.upload(result.id, attachments, 'SUPPORTING');
+            }
 
-            if (allAttachments.length > 0) {
-                await api.attachments.upload(result.id, allAttachments, 'SUPPORTING');
+            // 2. Upload OCR file correctly classified (Proforma for Payment requests)
+            if (ocrFile) {
+                const targetType = Number(formData.requestTypeId) === 2 ? 'PROFORMA' : 'SUPPORTING';
+                await api.attachments.upload(result.id, [ocrFile], targetType);
             }
 
             const isQuotation = Number(formData.requestTypeId) === 1;
@@ -388,6 +399,7 @@ export function RequestCreate() {
                         fromList: location.state?.fromList
                     }
                 });
+
             }
         } catch (err: any) {
             if (err instanceof ApiError && err.fieldErrors) {
@@ -688,7 +700,7 @@ export function RequestCreate() {
                                                      <span>Analisando documento, aguarde</span>
                                                      <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1.5, times: [0, 0.5, 1] }}>.</motion.span>
                                                      <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1.5, times: [0, 0.75, 1], delay: 0.2 }}>.</motion.span>
-                                                     <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1.5, times: [0, 1, 0], delay: 0.4 }}>.</motion.span>
+                                                     <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1.5, times: [0, 0.5, 1], delay: 0.4 }}>.</motion.span>
                                                  </div>
                                              </motion.div>
                                          )}

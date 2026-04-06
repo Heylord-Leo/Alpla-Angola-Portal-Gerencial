@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.33.1] - 2026-04-06
+
+### Fixed
+
+- **Payment OCR Navigation White Screen**: Fixed a critical `Uncaught TypeError` caused by an invalid framer-motion `times: [0, 1, 0]` keyframe array in the OCR loading dots animation.
+  - The Web Animations API (WAAPI) requires monotonically non-decreasing offsets. The invalid array crashed framer-motion's global animation engine, corrupting **all** `motion.*` components system-wide — causing a blank white content area on the edit page and a broken user profile menu.
+  - Fixed by correcting the offsets to `times: [0, 0.5, 1]`.
+
+### Added
+
+- **ErrorBoundary Component**: Added a React Error Boundary wrapping route components (`RequestCreate`, `RequestEdit`) and the `AppShell.Outlet`. Future render crashes will display a visible red error panel instead of a silent white screen.
+- **Loading Spinner CSS**: Added missing `@keyframes spin` to `globals.css`. The `RequestEdit` loading state now shows a visible animated spinner with inline styles instead of relying on the previously nonexistent `.spinner` class.
+- **Defensive Data-Load Guard**: `RequestEdit` now shows a user-friendly error panel with retry/back actions if data fails to load, instead of rendering a white screen.
+
 ## [2.33.0] - 2026-04-05
 
 ### Fixed

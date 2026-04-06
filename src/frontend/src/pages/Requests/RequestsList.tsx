@@ -80,9 +80,13 @@ export function RequestsList() {
     useEffect(() => {
         if (locationState?.successMessage) {
             setFeedback({ type: 'success', message: locationState.successMessage });
-            window.history.replaceState({}, document.title);
+            const newState = { ...locationState };
+            delete newState.successMessage;
+            
+            navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: newState });
         }
-    }, [locationState]);
+    }, [locationState, navigate, location.pathname, location.search]);
+
 
     const updateParams = (updates: Record<string, string | number | null>) => {
         setSearchParams(prev => {

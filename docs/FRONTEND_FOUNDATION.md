@@ -464,6 +464,10 @@ To ensure users never lose their place within deeply paginated or filtered datas
 1. **URL-Driven State:** Store current list coordinates (Search terms, Dropdown IDs, Pages, and Page Size sizes) structurally inside `react-router-dom`'s `useSearchParams` hook, mapping them natively out of `<input>` values upon change.
 2. **Forwarding Location:** When rendering outbound `<Link>` components or routing away from a List, inject the pure, raw query URL onto the destination React Router `state` payload: `<Link to="/target" state={{ fromList: location.search }}>`.
 3. **Retrieval and Restitution:** In the target component (Edit, Create, or sidebar Links), extract the injected location search parameters natively `<Link to={"/list" + (location.search?.fromList || "")}>` so that upon "Cancel" or "Return", the precise URL parameter state injects backwards verbatim, perfectly restoring the initial DOM render dynamically.
+4. **Hardened State Consumption (Ref-Guarded Pattern) (v2.32.0):** To prevent race conditions, infinite re-render loops, or "white screen" hydration failures when consuming `location.state` (e.g., `successMessage`, `highlightItems`):
+   - **One-Time Consumption:** Use a `useRef(false)` (e.g. `hasConsentedState`) to ensure the state-processing logic runs **exactly once** per component mount.
+   - **Delayed Cleanup:** When clearing the transient state from the browser history via `navigate(replace)`, wrap the call in a `setTimeout(..., 0)`. This defers the navigation to the next event loop tick, ensuring the initial render cycle and any entry animations (e.g., Framer Motion) are stable before the history stack is modified.
+   - **Structural Guards:** Always include a defensive "Data Not Found" block after the loading state to prevent UI crashes if background data fetching is interrupted or returns null during a rapid navigation transition.
 
 ### Expandable Table Row Pattern (v0.9.18+)
 

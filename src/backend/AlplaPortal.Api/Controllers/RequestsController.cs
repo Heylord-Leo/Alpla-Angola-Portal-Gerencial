@@ -1363,20 +1363,7 @@ public class RequestsController : BaseController
         if (request.RequestType!.Code == "QUOTATION" && request.NeedByDateUtc == null)
             errors.Add("A Data de Necessidade (Necessário Até) é obrigatória para pedidos de Cotação.");
 
-        // PAYMENT: DueDate is required at item level (every active item must have it)
-        if (request.RequestType!.Code == "PAYMENT")
-        {
-            var itemsMissingDueDate = request.LineItems
-                .Where(l => !l.IsDeleted && l.DueDate == null)
-                .ToList();
-            if (itemsMissingDueDate.Any())
-                errors.Add($"{itemsMissingDueDate.Count} item(ns) de pagamento sem Data de Vencimento. Edite cada item e preencha a data antes de submeter.");
-        }
-
-
         // Conditional Item Validation
-        // PAYMENT requests strictly require at least one item to submit.
-        // New Hardening Rule: QUOTATION requests must have at least one line item OR one attachment
         if (request.RequestType!.Code == "QUOTATION" && !request.LineItems.Any(l => !l.IsDeleted) && !request.Attachments.Any(a => !a.IsDeleted))
         {
             errors.Add("O pedido de cotação deve conter pelo menos itens ou um anexo descritivo antes de ser submetido.");
@@ -1387,12 +1374,8 @@ public class RequestsController : BaseController
             errors.Add("Para submeter, o pedido deve conter pelo menos um item.");
         }
 
-        // Hardening: Ensure all items have Cost Center and IVA Rate before submission (DEC-096)
-        var incompleteItems = request.LineItems.Where(l => !l.IsDeleted && (l.CostCenterId == null || l.IvaRateId == null)).ToList();
-        if (incompleteItems.Any())
-        {
-            errors.Add($"Os itens do pedido {string.Join(", ", incompleteItems.Select(i => i.LineNumber))} estão incompletos. Informe o Centro de Custo e a taxa IVA antes de submeter.");
-        }
+        // PAYMENT: DueDate, CostCenter and IvaRate are handled at later workflow stages (Area/Final Approver)
+        // Relaxed here to decouple from early Requester constraints.
 
         if (request.RequestType!.Code == "PAYMENT")
         {

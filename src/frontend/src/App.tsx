@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppShell } from './layouts/AppShell';
 import { RequestsList } from './pages/Requests/RequestsList';
 import { RequestCreate } from './pages/Requests/RequestCreate';
@@ -64,9 +65,9 @@ function AppContent() {
                 <Route path="/approvals" element={<ApprovalCenter />} />
                 <Route path="/purchasing" element={<PurchasingLandingPage />} />
                 <Route path="/requests" element={<RequestsList />} />
-                <Route path="/requests/new" element={<RequestCreate />} />
-                <Route path="/requests/:id" element={<RequestEdit />} />
-                <Route path="/requests/:id/edit" element={<RequestEdit />} />
+                <Route path="/requests/new" element={<ErrorBoundary fallbackName="RequestCreate"><RequestCreate /></ErrorBoundary>} />
+                <Route path="/requests/:id" element={<ErrorBoundary fallbackName="RequestEdit"><RequestEdit /></ErrorBoundary>} />
+                <Route path="/requests/:id/edit" element={<ErrorBoundary fallbackName="RequestEdit"><RequestEdit /></ErrorBoundary>} />
                 <Route path="/receiving/workspace" element={<ReceivingWorkspace />} />
                 <Route path="/receiving/operation/:id" element={<ReceivingOperation />} />
                 <Route path="/buyer/items" element={<BuyerItemsList />} />
