@@ -1680,7 +1680,7 @@ export function RequestEdit() {
                                             />
                                             {renderFieldError('NeedByDateUtc')}
                                             {!getFieldErrors('NeedByDateUtc') && formData.needByDateUtc && new Date(formData.needByDateUtc).getTime() < new Date().setHours(0, 0, 0, 0) && (
-                                                <div style={{ color: '#D97706', fontSize: '0.75rem', marginTop: '4px', position: 'absolute', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                                                <div style={{ color: '#D97706', fontSize: '0.75rem', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
                                                     <AlertTriangle size={12} />
                                                     {(requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2) ? 'O documento está vencido.' : 'A data selecionada está no passado.'}
                                                 </div>
@@ -1864,12 +1864,9 @@ export function RequestEdit() {
                                     <th style={{ textAlign: 'center' }}>Unid.</th>
                                     <th style={{ textAlign: 'right' }}>Qtd</th>
                                     {!selectedQuotationId && <th>Planta</th>}
-                                    {!selectedQuotationId && <th>Centro Custo</th>}
                                     {!selectedQuotationId && <th>IVA</th>}
-                                    {!selectedQuotationId && requestTypeCode === 'PAYMENT' && <th>Vencimento</th>}
                                     <th style={{ textAlign: 'right' }}>Preço Unit.</th>
                                     <th style={{ textAlign: 'right' }}>Total</th>
-                                    {!selectedQuotationId && <th>Status</th>}
                                     {!selectedQuotationId && <th style={{ textAlign: 'center' }}>Ações</th>}
                                 </tr>
                             </thead>
@@ -1888,7 +1885,7 @@ export function RequestEdit() {
                                     ))
                                 ) : lineItems.length === 0 ? (
                                     <tr>
-                                        <td colSpan={11} style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)' }}>Nenhum item adicionado a este pedido.</td>
+                                        <td colSpan={9} style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)' }}>Nenhum item adicionado a este pedido.</td>
                                     </tr>
                                 ) : (
                                     lineItems.map(item => (
@@ -1899,49 +1896,10 @@ export function RequestEdit() {
                                             <td style={{ textAlign: 'right' }}>{item.quantity}</td>
                                             <td>{item.plantName || '---'}</td>
                                             <td>
-                                                <span style={{ fontSize: '0.75rem' }}>{item.costCenterCode || '---'}</span>
-                                            </td>
-                                            <td>
                                                 <span style={{ fontSize: '0.75rem' }}>{item.ivaRatePercent != null ? `${item.ivaRatePercent}%` : '---'}</span>
                                             </td>
-                                            {requestTypeCode === 'PAYMENT' && (
-                                                <td>
-                                                    <span style={{ fontSize: '0.75rem' }}>
-                                                        {item.dueDate ? new Date(item.dueDate).toLocaleDateString('pt-AO', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '---'}
-                                                    </span>
-                                                </td>
-                                            )}
                                             <td style={{ textAlign: 'right' }}>{formatCurrencyAO(item.unitPrice)}</td>
                                             <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatCurrencyAO(item.totalAmount)}</td>
-                                            <td>
-                                                {/* Item status badge — read-only for requester */}
-                                                {item.lineItemStatusName ? (
-                                                    <span style={{
-                                                        display: 'inline-block', padding: '2px 8px', borderRadius: '999px',
-                                                        fontSize: '0.7rem', fontWeight: 700, whiteSpace: 'nowrap',
-                                                        backgroundColor: item.lineItemStatusBadgeColor === 'blue' ? '#dbeafe' :
-                                                            item.lineItemStatusBadgeColor === 'yellow' ? '#fef3c7' :
-                                                                item.lineItemStatusBadgeColor === 'green' ? '#dcfce7' :
-                                                                    item.lineItemStatusBadgeColor === 'red' ? '#fee2e2' :
-                                                                        item.lineItemStatusBadgeColor === 'indigo' ? '#e0e7ff' :
-                                                                            item.lineItemStatusBadgeColor === 'orange' ? '#ffedd5' :
-                                                                                item.lineItemStatusBadgeColor === 'cyan' ? '#cffafe' :
-                                                                                    '#f3f4f6',
-                                                        color: item.lineItemStatusBadgeColor === 'blue' ? '#1d4ed8' :
-                                                            item.lineItemStatusBadgeColor === 'yellow' ? '#92400e' :
-                                                                item.lineItemStatusBadgeColor === 'green' ? '#15803d' :
-                                                                item.lineItemStatusBadgeColor === 'red' ? '#dc2626' :
-                                                                    item.lineItemStatusBadgeColor === 'indigo' ? '#4338ca' :
-                                                                        item.lineItemStatusBadgeColor === 'orange' ? '#c2410c' :
-                                                                            item.lineItemStatusBadgeColor === 'cyan' ? '#0e7490' :
-                                                                                '#374151'
-                                                    }}>
-                                                        {item.lineItemStatusName}
-                                                    </span>
-                                                ) : (
-                                                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>—</span>
-                                                )}
-                                            </td>
                                             <td style={{ padding: '8px', textAlign: 'center' }}>
                                                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                                                     {canEditItems ? (

@@ -872,6 +872,7 @@ export function RequestCreate() {
                                                          <thead>
                                                              <tr style={{ backgroundColor: 'var(--color-bg-page)', borderBottom: '1px solid var(--color-border)' }}>
                                                                  <th style={{ padding: '8px', textAlign: 'left', fontWeight: 800 }}>DESCRIÇÃO</th>
+                                                                 <th style={{ padding: '8px', textAlign: 'center', width: '80px', fontWeight: 800 }}>UNID.</th>
                                                                  <th style={{ padding: '8px', textAlign: 'center', width: '60px', fontWeight: 800 }}>QTD</th>
                                                                  <th style={{ padding: '8px', textAlign: 'right', width: '100px', fontWeight: 800 }}>P. UNIT</th>
                                                                  <th style={{ padding: '8px', textAlign: 'center', width: '100px', fontWeight: 800 }}>IVA</th>
@@ -882,7 +883,7 @@ export function RequestCreate() {
                                                          <tbody>
                                                              {!(paymentDraft.items && paymentDraft.items.length > 0) ? (
                                                                  <tr style={{ borderBottom: '1px solid var(--color-border-light)' }}>
-                                                                     <td colSpan={6} style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                                                                     <td colSpan={7} style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
                                                                          <span style={{ fontWeight: 800, display: 'block', marginBottom: '4px' }}>Nenhum item válido identificado no documento</span>
                                                                          <span style={{ fontSize: '0.8rem' }}>Adicione as linhas manualmente abaixo</span>
                                                                      </td>
@@ -895,6 +896,24 @@ export function RequestCreate() {
                                                                      <tr key={idx} style={{ borderBottom: '1px solid var(--color-border-light)' }}>
                                                                          <td style={{ padding: '4px 8px' }}>
                                                                              <input type="text" value={String(item.description || '')} onChange={(e) => handleUpdateOcrItem(idx, 'description', e.target.value)} style={{ ...inputStyle, padding: '6px 8px', marginTop: 0 }} />
+                                                                         </td>
+                                                                         <td style={{ padding: '4px 8px' }}>
+                                                                             <select 
+                                                                                 value={item.unitId || ''} 
+                                                                                 onChange={(e) => {
+                                                                                     const uId = Number(e.target.value);
+                                                                                     const uMatch = units.find(x => x.id === uId);
+                                                                                     setPaymentDraft(prev => {
+                                                                                         if (!prev) return null;
+                                                                                         const nextItems = [...prev.items];
+                                                                                         nextItems[idx] = { ...nextItems[idx], unitId: uId, unit: uMatch ? uMatch.code : '' };
+                                                                                         return { ...prev, items: nextItems };
+                                                                                     });
+                                                                                 }} 
+                                                                                 style={{ ...inputStyle, padding: '6px 8px', marginTop: 0, textAlign: 'center' }}
+                                                                             >
+                                                                                 {units.map(u => <option key={u.id} value={u.id}>{u.code}</option>)}
+                                                                             </select>
                                                                          </td>
                                                                          <td style={{ padding: '4px 8px' }}>
                                                                              <input type="number" value={item.quantity || 0} onChange={(e) => handleUpdateOcrItem(idx, 'quantity', Number(e.target.value))} style={{ ...inputStyle, padding: '6px 8px', marginTop: 0, textAlign: 'center' }} />
@@ -922,7 +941,7 @@ export function RequestCreate() {
                                                          </tbody>
                                                          <tfoot>
                                                              <tr style={{ backgroundColor: '#F9FAFB', fontWeight: 800 }}>
-                                                                 <td colSpan={4} style={{ padding: '12px 16px', textAlign: 'right' }}>TOTAL DO PEDIDO ({String(paymentDraft.currency || '')}):</td>
+                                                                 <td colSpan={5} style={{ padding: '12px 16px', textAlign: 'right' }}>TOTAL DO PEDIDO ({String(paymentDraft.currency || '')}):</td>
                                                                  <td style={{ padding: '12px 16px', textAlign: 'right', color: 'var(--color-primary)', fontSize: '0.85rem' }}>
                                                                      {(Number(paymentDraft.totalAmount) || 0).toLocaleString('pt-PT', { minimumFractionDigits: 2 })}
                                                                  </td>
@@ -969,7 +988,7 @@ export function RequestCreate() {
                                             />
                                             {renderFieldError('NeedByDateUtc')}
                                             {!getFieldErrors('NeedByDateUtc') && formData.needByDateUtc && new Date(formData.needByDateUtc).getTime() < new Date().setHours(0, 0, 0, 0) && (
-                                                <div style={{ color: '#D97706', fontSize: '0.75rem', marginTop: '4px', position: 'absolute', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                                                <div style={{ color: '#D97706', fontSize: '0.75rem', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
                                                     <AlertTriangle size={12} />
                                                     {Number(formData.requestTypeId) === 2 ? 'O documento está vencido.' : 'A data selecionada está no passado.'}
                                                 </div>

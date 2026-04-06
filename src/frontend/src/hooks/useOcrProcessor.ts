@@ -51,15 +51,15 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
         return trimmed;
     };
 
-    const resolveUnitAlias = (val: string | undefined): number | null => {
-        if (!val) return null;
+    const resolveUnitAlias = (val: string | undefined): string => {
+        if (!val) return 'UN';
         const normalized = val.trim().toUpperCase().replace(/\.$/, '');
 
         const directMatch = units.find(u => 
             u.code.toUpperCase() === normalized || 
             u.name.toUpperCase() === normalized
         );
-        if (directMatch) return directMatch.id;
+        if (directMatch) return directMatch.code;
 
         const unitAliases: Record<string, string[]> = {
             'UN': ['UN', 'UND', 'UNID', 'UNIDADE', 'EA', 'EACH', 'PC', 'PCS', 'PÇ', 'PÇS'],
@@ -72,10 +72,10 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
         for (const [canonicalCode, aliases] of Object.entries(unitAliases)) {
             if (aliases.includes(normalized)) {
                 const matchedUnit = units.find(u => u.code.toUpperCase() === canonicalCode);
-                if (matchedUnit) return matchedUnit.id;
+                if (matchedUnit) return matchedUnit.code;
             }
         }
-        return null;
+        return 'UN';
     };
 
     const calculateItemTotal = (item: Pick<OcrDraftItem, 'quantity' | 'unitPrice' | 'ivaRateId'>) => {
@@ -159,7 +159,9 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
             proformaAttachmentId: attachmentId,
             items: (result.integration?.lineItemSuggestions || []).map((item: any, index: number) => {
                 const extractedUnit = item.unit || '';
-                const matchedUnitId = resolveUnitAlias(extractedUnit);
+                const matchedUnitCode = resolveUnitAlias(extractedUnit);
+                const matchedUnit = units.find(u => u.code === matchedUnitCode);
+                
                 const ivaRateId = (() => {
                     const rate = item.taxRate;
                     if (rate === undefined || rate === null) return null;
@@ -171,8 +173,8 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
                     lineNumber: index + 1,
                     description: item.description || '',
                     quantity: item.quantity || 1,
-                    unitId: matchedUnitId,
-                    unit: extractedUnit,
+                    unitId: matchedUnit ? matchedUnit.id : null,
+                    unit: matchedUnitCode,
                     unitPrice: item.unitPrice || 0,
                     ivaRateId,
                     taxRate: item.taxRate

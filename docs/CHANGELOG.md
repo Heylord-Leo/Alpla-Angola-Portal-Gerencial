@@ -10,6 +10,10 @@ All notable changes to this project will be documented in this file.
   - Removed strict business constraints on the backend (`RequestsController.cs`) that rejected `NeedByDateUtc` values matching past dates.
   - Aligned backend flexibility with the updated frontend UX (which issues visual warnings via `AlertTriangle` rather than hard blockers).
   - Improved OCR flow fallback to transparently handle mapping of document dates into the unified `NeedByDateUtc` architecture.
+- **OCR Unit Fallback Reliability**: Fixed an issue where the OCR extraction process would incorrectly save deactivated units (like 'EA') directly to item requests.
+  - Re-engineered `useOcrProcessor.ts` to implement a rigid fallback sequence mapping unidentified or raw string aliases into standard system-ready `UN` identifiers.
+  - Exposed a new interactive "UNID." selection field seamlessly bridging into the front-end OCR Item configuration table (`RequestCreate.tsx`).
+- **Payment Request Table UI Cleanup**: Stripped contextually redundant columns ("Centro de Custo", "Vencimento", "Status") from the visual list space (`RequestEdit.tsx`) to declutter UX without mutating backend constraints.
 
 ## [2.37.0] - 2026-04-06
 
