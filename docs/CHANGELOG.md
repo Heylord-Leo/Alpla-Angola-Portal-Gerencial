@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.34.0] - 2026-04-06
+
+### Added
+
+- **Supplier Quick-Create (Request Edit)**: Integrated the ability to create new suppliers directly from the Request Edit screen.
+  - Added a `+ NOVO FORNECEDOR` button for manual creation in authorized draft/quotation stages.
+  - Implemented an **unmatched OCR supplier warning** that appears when a suggested name from an invoice does not match an existing database record, providing a "CRIAR AGORA" entry point.
+  - Direct integration with `QuickSupplierModal` (reused from Buyer items) with auto-selection and validation clearing upon successful creation.
+
+### Changed
+
+- **PAYMENT Request Type Optimization**: Refined the Request Edit UI for payment-specific workflows, removing quotation-related bloat.
+  - **Conditional UI Rendering**: The "Cotações Salvas" section is now suppressed for `PAYMENT` requests, ensuring a cleaner interface focused on financial tracking.
+  - **Guided Attention Refinement**: auto-scroll and highlight logic (guided attention) now strictly targets `QUOTATION` requests, preventing jarring movements to non-existent sections in payment flows.
+
 ## [2.33.2] - 2026-04-06
 
 ### Fixed

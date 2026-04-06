@@ -14,8 +14,11 @@ import {
     Clock,
     ArrowRight,
     CheckCircle,
-    Check
+    Check,
+    AlertCircle,
+    UserPlus
 } from 'lucide-react';
+import { QuickSupplierModal } from '../../components/Buyer/QuickSupplierModal';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../features/auth/AuthContext';
 import { ROLES } from '../../constants/roles';
@@ -130,6 +133,9 @@ export function RequestEdit() {
     const [approvalComment, setApprovalComment] = useState('');
     const [approvalProcessing, setApprovalProcessing] = useState(false);
     const [modalFeedback, setModalFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'error', message: null });
+
+    // Quick Supplier Modal State
+    const [quickSupplierModal, setQuickSupplierModal] = useState<{ show: boolean; initialName: string; initialTaxId: string }>({ show: false, initialName: '', initialTaxId: '' });
 
     // --- Derived Operational Logic ---
 
@@ -273,7 +279,7 @@ export function RequestEdit() {
         let highlightTimeout: any;
         let scrollTimeout: any;
 
-        if (!loading && status === 'WAITING_AREA_APPROVAL' && id && hasGuidedAttentionRun.current !== id) {
+        if (!loading && status === 'WAITING_AREA_APPROVAL' && requestTypeCode === 'QUOTATION' && id && hasGuidedAttentionRun.current !== id) {
             hasGuidedAttentionRun.current = id;
             setSectionsOpen(prev => ({ ...prev, quotations: true }));
 
@@ -295,7 +301,7 @@ export function RequestEdit() {
             if (highlightTimeout) clearTimeout(highlightTimeout);
             if (scrollTimeout) clearTimeout(scrollTimeout);
         };
-    }, [loading, status, id]);
+    }, [loading, status, id, requestTypeCode]);
 
     // --- Action Handlers ---
 
@@ -1556,7 +1562,25 @@ export function RequestEdit() {
                             </label>
 
                             <label style={labelStyle}>
-                                Fornecedor {Number(formData.requestTypeId) === 1 && <span style={{ color: 'red' }}>*</span>}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span>
+                                        Fornecedor {Number(formData.requestTypeId) === 1 && <span style={{ color: 'red' }}>*</span>}
+                                    </span>
+                                    {canEditSupplier && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setQuickSupplierModal({
+                                                show: true,
+                                                initialName: supplierName,
+                                                initialTaxId: '' // Persist if available in backend DTO later
+                                            })}
+                                            style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                        >
+                                            <UserPlus size={12} />
+                                            + NOVO FORNECEDOR
+                                        </button>
+                                    )}
+                                </div>
                                 <SupplierAutocomplete
                                     initialName={supplierName}
                                     initialPortalCode={supplierPortalCode}
@@ -1573,6 +1597,31 @@ export function RequestEdit() {
                                     className="mt-1"
                                     disabled={!canEditSupplier}
                                 />
+                                {canEditSupplier && !formData.supplierId && supplierName && (
+                                    <div style={{ marginTop: '8px', padding: '10px 12px', backgroundColor: '#fff7ed', border: '1px solid #ffedd5', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <AlertCircle size={16} color="#c2410c" />
+                                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#9a3412' }}>
+                                                Fornecedor sugerido <strong>"{supplierName}"</strong> não encontrado.
+                                            </span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setQuickSupplierModal({
+                                                show: true,
+                                                initialName: supplierName,
+                                                initialTaxId: ''
+                                            })}
+                                            style={{ 
+                                                backgroundColor: '#f97316', color: '#fff', border: 'none', padding: '4px 10px', 
+                                                borderRadius: '4px', fontSize: '0.65rem', fontWeight: 800, cursor: 'pointer',
+                                                textTransform: 'uppercase'
+                                            }}
+                                        >
+                                            CRIAR AGORA
+                                        </button>
+                                    </div>
+                                )}
                                 {isQuotationStage && (
                                     <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: '4px', display: 'block' }}>
                                         Em tratamento pelo comprador.
@@ -1918,7 +1967,7 @@ export function RequestEdit() {
             </CollapsibleSection>
 
             {/* Section: Cotações Salvas */}
-            {(requestTypeCode === 'QUOTATION' || requestTypeCode === 'PAYMENT') && status !== 'CANCELLED' && status !== 'REJECTED' && (
+            {requestTypeCode === 'QUOTATION' && status !== 'CANCELLED' && status !== 'REJECTED' && (
                 <CollapsibleSection
                     title="Cotações Salvas"
                     count={quotations.length}
@@ -2070,6 +2119,19 @@ export function RequestEdit() {
                 processing={approvalProcessing || saving || submitting}
                 feedback={modalFeedback}
                 onCloseFeedback={() => setModalFeedback(prev => ({ ...prev, message: null }))}
+            />
+
+            <QuickSupplierModal 
+                isOpen={quickSupplierModal.show}
+                onClose={() => setQuickSupplierModal({ show: false, initialName: '', initialTaxId: '' })}
+                onSuccess={(supplier: { id: number; name: string; taxId?: string }) => {
+                    setFormData(prev => ({ ...prev, supplierId: String(supplier.id) }));
+                    setSupplierName(supplier.name);
+                    setSupplierPortalCode('');
+                    clearFieldError('SupplierId');
+                }}
+                initialName={quickSupplierModal.initialName}
+                initialTaxId={quickSupplierModal.initialTaxId}
             />
 
         </motion.div >
