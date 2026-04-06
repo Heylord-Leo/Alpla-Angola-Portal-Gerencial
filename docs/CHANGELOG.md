@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.33.2] - 2026-04-06
+
+### Fixed
+
+- **Approval Modal State Sync**: Fixed a stale closure bug in the Approval Center drawer where action buttons and local states derived from previous requests bled into the next request when auto-navigating. 
+  - Enforced a strict React render boundary by adding a `key` prop tied to the request ID on the `ApprovalDetailPanel`.
+  - Added programmatic resets for drill-down overlays (`selectedDetailedItem`) on queue navigation handlers (`handleNext`, `handlePrev`, `handleActionCompleted`).
+
 ## [2.33.1] - 2026-04-06
 
 ### Fixed

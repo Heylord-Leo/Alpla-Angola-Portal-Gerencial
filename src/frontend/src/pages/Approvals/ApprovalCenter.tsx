@@ -114,6 +114,7 @@ export function ApprovalCenter() {
             const isArea = areaApprovals.some(r => r.id === next.id);
             setSelectedRequestId(next.id);
             setSelectedApprovalStage(isArea ? 'AREA' : 'FINAL');
+            setSelectedDetailedItem(null);
         }
     };
 
@@ -123,6 +124,7 @@ export function ApprovalCenter() {
             const isArea = areaApprovals.some(r => r.id === prev.id);
             setSelectedRequestId(prev.id);
             setSelectedApprovalStage(isArea ? 'AREA' : 'FINAL');
+            setSelectedDetailedItem(null);
         }
     };
 
@@ -262,6 +264,7 @@ export function ApprovalCenter() {
         setSelectedApprovalStage(stage);
         setIsPanelOpen(true);
         setDetailData(null); // Clear old detail while new one loads
+        setSelectedDetailedItem(null); // Reset drill-down
     };
 
     const handleCloseDetail = () => {
@@ -269,6 +272,7 @@ export function ApprovalCenter() {
         setSelectedRequestId(null);
         setSelectedApprovalStage(null);
         setDetailData(null);
+        setSelectedDetailedItem(null);
     };
 
     const handleActionCompleted = async (successMessage: string) => {
@@ -333,6 +337,7 @@ export function ApprovalCenter() {
                     const isNewArea = newSortedArea.some(r => r.id === nextItem.id);
                     setSelectedRequestId(nextItem.id);
                     setSelectedApprovalStage(isNewArea ? 'AREA' : 'FINAL');
+                    setSelectedDetailedItem(null);
                     // Detail data will be updated by the useEffect watching selectedRequestId
                     return;
                 }
@@ -656,6 +661,7 @@ export function ApprovalCenter() {
                                     ) : detailData ? (
                                         <div className="p-0">
                                             <ApprovalDetailPanel
+                                                key={detailData.id}
                                                 data={detailData}
                                                 approvalStage={selectedApprovalStage || 'AREA'}
                                                 isAreaApprover={isAreaApprover}
