@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 interface QuickSupplierModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSuccess: (supplier: { id: number; name: string }) => void;
+    onSuccess: (supplier: { id: number; name: string; portalCode?: string }) => void;
     initialName?: string;
     initialTaxId?: string;
 }
@@ -52,7 +52,7 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
                 taxId: taxId.trim() || undefined
             });
 
-            onSuccess({ id: newSupplier.id, name: newSupplier.name });
+            onSuccess({ id: newSupplier.id, name: newSupplier.name, portalCode: newSupplier.portalCode });
             onClose();
         } catch (err: any) {
             if (err instanceof ApiError && err.fieldErrors) {

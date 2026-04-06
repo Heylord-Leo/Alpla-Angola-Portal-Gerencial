@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Save, X, Paperclip, Trash2, AlertTriangle, FileText, RefreshCw, UploadCloud, CheckCircle2 } from 'lucide-react';
+import { Save, X, Paperclip, Trash2, AlertTriangle, FileText, RefreshCw, UploadCloud, CheckCircle2, UserPlus, AlertCircle } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
+import { SupplierAutocomplete } from '../../components/SupplierAutocomplete';
+import { QuickSupplierModal } from '../../components/Buyer/QuickSupplierModal';
 import { FeedbackType } from '../../components/ui/Feedback';
 import { LookupDto, IvaRate, Unit, CurrencyDto, OcrDraft, OcrDraftItem } from '../../types';
 import { useOcrProcessor } from '../../hooks/useOcrProcessor';
@@ -40,6 +42,7 @@ export function RequestCreate() {
     const [isOcrLoading, setIsOcrLoading] = useState(false);
     const [paymentDraft, setPaymentDraft] = useState<OcrDraft | null>(null);
     const [ocrFile, setOcrFile] = useState<File | null>(null);
+    const [quickSupplierModal, setQuickSupplierModal] = useState<{ show: boolean; initialName: string; initialTaxId: string }>({ show: false, initialName: '', initialTaxId: '' });
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const { mapOcrResultToDraft, calculateItemTotal, calculateDraftTotal } = useOcrProcessor(ivaRates, units, currencies);
@@ -771,6 +774,65 @@ export function RequestCreate() {
                                                  </div>
 
                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+                                                      <label style={{ ...labelStyle, marginBottom: 0, gridColumn: '1 / -1' }}>
+                                                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                              <span>Fornecedor</span>
+                                                              <button
+                                                                  type="button"
+                                                                  onClick={() => setQuickSupplierModal({
+                                                                      show: true,
+                                                                      initialName: paymentDraft.supplierNameSnapshot || '',
+                                                                      initialTaxId: paymentDraft.supplierTaxId || ''
+                                                                  })}
+                                                                  style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                                              >
+                                                                  <UserPlus size={12} />
+                                                                  + NOVO FORNECEDOR
+                                                              </button>
+                                                          </div>
+                                                          <SupplierAutocomplete
+                                                              initialName={paymentDraft.supplierNameSnapshot || ''}
+                                                              initialPortalCode={paymentDraft.supplierPortalCode || ''}
+                                                              isUnresolved={!paymentDraft.supplierId && !!paymentDraft.supplierNameSnapshot}
+                                                              onChange={(id, name, portalCode) => {
+                                                                  handleUpdateOcrDraft('supplierId', id);
+                                                                  handleUpdateOcrDraft('supplierNameSnapshot', name);
+                                                                  handleUpdateOcrDraft('supplierPortalCode', portalCode || '');
+                                                                  clearFieldError('SupplierId');
+                                                              }}
+                                                              hasError={!paymentDraft.supplierId && !!paymentDraft.supplierNameSnapshot}
+                                                              className="mt-1"
+                                                          />
+                                                          {!paymentDraft.supplierId && paymentDraft.supplierNameSnapshot && (
+                                                              <motion.div 
+                                                                  initial={{ opacity: 0, height: 0 }} 
+                                                                  animate={{ opacity: 1, height: 'auto' }}
+                                                                  style={{ marginTop: '8px', padding: '12px', backgroundColor: '#fff7ed', border: '2px solid #fdba74', borderRadius: 'var(--radius-sm)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: 'var(--shadow-brutal-sm)' }}
+                                                              >
+                                                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                                      <AlertCircle size={18} color="#c2410c" style={{ flexShrink: 0 }} />
+                                                                      <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9a3412', lineHeight: '1.4' }}>
+                                                                          O fornecedor <strong>"{paymentDraft.supplierNameSnapshot}"</strong> foi extraído mas não existe no sistema.
+                                                                      </div>
+                                                                  </div>
+                                                                  <button
+                                                                      type="button"
+                                                                      onClick={() => setQuickSupplierModal({
+                                                                          show: true,
+                                                                          initialName: paymentDraft.supplierNameSnapshot || '',
+                                                                          initialTaxId: paymentDraft.supplierTaxId || ''
+                                                                      })}
+                                                                      style={{ 
+                                                                          backgroundColor: '#f97316', color: '#fff', border: 'none', padding: '6px 12px', 
+                                                                          borderRadius: 'var(--radius-sm)', fontSize: '0.7rem', fontWeight: 900, cursor: 'pointer',
+                                                                          textTransform: 'uppercase', boxShadow: '2px 2px 0 #9a3412', flexShrink: 0, marginLeft: '12px'
+                                                                      }}
+                                                                  >
+                                                                      CRIAR AGORA
+                                                                  </button>
+                                                              </motion.div>
+                                                          )}
+                                                      </label>
                                                      <label style={{ ...labelStyle, marginBottom: 0 }}>
                                                          Nº Documento
                                                          <input type="text" value={String(paymentDraft.documentNumber || '')} onChange={(e) => handleUpdateOcrDraft('documentNumber', e.target.value)} style={inputStyle} />
@@ -939,6 +1001,18 @@ export function RequestCreate() {
                     </div>
                 </section>
             </form>
+            <QuickSupplierModal 
+                isOpen={quickSupplierModal.show}
+                onClose={() => setQuickSupplierModal({ show: false, initialName: '', initialTaxId: '' })}
+                onSuccess={(s) => {
+                    handleUpdateOcrDraft('supplierId', s.id);
+                    handleUpdateOcrDraft('supplierNameSnapshot', s.name);
+                    handleUpdateOcrDraft('supplierPortalCode', s.portalCode || '');
+                    clearFieldError('SupplierId');
+                }}
+                initialName={quickSupplierModal.initialName}
+                initialTaxId={quickSupplierModal.initialTaxId}
+            />
         </motion.div >
     );
 }

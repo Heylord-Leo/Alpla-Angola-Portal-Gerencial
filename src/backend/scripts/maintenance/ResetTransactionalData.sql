@@ -42,8 +42,12 @@ BEGIN TRY
     -- Resetting the Pedido # sequence back to zero for the new validation run.
     IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SystemCounters')
     BEGIN
-        UPDATE SystemCounters SET [CurrentValue] = 0;
-        PRINT 'Reset SystemCounters to 0';
+        -- Reset only transactional counters. Master Data (Suppliers) must be preserved.
+        UPDATE SystemCounters 
+        SET [CurrentValue] = 0 
+        WHERE Id = 'GLOBAL_REQUEST_COUNTER';
+        
+        PRINT 'Reset GLOBAL_REQUEST_COUNTER to 0';
     END
 
     -- Final Check: Re-enable ALL constraints to preserve integrity for the new run

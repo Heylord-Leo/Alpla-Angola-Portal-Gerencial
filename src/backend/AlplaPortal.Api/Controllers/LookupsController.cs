@@ -671,45 +671,70 @@ public class LookupsController : ControllerBase
     private async Task<string> GetNextPortalCodeAsync()
     {
         var counterKey = "SUPPLIER_PORTAL_CODE";
-        var counter = await _context.SystemCounters.FirstOrDefaultAsync(sc => sc.Id == counterKey);
         int seqNumber;
 
-        if (counter == null)
+        // Use a transaction with a database-level lock to ensure concurrency safety
+        using (var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted))
         {
-            // Self-healing: find the highest sequence already used
-            var existingMax = await _context.Suppliers
-                .Where(s => s.PortalCode != null && s.PortalCode.StartsWith("SUP-"))
-                .Select(s => s.PortalCode)
-                .ToListAsync();
-
-            int maxSeq = 0;
-            foreach (var num in existingMax)
+            try
             {
-                if (num != null && num.StartsWith("SUP-") && int.TryParse(num.Substring(4), out int parsed))
+                // 1. Acquire an update lock on the counter record (blocking other concurrent generations)
+                var counter = await _context.SystemCounters
+                    .FromSqlRaw("SELECT * FROM SystemCounters WITH (UPDLOCK, ROWLOCK) WHERE Id = {0}", counterKey)
+                    .FirstOrDefaultAsync();
+
+                // 2. Perform robust "Self-healing": always check the actual database state
+                // This protects against sequence regressions if SystemCounters is reset or out of sync.
+                var maxCodeStr = await _context.Suppliers
+                    .Where(s => s.PortalCode != null && s.PortalCode.StartsWith("SUP-"))
+                    .OrderByDescending(s => s.PortalCode)
+                    .Select(s => s.PortalCode)
+                    .FirstOrDefaultAsync();
+
+                int maxInDb = 0;
+                if (maxCodeStr != null && maxCodeStr.Length == 10 && int.TryParse(maxCodeStr.Substring(4), out int parsed))
                 {
-                    maxSeq = Math.Max(maxSeq, parsed);
+                    maxInDb = parsed;
                 }
+
+                if (counter == null)
+                {
+                    seqNumber = maxInDb + 1;
+                    counter = new Domain.Entities.SystemCounter
+                    {
+                        Id = counterKey,
+                        CurrentValue = seqNumber,
+                        LastUpdatedUtc = DateTime.UtcNow
+                    };
+                    _context.SystemCounters.Add(counter);
+                }
+                else
+                {
+                    // If the counter lagging behind the actual data, force it to catch up
+                    if (counter.CurrentValue < maxInDb)
+                    {
+                        counter.CurrentValue = maxInDb;
+                    }
+
+                    counter.CurrentValue++;
+                    counter.LastUpdatedUtc = DateTime.UtcNow;
+                    seqNumber = counter.CurrentValue;
+                }
+
+                // 3. Persist changes to the counter
+                await _context.SaveChangesAsync();
+                
+                // 4. Commit the transaction to release the lock
+                await transaction.CommitAsync();
             }
-
-            seqNumber = maxSeq + 1;
-            counter = new Domain.Entities.SystemCounter
+            catch (Exception)
             {
-                Id = counterKey,
-                CurrentValue = seqNumber,
-                LastUpdatedUtc = DateTime.UtcNow
-            };
-            _context.SystemCounters.Add(counter);
-        }
-        else
-        {
-            counter.CurrentValue++;
-            counter.LastUpdatedUtc = DateTime.UtcNow;
-            seqNumber = counter.CurrentValue;
+                await transaction.RollbackAsync();
+                throw;
+            }
         }
 
-        // Save counter changes immediately to prevent collisions
-        await _context.SaveChangesAsync();
-
+        // Return precisely formatted code: SUP- + 6 zero-padded digits
         return $"SUP-{seqNumber:D6}";
     }
 

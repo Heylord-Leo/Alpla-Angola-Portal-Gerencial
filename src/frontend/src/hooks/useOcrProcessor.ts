@@ -125,11 +125,15 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
         
         // Part A: Supplier Matching
         let matchedSupplierId: number | null = null;
+        let extractedSupplierPortalCode: string | null = null;
         if (extractedSupplierName && typeof extractedSupplierName === 'string') {
             try {
                 const searchResults = await api.lookups.searchSuppliers(extractedSupplierName);
                 const match = searchResults.find((s: any) => s.name.toLowerCase().trim() === extractedSupplierName.toLowerCase().trim());
-                if (match) matchedSupplierId = match.id;
+                if (match) {
+                    matchedSupplierId = match.id;
+                    extractedSupplierPortalCode = match.portalCode;
+                }
             } catch (e) {
                 console.error("[useOcrProcessor] Supplier matching failed", e);
             }
@@ -143,6 +147,7 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
         const draft: OcrDraft = {
             supplierId: matchedSupplierId,
             supplierNameSnapshot: extractedSupplierName,
+            supplierPortalCode: extractedSupplierPortalCode,
             supplierTaxId: isTaxIdPlausible ? extractedSupplierTaxId : '',
             documentNumber: getSafeValue<string>(suggestions?.documentNumber, ''),
             documentDate: resolveDateAlias(getSafeValue<string>(suggestions?.documentDate, '')),

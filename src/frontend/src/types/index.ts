@@ -186,6 +186,7 @@ export interface OcrDraftItem {
 export interface OcrDraft {
     supplierId: number | null;
     supplierNameSnapshot: string;
+    supplierPortalCode?: string | null;
     supplierTaxId?: string;
     documentNumber: string;
     documentDate: string;

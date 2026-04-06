@@ -8,10 +8,11 @@ import { DropdownPortal } from './ui/DropdownPortal';
 interface SupplierAutocompleteProps {
     initialName?: string;
     initialPortalCode?: string;
-    onChange: (id: number | null, name: string) => void;
+    onChange: (id: number | null, name: string, portalCode?: string) => void;
     placeholder?: string;
     disabled?: boolean;
     hasError?: boolean;
+    isUnresolved?: boolean;
     className?: string;
     name?: string;
 }
@@ -26,6 +27,7 @@ export function SupplierAutocomplete({
     placeholder = 'Selecionar fornecedor...',
     disabled = false,
     hasError = false,
+    isUnresolved = false,
     className,
     name = 'SupplierId'
 }: SupplierAutocompleteProps) {
@@ -113,13 +115,13 @@ export function SupplierAutocomplete({
         setSelectedDisplay(displayName);
         setIsOpen(false);
         setHoveredId(null);
-        onChange(s.id, s.name);
+        onChange(s.id, s.name, s.portalCode);
     };
 
     const clearSelection = (e: React.MouseEvent) => {
         e.stopPropagation();
         setSelectedDisplay('');
-        onChange(null, '');
+        onChange(null, '', '');
         if (isOpen) {
             setSearchTerm('');
             performSearch('');
@@ -258,8 +260,14 @@ export function SupplierAutocomplete({
                 tabIndex={disabled ? -1 : 0}
                 data-field={name}
             >
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: '8px', fontWeight: 500, textTransform: 'none', letterSpacing: '0.01em', fontSize: '0.85rem' }}>
+                <span style={{ 
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: '8px', 
+                    fontWeight: 600, textTransform: 'none', letterSpacing: '0.01em', fontSize: '0.85rem',
+                    fontStyle: isUnresolved ? 'italic' : 'normal',
+                    color: isUnresolved ? '#9a3412' : selectedDisplay ? 'var(--color-text-main)' : 'var(--color-placeholder)'
+                }}>
                     {selectedDisplay || placeholder}
+                    {isUnresolved && selectedDisplay && ' (SUGESTÃO OCR - NÃO ENCONTRADO)'}
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
                     {selectedDisplay && !disabled && (

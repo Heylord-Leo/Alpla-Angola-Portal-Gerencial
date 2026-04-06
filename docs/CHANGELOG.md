@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.35.0] - 2026-04-06
+
+### Added
+
+- **Reactive OCR Supplier Workflow (New Request)**: Relocated the unresolved supplier validation from Request Edit to the New Request screen for a proactive "pre-creation" experience.
+  - **Visible Preservation**: OCR-extracted supplier names are now displayed even without a database match, marked with a clear "Unresolved" state.
+  - **Quick-Create Integration**: In-place `QuickSupplierModal` access during OCR preview, with automatic state synchronization and selection upon successful creation.
+- **Backend Portal Code Generation Hardening (DEC-098)**: Re-engineered the `Supplier.PortalCode` generation logic to be structurally robust and concurrency-safe.
+  - **Auto-Sync / Self-Healing**: The system now automatically detects and fixes out-of-sync counters by querying the actual `Suppliers` table for the maximum existing suffix before incrementing.
+  - **Concurrency Safety**: Implemented database-level `UPDLOCK, ROWLOCK` within a transaction to prevent duplicate code assignment during simultaneous creations.
+
+### Fixed
+
+- **Supplier Portal Code Collision**: Resolved the critical unique index violation (`IX_Suppliers_PortalCode`) where the system incorrectly reused `SUP-000001` after a transactional data reset.
+
+### Changed
+
+- **Maintenance Script Protection**: Updated `ResetTransactionalData.sql` to exclude Master Data counters (Suppliers) from blanket resets, ensuring sequence continuity across transactional wipes.
+
 ## [2.34.0] - 2026-04-06
 
 ### Added
@@ -58,7 +77,7 @@ All notable changes to this project will be documented in this file.
   - **Total Consistency**: Preserved the OCR-derived, IVA/discount-inclusive final total during Payment draft creation by passing it from the frontend and explicitly preventing backend sum-based reassignment for the `PAYMENT` request type.
   - **Currency Passthrough**: Correctly mapped the OCR-extracted currency alias to the draft payload.
 
-### Known Limitations (Explicitly Acknowledged)
+### Known Limitations
 
 - **Interim Discount Handling**: Surcharges and penalties are currently folded into the total by the OCR service and are not structurally extracted. Explicit discount values are temporarily appended to the Request `Description` as a traceability workaround. A dedicated `DiscountAmount` (and scalable financial adjustment architecture) is required for a final business-model solution.
 - **Company Prefill**: The system currently employs a deterministic scope-based fallback (auto-selecting the only available company for restricted users). It does **not** employ true OCR-based company matching, as the `Company` entity lacks a `TaxId` necessary for correlation.
@@ -215,9 +234,8 @@ All notable changes to this project will be documented in this file.
   - Removed brutalist hard-shadow offsets across the application.
 - **Visual Alignment**:
   - Updated `collapsibleSection` and `badge` styles to follow the new radii standards.
-## Current Version
-
-- **v2.31.0**: Payment OCR Persistence Fix (DEC-097). Relaxed DB constraints for Cost Center and IVA on draft line items, deferring strict validation to the submission stage.
+- **v2.35.0**: Reactive OCR Supplier Workflow & Backend Portal Code Hardening (DEC-098). Relocated supplier validation to New Request screen and implemented robust, self-healing, concurrency-safe portal code generation.
+- **v2.34.0**: Supplier Quick-Create in Request Edit & Payment Type Cleanup. Added supplier creation entry point for OCR mismatches and removed quotation-specific UI for payment requests.
 - **v2.30.0**: Payment OCR Intake & Shared Hook (DEC-096). Implemented automated document extraction for Payment requests and refactored OCR logic into a shared hook.
 - **v2.29.0**: Company Master Data & Final Approver Resolution. Implemented centralized company management and deterministic approval resolution, eliminating manual selection errors.
 - **2.26.0**: Instruction Layer Cleanup & Baseline Rebuild. Consolidated fragmented permission and status rules into unified directives. Streamlined the process lifecycle and reorganized legacy documentation into reference storage.
