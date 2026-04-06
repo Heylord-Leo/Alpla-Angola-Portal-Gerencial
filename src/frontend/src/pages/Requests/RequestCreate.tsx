@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Save, X, Paperclip, Trash2, AlertTriangle, FileText, RefreshCw, UploadCloud, CheckCircle2, UserPlus, AlertCircle } from 'lucide-react';
+import { Save, X, Paperclip, Trash2, AlertTriangle, FileText, RefreshCw, UploadCloud, CheckCircle2, UserPlus, AlertCircle, Edit2, Plus } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { SupplierAutocomplete } from '../../components/SupplierAutocomplete';
 import { QuickSupplierModal } from '../../components/Buyer/QuickSupplierModal';
@@ -42,8 +42,10 @@ export function RequestCreate() {
     const [isOcrLoading, setIsOcrLoading] = useState(false);
     const [paymentDraft, setPaymentDraft] = useState<OcrDraft | null>(null);
     const [ocrFile, setOcrFile] = useState<File | null>(null);
+    const [isManualOcr, setIsManualOcr] = useState(false);
     const [quickSupplierModal, setQuickSupplierModal] = useState<{ show: boolean; initialName: string; initialTaxId: string }>({ show: false, initialName: '', initialTaxId: '' });
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const manualFileInputRef = useRef<HTMLInputElement>(null);
 
     const { mapOcrResultToDraft, calculateItemTotal, calculateDraftTotal } = useOcrProcessor(ivaRates, units, currencies);
 
@@ -201,10 +203,32 @@ export function RequestCreate() {
         setAttachments(prev => prev.filter((_, i) => i !== index));
     };
 
+    const handleManualOcrUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setOcrFile(file);
+        setIsManualOcr(true);
+        setFeedback({ type: 'error', message: null });
+        setPaymentDraft({
+            supplierId: null,
+            supplierNameSnapshot: '',
+            documentNumber: '',
+            documentDate: '',
+            currency: 'AOA', 
+            discountAmount: 0,
+            totalAmount: 0,
+            items: []
+        });
+        if (manualFileInputRef.current) {
+            manualFileInputRef.current.value = '';
+        }
+    };
+
     const handleOcrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
         setOcrFile(file);
+        setIsManualOcr(false);
         setIsOcrLoading(true);
         setFeedback({ type: 'error', message: null });
 
@@ -259,6 +283,25 @@ export function RequestCreate() {
             const next = { ...prev, items: nextItems };
             next.totalAmount = calculateDraftTotal(next);
             return next;
+        });
+    };
+
+    const handleAddOcrItem = () => {
+        setPaymentDraft(prev => {
+            if (!prev) return null;
+            const nextItems = [...prev.items, {
+                lineNumber: prev.items.length + 1,
+                description: '',
+                quantity: 1,
+                unitId: null,
+                unitCode: '',
+                unit: '',
+                unitPrice: 0,
+                ivaRateId: null,
+                totalPrice: 0,
+                itemPriority: 'MEDIUM'
+            }];
+            return { ...prev, items: nextItems };
         });
     };
 
@@ -617,22 +660,22 @@ export function RequestCreate() {
                                 <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 400 }}>(Opcional)</span>
                             </div>
 
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-start' }}>
                                 <div style={{ 
-                                    border: '2px dashed var(--color-border)', padding: '16px', textAlign: 'center', borderRadius: 'var(--radius-sm)',
-                                    backgroundColor: 'rgba(255, 255, 255, 0.5)', cursor: 'pointer', position: 'relative', transition: 'all 0.2s ease',
-                                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px'
+                                    border: '1px solid var(--color-border-heavy)', padding: '8px 16px', textAlign: 'left', borderRadius: 'var(--radius-sm)',
+                                    backgroundColor: 'var(--color-bg-page)', cursor: 'pointer', position: 'relative', transition: 'all 0.2s ease',
+                                    display: 'inline-flex', alignItems: 'center', gap: '8px', boxShadow: 'var(--shadow-sm)'
                                 }}>
                                     <input 
                                         type="file" multiple onChange={handleFileChange}
                                         style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }}
                                     />
-                                    <div style={{ fontWeight: 700, fontSize: '0.75rem', color: 'var(--color-text-main)' }}>ADICIONAR DOCUMENTOS</div>
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>PDF, JPG, PNG, DOCX (Máx 5MB)</div>
+                                    <UploadCloud size={16} style={{ color: 'var(--color-text-main)' }} />
+                                    <div style={{ fontWeight: 800, fontSize: '0.75rem', color: 'var(--color-text-main)' }}>ADICIONAR DOCUMENTO</div>
                                 </div>
 
                                 {attachments.length > 0 && (
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '8px' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '8px', width: '100%' }}>
                                         {attachments.map((file, idx) => (
                                             <div key={idx} style={{ 
                                                 display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
@@ -673,8 +716,8 @@ export function RequestCreate() {
                                      style={{ position: 'relative' }}
                                  >
                                      <div style={{ 
-                                         marginBottom: '32px', padding: '24px', backgroundColor: 'var(--color-bg-page)', 
-                                         border: '2px dashed var(--color-primary)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-brutal-sm)',
+                                         marginBottom: '32px', padding: '24px', backgroundColor: '#fff', 
+                                         border: '2px solid var(--color-primary)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-brutal-sm)',
                                          position: 'relative'
                                      }}>
                                          <AnimatePresence>
@@ -721,6 +764,7 @@ export function RequestCreate() {
                                              </motion.div>
                                          )}
                                          </AnimatePresence>
+
                                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
                                              <div style={{ 
                                                  width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'var(--color-primary)', 
@@ -729,62 +773,97 @@ export function RequestCreate() {
                                                  <FileText size={20} />
                                              </div>
                                              <div>
-                                                 <h3 style={{ fontSize: '0.875rem', fontWeight: 800, textTransform: 'uppercase', margin: 0 }}>Input de Documento (OCR)</h3>
-                                                 <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: '2px 0 0 0' }}>Anexe a fatura ou nota para preenchimento automático</p>
+                                                 <h3 style={{ fontSize: '0.875rem', fontWeight: 800, textTransform: 'uppercase', margin: 0 }}>Input de Documento & Faturamento</h3>
+                                                 <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: '2px 0 0 0' }}>Anexe a fatura e insira os dados (OCR/Manual)</p>
                                              </div>
                                          </div>
 
                                          {!paymentDraft ? (
-                                             <label style={{ 
-                                                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', 
-                                                 padding: '32px', border: '2px dashed var(--color-border)', borderRadius: 'var(--radius-sm)',
-                                                 cursor: isOcrLoading ? 'wait' : 'pointer', backgroundColor: 'white', transition: 'all 0.2s ease'
-                                             }}>
-                                                 <input type="file" ref={fileInputRef} onChange={handleOcrUpload} disabled={isOcrLoading} style={{ display: 'none' }} />
-                                                 {isOcrLoading ? (
-                                                     <>
-                                                         <div style={{ opacity: 0.3 }}>
-                                                             <UploadCloud size={32} style={{ color: 'var(--color-border-heavy)' }} />
-                                                         </div>
-                                                         <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-muted)' }}>PROCESSANDO...</span>
-                                                     </>
-                                                 ) : (
-                                                     <>
-                                                         <UploadCloud size={32} style={{ color: 'var(--color-border-heavy)' }} />
-                                                         <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>CLIQUE OU ARRASTE A FATURA</span>
-                                                         <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>PDF, JPG ou PNG</span>
-                                                     </>
-                                                 )}
-                                             </label>
+                                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                                                 <label style={{ 
+                                                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', 
+                                                     padding: '32px', border: '1px solid #3b82f6', borderRadius: 'var(--radius-md)',
+                                                     cursor: isOcrLoading ? 'wait' : 'pointer', backgroundColor: '#eff6ff', transition: 'all 0.2s ease',
+                                                     textAlign: 'center'
+                                                 }}>
+                                                     <input type="file" ref={fileInputRef} onChange={handleOcrUpload} disabled={isOcrLoading} style={{ display: 'none' }} />
+                                                     {isOcrLoading ? (
+                                                         <>
+                                                             <div style={{ opacity: 0.3 }}>
+                                                                 <UploadCloud size={32} style={{ color: '#2563eb' }} />
+                                                             </div>
+                                                             <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#1e40af' }}>PROCESSANDO...</span>
+                                                         </>
+                                                     ) : (
+                                                         <>
+                                                             <UploadCloud size={32} style={{ color: '#2563eb' }} />
+                                                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                                                                <span style={{ fontSize: '0.9rem', fontWeight: 900, color: '#1e3a8a', letterSpacing: '0.025em', textTransform: 'uppercase' }}>IMPORTAR DOCUMENTO</span>
+                                                                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Extrair dados de fatura PDF/Imagem usando OCR</span>
+                                                             </div>
+                                                         </>
+                                                     )}
+                                                 </label>
+
+                                                 <label style={{ 
+                                                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', 
+                                                     padding: '32px', border: '1px solid #d946ef', borderRadius: 'var(--radius-md)',
+                                                     cursor: isOcrLoading ? 'not-allowed' : 'pointer', backgroundColor: '#fdf4ff', transition: 'all 0.2s ease',
+                                                     opacity: isOcrLoading ? 0.5 : 1, textAlign: 'center'
+                                                 }}>
+                                                     <input type="file" ref={manualFileInputRef} onChange={handleManualOcrUpload} disabled={isOcrLoading} style={{ display: 'none' }} />
+                                                     <Edit2 size={32} style={{ color: '#c026d3' }} />
+                                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                                                        <span style={{ fontSize: '0.9rem', fontWeight: 900, color: '#701a75', letterSpacing: '0.025em', textTransform: 'uppercase' }}>INSERIR MANUALMENTE</span>
+                                                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Preencher dados da fatura manualmente do zero e anexar</span>
+                                                     </div>
+                                                 </label>
+                                             </div>
                                          ) : (
                                              <div 
                                                  id="ocr-success-container"
                                                  data-testid="ocr-success-container"
-                                                 style={{ 
-                                                     padding: '16px', 
-                                                     borderRadius: '12px', 
-                                                     backgroundColor: 'white',
-                                                     display: 'block'
-                                                 }}
+                                                 style={{ display: 'block' }}
                                              >
-                                                 <div style={{ 
-                                                     display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-                                                     padding: '12px 16px', backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', 
-                                                     borderRadius: 'var(--radius-sm)', marginBottom: '16px' 
-                                                 }}>
-                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#166534' }}>
-                                                         <CheckCircle2 size={16} />
-                                                         <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>DADOS EXTRAÍDOS COM SUCESSO</span>
-                                                         <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>({ocrFile?.name})</span>
+                                                 {isManualOcr ? (
+                                                     <div style={{ 
+                                                         display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                                                         padding: '12px 16px', backgroundColor: '#FDF4FF', border: '1px solid #F0ABFC', 
+                                                         borderRadius: 'var(--radius-sm)', marginBottom: '16px' 
+                                                     }}>
+                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#86198F' }}>
+                                                             <Edit2 size={16} />
+                                                             <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>INSCRIÇÃO MANUAL DA FATURA</span>
+                                                             <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>({ocrFile?.name})</span>
+                                                         </div>
+                                                         <button 
+                                                            type="button"
+                                                            onClick={() => { setPaymentDraft(null); setOcrFile(null); setIsManualOcr(false); }}
+                                                            style={{ fontSize: '0.7rem', fontWeight: 800, color: '#86198F', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+                                                         >
+                                                             TROCAR ARQUIVO
+                                                         </button>
                                                      </div>
-                                                     <button 
-                                                        type="button"
-                                                        onClick={() => { setPaymentDraft(null); setOcrFile(null); }}
-                                                        style={{ fontSize: '0.7rem', fontWeight: 800, color: '#166534', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
-                                                     >
-                                                         TROCAR ARQUIVO
-                                                     </button>
-                                                 </div>
+                                                 ) : (
+                                                     <div style={{ 
+                                                         display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                                                         padding: '12px 16px', backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', 
+                                                         borderRadius: 'var(--radius-sm)', marginBottom: '16px' 
+                                                     }}>
+                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#166534' }}>
+                                                             <CheckCircle2 size={16} />
+                                                             <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>DADOS EXTRAÍDOS COM SUCESSO</span>
+                                                             <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>({ocrFile?.name})</span>
+                                                         </div>
+                                                         <button 
+                                                            type="button"
+                                                            onClick={() => { setPaymentDraft(null); setOcrFile(null); setIsManualOcr(false); }}
+                                                            style={{ fontSize: '0.7rem', fontWeight: 800, color: '#166534', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+                                                         >
+                                                             TROCAR ARQUIVO
+                                                         </button>
+                                                     </div>
+                                                 )}
 
                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
                                                       <label style={{ ...labelStyle, marginBottom: 0, gridColumn: '1 / -1' }}>
@@ -852,7 +931,7 @@ export function RequestCreate() {
                                                      </label>
                                                      <label style={{ ...labelStyle, marginBottom: 0 }}>
                                                          Data
-                                                         <input type="text" value={String(paymentDraft.documentDate || '')} onChange={(e) => handleUpdateOcrDraft('documentDate', e.target.value)} style={inputStyle} placeholder="AAAA-MM-DD" />
+                                                         <input type="date" value={String(paymentDraft.documentDate || '')} onChange={(e) => handleUpdateOcrDraft('documentDate', e.target.value)} style={inputStyle} />
                                                      </label>
                                                      <label style={{ ...labelStyle, marginBottom: 0 }}>
                                                          Moeda
@@ -865,6 +944,17 @@ export function RequestCreate() {
                                                          Total s/ IVA
                                                          <input type="number" value={(paymentDraft.items || []).reduce((sum, item) => sum + ((item?.quantity || 0) * (item?.unitPrice || 0)), 0)} disabled style={{ ...inputStyle, backgroundColor: '#F9FAFB' }} />
                                                      </label>
+                                                 </div>
+
+                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                                     <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Itens da Fatura</h4>
+                                                     <button 
+                                                         type="button"
+                                                         onClick={handleAddOcrItem}
+                                                         style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-primary)', fontWeight: 800, fontSize: '0.75rem', background: 'none', border: 'none', cursor: 'pointer' }}
+                                                     >
+                                                         <Plus size={16} /> ADICIONAR ITEM
+                                                     </button>
                                                  </div>
 
                                                  <div style={{ overflowX: 'auto', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
@@ -883,9 +973,20 @@ export function RequestCreate() {
                                                          <tbody>
                                                              {!(paymentDraft.items && paymentDraft.items.length > 0) ? (
                                                                  <tr style={{ borderBottom: '1px solid var(--color-border-light)' }}>
-                                                                     <td colSpan={7} style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                                                                         <span style={{ fontWeight: 800, display: 'block', marginBottom: '4px' }}>Nenhum item válido identificado no documento</span>
-                                                                         <span style={{ fontSize: '0.8rem' }}>Adicione as linhas manualmente abaixo</span>
+                                                                     <td colSpan={7} style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                                                                         <span style={{ fontWeight: 800, display: 'block', marginBottom: '8px' }}>Nenhum item válido identificado no documento</span>
+                                                                         <button
+                                                                             type="button"
+                                                                             onClick={handleAddOcrItem}
+                                                                             style={{ 
+                                                                                 display: 'inline-flex', alignItems: 'center', gap: '6px', 
+                                                                                 backgroundColor: 'var(--color-primary)', color: 'white', 
+                                                                                 border: 'none', padding: '8px 16px', borderRadius: '4px', 
+                                                                                 fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer' 
+                                                                             }}
+                                                                         >
+                                                                             <Plus size={16} /> ADICIONAR LINHA MANUALMENTE
+                                                                         </button>
                                                                      </td>
                                                                  </tr>
                                                              ) : (
@@ -945,7 +1046,11 @@ export function RequestCreate() {
                                                                  <td style={{ padding: '12px 16px', textAlign: 'right', color: 'var(--color-primary)', fontSize: '0.85rem' }}>
                                                                      {(Number(paymentDraft.totalAmount) || 0).toLocaleString('pt-PT', { minimumFractionDigits: 2 })}
                                                                  </td>
-                                                                 <td></td>
+                                                                 <td style={{ textAlign: 'center' }}>
+                                                                    <button type="button" onClick={handleAddOcrItem} title="Adicionar Item" style={{ color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px' }}>
+                                                                        <Plus size={18} />
+                                                                    </button>
+                                                                 </td>
                                                              </tr>
                                                          </tfoot>
                                                      </table>

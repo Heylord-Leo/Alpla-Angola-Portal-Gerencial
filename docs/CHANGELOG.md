@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
   - Re-engineered `useOcrProcessor.ts` to implement a rigid fallback sequence mapping unidentified or raw string aliases into standard system-ready `UN` identifiers.
   - Exposed a new interactive "UNID." selection field seamlessly bridging into the front-end OCR Item configuration table (`RequestCreate.tsx`).
 - **Payment Request Table UI Cleanup**: Stripped contextually redundant columns ("Centro de Custo", "Vencimento", "Status") from the visual list space (`RequestEdit.tsx`) to declutter UX without mutating backend constraints.
+- **Payment Request OCR & Manual UX Standardization**: Completely decoupled the OCR and Manual input modes from the legacy grey bounding box, adopting the "Gestão de Cotações" premium clean-card UI pattern.
+  - Resolved nesting context logic in `RequestCreate.tsx` where manual inputs mistakenly operated visually as OCR success extracts.
+  - Eliminated manual insertion friction by replacing "AAAA-MM-DD" text placeholders with native browser Date objects.
+  - Integrated deterministic visual states parsing out the "DADOS EXTRAÍDOS COM SUCESSO" banner from an independent "INSCRIÇÃO MANUAL DA FATURA" banner.
+  - Exposed full "Adicionar Item" lifecycle hooks nested inside and outside empty states to stabilize the UX for completely manual Payment Requests.
 
 ## [2.37.0] - 2026-04-06
 

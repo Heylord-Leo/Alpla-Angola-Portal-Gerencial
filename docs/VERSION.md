@@ -9,6 +9,7 @@ v2.37.1
 ### Fixed
 
 - **Payment Request Date Validation Rejection**: Resolved the blocking 400 Bad Request error occurring during the creation or editing of requests with past dates. Removed strict business constraints on the backend (`RequestsController.cs`) that rejected `NeedByDateUtc` values matching past dates, aligning it with the new frontend visual warning implementation.
+- **Payment Request OCR & Manual UX Standardization**: Restructured the frontend Payment Request form to permanently decouple OCR vs Manual selection from the legacy grey UI bounds. Applied the deterministic "Gestão de Cotações" premium clean-card pattern with separated manual parsing boundaries, integrated native Date picker inputs, and exposed inline grid interactions to resolve friction during non-OCR manual invoicing.
 
 ## [2.37.0] - 2026-04-06
 
