@@ -112,20 +112,20 @@ export function RequestLineItemForm({
                     {renderFieldError('Description')}
                 </label>
 
-                <label style={labelStyle}>Centro de Custo <span style={{ color: 'red' }}>*</span>
+                <label style={labelStyle}>Centro de Custo
                     <select
-                        required
+                        required={false}
                         value={itemForm.costCenterId || ''}
                         onChange={e => { setItemForm({ ...itemForm, costCenterId: Number(e.target.value) }); clearFieldError('CostCenterId'); }}
                         style={getInputStyle('CostCenterId')}
                         disabled={!itemForm.plantId}
                     >
-                        <option value="" disabled>
+                        <option value="">
                             {!itemForm.plantId
                                 ? 'Selecione primeiro a planta de destino'
                                 : (costCenters.filter(cc => (cc.isActive || cc.id === itemForm.costCenterId) && cc.plantId === itemForm.plantId).length === 0
                                     ? 'Nenhum centro de custo para esta planta'
-                                    : 'Selecione o centro de custo...')}
+                                    : 'Selecione o centro de custo (opcional)...')}
                         </option>
                         {costCenters
                             .filter(cc => (cc.isActive || cc.id === itemForm.costCenterId) && cc.plantId === itemForm.plantId)
@@ -153,9 +153,9 @@ export function RequestLineItemForm({
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '20px', paddingBottom: '16px' }}>
-                <label style={labelStyle}>Planta de Destino {requestTypeCode !== 'PAYMENT' && <span style={{ color: 'red' }}>*</span>}
+                <label style={labelStyle}>Planta de Destino
                     <select 
-                        required={requestTypeCode !== 'PAYMENT'} 
+                        required={false} 
                         value={itemForm.plantId || ''} 
                         onChange={e => {
                             const newPlantId = Number(e.target.value);
@@ -167,15 +167,18 @@ export function RequestLineItemForm({
                         style={getInputStyle('PlantId')}
                         disabled={!companyId}
                     >
-                        <option value="" disabled>
+                        <option value="">
                             {!companyId 
                                 ? 'Selecione primeiro a empresa no cabeçalho' 
-                                : (plants.length === 0 ? 'Nenhuma planta disponível para esta empresa' : 'Selecione a planta...')}
+                                : (plants.length === 0 ? 'Nenhuma planta disponível para esta empresa' : 'Selecione a planta (usar padrão do pedido)...')}
                         </option>
                         {plants.filter(p => p.isActive || p.id === itemForm.plantId).map(p => (
                             <option key={p.id} value={p.id}>{p.name} {!p.isActive ? '(Inativo)' : ''}</option>
                         ))}
                     </select>
+                    <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', marginTop: '4px', fontStyle: 'italic' }}>
+                        Se vazio, assume a planta principal definida no cabeçalho do pedido.
+                    </span>
                     {renderFieldError('PlantId')}
                 </label>
 

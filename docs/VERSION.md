@@ -2,7 +2,14 @@
 
 ## Current Version
 
-v2.36.0
+v2.37.0
+
+## [2.37.0] - 2026-04-06
+
+### Changed
+
+- **Approval Workspace Overhaul**: Completely modernized the user interface for the Approval Detail panel. Replaced all legacy brutalist remnants (raw black borders, strong shadows) with the new 'Premium Corporate' aesthetic leveraging `--color-bg-surface`, `--shadow-sm`, and `--radius-lg`.
+- **CSS Infrastructure Upgrade**: Migrated embedded nested panels (`DecisionInsightsPanel`, `DetailedHistoryPanel`, `DecisionTimeline`, `DecisionQuotationCard`) away from pure Tailwind utility dependency toward strict inline mapping to the internal `tokens.css` design system, terminating rendering failures caused by clashing layout strategies.
 
 ## [2.36.0] - 2026-04-06
 
@@ -50,6 +57,7 @@ v2.36.0
 
 ## Version History
 
+- **2.37.0**: Approval Workspace UI Engine Overhaul. Replaced complete UI styling stack for the Approval Detail panel with internal CSS tokens.
 - **2.36.0**: Area Approval Item-Level Cost Centers. Transitioned cost center assignment from request-level to granular item-level tracking, strictly enforcing plant compatibility.
 - **2.35.0**: Reactive OCR Supplier Workflow & Backend Portal Code Hardening (DEC-098). Relocated supplier validation to New Request screen and implemented robust, self-healing, concurrency-safe portal code generation.
 - **2.34.0**: Request Edit Workflow Optimizations. Refined the Request Edit UI for `PAYMENT` requests by suppressing non-applicable quotation sections and guided attention. Integrated `QuickSupplierModal` with an OCR prefill block to enable seamless supplier creation and auto-selection for unmatched invoice data.

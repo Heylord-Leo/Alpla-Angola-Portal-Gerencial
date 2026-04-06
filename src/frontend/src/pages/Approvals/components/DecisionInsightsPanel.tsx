@@ -17,11 +17,18 @@ interface DecisionInsightsPanelProps {
     approvalStage: 'AREA' | 'FINAL';
     requestData?: RequestContextData;
     onDrillDown?: (item: ItemIntelligenceDto) => void;
+    isSingleItemFocus?: boolean;
 }
 
 // --- Main Component ---
 
-export function DecisionInsightsPanel({ intelligence, approvalStage, requestData, onDrillDown }: DecisionInsightsPanelProps) {
+export function DecisionInsightsPanel({ 
+    intelligence, 
+    approvalStage, 
+    requestData, 
+    onDrillDown,
+    isSingleItemFocus 
+}: DecisionInsightsPanelProps) {
     if (!intelligence) return null;
 
     const { overallAlerts: alerts, departmentContext: dept, items: itemInsights } = intelligence;
@@ -43,10 +50,11 @@ export function DecisionInsightsPanel({ intelligence, approvalStage, requestData
                         alignItems: 'center',
                         gap: '14px',
                         padding: '12px 16px',
-                        backgroundColor: 'white',
-                        border: '2px solid black',
-                        borderLeft: `6px solid ${borderColor}`,
-                        boxShadow: '2px 2px 0px rgba(0,0,0,1)'
+                        backgroundColor: 'var(--color-bg-surface)',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: 'var(--radius-md)',
+                        borderLeft: `4px solid ${borderColor}`,
+                        boxShadow: 'var(--shadow-sm)'
                     }}>
                         <div style={{ color: borderColor, display: 'flex' }}>
                             {isCritical ? <AlertCircle size={18} /> : isWarning ? <AlertTriangle size={18} /> : <Info size={18} />}
@@ -84,7 +92,7 @@ export function DecisionInsightsPanel({ intelligence, approvalStage, requestData
 
     const itemsBlock = itemInsights && itemInsights.length > 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <SectionLabel>Análise por Item</SectionLabel>
+            {!isSingleItemFocus && <SectionLabel>Análise por Item</SectionLabel>}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {itemInsights.map((item, idx) => (
                     <ItemCard 
@@ -92,6 +100,7 @@ export function DecisionInsightsPanel({ intelligence, approvalStage, requestData
                         item={item} 
                         onDrillDown={onDrillDown}
                         isArea={isArea}
+                        isFocused={isSingleItemFocus}
                     />
                 ))}
             </div>
@@ -144,11 +153,12 @@ function ContextBanner({ approvalStage }: { approvalStage: 'AREA' | 'FINAL' }) {
             gap: '12px',
             padding: '12px 18px',
             backgroundColor: isArea ? 'var(--color-bg-page)' : 'var(--color-success-muted)',
-            border: '2px solid black',
-            borderLeft: `8px solid ${isArea ? 'var(--color-primary)' : 'var(--color-success)'}`,
-            boxShadow: 'var(--shadow-brutal)'
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-md)',
+            borderLeft: `6px solid ${isArea ? 'var(--color-primary)' : 'var(--color-success)'}`,
+            boxShadow: 'var(--shadow-sm)'
         }}>
-            <div style={{ display: 'flex', color: 'black' }}>
+            <div style={{ display: 'flex', color: 'var(--color-text-main)' }}>
                 {isArea ? <Eye size={18} strokeWidth={2.5} /> : <BarChart3 size={18} strokeWidth={2.5} />}
             </div>
             <span style={{ 
@@ -156,7 +166,7 @@ function ContextBanner({ approvalStage }: { approvalStage: 'AREA' | 'FINAL' }) {
                 fontWeight: 950, 
                 textTransform: 'uppercase', 
                 letterSpacing: '0.1em',
-                color: 'black'
+                color: 'var(--color-text-main)'
             }}>
                 {isArea ? 'Foco: Legitimidade e Necessidade' : 'Foco: Racionalidade Financeira'}
             </span>
@@ -206,10 +216,11 @@ function AreaEmphasisBlock({ intelligence, requestData }: {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <SectionLabel>Checklist de Legitimidade</SectionLabel>
             <div style={{
-                border: '2px solid black',
-                backgroundColor: 'white',
+                border: '1px solid var(--color-border)',
+                backgroundColor: 'var(--color-bg-surface)',
+                borderRadius: 'var(--radius-lg)',
                 overflow: 'hidden',
-                boxShadow: 'var(--shadow-brutal)'
+                boxShadow: 'var(--shadow-sm)'
             }}>
                 {items.map((item, idx) => (
                     <div key={idx} style={{
@@ -217,7 +228,7 @@ function AreaEmphasisBlock({ intelligence, requestData }: {
                         alignItems: 'center',
                         gap: '12px',
                         padding: '12px 20px',
-                        borderBottom: idx < items.length - 1 ? '1.5px solid black' : 'none',
+                        borderBottom: idx < items.length - 1 ? '1px solid var(--color-border)' : 'none',
                     }}>
                         <div style={{ display: 'flex', flexShrink: 0 }}>
                             {item.ok ? (
@@ -307,9 +318,10 @@ function FinalEmphasisBlock({ intelligence }: { intelligence: ApprovalIntelligen
                 {consolidatedVariation !== null && (
                     <div style={{ 
                         padding: '20px', 
-                        border: '2px solid black', 
-                        backgroundColor: 'white',
-                        boxShadow: 'var(--shadow-brutal)'
+                        border: '1px solid var(--color-border)', 
+                        borderRadius: 'var(--radius-lg)',
+                        backgroundColor: 'var(--color-bg-surface)',
+                        boxShadow: 'var(--shadow-sm)'
                     }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
                             <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 900, letterSpacing: '0.1em', color: 'var(--color-text-muted)' }}>
@@ -360,7 +372,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
             fontWeight: 950, 
             textTransform: 'uppercase', 
             letterSpacing: '0.15em', 
-            color: 'black',
+            color: 'var(--color-text-main)',
             marginBottom: '6px',
             display: 'flex',
             alignItems: 'center',
@@ -376,9 +388,10 @@ function KpiCard({ label, value, muted, tooltip }: { label: string; value: strin
     const cardContent = (
         <div style={{ 
             padding: '20px', 
-            border: '2px solid black', 
-            backgroundColor: 'white',
-            boxShadow: 'var(--shadow-brutal)',
+            border: '1px solid var(--color-border)', 
+            borderRadius: 'var(--radius-lg)',
+            backgroundColor: 'var(--color-bg-surface)',
+            boxShadow: 'var(--shadow-sm)',
             height: '100%'
         }}>
             <div style={{ 
@@ -392,7 +405,7 @@ function KpiCard({ label, value, muted, tooltip }: { label: string; value: strin
                 </div>
                 {tooltip && <HelpCircle size={12} className="text-gray-400" />}
             </div>
-            <div style={{ fontSize: '1.5rem', fontWeight: 950, color: muted ? 'var(--color-text-muted)' : 'black', fontVariantNumeric: 'tabular-nums' }}>
+            <div style={{ fontSize: '1.5rem', fontWeight: 950, color: muted ? 'var(--color-text-muted)' : 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>
                 {value}
             </div>
         </div>
@@ -409,7 +422,17 @@ function KpiCard({ label, value, muted, tooltip }: { label: string; value: strin
     return cardContent;
 }
 
-function ItemCard({ item, onDrillDown, isArea }: { item: ItemIntelligenceDto; onDrillDown?: (item: ItemIntelligenceDto) => void, isArea: boolean }) {
+function ItemCard({ 
+    item, 
+    onDrillDown, 
+    isArea,
+    isFocused 
+}: { 
+    item: ItemIntelligenceDto; 
+    onDrillDown?: (item: ItemIntelligenceDto) => void, 
+    isArea: boolean;
+    isFocused?: boolean;
+}) {
     const hasHistory = item.hasHistory;
     
     function getVariationStyle(variation: number) {
@@ -422,23 +445,25 @@ function ItemCard({ item, onDrillDown, isArea }: { item: ItemIntelligenceDto; on
 
     return (
         <div style={{ 
-            border: '2px solid black', 
-            backgroundColor: 'white',
-            padding: '20px',
+            border: isFocused ? '2px solid var(--color-primary)' : '1px solid var(--color-border)', 
+            borderRadius: 'var(--radius-lg)',
+            backgroundColor: 'var(--color-bg-surface)',
+            padding: isFocused ? '24px' : '20px',
             position: 'relative',
-            boxShadow: 'var(--shadow-brutal)'
+            boxShadow: isFocused ? 'var(--shadow-md)' : 'var(--shadow-sm)',
         }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-                <span style={{ fontSize: '0.9rem', fontWeight: 950, color: 'black', textTransform: 'uppercase', maxWidth: '70%', lineHeight: '1.1', letterSpacing: '-0.02em' }}>
+                <span style={{ fontSize: '0.9rem', fontWeight: 950, color: 'var(--color-text-main)', textTransform: 'uppercase', maxWidth: '70%', lineHeight: '1.1', letterSpacing: '-0.02em' }}>
                     {item.description}
                 </span>
                 <span style={{ 
                     fontSize: '0.6rem', 
                     fontWeight: 950, 
                     padding: '3px 8px', 
-                    backgroundColor: hasHistory ? 'black' : 'var(--color-bg-page)',
-                    border: '1.5px solid black',
-                    color: hasHistory ? 'white' : 'black',
+                    backgroundColor: hasHistory ? 'var(--color-text-main)' : 'var(--color-bg-page)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius-sm)',
+                    color: hasHistory ? 'white' : 'var(--color-text-main)',
                     textTransform: 'uppercase',
                     letterSpacing: '0.05em'
                 }}>
@@ -456,7 +481,7 @@ function ItemCard({ item, onDrillDown, isArea }: { item: ItemIntelligenceDto; on
                     }}>
                         <div>
                             <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 900, color: 'var(--color-text-muted)', letterSpacing: '0.05em' }}>Último Preço</div>
-                            <div style={{ fontSize: '1rem', fontWeight: 950, color: 'black', fontVariantNumeric: 'tabular-nums' }}>
+                            <div style={{ fontSize: '1rem', fontWeight: 950, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>
                                 {item.lastPaidPrice?.toLocaleString('pt-AO', { style: 'currency', currency: item.currency || 'AOA' })}
                             </div>
                         </div>
@@ -481,7 +506,7 @@ function ItemCard({ item, onDrillDown, isArea }: { item: ItemIntelligenceDto; on
                         alignItems: 'center', 
                         justifyContent: 'space-between',
                         paddingTop: '12px', 
-                        borderTop: '2px solid var(--color-bg-page)' 
+                        borderTop: '1px solid var(--color-border)' 
                     }}>
                         {item.lastSupplierName && (
                             <div style={{ 
@@ -489,10 +514,10 @@ function ItemCard({ item, onDrillDown, isArea }: { item: ItemIntelligenceDto; on
                                 alignItems: 'center', 
                                 gap: '8px' 
                             }}>
-                                <Package size={14} style={{ color: 'black' }} />
+                                <Package size={14} style={{ color: 'var(--color-text-main)' }} />
                                 <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 800 }}>
                                     <span style={{ opacity: 0.6, textTransform: 'uppercase', marginRight: '6px' }}>Forn. anterior:</span>
-                                    <span style={{ color: 'black', fontWeight: 950 }}>{item.lastSupplierName}</span>
+                                    <span style={{ color: 'var(--color-text-main)', fontWeight: 950 }}>{item.lastSupplierName}</span>
                                 </span>
                             </div>
                         )}
@@ -508,14 +533,15 @@ function ItemCard({ item, onDrillDown, isArea }: { item: ItemIntelligenceDto; on
                                     fontWeight: 950,
                                     textTransform: 'uppercase',
                                     color: 'white',
-                                    backgroundColor: 'black',
-                                    border: '2px solid black',
+                                    backgroundColor: 'var(--color-text-main)',
+                                    border: 'none',
+                                    borderRadius: 'var(--radius-sm)',
                                     padding: '6px 12px',
                                     cursor: 'pointer',
-                                    boxShadow: '3px 3px 0px rgba(0,0,0,0.2)',
+                                    boxShadow: 'var(--shadow-sm)',
                                     letterSpacing: '0.05em'
                                 }}
-                                className="hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none transition-all"
+                                className="hover:-translate-y-0.5 hover:shadow-md transition-all"
                             >
                                 {isArea ? 'Analisar Histórico' : 'Ver Detalhes'}
                             </button>
@@ -526,9 +552,10 @@ function ItemCard({ item, onDrillDown, isArea }: { item: ItemIntelligenceDto; on
                 <div style={{ 
                     padding: '14px', 
                     backgroundColor: 'var(--color-bg-page)', 
-                    border: '2px dashed var(--color-border)',
+                    border: '1px dashed var(--color-border)',
+                    borderRadius: 'var(--radius-md)',
                     textAlign: 'center',
-                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.05)'
+                    boxShadow: 'none'
                 }}>
                     <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                         Sem histórico nesta moeda

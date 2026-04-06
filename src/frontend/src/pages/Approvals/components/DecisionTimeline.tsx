@@ -46,8 +46,8 @@ export function DecisionTimeline({ entries }: DecisionTimelineProps) {
                             top: '24px',
                             bottom: 0,
                             width: '2px',
-                            backgroundColor: 'black',
-                            opacity: 0.1
+                            backgroundColor: 'var(--color-border)',
+                            opacity: 1
                         }} />
                     )}
 
@@ -56,7 +56,7 @@ export function DecisionTimeline({ entries }: DecisionTimelineProps) {
                         width: '24px',
                         height: '24px',
                         borderRadius: '50%',
-                        backgroundColor: 'black',
+                        backgroundColor: 'var(--color-text-main)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -91,8 +91,10 @@ export function DecisionTimeline({ entries }: DecisionTimelineProps) {
                             <div style={{
                                 marginTop: '8px',
                                 padding: '12px 14px',
-                                backgroundColor: '#f1f5f9',
-                                borderLeft: '4px solid black',
+                                backgroundColor: 'var(--color-bg-surface)',
+                                borderLeft: '4px solid var(--color-border-heavy)',
+                                borderRadius: '0 var(--radius-md) var(--radius-md) 0',
+                                border: '1px solid var(--color-border)',
                                 fontSize: '0.8rem',
                                 fontStyle: 'italic',
                                 fontWeight: 500,

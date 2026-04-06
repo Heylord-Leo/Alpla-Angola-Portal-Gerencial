@@ -40,18 +40,20 @@ export const DetailedHistoryPanel: React.FC<DetailedHistoryPanelProps> = ({ item
             {/* Header */}
             <div style={{ 
                 padding: '20px 24px', 
-                borderBottom: '4px solid black', 
+                borderBottom: '1px solid var(--color-border)', 
                 display: 'flex', 
                 alignItems: 'center', 
                 gap: '20px', 
-                backgroundColor: 'white' 
+                backgroundColor: 'var(--color-bg-surface)' 
             }}>
                 <button 
                     onClick={onClose}
                     style={{
                         padding: '10px 20px',
-                        backgroundColor: 'white',
-                        border: '2px solid black',
+                        backgroundColor: 'var(--color-bg-page)',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: 'var(--radius-md)',
+                        color: 'var(--color-text-main)',
                         fontWeight: 900,
                         fontSize: '0.75rem',
                         textTransform: 'uppercase',
@@ -59,8 +61,8 @@ export const DetailedHistoryPanel: React.FC<DetailedHistoryPanelProps> = ({ item
                         alignItems: 'center',
                         gap: '8px',
                         cursor: 'pointer',
-                        boxShadow: '4px 4px 0px rgba(0,0,0,1)',
-                        transition: 'all 0.1s'
+                        boxShadow: 'var(--shadow-sm)',
+                        transition: 'all 0.2s'
                     }}
                     className="hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none"
                 >
@@ -72,7 +74,7 @@ export const DetailedHistoryPanel: React.FC<DetailedHistoryPanelProps> = ({ item
                         fontWeight: 950, 
                         textTransform: 'uppercase', 
                         letterSpacing: '0.15em', 
-                        color: 'black',
+                        color: 'var(--color-text-main)',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px',
@@ -81,7 +83,7 @@ export const DetailedHistoryPanel: React.FC<DetailedHistoryPanelProps> = ({ item
                         <div style={{ width: '4px', height: '10px', backgroundColor: 'var(--color-primary)' }} />
                         Inteligência de Compra
                     </div>
-                    <h2 style={{ fontSize: '1.25rem', fontWeight: 900, margin: 0, textTransform: 'uppercase', letterSpacing: '-0.02em', color: 'black' }}>
+                    <h2 style={{ fontSize: '1.25rem', fontWeight: 900, margin: 0, textTransform: 'uppercase', letterSpacing: '-0.02em', color: 'var(--color-text-main)' }}>
                         {item.description}
                     </h2>
                 </div>
@@ -103,12 +105,13 @@ export const DetailedHistoryPanel: React.FC<DetailedHistoryPanelProps> = ({ item
                         {item.variationVsAvgPercentage !== undefined && (
                             <div style={{ 
                                 padding: '20px', 
-                                border: '2px solid black', 
+                                border: '1px solid var(--color-border)', 
+                                borderRadius: 'var(--radius-lg)',
                                 backgroundColor: item.variationVsAvgPercentage > 0 ? '#fef2f2' : '#f0fdf4',
                                 display: 'flex',
                                 flexDirection: 'column',
                                 gap: '4px',
-                                boxShadow: 'var(--shadow-brutal)'
+                                boxShadow: 'var(--shadow-sm)'
                             }}>
                                 <span style={{ fontSize: '0.65rem', fontWeight: 900, textTransform: 'uppercase', color: 'var(--color-text-muted)', letterSpacing: '0.1em' }}>Variação</span>
                                 <div style={{ 
@@ -131,10 +134,11 @@ export const DetailedHistoryPanel: React.FC<DetailedHistoryPanelProps> = ({ item
                 <div style={{ 
                     padding: '20px', 
                     backgroundColor: '#eff6ff', 
-                    border: '2px solid #2563eb', 
+                    border: '1px solid #93c5fd', 
+                    borderRadius: 'var(--radius-lg)',
                     display: 'flex', 
                     gap: '20px',
-                    boxShadow: 'var(--shadow-brutal)'
+                    boxShadow: 'var(--shadow-sm)'
                 }}>
                     <div style={{ 
                         width: '40px', 
@@ -144,9 +148,8 @@ export const DetailedHistoryPanel: React.FC<DetailedHistoryPanelProps> = ({ item
                         display: 'flex', 
                         alignItems: 'center', 
                         justifyContent: 'center',
-                        flexShrink: 0,
-                        border: '2px solid black',
-                        boxShadow: '2px 2px 0px black'
+                        borderRadius: 'var(--radius-md)',
+                        flexShrink: 0
                     }}>
                         <Info size={24} />
                     </div>
@@ -154,8 +157,8 @@ export const DetailedHistoryPanel: React.FC<DetailedHistoryPanelProps> = ({ item
                         <span style={{ fontSize: '0.7rem', fontWeight: 950, textTransform: 'uppercase', color: '#2563eb', letterSpacing: '0.1em', display: 'block', marginBottom: '4px' }}>
                             Grau de Confiança do Match
                         </span>
-                        <div style={{ fontSize: '0.9rem', fontWeight: 900, color: 'black' }}>Descrição Normalizada Filtrada</div>
-                        <p style={{ fontSize: '0.8rem', fontWeight: 600, color: '#374151', margin: '8px 0 0', lineHeight: 1.5, borderLeft: '3px solid #2563eb', paddingLeft: '12px' }}>
+                        <div style={{ fontSize: '0.9rem', fontWeight: 900, color: 'var(--color-text-main)' }}>Descrição Normalizada Filtrada</div>
+                        <p style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-text-muted)', margin: '8px 0 0', lineHeight: 1.5, borderLeft: '3px solid #2563eb', paddingLeft: '12px' }}>
                             Esta análise considera registros dos últimos 12 meses. O sistema normaliza as descrições para identificar variações do mesmo item.
                         </p>
                     </div>
@@ -163,13 +166,13 @@ export const DetailedHistoryPanel: React.FC<DetailedHistoryPanelProps> = ({ item
 
                 {/* Historical Table Section */}
                 <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderLeft: '4px solid black', paddingLeft: '16px' }}>
-                        <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Histórico de Aquisições</h3>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderLeft: '4px solid var(--color-primary)', paddingLeft: '16px' }}>
+                        <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--color-text-main)' }}>Histórico de Aquisições</h3>
                     </div>
                     
                     {isLoading ? (
-                        <div style={{ padding: '60px', textAlign: 'center', border: '2px dashed #e5e7eb', backgroundColor: 'white' }}>
-                            <div style={{ width: '40px', height: '40px', border: '4px solid #e5e7eb', borderTopColor: 'black', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
+                        <div style={{ padding: '60px', textAlign: 'center', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-lg)', backgroundColor: 'var(--color-bg-surface)' }}>
+                            <div style={{ width: '40px', height: '40px', border: '3px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
                             <span style={{ fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--color-text-muted)' }}>Procurando registros...</span>
                         </div>
                     ) : error ? (
@@ -181,37 +184,37 @@ export const DetailedHistoryPanel: React.FC<DetailedHistoryPanelProps> = ({ item
                             <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-muted)' }}>Nenhum registro histórico encontrado.</span>
                         </div>
                     ) : (
-                        <div style={{ border: '2px solid black', boxShadow: 'var(--shadow-brutal)', overflow: 'hidden' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: 'white', tableLayout: 'fixed' }}>
+                        <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: 'var(--color-bg-surface)', tableLayout: 'fixed' }}>
                                 <thead>
-                                    <tr style={{ backgroundColor: '#f9fafb', borderBottom: '2px solid black' }}>
-                                        <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.65rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.1em', width: '30%', borderRight: '1.5px solid black' }}>Data & Pedido</th>
-                                        <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.65rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.1em', borderRight: '1.5px solid black' }}>Fornecedor</th>
-                                        <th style={{ padding: '16px', textAlign: 'right', fontSize: '0.65rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.1em', width: '25%' }}>Preço Unit.</th>
+                                    <tr style={{ backgroundColor: 'var(--color-bg-page)', borderBottom: '1px solid var(--color-border)' }}>
+                                        <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.65rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.1em', width: '30%', color: 'var(--color-text-muted)' }}>Data & Pedido</th>
+                                        <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.65rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--color-text-muted)' }}>Fornecedor</th>
+                                        <th style={{ padding: '16px', textAlign: 'right', fontSize: '0.65rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.1em', width: '25%', color: 'var(--color-text-muted)' }}>Preço Unit.</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {history.map((record, idx) => (
                                         <tr 
                                             key={record.requestId + idx}
-                                            style={{ borderBottom: idx === history.length - 1 ? 'none' : '1.5px solid #000', backgroundColor: record.isLastPurchase ? '#fffbeb' : 'white' }}
-                                            className="hover:bg-gray-50"
+                                            style={{ borderBottom: idx === history.length - 1 ? 'none' : '1px solid var(--color-border)', backgroundColor: record.isLastPurchase ? 'rgba(234, 179, 8, 0.05)' : 'transparent' }}
+                                            className="hover:bg-gray-50 transition-colors"
                                         >
-                                            <td style={{ padding: '16px', borderRight: '1.5px solid black', verticalAlign: 'top' }}>
-                                                <div style={{ fontWeight: 900, fontSize: '0.85rem', color: 'black', marginBottom: '8px' }}>{formatDate(record.purchaseDate)}</div>
+                                            <td style={{ padding: '16px', verticalAlign: 'top' }}>
+                                                <div style={{ fontWeight: 900, fontSize: '0.85rem', color: 'var(--color-text-main)', marginBottom: '8px' }}>{formatDate(record.purchaseDate)}</div>
                                                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                                    <span style={{ fontSize: '10px', fontWeight: 900, backgroundColor: 'black', color: 'white', padding: '2px 6px', textTransform: 'uppercase' }}>#{record.requestNumber}</span>
-                                                    {record.isLastPurchase && <span style={{ fontSize: '10px', fontWeight: 900, backgroundColor: 'var(--color-warning)', color: 'black', padding: '2px 6px', textTransform: 'uppercase', border: '1px solid black' }}>Última</span>}
+                                                    <span style={{ fontSize: '10px', fontWeight: 900, backgroundColor: 'var(--color-text-main)', borderRadius: 'var(--radius-sm)', color: 'white', padding: '2px 6px', textTransform: 'uppercase' }}>#{record.requestNumber}</span>
+                                                    {record.isLastPurchase && <span style={{ fontSize: '10px', fontWeight: 900, backgroundColor: 'var(--color-warning)', color: 'var(--color-text-main)', borderRadius: 'var(--radius-sm)', padding: '2px 6px', textTransform: 'uppercase' }}>Última</span>}
                                                 </div>
                                             </td>
-                                            <td style={{ padding: '16px', borderRight: '1.5px solid black', verticalAlign: 'top' }}>
-                                                <div style={{ fontWeight: 900, fontSize: '0.85rem', color: 'black', marginBottom: '4px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{record.supplierName}</div>
+                                            <td style={{ padding: '16px', verticalAlign: 'top' }}>
+                                                <div style={{ fontWeight: 900, fontSize: '0.85rem', color: 'var(--color-text-main)', marginBottom: '4px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{record.supplierName}</div>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.7rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>
                                                     <Package size={12} /> {record.plantName || record.departmentName}
                                                 </div>
                                             </td>
-                                            <td style={{ padding: '16px', textAlign: 'right', verticalAlign: 'top', backgroundColor: '#fcfcfc' }}>
-                                                <div style={{ fontWeight: 950, fontSize: '1rem', color: 'black' }}>{formatCurrencyAO(record.unitPrice, record.currency)}</div>
+                                            <td style={{ padding: '16px', textAlign: 'right', verticalAlign: 'top' }}>
+                                                <div style={{ fontWeight: 950, fontSize: '1rem', color: 'var(--color-text-main)' }}>{formatCurrencyAO(record.unitPrice, record.currency)}</div>
                                                 {record.unitPrice !== item.currentUnitPrice && (
                                                     <div style={{ 
                                                         marginTop: '4px', 
@@ -246,15 +249,16 @@ function MetricCard({ label, value }: { label: string; value: string }) {
     return (
         <div style={{ 
             padding: '20px', 
-            border: '2px solid black', 
-            backgroundColor: 'white',
+            border: '1px solid var(--color-border)', 
+            borderRadius: 'var(--radius-lg)',
+            backgroundColor: 'var(--color-bg-surface)',
             display: 'flex',
             flexDirection: 'column',
             gap: '4px',
-            boxShadow: 'var(--shadow-brutal)'
+            boxShadow: 'var(--shadow-sm)'
         }}>
             <span style={{ fontSize: '0.65rem', fontWeight: 900, textTransform: 'uppercase', color: 'var(--color-text-muted)', letterSpacing: '0.1em' }}>{label}</span>
-            <div style={{ fontSize: '1.5rem', fontWeight: 950, color: 'black', letterSpacing: '-0.02em' }}>{value}</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 950, color: 'var(--color-text-main)', letterSpacing: '-0.02em' }}>{value}</div>
         </div>
     );
 }

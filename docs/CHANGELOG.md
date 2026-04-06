@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.37.0] - 2026-04-06
+
+### Changed
+
+- **Approval Workspace Overhaul**: Completely modernized the user interface for the Approval Detail panel. Replaced all legacy brutalist remnants (raw black borders, strong shadows) with the new 'Premium Corporate' aesthetic leveraging `--color-bg-surface`, `--shadow-sm`, and `--radius-lg`.
+- **CSS Infrastructure Upgrade**: Migrated embedded nested panels (`DecisionInsightsPanel`, `DetailedHistoryPanel`, `DecisionTimeline`, `DecisionQuotationCard`) away from pure Tailwind utility dependency toward strict inline mapping to the internal `tokens.css` design system. This eliminates widespread rendering failures previously caused by global layout class collisions.
+- **Adaptive UX Fallbacks**: Hardcoded deterministic overrides to fallback between grid 'Cards' and table 'List' structures automatically based on strict `> 5 item` thresholds inside the Approval viewer.
+
 ## [2.36.0] - 2026-04-06
 
 ### Added

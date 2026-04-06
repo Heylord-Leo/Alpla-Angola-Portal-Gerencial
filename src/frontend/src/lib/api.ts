@@ -280,35 +280,35 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao duplicar o pedido.');
             return response.json();
         },
-        approveArea: async (id: string, comment?: string, selectedQuotationId?: string, itemCostCenters?: Record<string, number | null>): Promise<{ message: string; statusCode: string }> => {
+        approveArea: async (id: string, comment?: string, selectedQuotationId?: string, itemAssignments?: Record<string, { plantId: number | null, costCenterId: number | null }>): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/area-approval/approve`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ comment, selectedQuotationId, itemCostCenters }),
+                body: JSON.stringify({ comment, selectedQuotationId, itemAssignments }),
             });
             if (!response.ok) return handleApiError(response, 'Falha ao aprovar o pedido.');
             return response.json();
         },
-        rejectArea: async (id: string, comment: string): Promise<{ message: string; statusCode: string }> => {
+        rejectArea: async (id: string, comment: string, itemAssignments?: Record<string, { plantId: number | null, costCenterId: number | null }>): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/area-approval/reject`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ comment }),
+                body: JSON.stringify({ comment, itemAssignments }),
             });
             if (!response.ok) return handleApiError(response, 'Falha ao rejeitar o pedido.');
             return response.json();
         },
-        requestAdjustmentArea: async (id: string, comment: string): Promise<{ message: string; statusCode: string }> => {
+        requestAdjustmentArea: async (id: string, comment: string, itemAssignments?: Record<string, { plantId: number | null, costCenterId: number | null }>): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/area-approval/request-adjustment`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ comment }),
+                body: JSON.stringify({ comment, itemAssignments }),
             });
             if (!response.ok) return handleApiError(response, 'Falha ao solicitar ajuste no pedido.');
             return response.json();

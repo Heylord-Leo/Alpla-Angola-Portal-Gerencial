@@ -2750,7 +2750,7 @@ public class RequestsController : BaseController
     [HttpPost("{id}/area-approval/approve")]
     public async Task<IActionResult> ApproveArea(Guid id, [FromBody] ApprovalActionDto dto)
     {
-        return await ProcessAreaApproval(id, "APPROVE", "WAITING_FINAL_APPROVAL", dto.Comment, dto.SelectedQuotationId, dto.ItemCostCenters);
+        return await ProcessAreaApproval(id, "APPROVE", "WAITING_FINAL_APPROVAL", dto.Comment, dto.SelectedQuotationId, dto.ItemAssignments);
     }
 
     [HttpPost("{id}/area-approval/reject")]
@@ -2759,7 +2759,7 @@ public class RequestsController : BaseController
         if (string.IsNullOrWhiteSpace(dto.Comment))
             return BadRequest(new ProblemDetails { Title = "Comentário Obrigatório", Detail = "Informe o motivo da rejeição.", Status = 400 });
 
-        return await ProcessAreaApproval(id, "REJECT", "REJECTED", dto.Comment, dto.SelectedQuotationId, dto.ItemCostCenters);
+        return await ProcessAreaApproval(id, "REJECT", "REJECTED", dto.Comment, dto.SelectedQuotationId, dto.ItemAssignments);
     }
 
     [HttpPost("{id}/area-approval/request-adjustment")]
@@ -2768,7 +2768,7 @@ public class RequestsController : BaseController
         if (string.IsNullOrWhiteSpace(dto.Comment))
             return BadRequest(new ProblemDetails { Title = "Comentário Obrigatório", Detail = "Informe o motivo do reajuste.", Status = 400 });
 
-        return await ProcessAreaApproval(id, "REQUEST_ADJUSTMENT", "AREA_ADJUSTMENT", dto.Comment, dto.SelectedQuotationId, dto.ItemCostCenters);
+        return await ProcessAreaApproval(id, "REQUEST_ADJUSTMENT", "AREA_ADJUSTMENT", dto.Comment, dto.SelectedQuotationId, dto.ItemAssignments);
     }
 
     [HttpPost("{id}/final-approval/approve")]
@@ -2845,7 +2845,7 @@ public class RequestsController : BaseController
         return await ApplyStatusChangeAndSyncItemsAsync(request, targetStatusCode, action, historyComment, successMessage, actorId);
     }
 
-    private async Task<IActionResult> ProcessAreaApproval(Guid id, string action, string targetStatusCode, string? comment, Guid? selectedQuotationId, Dictionary<Guid, int>? itemCostCenters)
+    private async Task<IActionResult> ProcessAreaApproval(Guid id, string action, string targetStatusCode, string? comment, Guid? selectedQuotationId, Dictionary<Guid, ItemApprovalAssignmentDto>? itemAssignments)
     {
         var actorId = CurrentUserId;
 
@@ -2894,21 +2894,28 @@ public class RequestsController : BaseController
         {
             var activeItems = request.LineItems.Where(li => !li.IsDeleted).ToList();
             
-            // 1. Validate that we have a CC for every active item
+            // 1. Validate that we have both Plant and CC for every active item
             foreach (var item in activeItems)
             {
-                if (itemCostCenters == null || !itemCostCenters.TryGetValue(item.Id, out var ccId) || ccId <= 0)
+                if (itemAssignments == null || !itemAssignments.TryGetValue(item.Id, out var assignment) || assignment.PlantId <= 0 || assignment.CostCenterId <= 0)
                 {
+                    string missingLabel = string.Empty;
+                    if (itemAssignments == null || !itemAssignments.TryGetValue(item.Id, out var a)) missingLabel = "Planta e Centro de Custo";
+                    else if (a.PlantId <= 0 && a.CostCenterId <= 0) missingLabel = "Planta e Centro de Custo";
+                    else if (a.PlantId <= 0) missingLabel = "Planta";
+                    else missingLabel = "Centro de Custo";
+
                     return BadRequest(new ProblemDetails
                     {
-                        Title = "Centro de Custo Ausente",
-                        Detail = $"O item #{item.LineNumber} está sem Centro de Custo atribuído. A aprovação da área exige alocação individual para todos os itens.",
+                        Title = "Atribuição de Item Incompleta",
+                        Detail = $"O item #{item.LineNumber} está sem {missingLabel} atribuído. A aprovação da área exige definição de Planta e Centro de Custo para todos os itens.",
                         Status = 400
                     });
                 }
                 
-                // Optional: Cross-verify CC vs Plant if strict validation is desired at this stage too
-                item.CostCenterId = ccId;
+                // 2. Persist the decided Plant and Cost Center to the line item
+                item.PlantId = assignment.PlantId;
+                item.CostCenterId = assignment.CostCenterId;
             }
         }
 

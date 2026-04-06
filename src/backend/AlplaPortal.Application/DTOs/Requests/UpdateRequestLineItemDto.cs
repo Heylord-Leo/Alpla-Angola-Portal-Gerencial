@@ -24,8 +24,7 @@ public class UpdateRequestLineItemDto
     public int? CurrencyId { get; set; }
 
     public int? PlantId { get; set; }
-
-    [Required(ErrorMessage = "O centro de custo é obrigatório.")]
+    
     public int? CostCenterId { get; set; }
 
     [Required(ErrorMessage = "A taxa de IVA é obrigatória.")]

@@ -19,14 +19,16 @@ export function DecisionQuotationCard({
 }: DecisionQuotationCardProps) {
     return (
         <div style={{
-            backgroundColor: 'white',
-            border: q.isSelected ? '3px solid #16a34a' : isLowest ? '2.5px solid #16a34a' : '2.5px solid black',
+            backgroundColor: 'var(--color-bg-surface)',
+            border: q.isSelected ? '2px solid var(--color-status-green)' : isLowest ? '1.5px solid var(--color-status-green)' : '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-lg)',
             marginBottom: '16px',
             display: 'flex',
             flexDirection: 'column',
             transition: 'all 0.2s ease',
             position: 'relative',
-            boxShadow: q.isSelected ? 'var(--shadow-brutal)' : 'none'
+            boxShadow: q.isSelected ? 'var(--shadow-md)' : 'var(--shadow-sm)',
+            overflow: 'hidden'
         }}>
             {/* Winner/Best Price Badge Overlay */}
             {(q.isSelected || isLowest) && (
@@ -40,30 +42,30 @@ export function DecisionQuotationCard({
                 }}>
                     {q.isSelected && (
                         <div style={{
-                            backgroundColor: '#16a34a',
+                            backgroundColor: 'var(--color-status-green)',
                             color: 'white',
                             fontSize: '9px',
                             fontWeight: 950,
                             padding: '4px 10px',
                             textTransform: 'uppercase',
                             letterSpacing: '0.1em',
-                            border: '1.5px solid black',
-                            boxShadow: '2px 2px 0px rgba(0,0,0,0.2)'
+                            borderRadius: 'var(--radius-sm)',
+                            boxShadow: 'var(--shadow-sm)'
                         }}>
                             VENCEDORA
                         </div>
                     )}
                     {isLowest && !q.isSelected && (
                         <div style={{
-                            backgroundColor: '#16a34a',
+                            backgroundColor: 'var(--color-status-green)',
                             color: 'white',
                             fontSize: '9px',
                             fontWeight: 950,
                             padding: '4px 10px',
                             textTransform: 'uppercase',
                             letterSpacing: '0.1em',
-                            border: '1.5px solid black',
-                            boxShadow: '2px 2px 0px rgba(0,0,0,0.2)'
+                            borderRadius: 'var(--radius-sm)',
+                            boxShadow: 'var(--shadow-sm)'
                         }}>
                             MELHOR PREÇO
                         </div>
@@ -84,15 +86,13 @@ export function DecisionQuotationCard({
                     <div style={{ 
                         width: '44px',
                         height: '44px',
-                        backgroundColor: q.isSelected ? '#16a34a' : isLowest ? '#16a34a' : 'white',
-                        color: q.isSelected ? 'white' : isLowest ? 'white' : 'black',
+                        backgroundColor: q.isSelected || isLowest ? 'var(--color-status-green)' : 'var(--color-bg-page)',
+                        color: q.isSelected || isLowest ? 'white' : 'var(--color-text-main)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        borderRadius: '0',
+                        borderRadius: 'var(--radius-md)',
                         flexShrink: 0,
-                        border: '2px solid black',
-                        boxShadow: '2px 2px 0px rgba(0,0,0,1)'
                     }}>
                         {q.isSelected ? <Trophy size={22} strokeWidth={2.5} /> : <FileText size={22} strokeWidth={2.5} />}
                     </div>
@@ -102,7 +102,7 @@ export function DecisionQuotationCard({
                             <span style={{ 
                                 fontWeight: 950, 
                                 fontSize: '1.05rem', 
-                                color: 'black',
+                                color: 'var(--color-text-main)',
                                 textTransform: 'uppercase',
                                 letterSpacing: '-0.02em',
                                 lineHeight: '1.1'
@@ -122,10 +122,10 @@ export function DecisionQuotationCard({
                             letterSpacing: '0.05em'
                         }}>
                              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <Hash size={13} strokeWidth={3} className="text-black" /> {q.documentNumber || 'S/N'}
+                                <Hash size={13} strokeWidth={3} className="text-gray-500" /> {q.documentNumber || 'S/N'}
                              </span>
                              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <Calendar size={13} strokeWidth={3} className="text-black" /> {q.documentDate ? formatDate(q.documentDate) : '---'}
+                                <Calendar size={13} strokeWidth={3} className="text-gray-500" /> {q.documentDate ? formatDate(q.documentDate) : '---'}
                              </span>
                         </div>
                     </div>
@@ -135,7 +135,7 @@ export function DecisionQuotationCard({
                     <div style={{ 
                         fontSize: '1.5rem', 
                         fontWeight: 950, 
-                        color: 'black',
+                        color: 'var(--color-text-main)',
                         letterSpacing: '-0.03em',
                         fontVariantNumeric: 'tabular-nums'
                     }}>
@@ -152,7 +152,7 @@ export function DecisionQuotationCard({
             {canSelectWinner && !q.isSelected && (
                 <div style={{ 
                     padding: '16px 20px', 
-                    borderTop: '2px solid black',
+                    borderTop: '1px solid var(--color-border)',
                     backgroundColor: 'var(--color-bg-page)',
                     display: 'flex',
                     justifyContent: 'flex-end'
@@ -164,19 +164,20 @@ export function DecisionQuotationCard({
                             display: 'flex',
                             alignItems: 'center',
                             gap: '8px',
-                            backgroundColor: 'white',
-                            border: '2px solid black',
-                            borderRadius: '0',
+                            backgroundColor: 'var(--color-bg-surface)',
+                            border: '1px solid var(--color-border)',
+                            borderRadius: 'var(--radius-md)',
                             padding: '10px 24px',
                             fontSize: '0.75rem',
                             fontWeight: 950,
                             textTransform: 'uppercase',
                             cursor: 'pointer',
-                            transition: 'all 0.1s',
-                            boxShadow: '3px 3px 0px rgba(0,0,0,1)',
+                            transition: 'all 0.2s',
+                            boxShadow: 'var(--shadow-sm)',
+                            color: 'var(--color-text-main)',
                             letterSpacing: '0.05em'
                         }}
-                        className="hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none bg-white hover:bg-black hover:text-white"
+                        className="hover:bg-gray-50 hover:shadow-md"
                     >
                          <CheckCircle2 size={16} strokeWidth={3} />
                          {isProcessing ? 'Selecionando...' : 'Selecionar Vencedora'}
@@ -188,8 +189,7 @@ export function DecisionQuotationCard({
             {q.isSelected && (
                 <div style={{ 
                     padding: '12px 20px', 
-                    backgroundColor: '#16a34a', 
-                    borderTop: '2px solid black',
+                    backgroundColor: 'var(--color-status-green)', 
                     fontSize: '11px',
                     fontWeight: 900,
                     color: 'white',
