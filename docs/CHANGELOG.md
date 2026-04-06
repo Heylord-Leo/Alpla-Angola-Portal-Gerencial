@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.36.0] - 2026-04-06
+
+### Added
+
+- **Item-Level Cost Center Mapping (Area Approval)**: Transitioned Area Approval from request-level to item-level cost center assignment.
+  - **Granular Allocation**: Approvers must now assign a cost center for each individual active line item in multi-item requests.
+  - **Plant-Aware Filtering**: Cost center options dynamically filter themselves based on the authoritative `PlantId` belonging to the specific line item, preventing cross-plant financial misallocation.
+  - **Safe Bulk-Fill Helper**: Introduced a "Repetir" helper that explicitly targets only unassigned items sharing the same plant.
+
+### Changed
+
+- **Decision Summary UX**: Upgraded the "Centro de Custo" card in the Decision Summary Panel to be highly reactive, introducing strong unassigned alert states (`Pendente X itens`) and clearly delineating uniform vs. mixed assignments.
+- **DTO Migration**: Shifted `ApprovalActionDto` from a single `CostCenterId` to a `Dictionary<Guid, int>` representing `ItemCostCenters`.
+
 ## [2.35.0] - 2026-04-06
 
 ### Added

@@ -280,13 +280,13 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao duplicar o pedido.');
             return response.json();
         },
-        approveArea: async (id: string, comment?: string, selectedQuotationId?: string, costCenterId?: string): Promise<{ message: string; statusCode: string }> => {
+        approveArea: async (id: string, comment?: string, selectedQuotationId?: string, itemCostCenters?: Record<string, number | null>): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/area-approval/approve`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ comment, selectedQuotationId, costCenterId }),
+                body: JSON.stringify({ comment, selectedQuotationId, itemCostCenters }),
             });
             if (!response.ok) return handleApiError(response, 'Falha ao aprovar o pedido.');
             return response.json();
@@ -789,9 +789,10 @@ export const api = {
             if (!res.ok) return handleApiError(res, 'Falha ao verificar unicidade do fornecedor.');
             return res.json();
         },
-        getCostCenters: async (includeInactive = false, plantId?: number): Promise<any[]> => {
+        getCostCenters: async (includeInactive = false, plantId?: number, companyId?: number): Promise<any[]> => {
             const params = new URLSearchParams({ includeInactive: String(includeInactive) });
             if (plantId) params.append('plantId', String(plantId));
+            if (companyId) params.append('companyId', String(companyId));
             const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/cost-centers?${params.toString()}`);
             if (!res.ok) return handleApiError(res, 'Falha ao carregar centros de custo.');
             return res.json();

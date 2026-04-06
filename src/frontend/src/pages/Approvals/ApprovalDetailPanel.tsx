@@ -83,9 +83,9 @@ export function ApprovalDetailPanel({
     const [intelligence, setIntelligence] = useState<ApprovalIntelligenceDto | null>(null);
     const [loadingIntelligence, setLoadingIntelligence] = useState(false);
 
-    // Business Control: Cost Center Selection (DEC-085)
+    // Business Control: Cost Center Selection (DEC-085/DEC-099)
     const [costCenters, setCostCenters] = useState<any[]>([]);
-    const [selectedCostCenterId, setSelectedCostCenterId] = useState<string | null>(null);
+    const [itemCostCenters, setItemCostCenters] = useState<Record<string, number | null>>({});
 
     useEffect(() => {
         if (data.id) {
@@ -94,10 +94,22 @@ export function ApprovalDetailPanel({
     }, [data.id]);
 
     useEffect(() => {
-        if (approvalStage === 'AREA' && data.plantId) {
-            fetchCostCenters(data.plantId);
+        if (approvalStage === 'AREA' && (data.plantId || data.companyId)) {
+            // Fetch all CCs for the company to support cross-plant items if needed
+            fetchCostCenters(data.companyId);
         }
-    }, [approvalStage, data.plantId]);
+    }, [approvalStage, data.companyId, data.plantId]);
+
+    // Initialize item cost centers from existing data
+    useEffect(() => {
+        if (data.lineItems) {
+            const initialMap: Record<string, number | null> = {};
+            data.lineItems.forEach(item => {
+                initialMap[item.id] = item.costCenterId || null;
+            });
+            setItemCostCenters(initialMap);
+        }
+    }, [data.id, data.lineItems]);
 
     const fetchIntelligence = async () => {
         setLoadingIntelligence(true);
@@ -111,9 +123,10 @@ export function ApprovalDetailPanel({
         }
     };
 
-    const fetchCostCenters = async (plantId: number) => {
+    const fetchCostCenters = async (companyId: number) => {
         try {
-            const list = await api.lookups.getCostCenters(false, plantId);
+            // Fetching by companyId allows the UI to filter per-item based on plantId
+            const list = await api.lookups.getCostCenters(false, undefined, companyId);
             setCostCenters(list);
         } catch (err) {
             console.error('Failed to fetch cost centers:', err);
@@ -129,32 +142,51 @@ export function ApprovalDetailPanel({
     const isAreaApprovalStage = data.statusCode === 'WAITING_AREA_APPROVAL';
     const isFinalApprovalStage = data.statusCode === 'WAITING_FINAL_APPROVAL';
 
-    // PAYMENT CC State Logic (DEC-085 refinement)
-    const lineItemCCs = data.lineItems || [];
-    const ccIds = lineItemCCs.map(item => item.costCenterId).filter((id): id is number => id !== null && id !== undefined);
-    const uniqueCCIds = Array.from(new Set(ccIds));
+    // DEC-099: Cost Center Validation Logic
+    const activeItems = data.lineItems || [];
+    const pendingItems = activeItems.filter(item => !itemCostCenters[item.id]);
+    const pendingCount = pendingItems.length;
+    const allCostCentersAssigned = activeItems.length > 0 && pendingCount === 0;
     
-    // A PAYMENT request is considered UNIFIED if ALL items share exactly the same non-null Cost Center
-    const paymentCCState: 'UNIFIED' | 'MISSING' | 'INCONSISTENT' = 
-        uniqueCCIds.length === 1 && ccIds.length === lineItemCCs.length ? 'UNIFIED' :
-        uniqueCCIds.length > 1 ? 'INCONSISTENT' : 'MISSING';
+    // A simplified helper to find if all items currently share the same CC (for summary display)
+    const currentValues = Object.values(itemCostCenters).filter((v): v is number => v !== null);
+    const currentUniqueCCIds = Array.from(new Set(currentValues));
+    const isUnifiedCC = activeItems.length > 0 && currentUniqueCCIds.length === 1 && allCostCentersAssigned;
+    const unifiedCC = isUnifiedCC ? costCenters.find(cc => cc.id === currentUniqueCCIds[0]) : null;
 
-    const hasValidatedPaymentCC = isPayment && paymentCCState === 'UNIFIED';
+    const handleBulkFillCostCenter = (itemId: string) => {
+        const sourceCCId = itemCostCenters[itemId];
+        if (!sourceCCId) return;
+        
+        const sourceItem = activeItems.find(i => i.id === itemId);
+        if (!sourceItem) return;
 
-    // Auto-select unified CC for PAYMENT so the approveArea payload is consistent
+        const newMap = { ...itemCostCenters };
+        activeItems.forEach(item => {
+            // Apply only to unassigned items of the exact same plant
+            if (item.plantId === sourceItem.plantId && !newMap[item.id]) {
+                newMap[item.id] = sourceCCId;
+            }
+        });
+        setItemCostCenters(newMap);
+    };
+
+    const canBulkFillForItem = (itemId: string): boolean => {
+        const sourceCCId = itemCostCenters[itemId];
+        if (!sourceCCId) return false;
+        
+        const sourceItem = activeItems.find(i => i.id === itemId);
+        if (!sourceItem) return false;
+
+        // True if there is at least one OTHER unassigned item for the SAME plant
+        return pendingItems.some(item => item.id !== itemId && item.plantId === sourceItem.plantId);
+    };
+
     useEffect(() => {
-        if (hasValidatedPaymentCC && uniqueCCIds.length === 1) {
-            setSelectedCostCenterId(uniqueCCIds[0].toString());
+        if (approvalStage === 'AREA' && data.companyId) {
+            fetchCostCenters(data.companyId);
         }
-    }, [hasValidatedPaymentCC, data.id]);
-
-    useEffect(() => {
-        // Fetch only if lookup is actually needed (Quotation, Missing CC, or Conflict)
-        const needsLookup = isQuotation || (isPayment && (paymentCCState === 'MISSING' || paymentCCState === 'INCONSISTENT'));
-        if (approvalStage === 'AREA' && data.plantId && needsLookup) {
-            fetchCostCenters(data.plantId);
-        }
-    }, [approvalStage, data.plantId, isQuotation, isPayment, paymentCCState]);
+    }, [approvalStage, data.companyId]);
 
     // Winner selection is enabled for QUOTATION requests when the approver is in their decision stage
     const canSelectWinner = isQuotation && (
@@ -162,8 +194,8 @@ export function ApprovalDetailPanel({
         (approvalStage === 'FINAL' && isFinalApprovalStage)
     );
 
-    // Approve is blocked for QUOTATION requests until a winner is selected
-    const isApproveBlocked = isQuotation && !hasWinnerSelected;
+    // Approve is blocked if winner not selected (Quotation) OR any Cost Center is missing (Area Approval)
+    const isApproveBlocked = (isQuotation && !hasWinnerSelected) || (approvalStage === 'AREA' && isAreaApprovalStage && !allCostCentersAssigned);
 
     // REQUEST_ADJUSTMENT is hidden for PAYMENT requests
     const showAdjustmentAction = !isPayment;
@@ -203,14 +235,14 @@ export function ApprovalDetailPanel({
     const handleApprovalAction = async (action: ApprovalActionType) => {
         if (!action) return;
 
-        // Validate winner selection for QUOTATION approve
         if (action === 'APPROVE') {
-            // DEC-085: Cost Center is mandatory for Area Approval
-            // Refined: For PAYMENT, if it's already unified, we allow it.
-            if (approvalStage === 'AREA' && !selectedCostCenterId) {
+            // DEC-099: item-level Cost Center alignment
+            if (approvalStage === 'AREA' && !allCostCentersAssigned) {
                 setModalFeedback({ 
                     type: 'error', 
-                    message: 'A seleção do Centro de Custo é obrigatória para prosseguir com a aprovação.' 
+                    message: activeItems.length > 1 
+                        ? 'Todos os itens devem ter um Centro de Custo atribuído antes de aprovar.' 
+                        : 'A seleção do Centro de Custo é obrigatória para prosseguir.' 
                 });
                 return;
             }
@@ -242,7 +274,7 @@ export function ApprovalDetailPanel({
 
             if (action === 'APPROVE') {
                 result = isArea
-                    ? await api.requests.approveArea(data.id, approvalComment, data.quotations?.find(q => q.isSelected)?.id, selectedCostCenterId || undefined)
+                    ? await api.requests.approveArea(data.id, approvalComment, data.quotations?.find(q => q.isSelected)?.id, itemCostCenters)
                     : await api.requests.approveFinal(data.id, approvalComment);
             } else if (action === 'REJECT') {
                 result = isArea
@@ -278,59 +310,56 @@ export function ApprovalDetailPanel({
         { label: 'Fornecedor Atual', value: data.supplierName },
         { 
             label: 'Centro de Custo', 
-            value: approvalStage === 'AREA' ? (
-                hasValidatedPaymentCC ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <div style={{ 
-                            padding: '8px 12px', 
-                            backgroundColor: 'white', 
-                            border: '1.5px solid black',
-                            fontSize: '0.8rem',
-                            fontWeight: 900
-                        }}>
-                             [{data.lineItems[0].costCenterCode}] {data.lineItems[0].costCenterName}
-                        </div>
-                        <div className="flex items-center gap-1 text-[9px] font-black tracking-wider text-green-600 uppercase">
-                            <CheckCircle size={10} /> Validado
-                        </div>
-                    </div>
-                ) : (
+            value: (approvalStage === 'AREA' && isAreaApprovalStage) ? (
+                activeItems.length === 1 ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         <select
-                            value={selectedCostCenterId || ''}
-                            onChange={(e) => setSelectedCostCenterId(e.target.value)}
+                            value={itemCostCenters[activeItems[0].id] || ''}
+                            onChange={(e) => setItemCostCenters(prev => ({ ...prev, [activeItems[0].id]: parseInt(e.target.value) || null }))}
                             className="w-full text-xs font-black uppercase text-black"
                             style={{
                                 padding: '6px 10px',
-                                border: selectedCostCenterId ? '2px solid black' : '2px solid var(--color-status-red)',
+                                border: itemCostCenters[activeItems[0].id] ? '2px solid black' : '2px solid var(--color-status-red)',
                                 borderRadius: '0',
                                 backgroundColor: 'white',
                                 outline: 'none',
                                 cursor: 'pointer',
                                 appearance: 'auto',
-                                boxShadow: selectedCostCenterId ? 'none' : '2px 2px 0px var(--color-status-red-bg)'
+                                boxShadow: itemCostCenters[activeItems[0].id] ? 'none' : '2px 2px 0px var(--color-status-red-bg)'
                             }}
                         >
                             <option value="">Selecione...</option>
-                            {costCenters.map(cc => (
+                            {costCenters.filter(cc => cc.plantId === activeItems[0].plantId).map(cc => (
                                 <option key={cc.id} value={cc.id}>
                                     [{cc.code}] {cc.name}
                                 </option>
                             ))}
                         </select>
-                        {isPayment && paymentCCState === 'INCONSISTENT' ? (
+                        {!itemCostCenters[activeItems[0].id] ? (
                             <div className="flex items-center gap-1 text-[9px] font-black tracking-wider text-red-600 uppercase">
-                                <AlertCircle size={10} /> Conflito: Unificação Obrigatória
-                            </div>
-                        ) : !selectedCostCenterId ? (
-                            <div className="flex items-center gap-1 text-[9px] font-black tracking-wider text-red-600 uppercase">
-                                <AlertCircle size={10} /> Decisão Obrigatória
+                                <AlertCircle size={10} /> Obrigatório
                             </div>
                         ) : (
                             <div className="flex items-center gap-1 text-[9px] font-black tracking-wider text-green-600 uppercase">
                                 <CheckCircle size={10} /> Validado
                             </div>
                         )}
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ 
+                            padding: '10px', fontSize: '0.75rem', fontWeight: 800, 
+                            backgroundColor: !allCostCentersAssigned ? 'var(--color-status-red-bg)' : (isUnifiedCC ? 'var(--color-status-green-bg)' : 'var(--color-bg-page)'), 
+                            border: !allCostCentersAssigned ? '2px solid var(--color-status-red)' : '1.5px solid black', 
+                            color: !allCostCentersAssigned ? 'var(--color-status-red)' : 'black'
+                        }}>
+                            {!allCostCentersAssigned 
+                                ? `Pendente (${pendingCount} item${pendingCount > 1 ? 's' : ''} sem centro de custo)` 
+                                : (isUnifiedCC && unifiedCC ? `[${unifiedCC.code}] ${unifiedCC.name}` : 'Mapeados individualmente (Ver Itens)')}
+                        </div>
+                        <div style={{ fontSize: '9px', fontWeight: 900, textTransform: 'uppercase', opacity: 0.6 }}>
+                            {allCostCentersAssigned ? '✓ Todos itens atribuídos' : '⚠ Verifique Detalhes nos Itens'}
+                        </div>
                     </div>
                 )
             ) : data.costCenterCode || (data.lineItems?.[0]?.costCenterCode ? `[${data.lineItems[0].costCenterCode}]` : '---'), 
@@ -513,6 +542,9 @@ export function ApprovalDetailPanel({
                                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.65rem', letterSpacing: '0.05em' }}>Descrição</th>
                                         <th style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.65rem', letterSpacing: '0.05em' }}>Qtd</th>
                                         <th style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.65rem', letterSpacing: '0.05em' }}>Total</th>
+                                        {approvalStage === 'AREA' && isAreaApprovalStage && activeItems.length > 1 && (
+                                            <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.65rem', letterSpacing: '0.05em', width: '220px' }}>Centro de Custo</th>
+                                        )}
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -527,6 +559,35 @@ export function ApprovalDetailPanel({
                                             </td>
                                             <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 700 }}>{item.quantity}</td>
                                             <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 900 }}>{formatCurrencyAO(item.totalAmount)}</td>
+                                            {approvalStage === 'AREA' && isAreaApprovalStage && activeItems.length > 1 && (
+                                                <td style={{ padding: '14px 16px', borderLeft: '1.5px solid black' }}>
+                                                    <div className="flex flex-col gap-2">
+                                                        <div className="text-[10px] font-black text-gray-500 uppercase tracking-widest">
+                                                            Planta: {item.plantName || '---'}
+                                                        </div>
+                                                        <select
+                                                            value={itemCostCenters[item.id] || ''}
+                                                            onChange={(e) => setItemCostCenters(prev => ({ ...prev, [item.id]: parseInt(e.target.value) || null }))}
+                                                            className={`w-full text-[10px] font-bold uppercase p-1.5 border-2 focus:outline-none ${!itemCostCenters[item.id] ? 'border-red-600 bg-red-50 text-red-900' : 'border-black bg-white text-black'}`}
+                                                        >
+                                                            <option value="">Selecione o C.C...</option>
+                                                            {costCenters.filter(cc => cc.plantId === item.plantId).map(cc => (
+                                                                <option key={cc.id} value={cc.id}>
+                                                                    [{cc.code}] {cc.name}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                        {canBulkFillForItem(item.id) && (
+                                                            <button 
+                                                                onClick={() => handleBulkFillCostCenter(item.id)}
+                                                                className="text-[9px] font-black uppercase text-blue-700 hover:underline text-left leading-tight py-1"
+                                                            >
+                                                                Aplicar este centro de custo aos itens pendentes de {item.plantName}
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            )}
                                         </tr>
                                     ))}
                                 </tbody>

@@ -2,9 +2,21 @@
 
 ## Current Version
 
-v2.35.0
+v2.36.0
 
-## [2.29.0] - 2026-04-04
+## [2.36.0] - 2026-04-06
+
+### Added
+
+- **Item-Level Cost Center Mapping (Area Approval)**: Transitioned Area Approval from request-level to item-level cost center assignment to support complex, multi-plant operations.
+- **Plant-Aware Assignment**: The UI now strictly uses the Line Item's `PlantId` to filter cost centers, rather than assuming all items belong to the Request Header's plant.
+- **Safe Bulk-Fill**: Added a specialized action to replicate a selected cost center to other *unassigned* items on the *same plant*.
+
+### Changed
+
+- **DTO Migration**: Refactored `ApprovalActionDto.CostCenterId` to `ApprovalActionDto.ItemCostCenters` (Dictionary) in the C# backend.
+
+## [2.35.0] - 2026-04-06
 
 ### Added
 
@@ -38,9 +50,11 @@ v2.35.0
 
 ## Version History
 
+- **2.36.0**: Area Approval Item-Level Cost Centers. Transitioned cost center assignment from request-level to granular item-level tracking, strictly enforcing plant compatibility.
+- **2.35.0**: Reactive OCR Supplier Workflow & Backend Portal Code Hardening (DEC-098). Relocated supplier validation to New Request screen and implemented robust, self-healing, concurrency-safe portal code generation.
 - **2.34.0**: Request Edit Workflow Optimizations. Refined the Request Edit UI for `PAYMENT` requests by suppressing non-applicable quotation sections and guided attention. Integrated `QuickSupplierModal` with an OCR prefill block to enable seamless supplier creation and auto-selection for unmatched invoice data.
 - **2.33.2**: Approval Modal State Sync. Fixed a stale closure bug in the Approval Center drawer.
-- **2.32.0**: Payment OCR Flow UX & Mapping Refinement. Resolved data mapping and UX bugs between the OCR upload and the persisted draft. Preserved OCR-derived final total and fixed supplier persistence. (Known Limitations: Discount handling is interim via description notes, and company prefill relies on deterministic scope fallback, not OCR tax ID matching).
+- **2.33.1**: Payment OCR Navigation Hotfix. Resolved animation keyframe crash causing white screen.
 - **2.31.0**: Payment OCR Persistence Fix (DEC-097). Relaxed DB constraints for Cost Center and IVA on draft line items, deferring strict validation to the submission stage.
 - **2.30.0**: Payment OCR Intake & Shared Hook (DEC-096). Implemented automated document extraction for Payment requests and refactored OCR logic into a shared hook.
 - **2.29.0**: Company Master Data & Entity Governance (DEC-093). Implemented full CRUD support for legal entities with integrated Final Approver role-based assignment. Simplified the request creation flow by automating actor resolution for Area and Final Approvers.
