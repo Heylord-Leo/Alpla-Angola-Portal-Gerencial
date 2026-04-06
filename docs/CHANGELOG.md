@@ -19,6 +19,10 @@ All notable changes to this project will be documented in this file.
   - Eliminated manual insertion friction by replacing "AAAA-MM-DD" text placeholders with native browser Date objects.
   - Integrated deterministic visual states parsing out the "DADOS EXTRAÍDOS COM SUCESSO" banner from an independent "INSCRIÇÃO MANUAL DA FATURA" banner.
   - Exposed full "Adicionar Item" lifecycle hooks nested inside and outside empty states to stabilize the UX for completely manual Payment Requests.
+- **Approval Historical Price Intelligence**: Integrated an automated price-variance alert directly into the Approval Detailed Panel (`ApprovalDetailPanel.tsx`).
+  - Visually flags requests that contain items priced above their historical averages (Yellow Warning).
+  - Highlights favorably (Green Warning) when all historical item pricing stays aligned or below market average.
+  - Decluttered redundant currency outputs in the hero header (`DecisionHeader.tsx`) and enlarged Request Number prominence.
 
 ## [2.37.0] - 2026-04-06
 

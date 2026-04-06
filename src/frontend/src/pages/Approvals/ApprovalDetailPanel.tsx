@@ -234,6 +234,12 @@ export function ApprovalDetailPanel({
         });
     }
 
+    // Intelligence summary flags
+    const intelItemsWithHistory = intelligence?.items?.filter(i => i.hasHistory) || [];
+    const hasHistoricalItems = intelItemsWithHistory.length > 0;
+    // Considered above if unit price is greater than historical average
+    const hasItemAboveAvg = intelItemsWithHistory.some(i => i.currentUnitPrice > (i.averageHistoricalPrice || 0));
+
     // --- Handlers ---
 
     const handleSelectWinner = async (quotationId: string) => {
@@ -378,6 +384,33 @@ export function ApprovalDetailPanel({
 
             {/* Content Container */}
             <div style={{ maxWidth: '80rem', margin: '0 auto', width: '100%', padding: '16px 24px 96px 24px' }}>
+
+                {/* --- INTELLIGENCE ALERTS --- */}
+                {hasHistoricalItems && (
+                    <div style={{
+                        marginBottom: '24px', width: '100%', 
+                        backgroundColor: hasItemAboveAvg ? '#FEF9C3' : '#F0FDF4', 
+                        border: `1px solid ${hasItemAboveAvg ? '#FEF08A' : '#BBF7D0'}`, 
+                        borderRadius: 'var(--radius-lg)', padding: '16px',
+                        display: 'flex', gap: '16px', boxShadow: 'var(--shadow-sm)', alignItems: 'flex-start'
+                    }}>
+                        {hasItemAboveAvg ? (
+                            <AlertTriangle color="#A16207" style={{ marginTop: '2px', flexShrink: 0 }} size={20} />
+                        ) : (
+                            <ShieldCheck color="#166534" style={{ marginTop: '2px', flexShrink: 0 }} size={20} />
+                        )}
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ color: hasItemAboveAvg ? '#854D0E' : '#14532D', fontWeight: 700, marginBottom: '4px' }}>
+                                {hasItemAboveAvg ? 'Atenção ao Histórico de Preços' : 'Preços Favoráveis'}
+                            </span>
+                            <span style={{ color: hasItemAboveAvg ? '#A16207' : '#166534', fontSize: '0.875rem', lineHeight: 1.2 }}>
+                                {hasItemAboveAvg 
+                                    ? 'Um ou mais itens deste pedido estão com preço acima da média histórica.' 
+                                    : 'Nenhum item com histórico no pedido encontra-se com preços acima da média.'}
+                            </span>
+                        </div>
+                    </div>
+                )}
 
                 {/* --- BLOCKING ALERTS --- */}
                 {isQuotation && !hasWinnerSelected && (

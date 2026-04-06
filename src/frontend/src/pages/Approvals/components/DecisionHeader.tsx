@@ -88,9 +88,9 @@ export function DecisionHeader({
                         </div>
                     )}
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-main)' }}>
-                        {requestNumber} - {currencyCode} {formatCurrencyAO(totalAmount)}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+                    <span style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--color-text-main)', letterSpacing: '0.02em', textAlign: 'center' }}>
+                        {requestNumber}
                     </span>
                 </div>
                 <button 
