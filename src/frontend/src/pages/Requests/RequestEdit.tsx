@@ -16,6 +16,7 @@ import {
     CheckCircle,
     Check,
     AlertCircle,
+    AlertTriangle,
     UserPlus
 } from 'lucide-react';
 import { QuickSupplierModal } from '../../components/Buyer/QuickSupplierModal';
@@ -364,7 +365,7 @@ export function RequestEdit() {
                 unitId: selectedUnit.id,
                 costCenterId: Number(itemForm.costCenterId),
                 ivaRateId: Number(itemForm.ivaRateId),
-                dueDate: itemForm.dueDate || null,
+                dueDate: formData.needByDateUtc && !isNaN(new Date(formData.needByDateUtc).getTime()) ? new Date(formData.needByDateUtc).toISOString() : (itemForm.dueDate || null),
                 currencyId: Number(formData.currencyId)
             };
 
@@ -568,8 +569,6 @@ export function RequestEdit() {
     }, [loadData]);
 
 
-    const today = new Date().toISOString().split('T')[0];
-
     const clearFieldError = (fieldName: string) => {
         setFieldErrors(prev => {
             const next = { ...prev };
@@ -617,10 +616,8 @@ export function RequestEdit() {
         if (!formData.plantId) newErrors['PlantId'] = ['A planta é obrigatória.'];
         // Conditional Supplier Validation: ID 2 is PAYMENT
         const isPayment = Number(formData.requestTypeId) === 2 || requestTypeCode === 'PAYMENT';
-        if (!isPayment && !formData.needByDateUtc) {
-            newErrors['NeedByDateUtc'] = ['A data Necessário Até é obrigatória.'];
-        } else if (formData.needByDateUtc && formData.needByDateUtc < today) {
-            newErrors['NeedByDateUtc'] = ['A data Necessário Até não pode ser no passado.'];
+        if (!formData.needByDateUtc) {
+            newErrors['NeedByDateUtc'] = [isPayment ? 'A data de vencimento é obrigatória.' : 'A data Necessário Até é obrigatória.'];
         }
 
         // Conditional Supplier Validation: ID 2 is PAYMENT
@@ -688,6 +685,22 @@ export function RequestEdit() {
         setSaving(true);
         try {
             await api.requests.updateDraft(id!, payload);
+
+            // Synchronize unified Due Date downwards to all existing line items
+            if (!isCopyMode && lineItems.length > 0) {
+                const globalDueDate = formData.needByDateUtc && !isNaN(new Date(formData.needByDateUtc).getTime()) 
+                    ? new Date(formData.needByDateUtc).toISOString() 
+                    : null;
+                
+                await Promise.all(lineItems.map(item => 
+                    api.requests.updateLineItem(id!, item.id, {
+                        ...item,
+                        quantity: Number(item.quantity) || 0,
+                        unitPrice: Number(item.unitPrice) || 0,
+                        dueDate: globalDueDate
+                    })
+                ));
+            }
 
             // Refetch to ensure frontend state (especially total) is perfectly in sync with backend logic
             const updated = await api.requests.get(id!);
@@ -1644,7 +1657,7 @@ export function RequestEdit() {
                             </label>
 
                             <AnimatePresence>
-                                {(requestTypeCode === 'QUOTATION' || Number(formData.requestTypeId) === 1) && (
+                                {(requestTypeCode === 'QUOTATION' || Number(formData.requestTypeId) === 1 || requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2) && (
                                     <motion.div
                                         initial={{ opacity: 0, height: 0 }}
                                         animate={{ opacity: 1, height: 'auto' }}
@@ -1652,7 +1665,7 @@ export function RequestEdit() {
                                         style={{ overflow: 'hidden' }}
                                     >
                                         <label style={labelStyle}>
-                                            Necessário até (Data limite) <span style={{ color: 'red' }}>*</span>
+                                            {(requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2) ? 'Data de vencimento' : 'Necessário até (Data limite)'} <span style={{ color: 'red' }}>*</span>
                                             <DateInput
                                                 required
                                                 name="needByDateUtc"
@@ -1666,6 +1679,12 @@ export function RequestEdit() {
                                                 disabled={!canEditHeader}
                                             />
                                             {renderFieldError('NeedByDateUtc')}
+                                            {!getFieldErrors('NeedByDateUtc') && formData.needByDateUtc && new Date(formData.needByDateUtc).getTime() < new Date().setHours(0, 0, 0, 0) && (
+                                                <div style={{ color: '#D97706', fontSize: '0.75rem', marginTop: '4px', position: 'absolute', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                                                    <AlertTriangle size={12} />
+                                                    {(requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2) ? 'O documento está vencido.' : 'A data selecionada está no passado.'}
+                                                </div>
+                                            )}
                                         </label>
                                     </motion.div>
                                 )}

@@ -896,10 +896,7 @@ public class RequestsController : BaseController
         if (initialStatus == null) return StatusCode(500, $"{initialStatusCode} status code not found in database lookup.");
 
 
-        if (dto.NeedByDateUtc.HasValue && dto.NeedByDateUtc.Value.Date < DateTime.UtcNow.Date)
-        {
-            return BadRequest("A data Necessário Até não pode ser no passado.");
-        }
+
 
         // 3. Generate Request Number using Persistent Global Counter
         // The counter is monotonic and never reused, even if requests are deleted.
@@ -1130,15 +1127,7 @@ public class RequestsController : BaseController
             });
         }
 
-        if (dto.NeedByDateUtc.HasValue && dto.NeedByDateUtc.Value.Date < DateTime.UtcNow.Date)
-        {
-            return BadRequest(new ProblemDetails 
-            { 
-                Title = "Regra de Negócio Violada", 
-                Detail = "A data Necessário Até não pode ser no passado.", 
-                Status = 400 
-            });
-        }
+
 
         // 4. Update Header Fields and Track Changes
         bool isQuotationStage = statusCode == "WAITING_QUOTATION";

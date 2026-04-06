@@ -212,6 +212,18 @@ export function RequestCreate() {
             const result = await api.requests.directOcrExtract(file);
             const draft = await mapOcrResultToDraft(result);
             setPaymentDraft(draft);
+            
+            const extractedDate = draft.dueDate || draft.documentDate;
+            if (extractedDate) {
+                try {
+                    const parsed = new Date(extractedDate);
+                    if (!isNaN(parsed.getTime())) {
+                        setFormData(prev => ({ ...prev, needByDateUtc: parsed.toISOString().split('T')[0] }));
+                    }
+                } catch (e) {
+                    // Ignore parsing errors
+                }
+            }
         } catch (err: any) {
             console.error("OCR Extraction failed", err);
             setFeedback({ type: 'error', message: err.message || 'Falha na extração OCR do documento.' });
@@ -303,11 +315,10 @@ export function RequestCreate() {
         if (!formData.companyId) newErrors['CompanyId'] = ['A empresa é obrigatória.'];
         if (!formData.plantId) newErrors['PlantId'] = ['A planta é obrigatória.'];
 
-        if (Number(formData.requestTypeId) === 1) {
+        if (Number(formData.requestTypeId) === 1 || Number(formData.requestTypeId) === 2) {
+            const isPayment = Number(formData.requestTypeId) === 2;
             if (!formData.needByDateUtc) {
-                newErrors['NeedByDateUtc'] = ['A data Necessário Até é obrigatória para pedidos de Cotação.'];
-            } else if (new Date(formData.needByDateUtc).getTime() < new Date().setHours(0, 0, 0, 0)) {
-                newErrors['NeedByDateUtc'] = ['A data Necessário Até não pode ser no passado.'];
+                newErrors['NeedByDateUtc'] = [isPayment ? 'A data de vencimento é obrigatória para pedidos de Pagamento.' : 'A data Necessário Até é obrigatória para pedidos de Cotação.'];
             }
         }
 
@@ -360,7 +371,9 @@ export function RequestCreate() {
                 unitPrice: item.unitPrice,
                 ivaRateId: item.ivaRateId,
                 totalAmount: item.totalPrice,
-                dueDate: paymentDraft.dueDate ? new Date(paymentDraft.dueDate).toISOString() : null,
+                dueDate: formData.needByDateUtc && !isNaN(new Date(formData.needByDateUtc).getTime()) 
+                    ? new Date(formData.needByDateUtc).toISOString() 
+                    : null,
                 currencyId: currencies.find(c => c.code === paymentDraft.currency)?.id || safeCurrencyId,
                 plantId: safePlantId,
                 costCenterId: null,
@@ -938,13 +951,13 @@ export function RequestCreate() {
                             </label>
 
                             <AnimatePresence>
-                                {Number(formData.requestTypeId) === 1 && (
+                                {(Number(formData.requestTypeId) === 1 || Number(formData.requestTypeId) === 2) && (
                                     <motion.div
                                         initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
                                         style={{ overflow: 'hidden' }}
                                     >
                                         <label style={labelStyle}>
-                                            Necessário até (Data limite) <span style={{ color: 'red' }}>*</span>
+                                            {Number(formData.requestTypeId) === 2 ? 'Data de vencimento' : 'Necessário até (Data limite)'} <span style={{ color: 'red' }}>*</span>
                                             <DateInput
                                                 required name="needByDateUtc" value={formData.needByDateUtc}
                                                 onChange={(val) => {
@@ -955,6 +968,12 @@ export function RequestCreate() {
                                                 style={getInputStyle('NeedByDateUtc')}
                                             />
                                             {renderFieldError('NeedByDateUtc')}
+                                            {!getFieldErrors('NeedByDateUtc') && formData.needByDateUtc && new Date(formData.needByDateUtc).getTime() < new Date().setHours(0, 0, 0, 0) && (
+                                                <div style={{ color: '#D97706', fontSize: '0.75rem', marginTop: '4px', position: 'absolute', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                                                    <AlertTriangle size={12} />
+                                                    {Number(formData.requestTypeId) === 2 ? 'O documento está vencido.' : 'A data selecionada está no passado.'}
+                                                </div>
+                                            )}
                                         </label>
                                     </motion.div>
                                 )}

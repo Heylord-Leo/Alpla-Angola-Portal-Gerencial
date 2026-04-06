@@ -2,7 +2,13 @@
 
 ## Current Version
 
-v2.37.0
+v2.37.1
+
+## [2.37.1] - 2026-04-06
+
+### Fixed
+
+- **Payment Request Date Validation Rejection**: Resolved the blocking 400 Bad Request error occurring during the creation or editing of requests with past dates. Removed strict business constraints on the backend (`RequestsController.cs`) that rejected `NeedByDateUtc` values matching past dates, aligning it with the new frontend visual warning implementation.
 
 ## [2.37.0] - 2026-04-06
 

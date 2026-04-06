@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.37.1] - 2026-04-06
+
+### Fixed
+
+- **Payment Request Date Validation Rejection**: Resolved the blocking 400 Bad Request error occurring during the creation or editing of requests with past dates.
+  - Removed strict business constraints on the backend (`RequestsController.cs`) that rejected `NeedByDateUtc` values matching past dates.
+  - Aligned backend flexibility with the updated frontend UX (which issues visual warnings via `AlertTriangle` rather than hard blockers).
+  - Improved OCR flow fallback to transparently handle mapping of document dates into the unified `NeedByDateUtc` architecture.
+
 ## [2.37.0] - 2026-04-06
 
 ### Changed
