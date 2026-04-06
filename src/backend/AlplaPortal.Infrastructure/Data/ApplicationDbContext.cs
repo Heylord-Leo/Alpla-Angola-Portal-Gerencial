@@ -132,6 +132,8 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<RequestLineItem>().HasIndex(r => r.RequestId);
         modelBuilder.Entity<RequestLineItem>().HasIndex(r => new { r.RequestId, r.IsDeleted });
 
+        modelBuilder.Entity<RequestAttachment>().HasIndex(ra => ra.FileHash).HasFilter("[FileHash] IS NOT NULL");
+
         // Notification Indexes
         modelBuilder.Entity<NotificationStatus>()
             .HasIndex(ns => new { ns.UserId, ns.Category })

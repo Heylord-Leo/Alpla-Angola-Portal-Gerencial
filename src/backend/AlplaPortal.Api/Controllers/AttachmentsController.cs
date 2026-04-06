@@ -8,6 +8,7 @@ using AlplaPortal.Domain.Constants;
 using System.IO;
 using System.Text.RegularExpressions;
 using AlplaPortal.Application.Models.Configuration;
+using System.Security.Cryptography;
 using Microsoft.Extensions.Options;
 
 namespace AlplaPortal.Api.Controllers;
@@ -143,9 +144,18 @@ public class AttachmentsController : BaseController
             var storageFileName = $"{fileId}{extension}"; // Guaranteed unique and extension-safe
             var filePath = Path.Combine(_storagePath, storageFileName);
 
+            var fileHash = string.Empty;
             using (var stream = new FileStream(filePath, FileMode.Create))
             {
                 await f.CopyToAsync(stream);
+            }
+
+            // Compute hash for anti-duplication
+            using (var streamForHash = new FileStream(filePath, FileMode.Open, FileAccess.Read))
+            using (var sha256 = SHA256.Create())
+            {
+                var hashBytes = await sha256.ComputeHashAsync(streamForHash);
+                fileHash = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
             }
 
             // Sanitized name for display/audit
@@ -161,6 +171,7 @@ public class AttachmentsController : BaseController
                 FileSizeMBytes = (decimal)f.Length / (1024 * 1024),
                 StorageReference = storageFileName, // Physical link
                 AttachmentTypeCode = typeCode,
+                FileHash = fileHash,
                 UploadedByUserId = actorId,
                 UploadedAtUtc = DateTime.UtcNow,
                 IsDeleted = false
@@ -202,6 +213,36 @@ public class AttachmentsController : BaseController
         await _context.SaveChangesAsync();
 
         return Ok(savedAttachments);
+    }
+
+    [HttpGet("check-duplicate")]
+    public async Task<IActionResult> CheckDuplicate([FromQuery] string hash)
+    {
+        if (string.IsNullOrWhiteSpace(hash)) return BadRequest();
+
+        var scopedQuery = await GetScopedRequestsQuery();
+        
+        var attachment = await _context.RequestAttachments
+            .Include(a => a.Request)
+            .Include(a => a.UploadedByUser)
+            .Where(a => a.FileHash == hash && !a.IsDeleted)
+            .FirstOrDefaultAsync();
+
+        if (attachment != null)
+        {
+            // Calculate if the current user has access to that specific request
+            bool hasAccess = await scopedQuery.AnyAsync(r => r.Id == attachment.RequestId);
+            
+            return Ok(new { 
+                isDuplicate = true, 
+                requestNumber = attachment.Request.RequestNumber, 
+                requestId = hasAccess ? attachment.RequestId : (Guid?)null, // Only expose ID for navigation if they have access
+                uploadedBy = attachment.UploadedByUser?.FullName ?? "Usuário Desconhecido",
+                createdAtUtc = attachment.UploadedAtUtc 
+            });
+        }
+
+        return Ok(new { isDuplicate = false });
     }
 
     [HttpGet("{id}/download")]

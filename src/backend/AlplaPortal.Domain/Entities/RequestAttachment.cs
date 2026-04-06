@@ -10,6 +10,7 @@ public class RequestAttachment
     public string FileName { get; set; } = string.Empty;
     public string FileExtension { get; set; } = string.Empty;
     public decimal FileSizeMBytes { get; set; }
+    public string? FileHash { get; set; }
     
     public string AttachmentTypeCode { get; set; } = string.Empty; // e.g., PROFORMA, PO, PAYMENT_PROOF, PAYMENT_SCHEDULE
     

@@ -541,6 +541,11 @@ export const api = {
         }
     },
     attachments: {
+        checkDuplicate: async (hash: string): Promise<{ isDuplicate: boolean; requestNumber?: string; requestId?: string; uploadedBy?: string; createdAtUtc?: string }> => {
+             const response = await apiFetch(`${API_BASE_URL}/api/v1/attachments/check-duplicate?hash=${hash}`);
+             if (!response.ok) return handleApiError(response, 'Falha ao verificar duplicidade de anexo.');
+             return response.json();
+        },
         upload: async (requestId: string, files: File[], typeCode: string): Promise<any> => {
             const formData = new FormData();
             files.forEach(file => {

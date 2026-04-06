@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Upload, Trash2, RefreshCcw, Hash, Calendar, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Plus, Upload, Trash2, RefreshCcw, Hash, Calendar, CheckCircle2, AlertCircle, AlertTriangle } from 'lucide-react';
 import { api } from '../lib/api';
 import { SupplierAutocomplete } from './SupplierAutocomplete';
 import { QuotationDraft, QuotationDraftItem, IvaRate, Unit } from '../types/quotation';
-import { formatCurrencyAO } from '../lib/utils';
+import { formatCurrencyAO, computeFileHash, formatDateTime } from '../lib/utils';
 import { Feedback, FeedbackType } from './ui/Feedback';
 
 interface QuotationEntryProps {
@@ -27,6 +27,7 @@ export function QuotationEntry({
     const [step, setStep] = useState<'SELECT' | 'UPLOAD' | 'EDIT'>(highlighted ? 'UPLOAD' : 'SELECT');
     const [isProcessing, setIsProcessing] = useState(false);
     const [feedback, setFeedback] = useState<{ type: FeedbackType; message: string } | null>(null);
+    const [duplicateWarning, setDuplicateWarning] = useState<{ isOpen: boolean; requestNumber: string; uploadCallback: () => void; uploadedBy?: string; createdAtUtc?: string } | null>(null);
     
     // Use props but allow local state if needed (though props are preferred)
     const [ivaRates, setIvaRates] = useState<IvaRate[]>(initialIvaRates || []);
@@ -98,13 +99,8 @@ export function QuotationEntry({
         return null;
     };
 
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
+    const _processUpload = async (file: File) => {
         setIsProcessing(true);
-        setFeedback(null);
-
         try {
             const uploadRes = await api.attachments.upload(requestId, [file], 'PROFORMA');
             const fileId = Array.isArray(uploadRes) ? uploadRes[0]?.id : uploadRes.id;
@@ -168,8 +164,43 @@ export function QuotationEntry({
             setStep('EDIT');
         } catch (err: any) {
             setFeedback({ type: 'error', message: err.message || 'Falha ao salvar cotação.' });
+        } finally {
             setIsProcessing(false);
         }
+    };
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsProcessing(true);
+        setFeedback(null);
+
+        try {
+            const hash = await computeFileHash(file);
+            const dupCheck = await api.attachments.checkDuplicate(hash);
+            if (dupCheck.isDuplicate) {
+                setDuplicateWarning({
+                    isOpen: true,
+                    requestNumber: dupCheck.requestNumber || 'Desconhecido',
+                    uploadedBy: dupCheck.uploadedBy,
+                    createdAtUtc: dupCheck.createdAtUtc,
+                    uploadCallback: () => {
+                        setDuplicateWarning(null);
+                        _processUpload(file);
+                    }
+                });
+                return;
+            }
+        } catch (err) {
+            console.error("Duplicate check failed", err);
+        } finally {
+            if (!duplicateWarning) { // Only clear if we are not opening the modal
+                setIsProcessing(false);
+            }
+        }
+
+        _processUpload(file);
     };
 
     const recalculateQuotationTotal = (d: QuotationDraft) => {
@@ -597,6 +628,58 @@ export function QuotationEntry({
                             </div>
                         )}
                     </motion.div>
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {duplicateWarning?.isOpen && (
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', backgroundColor: 'rgba(17, 24, 39, 0.5)', backdropFilter: 'blur(4px)' }}>
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            style={{ backgroundColor: 'white', borderRadius: '12px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', width: '100%', maxWidth: '448px', overflow: 'hidden', position: 'relative', border: '1px solid #e5e7eb' }}
+                        >
+                            <div style={{ padding: '24px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '48px', height: '48px', margin: '0 auto 16px', backgroundColor: '#fef3c7', borderRadius: '9999px' }}>
+                                    <AlertTriangle size={24} color="#d97706" />
+                                </div>
+                                <h3 style={{ fontSize: '1.125rem', fontWeight: 600, textAlign: 'center', color: '#111827', marginBottom: '8px' }}>
+                                    Documento Já Existente
+                               </h3>
+                                <p style={{ fontSize: '0.875rem', color: '#4b5563', textAlign: 'center', marginBottom: '16px' }}>
+                                    Aviso de duplicidade: Este orçamento/proforma já foi carregado no sistema anteriormente.
+                                </p>
+                                
+                                <div style={{ backgroundColor: '#f9fafb', padding: '16px', borderRadius: '8px', fontSize: '0.875rem', color: '#4b5563', marginBottom: '24px' }}>
+                                    <p style={{ marginBottom: '8px' }}><span style={{ fontWeight: 600, color: '#374151' }}>Pedido Vinculado:</span> {duplicateWarning.requestNumber}</p>
+                                    <p style={{ marginBottom: '8px' }}><span style={{ fontWeight: 600, color: '#374151' }}>Enviado por:</span> {duplicateWarning.uploadedBy || 'Desconhecido'}</p>
+                                    <p><span style={{ fontWeight: 600, color: '#374151' }}>Enviado em:</span> {duplicateWarning.createdAtUtc ? formatDateTime(duplicateWarning.createdAtUtc) : '-'}</p>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setDuplicateWarning(null)}
+                                        style={{ flex: 1, padding: '8px 16px', fontSize: '0.875rem', fontWeight: 500, color: '#374151', backgroundColor: 'white', border: '1px solid #d1d5db', borderRadius: '8px', cursor: 'pointer' }}
+                                    >
+                                        Cancelar Envio
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (duplicateWarning?.uploadCallback) {
+                                                duplicateWarning.uploadCallback();
+                                            }
+                                        }}
+                                        style={{ flex: 1, padding: '8px 16px', fontSize: '0.875rem', fontWeight: 500, color: 'white', backgroundColor: '#d97706', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
+                                    >
+                                        Estou Ciente, Prosseguir
+                                    </button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </div>
                 )}
             </AnimatePresence>
         </div>

@@ -1,6 +1,11 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to this project will be documented in this file.## [2.38.0] - 2026-04-06
+
+### Added
+
+- **Request Document Anti-Duplication (Soft-Block)**: Implemented an intelligent pre-flight `SHA-256` hashing validation on the Frontend via Web Crypto APIs (`computeFileHash`) that converts physical documents to checksums regardless of format (PDF, PNG, Excel).
+- **Server-Side File Verification**: Extended `AttachmentsController.cs` for physical duplicate monitoring. Prevents redundant document extraction and displays duplicate warnings in both Payment Request Creation (`RequestCreate.tsx`) and the Quotation Management Flow (`QuotationEntry.tsx`). Includes UX overrides for intentional duplication.
 
 ## [2.37.1] - 2026-04-06
 

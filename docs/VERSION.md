@@ -2,7 +2,14 @@
 
 ## Current Version
 
-v2.37.1
+v2.38.0
+
+## [2.38.0] - 2026-04-06
+
+### Added
+
+- **Request Document Anti-Duplication (Soft-Block)**: Implemented an intelligent pre-flight `SHA-256` hashing validation on the Frontend via Web Crypto APIs.
+- **Server-Side File Verification**: Extended `AttachmentsController.cs` for physical duplicate monitoring. Prevents redundant document extraction and saves user intake errors for Payment and Quotations flows.
 
 ## [2.37.1] - 2026-04-06
 
