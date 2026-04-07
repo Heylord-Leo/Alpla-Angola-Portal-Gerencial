@@ -370,7 +370,9 @@ export const api = {
                 method: 'POST'
             });
             if (!response.ok) return handleApiError(response, 'Falha ao atribuir o pedido para si.');
-            return response.json();
+            if (response.status === 204 || response.headers.get('content-length') === '0') return { message: 'Atribuído com sucesso.', statusCode: 'OK' };
+            const text = await response.text();
+            return text ? JSON.parse(text) : { message: 'Atribuído com sucesso.', statusCode: 'OK' };
         },
         schedulePayment: async (id: string, comment?: string): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/operational/schedule-payment`, {

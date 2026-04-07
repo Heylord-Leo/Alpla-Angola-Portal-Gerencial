@@ -1490,6 +1490,40 @@ public class RequestsController : BaseController
 
         await _context.SaveChangesAsync();
 
+        // Notifications
+        try
+        {
+            if (request.RequesterId != actorId)
+            {
+                var msgToRequester = newBuyerId == actorId 
+                    ? $"O comprador {user.FullName} assumiu a responsabilidade pelo seu pedido {(request.RequestNumber ?? "S/N")}."
+                    : $"O seu pedido {(request.RequestNumber ?? "S/N")} foi atribuído ao comprador {targetUser?.FullName}.";
+
+                await _notificationService.CreateNotificationAsync(
+                    request.RequesterId,
+                    "Comprador Atribuído",
+                    msgToRequester,
+                    NotificationTypes.Info,
+                    $"/requests/{request.Id}"
+                );
+            }
+
+            if (newBuyerId != actorId)
+            {
+                await _notificationService.CreateNotificationAsync(
+                    newBuyerId,
+                    "Nova Atribuição",
+                    $"O pedido {(request.RequestNumber ?? "S/N")} foi-lhe atribuído por {user.FullName}.",
+                    NotificationTypes.Info,
+                    $"/requests/{request.Id}"
+                );
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha ao enviar notificações de atribuição para o Pedido {RequestNumber}.", request.RequestNumber);
+        }
+
         return NoContent();
     }
 

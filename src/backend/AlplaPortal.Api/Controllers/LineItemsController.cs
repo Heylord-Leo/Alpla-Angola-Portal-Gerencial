@@ -147,6 +147,7 @@ public class LineItemsController : BaseController
                 RequestUpdatedAtUtc = x.Request.UpdatedAtUtc,
                 RequestCreatedAtUtc = x.Request.CreatedAtUtc,
                 RequestBuyerId = x.Request.BuyerId,
+                RequestBuyerName = x.Request.Buyer != null ? x.Request.Buyer.FullName : null,
                 
                 // Line Item specific flat fields
                 ItemPlantName = x.LineItem != null && x.LineItem.Plant != null ? x.LineItem.Plant.Name : null,
@@ -297,6 +298,7 @@ public class LineItemsController : BaseController
                 RequestSupplierCode = x.RequestSupplierCode,
                 
                 BuyerId = x.RequestBuyerId,
+                BuyerName = x.RequestBuyerName,
 
                 CostCenterId = x.LineItem != null ? x.LineItem.CostCenterId : null,
                 CostCenterName = x.ItemCostCenterName,

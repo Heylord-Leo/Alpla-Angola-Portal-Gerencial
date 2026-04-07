@@ -1,6 +1,19 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.## [2.38.0] - 2026-04-06
+All notable changes to this project will be documented in this file.
+
+## [2.38.1] - 2026-04-07
+
+### Added
+
+- **Quotation Assignment Notifications**: Real-time notifications dispatched to the requester and the assigned buyer when a quotation is claimed or explicitly assigned.
+
+### Fixed
+
+- **Buyer Assignment Resolution**: Safely mapping HTTP 204 responses on `assign-buyer` endpoints to prevent runtime parse failures.
+- **UX Parity in Quotation Management**: Fixed a gap in API mapping in `LineItemsController` to correctly hydrate and display the assigned buyer's name.
+
+## [2.38.0] - 2026-04-06
 
 ### Added
 

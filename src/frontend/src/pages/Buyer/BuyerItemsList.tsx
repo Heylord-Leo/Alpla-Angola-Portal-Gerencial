@@ -250,6 +250,7 @@ export function BuyerItemsList() {
                     latestAdjustmentDateUtc: item.latestAdjustmentDateUtc,
                     requestStatusBadgeColor: item.requestStatusBadgeColor,
                     buyerId: item.buyerId,
+                    buyerName: item.buyerName,
                     quotations: item.quotations || [],
                     items: []
                 };
@@ -1061,6 +1062,15 @@ export function BuyerItemsList() {
                                             <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Solicitante</span>
                                             <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-text-main)' }}>{group.requesterName}</span>
                                         </div>
+                                        {group.buyerName && (
+                                            <>
+                                                <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--color-border)' }}></div>
+                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                                                    <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Comprador</span>
+                                                    <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-primary)' }}>{group.buyerName}</span>
+                                                </div>
+                                            </>
+                                        )}
                                         <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--color-border)' }}></div>
                                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
                                             <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Data Necessária</span>
