@@ -11,7 +11,10 @@ import { MasterData } from './pages/Settings/MasterData';
 import { DocumentExtractionSettings } from './pages/Settings/DocumentExtractionSettings';
 import PurchasingLandingPage from './pages/Purchasing/PurchasingLandingPage';
 import { ApprovalCenter } from './pages/Approvals/ApprovalCenter';
-
+import FinanceLandingPage from './pages/Finance/FinanceLandingPage';
+import FinanceOverview from './pages/Finance/FinanceOverview';
+import FinancePaymentsList from './pages/Finance/FinancePaymentsList';
+import FinanceHistory from './pages/Finance/FinanceHistory';
 import { Dashboard } from './pages/Dashboard/Dashboard';
 import { AdministratorWorkspace } from './pages/Admin/AdministratorWorkspace';
 import { SystemLogs } from './pages/Admin/SystemLogs';
@@ -71,6 +74,15 @@ function AppContent() {
                 <Route path="/receiving/workspace" element={<ReceivingWorkspace />} />
                 <Route path="/receiving/operation/:id" element={<ReceivingOperation />} />
                 <Route path="/buyer/items" element={<BuyerItemsList />} />
+
+                {/* Finance Workspace */}
+                <Route path="/finance" element={<FinanceLandingPage />}>
+                    <Route index element={<Navigate to="overview" replace />} />
+                    <Route path="overview" element={<FinanceOverview />} />
+                    <Route path="payments" element={<FinancePaymentsList />} />
+                    <Route path="history" element={<FinanceHistory />} />
+                </Route>
+
                 {/* Settings Routes */}
                 <Route path="/settings/master-data" element={<AdminRoute><MasterData /></AdminRoute>} />
                 <Route path="/settings/document-extraction" element={<AdminRoute><DocumentExtractionSettings /></AdminRoute>} />

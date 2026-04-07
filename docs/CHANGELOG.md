@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.39.0] - 2026-04-07
+
+### Added
+
+- **Finance Workspace**: Implemented a comprehensive and compact operational cockpit for the treasury and accounts payable team under the "Finanças" navigation group.
+  - **Overview Dashboard**: Added dynamic KPI cards tracking pending actions, scheduled volumes, overdue alerts, and completed monthly volume. Includes a curated "Immediate Attention" alert panel.
+  - **Payments List**: A brutally efficient data grid aggregating all payment-pending requests. Hardened backend eligibility strictly requires a P.O. attachment before items enter the queue.
+  - **Financial Action Handlers**: Direct UI actions allowing the finance team to *Schedule*, *Mark as Paid*, *Add Notes*, or *Return for Adjustment* per-request, utilizing a modern, Brutalist-compliant `<FinanceActionModal />` triggered from a standard `<KebabMenu />`.
+  - **Dedicated Finance Return Flow**: Introduced new internal status `WAITING_PO_CORRECTION` ("Devolvido para Compras") to safely return invalid requests from Finance back to Purchasing without conflating states with general Approver rejections.
+  - **Audit History**: Native tracking showing all actions taken by the finance team in a read-only audit log.
+- **Backend Finance Services**: Segregated financial orchestration down into `FinanceController.cs` maximizing performance over the `RequestsController` and returning strictly typed DTOs mapping to the new namespace `AlplaPortal.Application.DTOs.Finance`.
+
 ## [2.38.2] - 2026-04-07
 
 ### Fixed

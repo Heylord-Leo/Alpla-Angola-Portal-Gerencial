@@ -369,3 +369,64 @@ export interface HistoricalPurchaseRecordDto {
     plantName?: string;
     departmentName?: string;
 }
+
+export interface FinanceAttentionPointDto {
+    id: string;
+    title: string;
+    description: string;
+    count: number;
+    targetPath: string;
+    type: 'WARNING' | 'INFO' | 'DANGER' | 'SUCCESS';
+}
+
+export interface FinanceSummaryDto {
+    waitingFinanceAction: number;
+    scheduledPayments: number;
+    overduePayments: number;
+    completedThisMonth: number;
+    pendingValue: number;
+    scheduledValue: number;
+    overdueValue: number;
+    paidThisMonthValue: number;
+    currencyCodes: string[];
+    attentionPoints: FinanceAttentionPointDto[];
+}
+
+export interface FinanceListItemDto {
+    id: string;
+    requestNumber: string;
+    title: string;
+    supplierName: string;
+    requesterName: string;
+    plantName: string;
+    amount: number;
+    currencyCode: string | null;
+    needByDateUtc: string | null;
+    scheduledDateUtc: string | null;
+    paidDateUtc: string | null;
+    statusCode: string;
+    statusName: string;
+    statusBadgeColor: string;
+    isOverdue: boolean;
+    isDueSoon: boolean;
+    isMissingDocuments: boolean;
+    missingDocumentTypes: string[];
+    availableFinanceActions: string[];
+}
+
+export interface FinanceListResponseDto {
+    pagedResult: PagedResult<FinanceListItemDto>;
+    summary: FinanceSummaryDto;
+}
+
+export interface FinanceHistoryItemDto {
+    id: string;
+    requestId: string;
+    actionTaken: string;
+    comment: string;
+    createdAtUtc: string;
+    actorName: string;
+    newStatusCode: string | null;
+    newStatusName: string | null;
+}
+

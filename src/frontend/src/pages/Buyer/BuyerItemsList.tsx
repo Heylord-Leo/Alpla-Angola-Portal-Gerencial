@@ -322,7 +322,7 @@ export function BuyerItemsList() {
 
         try {
             const hash = await computeFileHash(file);
-            const dupCheck = await api.attachments.checkDuplicate(hash, 'PROFORMA');
+            const dupCheck = await api.attachments.checkDuplicate(hash);
             
             if (dupCheck.isDuplicate) {
                 hasDuplicateWarning = true;

@@ -1,7 +1,8 @@
 import React from 'react';
 import { 
     FileText, Home, Settings, List, ShoppingCart, 
-    Package, Activity, Network, Shield, CheckCircle 
+    Package, Activity, Network, Shield, CheckCircle,
+    CreditCard, DollarSign, Archive
 } from 'lucide-react';
 import { ROLES } from './roles';
 
@@ -135,6 +136,44 @@ export const getNavigationConfig = (userRoles: string[]): NavItem[] => {
                     to: '/receiving/workspace',
                     roles: [ROLES.RECEIVING, ROLES.LOCAL_MANAGER, ROLES.SYSTEM_ADMINISTRATOR],
                     keywords: ['entrega', 'materiais', 'armazém', 'logística', 'conferência', 'entrada', 'estoque']
+                }
+            ]
+        },
+        {
+            id: 'financas',
+            type: 'group',
+            label: 'Finanças',
+            to: '/finance/overview',
+            icon: <CreditCard size={18} strokeWidth={2.5} />,
+            roles: [ROLES.FINANCE, ROLES.SYSTEM_ADMINISTRATOR],
+            keywords: ['finanças', 'tesouraria', 'pagamentos', 'faturas', 'fluxo'],
+            children: [
+                {
+                    id: 'finance-overview',
+                    type: 'link',
+                    label: 'Visão Geral',
+                    icon: <Activity size={18} strokeWidth={2.5} />,
+                    to: '/finance/overview',
+                    roles: [ROLES.FINANCE, ROLES.SYSTEM_ADMINISTRATOR],
+                    keywords: ['finanças', 'dashboard', 'resumo', 'kpi']
+                },
+                {
+                    id: 'finance-payments',
+                    type: 'link',
+                    label: 'Pagamentos',
+                    icon: <DollarSign size={18} strokeWidth={2.5} />,
+                    to: '/finance/payments',
+                    roles: [ROLES.FINANCE, ROLES.SYSTEM_ADMINISTRATOR],
+                    keywords: ['finanças', 'pagamentos', 'agendamento', 'liquidação', 'vencimento']
+                },
+                {
+                    id: 'finance-history',
+                    type: 'link',
+                    label: 'Histórico',
+                    icon: <Archive size={18} strokeWidth={2.5} />,
+                    to: '/finance/history',
+                    roles: [ROLES.FINANCE, ROLES.SYSTEM_ADMINISTRATOR],
+                    keywords: ['finanças', 'histórico', 'log', 'auditoria']
                 }
             ]
         },

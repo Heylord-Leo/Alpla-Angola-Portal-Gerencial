@@ -651,3 +651,24 @@ To support the system-resolved workflow actors, the "Dados Mestres" area now inc
     - **Active/Inactive**: Companies can be toggled via the standard `handleToggleActive` pattern.
 4. **Integration**: The `Companies` master data powers the plant-filtering logic and the header-level company selection in the Request Create/Edit forms.
 
+## Finance Workspace (v2.39.0)
+
+The Finance Workspace (`FinanceLandingPage.tsx`) acts as the dedicated operational cockpit for the treasury and accounts payable team, decoupled from the standard Buyer or Approver flows.
+
+### Core Architecture
+
+1. **Standalone API Segregation**: Data is sourced exclusively from `FinanceController.cs` returning targeted DTOs (`FinanceSummaryDto`, `FinanceListItemDto`), avoiding over-fetching from the generic Requests endpoints.
+2. **Brutalist Presentation**: The UI strictly inherits the project's "Brutalist / Modern Corporate" standards, relying on direct `style={{ ... }}` implementations leveraging CSS variables (`var(--color-primary)`, `var(--shadow-brutal)`) rather than arbitrary Tailwind utility classes.
+3. **Modular Sub-Navigation**: Features a left-aligned local navigation column bridging three primary modules:
+    - **Visão Geral**: High-density KPI cards and an "Immediate Attention" panel.
+    - **Pagamentos**: A dense, grid-based list of actionable payment requests.
+    - **Histórico**: A read-only audit log of finance-authored actions.
+
+### Technical & Business Rules
+
+1. **Document Awareness (`Faltam Docs`)**: The workspace dynamically computes missing documentation requirements based strictly on workflow stage and request type.
+    - *Proforma*: Flagged for quotations missing initial documentation.
+    - *P.O.*: Flagged for requests missing formal purchase orders.
+    - *Comprovativo*: Flagged for requests marked as paid but lacking a physical receipt upload.
+2. **Action Handlers**: Permitted actions (Agendar, Pagar, Notas, Devolver) are accessible directly from the payment list via the portal standard `<KebabMenu />` component, optimizing bulk processing velocity. 
+3. **Contextual Modals**: All explicit UI actions trigger the strictly native `<FinanceActionModal />` (`DropdownPortal`). No `window.prompt` or `window.confirm` dialogues are ever used in the business system. "Mark as Paid" executes a full (not partial) payment workflow transition.

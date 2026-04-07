@@ -27,5 +27,6 @@ public static class RequestConstants
         public const string PaymentCompleted = "PAYMENT_COMPLETED";
         public const string InFollowup = "IN_FOLLOWUP";
         public const string WaitingCostCenter = "WAITING_COST_CENTER";
+        public const string WaitingPoCorrection = "WAITING_PO_CORRECTION";
     }
 }

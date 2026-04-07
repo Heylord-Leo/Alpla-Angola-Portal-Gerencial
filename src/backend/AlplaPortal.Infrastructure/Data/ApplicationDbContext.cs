@@ -174,7 +174,8 @@ public class ApplicationDbContext : DbContext
             new RequestStatus { Id = 21, Code = "IN_FOLLOWUP", Name = "Em Acompanhamento", DisplayOrder = 18, BadgeColor = "amber" },
             new RequestStatus { Id = 17, Code = "COMPLETED", Name = "Finalizado", DisplayOrder = 19, BadgeColor = "carbon" },
             new RequestStatus { Id = 18, Code = "CANCELLED", Name = "Cancelado", DisplayOrder = 20, BadgeColor = "zinc" },
-            new RequestStatus { Id = 20, Code = "QUOTATION_COMPLETED", Name = "Cotação Concluída", DisplayOrder = 21, BadgeColor = "emerald", IsActive = false }
+            new RequestStatus { Id = 20, Code = "QUOTATION_COMPLETED", Name = "Cotação Concluída", DisplayOrder = 21, BadgeColor = "emerald", IsActive = false },
+            new RequestStatus { Id = 22, Code = "WAITING_PO_CORRECTION", Name = "Devolvido para Compras", DisplayOrder = 22, BadgeColor = "red" }
         );
 
         modelBuilder.Entity<Currency>().HasData(

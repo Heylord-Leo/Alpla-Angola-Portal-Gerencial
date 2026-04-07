@@ -1,4 +1,4 @@
-import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, DocumentExtractionSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto } from '../types';
+import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, DocumentExtractionSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult } from '../types';
 import { logger, FrontendComponentKey } from './logger';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
@@ -946,6 +946,62 @@ export const api = {
                 body: JSON.stringify({ receivedQuantity, divergenceNotes })
             });
             if (!res.ok) return handleApiError(res, 'Falha ao atualizar recebimento do item.');
+        }
+    },
+    finance: {
+        getSummary: async (): Promise<FinanceSummaryDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/summary`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar sumário financeiro.');
+            return response.json();
+        },
+        getPayments: async (filter?: string, page: number = 1, pageSize: number = 20): Promise<FinanceListResponseDto> => {
+            const params = new URLSearchParams();
+            if (filter) params.append('filter', filter);
+            params.append('page', page.toString());
+            params.append('pageSize', pageSize.toString());
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/payments?${params.toString()}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar pagamentos.');
+            return response.json();
+        },
+        getHistory: async (page: number = 1, pageSize: number = 20): Promise<PagedResult<FinanceHistoryItemDto>> => {
+            const params = new URLSearchParams();
+            params.append('page', page.toString());
+            params.append('pageSize', pageSize.toString());
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/history?${params.toString()}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar histórico financeiro.');
+            return response.json();
+        },
+        schedulePayment: async (id: string, actionDateUtc?: string, notes?: string): Promise<void> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/${id}/schedule`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ actionDateUtc, notes })
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao agendar pagamento.');
+        },
+        markAsPaid: async (id: string, actionDateUtc?: string, notes?: string): Promise<void> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/${id}/pay`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ actionDateUtc, notes })
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao registar pagamento.');
+        },
+        addNote: async (id: string, notes: string): Promise<void> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/${id}/note`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ notes })
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao adicionar nota.');
+        },
+        returnForAdjustment: async (id: string, notes: string): Promise<void> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/${id}/return`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ notes })
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao devolver pedido.');
         }
     },
     admin: {

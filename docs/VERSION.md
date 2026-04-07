@@ -2,7 +2,17 @@
 
 ## Current Version
 
-v2.38.2
+v2.39.0
+
+## [2.39.0] - 2026-04-07
+
+### Added
+
+- **Finance Workspace**: Implemented a comprehensive and compact operational cockpit for the treasury and accounts payable team under the "Finanças" navigation group.
+- **Finance Overview Dashboard**: Added dynamic KPI cards tracking pending actions, scheduled volumes, and overdue alerts.
+- **Finance Payments List**: Added a dedicated data grid utilizing the standardized `KebabMenu` framework and `<FinanceActionModal />` popups for all request interactions. Hardened backend P.O. enforcement eligibility for queue generation.
+- **Dedicated Return Workflow**: Added internal logical status `WAITING_PO_CORRECTION` to allow native context-safe return loops between Finance and Purchasing layers.
+- **Backend Finance Services**: Implemented `FinanceController.cs` to segregate financial orchestration and introduced typed `FinanceDtos`.
 
 ## [2.38.2] - 2026-04-07
 
