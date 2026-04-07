@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.38.2] - 2026-04-07
+
+### Fixed
+
+- **Quotation Attachment Anti-Duplication**: Resolved a functional regression where the SHA-256 duplicate warning modal failed to appear in the "Gestão de Cotações" workspace.
+  - Fixed a React state-batching/closure bug in `QuotationEntry.tsx` that caused the loading state to flip prematurely.
+  - Extended the pre-flight hash validation to the **OCR Import Flow** (`BuyerItemsList.tsx`), ensuring a consistent soft-block when uploading previously processed documents.
+  - Implemented a standard file input reset pattern to ensure repeated selections of the same file correctly trigger the verification logic.
+- **Supporting Document Visibility**: Surfaced non-quotation items (supporting attachments) in the Quotation Management header to provide buyers with full document context during analysis.
+
+
 ## [2.38.1] - 2026-04-07
 
 ### Added

@@ -177,8 +177,13 @@ public class LineItemsController : BaseController
             .Select(r => new
             {
                 r.Id,
-                Attachments = r.Attachments
+                ProformaAttachments = r.Attachments
                     .Where(a => a.AttachmentTypeCode == "PROFORMA" && !a.IsDeleted)
+                    .OrderByDescending(a => a.UploadedAtUtc)
+                    .Select(a => new ProformaAttachmentDto { Id = a.Id, FileName = a.FileName })
+                    .ToList(),
+                SupportingAttachments = r.Attachments
+                    .Where(a => a.AttachmentTypeCode == "SUPPORTING" && !a.IsDeleted)
                     .OrderByDescending(a => a.UploadedAtUtc)
                     .Select(a => new ProformaAttachmentDto { Id = a.Id, FileName = a.FileName })
                     .ToList(),
@@ -261,9 +266,10 @@ public class LineItemsController : BaseController
                 RequestTypeName = x.RequestTypeName,
                 CompanyId = x.CompanyId,
                 
-                ProformaId = rd?.Attachments.FirstOrDefault()?.Id,
-                ProformaFileName = rd?.Attachments.FirstOrDefault()?.FileName,
-                ProformaAttachments = rd?.Attachments,
+                ProformaId = rd?.ProformaAttachments.FirstOrDefault()?.Id,
+                ProformaFileName = rd?.ProformaAttachments.FirstOrDefault()?.FileName,
+                ProformaAttachments = rd?.ProformaAttachments,
+                SupportingAttachments = rd?.SupportingAttachments,
                 
                 DepartmentName = x.DepartmentName,
                 PlantId = x.LineItem != null ? x.LineItem.PlantId : null,

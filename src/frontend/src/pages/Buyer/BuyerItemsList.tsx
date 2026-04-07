@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { Link, useLocation, useSearchParams, useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, Search, Filter, FileText, CheckCircle2, X, Pencil, Trash2, ArrowLeft, AlertCircle, RefreshCcw, Hash, Calendar, UserPlus } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, Search, Filter, FileText, CheckCircle2, X, Pencil, Trash2, ArrowLeft, AlertCircle, RefreshCcw, Hash, Calendar, UserPlus, AlertTriangle } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
-import { formatCurrencyAO, formatDate, getUrgencyStyle } from '../../lib/utils';
+import { formatCurrencyAO, formatDate, getUrgencyStyle, computeFileHash, formatDateTime } from '../../lib/utils';
 import { SupplierAutocomplete } from '../../components/SupplierAutocomplete';
 import { completeQuotationAction } from '../../lib/workflow';
 import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModal';
@@ -108,6 +108,15 @@ export function BuyerItemsList() {
         show: false, requestId: '', draft: null, duplicate: null
     });
     const [expandedQuotations, setExpandedQuotations] = useState<Record<string, boolean>>({});
+    const [fileDuplicateWarning, setFileDuplicateWarning] = useState<{
+        isOpen: boolean;
+        requestId: string;
+        fileName: string;
+        requestNumber: string;
+        uploadedBy?: string;
+        createdAtUtc?: string;
+        uploadCallback: () => void;
+    } | null>(null);
 
     // Lookups
     const [ivaRates, setIvaRates] = useState<IvaRate[]>([]);
@@ -238,6 +247,7 @@ export function BuyerItemsList() {
                     proformaId: item.proformaId,
                     proformaFileName: item.proformaFileName,
                     proformaAttachments: item.proformaAttachments || (item.proformaId ? [{ id: item.proformaId, fileName: item.proformaFileName }] : []),
+                    supportingAttachments: item.supportingAttachments || [],
                     requestSupplierId: item.requestSupplierId,
                     requestSupplierName: item.requestSupplierName,
                     requestSupplierCode: item.requestSupplierCode,
@@ -262,6 +272,9 @@ export function BuyerItemsList() {
                 groups[item.requestId].proformaAttachments = item.proformaAttachments;
                 groups[item.requestId].proformaId = item.proformaId;
                 groups[item.requestId].proformaFileName = item.proformaFileName;
+            }
+            if (item.supportingAttachments && item.supportingAttachments.length > 0 && groups[item.requestId].supportingAttachments.length === 0) {
+                groups[item.requestId].supportingAttachments = item.supportingAttachments;
             }
             // Only add real line items to the group's items array
             if (item.lineItemId) {
@@ -303,6 +316,38 @@ export function BuyerItemsList() {
     const handleContinueWithDocument = async (requestId: string) => {
         const file = importSelectedFiles[requestId]?.[0];
         if (!file) return;
+
+        setIsProcessingOcr(prev => ({ ...prev, [requestId]: true }));
+        let hasDuplicateWarning = false;
+
+        try {
+            const hash = await computeFileHash(file);
+            const dupCheck = await api.attachments.checkDuplicate(hash, 'PROFORMA');
+            
+            if (dupCheck.isDuplicate) {
+                hasDuplicateWarning = true;
+                setFileDuplicateWarning({
+                    isOpen: true,
+                    requestId: requestId,
+                    fileName: file.name,
+                    requestNumber: dupCheck.requestNumber || 'Desconhecido',
+                    uploadedBy: dupCheck.uploadedBy,
+                    createdAtUtc: dupCheck.createdAtUtc,
+                    uploadCallback: () => {
+                        setFileDuplicateWarning(null);
+                        handleImportFiles(requestId, [file]);
+                    }
+                });
+                return;
+            }
+        } catch (err) {
+            console.error("Duplicate check failed:", err);
+        } finally {
+            if (!hasDuplicateWarning) {
+                setIsProcessingOcr(prev => ({ ...prev, [requestId]: false }));
+            }
+        }
+
         await handleImportFiles(requestId, [file]);
     };
 
@@ -1170,12 +1215,56 @@ export function BuyerItemsList() {
                                                 </div>
                                             </div>
 
-                                            {group.requestDescription && (
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                    <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Descrição / Notas do Pedido</span>
-                                                    <span style={{ fontSize: '0.85rem', color: 'var(--color-text-body)', whiteSpace: 'pre-wrap', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '4px', border: '1px solid var(--color-border)' }}>
-                                                        {group.requestDescription}
-                                                    </span>
+                                            {(group.requestDescription || group.supportingAttachments.length > 0) && (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                    {group.requestDescription && (
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                            <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Descrição / Notas do Pedido</span>
+                                                            <span style={{ fontSize: '0.85rem', color: 'var(--color-text-body)', whiteSpace: 'pre-wrap', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '4px', border: '1px solid var(--color-border)' }}>
+                                                                {group.requestDescription}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {group.supportingAttachments.length > 0 && (
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                            <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Documentos de Apoio Anexados</span>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '12px' }}>
+                                                                {group.supportingAttachments.map((att: any) => (
+                                                                    <div key={att.id} style={{
+                                                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px',
+                                                                        backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px',
+                                                                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                                                                    }}>
+                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                                                                            <div style={{ backgroundColor: '#fff', padding: '8px', borderRadius: '4px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+                                                                                <FileText size={20} color="#1d4ed8" />
+                                                                            </div>
+                                                                            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                                                                <span style={{ fontWeight: 700, color: '#1e40af', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={att.fileName}>
+                                                                                    {att.fileName}
+                                                                                </span>
+                                                                                <span style={{ fontSize: '0.7rem', color: '#3b82f6', fontWeight: 700 }}>DOC. APOIO (Solicitante)</span>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div style={{ display: 'flex', gap: '6px', marginLeft: '12px', flexShrink: 0 }}>
+                                                                            <a
+                                                                                href={`/api/v1/attachments/download/${att.id}`}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                                style={{ color: '#1d4ed8', padding: '6px', border: '1px solid #93c5fd', borderRadius: '4px', display: 'flex', alignItems: 'center', backgroundColor: '#fff', transition: 'all 0.2s' }}
+                                                                                onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#dbeafe'; e.currentTarget.style.borderColor = '#60a5fa'; }}
+                                                                                onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#fff'; e.currentTarget.style.borderColor = '#93c5fd'; }}
+                                                                                title="Baixar Documento"
+                                                                            >
+                                                                                <ExternalLink size={16} />
+                                                                            </a>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
@@ -1433,6 +1522,8 @@ export function BuyerItemsList() {
                                                             ))}
                                                         </div>
                                                     )}
+
+
                                                 </div>
                                             ) : (
                                                 <div style={{ 
@@ -2501,6 +2592,62 @@ export function BuyerItemsList() {
                         </motion.div>
                     </motion.div>
                 </DropdownPortal>
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {fileDuplicateWarning?.isOpen && (
+                    <div style={{ position: 'fixed', inset: 0, zIndex: Z_INDEX.MODAL + 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)' }}>
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                            style={{ backgroundColor: 'white', borderRadius: '12px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.3)', width: '100%', maxWidth: '448px', overflow: 'hidden', position: 'relative', border: '1px solid #e2e8f0' }}
+                        >
+                            <div style={{ padding: '24px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '48px', height: '48px', margin: '0 auto 16px', backgroundColor: '#fff7ed', borderRadius: '50%' }}>
+                                    <AlertTriangle size={24} color="#ea580c" />
+                                </div>
+                                <h3 style={{ fontSize: '1.25rem', fontWeight: 900, textAlign: 'center', color: '#0f172a', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '-0.01em' }}>
+                                    Documento Já Existente
+                                </h3>
+                                <p style={{ fontSize: '0.875rem', color: '#64748b', textAlign: 'center', marginBottom: '20px', fontWeight: 500, lineHeight: 1.5 }}>
+                                    Este orçamento/proforma já foi carregado no sistema anteriormente. Deseja prosseguir mesmo assim?
+                                </p>
+                                
+                                <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', fontSize: '0.8rem', color: '#475569', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+                                    <p style={{ marginBottom: '6px' }}><span style={{ fontWeight: 800, color: '#1e293b', textTransform: 'uppercase', fontSize: '0.7rem' }}>Arquivo:</span> {fileDuplicateWarning.fileName}</p>
+                                    <p style={{ marginBottom: '6px' }}><span style={{ fontWeight: 800, color: '#1e293b', textTransform: 'uppercase', fontSize: '0.7rem' }}>Pedido Vinculado:</span> {fileDuplicateWarning.requestNumber}</p>
+                                    <p style={{ marginBottom: '6px' }}><span style={{ fontWeight: 800, color: '#1e293b', textTransform: 'uppercase', fontSize: '0.7rem' }}>Enviado por:</span> {fileDuplicateWarning.uploadedBy || 'Desconhecido'}</p>
+                                    <p style={{ margin: 0 }}><span style={{ fontWeight: 800, color: '#1e293b', textTransform: 'uppercase', fontSize: '0.7rem' }}>Enviado em:</span> {fileDuplicateWarning.createdAtUtc ? formatDateTime(fileDuplicateWarning.createdAtUtc) : '-'}</p>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '12px' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setFileDuplicateWarning(null);
+                                            setIsProcessingOcr(prev => ({ ...prev, [fileDuplicateWarning!.requestId]: false }));
+                                        }}
+                                        style={{ flex: 1, padding: '10px 16px', fontSize: '0.8rem', fontWeight: 800, color: '#475569', backgroundColor: 'white', border: '2px solid #e2e8f0', borderRadius: '6px', cursor: 'pointer', textTransform: 'uppercase' }}
+                                    >
+                                        Cancelar Envio
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (fileDuplicateWarning?.uploadCallback) {
+                                                fileDuplicateWarning.uploadCallback();
+                                            }
+                                        }}
+                                        style={{ flex: 1.2, padding: '10px 16px', fontSize: '0.8rem', fontWeight: 800, color: 'white', backgroundColor: '#ea580c', border: 'none', borderRadius: '6px', cursor: 'pointer', textTransform: 'uppercase', boxShadow: '0 4px 0 #9a3412' }}
+                                    >
+                                        Estou Ciente, Prosseguir
+                                    </button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </div>
                 )}
             </AnimatePresence>
 

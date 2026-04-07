@@ -2,7 +2,14 @@
 
 ## Current Version
 
-v2.38.1
+v2.38.2
+
+## [2.38.2] - 2026-04-07
+
+### Fixed
+
+- **Quotation Attachment Anti-Duplication**: Resolved functional regression in SHA-256 duplicate warning modal. Extended pre-flight hash validation to the OCR Import Flow in Buyer Workspace.
+- **Supporting Document Visibility**: Surfaced non-quotation items in the Quotation Management header.
 
 ## [2.38.1] - 2026-04-07
 

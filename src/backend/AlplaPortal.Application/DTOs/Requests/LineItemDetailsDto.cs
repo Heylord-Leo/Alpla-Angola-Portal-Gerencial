@@ -36,6 +36,7 @@ public class LineItemDetailsDto
     public Guid? ProformaId { get; set; }         // kept for backward compatibility (first/latest)
     public string? ProformaFileName { get; set; } // kept for backward compatibility (first/latest)
     public List<ProformaAttachmentDto>? ProformaAttachments { get; set; }
+    public List<ProformaAttachmentDto>? SupportingAttachments { get; set; }
 
     // Request Organization Lookups
     public string? DepartmentName { get; set; }

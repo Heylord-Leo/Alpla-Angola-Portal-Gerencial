@@ -173,13 +173,20 @@ export function QuotationEntry({
         const file = e.target.files?.[0];
         if (!file) return;
 
+        // Reset the input value so the same file can be selected again
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+
         setIsProcessing(true);
         setFeedback(null);
+        let hasDuplicateWarning = false;
 
         try {
             const hash = await computeFileHash(file);
             const dupCheck = await api.attachments.checkDuplicate(hash);
             if (dupCheck.isDuplicate) {
+                hasDuplicateWarning = true;
                 setDuplicateWarning({
                     isOpen: true,
                     requestNumber: dupCheck.requestNumber || 'Desconhecido',
@@ -195,7 +202,7 @@ export function QuotationEntry({
         } catch (err) {
             console.error("Duplicate check failed", err);
         } finally {
-            if (!duplicateWarning) { // Only clear if we are not opening the modal
+            if (!hasDuplicateWarning) {
                 setIsProcessing(false);
             }
         }
