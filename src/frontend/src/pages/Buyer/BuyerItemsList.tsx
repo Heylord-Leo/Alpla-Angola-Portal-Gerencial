@@ -251,6 +251,8 @@ export function BuyerItemsList() {
                     requestStatusBadgeColor: item.requestStatusBadgeColor,
                     buyerId: item.buyerId,
                     buyerName: item.buyerName,
+                    requestTitle: item.requestTitle,
+                    requestDescription: item.requestDescription,
                     quotations: item.quotations || [],
                     items: []
                 };
@@ -1145,20 +1147,37 @@ export function BuyerItemsList() {
                                         {/* Row 1: Quotation Metadata Area */}
                                         <div style={{ 
                                             display: 'flex', 
-                                            gap: '24px', 
+                                            flexDirection: 'column',
+                                            gap: '16px', 
                                             paddingBottom: '16px', 
                                             marginBottom: '16px', 
                                             borderBottom: '1px solid var(--color-border)' 
                                         }}>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Planta</span>
-                                                <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>{group.plantName || plants.find(p => String(p.id) === String(group.plantId))?.name || '---'}</span>
+                                            <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                    <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Planta</span>
+                                                    <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>{group.plantName || plants.find(p => String(p.id) === String(group.plantId))?.name || '---'}</span>
+                                                </div>
+                                                <div style={{ width: '2px', height: '24px', backgroundColor: 'var(--color-border)', alignSelf: 'center' }}></div>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                    <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Departamento</span>
+                                                    <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>{group.departmentName}</span>
+                                                </div>
+                                                <div style={{ width: '2px', height: '24px', backgroundColor: 'var(--color-border)', alignSelf: 'center' }}></div>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
+                                                    <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Título do Pedido</span>
+                                                    <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--color-text-main)' }}>{group.requestTitle || '---'}</span>
+                                                </div>
                                             </div>
-                                            <div style={{ width: '2px', height: '24px', backgroundColor: 'var(--color-border)', alignSelf: 'center' }}></div>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Departamento</span>
-                                                <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>{group.departmentName}</span>
-                                            </div>
+
+                                            {group.requestDescription && (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                    <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Descrição / Notas do Pedido</span>
+                                                    <span style={{ fontSize: '0.85rem', color: 'var(--color-text-body)', whiteSpace: 'pre-wrap', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '4px', border: '1px solid var(--color-border)' }}>
+                                                        {group.requestDescription}
+                                                    </span>
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* SECTION A: Existing Quotations / Documents */}

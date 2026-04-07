@@ -18,6 +18,7 @@ public class LineItemDetailsDto
     public Guid RequestId { get; set; }
     public string RequestNumber { get; set; } = string.Empty;
     public string RequestTitle { get; set; } = string.Empty;
+    public string? RequestDescription { get; set; }
     public string RequesterName { get; set; } = string.Empty;
     public DateTime? NeedByDateUtc { get; set; }
     
