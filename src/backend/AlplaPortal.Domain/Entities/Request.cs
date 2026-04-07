@@ -44,6 +44,7 @@ public class Request
 
     public DateTime RequestedDateUtc { get; set; }
     public DateTime? NeedByDateUtc { get; set; }
+    public DateTime? ScheduledDateUtc { get; set; }
 
     // Financial
     public int? CurrencyId { get; set; }

@@ -29,13 +29,16 @@ export default function FinancePaymentsList() {
         setFeedback({ type: 'success', message: null });
     };
 
-    const handleConfirmAction = async (action: FinanceActionType, payload: { date?: string; notes?: string }) => {
+    const handleConfirmAction = async (action: FinanceActionType, payload: { date?: string; notes?: string; file?: File | null }) => {
         if (!actionModal.requestId) return;
         setProcessing(true);
         setFeedback({ type: 'success', message: null });
 
         try {
             if (action === 'SCHEDULE' && payload.date) {
+                if (payload.file) {
+                    await api.attachments.upload(actionModal.requestId, [payload.file], 'PAYMENT_SCHEDULE');
+                }
                 await api.finance.schedulePayment(actionModal.requestId, new Date(payload.date).toISOString(), payload.notes || "Agendado via portal");
             } else if (action === 'PAY') {
                 await api.finance.markAsPaid(actionModal.requestId, new Date().toISOString(), payload.notes || "Liquidado via portal");
@@ -111,10 +114,17 @@ export default function FinancePaymentsList() {
                                         <span style={getBadgeStyle(item.statusBadgeColor)}>{item.statusName}</span>
                                     </div>
                                     {item.needByDateUtc && (
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: item.isOverdue ? 800 : 600, color: item.isOverdue ? '#dc2626' : item.isDueSoon ? '#d97706' : '#475569', marginBottom: '8px' }}>
-                                            <Clock size={16} /> 
-                                            {new Date(item.needByDateUtc).toLocaleDateString()}
-                                            {item.isOverdue && <span style={{ backgroundColor: '#fef2f2', padding: '2px 6px', borderRadius: '4px', border: '1px solid #fca5a5', fontSize: '0.75rem' }}>Atrasado</span>}
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '8px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.80rem', fontWeight: 600, color: '#64748b' }}>
+                                                Original: {new Date(item.needByDateUtc).toLocaleDateString()}
+                                            </div>
+                                            {(item.scheduledDateUtc || item.isOverdue || item.isDueSoon) && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: item.isOverdue ? 800 : 700, color: item.isOverdue ? '#dc2626' : item.scheduledDateUtc ? '#0284c7' : item.isDueSoon ? '#d97706' : '#475569' }}>
+                                                    <Clock size={16} /> 
+                                                    {item.scheduledDateUtc ? `Agendado: ${new Date(item.scheduledDateUtc).toLocaleDateString()}` : `Vence: ${new Date(item.needByDateUtc).toLocaleDateString()}`}
+                                                    {item.isOverdue && <span style={{ backgroundColor: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', border: '1px solid #fca5a5', fontSize: '0.75rem', fontWeight: 800 }}>Atrasado</span>}
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                     {item.isMissingDocuments && (

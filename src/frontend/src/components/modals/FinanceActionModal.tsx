@@ -10,7 +10,7 @@ interface FinanceActionModalProps {
     show: boolean;
     action: FinanceActionType;
     onClose: () => void;
-    onConfirm: (action: FinanceActionType, payload: { date?: string; notes?: string }) => void;
+    onConfirm: (action: FinanceActionType, payload: { date?: string; notes?: string; file?: File | null }) => void;
     processing: boolean;
     feedback: { type: FeedbackType; message: string | null };
     onCloseFeedback: () => void;
@@ -27,11 +27,13 @@ export function FinanceActionModal({
 }: FinanceActionModalProps) {
     const [notes, setNotes] = useState('');
     const [date, setDate] = useState('');
+    const [file, setFile] = useState<File | null>(null);
 
     useEffect(() => {
         if (show) {
             setNotes('');
             setDate('');
+            setFile(null);
         }
     }, [show]);
 
@@ -130,6 +132,14 @@ export function FinanceActionModal({
                                     onChange={(e) => setDate(e.target.value)}
                                     style={inputStyle}
                                 />
+                                <label style={{ display: 'block', marginTop: '16px', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
+                                    Comprovante de Agendamento (opcional)
+                                </label>
+                                <input
+                                    type="file"
+                                    onChange={(e) => setFile(e.target.files && e.target.files.length > 0 ? e.target.files[0] : null)}
+                                    style={{...inputStyle, padding: '8px 10px'}}
+                                />
                             </div>
                         )}
 
@@ -171,7 +181,7 @@ export function FinanceActionModal({
                             </button>
                             <button
                                 disabled={isConfirmDisabled}
-                                onClick={() => onConfirm(action, { date, notes })}
+                                onClick={() => onConfirm(action, { date, notes, file })}
                                 style={{
                                     height: '48px',
                                     padding: '0 40px',

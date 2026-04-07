@@ -276,13 +276,13 @@ public class FinanceController : BaseController
                     ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.Currency 
                     : r.Currency != null ? r.Currency.Code : null,
                 NeedByDateUtc = r.NeedByDateUtc,
-                ScheduledDateUtc = item.ScheduledHistory?.CreatedAtUtc,
+                ScheduledDateUtc = r.ScheduledDateUtc,
                 PaidDateUtc = item.PaidHistory?.CreatedAtUtc,
                 StatusCode = r.Status.Code ?? "UNKNOWN",
                 StatusName = r.Status.Name ?? "UNKNOWN",
                 StatusBadgeColor = r.Status.BadgeColor ?? "gray",
-                IsOverdue = !isPaid && r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < today,
-                IsDueSoon = !isPaid && r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value >= today && r.NeedByDateUtc.Value <= in4Days,
+                IsOverdue = !isPaid && (r.ScheduledDateUtc ?? r.NeedByDateUtc) < today,
+                IsDueSoon = !isPaid && (r.ScheduledDateUtc ?? r.NeedByDateUtc) >= today && (r.ScheduledDateUtc ?? r.NeedByDateUtc) <= in4Days,
                 IsMissingDocuments = isMissingDocuments,
                 MissingDocumentTypes = missingDocs,
                 AvailableFinanceActions = actions
@@ -364,6 +364,7 @@ public class FinanceController : BaseController
         };
 
         r.StatusId = scheduledStatus.Id;
+        r.ScheduledDateUtc = requestDto.ActionDateUtc;
         r.UpdatedAtUtc = DateTime.UtcNow;
 
         _context.RequestStatusHistories.Add(history);
