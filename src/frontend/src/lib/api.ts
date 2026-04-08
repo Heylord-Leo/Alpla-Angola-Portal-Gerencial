@@ -503,6 +503,11 @@ export const api = {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/approvals/${id}/items/${lineItemId}/history`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar histórico detalhado do item.');
             return response.json();
+        },
+        getFinanceTrend: async (id: string, resolution: string = 'MONTH', scope: string = 'PLANT'): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/approvals/${id}/finance-trend?resolution=${resolution}&scope=${scope}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar tendência financeira.');
+            return response.json();
         }
     },
     dev: {

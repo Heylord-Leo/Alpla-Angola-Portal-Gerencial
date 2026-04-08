@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.39.3] - 2026-04-08
+
+### Added
+
+- **Approval Detail Financial Context**: Implemented a new `DecisionFinancialTrendLine` visual chart inside the Approval Center to contextualize request amounts alongside historical expenditure.
+  - Generates real-time, comparative trend lines showing "Pending Payment" versus "Paid" items over configurable resolutions (Weeks or Months).
+  - Integrates two scopes (`PLANT` and `DEPARTMENT`) to empower approvers with cross-sectional visibility of their spend throughput before making a decision.
+  - Dynamically calculates item count and provides interactive tooltips indicating both monetary volume and request volume.
+  - Upgraded internal timeline engine to safely aggregate and label ISO 8601 week mappings (`System.Globalization.ISOWeek`).
+- **Development Tooling**: Enhanced the Dev Seeding engine to construct deep historical status lineages, seamlessly testing the decision intelligence pipeline without organic wait times.
+
 ## [2.39.2] - 2026-04-08
 
 ### Added

@@ -76,31 +76,61 @@ public class DevSeedingController : BaseController
             var ivaIsentoId = 5; // IVA 0%
             var costCenter1Id = 1;
 
-            var quotationTypeId = 1;
-            var statusWaitingAreaId = 3;
-            var statusPaymentCompletedId = 15;
+            var quotationTypeId = await _context.RequestTypes.Where(t => t.Code == RequestConstants.Types.Quotation).Select(t => t.Id).FirstOrDefaultAsync() != 0 ? await _context.RequestTypes.Where(t => t.Code == RequestConstants.Types.Quotation).Select(t => t.Id).FirstOrDefaultAsync() : 1;
+            var statusWaitingAreaId = await _context.RequestStatuses.Where(s => s.Code == RequestConstants.Statuses.WaitingAreaApproval).Select(s => s.Id).FirstOrDefaultAsync() != 0 ? await _context.RequestStatuses.Where(s => s.Code == RequestConstants.Statuses.WaitingAreaApproval).Select(s => s.Id).FirstOrDefaultAsync() : 3;
+            var statusPaymentCompletedId = await _context.RequestStatuses.Where(s => s.Code == RequestConstants.Statuses.PaymentCompleted).Select(s => s.Id).FirstOrDefaultAsync() != 0 ? await _context.RequestStatuses.Where(s => s.Code == RequestConstants.Statuses.PaymentCompleted).Select(s => s.Id).FirstOrDefaultAsync() : 15;
+            var statusApprovedId = await _context.RequestStatuses.Where(s => s.Code == RequestConstants.Statuses.FinalApproved).Select(s => s.Id).FirstOrDefaultAsync() != 0 ? await _context.RequestStatuses.Where(s => s.Code == RequestConstants.Statuses.FinalApproved).Select(s => s.Id).FirstOrDefaultAsync() : 5;
 
             var now = DateTime.UtcNow;
 
             // --- SCENARIO 1: Financial Accumulation (MTD/YTD) ---
-            for (int i = 1; i <= 10; i++)
+            for (int i = 1; i <= 30; i++)
             {
+                // Alternate between Approved and Paid to show both trends
+                var isPaid = i % 2 == 0;
+                var monthOffset = i % 12; // Distribute across last 12 months
+
+                var histDate = now.AddMonths(-monthOffset).AddDays(-i);
+                
                 var req = new Request
                 {
-                    Title = $"[TEST_INTEL] Pedido Histórico Financeiro {i}",
-                    Description = "Dados históricos para validação de acumulados mensais e anuais.",
+                    Title = $"[TEST_INTEL] Pedido Gráfico Financeiro {i}",
+                    Description = "Dados históricos para validação do Gráfico de Tendência (Recharts).",
                     RequestTypeId = quotationTypeId,
-                    StatusId = statusPaymentCompletedId,
+                    StatusId = isPaid ? statusPaymentCompletedId : statusApprovedId,
                     RequesterId = requesterId,
                     DepartmentId = deptId,
                     CompanyId = companyId,
                     PlantId = plantId,
                     CurrencyId = aoaId,
-                    EstimatedTotalAmount = 500000,
-                    CreatedAtUtc = now.AddDays(-i),
-                    RequestedDateUtc = now.AddDays(-i),
+                    // Random-ish amount between 100k and 1m based on i
+                    EstimatedTotalAmount = 100000 + (decimal)(i * 25000),
+                    CreatedAtUtc = histDate,
+                    RequestedDateUtc = histDate,
                     CreatedByUserId = requesterId
                 };
+                
+                req.StatusHistories.Add(new RequestStatusHistory
+                {
+                    PreviousStatusId = statusWaitingAreaId,
+                    NewStatusId = statusApprovedId, // Reached Approval
+                    CreatedAtUtc = histDate.AddDays(1), // Reached approval 1 day after creation
+                    ActorUserId = requesterId,
+                    ActionTaken = "Approved Area"
+                });
+
+                if (isPaid)
+                {
+                    req.StatusHistories.Add(new RequestStatusHistory
+                    {
+                        PreviousStatusId = statusApprovedId,
+                        NewStatusId = statusPaymentCompletedId, // Reached Payment
+                        CreatedAtUtc = histDate.AddDays(5), // Reached payment 5 days later
+                        ActorUserId = requesterId,
+                        ActionTaken = "Payment Completed"
+                    });
+                }
+
                 _context.Requests.Add(req);
             }
 

@@ -41,4 +41,11 @@ public class ApprovalIntelligenceController : BaseController
         var history = await _intelligenceService.GetItemHistoryAsync(id, lineItemId);
         return Ok(history);
     }
+
+    [HttpGet("{id}/finance-trend")]
+    public async Task<ActionResult<ApprovalFinancialTrendDto>> GetFinanceTrend(Guid id, [FromQuery] string resolution = "MONTH", [FromQuery] string scope = "PLANT")
+    {
+        var trend = await _intelligenceService.GetFinancialTrendAsync(id, resolution, scope);
+        return Ok(trend);
+    }
 }

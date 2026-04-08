@@ -8,4 +8,5 @@ public interface IApprovalIntelligenceService
 {
     Task<ApprovalIntelligenceDto> GetIntelligenceAsync(Guid requestId);
     Task<List<HistoricalPurchaseRecordDto>> GetItemHistoryAsync(Guid requestId, Guid lineItemId);
+    Task<ApprovalFinancialTrendDto> GetFinancialTrendAsync(Guid requestId, string resolution, string scope);
 }

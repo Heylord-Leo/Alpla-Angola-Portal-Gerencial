@@ -7,6 +7,7 @@ using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
 
 namespace AlplaPortal.Infrastructure.Services.Approvals;
 
@@ -263,5 +264,119 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
             PlantName = li.Request.Plant?.Name,
             DepartmentName = li.Request.Department?.Name
         }).ToList();
+    }
+
+    public async Task<ApprovalFinancialTrendDto> GetFinancialTrendAsync(Guid requestId, string resolution, string scope)
+    {
+        var request = await _context.Requests
+            .Include(r => r.Currency)
+            .FirstOrDefaultAsync(r => r.Id == requestId);
+
+        if (request == null) return new ApprovalFinancialTrendDto();
+
+        var query = _context.Requests
+            .Include(r => r.Status)
+            .Include(r => r.StatusHistories)
+                .ThenInclude(sh => sh.NewStatus)
+            .Where(r => r.DepartmentId == request.DepartmentId && r.CurrencyId == request.CurrencyId && !r.IsCancelled);
+
+        if (scope == "PLANT" && request.PlantId.HasValue)
+        {
+            query = query.Where(r => r.PlantId == request.PlantId);
+        }
+
+        var validStatuses = new[] 
+        { 
+            RequestConstants.Statuses.FinalApproved,
+            RequestConstants.Statuses.PoIssued,
+            RequestConstants.Statuses.PaymentRequestSent,
+            RequestConstants.Statuses.PaymentScheduled,
+            RequestConstants.Statuses.Paid,
+            RequestConstants.Statuses.PaymentCompleted,
+            RequestConstants.Statuses.AreaAdjustment,
+            RequestConstants.Statuses.FinalAdjustment,
+            RequestConstants.Statuses.InFollowup,
+            RequestConstants.Statuses.WaitingCostCenter,
+            RequestConstants.Statuses.WaitingPoCorrection
+        };
+
+        var paidStatuses = new[] 
+        { 
+            RequestConstants.Statuses.Paid,
+            RequestConstants.Statuses.PaymentCompleted
+        };
+
+        // Needs to have been approved
+        query = query.Where(r => validStatuses.Contains(r.Status!.Code));
+
+        var historicalData = await query
+            .Select(r => new 
+            {
+                r.Id,
+                r.EstimatedTotalAmount,
+                CurrentStatusCode = r.Status!.Code,
+                ApprovedDate = r.StatusHistories
+                    .Where(sh => sh.NewStatus.Code == RequestConstants.Statuses.FinalApproved)
+                    .Select(sh => (DateTime?)sh.CreatedAtUtc)
+                    .OrderBy(d => d)
+                    .FirstOrDefault() ?? r.CreatedAtUtc
+            })
+            .ToListAsync();
+
+        var points = new List<FinancialTrendPointDto>();
+        var now = DateTime.UtcNow;
+
+        if (resolution == "WEEK")
+        {
+            var cutoff = now.AddDays(-7 * 12); // Last 12 weeks
+            var filtered = historicalData.Where(d => d.ApprovedDate >= cutoff);
+            
+            var grouped = filtered.GroupBy(d => {
+                int diff = (7 + (d.ApprovedDate.DayOfWeek - DayOfWeek.Monday)) % 7;
+                return d.ApprovedDate.AddDays(-1 * diff).Date;
+            });
+
+            foreach (var g in grouped.OrderBy(g => g.Key))
+            {
+                points.Add(new FinancialTrendPointDto
+                {
+                    PeriodLabel = $"Semana {ISOWeek.GetWeekOfYear(g.Key)} do ano",
+                    SortDate = g.Key,
+                    ApprovedAmount = g.Where(x => !paidStatuses.Contains(x.CurrentStatusCode)).Sum(x => x.EstimatedTotalAmount),
+                    ApprovedCount = g.Count(x => !paidStatuses.Contains(x.CurrentStatusCode)),
+                    PaidAmount = g.Where(x => paidStatuses.Contains(x.CurrentStatusCode)).Sum(x => x.EstimatedTotalAmount),
+                    PaidCount = g.Count(x => paidStatuses.Contains(x.CurrentStatusCode))
+                });
+            }
+        }
+        else // MONTH
+        {
+            var cutoff = now.AddMonths(-12); // Last 12 months
+            var filtered = historicalData.Where(d => d.ApprovedDate >= new DateTime(cutoff.Year, cutoff.Month, 1));
+
+            var grouped = filtered.GroupBy(d => new { d.ApprovedDate.Year, d.ApprovedDate.Month });
+
+            foreach (var g in grouped.OrderBy(g => g.Key.Year).ThenBy(g => g.Key.Month))
+            {
+                points.Add(new FinancialTrendPointDto
+                {
+                    PeriodLabel = $"{g.Key.Month:D2}/{g.Key.Year}",
+                    SortDate = new DateTime(g.Key.Year, g.Key.Month, 1),
+                    ApprovedAmount = g.Where(x => !paidStatuses.Contains(x.CurrentStatusCode)).Sum(x => x.EstimatedTotalAmount),
+                    ApprovedCount = g.Count(x => !paidStatuses.Contains(x.CurrentStatusCode)),
+                    PaidAmount = g.Where(x => paidStatuses.Contains(x.CurrentStatusCode)).Sum(x => x.EstimatedTotalAmount),
+                    PaidCount = g.Count(x => paidStatuses.Contains(x.CurrentStatusCode))
+                });
+            }
+        }
+
+        return new ApprovalFinancialTrendDto
+        {
+            RequestId = requestId,
+            Currency = request.Currency?.Code ?? string.Empty,
+            Resolution = resolution,
+            Scope = scope,
+            DataPoints = points
+        };
     }
 }

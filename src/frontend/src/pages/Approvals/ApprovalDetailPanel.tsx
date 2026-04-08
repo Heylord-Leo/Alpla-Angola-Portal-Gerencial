@@ -21,6 +21,7 @@ import { DecisionSection } from './components/DecisionSection';
 import { DecisionQuotationCard } from './components/DecisionQuotationCard';
 import { DecisionTimeline } from './components/DecisionTimeline';
 import { DecisionInsightsPanel } from './components/DecisionInsightsPanel';
+import { DecisionFinancialTrendLine } from './components/DecisionFinancialTrendLine';
 
 // --- Constants ---
 
@@ -468,6 +469,20 @@ export function ApprovalDetailPanel({
                 {/* 2. RESUMO PARA DECISÃO (Always Open Grid Context) */}
                 <div className="mb-8">
                     <DecisionSummaryGrid items={summaryItems} />
+                </div>
+
+                {/* 2.5. CONTEXTO FINANCEIRO (Gráfico de Tendência) */}
+                <div className="mb-8">
+                    <DecisionSection 
+                        title="Contexto Financeiro Visual" 
+                        icon={<TrendingUp size={16} className="text-black" />}
+                        isCollapsible={true}
+                        defaultOpen={true}
+                    >
+                        <div style={{ padding: '24px' }}>
+                            <DecisionFinancialTrendLine requestId={data.id} />
+                        </div>
+                    </DecisionSection>
                 </div>
 
                 {/* 3. INTELIGÊNCIA PARA DECISÃO (Phase 4 - Horizontal Navigation) */}
