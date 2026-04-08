@@ -69,7 +69,8 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
             }
 
             bool tryTextFirst = false;
-            string extractedNativeText = string.Empty;
+            List<string> pagesText = new();
+            DocumentStrategy strategy = DocumentStrategy.Invoice;
 
             var safeMemoryStream = new MemoryStream();
             await fileStream.CopyToAsync(safeMemoryStream, ct);
@@ -81,17 +82,23 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
             if (extension == ".pdf")
             {
                 using var triageStream = new MemoryStream(safeMemoryStream.ToArray());
-                var triageResult = await TryGetNativeTextAsync(triageStream, ct);
+                var triageResult = TriageDocument(triageStream);
                 tryTextFirst = triageResult.isNative;
-                extractedNativeText = triageResult.extractedText;
+                pagesText = triageResult.pagesText;
+                strategy = triageResult.strategy;
             }
 
             safeMemoryStream.Position = 0; // Reset for downstream
 
-            // Initial Triage classification mapping
-            DocumentStrategy strategy = DocumentStrategy.Invoice; 
-            
             var model = string.IsNullOrWhiteSpace(settings.Model) ? DefaultModel : settings.Model;
+
+            if (strategy == DocumentStrategy.Contract)
+            {
+                _logger.LogInformation("Routing document '{FileName}' to Contract Pipeline.", fileName);
+                return await ProcessContractAsync(pagesText, safeMemoryStream, fileName, model, apiKey, tryTextFirst, extension, ct);
+            }
+
+            string extractedNativeText = pagesText.Count > 0 ? pagesText[0] : string.Empty;
             var prompt = GetSystemPrompt();
 
             // TextFirst Attempt -> For native PDF Invoices
@@ -267,7 +274,10 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
                     return new ExtractionResultDto { Success = false, ProviderName = Name };
                 }
 
-                var extractedResult = MapFromJson(messageContent);
+                var extractedResult = routingStrat.StartsWith("Contract") 
+                    ? MapContractFromJson(messageContent) 
+                    : MapFromJson(messageContent);
+                
                 extractedResult.Metadata = new ExtractionMetadataDto
                 {
                     PromptTokens = promptTokens,
@@ -289,34 +299,85 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
             return new ExtractionResultDto { Success = false, ProviderName = Name };
     }
 
-    private async Task<(bool isNative, string extractedText)> TryGetNativeTextAsync(Stream pdfStream, CancellationToken ct)
+    private (bool isNative, List<string> pagesText, DocumentStrategy strategy) TriageDocument(Stream pdfStream)
     {
         try
         {
             using var document = PdfDocument.Load(pdfStream);
-            int pages = Math.Min(document.PageCount, 5);
-            StringBuilder sb = new StringBuilder();
+            int totalPages = document.PageCount;
             
-            for(int i = 0; i < pages; i++)
+            // 1. Triage: read first 3 pages
+            int triagePages = Math.Min(totalPages, 3);
+            StringBuilder triageSb = new StringBuilder();
+            
+            for(int i = 0; i < triagePages; i++)
             {
                 var text = document.GetPdfText(i);
                 if (!string.IsNullOrWhiteSpace(text))
                 {
-                    sb.AppendLine(text);
+                    triageSb.AppendLine(text);
                 }
             }
 
-            var fullText = sb.ToString();
-            
-            var lines = fullText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            bool isNative = fullText.Length > 100 && lines.Length >= 3;
+            var triageText = triageSb.ToString();
+            var triageLines = triageText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            bool isNative = triageText.Length > 100 && triageLines.Length >= 3;
 
-            return (isNative, fullText);
+            DocumentStrategy strategy = DocumentStrategy.Invoice;
+            
+            if (isNative)
+            {
+                var lowerText = triageText.ToLowerInvariant();
+                int invoiceSignals = 0;
+                int contractSignals = 0;
+
+                string[] invoiceKeywords = { "invoice", "fatura", "recibo", "proforma", "purchase order" };
+                string[] contractKeywords = { "contrato", "contract", "acordo", "nda", "n.d.a", "master service agreement", "terms and conditions", "termo", "termos", "confidentiality" };
+
+                foreach (var kw in invoiceKeywords) if (lowerText.Contains(kw)) invoiceSignals++;
+                foreach (var kw in contractKeywords) if (lowerText.Contains(kw)) contractSignals++;
+
+                bool denseText = triageText.Length > 2000 && triageLines.Length > 20;
+
+                if (contractSignals > 0 && contractSignals > invoiceSignals && denseText)
+                {
+                    strategy = DocumentStrategy.Contract;
+                }
+            }
+
+            List<string> pagesText = new();
+            if (isNative)
+            {
+                if (strategy == DocumentStrategy.Contract)
+                {
+                    // For contract, get up to 50 pages to prevent overflow, but enough for most contracts
+                    int contractLimit = Math.Min(totalPages, 50);
+                    for(int i = 0; i < contractLimit; i++)
+                    {
+                        var text = document.GetPdfText(i);
+                        if (!string.IsNullOrWhiteSpace(text)) pagesText.Add(text);
+                    }
+                }
+                else
+                {
+                    // For invoice, get up to 5 pages
+                    int invoiceLimit = Math.Min(totalPages, 5);
+                    StringBuilder sb = new StringBuilder();
+                    for(int i = 0; i < invoiceLimit; i++)
+                    {
+                        var text = document.GetPdfText(i);
+                        if (!string.IsNullOrWhiteSpace(text)) sb.AppendLine(text);
+                    }
+                    if (sb.Length > 0) pagesText.Add(sb.ToString());
+                }
+            }
+
+            return (isNative, pagesText, strategy);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to extract native text from PDF for triage.");
-            return (false, string.Empty);
+            _logger.LogWarning(ex, "Failed to comprehensively extract native text from PDF for triage.");
+            return (false, new List<string>(), DocumentStrategy.Invoice);
         }
     }
 
@@ -495,6 +556,203 @@ Only return the JSON object, no other text.";
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to map OpenAI JSON response to internal DTO. JSON: {Json}", json);
+            return new ExtractionResultDto { Success = false, ProviderName = Name };
+        }
+    }
+
+    private async Task<ExtractionResultDto> ProcessContractAsync(List<string> pagesText, Stream pdfStream, string fileName, string model, string apiKey, bool tryTextFirst, string extension, CancellationToken ct)
+    {
+        var result = new ExtractionResultDto { Success = true, ProviderName = Name, Contract = new ExtractionContractDto() };
+        int promptTokens = 0, completionTokens = 0;
+        int chunkCount = 0;
+        bool conflictsDetected = false;
+        
+        string systemPrompt = GetContractSystemPrompt();
+
+        if (tryTextFirst && pagesText.Count > 0)
+        {
+            _logger.LogInformation("Starting TextFirst sequential chunking for contract: {FileName}", fileName);
+            var chunks = new List<string>();
+            StringBuilder currentChunk = new();
+            foreach (var page in pagesText)
+            {
+                if (currentChunk.Length + page.Length > 20000)
+                {
+                    chunks.Add(currentChunk.ToString());
+                    currentChunk.Clear();
+                }
+                currentChunk.AppendLine(page);
+            }
+            if (currentChunk.Length > 0) chunks.Add(currentChunk.ToString());
+            chunkCount = chunks.Count;
+
+            _logger.LogInformation("Contract divided into {ChunkCount} chunks for {FileName}", chunkCount, fileName);
+
+            for (int i = 0; i < chunks.Count; i++)
+            {
+                string currentContext = JsonSerializer.Serialize(result.Contract);
+                string userContent = $"This is chunk {i + 1} of {chunks.Count}. Update the context with any NEW findings. Do NOT overwrite existing data unless there is strong contradictory evidence. If unsure, leave as is. \n\nCurrent State: {currentContext}\n\nDocument Text:\n{chunks[i]}";
+
+                var payload = new
+                {
+                    model = model,
+                    messages = new object[]
+                    {
+                        new { role = "system", content = systemPrompt },
+                        new { role = "user", content = userContent }
+                    },
+                    response_format = new { type = "json_object" },
+                    temperature = 0.0
+                };
+
+                var chunkResult = await ExecuteOpenAiRequestAsync(payload, apiKey, fileName, "ContractTextChunk", "n/a", model, ct);
+                
+                promptTokens += chunkResult.Metadata.PromptTokens;
+                completionTokens += chunkResult.Metadata.CompletionTokens;
+
+                if (chunkResult.Success && chunkResult.Contract != null)
+                {
+                    MergeContractResults(result.Contract, chunkResult.Contract, ref conflictsDetected);
+                }
+            }
+
+            result.Metadata = new ExtractionMetadataDto
+            {
+                PromptTokens = promptTokens,
+                CompletionTokens = completionTokens,
+                TotalTokens = promptTokens + completionTokens,
+                PagesProcessed = pagesText.Count,
+                RoutingStrategy = "ContractTextFirst",
+                DetailMode = "n/a",
+                NativeTextDetected = true,
+                ChunkCount = chunkCount,
+                ConflictsDetected = conflictsDetected,
+                IsPartial = IsContractPartial(result.Contract)
+            };
+            
+            result.QualityScore = 0.9m;
+            return result;
+        }
+
+        _logger.LogInformation("Falling back to Vision for Contract: {FileName}", fileName);
+        
+        pdfStream.Position = 0;
+        var renderProfile = DocumentRenderProfile.InvoiceProfile with { MaxPages = 5 }; // Narrow Vision Fallback
+
+        var base64Images = new List<string>();
+        if (extension == ".pdf")
+        {
+            base64Images = await RasterizePdfPagesAsync(pdfStream, fileName, renderProfile, ct);
+        }
+        else
+        {
+            var base64 = await ConvertStreamToBase64Async(pdfStream);
+            base64Images.Add(base64);
+        }
+
+        var userContentItems = new List<object>
+        {
+            new { type = "text", text = "This is a contract or legal document. Please extract the requested metadata. It may be partial." }
+        };
+
+        foreach (var img in base64Images)
+        {
+            userContentItems.Add(new
+            {
+                type = "image_url",
+                image_url = new { url = $"data:image/jpeg;base64,{img}", detail = "low" }
+            });
+        }
+
+        var visionPayload = new
+        {
+            model = model,
+            messages = new object[]
+            {
+                new { role = "system", content = systemPrompt },
+                new { role = "user", content = userContentItems.ToArray() }
+            },
+            response_format = new { type = "json_object" },
+            temperature = 0.0
+        };
+
+        var visionResult = await ExecuteOpenAiRequestAsync(visionPayload, apiKey, fileName, "ContractVisionFallback", "low", model, ct);
+        
+        visionResult.Metadata.ChunkCount = 1;
+        visionResult.Metadata.IsPartial = IsContractPartial(visionResult.Contract);
+        visionResult.Metadata.RoutingStrategy = "ContractVisionFallback";
+        return visionResult;
+    }
+
+    private void MergeContractResults(ExtractionContractDto target, ExtractionContractDto source, ref bool conflicts)
+    {
+        if (!string.IsNullOrWhiteSpace(source.DocumentType) && string.IsNullOrWhiteSpace(target.DocumentType)) target.DocumentType = source.DocumentType;
+        else if (!string.IsNullOrWhiteSpace(source.DocumentType) && target.DocumentType != source.DocumentType && target.DocumentType != null && !target.DocumentType.Contains(source.DocumentType)) conflicts = true;
+
+        if (!string.IsNullOrWhiteSpace(source.Parties) && string.IsNullOrWhiteSpace(target.Parties)) target.Parties = source.Parties;
+        else if (!string.IsNullOrWhiteSpace(source.Parties) && target.Parties != source.Parties && target.Parties != null && !target.Parties.Contains(source.Parties)) target.Parties += "; " + source.Parties;
+
+        if (!string.IsNullOrWhiteSpace(source.EffectiveDate) && string.IsNullOrWhiteSpace(target.EffectiveDate)) target.EffectiveDate = source.EffectiveDate;
+        if (!string.IsNullOrWhiteSpace(source.EndDate) && string.IsNullOrWhiteSpace(target.EndDate)) target.EndDate = source.EndDate;
+        if (!string.IsNullOrWhiteSpace(source.GoverningLaw) && string.IsNullOrWhiteSpace(target.GoverningLaw)) target.GoverningLaw = source.GoverningLaw;
+        if (!string.IsNullOrWhiteSpace(source.PaymentTerms) && string.IsNullOrWhiteSpace(target.PaymentTerms)) target.PaymentTerms = source.PaymentTerms;
+        if (!string.IsNullOrWhiteSpace(source.TerminationClauses) && string.IsNullOrWhiteSpace(target.TerminationClauses)) target.TerminationClauses = source.TerminationClauses;
+    }
+
+    private bool IsContractPartial(ExtractionContractDto? c)
+    {
+        if (c == null) return true;
+        return string.IsNullOrWhiteSpace(c.DocumentType) || string.IsNullOrWhiteSpace(c.Parties);
+    }
+
+    private string GetContractSystemPrompt()
+    {
+        return @"You are a specialized legal document extractor.
+Extract the core metadata from the provided contract text or image. 
+Return a JSON object with a single 'contract' object containing these fields:
+- documentType: Type of contract (e.g. NDA, Master Service Agreement, Lease, etc.)
+- parties: Names of the entities involved
+- effectiveDate: Start or signature date (YYYY-MM-DD if possible)
+- endDate: Expiration or termination date (YYYY-MM-DD)
+- governingLaw: State or country law governing the agreement
+- paymentTerms: Any extracted payment terms
+- terminationClauses: Brief summary of termination conditions
+
+If a field is not found in the current chunk, return null. Do not hallucinate.
+Only return the JSON object, no other text.";
+    }
+
+    private ExtractionResultDto MapContractFromJson(string json)
+    {
+        try
+        {
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var rawResult = JsonSerializer.Deserialize<JsonElement>(json, options);
+
+            var result = new ExtractionResultDto
+            {
+                Success = true,
+                ProviderName = Name,
+                QualityScore = rawResult.TryGetProperty("qualityScore", out var qs) ? (decimal)qs.GetDouble() : 0.9m,
+                Contract = new ExtractionContractDto()
+            };
+
+            if (rawResult.TryGetProperty("contract", out var contractObj))
+            {
+                result.Contract.DocumentType = contractObj.TryGetProperty("documentType", out var dt) ? dt.GetString() : null;
+                result.Contract.Parties = contractObj.TryGetProperty("parties", out var p) ? p.GetString() : null;
+                result.Contract.EffectiveDate = contractObj.TryGetProperty("effectiveDate", out var ed) ? ed.GetString() : null;
+                result.Contract.EndDate = contractObj.TryGetProperty("endDate", out var endd) ? endd.GetString() : null;
+                result.Contract.GoverningLaw = contractObj.TryGetProperty("governingLaw", out var gl) ? gl.GetString() : null;
+                result.Contract.PaymentTerms = contractObj.TryGetProperty("paymentTerms", out var pt) ? pt.GetString() : null;
+                result.Contract.TerminationClauses = contractObj.TryGetProperty("terminationClauses", out var tc) ? tc.GetString() : null;
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to map OpenAI Contract JSON response. JSON: {Json}", json);
             return new ExtractionResultDto { Success = false, ProviderName = Name };
         }
     }

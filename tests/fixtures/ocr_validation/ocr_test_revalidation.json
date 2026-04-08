@@ -51,6 +51,7 @@
             "confidence": "suggested"
           }
         ],
+        "contractSuggestions": null,
         "lineItemsRequireReview": true,
         "reviewRequired": true,
         "recommendedAutofillFields": null
@@ -62,7 +63,10 @@
         "pagesProcessed": 0,
         "processingDpi": 0,
         "processingFormat": "",
-        "provider": "OPENAI"
+        "provider": "OPENAI",
+        "chunkCount": 0,
+        "isPartial": false,
+        "conflictsDetected": false
       }
     }
   },
@@ -118,6 +122,7 @@
             "confidence": "suggested"
           }
         ],
+        "contractSuggestions": null,
         "lineItemsRequireReview": true,
         "reviewRequired": true,
         "recommendedAutofillFields": null
@@ -129,7 +134,10 @@
         "pagesProcessed": 0,
         "processingDpi": 0,
         "processingFormat": "",
-        "provider": "OPENAI"
+        "provider": "OPENAI",
+        "chunkCount": 0,
+        "isPartial": false,
+        "conflictsDetected": false
       }
     }
   },
@@ -185,6 +193,7 @@
             "confidence": "suggested"
           }
         ],
+        "contractSuggestions": null,
         "lineItemsRequireReview": true,
         "reviewRequired": true,
         "recommendedAutofillFields": null
@@ -196,7 +205,10 @@
         "pagesProcessed": 0,
         "processingDpi": 0,
         "processingFormat": "",
-        "provider": "OPENAI"
+        "provider": "OPENAI",
+        "chunkCount": 0,
+        "isPartial": false,
+        "conflictsDetected": false
       }
     }
   },
@@ -206,30 +218,30 @@
       "success": true,
       "status": {
         "code": "ok",
-        "qualityScore": 0
+        "qualityScore": 0.9
       },
       "requiredFieldsMissing": [],
       "integration": {
         "headerSuggestions": {
           "supplierName": {
-            "value": "",
+            "value": null,
             "status": "recommended"
           },
           "supplierTaxId": {
-            "value": "",
+            "value": null,
             "status": "recommended"
           },
           "documentNumber": {
-            "value": "",
+            "value": null,
             "status": "recommended"
           },
           "documentDate": {
-            "value": "",
+            "value": null,
             "status": "recommended"
           },
           "dueDate": null,
           "currency": {
-            "value": "",
+            "value": null,
             "status": "recommended"
           },
           "grandTotal": {
@@ -242,18 +254,51 @@
           }
         },
         "lineItemSuggestions": [],
+        "contractSuggestions": {
+          "documentType": {
+            "value": "Non-Disclosure Agreement",
+            "status": "suggested"
+          },
+          "parties": {
+            "value": null,
+            "status": "suggested"
+          },
+          "effectiveDate": {
+            "value": null,
+            "status": "suggested"
+          },
+          "endDate": {
+            "value": null,
+            "status": "suggested"
+          },
+          "governingLaw": {
+            "value": null,
+            "status": "suggested"
+          },
+          "paymentTerms": {
+            "value": null,
+            "status": "suggested"
+          },
+          "terminationClauses": {
+            "value": null,
+            "status": "suggested"
+          }
+        },
         "lineItemsRequireReview": true,
         "reviewRequired": true,
         "recommendedAutofillFields": null
       },
       "metadata": {
-        "promptTokens": 110910,
-        "completionTokens": 70,
-        "totalTokens": 110980,
-        "pagesProcessed": 3,
-        "processingDpi": 150,
-        "processingFormat": "Jpeg",
-        "provider": "OPENAI"
+        "promptTokens": 3684,
+        "completionTokens": 65,
+        "totalTokens": 3749,
+        "pagesProcessed": 9,
+        "processingDpi": 0,
+        "processingFormat": "",
+        "provider": "OPENAI",
+        "chunkCount": 1,
+        "isPartial": true,
+        "conflictsDetected": false
       }
     }
   },
@@ -300,7 +345,7 @@
         },
         "lineItemSuggestions": [
           {
-            "description": "Service or product",
+            "description": "Service",
             "quantity": 1,
             "unit": "UN",
             "unitPrice": 50,
@@ -309,18 +354,22 @@
             "confidence": "suggested"
           }
         ],
+        "contractSuggestions": null,
         "lineItemsRequireReview": true,
         "reviewRequired": true,
         "recommendedAutofillFields": null
       },
       "metadata": {
         "promptTokens": 839,
-        "completionTokens": 136,
-        "totalTokens": 975,
+        "completionTokens": 134,
+        "totalTokens": 973,
         "pagesProcessed": 0,
         "processingDpi": 0,
         "processingFormat": "",
-        "provider": "OPENAI"
+        "provider": "OPENAI",
+        "chunkCount": 0,
+        "isPartial": false,
+        "conflictsDetected": false
       }
     }
   }

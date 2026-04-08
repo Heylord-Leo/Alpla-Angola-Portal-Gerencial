@@ -71,6 +71,30 @@ public class OcrLineItemSuggestionDto
     public string? Status { get; set; } 
 }
 
+public class OcrContractSuggestionsDto
+{
+    [JsonPropertyName("documentType")]
+    public OcrValueDto<string>? DocumentType { get; set; }
+
+    [JsonPropertyName("parties")]
+    public OcrValueDto<string>? Parties { get; set; }
+
+    [JsonPropertyName("effectiveDate")]
+    public OcrValueDto<string>? EffectiveDate { get; set; }
+
+    [JsonPropertyName("endDate")]
+    public OcrValueDto<string>? EndDate { get; set; }
+
+    [JsonPropertyName("governingLaw")]
+    public OcrValueDto<string>? GoverningLaw { get; set; }
+
+    [JsonPropertyName("paymentTerms")]
+    public OcrValueDto<string>? PaymentTerms { get; set; }
+
+    [JsonPropertyName("terminationClauses")]
+    public OcrValueDto<string>? TerminationClauses { get; set; }
+}
+
 public class OcrIntegrationDto
 {
     [JsonPropertyName("headerSuggestions")]
@@ -78,6 +102,9 @@ public class OcrIntegrationDto
 
     [JsonPropertyName("lineItemSuggestions")]
     public List<OcrLineItemSuggestionDto>? LineItemSuggestions { get; set; }
+    
+    [JsonPropertyName("contractSuggestions")]
+    public OcrContractSuggestionsDto? ContractSuggestions { get; set; }
 
     [JsonPropertyName("lineItemsRequireReview")]
     public bool LineItemsRequireReview { get; set; }

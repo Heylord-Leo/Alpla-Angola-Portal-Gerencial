@@ -33,6 +33,22 @@ public class ExtractionMetadataDto
     public string RoutingStrategy { get; set; } = string.Empty;
     public string DetailMode { get; set; } = "auto";
     public bool NativeTextDetected { get; set; }
+    
+    // Phase 3 Extensions
+    public int ChunkCount { get; set; }
+    public bool IsPartial { get; set; }
+    public bool ConflictsDetected { get; set; }
+}
+
+public class ExtractionContractDto
+{
+    public string? DocumentType { get; set; }
+    public string? Parties { get; set; }
+    public string? EffectiveDate { get; set; }
+    public string? EndDate { get; set; }
+    public string? GoverningLaw { get; set; }
+    public string? PaymentTerms { get; set; }
+    public string? TerminationClauses { get; set; }
 }
 
 public class ExtractionResultDto
@@ -40,7 +56,9 @@ public class ExtractionResultDto
     public bool Success { get; set; }
     public ExtractionHeaderDto Header { get; set; } = new();
     public List<ExtractionLineItemDto> Items { get; set; } = new();
+    public ExtractionContractDto? Contract { get; set; }
     public string? ProviderName { get; set; }
     public decimal QualityScore { get; set; }
     public ExtractionMetadataDto Metadata { get; set; } = new();
 }
+
