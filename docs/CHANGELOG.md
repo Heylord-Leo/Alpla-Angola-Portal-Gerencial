@@ -26,6 +26,14 @@ All notable changes to this project will be documented in this file.
   - **Contextual Data Joins**: `FinanceHistoryItemDto` now aggregates associated metadata from the overarching Request (`RequestNumber`, `RequestTitle`), empowering instantaneous understanding of atomic historical events without secondary lookups.
   - **Export CSV Engine**: Delivered a backend-rendered, pre-formatted native export route decoupled from front-end table parsing limitations.
   - **Quick Searching & Filtering**: Injected global full-text evaluation for actor names, notes, and specific request numbers directly onto the timeline components.
+- **Finance Dashboard Analytics**: Fully modernized the Finance Overview workspace into a data-driven cockpit.
+  - **Recharts Integration**: Implemented Bar charts for 15-day Cash Flow Projection and Donut charts for Currency Liability Exposures (`AOA`, `USD`, `EUR`).
+  - **Supplier Concentration**: Implemented a "Top 5" unpaginated live ranking to surface heavily centralized current debts.
+  - **Operational Metrics**: Added a brutalist 'Aging' segment to track the latency (0-2, 3-5, 5+ days) of financial operations waiting for resolution.
+  - **UX & Onboarding**: Deployed a dynamic "Help Glossary" Modal mapping out exactly how to read each KPI, matched with descriptive deep empty-states for sparse data environments.
+- **Corporate Isolation Engine**: Re-engineered the Finance Pipeline to enforce dynamic company isolation.
+  - Injected an interactive tab-view intercepting the `api.lookups.getCompanies()` Master Data to render available Active Entities (e.g., AlplaPLASTICO, AlplaSOPRO).
+  - Wired `FinanceController.GetSummary` to accept an optional `companyId` constraint via `[FromQuery]`, enabling perfect segregation of debts, currency, and aging per CNPJ while maintaining the ability to scope `Global (Consolidated)`.
 
 ## [2.39.2] - 2026-04-08
 

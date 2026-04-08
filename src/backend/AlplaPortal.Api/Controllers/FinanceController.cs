@@ -36,10 +36,15 @@ public class FinanceController : BaseController
     }
 
     [HttpGet("summary")]
-    public async Task<ActionResult<FinanceSummaryDto>> GetSummary()
+    public async Task<ActionResult<FinanceSummaryDto>> GetSummary([FromQuery] int? companyId = null)
     {
         // Finance is restricted to their scoped plants
         var scopedQuery = await GetScopedRequestsQuery();
+        
+        if (companyId.HasValue)
+        {
+            scopedQuery = scopedQuery.Where(r => r.CompanyId == companyId.Value);
+        }
         
         // We only care about requests that have reached the PO_ISSUED state or beyond
         var financeStatuses = new[] 
@@ -70,6 +75,8 @@ public class FinanceController : BaseController
                 Id = r.Id,
                 StatusCode = r.Status!.Code,
                 NeedByDateUtc = r.NeedByDateUtc,
+                ScheduledDateUtc = r.ScheduledDateUtc,
+                RequestedDateUtc = r.RequestedDateUtc,
                 RequestTypeCode = r.RequestType!.Code,
                 Amount = r.SelectedQuotationId.HasValue 
                     ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.TotalAmount
@@ -77,6 +84,9 @@ public class FinanceController : BaseController
                 CurrencyCode = r.SelectedQuotationId.HasValue 
                     ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.Currency
                     : r.Currency != null ? r.Currency.Code : "---",
+                SupplierName = r.SelectedQuotationId.HasValue 
+                    ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.SupplierNameSnapshot
+                    : r.Supplier != null ? r.Supplier.Name : "---",
                 CompletedAtUtc = r.StatusHistories
                     .Where(sh => sh.NewStatus!.Code == RequestConstants.Statuses.Paid || sh.NewStatus!.Code == RequestConstants.Statuses.PaymentCompleted)
                     .OrderByDescending(sh => sh.CreatedAtUtc)
@@ -149,6 +159,61 @@ public class FinanceController : BaseController
         var scheduledValue = stats.Where(s => s.StatusCode == RequestConstants.Statuses.PaymentScheduled).Sum(s => s.Amount);
         var overdueValue = stats.Where(s => !new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(s.StatusCode) && s.NeedByDateUtc.HasValue && s.NeedByDateUtc.Value < today).Sum(s => s.Amount);
 
+        // --- NEW DATA SCIENCE METRICS ---
+
+        // 1. Projeção de Fluxo de Caixa (Próximos 15 dias)
+        var maxProjectionDate = today.AddDays(15);
+        var uncompletedRequests = stats.Where(s => !new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(s.StatusCode)).ToList();
+        
+        var projections = uncompletedRequests
+            .Where(s => (s.ScheduledDateUtc ?? s.NeedByDateUtc) >= today && (s.ScheduledDateUtc ?? s.NeedByDateUtc) <= maxProjectionDate)
+            .GroupBy(s => new { Date = (s.ScheduledDateUtc ?? s.NeedByDateUtc).Value.Date, Currency = s.CurrencyCode })
+            .Select(g => new FinanceCashFlowProjectionDto
+            {
+                Date = g.Key.Date.ToString("yyyy-MM-dd"),
+                CurrencyCode = g.Key.Currency,
+                TotalAmount = g.Sum(x => x.Amount)
+            })
+            .OrderBy(p => p.Date)
+            .ToList();
+
+        // 2. Exposição Cambial
+        var currencyExposures = uncompletedRequests
+            .GroupBy(s => s.CurrencyCode)
+            .Select(g => new FinanceCurrencyExposureDto
+            {
+                CurrencyCode = g.Key ?? "N/A",
+                Amount = g.Sum(x => x.Amount),
+                Count = g.Count()
+            })
+            .OrderByDescending(c => c.Amount)
+            .ToList();
+
+        // 3. Top 5 Fornecedores (Concentração financeira pendente)
+        var topSuppliers = uncompletedRequests
+            .GroupBy(s => new { s.SupplierName, s.CurrencyCode })
+            .Select(g => new FinanceTopSupplierDto
+            {
+                SupplierName = string.IsNullOrWhiteSpace(g.Key.SupplierName) ? "Fornecedor Não Declarado" : g.Key.SupplierName,
+                CurrencyCode = g.Key.CurrencyCode ?? "---",
+                TotalPendingAmount = g.Sum(x => x.Amount),
+                RequestCount = g.Count()
+            })
+            .OrderByDescending(t => t.TotalPendingAmount)
+            .Take(5)
+            .ToList();
+
+        // 4. Aging Operational (Idade dos processos esperando finanças)
+        var waitingFinanceAging = uncompletedRequests.Where(s => waitingActions.Contains(s.StatusCode) || (s.RequestTypeCode == RequestConstants.Types.Payment && s.StatusCode == RequestConstants.Statuses.FinalApproved)).ToList();
+        var agingAnalysis = new FinanceAgingAnalysisDto();
+        foreach (var req in waitingFinanceAging)
+        {
+            var diffDays = (today - req.RequestedDateUtc.Date).TotalDays;
+            if (diffDays <= 2) agingAnalysis.ZeroToTwoDays++;
+            else if (diffDays <= 5) agingAnalysis.ThreeToFiveDays++;
+            else agingAnalysis.MoreThanFiveDays++;
+        }
+
         return Ok(new FinanceSummaryDto
         {
             WaitingFinanceAction = waitingFinance,
@@ -160,7 +225,11 @@ public class FinanceController : BaseController
             OverdueValue = overdueValue,
             PaidThisMonthValue = paidValue,
             CurrencyCodes = currencyCodes,
-            AttentionPoints = attentionPoints
+            AttentionPoints = attentionPoints,
+            CashFlowProjections = projections,
+            CurrencyExposures = currencyExposures,
+            TopSuppliers = topSuppliers,
+            AgingAnalysis = agingAnalysis
         });
     }
 

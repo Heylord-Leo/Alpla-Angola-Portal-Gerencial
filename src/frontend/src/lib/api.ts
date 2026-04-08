@@ -954,8 +954,11 @@ export const api = {
         }
     },
     finance: {
-        getSummary: async (): Promise<FinanceSummaryDto> => {
-            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/summary`);
+        getSummary: async (companyId?: number): Promise<FinanceSummaryDto> => {
+            const url = companyId 
+                ? `${API_BASE_URL}/api/v1/finance/summary?companyId=${companyId}`
+                : `${API_BASE_URL}/api/v1/finance/summary`;
+            const response = await apiFetch(url);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar sumário financeiro.');
             return response.json();
         },

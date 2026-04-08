@@ -390,6 +390,35 @@ export interface FinanceSummaryDto {
     paidThisMonthValue: number;
     currencyCodes: string[];
     attentionPoints: FinanceAttentionPointDto[];
+    cashFlowProjections: FinanceCashFlowProjectionDto[];
+    currencyExposures: FinanceCurrencyExposureDto[];
+    topSuppliers: FinanceTopSupplierDto[];
+    agingAnalysis: FinanceAgingAnalysisDto;
+}
+
+export interface FinanceCashFlowProjectionDto {
+    date: string;
+    totalAmount: number;
+    currencyCode: string;
+}
+
+export interface FinanceCurrencyExposureDto {
+    currencyCode: string;
+    amount: number;
+    count: number;
+}
+
+export interface FinanceTopSupplierDto {
+    supplierName: string;
+    totalPendingAmount: number;
+    currencyCode: string;
+    requestCount: number;
+}
+
+export interface FinanceAgingAnalysisDto {
+    zeroToTwoDays: number;
+    threeToFiveDays: number;
+    moreThanFiveDays: number;
 }
 
 export interface FinanceListItemDto {

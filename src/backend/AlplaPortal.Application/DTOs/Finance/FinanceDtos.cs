@@ -18,6 +18,40 @@ public class FinanceSummaryDto
     public List<string> CurrencyCodes { get; set; } = new();
 
     public List<FinanceAttentionPointDto> AttentionPoints { get; set; } = new();
+
+    public List<FinanceCashFlowProjectionDto> CashFlowProjections { get; set; } = new();
+    public List<FinanceCurrencyExposureDto> CurrencyExposures { get; set; } = new();
+    public List<FinanceTopSupplierDto> TopSuppliers { get; set; } = new();
+    public FinanceAgingAnalysisDto AgingAnalysis { get; set; } = new();
+}
+
+public class FinanceCashFlowProjectionDto
+{
+    public string Date { get; set; } = string.Empty; // ISO Format yyyy-MM-dd
+    public decimal TotalAmount { get; set; }
+    public string CurrencyCode { get; set; } = string.Empty;
+}
+
+public class FinanceCurrencyExposureDto
+{
+    public string CurrencyCode { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public int Count { get; set; }
+}
+
+public class FinanceTopSupplierDto
+{
+    public string SupplierName { get; set; } = string.Empty;
+    public decimal TotalPendingAmount { get; set; }
+    public string CurrencyCode { get; set; } = string.Empty;
+    public int RequestCount { get; set; }
+}
+
+public class FinanceAgingAnalysisDto
+{
+    public int ZeroToTwoDays { get; set; }
+    public int ThreeToFiveDays { get; set; }
+    public int MoreThanFiveDays { get; set; }
 }
 
 public class FinanceAttentionPointDto
