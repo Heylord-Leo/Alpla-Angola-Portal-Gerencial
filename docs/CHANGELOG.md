@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.39.7] - 2026-04-08
+
+### Added
+- **OCR Execution Audit**: Integrated mandatory, persistent audit logging for all extraction pipeline executions (Success, Partial, Failure). Every run directly creates an immutable system log entry preserving user attribution, routing strategy, categorization (contract vs. invoice), and LLM token usage inside `AdminLogEntries` table.
+
 ## [2.39.6] - 2026-04-08
 
 ### Added

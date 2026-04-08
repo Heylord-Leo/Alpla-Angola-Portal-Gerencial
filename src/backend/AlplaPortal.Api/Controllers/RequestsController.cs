@@ -2,6 +2,7 @@ namespace AlplaPortal.Api.Controllers;
 
 using AlplaPortal.Application.DTOs.Requests;
 using AlplaPortal.Application.DTOs.Common;
+using AlplaPortal.Application.DTOs.Extraction;
 using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Application.Interfaces.Extraction;
 using AlplaPortal.Api.Helpers;
@@ -1561,11 +1562,16 @@ public class RequestsController : BaseController
             // Map back to legacy DTO to preserve frontend compatibility
             var legacyResult = ExtractionMapper.MapToLegacyOcrResult(internalResult);
 
+            await LogOcrExecutionAsync(file.FileName, id, internalResult, null);
+
             return Ok(legacyResult);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error during document extraction for Request {RequestId}", id);
+            
+            await LogOcrExecutionAsync(file.FileName, id, null, ex);
+
             return StatusCode(500, new OcrExtractionResultDto
             {
                 Success = false,
@@ -1596,11 +1602,16 @@ public class RequestsController : BaseController
             // Map back to legacy DTO to preserve frontend compatibility
             var legacyResult = ExtractionMapper.MapToLegacyOcrResult(internalResult);
 
+            await LogOcrExecutionAsync(file.FileName, null, internalResult, null);
+
             return Ok(legacyResult);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error during direct document extraction");
+            
+            await LogOcrExecutionAsync(file.FileName, null, null, ex);
+
             return StatusCode(500, new OcrExtractionResultDto
             {
                 Success = false,
@@ -3529,4 +3540,55 @@ public class RequestsController : BaseController
         new StageDef { Label = "Recebimento", StatusCodes = new[] { "WAITING_RECEIPT", "IN_FOLLOWUP" } },
         new StageDef { Label = "Concluído", StatusCodes = new[] { "COMPLETED" } }
     };
+
+    private async Task LogOcrExecutionAsync(string fileName, Guid? requestId, ExtractionResultDto? result, Exception? ex)
+    {
+        try
+        {
+            bool success = result?.Success ?? false;
+            bool isPartial = result?.Metadata?.IsPartial ?? false;
+            string status = success ? (isPartial ? "Partial" : "Success") : "Failed";
+
+            string routingStrategy = result?.Metadata?.RoutingStrategy ?? "Unknown";
+            string detectedStrategy = routingStrategy.StartsWith("Contract") ? "Contract" : (routingStrategy == "Unknown" ? "Unknown" : "Invoice");
+            string routingPath = routingStrategy.Replace("Contract", "");
+            if (string.IsNullOrEmpty(routingPath)) routingPath = "Unknown";
+            
+            string documentType = detectedStrategy == "Contract" ? "contract" : (detectedStrategy == "Invoice" ? "invoice/proforma" : "unknown");
+
+            string? shortError = ex?.Message ?? (!success && result != null ? "Extraction provider returned failure" : null);
+
+            var payloadObj = new
+            {
+                FileName = fileName,
+                RequestId = requestId,
+                DocumentType = documentType,
+                DetectedStrategy = detectedStrategy,
+                RoutingPath = routingPath,
+                Provider = result?.ProviderName ?? "OPENAI",
+                Model = "gpt-4o-mini",
+                NativeTextDetected = result?.Metadata?.NativeTextDetected ?? false,
+                DetailMode = result?.Metadata?.DetailMode,
+                PagesProcessed = result?.Metadata?.PagesProcessed ?? 0,
+                PromptTokens = result?.Metadata?.PromptTokens ?? 0,
+                CompletionTokens = result?.Metadata?.CompletionTokens ?? 0,
+                TotalTokens = result?.Metadata?.TotalTokens ?? 0,
+                ChunkCount = result?.Metadata?.ChunkCount ?? 0,
+                ExecutionStatus = status,
+                ErrorSummary = shortError
+            };
+
+            var options = new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase };
+            string payloadJson = System.Text.Json.JsonSerializer.Serialize(payloadObj, options);
+            
+            string message = $"OCR Execution {status}: {detectedStrategy} via {routingPath}";
+            string level = status == "Failed" ? "Warning" : "Information";
+
+            await _adminLog.WriteAsync(level, "OCR_Pipeline", "OCR_EXECUTION", message, ex?.ToString(), payloadJson);
+        }
+        catch (Exception logEx)
+        {
+            _logger.LogWarning(logEx, "Failed to write OCR audit log for file {FileName}", fileName);
+        }
+    }
 }

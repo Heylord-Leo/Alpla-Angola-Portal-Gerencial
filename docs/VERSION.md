@@ -2,7 +2,12 @@
 
 ## Current Version
 
-v2.39.6
+v2.39.7
+
+## [2.39.7] - 2026-04-08
+
+### Added
+- **OCR Execution Audit**: Integrated mandatory, persistent audit logging for all extraction pipeline executions.
 
 ## [2.39.6] - 2026-04-08
 

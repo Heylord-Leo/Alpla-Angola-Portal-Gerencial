@@ -215,6 +215,12 @@ export function SystemLogs() {
     navigator.clipboard.writeText(text);
   };
 
+  const detailParsedPayload = React.useMemo(() => {
+    if (!detail?.payload) return null;
+    try { return JSON.parse(detail.payload); } catch { return null; }
+  }, [detail]);
+  const isOcrLog = detail?.eventType === 'OCR_EXECUTION' && detailParsedPayload !== null;
+
   // ─── Styles ─────────────────────────────────────────────────────────────────
   const s = {
     page: { display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', minWidth: 0 } as React.CSSProperties,
@@ -479,6 +485,74 @@ export function SystemLogs() {
                     <div>
                       <div style={{ ...s.labelSm, color: 'var(--color-status-red)' }}>Detalhe da Exceção</div>
                       <div style={s.codeBlock}>{detail.exceptionDetail}</div>
+                    </div>
+                  )}
+
+                  {/* OCR Summary */}
+                  {isOcrLog && (
+                    <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: 16 }}>
+                      <div style={{ ...s.labelSm, color: 'var(--color-primary)', marginBottom: 12 }}>Resumo de Execução OCR</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
+                        
+                        <div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>File Name</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', wordBreak: 'break-all' }}>{detailParsedPayload.fileName || '—'}</div>
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Status</div>
+                          <div style={{ marginTop: 2 }}>
+                            {detailParsedPayload.executionStatus === 'Success' && <span style={{ background: '#ecfdf5', color: '#059669', padding: '2px 6px', borderRadius: 4, fontWeight: 700, fontSize: 11 }}>SUCESSO</span>}
+                            {detailParsedPayload.executionStatus === 'Partial' && <span style={{ background: '#fffbeb', color: '#d97706', padding: '2px 6px', borderRadius: 4, fontWeight: 700, fontSize: 11 }}>PARCIAL</span>}
+                            {detailParsedPayload.executionStatus === 'Failed' && <span style={{ background: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: 4, fontWeight: 700, fontSize: 11 }}>FALHA</span>}
+                            {!['Success', 'Partial', 'Failed'].includes(detailParsedPayload.executionStatus) && <span style={{ background: '#f3f4f6', color: '#4b5563', padding: '2px 6px', borderRadius: 4, fontWeight: 700, fontSize: 11 }}>{detailParsedPayload.executionStatus || '—'}</span>}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Tipo Documento</div>
+                          <div style={{ marginTop: 2 }}>
+                            {detailParsedPayload.documentType === 'contract' ? (
+                               <span style={{ background: '#e0e7ff', color: '#4338ca', padding: '2px 6px', borderRadius: 4, fontWeight: 700, fontSize: 11 }}>CONTRATO</span>
+                            ) : (
+                               <span style={{ background: '#f1f5f9', color: '#475569', padding: '2px 6px', borderRadius: 4, fontWeight: 700, fontSize: 11 }}>{(detailParsedPayload.documentType || '—').toUpperCase()}</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Estratégia / Rota</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{detailParsedPayload.detectedStrategy || '—'} <span style={{ color: '#94a3b8' }}>/</span> {detailParsedPayload.routingPath || '—'}</div>
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Provedor / Modelo</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{detailParsedPayload.provider || '—'} <span style={{ color: '#94a3b8' }}>/</span> {detailParsedPayload.model || '—'}</div>
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Tokens</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{detailParsedPayload.totalTokens ?? 0} <span style={{ fontSize: 11, color: '#64748b' }}>({detailParsedPayload.promptTokens ?? 0} P / {detailParsedPayload.completionTokens ?? 0} C)</span></div>
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Páginas & Texto Nato</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>Págs: {detailParsedPayload.pagesProcessed ?? 0} <span style={{ color: '#94a3b8' }}>|</span> Nato: {detailParsedPayload.nativeTextDetected ? 'Sim' : 'Não'}</div>
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Chunks</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{detailParsedPayload.chunkCount ?? 0}</div>
+                        </div>
+
+                      </div>
+
+                      {detailParsedPayload.errorSummary && (
+                        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #cbd5e1' }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: '#dc2626', textTransform: 'uppercase' }}>Resumo de Erro</div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#7f1d1d', marginTop: 4 }}>{detailParsedPayload.errorSummary}</div>
+                        </div>
+                      )}
                     </div>
                   )}
 
