@@ -7,6 +7,7 @@ import { DropdownPortal } from '../ui/DropdownPortal';
 
 import { useAuth } from '../../features/auth/AuthContext';
 import { getNavigationConfig, NavItem } from '../../constants/navigation';
+import { APP_VERSION } from '../../config';
 
 interface SidebarProps {
     isExpanded: boolean;
@@ -216,6 +217,19 @@ export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
                         <LogOut size={18} strokeWidth={2.5} />
                         {isExpanded && "Sair"}
                     </button>
+                    {isExpanded && (
+                        <div style={{
+                            padding: '0 1.5rem 1rem 1.5rem',
+                            fontSize: '0.65rem',
+                            fontWeight: 800,
+                            letterSpacing: '0.1em',
+                            color: 'var(--color-text-muted)',
+                            textTransform: 'uppercase',
+                            opacity: 0.6
+                        }}>
+                            v{APP_VERSION}
+                        </div>
+                    )}
                 </div>
             </aside>
 

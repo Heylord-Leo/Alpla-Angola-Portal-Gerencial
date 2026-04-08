@@ -306,7 +306,11 @@ public class FinanceController : BaseController
     }
 
     [HttpGet("history")]
-    public async Task<ActionResult<PagedResult<FinanceHistoryItemDto>>> GetHistory([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    public async Task<ActionResult<PagedResult<FinanceHistoryItemDto>>> GetHistory(
+        [FromQuery] string? search = null,
+        [FromQuery] string? actionType = null,
+        [FromQuery] int page = 1, 
+        [FromQuery] int pageSize = 20)
     {
         var scopedQuery = await GetScopedRequestsQuery();
         var requestIds = await scopedQuery.Select(r => r.Id).ToListAsync();
@@ -314,12 +318,31 @@ public class FinanceController : BaseController
         var financeActionCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "DOCUMENTO ADICIONADO", "NOTA_FINANCEIRA", "FINANCE_RETURN_ADJUSTMENT" };
         var financeStatusCodes = new[] { RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted };
 
-        // Query status histories for finance related transitions or generic notes from finance users
         var query = _context.RequestStatusHistories
             .Include(sh => sh.NewStatus)
             .Include(sh => sh.ActorUser)
+            .Include(sh => sh.Request!)
+                .ThenInclude(r => r.Quotations)
+            .Include(sh => sh.Request!)
+                .ThenInclude(r => r.Currency)
             .Where(sh => requestIds.Contains(sh.RequestId) && 
                 (financeStatusCodes.Contains(sh.NewStatus!.Code) || financeActionCodes.Contains(sh.ActionTaken)));
+
+        if (!string.IsNullOrWhiteSpace(actionType))
+        {
+            query = query.Where(sh => sh.ActionTaken == actionType);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var searchLower = search.ToLower();
+            query = query.Where(sh => 
+                (sh.ActorUser != null && sh.ActorUser.FullName != null && sh.ActorUser.FullName.ToLower().Contains(searchLower)) ||
+                (sh.Comment != null && sh.Comment.ToLower().Contains(searchLower)) ||
+                (sh.Request != null && sh.Request.RequestNumber != null && sh.Request.RequestNumber.ToLower().Contains(searchLower)) ||
+                (sh.Request != null && sh.Request.Title != null && sh.Request.Title.ToLower().Contains(searchLower))
+            );
+        }
 
         var total = await query.CountAsync();
         var items = await query
@@ -330,6 +353,14 @@ public class FinanceController : BaseController
             {
                 Id = sh.Id,
                 RequestId = sh.RequestId,
+                RequestNumber = sh.Request!.RequestNumber ?? "---",
+                RequestTitle = sh.Request.Title ?? "---",
+                Amount = sh.Request.SelectedQuotationId.HasValue 
+                    ? sh.Request.Quotations.FirstOrDefault(q => q.Id == sh.Request.SelectedQuotationId.Value)!.TotalAmount 
+                    : sh.Request.EstimatedTotalAmount,
+                CurrencyCode = sh.Request.SelectedQuotationId.HasValue 
+                    ? sh.Request.Quotations.FirstOrDefault(q => q.Id == sh.Request.SelectedQuotationId.Value)!.Currency 
+                    : (sh.Request.Currency != null ? sh.Request.Currency.Code : null),
                 ActionTaken = sh.ActionTaken,
                 Comment = sh.Comment,
                 CreatedAtUtc = sh.CreatedAtUtc,
@@ -340,6 +371,85 @@ public class FinanceController : BaseController
             .ToListAsync();
 
         return Ok(new PagedResult<FinanceHistoryItemDto> { Items = items, TotalCount = total, Page = page, PageSize = pageSize });
+    }
+
+    [HttpGet("history/export")]
+    public async Task<IActionResult> ExportHistory(
+        [FromQuery] string? search = null,
+        [FromQuery] string? actionType = null)
+    {
+        var scopedQuery = await GetScopedRequestsQuery();
+        var requestIds = await scopedQuery.Select(r => r.Id).ToListAsync();
+
+        var financeActionCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "DOCUMENTO ADICIONADO", "NOTA_FINANCEIRA", "FINANCE_RETURN_ADJUSTMENT" };
+        var financeStatusCodes = new[] { RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted };
+
+        var query = _context.RequestStatusHistories
+            .Include(sh => sh.NewStatus)
+            .Include(sh => sh.ActorUser)
+            .Include(sh => sh.Request!)
+                .ThenInclude(r => r.Quotations)
+            .Include(sh => sh.Request!)
+                .ThenInclude(r => r.Currency)
+            .Where(sh => requestIds.Contains(sh.RequestId) && 
+                (financeStatusCodes.Contains(sh.NewStatus!.Code) || financeActionCodes.Contains(sh.ActionTaken)));
+
+        if (!string.IsNullOrWhiteSpace(actionType)) query = query.Where(sh => sh.ActionTaken == actionType);
+        
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var searchLower = search.ToLower();
+            query = query.Where(sh => 
+                (sh.ActorUser != null && sh.ActorUser.FullName != null && sh.ActorUser.FullName.ToLower().Contains(searchLower)) ||
+                (sh.Comment != null && sh.Comment.ToLower().Contains(searchLower)) ||
+                (sh.Request != null && sh.Request.RequestNumber != null && sh.Request.RequestNumber.ToLower().Contains(searchLower)) ||
+                (sh.Request != null && sh.Request.Title != null && sh.Request.Title.ToLower().Contains(searchLower))
+            );
+        }
+
+        var items = await query
+            .OrderByDescending(sh => sh.CreatedAtUtc)
+            .Take(5000)
+            .Select(sh => new FinanceHistoryItemDto
+            {
+                Id = sh.Id,
+                RequestId = sh.RequestId,
+                RequestNumber = sh.Request!.RequestNumber ?? "---",
+                RequestTitle = sh.Request.Title ?? "---",
+                Amount = sh.Request.SelectedQuotationId.HasValue 
+                    ? sh.Request.Quotations.FirstOrDefault(q => q.Id == sh.Request.SelectedQuotationId.Value)!.TotalAmount 
+                    : sh.Request.EstimatedTotalAmount,
+                CurrencyCode = sh.Request.SelectedQuotationId.HasValue 
+                    ? sh.Request.Quotations.FirstOrDefault(q => q.Id == sh.Request.SelectedQuotationId.Value)!.Currency 
+                    : (sh.Request.Currency != null ? sh.Request.Currency.Code : null),
+                ActionTaken = sh.ActionTaken,
+                Comment = sh.Comment,
+                CreatedAtUtc = sh.CreatedAtUtc,
+                ActorName = sh.ActorUser!.FullName ?? "Unknown",
+                NewStatusCode = sh.NewStatus!.Code,
+                NewStatusName = sh.NewStatus.Name
+            })
+            .ToListAsync();
+
+        var csv = new System.Text.StringBuilder();
+        csv.AppendLine("Data/Hora;Acao;Responsavel;Ref. Pedido;Titulo;Moeda;Montante;Detalhes");
+
+        foreach (var item in items)
+        {
+            var comment = item.Comment?.Replace(";", ",").Replace("\r", "").Replace("\n", " ") ?? "";
+            var actionStr = item.ActionTaken switch {
+                "PAYMENT_SCHEDULED" => "Agendado",
+                "PAYMENT_COMPLETED" => "Pago",
+                "DOCUMENTO ADICIONADO" => "Comprovativo",
+                "NOTA_FINANCEIRA" => "Nota",
+                "FINANCE_RETURN_ADJUSTMENT" => "Ajuste",
+                _ => item.ActionTaken
+            };
+            csv.AppendLine($"{item.CreatedAtUtc:yyyy-MM-dd HH:mm:ss};{actionStr};{item.ActorName};{item.RequestNumber};{item.RequestTitle};{item.CurrencyCode};{item.Amount};{comment}");
+        }
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(csv.ToString());
+        return File(bytes, "text/csv", $"auditoria_financas_{DateTime.UtcNow:yyyyMMdd_HHmmss}.csv");
     }
 
     [HttpPost("{id:guid}/schedule")]

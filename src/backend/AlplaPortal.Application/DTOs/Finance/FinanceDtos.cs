@@ -67,6 +67,11 @@ public class FinanceHistoryItemDto
 {
     public Guid Id { get; set; }
     public Guid RequestId { get; set; }
+    public string RequestNumber { get; set; } = string.Empty;
+    public string RequestTitle { get; set; } = string.Empty;
+    public decimal? Amount { get; set; }
+    public string? CurrencyCode { get; set; }
+
     public string ActionTaken { get; set; } = string.Empty; // e.g., "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "NOTE_ADDED"
     public string Comment { get; set; } = string.Empty;
     public DateTime CreatedAtUtc { get; set; }

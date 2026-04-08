@@ -422,6 +422,10 @@ export interface FinanceListResponseDto {
 export interface FinanceHistoryItemDto {
     id: string;
     requestId: string;
+    requestNumber: string;
+    requestTitle: string;
+    amount: number | null;
+    currencyCode: string | null;
     actionTaken: string;
     comment: string;
     createdAtUtc: string;

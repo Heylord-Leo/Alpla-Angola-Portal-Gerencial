@@ -18,6 +18,14 @@ All notable changes to this project will be documented in this file.
   - **Activity Histogram**: Integrated Recharts to generate a temporal bar chart stacking errors, warnings, and infos for instant visual anomaly detection.
   - **Export CSV**: Added native `/export` endpoint and UI integration for bulk log extraction.
   - **JSON Clipboard**: Expanded log detail modal with one-click JSON payload copy capabilities.
+- **Application Versioning**: Integrated global portal version tracking.
+  - Centralized application settings payload onto standard `config.ts`.
+  - Statically anchored the release version label (`v2.39.3`) to the Navigation Sidebar footer and the Public Login panel to aid deterministic bug reporting.
+- **Finance History Observability**: Modernized the History & Audit interface for financial operators.
+  - **Timeline Hybrid UI**: Replaced standard datagrid with a date-grouped visual timeline reflecting actions like Scheduled, Paid, Notes, and Return adjustments using color-coded nodes.
+  - **Contextual Data Joins**: `FinanceHistoryItemDto` now aggregates associated metadata from the overarching Request (`RequestNumber`, `RequestTitle`), empowering instantaneous understanding of atomic historical events without secondary lookups.
+  - **Export CSV Engine**: Delivered a backend-rendered, pre-formatted native export route decoupled from front-end table parsing limitations.
+  - **Quick Searching & Filtering**: Injected global full-text evaluation for actor names, notes, and specific request numbers directly onto the timeline components.
 
 ## [2.39.2] - 2026-04-08
 

@@ -968,13 +968,28 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao carregar pagamentos.');
             return response.json();
         },
-        getHistory: async (page: number = 1, pageSize: number = 20): Promise<PagedResult<FinanceHistoryItemDto>> => {
+        getHistory: async (page: number = 1, pageSize: number = 20, search?: string, actionType?: string): Promise<PagedResult<FinanceHistoryItemDto>> => {
             const params = new URLSearchParams();
             params.append('page', page.toString());
             params.append('pageSize', pageSize.toString());
+            if (search) params.append('search', search);
+            if (actionType) params.append('actionType', actionType);
             const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/history?${params.toString()}`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar histórico financeiro.');
             return response.json();
+        },
+        exportHistory: async (search?: string, actionType?: string): Promise<Blob> => {
+            const params = new URLSearchParams();
+            if (search) params.append('search', search);
+            if (actionType) params.append('actionType', actionType);
+            
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/history/export?${params.toString()}`, {
+                headers: {
+                    'Accept': 'text/csv'
+                }
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao exportar auditoria.');
+            return response.blob();
         },
         schedulePayment: async (id: string, actionDateUtc?: string, notes?: string): Promise<void> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/${id}/schedule`, {

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../features/auth/AuthContext';
 import { api } from '../lib/api';
 import { AlertCircle, Lock, Mail, Loader2, Eye, EyeOff } from 'lucide-react';
+import { APP_VERSION } from '../config';
 
 const LoginPage: React.FC = () => {
     const [email, setEmail] = useState('');
@@ -120,6 +121,7 @@ const LoginPage: React.FC = () => {
 
                 <div style={{ textAlign: 'center', marginTop: '32px', opacity: 0.5, fontSize: '0.65rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
                     &copy; {new Date().getFullYear()} ALPLA. Todos os direitos reservados.
+                    <div style={{ marginTop: '8px' }}>v{APP_VERSION}</div>
                 </div>
             </div>
         </div>
