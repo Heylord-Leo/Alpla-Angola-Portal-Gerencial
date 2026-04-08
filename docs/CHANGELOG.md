@@ -12,6 +12,12 @@ All notable changes to this project will be documented in this file.
   - Dynamically calculates item count and provides interactive tooltips indicating both monetary volume and request volume.
   - Upgraded internal timeline engine to safely aggregate and label ISO 8601 week mappings (`System.Globalization.ISOWeek`).
 - **Development Tooling**: Enhanced the Dev Seeding engine to construct deep historical status lineages, seamlessly testing the decision intelligence pipeline without organic wait times.
+- **Admin System Logs Analytics**: Upgraded the operational Logs panel into a rich observability dashboard.
+  - **Deep Search**: Added full-text search capability into JSON `Payload` and `ExceptionDetail` stacks.
+  - **Live Tail**: Introduced a toggleable auto-refresh worker (10s polling) to monitor systems in real-time.
+  - **Activity Histogram**: Integrated Recharts to generate a temporal bar chart stacking errors, warnings, and infos for instant visual anomaly detection.
+  - **Export CSV**: Added native `/export` endpoint and UI integration for bulk log extraction.
+  - **JSON Clipboard**: Expanded log detail modal with one-click JSON payload copy capabilities.
 
 ## [2.39.2] - 2026-04-08
 

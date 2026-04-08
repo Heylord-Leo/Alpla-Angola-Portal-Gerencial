@@ -4,8 +4,9 @@ import { Z_INDEX } from '../../constants/ui';
 import { DropdownPortal } from '../../components/ui/DropdownPortal';
 import {
   FileText, Search, Eye, AlertTriangle, AlertCircle, Info, XCircle,
-  ChevronLeft, ChevronRight, X, RefreshCw, ShieldAlert
+  ChevronLeft, ChevronRight, X, RefreshCw, ShieldAlert, Download, Copy, Play, Pause, Activity
 } from 'lucide-react';
+import { BarChart, Bar, XAxis, Tooltip as RechartsTooltip, ResponsiveContainer, YAxis } from 'recharts';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -33,6 +34,14 @@ interface LogsResponse {
   pageSize: number;
   totalPages: number;
   items: AdminLogItem[];
+}
+
+interface ActivityItem {
+  periodLabel: string;
+  infoCount: number;
+  warningCount: number;
+  errorCount: number;
+  totalCount: number;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -98,8 +107,11 @@ export function SystemLogs() {
 
   // Data state
   const [data, setData] = useState<LogsResponse | null>(null);
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  const [autoRefresh, setAutoRefresh] = useState(false);
 
   // Detail modal state
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -127,6 +139,13 @@ export function SystemLogs() {
       const json: LogsResponse = await res.json();
       setData(json);
       setPage(targetPage);
+
+      // Fetch activity
+      const actRes = await apiFetch(`${API_BASE_URL}/api/admin/logs/activity?${params}`);
+      if (actRes.ok) {
+        setActivity(await actRes.json());
+      }
+
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro ao carregar logs.');
     } finally {
@@ -152,6 +171,48 @@ export function SystemLogs() {
     setLevel(''); setSource(''); setEventType('');
     setCorrelationId(''); setSearch(''); setStartDate(''); setEndDate('');
     setTimeout(() => fetchLogs(1), 0);
+  };
+
+  const applyPreset = (preset: string) => {
+    clearFilters();
+    if (preset === '1H') {
+      const start = new Date();
+      start.setHours(start.getHours() - 1);
+      setStartDate(start.toISOString().split('T')[0]); // Fallback as datestring works poorly for hour here in UI without time input, but let's just trigger load
+      setTimeout(() => fetchLogs(1), 0);
+    }
+    if (preset === 'ERRORS_24H') {
+      setLevel('Error');
+      const start = new Date();
+      start.setDate(start.getDate() - 1);
+      setStartDate(start.toISOString().split('T')[0]);
+      setTimeout(() => fetchLogs(1), 0);
+    }
+  };
+
+  const handleExport = () => {
+    const params = new URLSearchParams();
+    if (level) params.set('level', level);
+    if (source) params.set('source', source);
+    if (eventType) params.set('eventType', eventType);
+    if (correlationId) params.set('correlationId', correlationId);
+    if (search) params.set('search', search);
+    if (startDate) params.set('startDate', new Date(startDate).toISOString());
+    if (endDate) params.set('endDate', new Date(endDate + 'T23:59:59').toISOString());
+    
+    window.location.href = `${API_BASE_URL}/api/admin/logs/export?${params.toString()}`;
+  };
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const interval = setInterval(() => {
+      fetchLogs(1); // poll newest page 1
+    }, 10000); // 10s
+    return () => clearInterval(interval);
+  }, [autoRefresh, fetchLogs]);
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
   };
 
   // ─── Styles ─────────────────────────────────────────────────────────────────
@@ -185,10 +246,34 @@ export function SystemLogs() {
         <div style={s.title}>
           <FileText size={20} /> Logs do Sistema
         </div>
-        <p style={s.subtitle}>
-          Registo de eventos operacionais auditáveis. Utilize o Correlation ID para rastrear uma falha específica.
-        </p>
+        <div>
+          <p style={s.subtitle}>
+            Registo de eventos operacionais auditáveis.
+          </p>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+            <button onClick={() => applyPreset('ERRORS_24H')} style={{...s.btnSecondary, padding: '4px 8px', fontSize: 11}}>Erros (Últimas 24h)</button>
+          </div>
+        </div>
       </div>
+
+      {/* Activity Graph */}
+      {activity.length > 0 && (
+         <div style={{...s.filtersCard, padding: '16px 20px', height: '140px'}}>
+             <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--color-primary)', textTransform: 'uppercase', marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+                 <Activity size={14} /> Histograma de Atividade
+             </div>
+             <ResponsiveContainer width="100%" height="100%">
+               <BarChart data={activity} margin={{ top: 0, right: 0, left: -24, bottom: 0 }}>
+                 <XAxis dataKey="periodLabel" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
+                 <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
+                 <RechartsTooltip cursor={{ fill: '#f3f4f6' }} contentStyle={{ fontSize: 12, borderRadius: 4, padding: '8px' }} />
+                 <Bar dataKey="errorCount" name="Erros" stackId="a" fill="var(--color-status-red)" />
+                 <Bar dataKey="warningCount" name="Avisos" stackId="a" fill="var(--color-status-orange)" />
+                 <Bar dataKey="infoCount" name="Info" stackId="a" fill="var(--color-status-blue)" />
+               </BarChart>
+             </ResponsiveContainer>
+         </div>
+      )}
 
       {/* Filters */}
       <form onSubmit={handleSearch} style={s.filtersCard}>
@@ -225,13 +310,23 @@ export function SystemLogs() {
             <input style={s.input} placeholder="Pesquisar na mensagem, fonte ou tipo..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button type="submit" style={s.btnPrimary} disabled={loading}>
-            <Search size={14} /> {loading ? 'A carregar...' : 'Pesquisar'}
+            <Search size={14} /> {loading ? 'Carregando...' : 'Pesquisar'}
           </button>
           <button type="button" style={s.btnSecondary} onClick={clearFilters}>Limpar</button>
-          <button type="button" style={{ ...s.btnSecondary, marginLeft: 'auto' }} onClick={() => fetchLogs(page)}>
-            <RefreshCw size={13} />
+          
+          <div style={{ flex: 1 }} />
+          
+          <button type="button" style={{ ...s.btnSecondary, display: 'flex', alignItems: 'center', gap: 4, background: autoRefresh ? '#ecfdf5' : '#fff', color: autoRefresh ? '#059669' : '' }} onClick={() => setAutoRefresh(!autoRefresh)}>
+            {autoRefresh ? <Pause size={14} /> : <Play size={14} />}
+            {autoRefresh ? 'Live Tail' : 'Desligado'}
+          </button>
+          <button type="button" style={{ ...s.btnSecondary }} onClick={handleExport} title="Export CSV">
+            <Download size={15} /> Exportar
+          </button>
+          <button type="button" style={{ ...s.btnSecondary }} onClick={() => fetchLogs(page)}>
+            <RefreshCw size={13} className={loading && !autoRefresh ? "animate-spin" : ""} />
           </button>
         </div>
       </form>
@@ -389,8 +484,13 @@ export function SystemLogs() {
 
                   {/* Payload */}
                   {detail.payload && (
-                    <div>
-                      <div style={s.labelSm}>Payload (sanitizado)</div>
+                    <div style={{ position: 'relative' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <span style={s.labelSm}>Payload (sanitizado)</span>
+                          <button onClick={() => copyToClipboard(detail.payload!)} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#1d4ed8', fontWeight: 600 }}>
+                            <Copy size={12} /> Copiar JSON
+                          </button>
+                      </div>
                       <div style={s.codeBlock}>
                         {(() => {
                           try { return JSON.stringify(JSON.parse(detail.payload!), null, 2); }
