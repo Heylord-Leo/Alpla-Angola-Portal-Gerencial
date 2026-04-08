@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.39.5] - 2026-04-08
+
+### Changed
+- **Adaptive OCR Routing (Phase 2)**: Introduced a Text-First extraction path using `PdfiumViewer` to preemptively extract text from native PDFs. Bypasses the heavy Vision payload generation for clean invoices, reducing extraction costs by ~98%. Scanned or insufficient documents automatically fall back to the Vision API rasterization.
+- **Extraction Telemetry Enhancement**: Enriched `ExtractionResultDto.Metadata` with `RoutingStrategy`, `DetailMode`, and `NativeTextDetected` logic for seamless real-time consumption and token cost audits.
+
 ## [2.39.4] - 2026-04-08
 
 ### Added

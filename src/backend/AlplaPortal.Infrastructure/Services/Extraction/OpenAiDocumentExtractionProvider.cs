@@ -14,9 +14,17 @@ using PdfiumViewer;
 
 namespace AlplaPortal.Infrastructure.Services.Extraction;
 
-public record DocumentRenderProfile(int Dpi, int MaxPages, ImageFormat Format, long Quality)
+public record DocumentRenderProfile(int Dpi, int MaxPages, ImageFormat Format, long Quality, string OpenAiDetailMode)
 {
-    public static DocumentRenderProfile InvoiceProfile => new(150, 3, ImageFormat.Jpeg, 85L);
+    public static DocumentRenderProfile InvoiceProfile => new(150, 3, ImageFormat.Jpeg, 85L, "high");
+    public static DocumentRenderProfile SimpleInvoiceProfile => new(150, 3, ImageFormat.Jpeg, 85L, "low");
+}
+
+public enum DocumentStrategy
+{
+    Invoice,
+    Contract,
+    Other
 }
 
 /// <summary>
@@ -60,11 +68,66 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
                 return new ExtractionResultDto { Success = false, ProviderName = Name };
             }
 
+            bool tryTextFirst = false;
+            string extractedNativeText = string.Empty;
+
+            var safeMemoryStream = new MemoryStream();
+            await fileStream.CopyToAsync(safeMemoryStream, ct);
+            safeMemoryStream.Position = 0;
+
             var extension = Path.GetExtension(fileName).ToLowerInvariant();
             _logger.LogInformation("OpenAI Extraction: File extension identified as '{Extension}' for file '{FileName}'", extension, fileName);
 
-            // Phase 1 Optimization: Use Invoice profile by default for current flow
-            var renderProfile = DocumentRenderProfile.InvoiceProfile;
+            if (extension == ".pdf")
+            {
+                using var triageStream = new MemoryStream(safeMemoryStream.ToArray());
+                var triageResult = await TryGetNativeTextAsync(triageStream, ct);
+                tryTextFirst = triageResult.isNative;
+                extractedNativeText = triageResult.extractedText;
+            }
+
+            safeMemoryStream.Position = 0; // Reset for downstream
+
+            // Initial Triage classification mapping
+            DocumentStrategy strategy = DocumentStrategy.Invoice; 
+            
+            var model = string.IsNullOrWhiteSpace(settings.Model) ? DefaultModel : settings.Model;
+            var prompt = GetSystemPrompt();
+
+            // TextFirst Attempt -> For native PDF Invoices
+            if (tryTextFirst && strategy == DocumentStrategy.Invoice)
+            {
+                _logger.LogInformation("Native text detected (Length: {Len}). Attempting TextFirst path for {FileName}.", extractedNativeText.Length, fileName);
+                var textPayload = new
+                {
+                    model = model,
+                    messages = new object[]
+                    {
+                        new { role = "system", content = prompt },
+                        new { role = "user", content = $"Extract data from this document:\n\n{extractedNativeText}" }
+                    },
+                    response_format = new { type = "json_object" },
+                    temperature = 0.0
+                };
+
+                var textResult = await ExecuteOpenAiRequestAsync(textPayload, apiKey, fileName, "TextFirst", "n/a", model, ct);
+
+                if (textResult.Success && textResult.QualityScore >= 0.7m && (textResult.Header.TotalAmount > 0 || textResult.Header.SupplierName != null))
+                {
+                    _logger.LogInformation("TextFirst extraction successful for {FileName} with QualityScore {Score}.", fileName, textResult.QualityScore);
+                    textResult.Metadata.NativeTextDetected = true;
+                    return textResult; // Successfully avoided Vision!
+                }
+
+                _logger.LogWarning("TextFirst extraction failed or returned insufficient quality ({Score}). Falling back to Vision for {FileName}.", textResult.QualityScore, fileName);
+            }
+
+            // --- Vision Path (Primary or Fallback) ---
+            safeMemoryStream.Position = 0;
+
+            // Phase 2: detail="low" experiment (Only if explicitly flagged. For now, manual trigger check could be added. Sticking to default high).
+            bool useLowDetailExperiment = false; // Could check settings.OpenAi.UseLowDetailExperiment or similar
+            var renderProfile = useLowDetailExperiment ? DocumentRenderProfile.SimpleInvoiceProfile : DocumentRenderProfile.InvoiceProfile;
 
             List<string> base64Images = new();
             string mimeType = renderProfile.Format == ImageFormat.Jpeg ? "image/jpeg" : "image/png";
@@ -72,20 +135,16 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
             if (extension == ".pdf")
             {
                 _logger.LogInformation("PDF Path detected. Calling RasterizePdfPagesAsync for '{FileName}'", fileName);
-                base64Images = await RasterizePdfPagesAsync(fileStream, fileName, renderProfile, ct);
+                base64Images = await RasterizePdfPagesAsync(safeMemoryStream, fileName, renderProfile, ct);
                 _logger.LogInformation("PDF Rasterization completed for '{FileName}'. Total pages rasterized: {Count}", fileName, base64Images.Count);
             }
             else
             {
-                var base64 = await ConvertStreamToBase64Async(fileStream);
+                var base64 = await ConvertStreamToBase64Async(safeMemoryStream);
                 base64Images.Add(base64);
                 mimeType = GetMimeType(fileName);
             }
 
-            var model = string.IsNullOrWhiteSpace(settings.Model) ? DefaultModel : settings.Model;
-            var prompt = GetSystemPrompt();
-            
-            // Build multi-page content array
             var userContentItems = new List<object>
             {
                 new { type = "text", text = "Extract data from this document. It may contain multiple pages." }
@@ -99,12 +158,12 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
                     image_url = new 
                     { 
                         url = $"data:{mimeType};base64,{base64}",
-                        detail = "high"
+                        detail = renderProfile.OpenAiDetailMode
                     }
                 });
             }
 
-            var payload = new
+            var visionPayload = new
             {
                 model = model,
                 messages = new object[]
@@ -120,26 +179,50 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
                 temperature = 0.0
             };
 
-            var jsonOptions = new JsonSerializerOptions 
-            { 
-                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping 
-            };
-            var jsonPayloadStr = JsonSerializer.Serialize(payload, jsonOptions);
+            var routingStrat = tryTextFirst ? "VisionFallback" : "VisionFirst";
+            var finalResult = await ExecuteOpenAiRequestAsync(visionPayload, apiKey, fileName, routingStrat, renderProfile.OpenAiDetailMode, model, ct);
+            
+            finalResult.Metadata.NativeTextDetected = tryTextFirst;
+            finalResult.Metadata.PagesProcessed = base64Images.Count;
+            finalResult.Metadata.ProcessingDpi = renderProfile.Dpi;
+            finalResult.Metadata.ProcessingFormat = renderProfile.Format.ToString();
 
-            _logger.LogInformation("OpenAI Request Structure -> Provider: {Provider}, Pages: {Pages}, Format: {Format}, Resolution: {Dpi} DPI, Approx Payload Size: {Size} chars", 
-                Name, base64Images.Count, renderProfile.Format.ToString(), renderProfile.Dpi, jsonPayloadStr.Length);
+            return finalResult;
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("OpenAI extraction was cancelled or timed out for {FileName}", fileName);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during OpenAI extraction for {FileName}", fileName);
+            return new ExtractionResultDto { Success = false, ProviderName = Name };
+        }
+    }
 
-            var request = new HttpRequestMessage(HttpMethod.Post, ApiBaseUrl)
-            {
-                Content = new StringContent(jsonPayloadStr, Encoding.UTF8, "application/json")
-            };
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+    private async Task<ExtractionResultDto> ExecuteOpenAiRequestAsync(object payload, string apiKey, string fileName, string routingStrat, string detailMode, string model, CancellationToken ct)
+    {
+        var jsonOptions = new JsonSerializerOptions 
+        { 
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping 
+        };
+        var jsonPayloadStr = JsonSerializer.Serialize(payload, jsonOptions);
 
-            _logger.LogInformation("Sending OpenAI extraction request for {FileName} (Model: {Model})", fileName, model);
+        _logger.LogInformation("OpenAI Request Structure -> Provider: {Provider}, Routing: {Strat}, Detail: {Detail}, Approx Payload Size: {Size} chars", 
+            Name, routingStrat, detailMode, jsonPayloadStr.Length);
 
-            var response = await _httpClient.SendAsync(request, ct);
+        var request = new HttpRequestMessage(HttpMethod.Post, ApiBaseUrl)
+        {
+            Content = new StringContent(jsonPayloadStr, Encoding.UTF8, "application/json")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
-            if (response.IsSuccessStatusCode)
+        _logger.LogInformation("Sending OpenAI extraction request for {FileName} (Model: {Model})", fileName, model);
+
+        var response = await _httpClient.SendAsync(request, ct);
+
+        if (response.IsSuccessStatusCode)
             {
                 var content = await response.Content.ReadAsStringAsync(ct);
                 _logger.LogDebug("OpenAI raw response: {Response}", content);
@@ -156,7 +239,7 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
 
                     string safeFileName = Path.GetFileNameWithoutExtension(fileName);
                     string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                    string jsonDebugPath = Path.Combine(jsonDebugFolder, $"{safeFileName}_{timestamp}.json");
+                    string jsonDebugPath = Path.Combine(jsonDebugFolder, $"{safeFileName}_{routingStrat}_{timestamp}.json");
                     
                     await File.WriteAllTextAsync(jsonDebugPath, content, ct);
                     _logger.LogInformation("Successfully saved raw OpenAI JSON response to: {Path}", jsonDebugPath);
@@ -190,13 +273,13 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
                     PromptTokens = promptTokens,
                     CompletionTokens = completionTokens,
                     TotalTokens = totalTokens,
-                    PagesProcessed = base64Images.Count,
-                    ProcessingDpi = renderProfile.Dpi,
-                    ProcessingFormat = renderProfile.Format.ToString()
+                    PagesProcessed = 0,
+                    RoutingStrategy = routingStrat,
+                    DetailMode = detailMode
                 };
                 
-                _logger.LogInformation("OpenAI Extraction Success. Tokens Used -> Prompt: {Prompt}, Completion: {Completion}, Total: {Total}", 
-                    promptTokens, completionTokens, totalTokens);
+                _logger.LogInformation("OpenAI Extraction Success [{Strat}]. Tokens Used -> Prompt: {Prompt}, Completion: {Completion}, Total: {Total}", 
+                    routingStrat, promptTokens, completionTokens, totalTokens);
 
                 return extractedResult;
             }
@@ -204,16 +287,36 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
             var errorContent = await response.Content.ReadAsStringAsync(ct);
             _logger.LogError("OpenAI API returned error: {StatusCode}. Details: {Details}", response.StatusCode, errorContent);
             return new ExtractionResultDto { Success = false, ProviderName = Name };
-        }
-        catch (OperationCanceledException)
+    }
+
+    private async Task<(bool isNative, string extractedText)> TryGetNativeTextAsync(Stream pdfStream, CancellationToken ct)
+    {
+        try
         {
-            _logger.LogWarning("OpenAI extraction was cancelled or timed out for {FileName}", fileName);
-            throw;
+            using var document = PdfDocument.Load(pdfStream);
+            int pages = Math.Min(document.PageCount, 5);
+            StringBuilder sb = new StringBuilder();
+            
+            for(int i = 0; i < pages; i++)
+            {
+                var text = document.GetPdfText(i);
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    sb.AppendLine(text);
+                }
+            }
+
+            var fullText = sb.ToString();
+            
+            var lines = fullText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            bool isNative = fullText.Length > 100 && lines.Length >= 3;
+
+            return (isNative, fullText);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during OpenAI extraction for {FileName}", fileName);
-            return new ExtractionResultDto { Success = false, ProviderName = Name };
+            _logger.LogWarning(ex, "Failed to extract native text from PDF for triage.");
+            return (false, string.Empty);
         }
     }
 

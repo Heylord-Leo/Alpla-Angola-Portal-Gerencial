@@ -1,0 +1,311 @@
+[
+  {
+    "file": "c:\\dev\\alpla-portal\\tests\\fixtures\\ocr_validation\\1_invoices_clean\\clean_invoice_01.pdf",
+    "result": null
+  },
+  {
+    "file": "c:\\dev\\alpla-portal\\tests\\fixtures\\ocr_validation\\1_invoices_clean\\clean_invoice_02.pdf",
+    "result": null
+  },
+  {
+    "file": "c:\\dev\\alpla-portal\\tests\\fixtures\\ocr_validation\\1_invoices_clean\\clean_invoice_03.pdf",
+    "result": null
+  },
+  {
+    "file": "c:\\dev\\alpla-portal\\tests\\fixtures\\ocr_validation\\1_invoices_clean\\clean_invoice_04.pdf",
+    "result": null
+  },
+  {
+    "file": "c:\\dev\\alpla-portal\\tests\\fixtures\\ocr_validation\\2_invoices_multipage\\multipage_invoice_01.pdf",
+    "result": null
+  },
+  {
+    "file": "c:\\dev\\alpla-portal\\tests\\fixtures\\ocr_validation\\2_invoices_multipage\\multipage_invoice_02.pdf",
+    "result": null
+  },
+  {
+    "file": "c:\\dev\\alpla-portal\\tests\\fixtures\\ocr_validation\\2_invoices_multipage\\multipage_invoice_03.pdf",
+    "result": {
+      "success": true,
+      "status": {
+        "code": "ok",
+        "qualityScore": 0
+      },
+      "requiredFieldsMissing": [],
+      "integration": {
+        "headerSuggestions": {
+          "supplierName": {
+            "value": null,
+            "status": "recommended"
+          },
+          "supplierTaxId": {
+            "value": null,
+            "status": "recommended"
+          },
+          "documentNumber": {
+            "value": null,
+            "status": "recommended"
+          },
+          "documentDate": {
+            "value": null,
+            "status": "recommended"
+          },
+          "dueDate": null,
+          "currency": {
+            "value": null,
+            "status": "recommended"
+          },
+          "grandTotal": {
+            "value": 0,
+            "status": "recommended"
+          },
+          "discountAmount": {
+            "value": 0,
+            "status": "recommended"
+          }
+        },
+        "lineItemSuggestions": [],
+        "lineItemsRequireReview": true,
+        "reviewRequired": true,
+        "recommendedAutofillFields": null
+      },
+      "metadata": {
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "pagesProcessed": 0,
+        "processingDpi": 0,
+        "processingFormat": "",
+        "provider": "LOCAL_OCR"
+      }
+    }
+  },
+  {
+    "file": "c:\\dev\\alpla-portal\\tests\\fixtures\\ocr_validation\\3_contracts\\contract_public_01_nda.pdf",
+    "result": {
+      "success": false,
+      "status": {
+        "code": "ERROR",
+        "qualityScore": 0
+      },
+      "requiredFieldsMissing": [],
+      "integration": {
+        "headerSuggestions": {
+          "supplierName": {
+            "value": null,
+            "status": "recommended"
+          },
+          "supplierTaxId": {
+            "value": null,
+            "status": "recommended"
+          },
+          "documentNumber": {
+            "value": null,
+            "status": "recommended"
+          },
+          "documentDate": {
+            "value": null,
+            "status": "recommended"
+          },
+          "dueDate": null,
+          "currency": {
+            "value": null,
+            "status": "recommended"
+          },
+          "grandTotal": {
+            "value": 0,
+            "status": "recommended"
+          },
+          "discountAmount": {
+            "value": 0,
+            "status": "recommended"
+          }
+        },
+        "lineItemSuggestions": [],
+        "lineItemsRequireReview": true,
+        "reviewRequired": true,
+        "recommendedAutofillFields": null
+      },
+      "metadata": {
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "pagesProcessed": 0,
+        "processingDpi": 0,
+        "processingFormat": "",
+        "provider": "OPENAI"
+      }
+    }
+  },
+  {
+    "file": "c:\\dev\\alpla-portal\\tests\\fixtures\\ocr_validation\\3_contracts\\contract_public_02_msa.pdf",
+    "result": {
+      "success": false,
+      "status": {
+        "code": "ERROR",
+        "qualityScore": 0
+      },
+      "requiredFieldsMissing": [],
+      "integration": {
+        "headerSuggestions": {
+          "supplierName": {
+            "value": null,
+            "status": "recommended"
+          },
+          "supplierTaxId": {
+            "value": null,
+            "status": "recommended"
+          },
+          "documentNumber": {
+            "value": null,
+            "status": "recommended"
+          },
+          "documentDate": {
+            "value": null,
+            "status": "recommended"
+          },
+          "dueDate": null,
+          "currency": {
+            "value": null,
+            "status": "recommended"
+          },
+          "grandTotal": {
+            "value": 0,
+            "status": "recommended"
+          },
+          "discountAmount": {
+            "value": 0,
+            "status": "recommended"
+          }
+        },
+        "lineItemSuggestions": [],
+        "lineItemsRequireReview": true,
+        "reviewRequired": true,
+        "recommendedAutofillFields": null
+      },
+      "metadata": {
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "pagesProcessed": 0,
+        "processingDpi": 0,
+        "processingFormat": "",
+        "provider": "OPENAI"
+      }
+    }
+  },
+  {
+    "file": "c:\\dev\\alpla-portal\\tests\\fixtures\\ocr_validation\\4_edge_cases\\edge_case_01.pdf",
+    "result": {
+      "success": false,
+      "status": {
+        "code": "ERROR",
+        "qualityScore": 0
+      },
+      "requiredFieldsMissing": [],
+      "integration": {
+        "headerSuggestions": {
+          "supplierName": {
+            "value": null,
+            "status": "recommended"
+          },
+          "supplierTaxId": {
+            "value": null,
+            "status": "recommended"
+          },
+          "documentNumber": {
+            "value": null,
+            "status": "recommended"
+          },
+          "documentDate": {
+            "value": null,
+            "status": "recommended"
+          },
+          "dueDate": null,
+          "currency": {
+            "value": null,
+            "status": "recommended"
+          },
+          "grandTotal": {
+            "value": 0,
+            "status": "recommended"
+          },
+          "discountAmount": {
+            "value": 0,
+            "status": "recommended"
+          }
+        },
+        "lineItemSuggestions": [],
+        "lineItemsRequireReview": true,
+        "reviewRequired": true,
+        "recommendedAutofillFields": null
+      },
+      "metadata": {
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "pagesProcessed": 0,
+        "processingDpi": 0,
+        "processingFormat": "",
+        "provider": "OPENAI"
+      }
+    }
+  },
+  {
+    "file": "c:\\dev\\alpla-portal\\tests\\fixtures\\ocr_validation\\4_edge_cases\\edge_case_02.pdf",
+    "result": {
+      "success": false,
+      "status": {
+        "code": "ERROR",
+        "qualityScore": 0
+      },
+      "requiredFieldsMissing": [],
+      "integration": {
+        "headerSuggestions": {
+          "supplierName": {
+            "value": null,
+            "status": "recommended"
+          },
+          "supplierTaxId": {
+            "value": null,
+            "status": "recommended"
+          },
+          "documentNumber": {
+            "value": null,
+            "status": "recommended"
+          },
+          "documentDate": {
+            "value": null,
+            "status": "recommended"
+          },
+          "dueDate": null,
+          "currency": {
+            "value": null,
+            "status": "recommended"
+          },
+          "grandTotal": {
+            "value": 0,
+            "status": "recommended"
+          },
+          "discountAmount": {
+            "value": 0,
+            "status": "recommended"
+          }
+        },
+        "lineItemSuggestions": [],
+        "lineItemsRequireReview": true,
+        "reviewRequired": true,
+        "recommendedAutofillFields": null
+      },
+      "metadata": {
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "pagesProcessed": 0,
+        "processingDpi": 0,
+        "processingFormat": "",
+        "provider": "OPENAI"
+      }
+    }
+  }
+]

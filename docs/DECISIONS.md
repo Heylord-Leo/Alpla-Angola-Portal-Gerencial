@@ -1198,4 +1198,16 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
     4. **Submission Gating**: Added strict server-side validation in `SubmitRequest` to ensure all line items have mandatory business fields before the request enters the workflow.
 - **Consequences:** Enables a "Save Now, Complete Later" UX for complex OCR extractions. Prevents persistence crashes while maintaining strict financial governance at the submission boundary.
 
+---
 
+## DEC-098 — Adaptive OCR Routing & Token Optimization (Phase 2)
+
+- **Date:** 2026-04-08
+- **Status:** Accepted
+- **Context:** The previous naive Vision-based OpenAI OCR flow was processing clean, digital PDFs as rasterized images, leading to excessive token consumption (e.g., >37k tokens per invoice, ~111k for larger files) and high associated costs, due to OpenAI's tokenization logic for `high` detail images.
+- **Decision:** Implement a triage-first Adaptive OCR strategy.
+    1. **Native Text Detection**: The system uses `PdfiumViewer` to extract text from the first up to 5 pages of a document to determine if it's a native digital PDF.
+    2. **Text-First Routing**: If text is viable (>100 characters and >2 lines), the flow routes to a text-only OpenAI payload avoiding Vision API completely. This applies to standard invoices.
+    3. **Vision Fallback**: If extraction via text fails quality checks, or if it's a scanned document/contract, it seamlessly falls back to the original Rasterize-to-Vision flow.
+    4. **Telemetry**: Introduced explicit telemetry fields (`RoutingStrategy`, `DetailMode`, `NativeTextDetected`) in `ExtractionMetadataDto` to measure the cost-effectiveness in production admin logs without impacting legacy API consumers.
+- **Consequences:** Dramatically reduces token usage by approximately 98% for native PDFs (e.g., 618 tokens instead of >37,000 for standard invoices). Preserves fallback capability for scanned documents, preventing brittle failures. Sets the foundation for adaptive token optimization rules.

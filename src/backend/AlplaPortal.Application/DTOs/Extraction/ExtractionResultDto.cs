@@ -30,6 +30,9 @@ public class ExtractionMetadataDto
     public int PagesProcessed { get; set; }
     public int ProcessingDpi { get; set; }
     public string ProcessingFormat { get; set; } = string.Empty;
+    public string RoutingStrategy { get; set; } = string.Empty;
+    public string DetailMode { get; set; } = "auto";
+    public bool NativeTextDetected { get; set; }
 }
 
 public class ExtractionResultDto
