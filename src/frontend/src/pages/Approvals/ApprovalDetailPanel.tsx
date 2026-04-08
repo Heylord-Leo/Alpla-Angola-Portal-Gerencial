@@ -9,6 +9,7 @@ import {
 import { RequestDetailsDto, ApprovalIntelligenceDto } from '../../types';
 import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModal';
 import { FeedbackType } from '../../components/ui/Feedback';
+import { Tooltip } from '../../components/ui/Tooltip';
 import { api } from '../../lib/api';
 import { formatDate, formatCurrencyAO } from '../../lib/utils';
 import { motion } from 'framer-motion';
@@ -78,6 +79,10 @@ export function ApprovalDetailPanel({
     
     // Internal processing state for winner selection
     const [quotationProcessingId, setQuotationProcessingId] = useState<string | null>(null);
+
+    // UX Tracking
+    const [highlightSection, setHighlightSection] = useState(false);
+    const [highlightFields, setHighlightFields] = useState(false);
 
     // Phase 3A: Intelligence
     const [intelligence, setIntelligence] = useState<ApprovalIntelligenceDto | null>(null);
@@ -241,6 +246,17 @@ export function ApprovalDetailPanel({
     const hasItemAboveAvg = intelItemsWithHistory.some(i => i.currentUnitPrice > (i.averageHistoricalPrice || 0));
 
     // --- Handlers ---
+
+    const handleAllocationWarningClick = () => {
+        document.getElementById('itens-do-pedido-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        
+        setHighlightSection(true);
+        setHighlightFields(true);
+        
+        setTimeout(() => {
+            setHighlightSection(false);
+        }, 5000);
+    };
 
     const handleSelectWinner = async (quotationId: string) => {
         setQuotationProcessingId(quotationId);
@@ -430,11 +446,15 @@ export function ApprovalDetailPanel({
                 )}
                 
                 {isAreaApprovalStage && !allAssigned && (
-                    <div style={{
-                        marginBottom: '24px', width: '100%', backgroundColor: '#FEF2F2',
-                        border: '1px solid #FECACA', borderRadius: 'var(--radius-lg)', padding: '16px',
-                        display: 'flex', gap: '16px', boxShadow: 'var(--shadow-sm)', alignItems: 'flex-start'
-                    }}>
+                    <div 
+                        onClick={handleAllocationWarningClick}
+                        style={{
+                            marginBottom: '24px', width: '100%', backgroundColor: '#FEF2F2',
+                            border: '1px solid #FECACA', borderRadius: 'var(--radius-lg)', padding: '16px',
+                            display: 'flex', gap: '16px', boxShadow: 'var(--shadow-sm)', alignItems: 'flex-start',
+                            cursor: 'pointer'
+                        }}
+                    >
                         <AlertTriangle color="var(--color-status-red)" style={{ marginTop: '2px', flexShrink: 0 }} size={20} />
                         <div style={{ display: 'flex', flexDirection: 'column' }}>
                             <span style={{ color: '#991B1B', fontWeight: 700, marginBottom: '4px' }}>Pendência de Alocação</span>
@@ -555,14 +575,26 @@ export function ApprovalDetailPanel({
                 </DecisionSection>
 
                 {/* 4. ITENS DO PEDIDO (Adaptive Navigation) */}
-                <DecisionSection 
-                    title="Itens do pedido" 
-                    icon={<List size={16} />}
-                    count={activeItems.length}
-                    isCollapsible={true}
-                    defaultOpen={true}
-                    noPadding={viewMode === 'LIST'}
-                    headerRight={
+                <motion.div
+                    id="itens-do-pedido-section"
+                    animate={
+                        highlightSection
+                            ? {
+                                  boxShadow: ['0 0 0px 0px transparent', '0 0 15px 5px rgba(239, 68, 68, 0.4)', '0 0 0px 0px transparent'],
+                                  transition: { duration: 1, repeat: 4 }
+                              }
+                            : { boxShadow: '0 0 0px 0px transparent' }
+                    }
+                    style={{ borderRadius: 'var(--radius-lg)' }}
+                >
+                    <DecisionSection 
+                        title="Itens do pedido" 
+                        icon={<List size={16} />}
+                        count={activeItems.length}
+                        isCollapsible={true}
+                        defaultOpen={true}
+                        noPadding={viewMode === 'LIST'}
+                        headerRight={
                         <div style={{ display: 'flex', backgroundColor: 'var(--color-bg-page)', borderRadius: 'var(--radius-md)', padding: '4px', marginLeft: 'auto', flexShrink: 0 }}>
                             <button
                                 onClick={(e) => { e.stopPropagation(); setViewMode('CARDS'); }}
@@ -636,7 +668,11 @@ export function ApprovalDetailPanel({
                                                             onChange={(e) => setItemAssignments(prev => ({ 
                                                                 ...prev, [item.id]: { plantId: parseInt(e.target.value) || null, costCenterId: null } 
                                                             }))}
-                                                            style={{ width: '100%', fontSize: '0.75rem', fontWeight: 700, backgroundColor: 'var(--color-bg-page)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px', outline: 'none' }}
+                                                            style={{ 
+                                                                width: '100%', fontSize: '0.75rem', fontWeight: 700, backgroundColor: 'var(--color-bg-page)', 
+                                                                border: (highlightFields && !assignment.plantId) ? '2px solid var(--color-status-red)' : '1px solid var(--color-border)', 
+                                                                borderRadius: 'var(--radius-md)', padding: '10px', outline: 'none' 
+                                                            }}
                                                         >
                                                             <option value="">Selecionar...</option>
                                                             {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -650,7 +686,11 @@ export function ApprovalDetailPanel({
                                                             onChange={(e) => setItemAssignments(prev => ({ 
                                                                 ...prev, [item.id]: { ...prev[item.id], costCenterId: parseInt(e.target.value) || null } 
                                                             }))}
-                                                            style={{ width: '100%', fontSize: '0.75rem', fontWeight: 700, backgroundColor: 'var(--color-bg-page)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px', outline: 'none', opacity: assignment.plantId ? 1 : 0.5 }}
+                                                            style={{ 
+                                                                width: '100%', fontSize: '0.75rem', fontWeight: 700, backgroundColor: 'var(--color-bg-page)', 
+                                                                border: (highlightFields && !assignment.costCenterId) ? '2px solid var(--color-status-red)' : '1px solid var(--color-border)', 
+                                                                borderRadius: 'var(--radius-md)', padding: '10px', outline: 'none', opacity: assignment.plantId ? 1 : 0.5 
+                                                            }}
                                                         >
                                                             <option value="">{assignment.plantId ? 'Selecionar...' : 'Exige Planta'}</option>
                                                             {costCenters.filter(cc => cc.plantId === assignment.plantId).map(cc => (
@@ -661,12 +701,14 @@ export function ApprovalDetailPanel({
                                                     {canBulkFill(item.id) && (() => {
                                                         const pendingCount = activeItems.filter(i => i.id !== item.id && (!itemAssignments[i.id]?.plantId || !itemAssignments[i.id]?.costCenterId)).length;
                                                         return (
-                                                            <button 
-                                                                onClick={() => handleBulkFill(item.id)}
-                                                                style={{ marginTop: '8px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '8px 12px', backgroundColor: 'var(--color-bg-page)', color: 'var(--color-text-muted)', borderRadius: 'var(--radius-md)', fontSize: '0.625rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', border: 'none', cursor: 'pointer' }}
-                                                            >
-                                                                Aplicar a {pendingCount} pendentes
-                                                            </button>
+                                                            <Tooltip content="Aplica a mesma Planta e Centro de Custo aos demais itens desta lista com status pendente" variant="dark" side="top">
+                                                                <button 
+                                                                    onClick={() => handleBulkFill(item.id)}
+                                                                    style={{ marginTop: '8px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '8px 12px', backgroundColor: 'var(--color-bg-page)', color: 'var(--color-text-muted)', borderRadius: 'var(--radius-md)', fontSize: '0.625rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', border: 'none', cursor: 'pointer' }}
+                                                                >
+                                                                    Aplicar a {pendingCount} pendentes
+                                                                </button>
+                                                            </Tooltip>
                                                         );
                                                     })()}
                                                 </div>
@@ -725,7 +767,11 @@ export function ApprovalDetailPanel({
                                                                 onChange={(e) => setItemAssignments(prev => ({ 
                                                                     ...prev, [item.id]: { plantId: parseInt(e.target.value) || null, costCenterId: null } 
                                                                 }))}
-                                                                style={{ width: '100%', fontSize: '0.75rem', fontWeight: 700, backgroundColor: 'var(--color-bg-page)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px', outline: 'none' }}
+                                                                style={{ 
+                                                                    width: '100%', fontSize: '0.75rem', fontWeight: 700, backgroundColor: 'var(--color-bg-page)', 
+                                                                    border: (highlightFields && !assignment.plantId) ? '2px solid var(--color-status-red)' : '1px solid var(--color-border)', 
+                                                                    borderRadius: 'var(--radius-md)', padding: '8px', outline: 'none' 
+                                                                }}
                                                             >
                                                                 <option value="">Selecionar...</option>
                                                                 {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -739,7 +785,11 @@ export function ApprovalDetailPanel({
                                                                 onChange={(e) => setItemAssignments(prev => ({ 
                                                                     ...prev, [item.id]: { ...prev[item.id], costCenterId: parseInt(e.target.value) || null } 
                                                                 }))}
-                                                                style={{ width: '100%', fontSize: '0.75rem', fontWeight: 700, backgroundColor: 'var(--color-bg-page)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px', outline: 'none', opacity: assignment.plantId ? 1 : 0.5 }}
+                                                                style={{ 
+                                                                    width: '100%', fontSize: '0.75rem', fontWeight: 700, backgroundColor: 'var(--color-bg-page)', 
+                                                                    border: (highlightFields && !assignment.costCenterId) ? '2px solid var(--color-status-red)' : '1px solid var(--color-border)', 
+                                                                    borderRadius: 'var(--radius-md)', padding: '8px', outline: 'none', opacity: assignment.plantId ? 1 : 0.5 
+                                                                }}
                                                             >
                                                                 <option value="">{assignment.plantId ? 'Selecionar...' : '---'}</option>
                                                                 {costCenters.filter(cc => cc.plantId === assignment.plantId).map(cc => (
@@ -751,12 +801,14 @@ export function ApprovalDetailPanel({
                                                     {canBulkFill(item.id) && (() => {
                                                         const pendingCount = activeItems.filter(i => i.id !== item.id && (!itemAssignments[i.id]?.plantId || !itemAssignments[i.id]?.costCenterId)).length;
                                                         return (
-                                                            <button 
-                                                                onClick={() => handleBulkFill(item.id)}
-                                                                style={{ width: '100%', marginTop: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'var(--color-bg-page)', color: 'var(--color-text-muted)', borderRadius: 'var(--radius-sm)', fontSize: '0.625rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', transition: 'all 0.2s', border: 'none', cursor: 'pointer' }}
-                                                            >
-                                                                Aplicar aos {pendingCount} compatíveis
-                                                            </button>
+                                                            <Tooltip content="Aplica a mesma Planta e Centro de Custo aos demais itens desta lista com status pendente" variant="dark" side="top">
+                                                                <button 
+                                                                    onClick={() => handleBulkFill(item.id)}
+                                                                    style={{ width: '100%', marginTop: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'var(--color-bg-page)', color: 'var(--color-text-muted)', borderRadius: 'var(--radius-sm)', fontSize: '0.625rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', transition: 'all 0.2s', border: 'none', cursor: 'pointer' }}
+                                                                >
+                                                                    Aplicar aos {pendingCount} compatíveis
+                                                                </button>
+                                                            </Tooltip>
                                                         );
                                                     })()}
                                                 </div>
@@ -779,6 +831,7 @@ export function ApprovalDetailPanel({
                         </div>
                     )}
                 </DecisionSection>
+                </motion.div>
 
                 {/* 5. JUSTIFICATIVA / OBSERVAÇÕES (Always Open if present) */}
                 {data.description && (

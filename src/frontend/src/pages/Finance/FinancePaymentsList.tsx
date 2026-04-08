@@ -41,6 +41,9 @@ export default function FinancePaymentsList() {
                 }
                 await api.finance.schedulePayment(actionModal.requestId, new Date(payload.date).toISOString(), payload.notes || "Agendado via portal");
             } else if (action === 'PAY') {
+                if (payload.file) {
+                    await api.attachments.upload(actionModal.requestId, [payload.file], 'PAYMENT_PROOF');
+                }
                 await api.finance.markAsPaid(actionModal.requestId, new Date().toISOString(), payload.notes || "Liquidado via portal");
             } else if (action === 'RETURN' && payload.notes) {
                 await api.finance.returnForAdjustment(actionModal.requestId, payload.notes);

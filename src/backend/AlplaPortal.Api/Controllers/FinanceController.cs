@@ -345,8 +345,8 @@ public class FinanceController : BaseController
     [HttpPost("{id:guid}/schedule")]
     public async Task<IActionResult> SchedulePayment(Guid id, [FromBody] FinanceActionRequestDto requestDto)
     {
-        var r = await (await GetScopedRequestsQuery()).Include(req => req.Status).FirstOrDefaultAsync(req => req.Id == id);
-        if (r == null) return NotFound();
+        var r = await _context.Requests.Include(req => req.Status).FirstOrDefaultAsync(req => req.Id == id);
+        if (r == null || !await (await GetScopedRequestsQuery()).AnyAsync(req => req.Id == id)) return NotFound();
 
         var scheduledStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == RequestConstants.Statuses.PaymentScheduled);
         if (scheduledStatus == null) return BadRequest("Status SCHEDULED não configurado.");
@@ -375,8 +375,8 @@ public class FinanceController : BaseController
     [HttpPost("{id:guid}/pay")]
     public async Task<IActionResult> MarkAsPaid(Guid id, [FromBody] FinanceActionRequestDto requestDto)
     {
-        var r = await (await GetScopedRequestsQuery()).Include(req => req.Status).FirstOrDefaultAsync(req => req.Id == id);
-        if (r == null) return NotFound();
+        var r = await _context.Requests.Include(req => req.Status).FirstOrDefaultAsync(req => req.Id == id);
+        if (r == null || !await (await GetScopedRequestsQuery()).AnyAsync(req => req.Id == id)) return NotFound();
 
         var paidStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == RequestConstants.Statuses.PaymentCompleted || s.Code == RequestConstants.Statuses.Paid);
         if (paidStatus == null) return BadRequest("Status PAID não configurado.");
@@ -405,8 +405,8 @@ public class FinanceController : BaseController
     public async Task<IActionResult> AddNote(Guid id, [FromBody] FinanceActionRequestDto requestDto)
     {
         if (string.IsNullOrWhiteSpace(requestDto.Notes)) return BadRequest();
-        var r = await (await GetScopedRequestsQuery()).Include(req => req.Status).FirstOrDefaultAsync(req => req.Id == id);
-        if (r == null) return NotFound();
+        var r = await _context.Requests.Include(req => req.Status).FirstOrDefaultAsync(req => req.Id == id);
+        if (r == null || !await (await GetScopedRequestsQuery()).AnyAsync(req => req.Id == id)) return NotFound();
 
         _context.RequestStatusHistories.Add(new RequestStatusHistory
         {
@@ -426,8 +426,8 @@ public class FinanceController : BaseController
     [HttpPost("{id:guid}/return")]
     public async Task<IActionResult> ReturnForAdjustment(Guid id, [FromBody] FinanceActionRequestDto requestDto)
     {
-        var r = await (await GetScopedRequestsQuery()).Include(req => req.Status).FirstOrDefaultAsync(req => req.Id == id);
-        if (r == null) return NotFound();
+        var r = await _context.Requests.Include(req => req.Status).FirstOrDefaultAsync(req => req.Id == id);
+        if (r == null || !await (await GetScopedRequestsQuery()).AnyAsync(req => req.Id == id)) return NotFound();
 
         var returnStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == RequestConstants.Statuses.WaitingPoCorrection);
         if (returnStatus == null) return StatusCode(500, "Status de destino não configurado no sistema.");

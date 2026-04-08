@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DropdownPortal } from '../ui/DropdownPortal';
 import { Z_INDEX } from '../../constants/ui';
@@ -63,6 +63,7 @@ export function FinanceActionModal({
     // Determine button disabled state
     const isConfirmDisabled = processing || 
         (action === 'SCHEDULE' && !date) || 
+        (action === 'PAY' && !file) ||
         (isCommentRequired && !notes.trim());
 
     const inputStyle = {
@@ -134,6 +135,19 @@ export function FinanceActionModal({
                                 />
                                 <label style={{ display: 'block', marginTop: '16px', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
                                     Comprovante de Agendamento (opcional)
+                                </label>
+                                <input
+                                    type="file"
+                                    onChange={(e) => setFile(e.target.files && e.target.files.length > 0 ? e.target.files[0] : null)}
+                                    style={{...inputStyle, padding: '8px 10px'}}
+                                />
+                            </div>
+                        )}
+
+                        {action === 'PAY' && (
+                            <div style={{ marginBottom: '24px' }}>
+                                <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
+                                    Comprovante de Pagamento (obrigatório)
                                 </label>
                                 <input
                                     type="file"
