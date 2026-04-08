@@ -68,37 +68,35 @@ export default function FinanceOverview() {
                     <button
                         onClick={() => setSelectedCompanyId(null)}
                         style={{
-                            padding: '10px 16px',
-                            backgroundColor: selectedCompanyId === null ? '#0f172a' : '#f1f5f9',
-                            color: selectedCompanyId === null ? '#fff' : '#475569',
-                            border: '2px solid #0f172a',
-                            fontWeight: 800,
-                            fontSize: '13px',
-                            textTransform: 'uppercase',
+                            padding: '8px 16px',
+                            backgroundColor: selectedCompanyId === null ? 'var(--color-primary)' : 'var(--color-bg-surface)',
+                            color: selectedCompanyId === null ? '#fff' : 'var(--color-text-muted)',
+                            border: selectedCompanyId === null ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                            borderRadius: '8px',
+                            fontWeight: 600,
+                            fontSize: '14px',
                             cursor: 'pointer',
-                            boxShadow: selectedCompanyId === null ? 'none' : '2px 2px 0 #0f172a',
-                            transform: selectedCompanyId === null ? 'translate(2px, 2px)' : 'none',
-                            transition: 'all 0.1s'
+                            transition: 'all 0.2s',
+                            boxShadow: selectedCompanyId === null ? '0 4px 6px rgba(0,0,0,0.1)' : '0 1px 2px rgba(0,0,0,0.05)',
                         }}
                     >
-                        CONSOLIDADO GLOBAL
+                        Consolidado Global
                     </button>
                     {companies.map(c => (
                         <button
                             key={c.id}
                             onClick={() => setSelectedCompanyId(c.id)}
                             style={{
-                                padding: '10px 16px',
-                                backgroundColor: selectedCompanyId === c.id ? '#0f172a' : '#fff',
-                                color: selectedCompanyId === c.id ? '#fff' : '#0f172a',
-                                border: '2px solid #0f172a',
-                                fontWeight: 800,
-                                fontSize: '13px',
-                                textTransform: 'uppercase',
+                                padding: '8px 16px',
+                                backgroundColor: selectedCompanyId === c.id ? 'var(--color-primary)' : 'var(--color-bg-surface)',
+                                color: selectedCompanyId === c.id ? '#fff' : 'var(--color-text-muted)',
+                                border: selectedCompanyId === c.id ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                borderRadius: '8px',
+                                fontWeight: 600,
+                                fontSize: '14px',
                                 cursor: 'pointer',
-                                boxShadow: selectedCompanyId === c.id ? 'none' : '2px 2px 0 #0f172a',
-                                transform: selectedCompanyId === c.id ? 'translate(2px, 2px)' : 'none',
-                                transition: 'all 0.1s'
+                                transition: 'all 0.2s',
+                                boxShadow: selectedCompanyId === c.id ? '0 4px 6px rgba(0,0,0,0.1)' : '0 1px 2px rgba(0,0,0,0.05)',
                             }}
                         >
                             {c.name}
@@ -112,70 +110,69 @@ export default function FinanceOverview() {
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px',
-                        padding: '10px 16px',
-                        backgroundColor: '#1e293b',
-                        color: '#fff',
-                        border: '2px solid #0f172a',
-                        fontWeight: 800,
-                        fontSize: '13px',
-                        textTransform: 'uppercase',
+                        padding: '8px 16px',
+                        backgroundColor: 'var(--color-bg-surface)',
+                        color: 'var(--color-text-muted)',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: '8px',
+                        fontWeight: 600,
+                        fontSize: '14px',
                         cursor: 'pointer',
-                        boxShadow: '2px 2px 0 #0f172a',
-                        transition: 'all 0.1s'
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                        transition: 'all 0.2s'
                     }}
-                    onMouseOver={(e) => (e.currentTarget.style.transform = 'translate(-2px, -2px)', e.currentTarget.style.boxShadow = '4px 4px 0 #0f172a')}
-                    onMouseOut={(e) => (e.currentTarget.style.transform = 'translate(0, 0)', e.currentTarget.style.boxShadow = '2px 2px 0 #0f172a')}
-                    onMouseDown={(e) => (e.currentTarget.style.transform = 'translate(2px, 2px)', e.currentTarget.style.boxShadow = '0 0 0 #0f172a')}
+                    onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'; e.currentTarget.style.color = 'var(--color-text)'; }}
+                    onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; e.currentTarget.style.color = 'var(--color-text-muted)'; }}
                 >
-                    <BookOpen size={18} /> COMO LER ESTE PAINEL
+                    <BookOpen size={18} /> Guia Financeiro
                 </button>
             </div>
 
             {/* KPI Cards Row */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '24px' }}>
-                <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '2px solid var(--color-border)', boxShadow: 'var(--shadow-brutal)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                        <span style={{ fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Aguardando Ação</span>
-                        <Clock size={24} color="#0284c7" />
+                <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <span style={{ fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Aguardando Ação</span>
+                        <Clock size={20} color="#0284c7" />
                     </div>
-                    <div style={{ fontSize: '3rem', fontWeight: 900, lineHeight: 1 }}>{summary.waitingFinanceAction}</div>
-                    <div style={{ marginTop: '8px', fontSize: '1.2rem', fontWeight: 'bold' }}>
+                    <div style={{ fontSize: '2.5rem', fontWeight: 700, lineHeight: 1, color: 'var(--color-text)' }}>{summary.waitingFinanceAction}</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>
                         {formatCurrency(summary.pendingValue, summary.currencyCodes?.[0])}
                     </div>
                 </div>
 
-                <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '2px solid var(--color-border)', boxShadow: 'var(--shadow-brutal)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                        <span style={{ fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Agendados</span>
-                        <CheckCircle size={24} color="#ea580c" />
+                <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <span style={{ fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Agendados</span>
+                        <CheckCircle size={20} color="#ea580c" />
                     </div>
-                    <div style={{ fontSize: '3rem', fontWeight: 900, lineHeight: 1 }}>{summary.scheduledPayments}</div>
-                    <div style={{ marginTop: '8px', fontSize: '1.2rem', fontWeight: 'bold' }}>
+                    <div style={{ fontSize: '2.5rem', fontWeight: 700, lineHeight: 1, color: 'var(--color-text)' }}>{summary.scheduledPayments}</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>
                         {formatCurrency(summary.scheduledValue, summary.currencyCodes?.[0])}
                     </div>
                 </div>
 
-                <div style={{ backgroundColor: '#fef2f2', padding: '24px', border: '2px solid #ef4444', boxShadow: '4px 4px 0 #ef4444', cursor: 'pointer', transition: 'all 0.1s' }} 
+                <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #fca5a5', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', gap: '8px' }} 
                      onClick={() => navigate('/finance/payments?filter=overdue')}
-                     onMouseOver={(e) => e.currentTarget.style.transform = 'translate(-2px, -2px)'}
-                     onMouseOut={(e) => e.currentTarget.style.transform = 'none'}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                        <span style={{ fontWeight: 800, textTransform: 'uppercase', color: '#b91c1c' }}>Pagtos. Vencidos</span>
-                        <AlertCircle size={24} color="#ef4444" />
+                     onMouseOver={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 12px rgba(239, 68, 68, 0.1)'; }}
+                     onMouseOut={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.05)'; }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <span style={{ fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', color: '#ef4444' }}>Pagtos. Vencidos</span>
+                        <AlertCircle size={20} color="#ef4444" />
                     </div>
-                    <div style={{ fontSize: '3rem', fontWeight: 900, lineHeight: 1, color: '#b91c1c' }}>{summary.overduePayments}</div>
-                    <div style={{ marginTop: '8px', fontSize: '1.2rem', fontWeight: 'bold', color: '#b91c1c' }}>
+                    <div style={{ fontSize: '2.5rem', fontWeight: 700, lineHeight: 1, color: '#ef4444' }}>{summary.overduePayments}</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 600, color: '#ef4444' }}>
                         {formatCurrency(summary.overdueValue, summary.currencyCodes?.[0])}
                     </div>
                 </div>
 
-                <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '2px solid var(--color-border)', boxShadow: 'var(--shadow-brutal)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                        <span style={{ fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Pago no Mês</span>
-                        <DollarSign size={24} color="#16a34a" />
+                <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <span style={{ fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Pago no Mês</span>
+                        <DollarSign size={20} color="#16a34a" />
                     </div>
-                    <div style={{ fontSize: '2.5rem', fontWeight: 900, lineHeight: 1, color: '#16a34a' }}>{summary.completedThisMonth}</div>
-                    <div style={{ marginTop: '8px', fontSize: '1.2rem', fontWeight: 'bold' }}>
+                    <div style={{ fontSize: '2.5rem', fontWeight: 700, lineHeight: 1, color: '#16a34a' }}>{summary.completedThisMonth}</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>
                         {formatCurrency(summary.paidThisMonthValue, summary.currencyCodes?.[0])}
                     </div>
                 </div>
@@ -185,8 +182,8 @@ export default function FinanceOverview() {
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
                 
                 {/* Projeção de Fluxo de Caixa */}
-                <div style={{ backgroundColor: '#fff', border: '2px solid var(--color-border)', padding: '24px', boxShadow: 'var(--shadow-brutal)' }}>
-                    <h3 style={{ fontSize: '1.2rem', fontWeight: 900, textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <TrendingUp size={20} color="#0284c7" /> Projeção de Fluxo de Caixa
                     </h3>
                     <p style={{ margin: '0 0 24px 0', color: '#64748b', fontSize: '14px', fontWeight: 500 }}>Previsão de saída para os próximos 15 dias baseado em agendamentos faturados.</p>
@@ -214,8 +211,8 @@ export default function FinanceOverview() {
                 </div>
 
                 {/* Exposição Cambial */}
-                <div style={{ backgroundColor: '#fff', border: '2px solid var(--color-border)', padding: '24px', boxShadow: 'var(--shadow-brutal)' }}>
-                    <h3 style={{ fontSize: '1.2rem', fontWeight: 900, textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <Presentation size={20} color="#ea580c" /> Exposição Cambial
                     </h3>
                     <p style={{ margin: '0 0 24px 0', color: '#64748b', fontSize: '14px', fontWeight: 500 }}>Montantes pendentes fragmentados por moeda circulante.</p>
@@ -250,8 +247,8 @@ export default function FinanceOverview() {
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr)', gap: '24px' }}>
                 
                 {/* Aging */}
-                <div style={{ backgroundColor: '#fff', padding: '24px', border: '2px solid var(--color-border)', boxShadow: 'var(--shadow-brutal)' }}>
-                    <h3 style={{ fontSize: '1.2rem', fontWeight: 900, textTransform: 'uppercase', marginBottom: '24px' }}>Idade da Fila (Aging)</h3>
+                <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '24px' }}>Idade da Fila (Aging)</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         {agingData.map((d) => {
                             const maxItems = Math.max(...agingData.map(x=>x.items), 1);
@@ -269,8 +266,8 @@ export default function FinanceOverview() {
                 </div>
 
                 {/* Concentração de Pedidos (Top Fornecedores) */}
-                <div style={{ backgroundColor: '#fff', padding: '24px', border: '2px solid var(--color-border)', boxShadow: 'var(--shadow-brutal)' }}>
-                    <h3 style={{ fontSize: '1.2rem', fontWeight: 900, textTransform: 'uppercase', marginBottom: '24px' }}>Top 5 Fornecedores Pendentes</h3>
+                <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '24px' }}>Top 5 Fornecedores Pendentes</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                         {summary.topSuppliers && summary.topSuppliers.length > 0 ? summary.topSuppliers.map((supplier, idx) => (
                             <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8px', borderBottom: idx < summary.topSuppliers.length - 1 ? '1px dashed #e2e8f0' : 'none' }}>
@@ -293,8 +290,8 @@ export default function FinanceOverview() {
                 </div>
 
                 {/* Atenção Imediata (Refactored to be narrower) */}
-                <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '2px solid var(--color-border)', boxShadow: 'var(--shadow-brutal)', display: 'flex', flexDirection: 'column' }}>
-                    <h3 style={{ fontSize: '1.2rem', fontWeight: 900, textTransform: 'uppercase', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column' }}>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <AlertTriangle size={20} color="#b91c1c" /> Atenção Imediata
                     </h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, overflowY: 'auto' }}>
@@ -401,10 +398,19 @@ export default function FinanceOverview() {
                                 <div>
                                     <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>Idade da Fila (Aging)</h4>
                                     <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
-                                        <strong>O que é:</strong> Dos processos marcados como "Aguardando Ação", há quantos dias o requisitante foi notificado pela máquina e a bola está com Finanças?
+                                        <strong>O que é:</strong> Mostra há quanto tempo os processos estão parados na fila de trabalho das Finanças, sem avanço. O objetivo é identificar rapidamente o que está dentro do prazo e o que já está demorando mais do que o esperado.
                                     </p>
+                                    <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                                        <strong>Como ler:</strong><br />
+                                        Os processos são agrupados por faixa de tempo, por exemplo:
+                                    </p>
+                                    <ul style={{ margin: '0 0 16px 20px', fontSize: '14px', color: '#334155', lineHeight: 1.6 }}>
+                                        <li><strong>0-2 dias</strong> &rarr; itens recentes, ainda dentro do fluxo normal</li>
+                                        <li><strong>3-5 dias</strong> &rarr; itens que pedem atenção</li>
+                                        <li><strong>+5 dias</strong> &rarr; itens com atraso ou risco de impacto no pagamento</li>
+                                    </ul>
                                     <p style={{ margin: 0, fontSize: '14px', backgroundColor: '#f1f5f9', padding: '8px', borderLeft: '4px solid #94a3b8' }}>
-                                        <em>Exemplo prático:</em> Barras quentes (+5 Dias altas) mostram que a esteira da tesouraria está extremamente ineficiente e perdendo os descontos/prazos contratuais de pagamento com faturas seguradas dentro da própria casa.
+                                        <em>Exemplo prático:</em> Se houver muitos processos na faixa <strong>+5 dias</strong>, isso pode indicar acúmulo, atraso de validação ou risco de perder prazos acordados com fornecedores.
                                     </p>
                                 </div>
                             </div>

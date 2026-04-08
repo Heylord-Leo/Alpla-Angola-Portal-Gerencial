@@ -43,6 +43,16 @@ public static class ExtractionMapper
                 }).ToList(),
                 LineItemsRequireReview = true,
                 ReviewRequired = true
+            },
+            Metadata = new Dictionary<string, object>
+            {
+                { "promptTokens", internalResult.Metadata?.PromptTokens ?? 0 },
+                { "completionTokens", internalResult.Metadata?.CompletionTokens ?? 0 },
+                { "totalTokens", internalResult.Metadata?.TotalTokens ?? 0 },
+                { "pagesProcessed", internalResult.Metadata?.PagesProcessed ?? 0 },
+                { "processingDpi", internalResult.Metadata?.ProcessingDpi ?? 0 },
+                { "processingFormat", internalResult.Metadata?.ProcessingFormat ?? "unknown" },
+                { "provider", internalResult.ProviderName ?? "OPENAI" }
             }
         };
     }

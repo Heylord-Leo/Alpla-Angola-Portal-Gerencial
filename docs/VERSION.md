@@ -2,7 +2,15 @@
 
 ## Current Version
 
-v2.39.2
+v2.39.4
+
+## [2.39.4] - 2026-04-08
+
+### Added
+- **Token & Cost Observability**: Extracted and mapped OpenAI token consumption (Prompt, Completion, Total) directly into `ExtractionResultDto.Metadata`.
+
+### Changed
+- **Adaptive Document Rasterization Engine (Phase 1)**: Overhauled the OCR PDF rendering behavior inside `OpenAiDocumentExtractionProvider` (JPEG at 150 DPI, max 3 pages).
 
 ## [2.39.2] - 2026-04-08
 

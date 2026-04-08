@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.39.4] - 2026-04-08
+
+### Added
+
+- **Token & Cost Observability**: Extracted and mapped OpenAI token consumption (Prompt, Completion, Total) directly into `ExtractionResultDto.Metadata`. This telemetry is seamlessly exposed to the frontend payload, guaranteeing baseline observability for token consumption modeling.
+- **Provider Payload Telemetry**: Added diagnostic logging in `OpenAiDocumentExtractionProvider` pointing exactly to the payload character size sent to the GPT Vision layer, further solidifying observability.
+
+### Changed
+
+- **Adaptive Document Rasterization Engine (Phase 1)**: Overhauled the OCR PDF rendering layer inside `OpenAiDocumentExtractionProvider` to decisively slash overarching token burn rates.
+  - Transferred image projection output from lossless PNG to compressed `ImageFormat.Jpeg` (Quality: 85).
+  - Reduced default rasterization limits from `300 DPI` to `150 DPI`, allowing smaller tile allocations in OpenAI's Vision model while preserving reading integrity.
+  - Bounded initial analysis to `3 pages` max for financial invoices, averting runaway extraction over long procedural annexes.
+  - Intercalated a `DocumentRenderProfile` structure to allow fluid, programmatic switching of DPI/quality policies pending future `Contract` analysis needs.
+
+### Fixed
+
+- **OpenAI Vision Payload Inflation**: Resolved a systemic token-burn issue where OpenAI billed ~37,000 prompt tokens per JPEG page due to `System.Text.Json` escaping base64 characters (e.g. `+` to `\u002B`). Injected `JavaScriptEncoder.UnsafeRelaxedJsonEscaping` during payload construction to maintain standard Base64 integrity, allowing OpenAI to successfully process images as native tiles rather than enormous unstructured textual arrays.
+
 ## [2.39.3] - 2026-04-08
 
 ### Added

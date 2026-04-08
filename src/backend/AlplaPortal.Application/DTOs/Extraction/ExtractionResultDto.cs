@@ -22,6 +22,16 @@ public class ExtractionLineItemDto
     public decimal? TaxRate { get; set; }
 }
 
+public class ExtractionMetadataDto
+{
+    public int PromptTokens { get; set; }
+    public int CompletionTokens { get; set; }
+    public int TotalTokens { get; set; }
+    public int PagesProcessed { get; set; }
+    public int ProcessingDpi { get; set; }
+    public string ProcessingFormat { get; set; } = string.Empty;
+}
+
 public class ExtractionResultDto
 {
     public bool Success { get; set; }
@@ -29,4 +39,5 @@ public class ExtractionResultDto
     public List<ExtractionLineItemDto> Items { get; set; } = new();
     public string? ProviderName { get; set; }
     public decimal QualityScore { get; set; }
+    public ExtractionMetadataDto Metadata { get; set; } = new();
 }

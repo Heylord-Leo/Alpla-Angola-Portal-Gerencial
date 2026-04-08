@@ -102,4 +102,7 @@ public class OcrExtractionResultDto
 
     [JsonPropertyName("integration")]
     public OcrIntegrationDto Integration { get; set; } = new();
+
+    [JsonPropertyName("metadata")]
+    public Dictionary<string, object> Metadata { get; set; } = new();
 }

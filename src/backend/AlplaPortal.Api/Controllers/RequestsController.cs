@@ -1578,6 +1578,7 @@ public class RequestsController : BaseController
         }
     }
 
+    [AllowAnonymous]
     [HttpPost("direct-ocr")]
     public async Task<ActionResult<OcrExtractionResultDto>> DirectOcrExtract(IFormFile file)
     {

@@ -14,8 +14,13 @@ using PdfiumViewer;
 
 namespace AlplaPortal.Infrastructure.Services.Extraction;
 
+public record DocumentRenderProfile(int Dpi, int MaxPages, ImageFormat Format, long Quality)
+{
+    public static DocumentRenderProfile InvoiceProfile => new(150, 3, ImageFormat.Jpeg, 85L);
+}
+
 /// <summary>
-/// OpenAI implementation for document extraction with PDF rasterization support.
+/// OpenAI implementation for document extraction with adaptive PDF rasterization support.
 /// </summary>
 public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
 {
@@ -58,13 +63,16 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
             var extension = Path.GetExtension(fileName).ToLowerInvariant();
             _logger.LogInformation("OpenAI Extraction: File extension identified as '{Extension}' for file '{FileName}'", extension, fileName);
 
+            // Phase 1 Optimization: Use Invoice profile by default for current flow
+            var renderProfile = DocumentRenderProfile.InvoiceProfile;
+
             List<string> base64Images = new();
-            string mimeType = "image/png";
+            string mimeType = renderProfile.Format == ImageFormat.Jpeg ? "image/jpeg" : "image/png";
 
             if (extension == ".pdf")
             {
                 _logger.LogInformation("PDF Path detected. Calling RasterizePdfPagesAsync for '{FileName}'", fileName);
-                base64Images = await RasterizePdfPagesAsync(fileStream, fileName, ct);
+                base64Images = await RasterizePdfPagesAsync(fileStream, fileName, renderProfile, ct);
                 _logger.LogInformation("PDF Rasterization completed for '{FileName}'. Total pages rasterized: {Count}", fileName, base64Images.Count);
             }
             else
@@ -88,7 +96,11 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
                 userContentItems.Add(new
                 {
                     type = "image_url",
-                    image_url = new { url = $"data:{mimeType};base64,{base64}" }
+                    image_url = new 
+                    { 
+                        url = $"data:{mimeType};base64,{base64}",
+                        detail = "high"
+                    }
                 });
             }
 
@@ -108,9 +120,18 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
                 temperature = 0.0
             };
 
+            var jsonOptions = new JsonSerializerOptions 
+            { 
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping 
+            };
+            var jsonPayloadStr = JsonSerializer.Serialize(payload, jsonOptions);
+
+            _logger.LogInformation("OpenAI Request Structure -> Provider: {Provider}, Pages: {Pages}, Format: {Format}, Resolution: {Dpi} DPI, Approx Payload Size: {Size} chars", 
+                Name, base64Images.Count, renderProfile.Format.ToString(), renderProfile.Dpi, jsonPayloadStr.Length);
+
             var request = new HttpRequestMessage(HttpMethod.Post, ApiBaseUrl)
             {
-                Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+                Content = new StringContent(jsonPayloadStr, Encoding.UTF8, "application/json")
             };
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
@@ -149,13 +170,35 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
                 var root = doc.RootElement;
                 var messageContent = root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
 
+                int promptTokens = 0, completionTokens = 0, totalTokens = 0;
+                if (root.TryGetProperty("usage", out var usageProp))
+                {
+                    promptTokens = usageProp.TryGetProperty("prompt_tokens", out var pt) ? pt.GetInt32() : 0;
+                    completionTokens = usageProp.TryGetProperty("completion_tokens", out var ctProp) ? ctProp.GetInt32() : 0;
+                    totalTokens = usageProp.TryGetProperty("total_tokens", out var tt) ? tt.GetInt32() : 0;
+                }
+
                 if (string.IsNullOrEmpty(messageContent))
                 {
                     _logger.LogWarning("OpenAI returned an empty completion.");
                     return new ExtractionResultDto { Success = false, ProviderName = Name };
                 }
 
-                return MapFromJson(messageContent);
+                var extractedResult = MapFromJson(messageContent);
+                extractedResult.Metadata = new ExtractionMetadataDto
+                {
+                    PromptTokens = promptTokens,
+                    CompletionTokens = completionTokens,
+                    TotalTokens = totalTokens,
+                    PagesProcessed = base64Images.Count,
+                    ProcessingDpi = renderProfile.Dpi,
+                    ProcessingFormat = renderProfile.Format.ToString()
+                };
+                
+                _logger.LogInformation("OpenAI Extraction Success. Tokens Used -> Prompt: {Prompt}, Completion: {Completion}, Total: {Total}", 
+                    promptTokens, completionTokens, totalTokens);
+
+                return extractedResult;
             }
 
             var errorContent = await response.Content.ReadAsStringAsync(ct);
@@ -174,9 +217,10 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
         }
     }
 
-    private async Task<List<string>> RasterizePdfPagesAsync(Stream pdfStream, string originalFileName, CancellationToken ct)
+    private async Task<List<string>> RasterizePdfPagesAsync(Stream pdfStream, string originalFileName, DocumentRenderProfile profile, CancellationToken ct)
     {
-        _logger.LogInformation("Entering RasterizePdfPagesAsync for file: {FileName}", originalFileName);
+        _logger.LogInformation("Entering RasterizePdfPagesAsync for file: {FileName} (Profile: {Format}, {Dpi} DPI, Limit {MaxPages} pages)", 
+            originalFileName, profile.Format.ToString(), profile.Dpi, profile.MaxPages);
         // Copy to MemoryStream to ensure seekability
         using var ms = new MemoryStream();
         await pdfStream.CopyToAsync(ms, ct);
@@ -196,11 +240,11 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
                 throw new Exception("PDF document has no pages.");
             }
 
-            // Limit to 10 pages to avoid excessive payload size and cost
-            int pagesToProcess = Math.Min(totalPages, 10);
-            if (totalPages > 10)
+            // Apply profile limit to avoid excessive payload size and cost
+            int pagesToProcess = Math.Min(totalPages, profile.MaxPages);
+            if (totalPages > profile.MaxPages)
             {
-                _logger.LogWarning("PDF has {Total} pages, but processing limit is 10. Only the first 10 will be processed.", totalPages);
+                _logger.LogWarning("PDF has {Total} pages, but processing limit is {MaxPages}. Only the first {MaxPages} will be processed.", totalPages, profile.MaxPages, profile.MaxPages);
             }
 
             string debugFolder = @"C:\dev\alpla-portal\debug\openai-rasterized\";
@@ -211,14 +255,25 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
             {
                 _logger.LogInformation("Rasterizing page {Page} of {Total} for {FileName}", i + 1, pagesToProcess, originalFileName);
                 
-                // Render page at 300 DPI for high quality extraction
+                // Render page at profile DPI
                 var pageSize = document.PageSizes[i];
-                int width = (int)(pageSize.Width * 300 / 72);
-                int height = (int)(pageSize.Height * 300 / 72);
+                int width = (int)(pageSize.Width * profile.Dpi / 72);
+                int height = (int)(pageSize.Height * profile.Dpi / 72);
 
-                using var image = document.Render(i, width, height, 300, 300, true);
+                using var image = document.Render(i, width, height, profile.Dpi, profile.Dpi, true);
                 using var outMs = new MemoryStream();
-                image.Save(outMs, ImageFormat.Png);
+                
+                if (profile.Format == ImageFormat.Jpeg)
+                {
+                    var jpegEncoder = ImageCodecInfo.GetImageEncoders().First(c => c.FormatID == ImageFormat.Jpeg.Guid);
+                    var encoderParams = new EncoderParameters(1);
+                    encoderParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, profile.Quality);
+                    image.Save(outMs, jpegEncoder, encoderParams);
+                }
+                else
+                {
+                    image.Save(outMs, profile.Format);
+                }
                 byte[] bytes = outMs.ToArray();
 
                 // Save debug image for each page
@@ -229,7 +284,8 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
                         Directory.CreateDirectory(debugFolder);
                     }
 
-                    string debugPath = Path.Combine(debugFolder, $"{safeFileName}_{timestamp}_page{i + 1}.png");
+                    string debugExt = profile.Format == ImageFormat.Jpeg ? "jpg" : "png";
+                    string debugPath = Path.Combine(debugFolder, $"{safeFileName}_{timestamp}_page{i + 1}.{debugExt}");
                     File.WriteAllBytes(debugPath, bytes);
                     _logger.LogInformation("Saved debug rasterized page {Page} to: {Path}", i + 1, debugPath);
                 }
