@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 import { Link, useLocation, useSearchParams, useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, Search, Filter, FileText, CheckCircle2, X, Pencil, Trash2, ArrowLeft, AlertCircle, RefreshCcw, Hash, Calendar, UserPlus, AlertTriangle } from 'lucide-react';
+import { useAuth } from '../../features/auth/AuthContext';
 import { api } from '../../lib/api';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { formatCurrencyAO, formatDate, getUrgencyStyle, computeFileHash, formatDateTime } from '../../lib/utils';
@@ -136,6 +137,7 @@ export function BuyerItemsList() {
     const [totalCount, setTotalCount] = useState(0);
 
     const { mapOcrResultToDraft, calculateItemTotal, calculateDraftTotal } = useOcrProcessor(ivaRates, units, currencies);
+    const { user: currentUser } = useAuth();
 
     const location = useLocation();
     const locationState = location.state as { successMessage?: string, fromList?: string } | null;
@@ -453,13 +455,7 @@ export function BuyerItemsList() {
         });
     };
 
-    const handleUpdateQuotationDiscount = (requestId: string, val: number) => {
-        setQuotationDrafts(prev => {
-            const draft = { ...prev[requestId], discountAmount: val };
-            draft.totalAmount = calculateDraftTotal(draft);
-            return { ...prev, [requestId]: draft };
-        });
-    };
+    // Global discount logic replaced by item-level discounts (Option A)
 
     // Local calculation logic moved to shared useOcrProcessor hook
 
@@ -650,6 +646,7 @@ export function BuyerItemsList() {
                     quantity: item.quantity,
                     unitId: item.unitId,
                     unitPrice: item.unitPrice,
+                    discountAmount: item.discountAmount || 0,
                     ivaRateId: item.ivaRateId
                 }))
             };
@@ -678,6 +675,38 @@ export function BuyerItemsList() {
         } catch (error: any) {
             setFeedback({ type: 'error', message: error.message || 'Erro ao salvar cotação.' });
         } finally {
+            setIsSaving(false);
+        }
+    };
+
+
+    const handleCancelQuotation = async (requestId: string) => {
+        try {
+            const draft = quotationDrafts[requestId];
+            const isEditing = !!editingQuotationId[requestId];
+            
+            // If creating a NEW quotation from OCR, the attachment was pre-uploaded. Clean it up.
+            if (!isEditing && draft?.proformaAttachmentId && addQuotationMode[requestId] === 'UPLOAD') {
+                setIsSaving(true);
+                try {
+                    await api.attachments.delete(draft.proformaAttachmentId);
+                } catch (e) {
+                    console.warn("Failed to delete orphaned attachment on cancel", e);
+                }
+                setIsSaving(false);
+            }
+
+            // Cleanup flow state
+            setQuotationFlowStep(prev => { const n = { ...prev }; delete n[requestId]; return n; });
+            setQuotationDrafts(prev => { const n = { ...prev }; delete n[requestId]; return n; });
+            setAddQuotationMode(prev => { const n = { ...prev }; delete n[requestId]; return n; });
+            setOcrResults(prev => { const n = { ...prev }; delete n[requestId]; return n; });
+            setEditingQuotationId(prev => { const n = { ...prev }; delete n[requestId]; return n; });
+            setDraftProformaFiles(prev => { const n = { ...prev }; delete n[requestId]; return n; });
+            setImportSelectedFiles(prev => { const n = { ...prev }; delete n[requestId]; return n; });
+            setFormErrors(prev => { const n = { ...prev }; delete n[requestId]; return n; });
+        } catch (error) {
+            console.error("Error cancelling quotation:", error);
             setIsSaving(false);
         }
     };
@@ -1047,10 +1076,11 @@ export function BuyerItemsList() {
                 ) : (
                     groupedRequests.map((group) => {
                         const isExpanded = expandedRequests.has(group.requestId);
+                        const isAssignedToMe = group.buyerId === currentUser?.id;
                         const urgency = getUrgencyStyle(group.needByDateUtc, group.requestStatusCode);
                         const actionBadge = getActionBadge(group.requestStatusCode);
                         const isAdjustmentPhase = group.requestStatusCode === 'AREA_ADJUSTMENT' || group.requestStatusCode === 'FINAL_ADJUSTMENT';
-                        const canMutateQuotation = ['DRAFT', 'WAITING_QUOTATION', 'AREA_ADJUSTMENT', 'FINAL_ADJUSTMENT'].includes(group.requestStatusCode);
+                        const canMutateQuotation = ['DRAFT', 'WAITING_QUOTATION', 'AREA_ADJUSTMENT', 'FINAL_ADJUSTMENT'].includes(group.requestStatusCode) && isAssignedToMe;
 
                         return (
                             <div key={group.requestId} style={{
@@ -1138,16 +1168,16 @@ export function BuyerItemsList() {
                                         }}>
                                             {actionBadge.label}
                                         </span>
-                                        {!group.buyerId && (
+                                        {group.buyerId !== currentUser?.id && (
                                             <button 
                                                 onClick={(e) => { e.stopPropagation(); handleAssignToMe(group.requestId); }}
                                                 disabled={isSaving}
                                                 style={{ 
                                                     backgroundColor: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '4px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 800, cursor: isSaving ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '4px', textTransform: 'uppercase', boxShadow: '2px 2px 0px rgba(0,0,0,0.15)' 
                                                 }}
-                                                title="Reivindicar pedido para mim"
+                                                title={group.buyerId ? "Reatribuir este pedido para mim" : "Reivindicar pedido para mim"}
                                             >
-                                                <UserPlus size={14} /> Atribuir a Mim
+                                                <UserPlus size={14} /> {group.buyerId ? "Assumir Pedido" : "Atribuir a Mim"}
                                             </button>
                                         )}
                                         <Link
@@ -1539,7 +1569,7 @@ export function BuyerItemsList() {
                                                         Nenhuma cotação ou documento registrado para este pedido.
                                                     </p>
                                                     <p style={{ margin: '4px 0 0', color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>
-                                                        Utilize a Seção B abaixo para adicionar a primeira cotação.
+                                                        {isAssignedToMe ? 'Utilize a Seção B abaixo para adicionar a primeira cotação.' : 'Atribua o pedido a você para adicionar cotações e documentos.'}
                                                     </p>
                                                 </div>
                                             )}
@@ -2005,7 +2035,7 @@ export function BuyerItemsList() {
                                                                                             <span></span>
                                                                                         </div>
                                                                                         {quotationDrafts[group.requestId].items.map((item, idx) => (
-                                                                                            <div key={idx} style={{ display: 'grid', gridTemplateColumns: '40px minmax(150px, 1fr) 80px 100px 100px 110px 120px 40px', gap: '8px', alignItems: 'center', padding: '12px', backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                                                                                            <div key={idx} style={{ display: 'grid', gridTemplateColumns: '40px minmax(150px, 1fr) 60px 80px 100px 100px 110px 120px 40px', gap: '8px', alignItems: 'center', padding: '12px', backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
                                                                                                 <div style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--color-text-muted)', textAlign: 'center' }}>{item.lineNumber}</div>
                                                                                                 <input 
                                                                                                     value={item.description}
@@ -2040,6 +2070,12 @@ export function BuyerItemsList() {
                                                                                                     type="number"
                                                                                                     value={item.unitPrice || ''}
                                                                                                     onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'unitPrice', parseFloat(e.target.value) || 0)}
+                                                                                                    style={{ padding: '8px', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.8rem', textAlign: 'right', WebkitAppearance: 'none', MozAppearance: 'textfield' }}
+                                                                                                />
+                                                                                                <input 
+                                                                                                    type="number"
+                                                                                                    value={item.discountAmount || ''}
+                                                                                                    onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'discountAmount', parseFloat(e.target.value) || 0)}
                                                                                                     style={{ padding: '8px', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.8rem', textAlign: 'right', WebkitAppearance: 'none', MozAppearance: 'textfield' }}
                                                                                                 />
                                                                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -2088,15 +2124,14 @@ export function BuyerItemsList() {
                                                                                     </div>
                                                                                 </div>
                                                                                 <div style={{ textAlign: 'left' }}>
-                                                                                    <div style={{ fontSize: '0.7rem', fontWeight: 900, color: '#0369a1', textTransform: 'uppercase', marginBottom: '4px' }}>Valor Desc. Global</div>
-                                                                                    <input 
-                                                                                        type="number"
-                                                                                        min="0"
-                                                                                        value={quotationDrafts[group.requestId].discountAmount || ''}
-                                                                                        onChange={(e) => handleUpdateQuotationDiscount(group.requestId, parseFloat(e.target.value) || 0)}
-                                                                                        style={{ width: '120px', padding: '6px 10px', border: '2px solid #bae6fd', borderRadius: '4px', fontSize: '1rem', fontWeight: 700, color: '#dc2626', textAlign: 'right' }}
-                                                                                        placeholder="0.00"
-                                                                                    />
+                                                                                    <div style={{ fontSize: '0.7rem', fontWeight: 900, color: '#0369a1', textTransform: 'uppercase', marginBottom: '4px' }}>Valor Desc. Itens</div>
+                                                                                    <div style={{ fontSize: '1rem', fontWeight: 800, color: '#dc2626' }}>
+                                                                                        {(() => {
+                                                                                            const items = quotationDrafts[group.requestId]?.items || [];
+                                                                                            const totalDiscount = items.reduce((sum, item) => sum + (Number(item.discountAmount) || 0), 0);
+                                                                                            return formatCurrencyAO(totalDiscount);
+                                                                                        })()}
+                                                                                    </div>
                                                                                 </div>
                                                                                 <div style={{ textAlign: 'left' }}>
                                                                                     <div style={{ fontSize: '0.7rem', fontWeight: 900, color: '#0369a1', textTransform: 'uppercase' }}>Valor Total IVA</div>
@@ -2104,18 +2139,15 @@ export function BuyerItemsList() {
                                                                                         {(() => {
                                                                                             const draft = quotationDrafts[group.requestId];
                                                                                             const items = draft?.items || [];
-                                                                                            const gross = items.reduce((sum, item) => sum + ((item.quantity||0) * (item.unitPrice||0)), 0);
                                                                                             const iva = items.reduce((sum, item) => {
                                                                                                 const itemGross = (item.quantity||0) * (item.unitPrice||0);
+                                                                                                const itemDiscount = Number(item.discountAmount) || 0;
+                                                                                                const netSubtotal = Math.max(0, itemGross - itemDiscount);
                                                                                                 const selectedIva = ivaRates.find(r => r.id === item.ivaRateId);
                                                                                                 const ivaPercent = selectedIva ? selectedIva.ratePercent : 0;
-                                                                                                return sum + Math.round(itemGross * (ivaPercent / 100) * 100) / 100;
+                                                                                                return sum + Math.round(netSubtotal * (ivaPercent / 100) * 100) / 100;
                                                                                             }, 0);
-                                                                                            
-                                                                                            const discount = draft.discountAmount || 0;
-                                                                                            const taxableBase = Math.max(0, gross - discount);
-                                                                                            const ratio = gross > 0 ? (taxableBase / gross) : 1;
-                                                                                            return formatCurrencyAO(Math.round(iva * ratio * 100) / 100);
+                                                                                            return formatCurrencyAO(iva);
                                                                                         })()}
                                                                                     </div>
                                                                                 </div>
@@ -2126,35 +2158,57 @@ export function BuyerItemsList() {
                                                                                     </div>
                                                                                 </div>
                                                                             </div>
-                                                                            <button 
-                                                                                 onClick={() => handleSaveQuotation(group.requestId)}
-                                                                                 disabled={isSaving || !quotationDrafts[group.requestId].supplierId}
-                                                                                 style={{ 
-                                                                                     display: 'flex', 
-                                                                                     alignItems: 'center', 
-                                                                                     gap: '8px', 
-                                                                                     backgroundColor: editingQuotationId[group.requestId] ? '#f97316' : '#059669', // Orange for edit (Step 9.5)
-                                                                                     color: '#fff', 
-                                                                                     padding: '12px 32px', 
-                                                                                     borderRadius: '6px', 
-                                                                                     fontWeight: 900, 
-                                                                                     fontSize: '0.9rem', 
-                                                                                     border: 'none', 
-                                                                                     cursor: (isSaving || !quotationDrafts[group.requestId].supplierId) ? 'not-allowed' : 'pointer', 
-                                                                                     opacity: (isSaving || !quotationDrafts[group.requestId].supplierId) ? 0.6 : 1, 
-                                                                                     marginLeft: '40px',
-                                                                                     transition: 'all 0.2s',
-                                                                                     boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)'
-                                                                                 }}
-                                                                             >
-                                                                                 {isSaving ? (
-                                                                                     <>Processando...</>
-                                                                                 ) : (
-                                                                                     <>
-                                                                                         <CheckCircle2 size={20} /> {editingQuotationId[group.requestId] ? 'ATUALIZAR COTAÇÃO' : 'SALVAR COTAÇÃO'}
-                                                                                     </>
-                                                                                 )}
-                                                                             </button>
+                                                                            <div style={{ display: 'flex', gap: '12px', marginLeft: '40px' }}>
+                                                                                <button 
+                                                                                    onClick={() => handleCancelQuotation(group.requestId)}
+                                                                                    disabled={isSaving}
+                                                                                    style={{ 
+                                                                                        display: 'flex', 
+                                                                                        alignItems: 'center', 
+                                                                                        gap: '8px', 
+                                                                                        backgroundColor: '#fff', 
+                                                                                        color: '#64748b', 
+                                                                                        padding: '12px 24px', 
+                                                                                        borderRadius: '6px', 
+                                                                                        fontWeight: 800, 
+                                                                                        fontSize: '0.9rem', 
+                                                                                        border: '2px solid #e2e8f0', 
+                                                                                        cursor: isSaving ? 'not-allowed' : 'pointer',
+                                                                                        opacity: isSaving ? 0.6 : 1,
+                                                                                        transition: 'all 0.2s'
+                                                                                    }}
+                                                                                >
+                                                                                    <X size={20} /> CANCELAR
+                                                                                </button>
+                                                                                <button 
+                                                                                     onClick={() => handleSaveQuotation(group.requestId)}
+                                                                                     disabled={isSaving || !quotationDrafts[group.requestId].supplierId}
+                                                                                     style={{ 
+                                                                                         display: 'flex', 
+                                                                                         alignItems: 'center', 
+                                                                                         gap: '8px', 
+                                                                                         backgroundColor: editingQuotationId[group.requestId] ? '#f97316' : '#059669', // Orange for edit (Step 9.5)
+                                                                                         color: '#fff', 
+                                                                                         padding: '12px 32px', 
+                                                                                         borderRadius: '6px', 
+                                                                                         fontWeight: 900, 
+                                                                                         fontSize: '0.9rem', 
+                                                                                         border: 'none', 
+                                                                                         cursor: (isSaving || !quotationDrafts[group.requestId].supplierId) ? 'not-allowed' : 'pointer', 
+                                                                                         opacity: (isSaving || !quotationDrafts[group.requestId].supplierId) ? 0.6 : 1, 
+                                                                                         transition: 'all 0.2s',
+                                                                                         boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)'
+                                                                                     }}
+                                                                                 >
+                                                                                     {isSaving ? (
+                                                                                         <>Processando...</>
+                                                                                     ) : (
+                                                                                         <>
+                                                                                             <CheckCircle2 size={20} /> {editingQuotationId[group.requestId] ? 'ATUALIZAR COTAÇÃO' : 'SALVAR COTAÇÃO'}
+                                                                                         </>
+                                                                                     )}
+                                                                                 </button>
+                                                                            </div>
                                                                         </div>
                                                                         {!quotationDrafts[group.requestId].supplierId && (
                                                                             <p style={{ textAlign: 'right', fontSize: '0.75rem', color: '#b91c1c', fontWeight: 700, marginTop: '8px' }}>
@@ -2201,7 +2255,20 @@ export function BuyerItemsList() {
                                             </div>
 
                                             <div style={{ display: 'flex', gap: '12px' }}>
-                                                {group.requestStatusCode === 'WAITING_QUOTATION' && mode === 'BUYER' && (
+                                                {!isAssignedToMe && (
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); handleAssignToMe(group.requestId); }}
+                                                        disabled={isSaving}
+                                                        style={{ 
+                                                            backgroundColor: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '4px', padding: '10px 24px', fontSize: '0.85rem', fontWeight: 800, cursor: isSaving ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', boxShadow: '2px 2px 0px rgba(0,0,0,0.15)' 
+                                                        }}
+                                                        title="Reivindicar pedido para mim para editá-lo"
+                                                    >
+                                                        <UserPlus size={18} /> {group.buyerId ? "Assumir Pedido" : "Atribuir a Mim"}
+                                                    </button>
+                                                )}
+
+                                                {group.requestStatusCode === 'WAITING_QUOTATION' && mode === 'BUYER' && isAssignedToMe && (
                                                     <>
                                                         <button
                                                             onClick={() => {
@@ -2255,7 +2322,7 @@ export function BuyerItemsList() {
                                                     </>
                                                 )}
 
-                                                {isAdjustmentPhase && mode === 'BUYER' && (
+                                                {isAdjustmentPhase && mode === 'BUYER' && isAssignedToMe && (
                                                     <button
                                                         onClick={() => {
                                                             const qCount = group.quotations.length;

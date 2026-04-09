@@ -28,6 +28,8 @@ public class SaveQuotationItemDto
     public decimal Quantity { get; set; }
     public int? UnitId { get; set; }
     public decimal UnitPrice { get; set; }
+    public decimal DiscountAmount { get; set; }
+    public decimal? DiscountPercent { get; set; }
     public int? IvaRateId { get; set; }
 }
 
@@ -69,6 +71,9 @@ public class SavedQuotationItemDto
 
     public int? IvaRateId { get; set; }
     public decimal IvaRatePercent { get; set; }
+
+    public decimal DiscountAmount { get; set; }
+    public decimal? DiscountPercent { get; set; }
 
     public decimal GrossSubtotal { get; set; }
     public decimal IvaAmount { get; set; }

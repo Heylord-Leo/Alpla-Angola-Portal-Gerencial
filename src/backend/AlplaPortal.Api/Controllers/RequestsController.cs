@@ -1725,10 +1725,14 @@ public class RequestsController : BaseController
             if (item.UnitPrice < 0) return BadRequest("O preço unitário não pode ser negativo.");
 
             decimal grossSubtotal = Math.Round(item.Quantity * item.UnitPrice, 2);
+            decimal itemDiscount = Math.Round(item.DiscountAmount, 2);
+            if (itemDiscount < 0) return BadRequest("O desconto do item não pode ser negativo.");
+            if (itemDiscount > grossSubtotal) return BadRequest("O desconto não pode exceder o subtotal bruto no item " + item.LineNumber);
 
+            decimal netSubtotal = Math.Max(0, grossSubtotal - itemDiscount);
             decimal ivaPercent = item.IvaRateId.HasValue && ivaRates.TryGetValue(item.IvaRateId.Value, out var rate) ? rate : 0m;
-            decimal ivaAmount = Math.Round(grossSubtotal * (ivaPercent / 100m), 2);
-            decimal lineTotal = Math.Round(grossSubtotal + ivaAmount, 2);
+            decimal ivaAmount = Math.Round(netSubtotal * (ivaPercent / 100m), 2);
+            decimal lineTotal = Math.Round(netSubtotal + ivaAmount, 2);
 
             quotation.Items.Add(new QuotationItem
             {
@@ -1739,6 +1743,8 @@ public class RequestsController : BaseController
                 UnitId = item.UnitId,
                 Quantity = item.Quantity,
                 UnitPrice = item.UnitPrice,
+                DiscountAmount = itemDiscount,
+                DiscountPercent = item.DiscountPercent,
                 IvaRateId = item.IvaRateId,
                 IvaRatePercent = ivaPercent,
                 GrossSubtotal = grossSubtotal,
@@ -1747,23 +1753,16 @@ public class RequestsController : BaseController
             });
         }
 
+        // Sum up line totals directly, because IVA and discounts are fully resolved per item.
         decimal totalGross = quotation.Items.Sum(i => i.GrossSubtotal);
-        decimal totalRawIva = quotation.Items.Sum(i => i.IvaAmount);
-        
-        // Apply quotation-level discount safely
-        if (dto.DiscountAmount < 0) return BadRequest("O valor do desconto não pode ser negativo.");
-        if (dto.DiscountAmount > totalGross) return BadRequest("O desconto não pode exceder o subtotal bruto.");
-        
-        quotation.DiscountAmount = Math.Round(dto.DiscountAmount, 2);
+        decimal sumItemDiscounts = quotation.Items.Sum(i => i.DiscountAmount);
+        decimal totalIva = quotation.Items.Sum(i => i.IvaAmount);
+
+        quotation.DiscountAmount = Math.Round(sumItemDiscounts, 2);
         quotation.TotalGrossAmount = Math.Round(totalGross, 2);
         quotation.TotalDiscountAmount = quotation.DiscountAmount;
-        
-        decimal taxableBase = Math.Max(0, totalGross - quotation.DiscountAmount);
-        quotation.TotalTaxableBase = Math.Round(taxableBase, 2);
-        
-        decimal discountRatio = totalGross > 0 ? (taxableBase / totalGross) : 1m;
-        quotation.TotalIvaAmount = Math.Round(totalRawIva * discountRatio, 2);
-        
+        quotation.TotalTaxableBase = Math.Round(Math.Max(0, totalGross - quotation.DiscountAmount), 2);
+        quotation.TotalIvaAmount = Math.Round(totalIva, 2);
         quotation.TotalAmount = Math.Round(quotation.TotalTaxableBase + quotation.TotalIvaAmount, 2);
 
         _context.Quotations.Add(quotation);
@@ -1826,6 +1825,8 @@ public class RequestsController : BaseController
                 UnitName = qi.Unit?.Name,
                 UnitCode = qi.Unit?.Code,
                 UnitPrice = qi.UnitPrice,
+                DiscountAmount = qi.DiscountAmount,
+                DiscountPercent = qi.DiscountPercent,
                 IvaRateId = qi.IvaRateId,
                 IvaRatePercent = qi.IvaRatePercent,
                 GrossSubtotal = qi.GrossSubtotal,
@@ -1918,9 +1919,14 @@ public class RequestsController : BaseController
             if (item.UnitPrice < 0) return BadRequest("O preço unitário não pode ser negativo.");
 
             decimal grossSubtotal = Math.Round(item.Quantity * item.UnitPrice, 2);
+            decimal itemDiscount = Math.Round(item.DiscountAmount, 2);
+            if (itemDiscount < 0) return BadRequest("O desconto do item não pode ser negativo.");
+            if (itemDiscount > grossSubtotal) return BadRequest("O desconto não pode exceder o subtotal bruto no item " + item.LineNumber);
+
+            decimal netSubtotal = Math.Max(0, grossSubtotal - itemDiscount);
             decimal ivaPercent = item.IvaRateId.HasValue && ivaRates.TryGetValue(item.IvaRateId.Value, out var rate) ? rate : 0m;
-            decimal ivaAmount = Math.Round(grossSubtotal * (ivaPercent / 100m), 2);
-            decimal lineTotal = Math.Round(grossSubtotal + ivaAmount, 2);
+            decimal ivaAmount = Math.Round(netSubtotal * (ivaPercent / 100m), 2);
+            decimal lineTotal = Math.Round(netSubtotal + ivaAmount, 2);
 
             _context.QuotationItems.Add(new QuotationItem
             {
@@ -1931,6 +1937,8 @@ public class RequestsController : BaseController
                 UnitId = item.UnitId,
                 Quantity = item.Quantity,
                 UnitPrice = item.UnitPrice,
+                DiscountAmount = itemDiscount,
+                DiscountPercent = item.DiscountPercent,
                 IvaRateId = item.IvaRateId,
                 IvaRatePercent = ivaPercent,
                 GrossSubtotal = grossSubtotal,
@@ -1940,22 +1948,14 @@ public class RequestsController : BaseController
         }
 
         decimal totalGross = _context.QuotationItems.Local.Where(qi => qi.QuotationId == quotation.Id).Sum(i => i.GrossSubtotal);
-        decimal totalRawIva = _context.QuotationItems.Local.Where(qi => qi.QuotationId == quotation.Id).Sum(i => i.IvaAmount);
-        
-        // Apply quotation-level discount safely
-        if (dto.DiscountAmount < 0) return BadRequest("O valor do desconto não pode ser negativo.");
-        if (dto.DiscountAmount > totalGross) return BadRequest("O desconto não pode exceder o subtotal bruto.");
-        
-        quotation.DiscountAmount = Math.Round(dto.DiscountAmount, 2);
+        decimal sumItemDiscounts = _context.QuotationItems.Local.Where(qi => qi.QuotationId == quotation.Id).Sum(i => i.DiscountAmount);
+        decimal totalIva = _context.QuotationItems.Local.Where(qi => qi.QuotationId == quotation.Id).Sum(i => i.IvaAmount);
+
+        quotation.DiscountAmount = Math.Round(sumItemDiscounts, 2);
         quotation.TotalGrossAmount = Math.Round(totalGross, 2);
         quotation.TotalDiscountAmount = quotation.DiscountAmount;
-        
-        decimal taxableBase = Math.Max(0, totalGross - quotation.DiscountAmount);
-        quotation.TotalTaxableBase = Math.Round(taxableBase, 2);
-        
-        decimal discountRatio = totalGross > 0 ? (taxableBase / totalGross) : 1m;
-        quotation.TotalIvaAmount = Math.Round(totalRawIva * discountRatio, 2);
-        
+        quotation.TotalTaxableBase = Math.Round(Math.Max(0, totalGross - quotation.DiscountAmount), 2);
+        quotation.TotalIvaAmount = Math.Round(totalIva, 2);
         quotation.TotalAmount = Math.Round(quotation.TotalTaxableBase + quotation.TotalIvaAmount, 2);
 
 

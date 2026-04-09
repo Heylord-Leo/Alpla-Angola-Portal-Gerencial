@@ -19,6 +19,8 @@ public class QuotationItem
     
     // New Financial Fields (Step 10 Refinement)
     public int LineNumber { get; set; }
+    public decimal DiscountAmount { get; set; }
+    public decimal? DiscountPercent { get; set; }
     public int? IvaRateId { get; set; }
     public IvaRate? IvaRate { get; set; }
     public decimal IvaRatePercent { get; set; } // Snapshot at the time of creation/update
