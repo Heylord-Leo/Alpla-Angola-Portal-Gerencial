@@ -2988,7 +2988,7 @@ public class RequestsController : BaseController
     }
 
     [HttpPost("{id}/operational/register-po")]
-    public async Task<IActionResult> RegisterPo(Guid id, [FromBody] ApprovalActionDto dto)
+    public async Task<IActionResult> RegisterPo(Guid id, [FromBody] RegisterPoActionDto dto)
     {
         if (!await HasAttachmentAsync(id, RequestAttachment.TYPE_PO))
         {
@@ -2999,7 +2999,34 @@ public class RequestsController : BaseController
                 Status = 400
             });
         }
-        return await ProcessCommonOperationalTransition(id, "REGISTER_PO", "PO_ISSUED", new[] { "APPROVED" }, dto.Comment, "P.O registrada com sucesso.");
+
+        if (dto.HasMismatches && !dto.OverrideConfirmed)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Ação Bloqueada",
+                Detail = "Existem divergências entre a P.O e o pedido. É necessário confirmar o override para prosseguir.",
+                Status = 400
+            });
+        }
+
+        if (dto.HasMismatches && string.IsNullOrWhiteSpace(dto.Comment))
+        {
+             return BadRequest(new ProblemDetails
+            {
+                Title = "Ação Bloqueada",
+                Detail = "Quando há divergências confirmadas, um comentário justificativo é obrigatório.",
+                Status = 400
+            });
+        }
+
+        string finalComment = dto.Comment ?? string.Empty;
+        if (dto.HasMismatches)
+        {
+            finalComment += $"\n[ALERTA DE SISTEMA: Override de divergência na OCR]\n{dto.MismatchDetails}";
+        }
+
+        return await ProcessCommonOperationalTransition(id, "REGISTER_PO", "PO_ISSUED", new[] { "APPROVED" }, finalComment, "P.O registrada com sucesso.");
     }
 
     [HttpPost("{id}/operational/schedule-payment")]
@@ -3263,7 +3290,9 @@ public class RequestsController : BaseController
 
         var request = await _context.Requests
             .Include(r => r.Status)
+            .Include(r => r.LineItems)
             .Include(r => r.Quotations)
+                .ThenInclude(q => q.Items)
             .FirstOrDefaultAsync(r => r.Id == requestId);
 
         if (request == null) return NotFound(new ProblemDetails { Title = "Pedido não encontrado.", Status = 404 });
@@ -3323,6 +3352,44 @@ public class RequestsController : BaseController
 
         request.UpdatedAtUtc = DateTime.UtcNow;
         request.UpdatedByUserId = actorId;
+
+        // Synchronize Quotation Items to Request Line Items
+        // 1. Soft-delete any existing active items to ensure a clean slate
+        foreach (var lineItem in request.LineItems.Where(li => !li.IsDeleted))
+        {
+            lineItem.IsDeleted = true;
+            lineItem.UpdatedAtUtc = DateTime.UtcNow;
+            lineItem.UpdatedByUserId = actorId;
+        }
+
+        // 2. Clone the winning quotation items into the request
+        int nextLineNumber = 1;
+        var orderedQuoteItems = targetQuotation.Items.OrderBy(i => i.LineNumber == 0 ? int.MaxValue : i.LineNumber).ToList();
+        
+        foreach (var quotationItem in orderedQuoteItems)
+        {
+            var newRequestLineItem = new RequestLineItem
+            {
+                Id = Guid.NewGuid(),
+                RequestId = request.Id,
+                LineNumber = nextLineNumber++,
+                ItemPriority = "MEDIUM",
+                Description = quotationItem.Description,
+                Quantity = quotationItem.Quantity,
+                UnitId = quotationItem.UnitId,
+                UnitPrice = quotationItem.UnitPrice,
+                TotalAmount = quotationItem.LineTotal,
+                CurrencyId = matchedCurrency?.Id ?? request.CurrencyId,
+                IvaRateId = quotationItem.IvaRateId,
+                LineItemStatusId = 1, // WAITING_QUOTATION status default
+                SupplierName = targetQuotation.SupplierNameSnapshot,
+                IsDeleted = false,
+                CreatedAtUtc = DateTime.UtcNow,
+                CreatedByUserId = actorId
+            };
+            
+            _context.RequestLineItems.Add(newRequestLineItem);
+        }
 
         // Record selection update in history for audit
         var itemHistory = new RequestStatusHistory

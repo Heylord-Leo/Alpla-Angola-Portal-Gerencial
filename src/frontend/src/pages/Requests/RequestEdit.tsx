@@ -2095,22 +2095,42 @@ export function RequestEdit() {
             />
 
             {id && (
-                <RegisterPoModal
-                    show={showRegisterPoModal}
-                    requestId={id}
-                    onClose={() => setShowRegisterPoModal(false)}
-                    onSuccess={async (msg) => {
-                        setShowRegisterPoModal(false);
-                        setFeedback({ type: 'success', message: msg });
-                        // Reload state
-                        const data = await api.requests.get(id);
-                        setStatus(data.statusCode);
-                        setStatusFullName(data.statusName);
-                        setStatusBadgeColor(data.statusBadgeColor);
-                        setStatusHistory(data.statusHistory || []);
-                        setAttachments(data.attachments || []);
-                    }}
-                />
+                (() => {
+                    let activeTotalAmount = Number(formData.estimatedTotalAmount) || 0;
+                    let activeSupplierName = supplierName;
+                    let activeCurrencyCode = currencies.find(c => c.id === Number(formData.currencyId))?.code || '';
+
+                    if (requestTypeCode === 'QUOTATION' && quotations.some(q => q.isSelected)) {
+                       const winner = quotations.find(q => q.isSelected)!;
+                       activeTotalAmount = winner.totalPrice;
+                       activeSupplierName = winner.supplierNameSnapshot;
+                       activeCurrencyCode = currencies.find(c => c.id === winner.currencyId)?.code || activeCurrencyCode;
+                    }
+
+                    return (
+                        <RegisterPoModal
+                            show={showRegisterPoModal}
+                            requestId={id}
+                            requestData={{
+                                totalAmount: activeTotalAmount,
+                                supplierName: activeSupplierName,
+                                currencyCode: activeCurrencyCode
+                            }}
+                            onClose={() => setShowRegisterPoModal(false)}
+                            onSuccess={async (msg) => {
+                                setShowRegisterPoModal(false);
+                                setFeedback({ type: 'success', message: msg });
+                                // Reload state
+                                const data = await api.requests.get(id);
+                                setStatus(data.statusCode);
+                                setStatusFullName(data.statusName);
+                                setStatusBadgeColor(data.statusBadgeColor);
+                                setStatusHistory(data.statusHistory || []);
+                                setAttachments(data.attachments || []);
+                            }}
+                        />
+                    );
+                })()
             )}
 
             <QuickSupplierModal 
