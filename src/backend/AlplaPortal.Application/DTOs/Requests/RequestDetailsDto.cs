@@ -73,6 +73,8 @@ public class RequestLineItemDto
     public decimal Quantity { get; set; }
     public string Unit { get; set; } = string.Empty;
     public decimal UnitPrice { get; set; }
+    public decimal? DiscountPercent { get; set; }
+    public decimal? DiscountAmount { get; set; }
     public decimal TotalAmount { get; set; }
     public string? SupplierName { get; set; }
     public string? Notes { get; set; }

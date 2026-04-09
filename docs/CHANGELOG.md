@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.43.1] - 2026-04-09
+
+### Fixed
+- **TotalAmount Persistence & Calculation**: Resolved a financial data loss issue where discount amounts and IVA rates were discarded during Request Line Item processing resulting in incorrect `TotalAmount` values (e.g., reverting to gross totals instead of net + IVA).
+    - Appended `DiscountPercent` and `DiscountAmount` to the database schema and response payload to survive frontend auto-save loops.
+    - Standardized `TotalAmount` calculation across all backend item generation points (Bulk Create, Clone, Add, Update) to explicitly include discounts and IVA variables.
+
 ## [2.43.0] - 2026-04-09
 
 ### Added

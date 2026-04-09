@@ -24,6 +24,9 @@ public class RequestLineItem
     public int? PlantId { get; set; }
     public Plant? Plant { get; set; }
 
+    public decimal? DiscountPercent { get; set; }
+    public decimal? DiscountAmount { get; set; }
+
     // Kept for direct fast querying, though typically mathematically computed
     public decimal TotalAmount { get; set; } 
 

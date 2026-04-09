@@ -57,6 +57,8 @@ export interface RequestLineItemDto {
     quantity: number;
     unit: string;
     unitPrice: number;
+    discountPercent?: number;
+    discountAmount?: number;
     totalAmount: number;
     supplierName: string | null;
     notes: string | null;

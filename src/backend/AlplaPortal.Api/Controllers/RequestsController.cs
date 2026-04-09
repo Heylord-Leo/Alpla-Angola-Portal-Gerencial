@@ -589,6 +589,8 @@ public class RequestsController : BaseController
                     Quantity = li.Quantity,
                     Unit = li.Unit != null ? li.Unit.Code : "EA", 
                     UnitPrice = li.UnitPrice,
+                    DiscountPercent = li.DiscountPercent,
+                    DiscountAmount = li.DiscountAmount,
                     TotalAmount = li.TotalAmount,
                     SupplierName = li.SupplierName,
                     Notes = li.Notes,
@@ -972,6 +974,7 @@ public class RequestsController : BaseController
         if (dto.LineItems != null && dto.LineItems.Any())
         {
             var units = await _context.Units.AsNoTracking().ToListAsync();
+            var allIvaRates = await _context.IvaRates.AsNoTracking().ToListAsync();
             var lineItems = new List<RequestLineItem>();
             decimal totalAmount = 0;
 
@@ -979,6 +982,9 @@ public class RequestsController : BaseController
             foreach (var itemDto in dto.LineItems)
             {
                 var unit = units.FirstOrDefault(u => u.Code == itemDto.Unit);
+                var netAmount = (itemDto.Quantity * itemDto.UnitPrice) - (itemDto.DiscountAmount ?? 0);
+                var ivaEntity = itemDto.IvaRateId.HasValue ? allIvaRates.FirstOrDefault(r => r.Id == itemDto.IvaRateId.Value) : null;
+                var ivaAmount = ivaEntity != null ? Math.Round(netAmount * (ivaEntity.RatePercent / 100m), 2) : 0m;
                 var item = new RequestLineItem
                 {
                     Id = Guid.NewGuid(),
@@ -989,7 +995,9 @@ public class RequestsController : BaseController
                     Quantity = itemDto.Quantity,
                     UnitId = unit?.Id ?? units.FirstOrDefault(u => u.Code == "EA")?.Id ?? 1, // Fallback to EA
                     UnitPrice = itemDto.UnitPrice,
-                    TotalAmount = itemDto.Quantity * itemDto.UnitPrice,
+                    DiscountPercent = itemDto.DiscountPercent,
+                    DiscountAmount = itemDto.DiscountAmount,
+                    TotalAmount = netAmount + ivaAmount,
                     Notes = itemDto.Notes,
                     PlantId = itemDto.PlantId ?? request.PlantId,
                     CostCenterId = itemDto.CostCenterId,
@@ -2192,10 +2200,14 @@ public class RequestsController : BaseController
             // 4. Copy Line Items
             var activeItems = originalRequest.LineItems.Where(li => !li.IsDeleted).ToList();
             decimal newTotalAmount = 0;
+            var cloneIvaRates = await _context.IvaRates.AsNoTracking().ToListAsync();
 
             foreach (var item in activeItems)
             {
-                var computedItemTotal = item.Quantity * item.UnitPrice;
+                var netClone = (item.Quantity * item.UnitPrice) - (item.DiscountAmount ?? 0);
+                var ivaClone = item.IvaRateId.HasValue ? cloneIvaRates.FirstOrDefault(r => r.Id == item.IvaRateId.Value) : null;
+                var ivaAmountClone = ivaClone != null ? Math.Round(netClone * (ivaClone.RatePercent / 100m), 2) : 0m;
+                var computedItemTotal = netClone + ivaAmountClone;
                 newTotalAmount += computedItemTotal;
 
                 var newItem = new RequestLineItem
@@ -2208,6 +2220,8 @@ public class RequestsController : BaseController
                     Quantity = item.Quantity,
                     UnitId = item.UnitId,
                     UnitPrice = item.UnitPrice,
+                    DiscountPercent = item.DiscountPercent,
+                    DiscountAmount = item.DiscountAmount,
                     TotalAmount = computedItemTotal,
                     CurrencyId = item.CurrencyId,
                     PlantId = item.PlantId,
@@ -2426,7 +2440,10 @@ public class RequestsController : BaseController
         var nextLineNumber = request.LineItems.Any() ? request.LineItems.Max(l => l.LineNumber) + 1 : 1;
         var quantity = dto.Quantity ?? 0;
         var unitPrice = dto.UnitPrice ?? 0;
-        var computedTotal = quantity * unitPrice;
+        var netTotal = (quantity * unitPrice) - (dto.DiscountAmount ?? 0);
+        var addIvaRate = dto.IvaRateId.HasValue ? await _context.IvaRates.FindAsync(dto.IvaRateId.Value) : null;
+        var addIvaAmount = addIvaRate != null ? Math.Round(netTotal * (addIvaRate.RatePercent / 100m), 2) : 0m;
+        var computedTotal = netTotal + addIvaAmount;
 
         var newItem = new RequestLineItem
         {
@@ -2438,6 +2455,8 @@ public class RequestsController : BaseController
             Quantity = quantity,
             UnitId = dto.UnitId, // Mapped from Frontend Select
             UnitPrice = unitPrice,
+            DiscountPercent = dto.DiscountPercent,
+            DiscountAmount = dto.DiscountAmount,
             TotalAmount = computedTotal,
             CurrencyId = request.RequestType?.Code == "QUOTATION" && dto.CurrencyId.HasValue ? dto.CurrencyId : request.CurrencyId,
             PlantId = dto.PlantId,
@@ -2595,7 +2614,12 @@ public class RequestsController : BaseController
         item.Quantity = dto.Quantity ?? item.Quantity;
         item.UnitId = dto.UnitId;
         item.UnitPrice = dto.UnitPrice ?? item.UnitPrice;
-        item.TotalAmount = item.Quantity * item.UnitPrice;
+        item.DiscountPercent = dto.DiscountPercent ?? item.DiscountPercent;
+        item.DiscountAmount = dto.DiscountAmount ?? item.DiscountAmount;
+        var updateNet = (item.Quantity * item.UnitPrice) - (item.DiscountAmount ?? 0);
+        var updateIvaRate = item.IvaRateId.HasValue ? await _context.IvaRates.FindAsync(item.IvaRateId.Value) : null;
+        var updateIvaAmount = updateIvaRate != null ? Math.Round(updateNet * (updateIvaRate.RatePercent / 100m), 2) : 0m;
+        item.TotalAmount = updateNet + updateIvaAmount;
         item.CurrencyId = (request.RequestType?.Code == "QUOTATION" && dto.CurrencyId.HasValue) ? dto.CurrencyId : request.CurrencyId;
         
         // Cross-Company Plant Validation

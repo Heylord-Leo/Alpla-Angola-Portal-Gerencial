@@ -27,6 +27,9 @@ public class CreateRequestLineItemDto
     
     public int? CostCenterId { get; set; }
 
+    public decimal? DiscountPercent { get; set; }
+    public decimal? DiscountAmount { get; set; }
+
     [Required(ErrorMessage = "A taxa de IVA é obrigatória.")]
     public int? IvaRateId { get; set; }
 

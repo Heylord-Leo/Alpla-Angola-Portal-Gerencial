@@ -485,6 +485,7 @@ export function RequestCreate() {
                 unitId: item.unitId,
                 unit: item.unit,
                 unitPrice: item.unitPrice,
+                discountAmount: item.discountAmount,
                 ivaRateId: item.ivaRateId,
                 totalAmount: item.totalPrice,
                 dueDate: formData.needByDateUtc && !isNaN(new Date(formData.needByDateUtc).getTime()) 
