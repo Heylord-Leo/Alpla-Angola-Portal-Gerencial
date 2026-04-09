@@ -3573,6 +3573,7 @@ public class RequestsController : BaseController
                 TotalTokens = result?.Metadata?.TotalTokens ?? 0,
                 ChunkCount = result?.Metadata?.ChunkCount ?? 0,
                 ExecutionStatus = status,
+                BilledCompany = result?.Header?.BilledCompanyName,
                 ErrorSummary = shortError
             };
 

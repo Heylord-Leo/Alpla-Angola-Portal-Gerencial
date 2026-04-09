@@ -28,6 +28,9 @@ public class OcrHeaderSuggestionsDto
     [JsonPropertyName("supplierTaxId")]
     public OcrValueDto<string>? SupplierTaxId { get; set; }
 
+    [JsonPropertyName("billedCompany")]
+    public OcrValueDto<string>? BilledCompany { get; set; }
+
     [JsonPropertyName("documentNumber")]
     public OcrValueDto<string>? DocumentNumber { get; set; }
 
@@ -60,6 +63,12 @@ public class OcrLineItemSuggestionDto
 
     [JsonPropertyName("unitPrice")]
     public decimal? UnitPrice { get; set; }
+
+    [JsonPropertyName("discountAmount")]
+    public decimal? DiscountAmount { get; set; }
+
+    [JsonPropertyName("discountPercent")]
+    public decimal? DiscountPercent { get; set; }
 
     [JsonPropertyName("totalPrice")] // Changed from TotalAmount to match JSON
     public decimal? TotalAmount { get; set; }

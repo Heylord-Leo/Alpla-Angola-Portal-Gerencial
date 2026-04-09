@@ -1,7 +1,7 @@
 import { api } from '../lib/api';
-import { IvaRate, Unit, CurrencyDto, OcrDraft, OcrDraftItem } from '../types';
+import { IvaRate, Unit, CurrencyDto, OcrDraft, OcrDraftItem, LookupDto } from '../types';
 
-export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: CurrencyDto[]) {
+export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: CurrencyDto[], companies: LookupDto[] = []) {
 
     const resolveCurrencyAlias = (val: string | undefined) => {
         if (!val) return '';
@@ -78,10 +78,12 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
         return 'UN';
     };
 
-    const calculateItemTotal = (item: Pick<OcrDraftItem, 'quantity' | 'unitPrice' | 'ivaRateId'>) => {
+    const calculateItemTotal = (item: Pick<OcrDraftItem, 'quantity' | 'unitPrice' | 'ivaRateId' | 'discountAmount'>) => {
         const safeQty = item.quantity || 0;
         const safePrice = item.unitPrice || 0;
-        const grossSubtotal = Math.round(safeQty * safePrice * 100) / 100;
+        const discount = item.discountAmount || 0;
+        const grossSubtotal = Math.round((safeQty * safePrice - discount) * 100) / 100;
+        
         const selectedIva = ivaRates.find(r => r.id === item.ivaRateId);
         const ivaPercent = selectedIva ? selectedIva.ratePercent : 0;
         const ivaAmount = Math.round(grossSubtotal * (ivaPercent / 100) * 100) / 100;
@@ -93,14 +95,14 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
         let ivaTotal = 0;
         
         draft.items.forEach(item => {
-            const itemGross = Math.round((item.quantity || 0) * (item.unitPrice || 0) * 100) / 100;
+            const itemGross = Math.round(((item.quantity || 0) * (item.unitPrice || 0) - (item.discountAmount || 0)) * 100) / 100;
             gross += itemGross;
             const selectedIva = ivaRates.find(r => r.id === item.ivaRateId);
             const ivaPercent = selectedIva ? selectedIva.ratePercent : 0;
             ivaTotal += Math.round(itemGross * (ivaPercent / 100) * 100) / 100;
         });
 
-        const discount = draft.discountAmount || 0;
+        const discount = draft.discountAmount || 0; // Global discount
         const taxableBase = Math.max(0, gross - discount);
         const discountRatio = gross > 0 ? (taxableBase / gross) : 1;
         const adjustedIva = Math.round(ivaTotal * discountRatio * 100) / 100;
@@ -139,23 +141,72 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
             }
         }
 
-        const isTaxIdPlausible = extractedSupplierTaxId && typeof extractedSupplierTaxId === 'string' && extractedSupplierTaxId.length >= 5;
+        const extractedBilledCompany = getSafeValue<string>(suggestions?.billedCompany, '');
+        const extractedCurrency = getSafeValue<string>(suggestions?.currencyCode, '') || getSafeValue<string>(suggestions?.currency, 'EUR');
 
-        // Extract currency from backend property matching [JsonPropertyName("currency")]
-        const extractedCurrency = getSafeValue<string>(suggestions?.currency, '');
+        // Part B: Company Matching (Keyword-based)
+        // Strategy: extract distinguishing keywords (PLASTICO/SOPRO) from both the OCR text
+        // and system company names, then match on keyword overlap.
+        let matchedCompanyId: number | null = null;
+        let isCompanyOcrAutoFilled = false;
+        
+        if (extractedBilledCompany && typeof extractedBilledCompany === 'string' && companies.length > 0) {
+            const normalizedExtracted = extractedBilledCompany.toLowerCase();
+            
+            // Check for distinguishing keywords
+            const extractedHasPlastico = /plastico/i.test(normalizedExtracted);
+            const extractedHasSopro = /sopro/i.test(normalizedExtracted);
+            
+            for (const company of companies) {
+                const companyNameLower = company.name.toLowerCase();
+                const companyHasPlastico = /plastico/i.test(companyNameLower);
+                const companyHasSopro = /sopro/i.test(companyNameLower);
+                
+                // Match if both contain the same distinguishing keyword
+                if ((extractedHasPlastico && companyHasPlastico) || (extractedHasSopro && companyHasSopro)) {
+                    matchedCompanyId = company.id;
+                    isCompanyOcrAutoFilled = true;
+                    break;
+                }
+            }
+            
+            // Fallback: if no keyword match but text contains 'alpla', pick the first ALPLA company
+            if (!matchedCompanyId && /alpla/i.test(normalizedExtracted) && companies.length === 1) {
+                matchedCompanyId = companies[0].id;
+                isCompanyOcrAutoFilled = true;
+            }
+        }
+
+        // --- Company Match Diagnostics (visible in browser DevTools > Console) ---
+        console.group('[OCR] Company Match Diagnostics');
+        console.log('Extracted Company (raw):', extractedBilledCompany || '(empty)');
+        console.log('System Companies:', companies.map(c => ({ id: c.id, name: c.name })));
+        console.log('Keywords detected:', {
+            hasPlastico: extractedBilledCompany ? /plastico/i.test(extractedBilledCompany) : false,
+            hasSopro: extractedBilledCompany ? /sopro/i.test(extractedBilledCompany) : false,
+            hasAlpla: extractedBilledCompany ? /alpla/i.test(extractedBilledCompany) : false,
+        });
+        console.log('Match Result:', matchedCompanyId
+            ? `✅ Matched → Company ID ${matchedCompanyId} (${companies.find(c => c.id === matchedCompanyId)?.name})`
+            : '❌ No match found'
+        );
+        console.groupEnd();
 
         const draft: OcrDraft = {
             supplierId: matchedSupplierId,
             supplierNameSnapshot: extractedSupplierName,
             supplierPortalCode: extractedSupplierPortalCode,
-            supplierTaxId: isTaxIdPlausible ? extractedSupplierTaxId : '',
+            supplierTaxId: extractedSupplierTaxId,
+            companyId: matchedCompanyId,
+            extractedCompanyName: extractedBilledCompany,
+            isCompanyOcrAutoFilled: isCompanyOcrAutoFilled,
             documentNumber: getSafeValue<string>(suggestions?.documentNumber, ''),
             documentDate: resolveDateAlias(getSafeValue<string>(suggestions?.documentDate, '')),
             dueDate: resolveDateAlias(getSafeValue<string>(suggestions?.dueDate, '')),
             currency: resolveCurrencyAlias(extractedCurrency),
             extractedCurrency: extractedCurrency,
             discountAmount: getSafeValue<number>(suggestions?.discountAmount, 0),
-            totalAmount: getSafeValue<number>(suggestions?.totalAmount, 0),
+            totalAmount: getSafeValue<number>(suggestions?.grandTotal, 0) || getSafeValue<number>(suggestions?.totalAmount, 0),
             proformaAttachmentId: attachmentId,
             items: (result.integration?.lineItemSuggestions || []).map((item: any, index: number) => {
                 const extractedUnit = item.unit || '';
@@ -169,29 +220,67 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
                     return matched ? matched.id : null;
                 })();
 
+                // Cross-validate discountAmount using discountPercent if available
+                // The AI sometimes returns per-unit discount instead of total line discount
+                const rawQty = item.quantity || 1;
+                const rawPrice = item.unitPrice || 0;
+                const rawDiscountPct = item.discountPercent || 0;
+                const rawDiscountAmt = item.discountAmount || 0;
+                
+                let resolvedDiscount = rawDiscountAmt;
+                if (rawDiscountPct > 0) {
+                    // Calculate expected total line discount from percentage
+                    const expectedDiscount = Math.round(rawQty * rawPrice * (rawDiscountPct / 100) * 100) / 100;
+                    // If the OCR discountAmount doesn't match the expected value, use the calculated one
+                    if (Math.abs(resolvedDiscount - expectedDiscount) > 0.01) {
+                        console.warn(`[OCR] Item ${index + 1}: discountAmount (${resolvedDiscount}) doesn't match ${rawDiscountPct}% of ${rawQty}×${rawPrice} = ${expectedDiscount}. Using calculated value.`);
+                        resolvedDiscount = expectedDiscount;
+                    }
+                }
+
                 const baseItem = {
                     lineNumber: index + 1,
                     description: item.description || '',
-                    quantity: item.quantity || 1,
+                    quantity: rawQty,
                     unitId: matchedUnit ? matchedUnit.id : null,
                     unit: matchedUnitCode,
-                    unitPrice: item.unitPrice || 0,
+                    unitPrice: rawPrice,
+                    discountAmount: resolvedDiscount,
                     ivaRateId,
                     taxRate: item.taxRate
                 };
 
                 return {
                     ...baseItem,
-                    // backend uses 'totalAmount' for line item price
-                    totalPrice: item.totalAmount ?? calculateItemTotal(baseItem)
+                    // Always recalculate from components (qty * unitPrice - discount + IVA)
+                    totalPrice: calculateItemTotal(baseItem)
                 };
             })
         };
 
-        // Final sanity check for total amount if not returned by OCR or looks like purely gross
-        if (draft.totalAmount === 0 && draft.items.length > 0) {
+        // Always recalculate total from item components for consistency
+        // (since individual item totals are now always calculated from qty * unitPrice - discount)
+        if (draft.items.length > 0) {
             draft.totalAmount = calculateDraftTotal(draft);
         }
+
+        // --- Calculation Diagnostics (visible in browser DevTools > Console) ---
+        console.group('[OCR] Extraction & Calculation Diagnostics');
+        console.log('Header Total (grandTotal from OCR):', getSafeValue<number>(suggestions?.grandTotal, 0));
+        console.log('Header Total (totalAmount fallback):', getSafeValue<number>(suggestions?.totalAmount, 0));
+        console.log('Final Draft Total:', draft.totalAmount);
+        console.log('Global Discount:', draft.discountAmount);
+        console.table(draft.items.map((item, i) => ({
+            '#': i + 1,
+            description: (item.description || '').substring(0, 40),
+            qty: item.quantity,
+            unitPrice: item.unitPrice,
+            discount: item.discountAmount,
+            totalPrice: item.totalPrice,
+            gross: ((item.quantity || 0) * (item.unitPrice || 0)).toFixed(2),
+            net: (((item.quantity || 0) * (item.unitPrice || 0)) - (item.discountAmount || 0)).toFixed(2)
+        })));
+        console.groupEnd();
 
         return draft;
     };

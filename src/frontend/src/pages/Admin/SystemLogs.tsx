@@ -526,6 +526,16 @@ export function SystemLogs() {
                         </div>
 
                         <div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Empresa Identificada (OCR)</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: detailParsedPayload.billedCompany ? 'var(--color-primary)' : '#dc2626' }}>
+                            {detailParsedPayload.billedCompany || '⚠ NÃO IDENTIFICADA'}
+                          </div>
+                          {!detailParsedPayload.billedCompany && (
+                            <div style={{ fontSize: 10, color: '#dc2626', marginTop: 2 }}>O OCR não conseguiu extrair a empresa do documento. Verifique o console do browser para diagnósticos de matching.</div>
+                          )}
+                        </div>
+
+                        <div>
                           <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Provedor / Modelo</div>
                           <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{detailParsedPayload.provider || '—'} <span style={{ color: '#94a3b8' }}>/</span> {detailParsedPayload.model || '—'}</div>
                         </div>

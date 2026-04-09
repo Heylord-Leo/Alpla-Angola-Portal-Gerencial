@@ -479,34 +479,44 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
 
     private string GetSystemPrompt()
     {
-        return @"You are a professional document extractor. 
-Extract data from the provided image into a structured JSON format. 
-Return a JSON object with 'header' and 'items'.
+        return @"You are a financial OCR expert. Extract data from this invoice or proforma.
+CRITICAL PRECISION RULES:
+- QUANTITY (Menge): Capture EVERY digit. If it says '21', do not return '2'. Look closely at column alignment and digit spacing.
+- UNIT PRICE (Einzelpreis/Stückpreis): Capture the full numerical value exactly as printed.
+- DISCOUNTS (Rabatt):
+  * discountPercent = the percentage shown in the Rabatt column (e.g., 100 means 100%).
+  * discountAmount = THE TOTAL DISCOUNT FOR THE ENTIRE LINE = quantity × unitPrice × (discountPercent / 100).
+    Example: qty=23, unitPrice=149.90, Rabatt=100% → discountAmount = 23 × 149.90 = 3447.70 (NOT 149.90).
+  * If no discount column or value exists for a line, set both to 0.
+- LINE TOTAL (Ges.preis): totalPrice = (quantity × unitPrice) - discountAmount. If Rabatt=100%, totalPrice = 0.
+- HEADER totalAmount = the Zwischensumme/Subtotal (net total after all line discounts, before tax).
 
-'header' fields:
-- supplierName: Name of the vendor/supplier
-- supplierTaxId: Tax ID or NIF of the supplier. 
-  PRIORITIZE patterns like 'Contribuinte N.º:', 'Contribuinte No:', 'Contribuinte Nº:', 'Numero contribuinte:', 'Número contribuinte:', 'Nº Contribuinte:'.
-  Also look for 'NIF:', 'Tax ID:', 'VAT:', 'CIF:'.
-  The value is a digit-only string (e.g. 5417049840) or possibly with letters if international.
-  It might be on the same line as the label (after a colon or space) or on the line immediately preceding or following the label.
-  IMPORTANT: The label identification is case-insensitive and punctuation-insensitive.
-- documentNumber: Invoice or Quotation number
-- documentDate: Date of the document (YYYY-MM-DD)
-- currency: ISO Currency code (e.g. AOA, USD, EUR)
-- totalAmount: Numerical total amount
-- discountAmount: Numerical global discount or total deduction amount (absolute value)
-
-'items' list fields:
-- description: Item description
-- quantity: Numerical quantity
-- unit: Unit of measure (e.g. UN, KG, L)
-- unitPrice: Numerical unit price
-- taxRate: Numerical tax percentage (e.g. 14, 14.0, 0, 5). Do not include the % symbol.
-- totalPrice: Numerical total price for the line
-
-Include a 'qualityScore' (0.0 to 1.0) reflecting your confidence in the overall extraction.
-Only return the JSON object, no other text.";
+Output ONLY JSON with this structure:
+{
+  ""header"": {
+    ""supplierName"": ""string"",
+    ""supplierTaxId"": ""string"",
+    ""billedCompanyName"": ""Name of company being billed. Typically 'AlplaPLASTICO' or 'AlplaSOPRO'. Look for keywords PLASTICO vs SOPRO."",
+    ""documentNumber"": ""string"",
+    ""documentDate"": ""ISO date"",
+    ""dueDate"": ""ISO date"",
+    ""currency"": ""string (e.g. EUR, USD, AOA)"",
+    ""totalAmount"": number (Zwischensumme / Subtotal after all discounts)
+  },
+  ""items"": [
+    {
+      ""description"": ""string"",
+      ""quantity"": number,
+      ""unit"": ""string"",
+      ""unitPrice"": number,
+      ""discountPercent"": number (e.g. 100 for 100%, 0 if none),
+      ""discountAmount"": number (TOTAL line discount = qty × unitPrice × discountPercent/100),
+      ""taxRate"": number,
+      ""totalPrice"": number (after discount, before tax)
+    }
+  ],
+  ""qualityScore"": 0.95
+}";
     }
 
     private ExtractionResultDto MapFromJson(string json)
@@ -529,6 +539,7 @@ Only return the JSON object, no other text.";
                 {
                     SupplierName = header.TryGetProperty("supplierName", out var sn) ? sn.GetString() : null,
                     SupplierTaxId = header.TryGetProperty("supplierTaxId", out var stid) ? stid.GetString() : null,
+                    BilledCompanyName = header.TryGetProperty("billedCompanyName", out var bcn) ? bcn.GetString() : null,
                     DocumentNumber = header.TryGetProperty("documentNumber", out var dn) ? dn.GetString() : null,
                     DocumentDate = header.TryGetProperty("documentDate", out var dd) ? dd.GetString() : null,
                     Currency = header.TryGetProperty("currency", out var cur) ? cur.GetString() : null,
@@ -546,6 +557,8 @@ Only return the JSON object, no other text.";
                     Quantity = item.TryGetProperty("quantity", out var qty) ? (qty.ValueKind == JsonValueKind.Number ? qty.GetDecimal() : 0) : null,
                     Unit = item.TryGetProperty("unit", out var unit) ? unit.GetString() : null,
                     UnitPrice = item.TryGetProperty("unitPrice", out var up) ? (up.ValueKind == JsonValueKind.Number ? up.GetDecimal() : 0) : null,
+                    DiscountAmount = item.TryGetProperty("discountAmount", out var da) ? (da.ValueKind == JsonValueKind.Number ? da.GetDecimal() : 0) : 0,
+                    DiscountPercent = item.TryGetProperty("discountPercent", out var dp) ? (dp.ValueKind == JsonValueKind.Number ? dp.GetDecimal() : 0) : 0,
                     TaxRate = item.TryGetProperty("taxRate", out var tr) ? (tr.ValueKind == JsonValueKind.Number ? tr.GetDecimal() : 0) : null,
                     TotalPrice = item.TryGetProperty("totalPrice", out var tp) ? (tp.ValueKind == JsonValueKind.Number ? tp.GetDecimal() : 0) : null
                 }).ToList();

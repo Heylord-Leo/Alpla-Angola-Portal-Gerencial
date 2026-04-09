@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.40.0] - 2026-04-09
+
+### Added
+- **OCR Line-Item Discount Extraction**: Extended the extraction pipeline to identify and extract per-item discount percentages and amounts from invoices (e.g., "Rabatt %" columns). Added `DiscountPercent` and `DiscountAmount` fields across the full backend DTO chain (`ExtractionLineItemDto`, `OcrLineItemSuggestionDto`, `ExtractionMapper`).
+- **Discount Cross-Validation (Frontend)**: Implemented a safety net that recalculates `discountAmount` from `discountPercent` when the AI returns an incorrect per-unit value instead of the total line discount. Logs a `console.warn` when a correction is applied.
+- **Editable Discount Column (UI)**: Added a new `DESC.` column to the Payment Request OCR items table, allowing users to view and manually correct extracted discount values. Includes a red "TOTAL ABATIMENTOS" summary row in the footer.
+- **Company Auto-Identification (OCR)**: Implemented keyword-based company matching that identifies `AlplaPLASTICO` or `AlplaSOPRO` from OCR-extracted billing entity names, auto-filling the "Empresa" field with a visual confirmation message.
+- **OCR Diagnostics**: Added `[OCR] Company Match Diagnostics` and `[OCR] Extraction & Calculation Diagnostics` console groups for real-time debugging. Enhanced Admin System Logs to show "Empresa Identificada (OCR)" with visual warning when extraction fails.
+
+### Changed
+- **AI Extraction Prompt**: Rewritten with explicit discount calculation rules and concrete examples to prevent the model from returning per-unit discounts instead of total line discounts.
+- **Item Total Calculation**: All line-item and draft totals are now always recalculated from components (qty × unitPrice − discount + IVA) instead of trusting OCR-provided totals, eliminating silent zero-value errors caused by `??` operator semantics.
+- **Quantity Column Width**: Increased QTD column from 60px to 80px to accommodate multi-digit quantities.
+
 ## [2.39.8] - 2026-04-09
 
 ### Changed

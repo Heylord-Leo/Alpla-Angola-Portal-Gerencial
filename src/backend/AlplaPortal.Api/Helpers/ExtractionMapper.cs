@@ -17,6 +17,7 @@ public static class ExtractionMapper
             {
                 SupplierName = new OcrValueDto<string> { Value = internalResult.Header?.SupplierName, Status = "recommended" },
                 SupplierTaxId = new OcrValueDto<string> { Value = internalResult.Header?.SupplierTaxId, Status = "recommended" },
+                BilledCompany = new OcrValueDto<string> { Value = internalResult.Header?.BilledCompanyName, Status = "recommended" },
                 DocumentNumber = new OcrValueDto<string> { Value = internalResult.Header?.DocumentNumber, Status = "recommended" },
                 Date = new OcrValueDto<string> { Value = internalResult.Header?.DocumentDate, Status = "recommended" },
                 CurrencyCode = new OcrValueDto<string> { Value = internalResult.Header?.Currency, Status = "recommended" },
@@ -29,6 +30,8 @@ public static class ExtractionMapper
                 Quantity = item.Quantity,
                 Unit = item.Unit,
                 UnitPrice = item.UnitPrice,
+                DiscountAmount = item.DiscountAmount,
+                DiscountPercent = item.DiscountPercent,
                 TotalAmount = item.TotalPrice,
                 TaxRate = item.TaxRate,
                 Status = "suggested"

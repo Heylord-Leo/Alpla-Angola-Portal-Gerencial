@@ -178,6 +178,7 @@ export interface OcrDraftItem {
     unitId: number | null;
     unit?: string; // Raw extracted unit string from OCR
     unitPrice: number;
+    discountAmount: number;
     ivaRateId: number | null;
     taxRate?: number; // Raw extracted tax percentage for suggestion hint
     totalPrice: number; // Front-end calculated preview
@@ -188,6 +189,9 @@ export interface OcrDraft {
     supplierNameSnapshot: string;
     supplierPortalCode?: string | null;
     supplierTaxId?: string;
+    companyId?: number | null;
+    extractedCompanyName?: string;
+    isCompanyOcrAutoFilled?: boolean;
     documentNumber: string;
     documentDate: string;
     dueDate?: string;

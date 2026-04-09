@@ -2,7 +2,18 @@
 
 ## Current Version
 
-v2.39.8
+v2.40.0
+
+## [2.40.0] - 2026-04-09
+
+### Added
+- **OCR Line-Item Discount Extraction**: Full pipeline support for per-item discount percentages and amounts, with cross-validation safety net and editable UI column.
+- **Company Auto-Identification (OCR)**: Keyword-based matching for automatic company field population from invoice billing entity.
+- **OCR Diagnostics**: Console-level extraction and matching diagnostics for debugging.
+
+### Changed
+- **AI Extraction Prompt**: Rewritten with explicit discount calculation rules and concrete examples.
+- **Item Total Calculation**: Always recalculated from components, eliminating silent zero-value errors.
 
 ## [2.39.8] - 2026-04-09
 

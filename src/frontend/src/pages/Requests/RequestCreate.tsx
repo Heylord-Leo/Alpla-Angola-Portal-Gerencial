@@ -49,7 +49,7 @@ export function RequestCreate() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const manualFileInputRef = useRef<HTMLInputElement>(null);
 
-    const { mapOcrResultToDraft, calculateItemTotal, calculateDraftTotal } = useOcrProcessor(ivaRates, units, currencies);
+    const { mapOcrResultToDraft, calculateItemTotal, calculateDraftTotal } = useOcrProcessor(ivaRates, units, currencies, companies);
 
     const [formData, setFormData] = useState({
         title: '',
@@ -265,6 +265,20 @@ export function RequestCreate() {
             const draft = await mapOcrResultToDraft(result);
             setPaymentDraft(draft);
             
+            if (draft.companyId) {
+                setFormData(prev => {
+                    const next = { ...prev, companyId: String(draft.companyId) };
+                    // We must also deduce plantId if possible from the matched company 
+                    // (similar to what handleChange does for manual select)
+                    next.plantId = '';
+                    const plantsForCompany = filteredPlants.filter(p => p.companyId === draft.companyId);
+                    if (plantsForCompany.length === 1) {
+                        next.plantId = String(plantsForCompany[0].id);
+                    }
+                    return next;
+                });
+            }
+            
             const extractedDate = draft.dueDate || draft.documentDate;
             if (extractedDate) {
                 try {
@@ -336,7 +350,7 @@ export function RequestCreate() {
             const nextItems = [...prev.items];
             nextItems[index] = { ...nextItems[index], [field]: value };
             
-            if (field === 'quantity' || field === 'unitPrice' || field === 'ivaRateId') {
+            if (field === 'quantity' || field === 'unitPrice' || field === 'ivaRateId' || field === 'discountAmount') {
                 nextItems[index].totalPrice = calculateItemTotal(nextItems[index]);
             }
             
@@ -354,12 +368,11 @@ export function RequestCreate() {
                 description: '',
                 quantity: 1,
                 unitId: null,
-                unitCode: '',
                 unit: '',
                 unitPrice: 0,
+                discountAmount: 0,
                 ivaRateId: null,
-                totalPrice: 0,
-                itemPriority: 'MEDIUM'
+                totalPrice: 0
             }];
             return { ...prev, items: nextItems };
         });
@@ -1002,7 +1015,7 @@ export function RequestCreate() {
                                                      </label>
                                                      <label style={{ ...labelStyle, marginBottom: 0 }}>
                                                          Total s/ IVA
-                                                         <input type="number" value={(paymentDraft.items || []).reduce((sum, item) => sum + ((item?.quantity || 0) * (item?.unitPrice || 0)), 0)} disabled style={{ ...inputStyle, backgroundColor: '#F9FAFB' }} />
+                                                         <input type="number" value={(paymentDraft.items || []).reduce((sum, item) => sum + (((item?.quantity || 0) * (item?.unitPrice || 0)) - (item?.discountAmount || 0)), 0)} disabled style={{ ...inputStyle, backgroundColor: '#F9FAFB' }} />
                                                      </label>
                                                  </div>
 
@@ -1023,9 +1036,10 @@ export function RequestCreate() {
                                                              <tr style={{ backgroundColor: 'var(--color-bg-page)', borderBottom: '1px solid var(--color-border)' }}>
                                                                  <th style={{ padding: '8px', textAlign: 'left', fontWeight: 800 }}>DESCRIÇÃO</th>
                                                                  <th style={{ padding: '8px', textAlign: 'center', width: '80px', fontWeight: 800 }}>UNID.</th>
-                                                                 <th style={{ padding: '8px', textAlign: 'center', width: '60px', fontWeight: 800 }}>QTD</th>
+                                                                 <th style={{ padding: '8px', textAlign: 'center', width: '80px', fontWeight: 800 }}>QTD</th>
                                                                  <th style={{ padding: '8px', textAlign: 'right', width: '100px', fontWeight: 800 }}>P. UNIT</th>
                                                                  <th style={{ padding: '8px', textAlign: 'center', width: '100px', fontWeight: 800 }}>IVA</th>
+                                                                 <th style={{ padding: '8px', textAlign: 'right', width: '100px', fontWeight: 800 }}>DESC.</th>
                                                                  <th style={{ padding: '8px', textAlign: 'right', width: '100px', fontWeight: 800 }}>TOTAL</th>
                                                                  <th style={{ padding: '8px', textAlign: 'center', width: '40px' }}></th>
                                                              </tr>
@@ -1033,7 +1047,7 @@ export function RequestCreate() {
                                                          <tbody>
                                                              {!(paymentDraft.items && paymentDraft.items.length > 0) ? (
                                                                  <tr style={{ borderBottom: '1px solid var(--color-border-light)' }}>
-                                                                     <td colSpan={7} style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                                                                     <td colSpan={8} style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
                                                                          <span style={{ fontWeight: 800, display: 'block', marginBottom: '8px' }}>Nenhum item válido identificado no documento</span>
                                                                          <button
                                                                              type="button"
@@ -1088,8 +1102,22 @@ export function RequestCreate() {
                                                                                  {ivaRates.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                                                                              </select>
                                                                          </td>
+                                                                         <td style={{ padding: '4px 8px' }}>
+                                                                             <input
+                                                                                 type="number"
+                                                                                 value={item.discountAmount || 0}
+                                                                                 onChange={(e) => handleUpdateOcrItem(idx, 'discountAmount', Number(e.target.value))}
+                                                                                 style={{ ...inputStyle, padding: '6px 8px', marginTop: 0, textAlign: 'right', fontSize: '0.72rem' }}
+                                                                                 min={0}
+                                                                             />
+                                                                         </td>
                                                                          <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 700 }}>
                                                                              {(Number(item.totalPrice) || 0).toLocaleString('pt-PT', { minimumFractionDigits: 2 })}
+                                                                             {Number(item.discountAmount) > 0 && (
+                                                                                 <div style={{ fontSize: '0.6rem', color: '#dc2626', fontWeight: 600 }}>
+                                                                                     -{(Number(item.discountAmount)).toLocaleString('pt-PT', { minimumFractionDigits: 2 })}
+                                                                                 </div>
+                                                                             )}
                                                                          </td>
                                                                          <td style={{ padding: '4px 8px', textAlign: 'center' }}>
                                                                              <button type="button" onClick={() => handleRemoveOcrItem(idx)} style={{ color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer' }}>
@@ -1101,8 +1129,22 @@ export function RequestCreate() {
                                                              )}
                                                          </tbody>
                                                          <tfoot>
+                                                             {(() => {
+                                                                 const totalDiscount = (paymentDraft.items || []).reduce((sum, item) => sum + (Number(item.discountAmount) || 0), 0);
+                                                                 return totalDiscount > 0 ? (
+                                                                     <tr style={{ backgroundColor: '#fef2f2', borderBottom: '1px solid #fecaca' }}>
+                                                                         <td colSpan={6} style={{ padding: '8px 16px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 700, color: '#dc2626' }}>
+                                                                             TOTAL ABATIMENTOS ({String(paymentDraft.currency || '')}):
+                                                                         </td>
+                                                                         <td style={{ padding: '8px 16px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 800, color: '#dc2626' }}>
+                                                                             -{totalDiscount.toLocaleString('pt-PT', { minimumFractionDigits: 2 })}
+                                                                         </td>
+                                                                         <td></td>
+                                                                     </tr>
+                                                                 ) : null;
+                                                             })()}
                                                              <tr style={{ backgroundColor: '#F9FAFB', fontWeight: 800 }}>
-                                                                 <td colSpan={5} style={{ padding: '12px 16px', textAlign: 'right' }}>TOTAL DO PEDIDO ({String(paymentDraft.currency || '')}):</td>
+                                                                 <td colSpan={6} style={{ padding: '12px 16px', textAlign: 'right' }}>TOTAL DO PEDIDO ({String(paymentDraft.currency || '')}):</td>
                                                                  <td style={{ padding: '12px 16px', textAlign: 'right', color: 'var(--color-primary)', fontSize: '0.85rem' }}>
                                                                      {(Number(paymentDraft.totalAmount) || 0).toLocaleString('pt-PT', { minimumFractionDigits: 2 })}
                                                                  </td>
@@ -1184,6 +1226,15 @@ export function RequestCreate() {
                                     {filteredCompanies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                 </select>
                                 {renderFieldError('CompanyId')}
+                                {paymentDraft?.isCompanyOcrAutoFilled && (
+                                    <motion.div 
+                                        initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }}
+                                        style={{ color: '#059669', fontSize: '0.75rem', marginTop: '6px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}
+                                    >
+                                        <CheckCircle2 size={14} />
+                                        Preenchido automaticamente conforme identificado ({paymentDraft.extractedCompanyName})
+                                    </motion.div>
+                                )}
                             </label>
 
                             <label style={labelStyle}>

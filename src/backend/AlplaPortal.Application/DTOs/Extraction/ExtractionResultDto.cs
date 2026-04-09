@@ -4,6 +4,7 @@ public class ExtractionHeaderDto
 {
     public string? SupplierName { get; set; }
     public string? SupplierTaxId { get; set; }
+    public string? BilledCompanyName { get; set; }
     public string? DocumentNumber { get; set; }
     public string? DocumentDate { get; set; }
     public string? Currency { get; set; }
@@ -18,6 +19,8 @@ public class ExtractionLineItemDto
     public decimal? Quantity { get; set; }
     public string? Unit { get; set; }
     public decimal? UnitPrice { get; set; }
+    public decimal? DiscountAmount { get; set; }
+    public decimal? DiscountPercent { get; set; }
     public decimal? TotalPrice { get; set; }
     public decimal? TaxRate { get; set; }
 }
