@@ -26,7 +26,7 @@ public class LocalOcrExtractionProvider : IDocumentExtractionProvider
         _settingsService = settingsService;
     }
 
-    public async Task<ExtractionResultDto> ExtractAsync(Stream fileStream, string fileName, CancellationToken ct = default)
+    public async Task<ExtractionResultDto> ExtractAsync(Stream fileStream, string fileName, string? sourceContext = null, CancellationToken ct = default)
     {
         try
         {

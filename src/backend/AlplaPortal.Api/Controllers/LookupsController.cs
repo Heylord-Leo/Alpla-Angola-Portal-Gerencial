@@ -620,6 +620,7 @@ public class LookupsController : ControllerBase
             queryable = queryable.Where(s =>
                 (s.PortalCode != null && s.PortalCode.Contains(queryText)) ||
                 (s.PrimaveraCode != null && s.PrimaveraCode.Contains(queryText)) ||
+                (s.TaxId != null && s.TaxId.Contains(queryText)) ||
                 s.Name.ToUpper().Contains(queryText)
             );
         }
@@ -632,7 +633,7 @@ public class LookupsController : ControllerBase
         var results = await queryable
             .OrderBy(s => s.Name)
             .Take(take)
-            .Select(s => new { s.Id, s.PortalCode, s.PrimaveraCode, s.Name })
+            .Select(s => new { s.Id, s.PortalCode, s.PrimaveraCode, s.Name, s.TaxId })
             .ToListAsync();
 
         return Ok(results);

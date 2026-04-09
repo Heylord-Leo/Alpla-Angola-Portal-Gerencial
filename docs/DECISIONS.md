@@ -1211,3 +1211,19 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
     3. **Vision Fallback**: If extraction via text fails quality checks, or if it's a scanned document/contract, it seamlessly falls back to the original Rasterize-to-Vision flow.
     4. **Telemetry**: Introduced explicit telemetry fields (`RoutingStrategy`, `DetailMode`, `NativeTextDetected`) in `ExtractionMetadataDto` to measure the cost-effectiveness in production admin logs without impacting legacy API consumers.
 - **Consequences:** Dramatically reduces token usage by approximately 98% for native PDFs (e.g., 618 tokens instead of >37,000 for standard invoices). Preserves fallback capability for scanned documents, preventing brittle failures. Sets the foundation for adaptive token optimization rules.
+
+---
+
+## DEC-099 — Context-Aware Document Triage & Multi-Strategy Matching
+
+- **Date:** 2026-04-09
+- **Status:** Accepted
+- **Context:** OCR extraction suffered from two critical failures: 1) Invoices misclassified as Contracts due to overlapping keywords in footers (referencing payment terms), and 2) Duplicate suppliers created due to minor naming variations (e.g., "ITA, SA." vs "ITA SA").
+- **Decision:** 
+    1. **Source-Context Hint**: The extraction pipeline now accepts a `sourceContext` param (e.g. `quotation`). If present, the triage engine automatically favors the `Invoice` strategy unless the document is definitively a multi-page legal contract (dominant scoring).
+    2. **Aggressive Keyword Weighting**: Strong invoice keywords (e.g. "Factura", "Proforma") now carry 3x weight and act as "vetos" against contract classification.
+    3. **Multi-Step Matching**: Frontend supplier matching now follows a three-step sequence: Normalized Name Match -> NIF/TaxId API Search -> Fuzzy Name Match. 
+    4. **Normalization Standards**: Standardized stripping of common punctuation and corporate suffixes during the search phase to bridge the gap between extraction strings and Master Data records.
+- **Consequences:** Dramatically increases extraction reliability for first-time uploads. Eliminates the most common cause of "Partial" extraction states for invoices. Provides a significantly cleaner Supplier master dataset by preventing "punctuation-based" duplicates.
+
+---

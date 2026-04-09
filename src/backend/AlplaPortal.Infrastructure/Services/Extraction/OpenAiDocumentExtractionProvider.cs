@@ -54,7 +54,7 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
         _settingsService = settingsService;
     }
 
-    public async Task<ExtractionResultDto> ExtractAsync(Stream fileStream, string fileName, CancellationToken ct = default)
+    public async Task<ExtractionResultDto> ExtractAsync(Stream fileStream, string fileName, string? sourceContext = null, CancellationToken ct = default)
     {
         try
         {
@@ -82,7 +82,7 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
             if (extension == ".pdf")
             {
                 using var triageStream = new MemoryStream(safeMemoryStream.ToArray());
-                var triageResult = TriageDocument(triageStream);
+                var triageResult = TriageDocument(triageStream, fileName, sourceContext);
                 tryTextFirst = triageResult.isNative;
                 pagesText = triageResult.pagesText;
                 strategy = triageResult.strategy;
@@ -299,7 +299,7 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
             return new ExtractionResultDto { Success = false, ProviderName = Name };
     }
 
-    private (bool isNative, List<string> pagesText, DocumentStrategy strategy) TriageDocument(Stream pdfStream)
+    private (bool isNative, List<string> pagesText, DocumentStrategy strategy) TriageDocument(Stream pdfStream, string fileName, string? sourceContext = null)
     {
         try
         {
@@ -325,23 +325,76 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
 
             DocumentStrategy strategy = DocumentStrategy.Invoice;
             
-            if (isNative)
+            // --- CONTEXT-AWARE OVERRIDE ---
+            // If the request originates from quotation or payment request screens,
+            // the user is definitely uploading an invoice/proforma, never a contract.
+            bool contextForcesInvoice = !string.IsNullOrWhiteSpace(sourceContext) &&
+                (sourceContext.Equals("quotation", StringComparison.OrdinalIgnoreCase) ||
+                 sourceContext.Equals("payment_request", StringComparison.OrdinalIgnoreCase));
+
+            if (contextForcesInvoice)
+            {
+                _logger.LogInformation("Triage: sourceContext='{Context}' forces Invoice strategy for '{FileName}'. Skipping contract classification.", sourceContext, fileName);
+            }
+            else if (isNative)
             {
                 var lowerText = triageText.ToLowerInvariant();
                 int invoiceSignals = 0;
                 int contractSignals = 0;
 
-                string[] invoiceKeywords = { "invoice", "fatura", "recibo", "proforma", "purchase order" };
-                string[] contractKeywords = { "contrato", "contract", "acordo", "nda", "n.d.a", "master service agreement", "terms and conditions", "termo", "termos", "confidentiality" };
+                // Strong invoice keywords — if ANY of these match, the document is an invoice/proforma
+                string[] strongInvoiceKeywords = { "invoice", "fatura", "factura", "proforma", "pro-forma", "pro forma",
+                    "purchase order", "encomenda", "nota de débito", "nota de debito", "recibo", "receipt" };
+                // General invoice signals
+                string[] invoiceKeywords = { "subtotal", "zwischensumme", "iva", "tax", "vat", "total amount",
+                    "total documento", "quantidade", "unit price", "preço unitário" };
+                // Contract keywords
+                string[] contractKeywords = { "contrato", "contract", "acordo", "nda", "n.d.a", "master service agreement",
+                    "terms and conditions", "confidentiality", "cláusula", "clausula", "signatário", "signatario" };
+                // Weak contract signals — common in invoices too, should NOT trigger contract classification alone
+                // "termo", "termos" removed from contract keywords as they appear frequently in payment terms of invoices
+
+                // Check strong invoice keywords first — these are definitive
+                bool hasStrongInvoiceSignal = false;
+                foreach (var kw in strongInvoiceKeywords)
+                {
+                    if (lowerText.Contains(kw))
+                    {
+                        hasStrongInvoiceSignal = true;
+                        invoiceSignals += 3; // Heavy weight
+                    }
+                }
 
                 foreach (var kw in invoiceKeywords) if (lowerText.Contains(kw)) invoiceSignals++;
                 foreach (var kw in contractKeywords) if (lowerText.Contains(kw)) contractSignals++;
 
+                // Filename heuristic — common invoice/PO prefixes
+                var baseFileName = Path.GetFileNameWithoutExtension(fileName).ToUpperInvariant();
+                string[] invoiceFilePrefixes = { "FA", "INV", "PRO", "PO", "ENC", "NF", "REC", "FT" };
+                if (invoiceFilePrefixes.Any(p => baseFileName.StartsWith(p)))
+                {
+                    invoiceSignals += 2;
+                    _logger.LogInformation("Triage: Filename '{FileName}' matches invoice prefix pattern. Boosting invoice score.", fileName);
+                }
+
                 bool denseText = triageText.Length > 2000 && triageLines.Length > 20;
 
-                if (contractSignals > 0 && contractSignals > invoiceSignals && denseText)
+                // Contract classification requires ALL of:
+                // 1. No strong invoice signal present
+                // 2. At least 2 distinct contract keywords matched
+                // 3. Contract signals clearly dominate invoice signals
+                // 4. Dense text (multi-paragraph legal document)
+                // 5. Multi-page document (contracts are rarely 1 page)
+                if (!hasStrongInvoiceSignal && contractSignals >= 2 && contractSignals > invoiceSignals + 1 && denseText && totalPages > 1)
                 {
                     strategy = DocumentStrategy.Contract;
+                    _logger.LogInformation("Triage: Classified '{FileName}' as Contract (contractSignals={CS}, invoiceSignals={IS}, pages={Pages}).",
+                        fileName, contractSignals, invoiceSignals, totalPages);
+                }
+                else
+                {
+                    _logger.LogInformation("Triage: Classified '{FileName}' as Invoice (contractSignals={CS}, invoiceSignals={IS}, strongInvoice={SI}, pages={Pages}).",
+                        fileName, contractSignals, invoiceSignals, hasStrongInvoiceSignal, totalPages);
                 }
             }
 
@@ -482,14 +535,26 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
         return @"You are a financial OCR expert. Extract data from this invoice, proforma, or purchase order (Encomenda).
 CRITICAL PRECISION RULES:
 - SUPPLIER IDENTIFICATION: If the document is a Purchase Order (e.g. 'Encomenda'), the issuing company (like 'ALPLA') is usually at the top, and the ACTUAL SUPPLIER is usually listed under 'Exmo.(s) Sr.(s)' or 'Srs.' or 'Fornecedor'. DO NOT confuse the billed company with the supplier.
-- QUANTITY (Menge): Capture EVERY digit. If it says '21', do not return '2'. Look closely at column alignment and digit spacing.
-- UNIT PRICE (Einzelpreis/Stückpreis): Capture the full numerical value exactly as printed.
-- DISCOUNTS (Rabatt):
-  * discountPercent = the percentage shown in the Rabatt column (e.g., 100 means 100%).
-  * discountAmount = THE TOTAL DISCOUNT FOR THE ENTIRE LINE = quantity × unitPrice × (discountPercent / 100).
-    Example: qty=23, unitPrice=149.90, Rabatt=100% → discountAmount = 23 × 149.90 = 3447.70 (NOT 149.90).
-  * If no discount column or value exists for a line, set both to 0.
-- LINE TOTAL (Ges.preis): totalPrice = (quantity × unitPrice) - discountAmount. If Rabatt=100%, totalPrice = 0.
+- QUANTITY (Menge/Qtd.): Capture EVERY digit. If it says '21', do not return '2'. Look closely at column alignment and digit spacing.
+- UNIT PRICE (Einzelpreis/Stückpreis/Pr. Unitário): Capture the full numerical value exactly as printed.
+
+- DISCOUNTS — CRITICAL COLUMN DISAMBIGUATION:
+  Portuguese invoices have SEPARATE columns for discount and tax. You MUST distinguish:
+    * Column 'Desc.' or 'Desconto' = DISCOUNT PERCENTAGE (e.g. 7.00 means 7% discount, 25.00 means 25% discount)
+    * Column 'IVA' or 'Taxa' = TAX/VAT RATE (e.g. 14.00 means 14% tax)
+  These are DIFFERENT columns. Do NOT confuse them. Do NOT use the IVA value as discountPercent.
+  German invoices use 'Rabatt' for discount and 'MwSt' for tax.
+
+  Extraction rules for each item:
+    * discountPercent = the value from the Desc./Desconto/Rabatt column. If no discount column exists, set to 0.
+    * discountAmount = THE TOTAL DISCOUNT FOR THE ENTIRE LINE = quantity × unitPrice × (discountPercent / 100).
+      Example: qty=1, unitPrice=510000, Desc.=7% → discountAmount = 1 × 510000 × 0.07 = 35700.
+    * taxRate = the value from the IVA/Taxa/MwSt column. This is NOT a discount. If 14.00 appears in the IVA column, taxRate=14.
+    * If no discount column or value exists for a line, set discountPercent=0 and discountAmount=0.
+  SELF-VALIDATION: totalPrice should equal (quantity × unitPrice) - discountAmount. 
+    If this does not match the printed 'Valor' column, re-examine which column is discount vs tax.
+
+- LINE TOTAL (Ges.preis/Valor): totalPrice = (quantity × unitPrice) - discountAmount. If discount=100%, totalPrice = 0.
 - HEADER totalAmount = the Zwischensumme/Subtotal (net total after all line discounts, before tax).
 - HEADER grandTotal = the FINAL total the buyer must pay, INCLUDING all taxes (IVA). This is the 'Total' or 'Total (AKZ)' or 'TOTAL DOCUMENTO' line on the document. If there is no separate grand total, set grandTotal = totalAmount.
 
@@ -512,9 +577,9 @@ Output ONLY JSON with this structure:
       ""quantity"": number,
       ""unit"": ""string"",
       ""unitPrice"": number,
-      ""discountPercent"": number (e.g. 100 for 100%, 0 if none),
+      ""discountPercent"": number (from Desc./Desconto column, e.g. 7 for 7%, 25 for 25%, 0 if none),
       ""discountAmount"": number (TOTAL line discount = qty × unitPrice × discountPercent/100),
-      ""taxRate"": number,
+      ""taxRate"": number (from IVA/Taxa column — NOT the discount),
       ""totalPrice"": number (after discount, before tax)
     }
   ],

@@ -265,6 +265,7 @@ public class RequestsController : BaseController
             .ToListAsync();
     }
 
+    [HttpGet]
     public async Task<ActionResult<RequestListResponseDto>> GetRequests(
         [FromQuery] string? search = null, 
         [FromQuery] string? statusIds = null,
@@ -1559,7 +1560,7 @@ public class RequestsController : BaseController
         {
             // Step 3: Trigger Extraction via provider-agnostic service
             using var stream = file.OpenReadStream();
-            var internalResult = await _extractionService.ExtractAsync(stream, file.FileName);
+            var internalResult = await _extractionService.ExtractAsync(stream, file.FileName, "quotation");
 
             // Map back to legacy DTO to preserve frontend compatibility
             var legacyResult = ExtractionMapper.MapToLegacyOcrResult(internalResult);
@@ -1588,7 +1589,7 @@ public class RequestsController : BaseController
 
     [AllowAnonymous]
     [HttpPost("direct-ocr")]
-    public async Task<ActionResult<OcrExtractionResultDto>> DirectOcrExtract(IFormFile file)
+    public async Task<ActionResult<OcrExtractionResultDto>> DirectOcrExtract(IFormFile file, [FromQuery] string? sourceContext = null)
     {
         if (file == null || file.Length == 0)
         {
@@ -1599,7 +1600,7 @@ public class RequestsController : BaseController
         {
             // Trigger Extraction directly without Request ID check
             using var stream = file.OpenReadStream();
-            var internalResult = await _extractionService.ExtractAsync(stream, file.FileName);
+            var internalResult = await _extractionService.ExtractAsync(stream, file.FileName, sourceContext);
 
             // Map back to legacy DTO to preserve frontend compatibility
             var legacyResult = ExtractionMapper.MapToLegacyOcrResult(internalResult);

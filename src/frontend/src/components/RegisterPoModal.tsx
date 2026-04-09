@@ -314,10 +314,50 @@ export function RegisterPoModal({ show, requestId, requestData, onClose, onSucce
 
                                     {/* OCR Block */}
                                     {ocrLoading ? (
-                                        <div style={{ padding: '24px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-                                            <Search className="spin-animation" size={20} color="#64748b" />
-                                            <span style={{ fontWeight: 700, color: '#334155', fontSize: '0.9rem' }}>A validar documento com Inteligência Artificial...</span>
-                                        </div>
+                                        <motion.div
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            exit={{ opacity: 0 }}
+                                            transition={{ duration: 0.2 }}
+                                            style={{
+                                                padding: '32px 24px',
+                                                backgroundColor: '#f0f9ff',
+                                                border: '2px solid var(--color-primary)',
+                                                borderRadius: '8px',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '12px'
+                                            }}
+                                        >
+                                            <motion.div
+                                                animate={{ rotate: [0, 360] }}
+                                                transition={{ repeat: Infinity, ease: "linear", duration: 1.5 }}
+                                                style={{ display: 'flex' }}
+                                            >
+                                                <Search size={32} style={{ color: 'var(--color-primary)' }} />
+                                            </motion.div>
+
+                                            <span style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--color-primary)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                                                Validando com IA
+                                            </span>
+
+                                            <div style={{ width: '120px', height: '4px', backgroundColor: 'var(--color-border)', borderRadius: '2px', overflow: 'hidden' }}>
+                                                <motion.div
+                                                    animate={{ x: ['-100%', '200%'] }}
+                                                    transition={{ repeat: Infinity, ease: 'easeInOut', duration: 1.5 }}
+                                                    style={{ width: '50%', height: '100%', backgroundColor: 'var(--color-primary)' }}
+                                                />
+                                            </div>
+
+                                            <div style={{ fontSize: '0.8rem', color: '#334155', fontWeight: 600, display: 'flex', gap: '2px' }}>
+                                                <span>A validar documento com Inteligência Artificial</span>
+                                                <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1.5, times: [0, 0.5, 1] }}>.</motion.span>
+                                                <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1.5, times: [0, 0.75, 1], delay: 0.2 }}>.</motion.span>
+                                                <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1.5, times: [0, 0.5, 1], delay: 0.4 }}>.</motion.span>
+                                            </div>
+                                        </motion.div>
                                     ) : ocrResult ? (
                                         ocrResult.hasMismatches ? (
                                             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ padding: '24px', backgroundColor: '#fff7ed', border: '2px solid #f97316', borderRadius: '8px' }}>

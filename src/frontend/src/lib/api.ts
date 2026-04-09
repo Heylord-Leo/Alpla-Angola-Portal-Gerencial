@@ -439,10 +439,11 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao processar OCR do documento.', 'OcrSettings');
             return response.json();
         },
-        directOcrExtract: async (file: File): Promise<any> => {
+        directOcrExtract: async (file: File, sourceContext?: string): Promise<any> => {
             const formData = new FormData();
             formData.append('file', file);
-            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/direct-ocr`, {
+            const ctxParam = sourceContext ? `?sourceContext=${encodeURIComponent(sourceContext)}` : '';
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/direct-ocr${ctxParam}`, {
                 method: 'POST',
                 body: formData,
             });

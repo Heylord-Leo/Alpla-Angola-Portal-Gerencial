@@ -128,17 +128,73 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
         const extractedSupplierName = getSafeValue<string>(suggestions?.supplierName, '');
         const extractedSupplierTaxId = getSafeValue<string>(suggestions?.supplierTaxId, '');
         
-        // Part A: Supplier Matching
+        // --- Supplier Name Normalizer: strips trailing punctuation, collapses whitespace ---
+        const normalizeName = (name: string): string => {
+            return name
+                .toLowerCase()
+                .trim()
+                .replace(/[.,;:!]+$/g, '')   // Remove trailing punctuation (e.g. "SA." → "SA")
+                .replace(/\s+/g, ' ')         // Collapse multiple spaces
+                .replace(/[''`´]/g, "'")      // Normalize apostrophes
+                .trim();
+        };
+
+        // Part A: Supplier Matching (multi-strategy)
         let matchedSupplierId: number | null = null;
         let extractedSupplierPortalCode: string | null = null;
+        
         if (extractedSupplierName && typeof extractedSupplierName === 'string') {
             try {
+                // Search by name first
                 const searchResults = await api.lookups.searchSuppliers(extractedSupplierName);
-                const match = searchResults.find((s: any) => s.name.toLowerCase().trim() === extractedSupplierName.toLowerCase().trim());
+                const normalizedExtracted = normalizeName(extractedSupplierName);
+
+                // Strategy 1: Exact normalized name match
+                let match = searchResults.find((s: any) => normalizeName(s.name) === normalizedExtracted);
+
+                // Strategy 2: NIF/TaxId match — if name didn't match but we have a tax ID
+                if (!match && extractedSupplierTaxId) {
+                    const normalizedTaxId = extractedSupplierTaxId.replace(/[\s\-.]/g, '').trim();
+                    if (normalizedTaxId.length >= 5) {
+                        // First check if any name-search result has matching NIF
+                        match = searchResults.find((s: any) => 
+                            s.taxId && s.taxId.replace(/[\s\-.]/g, '').trim() === normalizedTaxId
+                        );
+                        
+                        // If still no match, do a dedicated search by NIF
+                        if (!match) {
+                            const nifResults = await api.lookups.searchSuppliers(normalizedTaxId);
+                            match = nifResults.find((s: any) => 
+                                s.taxId && s.taxId.replace(/[\s\-.]/g, '').trim() === normalizedTaxId
+                            );
+                        }
+                    }
+                }
+
+                // Strategy 3: Fuzzy contains — one name contains the other (for trade names / abbreviations)
+                if (!match && normalizedExtracted.length >= 5) {
+                    match = searchResults.find((s: any) => {
+                        const normalizedDb = normalizeName(s.name);
+                        return normalizedDb.includes(normalizedExtracted) || normalizedExtracted.includes(normalizedDb);
+                    });
+                }
+
                 if (match) {
                     matchedSupplierId = match.id;
                     extractedSupplierPortalCode = match.portalCode;
                 }
+
+                // --- Supplier Match Diagnostics ---
+                console.group('[OCR] Supplier Match Diagnostics');
+                console.log('Extracted Name:', extractedSupplierName);
+                console.log('Normalized Name:', normalizedExtracted);
+                console.log('Extracted NIF:', extractedSupplierTaxId || '(empty)');
+                console.log('Search Results:', searchResults.length, 'candidates');
+                console.log('Match Result:', match
+                    ? `✅ Matched → ${match.name} (ID: ${match.id}, Code: ${match.portalCode})`
+                    : '❌ No match — supplier may need registration'
+                );
+                console.groupEnd();
             } catch (e) {
                 console.error("[useOcrProcessor] Supplier matching failed", e);
             }
@@ -223,18 +279,37 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
                     return matched ? matched.id : null;
                 })();
 
-                // Cross-validate discountAmount using discountPercent if available
-                // The AI sometimes returns per-unit discount instead of total line discount
+                // --- Discount Cross-Validation & Recovery ---
+                // Portuguese invoices often show discount as % in the "Desc." column.
+                // The AI sometimes confuses the "Desc." (discount) and "IVA" (tax) columns,
+                // returning IVA% as discountPercent. We use totalPrice (from the "Valor" column)
+                // as the anchor of truth to detect and correct such errors.
                 const rawQty = item.quantity || 1;
                 const rawPrice = item.unitPrice || 0;
                 const rawDiscountPct = item.discountPercent || 0;
                 const rawDiscountAmt = item.discountAmount || 0;
+                const rawTotalPrice = item.totalAmount || item.totalPrice || 0;
+                const grossLineTotal = rawQty * rawPrice;
                 
                 let resolvedDiscount = rawDiscountAmt;
-                if (rawDiscountPct > 0) {
-                    // Calculate expected total line discount from percentage
-                    const expectedDiscount = Math.round(rawQty * rawPrice * (rawDiscountPct / 100) * 100) / 100;
-                    // If the OCR discountAmount doesn't match the expected value, use the calculated one
+
+                if (rawTotalPrice > 0 && grossLineTotal > 0) {
+                    // Strategy A: Use totalPrice as anchor to reverse-engineer the actual discount
+                    const impliedDiscount = Math.round((grossLineTotal - rawTotalPrice) * 100) / 100;
+                    const impliedDiscountPct = Math.round((impliedDiscount / grossLineTotal) * 10000) / 100;
+
+                    // If the AI's discountAmount doesn't produce the right totalPrice, use the implied one
+                    const aiCalculatedTotal = Math.round((grossLineTotal - rawDiscountAmt) * 100) / 100;
+                    if (Math.abs(aiCalculatedTotal - rawTotalPrice) > 1) {
+                        console.warn(
+                            `[OCR] Item ${index + 1}: AI discount (${rawDiscountAmt}) produces total ${aiCalculatedTotal}, ` +
+                            `but document says ${rawTotalPrice}. Correcting discount to ${impliedDiscount} (${impliedDiscountPct}%).`
+                        );
+                        resolvedDiscount = Math.max(0, impliedDiscount);
+                    }
+                } else if (rawDiscountPct > 0) {
+                    // Strategy B: No totalPrice available — calculate from percentage
+                    const expectedDiscount = Math.round(grossLineTotal * (rawDiscountPct / 100) * 100) / 100;
                     if (Math.abs(resolvedDiscount - expectedDiscount) > 0.01) {
                         console.warn(`[OCR] Item ${index + 1}: discountAmount (${resolvedDiscount}) doesn't match ${rawDiscountPct}% of ${rawQty}×${rawPrice} = ${expectedDiscount}. Using calculated value.`);
                         resolvedDiscount = expectedDiscount;

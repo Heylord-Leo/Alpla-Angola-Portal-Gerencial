@@ -10,5 +10,6 @@ public interface IDocumentExtractionService
     /// <param name="fileStream">The document stream.</param>
     /// <param name="fileName">Original filename for context.</param>
     /// <returns>A provider-agnostic extraction result.</returns>
-    Task<ExtractionResultDto> ExtractAsync(Stream fileStream, string fileName, CancellationToken ct = default);
+    /// <param name="sourceContext">Optional hint about the source context (e.g., 'quotation', 'payment_request') to guide document classification.</param>
+    Task<ExtractionResultDto> ExtractAsync(Stream fileStream, string fileName, string? sourceContext = null, CancellationToken ct = default);
 }

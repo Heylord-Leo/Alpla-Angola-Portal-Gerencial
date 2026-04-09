@@ -21,7 +21,7 @@ public class DocumentExtractionService : IDocumentExtractionService
         _settingsService = settingsService;
     }
 
-    public async Task<ExtractionResultDto> ExtractAsync(Stream fileStream, string fileName, CancellationToken ct = default)
+    public async Task<ExtractionResultDto> ExtractAsync(Stream fileStream, string fileName, string? sourceContext = null, CancellationToken ct = default)
     {
         var options = await _settingsService.GetEffectiveSettingsAsync(ct);
 
@@ -54,7 +54,7 @@ public class DocumentExtractionService : IDocumentExtractionService
 
         try 
         {
-            return await provider.ExtractAsync(fileStream, fileName, timeoutCts.Token);
+            return await provider.ExtractAsync(fileStream, fileName, sourceContext, timeoutCts.Token);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
         {

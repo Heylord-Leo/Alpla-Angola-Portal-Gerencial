@@ -2,7 +2,18 @@
 
 ## Current Version
 
-v2.42.1
+v2.43.0
+
+## [2.43.0] - 2026-04-09
+
+### Added
+- **Context-Aware OCR Triage**: Implemented `sourceContext` propagation in the extraction pipeline. When documents are uploaded from Quotation or Payment flows, the system now enforces an "Invoice" classification, preventing catastrophic misclassification as "Contract".
+- **Multi-Strategy Supplier Matching**: Overhauled the frontend supplier identification in `useOcrProcessor.ts`, including punctuation-insensitive normalization and NIF/TaxId fallback search to eliminate duplicate records.
+- **Discount & IVA Reliability**: Improved the OCR prompt and frontend mapping to accurately distinguish Portuguese "Desc." (discount) from "IVA" (tax) columns.
+- **TotalPrice Anchor Validation**: Implemented a frontend safety net that reverse-engineers the correct discount amount from the document's total price if AI classification fails.
+
+### Changed
+- **OCR System Prompt**: Updated with bilingual (PT/DE) column mapping instructions and self-validation rules for line items.
 
 ## [2.42.1] - 2026-04-09
 
