@@ -2,7 +2,17 @@
 
 ## Current Version
 
-v2.40.0
+v2.41.0
+
+## [2.41.0] - 2026-04-09
+
+### Added
+- **P.O. Workflow Visibility**: Added "Awaiting P.O" metric to dashboard KPIs and a high-visibility quick-chip in the requests grid.
+- **Atomic P.O. Registration**: Created a dedicated `RegisterPoModal` to handle PDF upload and status transition in a single, frictionless action.
+- **Unit Master Data Integrity**: Implemented `isActive` filtering for units of measure across OCR extraction and manual input menus.
+
+### Fixed
+- **Status Constant Regressions**: Fixed backend build failure caused by incorrect status constant naming (`Approved` vs `FinalApproved`).
 
 ## [2.40.0] - 2026-04-09
 

@@ -56,6 +56,7 @@ public class RequestsController : BaseController
                 WaitingQuotation = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingQuotation && r.RequestType!.Code == RequestConstants.Types.Quotation),
                 WaitingAreaApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval),
                 WaitingFinalApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval || r.Status!.Code == RequestConstants.Statuses.WaitingCostCenter),
+                AwaitingPo = g.Count(r => r.Status!.Code == RequestConstants.Statuses.FinalApproved),
                 InAdjustment = g.Count(r => r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment),
                 InAttention = g.Count(r => !terminalStates.Contains(r.Status!.Code) && r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < in4Days)
             })
@@ -68,6 +69,7 @@ public class RequestsController : BaseController
             WaitingQuotation = stats?.WaitingQuotation ?? 0,
             WaitingAreaApproval = stats?.WaitingAreaApproval ?? 0,
             WaitingFinalApproval = stats?.WaitingFinalApproval ?? 0,
+            AwaitingPo = stats?.AwaitingPo ?? 0,
             InAdjustment = stats?.InAdjustment ?? 0,
             InAttention = stats?.InAttention ?? 0
         });
@@ -319,6 +321,7 @@ public class RequestsController : BaseController
                 Total = g.Count(),
                 WaitingQuotation = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingQuotation && r.RequestType!.Code == RequestConstants.Types.Quotation),
                 AwaitingApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval || r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval || r.Status!.Code == RequestConstants.Statuses.WaitingCostCenter),
+                AwaitingPo = g.Count(r => r.Status!.Code == RequestConstants.Statuses.FinalApproved),
                 AwaitingPayment = g.Count(r => r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled),
                 Completed = g.Count(r => r.Status!.Code == "COMPLETED") // COMPLETED status not yet in constants
             })
@@ -330,6 +333,7 @@ public class RequestsController : BaseController
             TotalRequests = counts?.Total ?? 0,
             WaitingQuotation = counts?.WaitingQuotation ?? 0,
             AwaitingApproval = counts?.AwaitingApproval ?? 0,
+            AwaitingPo = counts?.AwaitingPo ?? 0,
             AwaitingPayment = counts?.AwaitingPayment ?? 0,
             CompletedRequests = counts?.Completed ?? 0
         };

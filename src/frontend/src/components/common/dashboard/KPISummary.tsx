@@ -36,6 +36,14 @@ export function KPISummary({ summary, activeFilter, onFilterChange }: KPISummary
             filter: 'Em Aprovação'
         },
         {
+            id: 'po',
+            label: 'Aguardando P.O',
+            count: summary.awaitingPo,
+            icon: ClipboardList,
+            color: 'bg-orange-400',
+            filter: 'Aguardando P.O'
+        },
+        {
             id: 'payment',
             label: 'Aguardando Pagamento',
             count: summary.awaitingPayment,

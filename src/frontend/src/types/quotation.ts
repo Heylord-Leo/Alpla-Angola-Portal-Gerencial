@@ -11,6 +11,7 @@ export interface Unit {
     code: string;
     name: string;
     allowsDecimalQuantity: boolean;
+    isActive?: boolean;
 }
 
 export interface QuotationDraftItem {

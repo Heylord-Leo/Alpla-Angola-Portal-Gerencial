@@ -1087,7 +1087,7 @@ export function RequestCreate() {
                                                                                  }} 
                                                                                  style={{ ...inputStyle, padding: '6px 8px', marginTop: 0, textAlign: 'center' }}
                                                                              >
-                                                                                 {units.map(u => <option key={u.id} value={u.id}>{u.code}</option>)}
+                                                                                 {units.filter(u => u.isActive !== false || u.id === item.unitId).map(u => <option key={u.id} value={u.id}>{u.code}</option>)}
                                                                              </select>
                                                                          </td>
                                                                          <td style={{ padding: '4px 8px' }}>

@@ -12,7 +12,6 @@ export type ApprovalActionType =
     | 'DELETE' 
     | 'DELETE_ITEM' 
     | 'DELETE_QUOTATION'
-    | 'REGISTER_PO' 
     | 'SCHEDULE_PAYMENT' 
     | 'COMPLETE_PAYMENT' 
     | 'MOVE_TO_RECEIPT' 
@@ -69,7 +68,6 @@ export function ApprovalModal({
             case 'DELETE':
             case 'DELETE_ITEM':
             case 'DELETE_QUOTATION': return 'Confirmar exclusão';
-            case 'REGISTER_PO': return 'Registrar P.O';
             case 'SCHEDULE_PAYMENT': return 'Agendar Pagamento';
             case 'COMPLETE_PAYMENT': return 'Confirmar Pagamento';
             case 'MOVE_TO_RECEIPT': return 'Mover para Recibo';
@@ -99,7 +97,6 @@ export function ApprovalModal({
             case 'DELETE': return 'Tem certeza de que deseja excluir este rascunho? Esta ação não poderá ser desfeita.';
             case 'DELETE_ITEM': return 'Tem certeza que deseja excluir este item?';
             case 'DELETE_QUOTATION': return 'Tem certeza que deseja excluir esta cotação?';
-            case 'REGISTER_PO': return 'Deseja confirmar que a P.O deste pedido foi emitida?';
             case 'SCHEDULE_PAYMENT': return 'Deseja confirmar que o pagamento deste pedido foi agendado?';
             case 'COMPLETE_PAYMENT': return 'Deseja confirmar que o pagamento deste pedido foi realizado?';
             case 'MOVE_TO_RECEIPT': return 'Deseja mover este pedido para a fase de aguardando recibo?';
@@ -123,7 +120,7 @@ export function ApprovalModal({
 
     const isCommentRequired = type === 'REJECT' || type === 'REQUEST_ADJUSTMENT' || type === 'ITEM_STATUS_CHANGE' || type === 'CANCEL_REQUEST';
     const showCommentField = [
-        'APPROVE', 'REJECT', 'REQUEST_ADJUSTMENT', 'REGISTER_PO', 
+        'APPROVE', 'REJECT', 'REQUEST_ADJUSTMENT', 
         'SCHEDULE_PAYMENT', 'COMPLETE_PAYMENT', 'MOVE_TO_RECEIPT', 
         'FINALIZE', 'COMPLETE_QUOTATION', 'ITEM_STATUS_CHANGE', 'CANCEL_REQUEST'
     ].includes(type || '');

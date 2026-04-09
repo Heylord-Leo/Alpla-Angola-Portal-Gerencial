@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.41.0] - 2026-04-09
+
+### Added
+- **P.O. Workflow Visibility**: Implemented orange "Aguardando P.O" KPI card in the dashboard and a dedicated quick-chip in the requests grid mapped to the `APPROVED` status.
+- **Optimized P.O. Registration UX**: Replaced fragmented workflow with a specialized `RegisterPoModal` that handles document upload and status transition to `PO_ISSUED` in one click.
+- **Unit Master Data Integrity**: Filtered out deactivated units (`isActive: false`) from OCR auto-suggestions and manual selection menus in Quotation and Buyer Item lists.
+
+### Fixed
+- **RequestsController Build Error**: Corrected status constant usage from `Statuses.Approved` to `Statuses.FinalApproved`.
+- **Frontend Build Stability**: Cleaned up imports in `DecisionFinancialTrendLine.tsx` and `ActionMenu.tsx`.
+
 ## [2.40.0] - 2026-04-09
 
 ### Added

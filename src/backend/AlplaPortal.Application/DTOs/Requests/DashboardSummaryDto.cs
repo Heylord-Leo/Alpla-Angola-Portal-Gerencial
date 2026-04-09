@@ -12,6 +12,7 @@ public class DashboardSummaryDto
     // KPI Cards Specific
     public int AwaitingPayment { get; set; }
     public int AwaitingApproval { get; set; }
+    public int AwaitingPo { get; set; }
     public int CompletedRequests { get; set; }
 
     public decimal FilteredTotal { get; set; }

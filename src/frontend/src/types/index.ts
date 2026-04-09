@@ -169,6 +169,7 @@ export interface Unit {
     code: string;
     name: string;
     allowsDecimalQuantity: boolean;
+    isActive?: boolean;
 }
 
 export interface OcrDraftItem {
@@ -269,6 +270,7 @@ export interface DashboardSummaryDto {
 
     // KPI Cards Specific
     awaitingApproval: number;
+    awaitingPo: number;
     awaitingPayment: number;
     completedRequests: number;
 

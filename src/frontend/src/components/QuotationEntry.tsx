@@ -79,7 +79,8 @@ export function QuotationEntry({
     const resolveUnitAlias = (val: string | undefined): number | null => {
         if (!val) return null;
         const normalized = val.trim().toUpperCase().replace(/\.$/, '');
-        const directMatch = units.find(u => u.code.toUpperCase() === normalized || u.name.toUpperCase() === normalized);
+        const activeUnits = units.filter(u => u.isActive !== false);
+        const directMatch = activeUnits.find(u => u.code.toUpperCase() === normalized || u.name.toUpperCase() === normalized);
         if (directMatch) return directMatch.id;
 
         const unitAliases: Record<string, string[]> = {
@@ -92,7 +93,7 @@ export function QuotationEntry({
 
         for (const [canonicalCode, aliases] of Object.entries(unitAliases)) {
             if (aliases.includes(normalized)) {
-                const matchedUnit = units.find(u => u.code.toUpperCase() === canonicalCode);
+                const matchedUnit = activeUnits.find(u => u.code.toUpperCase() === canonicalCode);
                 if (matchedUnit) return matchedUnit.id;
             }
         }
@@ -502,7 +503,7 @@ export function QuotationEntry({
                                                     className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-red-500 focus:outline-none py-1 text-xs font-bold transition-colors"
                                                 >
                                                     <option value="">Unid...</option>
-                                                    {units.map(u => <option key={u.id} value={u.id}>{u.code}</option>)}
+                                                    {units.filter(u => u.isActive !== false || u.id === item.unitId).map(u => <option key={u.id} value={u.id}>{u.code}</option>)}
                                                 </select>
                                                 {item.unit && !item.unitId && (
                                                     <div className="absolute top-full z-10 text-[9px] text-amber-600 bg-amber-50 px-1 border border-amber-200">Sug: {item.unit}</div>

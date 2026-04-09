@@ -17,6 +17,7 @@ const QUICK_CHIPS = [
     { label: 'Todos', activeCodes: [] },
     { label: 'Em Cotação', activeCodes: ['WAITING_QUOTATION'] },
     { label: 'Em Aprovação', activeCodes: ['WAITING_AREA_APPROVAL', 'WAITING_FINAL_APPROVAL'] },
+    { label: 'Aguardando P.O', activeCodes: ['APPROVED'] },
     { label: 'Aguardando Pagamento', activeCodes: ['PO_ISSUED', 'PAYMENT_REQUEST_SENT', 'PAYMENT_SCHEDULED'] },
     { label: 'Recebimento', activeCodes: ['WAITING_RECEIPT', 'PARTIALLY_RECEIVED'] },
     { label: 'Finalizados', activeCodes: ['COMPLETED', 'QUOTATION_COMPLETED'] },
@@ -236,7 +237,7 @@ export function RequestsList() {
     const statusGroups: FilterGroup[] = useMemo(() => {
         return [
             { name: 'Inicial', codes: ['DRAFT', 'AREA_ADJUSTMENT', 'FINAL_ADJUSTMENT'] },
-            { name: 'Aprovação & Cotação', codes: ['WAITING_QUOTATION', 'WAITING_AREA_APPROVAL', 'WAITING_FINAL_APPROVAL'] },
+            { name: 'Aprovação & Cotação', codes: ['WAITING_QUOTATION', 'WAITING_AREA_APPROVAL', 'WAITING_FINAL_APPROVAL', 'APPROVED'] },
             { name: 'Financeiro & Recebimento', codes: ['PO_ISSUED', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'PARTIALLY_RECEIVED'] },
             { name: 'Finalizados', codes: ['COMPLETED', 'QUOTATION_COMPLETED', 'CANCELLED', 'REJECTED'] }
         ].map(g => ({

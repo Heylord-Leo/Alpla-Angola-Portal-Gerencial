@@ -34,6 +34,7 @@ The system provides two operational workflows (slash-commands) to satisfy this S
 4. **Versioning**:
    - Update `docs/CHANGELOG.md` with a concise delivery description.
    - Update `docs/VERSION.md` with the new version number.
+   - Automatically update `src/frontend/src/config.ts` (`APP_VERSION`) to keep the UI in sync.
 5. **Service Restart**: If code was changed, restart backend and frontend services before final confirmation (if requested).
 6. **Commit**: Create a commit using **Conventional Commits** (`feat:`, `fix:`, `docs:`, `refactor:`, etc.).
 7. **Push**: Send to `origin/main` only when the work is stable and coherent.

@@ -54,8 +54,11 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
     const resolveUnitAlias = (val: string | undefined): string => {
         if (!val) return 'UN';
         const normalized = val.trim().toUpperCase().replace(/\.$/, '');
+        
+        // Only consider active units for new extractions
+        const activeUnits = units.filter(u => u.isActive !== false);
 
-        const directMatch = units.find(u => 
+        const directMatch = activeUnits.find(u => 
             u.code.toUpperCase() === normalized || 
             u.name.toUpperCase() === normalized
         );
@@ -71,7 +74,7 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
 
         for (const [canonicalCode, aliases] of Object.entries(unitAliases)) {
             if (aliases.includes(normalized)) {
-                const matchedUnit = units.find(u => u.code.toUpperCase() === canonicalCode);
+                const matchedUnit = activeUnits.find(u => u.code.toUpperCase() === canonicalCode);
                 if (matchedUnit) return matchedUnit.code;
             }
         }

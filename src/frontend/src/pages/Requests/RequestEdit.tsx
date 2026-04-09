@@ -32,6 +32,7 @@ import { RequestAttachments } from '../../components/RequestAttachments';
 import { motion, AnimatePresence } from 'framer-motion';
 import { completeQuotationAction } from '../../lib/workflow';
 import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModal';
+import { RegisterPoModal } from '../../components/RegisterPoModal';
 import { RequestLineItemForm } from '../../components/RequestLineItemForm';
 import { RequestActionHeader, BreadcrumbItem, OperationalGuidance } from './components/RequestActionHeader';
 import { RequestQuotations } from './components/RequestQuotations';
@@ -131,6 +132,7 @@ export function RequestEdit() {
         show: boolean,
         type: ApprovalActionType
     }>({ show: false, type: null });
+    const [showRegisterPoModal, setShowRegisterPoModal] = useState(false);
     const [approvalComment, setApprovalComment] = useState('');
     const [approvalProcessing, setApprovalProcessing] = useState(false);
     const [modalFeedback, setModalFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'error', message: null });
@@ -795,10 +797,6 @@ export function RequestEdit() {
         setModalFeedback({ type: 'error', message: null });
 
         // Mandatory Attachment Validations
-        if (action === 'REGISTER_PO' && !hasAttachment('PO')) {
-            setModalFeedback({ type: 'error', message: 'É necessário anexar a P.O antes de registrar.' });
-            return;
-        }
         if (action === 'SCHEDULE_PAYMENT' && !hasAttachment('PAYMENT_SCHEDULE')) {
             setModalFeedback({ type: 'error', message: 'É necessário anexar o Cronograma de Pagamento antes de agendar.' });
             return;
@@ -858,8 +856,6 @@ export function RequestEdit() {
                 await executeDeleteItem();
                 setShowApprovalModal({ show: false, type: null });
                 return;
-            } else if (action === 'REGISTER_PO') {
-                result = await api.requests.registerPo(id, approvalComment);
             } else if (action === 'SCHEDULE_PAYMENT') {
                 result = await api.requests.schedulePayment(id, approvalComment);
             } else if (action === 'COMPLETE_PAYMENT') {
@@ -1380,7 +1376,7 @@ export function RequestEdit() {
                                     <div style={{ display: 'flex', gap: '8px' }}>
                                         {status === 'APPROVED' && (
                                             <button 
-                                                onClick={() => setShowApprovalModal({ show: true, type: 'REGISTER_PO' })}
+                                                onClick={() => setShowRegisterPoModal(true)}
                                                 className="btn-primary"
                                                 style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
                                             >
@@ -2097,6 +2093,25 @@ export function RequestEdit() {
                 feedback={modalFeedback}
                 onCloseFeedback={() => setModalFeedback(prev => ({ ...prev, message: null }))}
             />
+
+            {id && (
+                <RegisterPoModal
+                    show={showRegisterPoModal}
+                    requestId={id}
+                    onClose={() => setShowRegisterPoModal(false)}
+                    onSuccess={async (msg) => {
+                        setShowRegisterPoModal(false);
+                        setFeedback({ type: 'success', message: msg });
+                        // Reload state
+                        const data = await api.requests.get(id);
+                        setStatus(data.statusCode);
+                        setStatusFullName(data.statusName);
+                        setStatusBadgeColor(data.statusBadgeColor);
+                        setStatusHistory(data.statusHistory || []);
+                        setAttachments(data.attachments || []);
+                    }}
+                />
+            )}
 
             <QuickSupplierModal 
                 isOpen={quickSupplierModal.show}

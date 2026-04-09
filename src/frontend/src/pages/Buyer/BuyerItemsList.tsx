@@ -489,7 +489,8 @@ export function BuyerItemsList() {
                 unitId: originalItem?.unitId || null,
                 unitPrice: 0,
                 ivaRateId: null,
-                totalPrice: 0
+                totalPrice: 0,
+                discountAmount: 0
             };
             draft.items = [...(draft.items || []), newItem];
             return { ...prev, [requestId]: draft };
@@ -758,7 +759,8 @@ export function BuyerItemsList() {
                 unitId: item.unitId || null,
                 unitPrice: item.unitPrice,
                 ivaRateId: item.ivaRateId,
-                totalPrice: item.lineTotal
+                totalPrice: item.lineTotal,
+                discountAmount: 0
             }))
         };
 
@@ -2024,7 +2026,7 @@ export function BuyerItemsList() {
                                                                                                         style={{ padding: '8px', border: item.unit && !item.unitId ? '2px solid #f97316' : '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.75rem', backgroundColor: '#f8fafc', width: '100%' }}
                                                                                                     >
                                                                                                         <option value="">...</option>
-                                                                                                        {units.map(u => (
+                                                                                                        {units.filter(u => u.isActive !== false || u.id === item.unitId).map(u => (
                                                                                                             <option key={u.id} value={u.id}>{u.code}</option>
                                                                                                         ))}
                                                                                                     </select>

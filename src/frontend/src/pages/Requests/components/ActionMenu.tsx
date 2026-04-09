@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { MoreVertical } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export interface ActionMenuItem {
   label: string;
