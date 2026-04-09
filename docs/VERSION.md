@@ -2,7 +2,12 @@
 
 ## Current Version
 
-v2.39.7
+v2.39.8
+
+## [2.39.8] - 2026-04-09
+
+### Changed
+- **Requests List Performance Optimization**: Refactored the core EF Core LINQ projections in `RequestsController.GetRequests` to utilize `SelectMany().SumAsync()` left-joins, removing a crippling in-memory aggregation bottleneck and dropping server response times for the main workspace dataset from ~40s to ~230ms.
 
 ## [2.39.7] - 2026-04-08
 

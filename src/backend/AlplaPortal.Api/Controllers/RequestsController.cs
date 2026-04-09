@@ -262,6 +262,7 @@ public class RequestsController : BaseController
             })
             .ToListAsync();
     }
+
     public async Task<ActionResult<RequestListResponseDto>> GetRequests(
         [FromQuery] string? search = null, 
         [FromQuery] string? statusIds = null,
@@ -350,15 +351,13 @@ public class RequestsController : BaseController
         }
 
         // 3a. Calculate Filtered Total (Monetary Total)
-        // Materialize scalar amounts to avoid SQL Server's aggregate limitations 
-        // (Sum over subquery is not allowed in SQL)
-        var filteredAmounts = await query
-            .Select(r => r.SelectedQuotationId.HasValue 
-                ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId).Select(q => (decimal?)q.TotalAmount).FirstOrDefault() ?? 0
-                : r.EstimatedTotalAmount)
-            .ToListAsync();
-
-        var filteredTotal = filteredAmounts.Sum();
+        // Opting for SelectMany / DefaultIfEmpty to compute sum on database-side without N+1 or local evaluation
+        var filteredTotal = await query
+            .SelectMany(
+                r => r.Quotations.Where(q => q.Id == r.SelectedQuotationId).DefaultIfEmpty(),
+                (r, q) => q != null ? q.TotalAmount : r.EstimatedTotalAmount
+            )
+            .SumAsync();
 
         // 3b. Retrieve Distinct Currency Codes for Multi-currency Protection
         // Running as a separate query ensures EF can safely translate the Distinct/ToList projection
@@ -381,12 +380,13 @@ public class RequestsController : BaseController
         var prevMtdEnd = now.AddMonths(-1);
 
         // Current MTD Total & Currencies
-        var currentMtdAmounts = await query
+        var currentMtdTotal = await query
             .Where(r => r.CreatedAtUtc >= currentMtdStart && r.CreatedAtUtc <= now)
-            .Select(r => r.SelectedQuotationId.HasValue 
-                ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId).Select(q => (decimal?)q.TotalAmount).FirstOrDefault() ?? 0
-                : r.EstimatedTotalAmount)
-            .ToListAsync();
+            .SelectMany(
+                r => r.Quotations.Where(q => q.Id == r.SelectedQuotationId).DefaultIfEmpty(),
+                (r, q) => q != null ? q.TotalAmount : r.EstimatedTotalAmount
+            )
+            .SumAsync();
         
         var currentMtdCurrencies = await query
             .Where(r => r.CreatedAtUtc >= currentMtdStart && r.CreatedAtUtc <= now)
@@ -398,12 +398,13 @@ public class RequestsController : BaseController
             .ToListAsync();
 
         // Previous MTD Total & Currencies
-        var prevMtdAmounts = await query
+        var prevMtdTotal = await query
             .Where(r => r.CreatedAtUtc >= prevMtdStart && r.CreatedAtUtc <= prevMtdEnd)
-            .Select(r => r.SelectedQuotationId.HasValue 
-                ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId).Select(q => (decimal?)q.TotalAmount).FirstOrDefault() ?? 0
-                : r.EstimatedTotalAmount)
-            .ToListAsync();
+            .SelectMany(
+                r => r.Quotations.Where(q => q.Id == r.SelectedQuotationId).DefaultIfEmpty(),
+                (r, q) => q != null ? q.TotalAmount : r.EstimatedTotalAmount
+            )
+            .SumAsync();
 
         var prevMtdCurrencies = await query
             .Where(r => r.CreatedAtUtc >= prevMtdStart && r.CreatedAtUtc <= prevMtdEnd)
@@ -413,9 +414,6 @@ public class RequestsController : BaseController
             .Where(c => c != null)
             .Distinct()
             .ToListAsync();
-
-        var currentMtdTotal = currentMtdAmounts.Sum();
-        var prevMtdTotal = prevMtdAmounts.Sum();
 
         // Safe Trend Calculation (Multi-currency and Zero-baseline checks)
         bool isCurrentSafe = currentMtdCurrencies.Count == 1;
