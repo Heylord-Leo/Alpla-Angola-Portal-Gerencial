@@ -66,10 +66,12 @@ export function RegisterPoModal({ show, requestId, requestData, onClose, onSucce
 
         try {
             // directOcrExtract handles generic layout detection & extraction
+            // Response shape: { integration: { headerSuggestions: { supplierName: { value }, grandTotal: { value } } } }
             const ocrData = await api.requests.directOcrExtract(selectedFile);
+            const suggestions = ocrData?.integration?.headerSuggestions;
             
-            const extractedTotal = Number(ocrData?.header?.totalAmount) || 0;
-            const extractedSupplier = ocrData?.header?.supplierName || '';
+            const extractedTotal = Number(suggestions?.grandTotal?.value) || 0;
+            const extractedSupplier = suggestions?.supplierName?.value || '';
 
             const mismatches: string[] = [];
             let hasMismatches = false;

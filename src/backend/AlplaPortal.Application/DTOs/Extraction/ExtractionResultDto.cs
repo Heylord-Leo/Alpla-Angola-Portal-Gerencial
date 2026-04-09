@@ -9,6 +9,7 @@ public class ExtractionHeaderDto
     public string? DocumentDate { get; set; }
     public string? Currency { get; set; }
     public decimal? TotalAmount { get; set; }
+    public decimal? GrandTotal { get; set; }
     public decimal? DiscountAmount { get; set; }
 }
 

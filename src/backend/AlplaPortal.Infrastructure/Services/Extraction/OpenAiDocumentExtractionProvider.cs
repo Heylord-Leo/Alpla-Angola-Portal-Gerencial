@@ -98,7 +98,7 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
                 return await ProcessContractAsync(pagesText, safeMemoryStream, fileName, model, apiKey, tryTextFirst, extension, ct);
             }
 
-            string extractedNativeText = pagesText.Count > 0 ? pagesText[0] : string.Empty;
+            string extractedNativeText = string.Join("\n\n--- PAGE BREAK ---\n\n", pagesText);
             var prompt = GetSystemPrompt();
 
             // TextFirst Attempt -> For native PDF Invoices
@@ -119,7 +119,7 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
 
                 var textResult = await ExecuteOpenAiRequestAsync(textPayload, apiKey, fileName, "TextFirst", "n/a", model, ct);
 
-                if (textResult.Success && textResult.QualityScore >= 0.7m && (textResult.Header.TotalAmount > 0 || textResult.Header.SupplierName != null))
+                if (textResult.Success && textResult.QualityScore >= 0.7m && (textResult.Header.TotalAmount > 0 || !string.IsNullOrWhiteSpace(textResult.Header.SupplierName)))
                 {
                     _logger.LogInformation("TextFirst extraction successful for {FileName} with QualityScore {Score}.", fileName, textResult.QualityScore);
                     textResult.Metadata.NativeTextDetected = true;
@@ -479,8 +479,9 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
 
     private string GetSystemPrompt()
     {
-        return @"You are a financial OCR expert. Extract data from this invoice or proforma.
+        return @"You are a financial OCR expert. Extract data from this invoice, proforma, or purchase order (Encomenda).
 CRITICAL PRECISION RULES:
+- SUPPLIER IDENTIFICATION: If the document is a Purchase Order (e.g. 'Encomenda'), the issuing company (like 'ALPLA') is usually at the top, and the ACTUAL SUPPLIER is usually listed under 'Exmo.(s) Sr.(s)' or 'Srs.' or 'Fornecedor'. DO NOT confuse the billed company with the supplier.
 - QUANTITY (Menge): Capture EVERY digit. If it says '21', do not return '2'. Look closely at column alignment and digit spacing.
 - UNIT PRICE (Einzelpreis/Stückpreis): Capture the full numerical value exactly as printed.
 - DISCOUNTS (Rabatt):
@@ -490,6 +491,7 @@ CRITICAL PRECISION RULES:
   * If no discount column or value exists for a line, set both to 0.
 - LINE TOTAL (Ges.preis): totalPrice = (quantity × unitPrice) - discountAmount. If Rabatt=100%, totalPrice = 0.
 - HEADER totalAmount = the Zwischensumme/Subtotal (net total after all line discounts, before tax).
+- HEADER grandTotal = the FINAL total the buyer must pay, INCLUDING all taxes (IVA). This is the 'Total' or 'Total (AKZ)' or 'TOTAL DOCUMENTO' line on the document. If there is no separate grand total, set grandTotal = totalAmount.
 
 Output ONLY JSON with this structure:
 {
@@ -501,7 +503,8 @@ Output ONLY JSON with this structure:
     ""documentDate"": ""ISO date"",
     ""dueDate"": ""ISO date"",
     ""currency"": ""string (e.g. EUR, USD, AOA)"",
-    ""totalAmount"": number (Zwischensumme / Subtotal after all discounts)
+    ""totalAmount"": number (Zwischensumme / Subtotal after all discounts, before tax),
+    ""grandTotal"": number (Final total INCLUDING tax/IVA - this is what the buyer actually pays)
   },
   ""items"": [
     {
@@ -544,6 +547,7 @@ Output ONLY JSON with this structure:
                     DocumentDate = header.TryGetProperty("documentDate", out var dd) ? dd.GetString() : null,
                     Currency = header.TryGetProperty("currency", out var cur) ? cur.GetString() : null,
                     TotalAmount = header.TryGetProperty("totalAmount", out var ta) ? (ta.ValueKind == JsonValueKind.Number ? ta.GetDecimal() : 0) : null,
+                    GrandTotal = header.TryGetProperty("grandTotal", out var gt) ? (gt.ValueKind == JsonValueKind.Number ? gt.GetDecimal() : 0) : null,
                     DiscountAmount = header.TryGetProperty("discountAmount", out var da) ? (da.ValueKind == JsonValueKind.Number ? da.GetDecimal() : 0) : null
                 };
             }

@@ -2,7 +2,16 @@
 
 ## Current Version
 
-v2.42.0
+v2.42.1
+
+## [2.42.1] - 2026-04-09
+
+### Fixed
+- **P.O. OCR Data Path Mismatch**: The `RegisterPoModal` was reading OCR results from a non-existent flat path (`header.totalAmount`). Corrected to read from the legacy envelope (`integration.headerSuggestions.grandTotal.value`).
+- **P.O. Grand Total Extraction**: The GPT extraction prompt only requested the subtotal before tax (`totalAmount`), causing a systematic mismatch against the quotation's grand total. Added a new `grandTotal` field to the extraction schema capturing the final amount including IVA, with a safe fallback chain (`GrandTotal ?? TotalAmount`).
+- **P.O. Supplier Identification on Encomendas**: Added explicit prompt instructions for Purchase Order layouts where ALPLA appears as the header entity and the actual supplier is listed under `Exmo.(s) Sr.(s)`.
+- **Quotation Winner DTO Mapping**: Fixed `totalPrice` → `totalAmount` and `currencyId` → `currency` property mismatches when reading the winning quotation in `RequestEdit.tsx`.
+- **TextFirst Null Guard**: Hardened the TextFirst early-return condition to reject empty strings (`!string.IsNullOrWhiteSpace`) instead of only checking for `null`.
 
 ## [2.42.0] - 2026-04-09
 

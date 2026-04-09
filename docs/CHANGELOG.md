@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.42.1] - 2026-04-09
+
+### Fixed
+- **P.O. OCR Data Path Mismatch**: Corrected `RegisterPoModal` to read OCR data from the legacy envelope path (`integration.headerSuggestions.grandTotal.value`) instead of a non-existent flat path.
+- **P.O. Grand Total Extraction**: Added `grandTotal` field to the GPT extraction schema to capture the final amount including IVA, resolving systematic mismatches against quotation totals.
+- **P.O. Supplier Identification on Encomendas**: Added explicit prompt instructions for Purchase Order layouts from ERP Primavera.
+- **Quotation Winner DTO Mapping**: Fixed `totalPrice`→`totalAmount` and `currencyId`→`currency` property mismatches in `RequestEdit.tsx`.
+- **TextFirst Null Guard**: Hardened OCR early-return condition to reject empty strings via `!string.IsNullOrWhiteSpace`.
+
 ## [2.42.0] - 2026-04-09
 
 ### Added

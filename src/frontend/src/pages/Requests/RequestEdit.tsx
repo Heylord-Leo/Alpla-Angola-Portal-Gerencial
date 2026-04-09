@@ -2102,9 +2102,9 @@ export function RequestEdit() {
 
                     if (requestTypeCode === 'QUOTATION' && quotations.some(q => q.isSelected)) {
                        const winner = quotations.find(q => q.isSelected)!;
-                       activeTotalAmount = winner.totalPrice;
+                       activeTotalAmount = winner.totalAmount;
                        activeSupplierName = winner.supplierNameSnapshot;
-                       activeCurrencyCode = currencies.find(c => c.id === winner.currencyId)?.code || activeCurrencyCode;
+                       activeCurrencyCode = winner.currency || activeCurrencyCode;
                     }
 
                     return (
