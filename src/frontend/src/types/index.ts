@@ -30,6 +30,7 @@ export interface RequestListItemDto {
     supplierName: string | null;
     supplierPortalCode: string | null;
     estimatedTotalAmount: number;
+    discountAmount: number;
     currencyId: number | null;
     currencyCode: string | null;
     capexOpexClassificationId: number | null;

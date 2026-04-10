@@ -536,7 +536,8 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
 CRITICAL PRECISION RULES:
 - SUPPLIER IDENTIFICATION: If the document is a Purchase Order (e.g. 'Encomenda'), the issuing company (like 'ALPLA') is usually at the top, and the ACTUAL SUPPLIER is usually listed under 'Exmo.(s) Sr.(s)' or 'Srs.' or 'Fornecedor'. DO NOT confuse the billed company with the supplier.
 - QUANTITY (Menge/Qtd.): Capture EVERY digit. If it says '21', do not return '2'. Look closely at column alignment and digit spacing.
-- UNIT PRICE (Einzelpreis/Stückpreis/Pr. Unitário): Capture the full numerical value exactly as printed.
+- UNIT PRICE (Einzelpreis/Stückpreis/Pr. Unitário): Capture the full numerical value. IGNORE ALL THOUSAND SEPARATORS (spaces, dots, commas). Convert to a pure JSON number using a period for decimals (e.g. '15 358,00' or '15.358,00' MUST become 15358.00). Ensure NO leading digits are lost before spaces.
+- TOTAL AMOUNTS (Valor/Net/Gross/Grand Total): Follow the exact same formatting rules as UNIT PRICE. Ensure ALL spaces and thousand separators are removed (e.g. '36 552,96' MUST become 36552.96).
 
 - DISCOUNTS — CRITICAL COLUMN DISAMBIGUATION:
   Portuguese invoices have SEPARATE columns for discount and tax. You MUST distinguish:
@@ -557,6 +558,11 @@ CRITICAL PRECISION RULES:
 - LINE TOTAL (Ges.preis/Valor): totalPrice = (quantity × unitPrice) - discountAmount. If discount=100%, totalPrice = 0.
 - HEADER totalAmount = the Zwischensumme/Subtotal (net total after all line discounts, before tax).
 - HEADER grandTotal = the FINAL total the buyer must pay, INCLUDING all taxes (IVA). This is the 'Total' or 'Total (AKZ)' or 'TOTAL DOCUMENTO' line on the document. If there is no separate grand total, set grandTotal = totalAmount.
+- HEADER discountAmount = the GLOBAL / COMMERCIAL discount applied to the ENTIRE INVOICE (NOT per-item).
+  Look for labels like 'Desconto Comercial', 'Desconto Valor s/Serviços', 'Desconto Global', 'Gesamtrabatt', 'Trade Discount' in the invoice SUMMARY / FOOTER section (e.g. 'Quadro Resumo', 'Resumo de Impostos').
+  This is a POSITIVE number representing the absolute discount value (e.g. if the summary shows 'Desconto Comercial -823 261,00', set discountAmount = 823261.00).
+  If no global/commercial discount exists on the document, set discountAmount = 0.
+  NOTE: Do NOT confuse this with per-item discounts in the 'Desc.' column — those are already captured per line item.
 
 Output ONLY JSON with this structure:
 {
@@ -569,7 +575,8 @@ Output ONLY JSON with this structure:
     ""dueDate"": ""ISO date"",
     ""currency"": ""string (e.g. EUR, USD, AOA)"",
     ""totalAmount"": number (Zwischensumme / Subtotal after all discounts, before tax),
-    ""grandTotal"": number (Final total INCLUDING tax/IVA - this is what the buyer actually pays)
+    ""grandTotal"": number (Final total INCLUDING tax/IVA - this is what the buyer actually pays),
+    ""discountAmount"": number (Global/commercial invoice-level discount, 0 if none — see rules above)
   },
   ""items"": [
     {

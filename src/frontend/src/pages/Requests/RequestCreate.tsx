@@ -465,6 +465,9 @@ export function RequestCreate() {
             estimatedTotalAmount: paymentDraft && Number(formData.requestTypeId) === 2 
                 ? paymentDraft.totalAmount 
                 : (Number(formData.estimatedTotalAmount) || 0),
+            discountAmount: paymentDraft && Number(formData.requestTypeId) === 2 
+                ? (paymentDraft.discountAmount || 0) 
+                : 0,
             departmentId: Number(formData.departmentId),
             companyId: Number(formData.companyId),
             plantId: safePlantId,
@@ -1121,29 +1124,45 @@ export function RequestCreate() {
                                                                              )}
                                                                          </td>
                                                                          <td style={{ padding: '4px 8px', textAlign: 'center' }}>
-                                                                             <button type="button" onClick={() => handleRemoveOcrItem(idx)} style={{ color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer' }}>
-                                                                                 <Trash2 size={14} />
-                                                                             </button>
-                                                                         </td>
-                                                                     </tr>
-                                                                 ))
-                                                             )}
-                                                         </tbody>
+                                                                            <button type="button" onClick={() => handleRemoveOcrItem(idx)} style={{ color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer' }}>
+                                                                                <Trash2 size={14} />
+                                                                            </button>
+                                                                        </td>
+                                                                    </tr>
+                                                                ))
+                                                            )}
+                                                        </tbody>
                                                          <tfoot>
                                                              {(() => {
-                                                                 const totalDiscount = (paymentDraft.items || []).reduce((sum, item) => sum + (Number(item.discountAmount) || 0), 0);
-                                                                 return totalDiscount > 0 ? (
-                                                                     <tr style={{ backgroundColor: '#fef2f2', borderBottom: '1px solid #fecaca' }}>
-                                                                         <td colSpan={6} style={{ padding: '8px 16px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 700, color: '#dc2626' }}>
-                                                                             TOTAL ABATIMENTOS ({String(paymentDraft.currency || '')}):
-                                                                         </td>
-                                                                         <td style={{ padding: '8px 16px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 800, color: '#dc2626' }}>
-                                                                             -{totalDiscount.toLocaleString('pt-PT', { minimumFractionDigits: 2 })}
-                                                                         </td>
-                                                                         <td></td>
-                                                                     </tr>
-                                                                 ) : null;
-                                                             })()}
+                                                                const totalDiscount = (paymentDraft.items || []).reduce((sum, item) => sum + (Number(item.discountAmount) || 0), 0);
+                                                                return totalDiscount > 0 ? (
+                                                                    <tr style={{ backgroundColor: '#fef2f2', borderBottom: '1px solid #fecaca' }}>
+                                                                        <td colSpan={6} style={{ padding: '8px 16px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 700, color: '#dc2626' }}>
+                                                                            TOTAL ABATIMENTOS ITENS ({String(paymentDraft.currency || '')}):
+                                                                        </td>
+                                                                        <td style={{ padding: '8px 16px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 800, color: '#dc2626' }}>
+                                                                            -{totalDiscount.toLocaleString('pt-PT', { minimumFractionDigits: 2 })}
+                                                                        </td>
+                                                                        <td></td>
+                                                                    </tr>
+                                                                ) : null;
+                                                            })()}
+                                                            <tr style={{ backgroundColor: '#fef2f2', borderBottom: '1px solid #fecaca' }}>
+                                                                <td colSpan={6} style={{ padding: '8px 16px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 700, color: '#dc2626' }}>
+                                                                    DESCONTO GLOBAL ({String(paymentDraft.currency || '')}):
+                                                                </td>
+                                                                <td style={{ padding: '4px 16px', textAlign: 'right' }}>
+                                                                    <input 
+                                                                        type="number" 
+                                                                        min="0"
+                                                                        step="0.01"
+                                                                        value={paymentDraft.discountAmount || ''}
+                                                                        onChange={(e) => handleUpdateOcrDraft('discountAmount', parseFloat(e.target.value) || 0)}
+                                                                        style={{ width: '100px', padding: '4px', textAlign: 'right', border: '1px solid #fca5a5', borderRadius: '4px', fontSize: '0.85rem', fontWeight: 800, color: '#dc2626', backgroundColor: '#fff', float: 'right' }}
+                                                                    />
+                                                                </td>
+                                                                <td></td>
+                                                            </tr>
                                                              <tr style={{ backgroundColor: '#F9FAFB', fontWeight: 800 }}>
                                                                  <td colSpan={6} style={{ padding: '12px 16px', textAlign: 'right' }}>TOTAL DO PEDIDO ({String(paymentDraft.currency || '')}):</td>
                                                                  <td style={{ padding: '12px 16px', textAlign: 'right', color: 'var(--color-primary)', fontSize: '0.85rem' }}>

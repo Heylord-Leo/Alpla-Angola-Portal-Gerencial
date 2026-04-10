@@ -425,6 +425,10 @@ export function BuyerItemsList() {
             if (field === 'currency' && value) {
                 draft.extractedCurrency = undefined;
             }
+            // Recalculate total when global discount changes
+            if (field === 'discountAmount') {
+                draft.totalAmount = calculateDraftTotal(draft);
+            }
             return {
                 ...prev,
                 [requestId]: draft
@@ -1448,6 +1452,7 @@ export function BuyerItemsList() {
                                                                                             <th style={{ padding: '12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', width: '60px' }}>Qtd</th>
                                                                                             <th style={{ padding: '12px', textAlign: 'center', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', width: '60px' }}>Unid.</th>
                                                                                             <th style={{ padding: '12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', width: '100px' }}>P. Unit</th>
+                                                                                            <th style={{ padding: '12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', width: '100px' }}>Desc. (AOA)</th>
                                                                                             <th style={{ padding: '12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', width: '100px' }}>IVA</th>
                                                                                             <th style={{ padding: '12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', width: '120px' }}>Total do Item</th>
                                                                                         </tr>
@@ -1459,13 +1464,14 @@ export function BuyerItemsList() {
                                                                                                 <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700 }}>{item.quantity}</td>
                                                                                                 <td style={{ padding: '12px', textAlign: 'center', fontWeight: 700, color: 'var(--color-text-muted)' }}>{item.unitCode || '---'}</td>
                                                                                                 <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700 }}>{formatCurrencyAO(item.unitPrice)}</td>
+                                                                                                <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#ef4444' }}>{item.discountAmount > 0 ? formatCurrencyAO(item.discountAmount) : '---'}</td>
                                                                                                 <td style={{ padding: '12px', textAlign: 'right', fontWeight: 600, color: '#0369a1' }}>{item.ivaRatePercent > 0 ? `${item.ivaRatePercent}% (${formatCurrencyAO(item.ivaAmount)})` : 'Isento'}</td>
                                                                                                 <td style={{ padding: '12px', textAlign: 'right', fontWeight: 900, backgroundColor: '#f9fafb' }}>{formatCurrencyAO(item.lineTotal)}</td>
                                                                                             </tr>
 
                                                                                         )) : (
                                                                                             <tr>
-                                                                                                <td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                                                                                                <td colSpan={7} style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
                                                                                                     Nenhum item detalhado disponível.
                                                                                                 </td>
                                                                                             </tr>
@@ -1473,23 +1479,23 @@ export function BuyerItemsList() {
                                                                                     </tbody>
                                                                                     <tfoot>
                                                                                         <tr style={{ backgroundColor: '#f8fafc' }}>
-                                                                                            <td colSpan={4} style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 800 }}>SUBTOTAL BRUTO:</td>
+                                                                                            <td colSpan={6} style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 800 }}>SUBTOTAL BRUTO:</td>
                                                                                             <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', color: 'var(--color-text-main)', fontWeight: 800 }}>{formatCurrencyAO(q.totalGrossAmount || 0)}</td>
                                                                                         </tr>
                                                                                         <tr style={{ backgroundColor: '#f8fafc' }}>
-                                                                                            <td colSpan={4} style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 800 }}>DESCONTOS GLOBAL:</td>
+                                                                                            <td colSpan={6} style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 800 }}>DESCONTOS GLOBAL:</td>
                                                                                             <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', color: '#dc2626', fontWeight: 800 }}>- {formatCurrencyAO(q.totalDiscountAmount || 0)}</td>
                                                                                         </tr>
                                                                                         <tr style={{ backgroundColor: '#f8fafc' }}>
-                                                                                            <td colSpan={4} style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 800 }}>BASE TRIBUTÁVEL:</td>
+                                                                                            <td colSpan={6} style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 800 }}>BASE TRIBUTÁVEL:</td>
                                                                                             <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', color: 'var(--color-text-main)', fontWeight: 800 }}>{formatCurrencyAO(q.totalTaxableBase || 0)}</td>
                                                                                         </tr>
                                                                                         <tr style={{ backgroundColor: '#f8fafc' }}>
-                                                                                            <td colSpan={4} style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 800 }}>TOTAL IVA:</td>
+                                                                                            <td colSpan={6} style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 800 }}>TOTAL IVA:</td>
                                                                                             <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', color: '#0284c7', fontWeight: 800 }}>{formatCurrencyAO(q.totalIvaAmount || 0)}</td>
                                                                                         </tr>
                                                                                         <tr style={{ backgroundColor: '#f1f5f9', fontWeight: 900, borderTop: '2px solid #cbd5e1' }}>
-                                                                                            <td colSpan={4} style={{ padding: '12px', textAlign: 'right', textTransform: 'uppercase', fontSize: '0.75rem', color: 'var(--color-text-main)' }}>TOTAL DA COTAÇÃO ({q.currency}):</td>
+                                                                                            <td colSpan={6} style={{ padding: '12px', textAlign: 'right', textTransform: 'uppercase', fontSize: '0.75rem', color: 'var(--color-text-main)' }}>TOTAL DA COTAÇÃO ({q.currency}):</td>
                                                                                             <td style={{ padding: '12px', textAlign: 'right', fontSize: '1.1rem', color: 'var(--color-primary)' }}>{formatCurrencyAO(q.totalAmount)}</td>
                                                                                         </tr>
                                                                                     </tfoot>
@@ -2024,12 +2030,13 @@ export function BuyerItemsList() {
                                                                                     </div>
                                                                                 ) : (
                                                                                     <>
-                                                                                        <div style={{ display: 'grid', gridTemplateColumns: '40px minmax(150px, 1fr) 80px 100px 100px 110px 120px 40px', gap: '8px', padding: '0 12px', marginBottom: '4px' }}>
-                                                                                            <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>#</span>
+                                                                                        <div style={{ display: 'grid', gridTemplateColumns: '40px minmax(150px, 1fr) 60px 80px 100px 100px 110px 120px 40px', gap: '8px', padding: '0 12px', marginBottom: '4px' }}>
+                                                                                            <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>#</span>
                                                                                             <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Descrição do Item</span>
                                                                                             <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase', textAlign: 'right' }}>Qtd</span>
                                                                                             <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Unid</span>
                                                                                             <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase', textAlign: 'right' }}>P. Unit</span>
+                                                                                            <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase', textAlign: 'right' }}>Desc. (AOA)</span>
                                                                                             <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Taxa IVA</span>
                                                                                             <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase', textAlign: 'right' }}>Total ({quotationDrafts[group.requestId].currency})</span>
                                                                                             <span></span>
@@ -2132,6 +2139,17 @@ export function BuyerItemsList() {
                                                                                             return formatCurrencyAO(totalDiscount);
                                                                                         })()}
                                                                                     </div>
+                                                                                </div>
+                                                                                <div style={{ textAlign: 'left' }}>
+                                                                                    <div style={{ fontSize: '0.7rem', fontWeight: 900, color: '#0369a1', textTransform: 'uppercase', marginBottom: '4px' }}>Desconto Global</div>
+                                                                                    <input 
+                                                                                        type="number" 
+                                                                                        min="0"
+                                                                                        step="0.01"
+                                                                                        value={quotationDrafts[group.requestId]?.discountAmount || 0}
+                                                                                        onChange={(e) => handleUpdateQuotationHeader(group.requestId, 'discountAmount', parseFloat(e.target.value) || 0)}
+                                                                                        style={{ width: '120px', padding: '6px', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.9rem', fontWeight: 600, color: '#dc2626', backgroundColor: '#fff' }}
+                                                                                    />
                                                                                 </div>
                                                                                 <div style={{ textAlign: 'left' }}>
                                                                                     <div style={{ fontSize: '0.7rem', fontWeight: 900, color: '#0369a1', textTransform: 'uppercase' }}>Valor Total IVA</div>

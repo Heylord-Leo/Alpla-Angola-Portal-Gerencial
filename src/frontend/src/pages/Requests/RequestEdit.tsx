@@ -74,6 +74,7 @@ export function RequestEdit() {
         requestTypeId: 1,
         needLevelId: '',
         estimatedTotalAmount: '',
+        discountAmount: '',
         currencyId: 1,
         departmentId: '',
         companyId: '',
@@ -383,7 +384,7 @@ export function RequestEdit() {
                 
                 setLineItems(nextItems);
                 const newTotal = nextItems.reduce((acc, it) => acc + (Number(it.quantity) * Number(it.unitPrice)), 0);
-                setFormData(prev => ({ ...prev, estimatedTotalAmount: newTotal.toString() }));
+                setFormData(prev => ({ ...prev, estimatedTotalAmount: newTotal.toString(), discountAmount: '0' }));
                 setItemForm(null);
                 setFeedback({ type: 'success', message: 'Item atualizado (em memória).' });
             } else {
@@ -394,7 +395,7 @@ export function RequestEdit() {
                 }
                 const data = await api.requests.get(id!);
                 setLineItems(data.lineItems || []);
-                setFormData(prev => ({ ...prev, estimatedTotalAmount: data.estimatedTotalAmount?.toString() || '0' }));
+                setFormData(prev => ({ ...prev, estimatedTotalAmount: data.estimatedTotalAmount?.toString() || '0', discountAmount: data.discountAmount?.toString() || '0' }));
                 setItemForm(null);
                 setFeedback({ type: 'success', message: 'Item salvo com sucesso.' });
             }
@@ -431,7 +432,7 @@ export function RequestEdit() {
                 await api.requests.deleteLineItem(id, pendingDeleteId);
                 const data = await api.requests.get(id);
                 setLineItems(data.lineItems || []);
-                setFormData(prev => ({ ...prev, estimatedTotalAmount: data.estimatedTotalAmount?.toString() || '0' }));
+                setFormData(prev => ({ ...prev, estimatedTotalAmount: data.estimatedTotalAmount?.toString() || '0', discountAmount: data.discountAmount?.toString() || '0' }));
                 setFeedback({ type: 'success', message: 'Item excluído com sucesso.' });
                 setPendingDeleteId(null);
             } catch (err: any) {
@@ -511,6 +512,7 @@ export function RequestEdit() {
                 requestTypeId: data.requestTypeId || 1,
                 needLevelId: data.needLevelId != null ? data.needLevelId.toString() : '',
                 estimatedTotalAmount: data.estimatedTotalAmount?.toString() || '0',
+                discountAmount: data.discountAmount?.toString() || '0',
                 currencyId: data.currencyId ?? 1,
                 departmentId: data.departmentId?.toString() || '',
                 companyId: data.companyId?.toString() || '',
@@ -671,6 +673,7 @@ export function RequestEdit() {
             needLevelId: formData.needLevelId ? Number(formData.needLevelId) : null,
             currencyId: formData.currencyId ? Number(formData.currencyId) : null,
             estimatedTotalAmount: Number(formData.estimatedTotalAmount) || 0,
+            discountAmount: Number(formData.discountAmount) || 0,
             departmentId: formData.departmentId ? Number(formData.departmentId) : 0,
             companyId: formData.companyId ? Number(formData.companyId) : 0,
             plantId: formData.plantId ? Number(formData.plantId) : null,
@@ -709,7 +712,8 @@ export function RequestEdit() {
             setLineItems(updated.lineItems || []);
             setFormData(prev => ({
                 ...prev,
-                estimatedTotalAmount: updated.estimatedTotalAmount?.toString() || '0'
+                estimatedTotalAmount: updated.estimatedTotalAmount?.toString() || '0',
+                discountAmount: updated.discountAmount?.toString() || '0'
             }));
 
             // Only show success if this was a manual save (has e or forceFeedback)
@@ -1761,7 +1765,7 @@ export function RequestEdit() {
                     onToggle={() => toggleSection('finance')}
                 >
                     <div style={{ padding: '32px' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '32px', alignItems: 'start' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1.5fr 1fr', gap: '32px', alignItems: 'start' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px', backgroundColor: 'var(--color-bg-page)', border: '2px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
                                 <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-muted)', letterSpacing: '0.05em' }}>
                                     Valor Total Estimado
@@ -1773,6 +1777,27 @@ export function RequestEdit() {
                                     Este valor é recalculado automaticamente a partir dos itens inseridos ao recarregar a tela.
                                 </span>
                             </div>
+
+                            <label style={labelStyle}>
+                                Desconto Global ({currencies.find(c => c.id === Number(formData.currencyId))?.code || ''})
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={formData.discountAmount}
+                                    onChange={(e) => {
+                                        setFormData(prev => ({ ...prev, discountAmount: e.target.value }));
+                                        clearFieldError('DiscountAmount');
+                                    }}
+                                    disabled={!canEditHeader}
+                                    placeholder="0.00"
+                                    style={getInputStyle('DiscountAmount')}
+                                />
+                                <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: '4px', display: 'block' }}>
+                                    Abatimento que reduz a base tributável deste pedido.
+                                </span>
+                                {renderFieldError('DiscountAmount')}
+                            </label>
 
                             <label style={labelStyle}>
                                 Moeda Principal do Pedido

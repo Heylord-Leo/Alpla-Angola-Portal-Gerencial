@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.44.1] - 2026-04-10
+
+### Fixed
+- **Global Discount Persistence**: Resolved a regression where the "Desconto Comercial" was being overwritten by gross totals during the Payment Request submission. Recalculated totals now properly account for global discounts across all line-item mutation endpoints (Create, Update, Delete).
+- **Payment Request Submission Payload**: Ensured `discountAmount` is included in the initial creation request to prevent zero-value defaults on the backend.
+
 ## [2.44.0] - 2026-04-10
 
 ### Added

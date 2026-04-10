@@ -49,6 +49,7 @@ public class RequestDetailsDto
     public string? SupplierPortalCode { get; set; }
 
     public decimal EstimatedTotalAmount { get; set; }
+    public decimal DiscountAmount { get; set; }
     public string? CurrencyCode { get; set; }
 
     public DateTime RequestedDateUtc { get; set; }

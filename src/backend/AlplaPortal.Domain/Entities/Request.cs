@@ -50,6 +50,7 @@ public class Request
     public int? CurrencyId { get; set; }
     public Currency? Currency { get; set; }
     public decimal EstimatedTotalAmount { get; set; }
+    public decimal DiscountAmount { get; set; }
 
     public int? CapexOpexClassificationId { get; set; }
     public CapexOpexClassification? CapexOpexClassification { get; set; }

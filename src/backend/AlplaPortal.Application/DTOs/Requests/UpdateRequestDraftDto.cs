@@ -22,6 +22,8 @@ public class UpdateRequestDraftDto
     [Range(0, double.MaxValue, ErrorMessage = "O valor total estimado deve ser maior ou igual a zero.")]
     public decimal EstimatedTotalAmount { get; set; }
 
+    public decimal DiscountAmount { get; set; }
+
     [Required(ErrorMessage = "O departamento é obrigatório.")]
     public int DepartmentId { get; set; }
     

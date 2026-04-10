@@ -2,7 +2,13 @@
 
 ## Current Version
 
-v2.44.0
+v2.44.1
+
+## [2.44.1] - 2026-04-10
+
+### Fixed
+- **Global Discount Persistence**: Resolved a regression where the "Desconto Comercial" was being overwritten by gross totals during the Payment Request submission.
+- **Payment Request Submission Payload**: Ensured `discountAmount` is included in the initial creation request.
 
 ## [2.44.0] - 2026-04-10
 

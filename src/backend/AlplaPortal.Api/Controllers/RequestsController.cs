@@ -572,7 +572,9 @@ public class RequestsController : BaseController
                 SupplierId = r.SupplierId,
                 SupplierName = r.Supplier != null ? r.Supplier.Name : null,
                 SupplierPortalCode = r.Supplier != null ? r.Supplier.PortalCode : null,
+
                 EstimatedTotalAmount = r.EstimatedTotalAmount,
+                DiscountAmount = r.DiscountAmount,
                 CurrencyCode = r.Currency != null ? r.Currency.Code : null,
                 
                 RequestedDateUtc = r.RequestedDateUtc,
@@ -951,6 +953,7 @@ public class RequestsController : BaseController
             NeedLevelId = dto.NeedLevelId,
             CurrencyId = dto.CurrencyId,
             EstimatedTotalAmount = dto.EstimatedTotalAmount,
+            DiscountAmount = dto.DiscountAmount,
             DepartmentId = dto.DepartmentId!.Value,
             CompanyId = dto.CompanyId!.Value,
             PlantId = dto.PlantId,
@@ -1157,6 +1160,8 @@ public class RequestsController : BaseController
         if (request.DepartmentId != dto.DepartmentId) { request.DepartmentId = dto.DepartmentId; changedFields.Add("Departamento"); changed = true; }
         if (request.NeedByDateUtc != dto.NeedByDateUtc) { request.NeedByDateUtc = dto.NeedByDateUtc; changedFields.Add("Data Necessidade"); changed = true; }
         if (request.CapexOpexClassificationId != dto.CapexOpexClassificationId) { request.CapexOpexClassificationId = dto.CapexOpexClassificationId; changedFields.Add("Classificação"); changed = true; }
+        if (request.EstimatedTotalAmount != dto.EstimatedTotalAmount) { request.EstimatedTotalAmount = dto.EstimatedTotalAmount; changedFields.Add("Valor Bruto Estimado"); changed = true; }
+        if (request.DiscountAmount != dto.DiscountAmount) { request.DiscountAmount = dto.DiscountAmount; changedFields.Add("Desconto Global"); changed = true; }
 
         // --- Restricted Fields in Quotation Stage ---
         if (isQuotationStage)
@@ -1753,17 +1758,26 @@ public class RequestsController : BaseController
             });
         }
 
-        // Sum up line totals directly, because IVA and discounts are fully resolved per item.
+        // Sum up line totals. Item-level discounts are already applied per-line.
         decimal totalGross = quotation.Items.Sum(i => i.GrossSubtotal);
         decimal sumItemDiscounts = quotation.Items.Sum(i => i.DiscountAmount);
-        decimal totalIva = quotation.Items.Sum(i => i.IvaAmount);
+        decimal totalItemIva = quotation.Items.Sum(i => i.IvaAmount);
+        decimal netAfterItemDiscounts = Math.Round(Math.Max(0, totalGross - sumItemDiscounts), 2);
 
-        quotation.DiscountAmount = Math.Round(sumItemDiscounts, 2);
+        // Global (commercial) discount from DTO — reduces the taxable base further
+        decimal globalDiscount = Math.Round(Math.Max(0, dto.DiscountAmount), 2);
+        decimal taxableBase = Math.Round(Math.Max(0, netAfterItemDiscounts - globalDiscount), 2);
+
+        // Proportionally adjust IVA based on the global discount reduction
+        decimal discountRatio = netAfterItemDiscounts > 0 ? (taxableBase / netAfterItemDiscounts) : 1m;
+        decimal adjustedIva = Math.Round(totalItemIva * discountRatio, 2);
+
+        quotation.DiscountAmount = globalDiscount;
         quotation.TotalGrossAmount = Math.Round(totalGross, 2);
-        quotation.TotalDiscountAmount = quotation.DiscountAmount;
-        quotation.TotalTaxableBase = Math.Round(Math.Max(0, totalGross - quotation.DiscountAmount), 2);
-        quotation.TotalIvaAmount = Math.Round(totalIva, 2);
-        quotation.TotalAmount = Math.Round(quotation.TotalTaxableBase + quotation.TotalIvaAmount, 2);
+        quotation.TotalDiscountAmount = Math.Round(sumItemDiscounts + globalDiscount, 2);
+        quotation.TotalTaxableBase = taxableBase;
+        quotation.TotalIvaAmount = adjustedIva;
+        quotation.TotalAmount = Math.Round(taxableBase + adjustedIva, 2);
 
         _context.Quotations.Add(quotation);
 
@@ -1949,14 +1963,23 @@ public class RequestsController : BaseController
 
         decimal totalGross = _context.QuotationItems.Local.Where(qi => qi.QuotationId == quotation.Id).Sum(i => i.GrossSubtotal);
         decimal sumItemDiscounts = _context.QuotationItems.Local.Where(qi => qi.QuotationId == quotation.Id).Sum(i => i.DiscountAmount);
-        decimal totalIva = _context.QuotationItems.Local.Where(qi => qi.QuotationId == quotation.Id).Sum(i => i.IvaAmount);
+        decimal totalItemIva = _context.QuotationItems.Local.Where(qi => qi.QuotationId == quotation.Id).Sum(i => i.IvaAmount);
+        decimal netAfterItemDiscounts = Math.Round(Math.Max(0, totalGross - sumItemDiscounts), 2);
 
-        quotation.DiscountAmount = Math.Round(sumItemDiscounts, 2);
+        // Global (commercial) discount from DTO — reduces the taxable base further
+        decimal globalDiscount = Math.Round(Math.Max(0, dto.DiscountAmount), 2);
+        decimal taxableBase = Math.Round(Math.Max(0, netAfterItemDiscounts - globalDiscount), 2);
+
+        // Proportionally adjust IVA based on the global discount reduction
+        decimal discountRatio = netAfterItemDiscounts > 0 ? (taxableBase / netAfterItemDiscounts) : 1m;
+        decimal adjustedIva = Math.Round(totalItemIva * discountRatio, 2);
+
+        quotation.DiscountAmount = globalDiscount;
         quotation.TotalGrossAmount = Math.Round(totalGross, 2);
-        quotation.TotalDiscountAmount = quotation.DiscountAmount;
-        quotation.TotalTaxableBase = Math.Round(Math.Max(0, totalGross - quotation.DiscountAmount), 2);
-        quotation.TotalIvaAmount = Math.Round(totalIva, 2);
-        quotation.TotalAmount = Math.Round(quotation.TotalTaxableBase + quotation.TotalIvaAmount, 2);
+        quotation.TotalDiscountAmount = Math.Round(sumItemDiscounts + globalDiscount, 2);
+        quotation.TotalTaxableBase = taxableBase;
+        quotation.TotalIvaAmount = adjustedIva;
+        quotation.TotalAmount = Math.Round(taxableBase + adjustedIva, 2);
 
 
         // Audit Trail entry for traceability
@@ -2521,10 +2544,8 @@ public class RequestsController : BaseController
 
         await _context.SaveChangesAsync();
 
-        // Recalculate total from DB AFTER saving, to avoid in-memory collection double-counting
-        request.EstimatedTotalAmount = await _context.RequestLineItems
-            .Where(l => l.RequestId == requestId && !l.IsDeleted)
-            .SumAsync(l => l.TotalAmount);
+        // Recalculate total from DB AFTER saving (accounts for global discount)
+        await RecalculateEstimatedTotalAsync(request, requestId);
         request.UpdatedAtUtc = DateTime.UtcNow;
         request.UpdatedByUserId = actorId;
 
@@ -2689,10 +2710,8 @@ public class RequestsController : BaseController
 
         await _context.SaveChangesAsync();
 
-        // Recalculate total from DB AFTER saving, to avoid in-memory collection double-counting
-        request.EstimatedTotalAmount = await _context.RequestLineItems
-            .Where(l => l.RequestId == requestId && !l.IsDeleted)
-            .SumAsync(l => l.TotalAmount);
+        // Recalculate total from DB AFTER saving (accounts for global discount)
+        await RecalculateEstimatedTotalAsync(request, requestId);
         request.UpdatedAtUtc = DateTime.UtcNow;
         request.UpdatedByUserId = actorId;
 
@@ -2759,10 +2778,8 @@ public class RequestsController : BaseController
 
         await _context.SaveChangesAsync();
 
-        // Recalculate total from DB AFTER saving, to avoid in-memory collection double-counting
-        request.EstimatedTotalAmount = await _context.RequestLineItems
-            .Where(l => l.RequestId == requestId && !l.IsDeleted)
-            .SumAsync(l => l.TotalAmount);
+        // Recalculate total from DB AFTER saving (accounts for global discount)
+        await RecalculateEstimatedTotalAsync(request, requestId);
         request.UpdatedAtUtc = DateTime.UtcNow;
         request.UpdatedByUserId = actorId;
 
@@ -3476,6 +3493,42 @@ public class RequestsController : BaseController
             return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = $"O pedido não está em um status válido para esta ação. Status permitidos: {string.Join(", ", requiredCurrentStatusCodes)}.", Status = 400 });
 
         return await ApplyStatusChangeAndSyncItemsAsync(request, targetStatusCode, action, comment ?? string.Empty, successMessage, actorId);
+    }
+
+    /// <summary>
+    /// Recalculates EstimatedTotalAmount from active line items, applying the global
+    /// DiscountAmount proportionally across the taxable base and IVA.
+    /// </summary>
+    private async Task RecalculateEstimatedTotalAsync(Request request, Guid requestId)
+    {
+        var activeItems = await _context.RequestLineItems
+            .Where(l => l.RequestId == requestId && !l.IsDeleted)
+            .ToListAsync();
+
+        var grossTotal = activeItems.Sum(l => l.TotalAmount);
+        var globalDiscount = request.DiscountAmount;
+
+        if (globalDiscount > 0 && grossTotal > 0)
+        {
+            var allIvaRates = await _context.IvaRates.AsNoTracking().ToListAsync();
+            decimal grossBase = 0;
+            decimal ivaTotal = 0;
+            foreach (var li in activeItems)
+            {
+                var netItem = (li.Quantity * li.UnitPrice) - (li.DiscountAmount ?? 0);
+                grossBase += netItem;
+                var liIva = li.IvaRateId.HasValue ? allIvaRates.FirstOrDefault(r => r.Id == li.IvaRateId.Value) : null;
+                if (liIva != null) ivaTotal += Math.Round(netItem * (liIva.RatePercent / 100m), 2);
+            }
+            var taxableBase = Math.Max(0, grossBase - globalDiscount);
+            var discountRatio = grossBase > 0 ? (taxableBase / grossBase) : 1m;
+            var adjustedIva = Math.Round(ivaTotal * discountRatio, 2);
+            request.EstimatedTotalAmount = Math.Max(0, taxableBase + adjustedIva);
+        }
+        else
+        {
+            request.EstimatedTotalAmount = grossTotal;
+        }
     }
 
     private async Task<IActionResult> ApplyStatusChangeAndSyncItemsAsync(
