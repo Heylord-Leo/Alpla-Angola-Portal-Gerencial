@@ -119,7 +119,7 @@ export const RequestQuotations: React.FC<RequestQuotationsProps> = ({
                                         disabled={!!processingId}
                                         style={{
                                             display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px',
-                                            backgroundColor: '#fff', border: '1px solid #4f46e5', borderRadius: '4px',
+                                            backgroundColor: 'var(--color-bg-surface)', border: '1px solid #4f46e5', borderRadius: '4px',
                                             color: '#4f46e5', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer',
                                             textTransform: 'uppercase', transition: 'all 0.1s'
                                         }}
@@ -143,7 +143,7 @@ export const RequestQuotations: React.FC<RequestQuotationsProps> = ({
 
                         {/* Detailed Items Table (Read-only) */}
                         {isExpanded && (
-                            <div style={{ padding: '0 16px 16px 16px', borderTop: '1px solid var(--color-border)', backgroundColor: '#f9fafb' }}>
+                            <div style={{ padding: '0 16px 16px 16px', borderTop: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-page)' }}>
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem', marginTop: '16px', border: '1px solid var(--color-border)', borderRadius: '4px', overflow: 'hidden' }}>
                                     <thead style={{ backgroundColor: 'var(--color-bg-page)' }}>
                                         <tr>
@@ -156,7 +156,7 @@ export const RequestQuotations: React.FC<RequestQuotationsProps> = ({
                                     </thead>
                                     <tbody>
                                         {q.items?.map((item, idx) => (
-                                            <tr key={item.id || idx} style={{ backgroundColor: '#fff', borderBottom: '1px solid var(--color-border-light)' }}>
+                                            <tr key={item.id || idx} style={{ backgroundColor: 'var(--color-bg-surface)', borderBottom: '1px solid var(--color-border-light)' }}>
                                                 <td style={{ padding: '8px', fontWeight: 600 }}>{item.description}</td>
                                                 <td style={{ padding: '8px', textAlign: 'center', color: 'var(--color-text-muted)', fontWeight: 700 }}>{item.unitCode || '---'}</td>
                                                 <td style={{ padding: '8px', textAlign: 'right' }}>{item.quantity}</td>

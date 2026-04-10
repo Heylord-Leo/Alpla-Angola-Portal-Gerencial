@@ -152,7 +152,7 @@ export default function FinanceOverview() {
                     </div>
                 </div>
 
-                <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #fca5a5', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', gap: '8px' }} 
+                <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', borderRadius: '12px', border: '1px solid #fca5a5', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', gap: '8px' }} 
                      onClick={() => navigate('/finance/payments?filter=overdue')}
                      onMouseOver={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 12px rgba(239, 68, 68, 0.1)'; }}
                      onMouseOut={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.05)'; }}>
@@ -200,7 +200,7 @@ export default function FinanceOverview() {
                             </ResponsiveContainer>
                         </div>
                     ) : (
-                        <div style={{ height: '300px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 600, border: '2px dashed #cbd5e1', padding: '24px', textAlign: 'center', backgroundColor: '#f8fafc' }}>
+                        <div style={{ height: '300px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 600, border: '2px dashed #cbd5e1', padding: '24px', textAlign: 'center', backgroundColor: 'var(--color-bg-page)' }}>
                             <TrendingUp size={36} color="#94a3b8" style={{ marginBottom: '16px' }} />
                             <span style={{ fontSize: '15px', color: '#334155' }}>Sem agendamentos a lançar</span>
                             <span style={{ marginTop: '8px', fontSize: '13px', maxWidth: '350px' }}>
@@ -232,7 +232,7 @@ export default function FinanceOverview() {
                             </ResponsiveContainer>
                         </div>
                     ) : (
-                        <div style={{ height: '250px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 600, border: '2px dashed #cbd5e1', padding: '24px', textAlign: 'center', backgroundColor: '#f8fafc' }}>
+                        <div style={{ height: '250px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 600, border: '2px dashed #cbd5e1', padding: '24px', textAlign: 'center', backgroundColor: 'var(--color-bg-page)' }}>
                             <Presentation size={36} color="#94a3b8" style={{ marginBottom: '16px' }} />
                             <span style={{ fontSize: '15px', color: '#334155' }}>Nenhum valor em risco</span>
                             <span style={{ marginTop: '8px', fontSize: '13px', maxWidth: '300px' }}>
@@ -280,7 +280,7 @@ export default function FinanceOverview() {
                                 </span>
                             </div>
                         )) : (
-                            <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 600, textAlign: 'center', border: '2px dashed #cbd5e1', backgroundColor: '#f8fafc', flex: 1 }}>
+                            <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 600, textAlign: 'center', border: '2px dashed #cbd5e1', backgroundColor: 'var(--color-bg-page)', flex: 1 }}>
                                 <span style={{ fontSize: '13px' }}>
                                     Sem dados nominais. O sistema elencará automaticamente as cinco entidades físicas perante as quais o grupo Alpla tem as mais pesadas dívidas a saldar no curto prazo.
                                 </span>
@@ -316,7 +316,7 @@ export default function FinanceOverview() {
                                 >
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <h4 style={{ margin: 0, fontWeight: 900, fontSize: '1.05rem', color: isDanger ? '#b91c1c' : isWarning ? '#c2410c' : 'var(--color-text)' }}>{point.title}</h4>
-                                        <span style={{ backgroundColor: '#fff', padding: '2px 8px', borderRadius: '999px', fontWeight: 'bold', border: '1px solid #ccc', fontSize: '12px' }}>{point.count}</span>
+                                        <span style={{ backgroundColor: 'var(--color-bg-surface)', padding: '2px 8px', borderRadius: '999px', fontWeight: 'bold', border: '1px solid #ccc', fontSize: '12px' }}>{point.count}</span>
                                     </div>
                                     <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: '#475569' }}>{point.description}</p>
                                 </div>
@@ -342,7 +342,7 @@ export default function FinanceOverview() {
                     backdropFilter: 'blur(4px)'
                 }}>
                     <div style={{
-                        backgroundColor: '#fff', border: '4px solid #0f172a',
+                        backgroundColor: 'var(--color-bg-surface)', border: '4px solid #0f172a',
                         width: '90%', maxWidth: '750px', maxHeight: '90vh', overflowY: 'auto',
                         boxShadow: '16px 16px 0 #0f172a', padding: '32px', position: 'relative'
                     }}>
@@ -394,7 +394,7 @@ export default function FinanceOverview() {
                             </div>
 
                             <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-                                <div style={{ backgroundColor: '#f3f4f6', padding: '12px', color: '#1e293b', border: '2px solid #1e293b' }}><Clock size={24} /></div>
+                                <div style={{ backgroundColor: 'var(--color-bg-page)', padding: '12px', color: '#1e293b', border: '2px solid #1e293b' }}><Clock size={24} /></div>
                                 <div>
                                     <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>Idade da Fila (Aging)</h4>
                                     <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>

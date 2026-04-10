@@ -239,16 +239,16 @@ export default function UserManagement() {
         title: { margin: 0, fontSize: '2.5rem', fontWeight: 900, color: 'var(--color-primary)', fontFamily: 'var(--font-family-display)', textTransform: 'uppercase' as const, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 16 } as React.CSSProperties,
         filtersCard: { backgroundColor: 'var(--color-bg-surface)', padding: '16px', boxShadow: 'var(--shadow-brutal)', border: '2px solid var(--color-primary)', display: 'flex', flexWrap: 'wrap' as const, gap: '16px', alignItems: 'center' } as React.CSSProperties,
         input: { padding: '10px 12px', border: '2px solid var(--color-border)', fontSize: '0.85rem', fontWeight: 600, outline: 'none', background: 'var(--color-bg-page)' } as React.CSSProperties,
-        select: { padding: '10px 12px', border: '2px solid var(--color-border)', fontSize: '0.85rem', background: '#fff', fontWeight: 600, outline: 'none' } as React.CSSProperties,
+        select: { padding: '10px 12px', border: '2px solid var(--color-border)', fontSize: '0.85rem', background: 'var(--color-bg-page)', color: 'var(--color-text-main)', fontWeight: 600, outline: 'none' } as React.CSSProperties,
         labelSm: { fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4, display: 'block' },
-        tableContainer: { overflowX: 'auto' as const, border: '2px solid var(--color-primary)', boxShadow: 'var(--shadow-brutal)', background: '#fff' },
+        tableContainer: { overflowX: 'auto' as const, border: '2px solid var(--color-primary)', boxShadow: 'var(--shadow-brutal)', background: 'var(--color-bg-surface)' },
         table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: '0.85rem' },
         th: { padding: '12px 16px', background: 'var(--color-bg-page)', color: 'var(--color-text-main)', fontWeight: 800, textAlign: 'left' as const, fontSize: '0.75rem', letterSpacing: '0.05em', textTransform: 'uppercase' as const, borderBottom: '1px solid var(--color-border)' },
         td: { padding: '12px 16px', borderBottom: '1px solid var(--color-border)', verticalAlign: 'middle' as const },
         trHover: { background: 'var(--color-bg-page)' },
         badge: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase' as const, border: '1px solid currentColor' },
         drawerOverlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'flex-end', zIndex: Z_INDEX.DRAWER },
-        drawer: { background: '#fff', width: '100%', maxWidth: 560, height: '100vh', display: 'flex', flexDirection: 'column' as const, borderLeft: '4px solid var(--color-primary)', boxShadow: '-8px 0 24px rgba(0,0,0,0.2)' },
+        drawer: { background: 'var(--color-bg-surface)', width: '100%', maxWidth: 560, height: '100vh', display: 'flex', flexDirection: 'column' as const, borderLeft: '4px solid var(--color-primary)', boxShadow: '-8px 0 24px rgba(0,0,0,0.2)' },
         drawerHeader: { padding: '24px', background: 'var(--color-bg-page)', borderBottom: '2px solid var(--color-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
         drawerBody: { flex: 1, overflowY: 'auto' as const, padding: '32px', display: 'flex', flexDirection: 'column' as const, gap: '24px' },
         drawerFooter: { padding: '20px 32px', borderTop: '2px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: 12, background: 'var(--color-bg-page)' }
@@ -356,17 +356,17 @@ export default function UserManagement() {
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                                             {user.plants.length > 0 ? user.plants.map(p => (
-                                                <span key={p} style={{ fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, background: '#f3f4f6', padding: '2px 6px', border: '1px solid #d1d5db' }}>
+                                                <span key={p} style={{ fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, background: 'var(--color-bg-page)', padding: '2px 6px', border: '1px solid var(--color-border)' }}>
                                                     <MapPin size={10} /> {p}
                                                 </span>
-                                            )) : <span style={{ fontSize: '10px', fontStyle: 'italic', color: '#9ca3af' }}>Nenhuma Planta</span>}
+                                            )) : <span style={{ fontSize: '10px', fontStyle: 'italic', color: 'var(--color-text-muted)' }}>Nenhuma Planta</span>}
                                         </div>
                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                                             {user.departments.length > 0 ? user.departments.map(d => (
-                                                <span key={d} style={{ fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, background: '#f8fafc', padding: '2px 6px', border: '1px solid #cbd5e1' }}>
+                                                <span key={d} style={{ fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, background: 'var(--color-bg-page)', padding: '2px 6px', border: '1px solid var(--color-border)' }}>
                                                     <Building2 size={10} /> {d}
                                                 </span>
-                                            )) : <span style={{ fontSize: '10px', fontStyle: 'italic', color: '#9ca3af' }}>Nenhum Departamento</span>}
+                                            )) : <span style={{ fontSize: '10px', fontStyle: 'italic', color: 'var(--color-text-muted)' }}>Nenhum Departamento</span>}
                                         </div>
                                     </div>
                                 </td>
@@ -449,7 +449,7 @@ export default function UserManagement() {
                                     </p>
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginTop: 8 }}>
                                         {allRoles.map((role, idx) => (
-                                            <label key={role.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: 10, border: '1px solid var(--color-border)', cursor: 'pointer', fontSize: 11, fontWeight: 700, background: formData.roleIds.includes(role.id) ? 'var(--color-primary)08' : '#fff' }}>
+                                            <label key={role.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: 10, border: '1px solid var(--color-border)', cursor: 'pointer', fontSize: 11, fontWeight: 700, background: formData.roleIds.includes(role.id) ? 'var(--color-primary)08' : 'var(--color-bg-page)' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                                     <input type="checkbox" checked={formData.roleIds.includes(role.id)} onChange={() => setFormData({...formData, roleIds: toggleId(formData.roleIds, role.id)})} />
                                                     {role.roleName}
@@ -511,7 +511,7 @@ export default function UserManagement() {
             {resultPassword && (
                 <DropdownPortal>
                     <div style={{ ...s.drawerOverlay, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <div style={{ background: '#fff', padding: 48, border: '4px solid var(--color-primary)', boxShadow: 'var(--shadow-brutal)', maxWidth: 440, textAlign: 'center' }}>
+                        <div style={{ background: 'var(--color-bg-surface)', padding: 48, border: '4px solid var(--color-primary)', boxShadow: 'var(--shadow-brutal)', maxWidth: 440, textAlign: 'center' }}>
                             <div style={{ color: 'var(--color-primary)', marginBottom: 24 }}><Key size={64} style={{ margin: '0 auto' }} /></div>
                             <h2 style={{ fontSize: '1.5rem', fontWeight: 900, marginBottom: 12 }}>AUTENTICAÇÃO GERADA</h2>
                             <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', fontWeight: 700, marginBottom: 24 }}>Copiue e guarde. Esta informação não será exibida novamente.</p>

@@ -109,7 +109,7 @@ export default function FinanceHistory() {
                         alignItems: 'center',
                         gap: '8px',
                         padding: '12px 24px',
-                        backgroundColor: '#fff',
+                        backgroundColor: 'var(--color-bg-surface)',
                         color: 'var(--color-primary)',
                         border: '2px solid var(--color-primary)',
                         fontWeight: 800,
@@ -137,7 +137,7 @@ export default function FinanceHistory() {
                 boxShadow: 'var(--shadow-brutal)',
                 flexWrap: 'wrap'
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '300px', backgroundColor: '#fff', border: '2px solid var(--color-border)', padding: '0 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '300px', backgroundColor: 'var(--color-bg-surface)', border: '2px solid var(--color-border)', padding: '0 16px' }}>
                     <SearchIcon />
                     <input 
                         type="text" 
@@ -174,7 +174,7 @@ export default function FinanceHistory() {
             </div>
 
             <div style={{
-                backgroundColor: '#fff',
+                backgroundColor: 'var(--color-bg-surface)',
                 border: '2px solid var(--color-border)',
                 boxShadow: 'var(--shadow-brutal)',
                 padding: '32px'
@@ -212,7 +212,7 @@ export default function FinanceHistory() {
                                                 key={item.id} 
                                                 style={{ 
                                                     position: 'relative',
-                                                    backgroundColor: '#fff', 
+                                                    backgroundColor: 'var(--color-bg-surface)', 
                                                     border: '2px solid var(--color-border)', 
                                                     padding: '20px',
                                                     marginLeft: '24px',

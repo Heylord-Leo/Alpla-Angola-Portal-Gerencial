@@ -17,7 +17,7 @@ export function WorkflowInteractive({ selectedStageId, onSelectStage }: Workflow
             flexDirection: 'column',
             gap: '2rem',
             padding: '2rem',
-            backgroundColor: '#f8fafc',
+            backgroundColor: 'var(--color-bg-page)',
             border: '2px dashed var(--color-primary-light)',
             borderRadius: '0',
             marginBottom: '1.5rem',

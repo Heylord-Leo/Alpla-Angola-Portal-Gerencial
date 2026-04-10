@@ -1060,7 +1060,7 @@ export function RequestEdit() {
         return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '1400px', margin: '0 auto' }}>
                 <Feedback type={feedback.type} message={feedback.message} onClose={() => setFeedback(prev => ({ ...prev, message: null }))} />
-                <div style={{ padding: '20px', textAlign: 'center', backgroundColor: '#fff', borderRadius: '8px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-sm)' }}>
+                <div style={{ padding: '20px', textAlign: 'center', backgroundColor: 'var(--color-bg-surface)', borderRadius: '8px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-sm)' }}>
                     <div style={{ width: '40px', height: '40px', border: '3px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px auto' }}></div>
                     <div style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>Carregando detalhes do pedido...</div>
                 </div>
@@ -1106,7 +1106,7 @@ export function RequestEdit() {
             <>
                 {isFullyReadOnly && (
                     <span style={{
-                        padding: '2px 8px', backgroundColor: '#f8fafc', color: '#64748b',
+                        padding: '2px 8px', backgroundColor: 'var(--color-bg-page)', color: '#64748b',
                         borderRadius: '4px', fontSize: '0.65rem', fontWeight: 800,
                         textTransform: 'uppercase', border: '1px solid #e2e8f0',
                         display: 'flex', alignItems: 'center', gap: '4px'

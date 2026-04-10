@@ -72,7 +72,7 @@ export function DecisionFinancialTrendLine({ requestId }: DecisionFinancialTrend
         justifyContent: 'space-between', 
         alignItems: 'center', 
         gap: '1rem', 
-        backgroundColor: '#F9FAFB', 
+        backgroundColor: 'var(--color-bg-page)', 
         border: '1px solid #F3F4F6', 
         padding: '0.75rem', 
         borderRadius: '0.375rem' 
@@ -89,7 +89,7 @@ export function DecisionFinancialTrendLine({ requestId }: DecisionFinancialTrend
               transition: 'all 0.2s',
               ...(resolution === 'WEEK' 
                 ? { backgroundColor: '#1E40AF', color: '#FFFFFF', border: '1px solid #1E40AF' }
-                : { backgroundColor: '#FFFFFF', color: '#4B5563', border: '1px solid #E5E7EB' })
+                : { backgroundColor: 'var(--color-bg-surface)', color: '#4B5563', border: '1px solid #E5E7EB' })
             }}
           >
             Semanas
@@ -105,7 +105,7 @@ export function DecisionFinancialTrendLine({ requestId }: DecisionFinancialTrend
               transition: 'all 0.2s',
               ...(resolution === 'MONTH' 
                 ? { backgroundColor: '#1E40AF', color: '#FFFFFF', border: '1px solid #1E40AF' }
-                : { backgroundColor: '#FFFFFF', color: '#4B5563', border: '1px solid #E5E7EB' })
+                : { backgroundColor: 'var(--color-bg-surface)', color: '#4B5563', border: '1px solid #E5E7EB' })
             }}
           >
             Meses
@@ -124,7 +124,7 @@ export function DecisionFinancialTrendLine({ requestId }: DecisionFinancialTrend
               transition: 'all 0.2s',
               ...(scope === 'PLANT' 
                 ? { backgroundColor: '#1E40AF', color: '#FFFFFF', border: '1px solid #1E40AF' }
-                : { backgroundColor: '#FFFFFF', color: '#4B5563', border: '1px solid #E5E7EB' })
+                : { backgroundColor: 'var(--color-bg-surface)', color: '#4B5563', border: '1px solid #E5E7EB' })
             }}
           >
             Apenas Planta Atual
@@ -140,7 +140,7 @@ export function DecisionFinancialTrendLine({ requestId }: DecisionFinancialTrend
               transition: 'all 0.2s',
               ...(scope === 'DEPARTMENT' 
                 ? { backgroundColor: '#1E40AF', color: '#FFFFFF', border: '1px solid #1E40AF' }
-                : { backgroundColor: '#FFFFFF', color: '#4B5563', border: '1px solid #E5E7EB' })
+                : { backgroundColor: 'var(--color-bg-surface)', color: '#4B5563', border: '1px solid #E5E7EB' })
             }}
           >
             Apenas este Departamento
@@ -174,7 +174,7 @@ export function DecisionFinancialTrendLine({ requestId }: DecisionFinancialTrend
             justifyContent: 'center',
             border: '1px dashed #E5E7EB',
             borderRadius: '0.375rem',
-            backgroundColor: '#F9FAFB',
+            backgroundColor: 'var(--color-bg-page)',
             color: '#6B7280',
             fontSize: '0.875rem'
           }}>
@@ -212,7 +212,7 @@ export function DecisionFinancialTrendLine({ requestId }: DecisionFinancialTrend
                     const point = payload[0].payload as FinancialTrendPointDto;
                     return (
                       <div style={{ 
-                        backgroundColor: '#fff', 
+                        backgroundColor: 'var(--color-bg-surface)', 
                         padding: '12px', 
                         borderRadius: '8px', 
                         boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',

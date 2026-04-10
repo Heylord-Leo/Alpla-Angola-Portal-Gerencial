@@ -41,7 +41,7 @@ const LoginPage: React.FC = () => {
         iconLeft: { position: 'absolute' as const, left: '16px', top: '13px', color: 'var(--color-primary)', opacity: 0.5 },
         iconRight: { position: 'absolute' as const, right: '16px', top: '13px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' },
         input: { width: '100%', padding: '12px 16px 12px 48px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: '0.95rem', fontWeight: 500, transition: 'all 0.2s', outline: 'none', backgroundColor: '#fcfcfc' },
-        inputFocus: { borderColor: 'var(--color-primary)', boxShadow: '0 0 0 4px rgba(var(--color-primary-rgb), 0.1)', backgroundColor: '#fff' },
+        inputFocus: { borderColor: 'var(--color-primary)', boxShadow: '0 0 0 4px rgba(var(--color-primary-rgb), 0.1)', backgroundColor: 'var(--color-bg-surface)' },
         errorBox: { backgroundColor: 'rgba(var(--color-status-red-rgb), 0.05)', border: '1px solid var(--color-status-red)', padding: '14px 16px', display: 'flex', alignItems: 'flex-start', gap: '12px', color: 'var(--color-status-red)', fontSize: '0.85rem', fontWeight: 600, borderRadius: 'var(--radius-md)' },
         footer: { textAlign: 'center' as const, pt: '16px' }
     };

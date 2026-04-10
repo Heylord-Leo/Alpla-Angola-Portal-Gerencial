@@ -793,7 +793,7 @@ export function RequestCreate() {
                                      style={{ position: 'relative' }}
                                  >
                                      <div style={{ 
-                                         marginBottom: '32px', padding: '24px', backgroundColor: '#fff', 
+                                         marginBottom: '32px', padding: '24px', backgroundColor: 'var(--color-bg-surface)', 
                                          border: '2px solid var(--color-primary)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-brutal-sm)',
                                          position: 'relative'
                                      }}>
@@ -1019,7 +1019,7 @@ export function RequestCreate() {
                                                      </label>
                                                      <label style={{ ...labelStyle, marginBottom: 0 }}>
                                                          Total s/ IVA
-                                                         <input type="number" value={(paymentDraft.items || []).reduce((sum, item) => sum + (((item?.quantity || 0) * (item?.unitPrice || 0)) - (item?.discountAmount || 0)), 0)} disabled style={{ ...inputStyle, backgroundColor: '#F9FAFB' }} />
+                                                         <input type="number" value={(paymentDraft.items || []).reduce((sum, item) => sum + (((item?.quantity || 0) * (item?.unitPrice || 0)) - (item?.discountAmount || 0)), 0)} disabled style={{ ...inputStyle, backgroundColor: 'var(--color-bg-page)' }} />
                                                      </label>
                                                  </div>
 
@@ -1158,12 +1158,12 @@ export function RequestCreate() {
                                                                         step="0.01"
                                                                         value={paymentDraft.discountAmount || ''}
                                                                         onChange={(e) => handleUpdateOcrDraft('discountAmount', parseFloat(e.target.value) || 0)}
-                                                                        style={{ width: '100px', padding: '4px', textAlign: 'right', border: '1px solid #fca5a5', borderRadius: '4px', fontSize: '0.85rem', fontWeight: 800, color: '#dc2626', backgroundColor: '#fff', float: 'right' }}
+                                                                        style={{ width: '100px', padding: '4px', textAlign: 'right', border: '1px solid #fca5a5', borderRadius: '4px', fontSize: '0.85rem', fontWeight: 800, color: '#dc2626', backgroundColor: 'var(--color-bg-surface)', float: 'right' }}
                                                                     />
                                                                 </td>
                                                                 <td></td>
                                                             </tr>
-                                                             <tr style={{ backgroundColor: '#F9FAFB', fontWeight: 800 }}>
+                                                             <tr style={{ backgroundColor: 'var(--color-bg-page)', fontWeight: 800 }}>
                                                                  <td colSpan={6} style={{ padding: '12px 16px', textAlign: 'right' }}>TOTAL DO PEDIDO ({String(paymentDraft.currency || '')}):</td>
                                                                  <td style={{ padding: '12px 16px', textAlign: 'right', color: 'var(--color-primary)', fontSize: '0.85rem' }}>
                                                                      {(Number(paymentDraft.totalAmount) || 0).toLocaleString('pt-PT', { minimumFractionDigits: 2 })}
@@ -1308,7 +1308,7 @@ export function RequestCreate() {
                                     Aviso de possível duplicidade: A extração binária (assinatura via ficheiro) detectou que este exato documento já foi carregado no sistema anteriormente.
                                 </p>
                                 
-                                <div style={{ backgroundColor: '#f9fafb', padding: '16px', borderRadius: '8px', fontSize: '0.875rem', color: '#4b5563', marginBottom: '24px' }}>
+                                <div style={{ backgroundColor: 'var(--color-bg-page)', padding: '16px', borderRadius: '8px', fontSize: '0.875rem', color: '#4b5563', marginBottom: '24px' }}>
                                     <p style={{ marginBottom: '8px' }}><span style={{ fontWeight: 600, color: '#374151' }}>Pedido Vinculado:</span> {duplicateWarning.requestNumber}</p>
                                     <p style={{ marginBottom: '8px' }}><span style={{ fontWeight: 600, color: '#374151' }}>Enviado por:</span> {duplicateWarning.uploadedBy || 'Desconhecido'}</p>
                                     <p><span style={{ fontWeight: 600, color: '#374151' }}>Enviado em:</span> {duplicateWarning.createdAtUtc ? formatDateTime(duplicateWarning.createdAtUtc) : '-'}</p>
@@ -1318,7 +1318,7 @@ export function RequestCreate() {
                                     <button
                                         type="button"
                                         onClick={() => setDuplicateWarning(null)}
-                                        style={{ flex: 1, padding: '8px 16px', fontSize: '0.875rem', fontWeight: 500, color: '#374151', backgroundColor: 'white', border: '1px solid #d1d5db', borderRadius: '8px', cursor: 'pointer' }}
+                                        style={{ flex: 1, padding: '8px 16px', fontSize: '0.875rem', fontWeight: 500, color: '#374151', backgroundColor: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer' }}
                                     >
                                         Cancelar Envio
                                     </button>

@@ -2,9 +2,12 @@
 
 ## Current Version
 
-v2.45.0
+v2.45.1
 
-## [2.45.0] - 2026-04-10
+## [2.45.1] - 2026-04-10
+
+### Fixed
+- **Dark Mode UI Stabilization**: System-wide eradication of hardcoded hex colors to prevent visibility issues in themed environments.
 
 ### Added
 - **Dark Mode Support**: Native theme switching (Light, Dark, System) with FOUC prevention and high-contrast slate-based palettes.

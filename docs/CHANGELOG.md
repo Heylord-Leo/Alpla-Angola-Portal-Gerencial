@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.45.1] - 2026-04-10
+
+### Fixed
+- **Dark Mode UI Stabilization**: Conducted a systematic sweep of the entire frontend to eradicate hardcoded hex colors (`#fff`, `#f3f4f6`, `#e5e7eb`) from inline styles.
+    - Updated 14+ core components and pages (User Management, Finance Overview, Dashboards, Autocompletes) to use theme-aware CSS variables.
+    - Preserved document-viewer white-space integrity for PDFs and scanned images as per operational requirements.
+
 ## [2.45.0] - 2026-04-10
 
 ### Added

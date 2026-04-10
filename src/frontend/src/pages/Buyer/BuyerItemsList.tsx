@@ -1069,7 +1069,7 @@ export function BuyerItemsList() {
             {/* Grouped Area */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
                 {loading ? (
-                    <div style={{ padding: '60px', textAlign: 'center', color: 'var(--color-primary)', fontWeight: 700, fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '0.1em', border: '2px solid var(--color-primary)', backgroundColor: '#fff' }}>
+                    <div style={{ padding: '60px', textAlign: 'center', color: 'var(--color-primary)', fontWeight: 700, fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '0.1em', border: '2px solid var(--color-primary)', backgroundColor: 'var(--color-bg-surface)' }}>
                         Carregando Cotações...
                     </div>
                 ) : groupedRequests.length === 0 ? (
@@ -1088,7 +1088,7 @@ export function BuyerItemsList() {
 
                         return (
                             <div key={group.requestId} style={{
-                                backgroundColor: '#fff',
+                                backgroundColor: 'var(--color-bg-surface)',
                                 border: '2px solid var(--color-primary)',
                                 boxShadow: 'var(--shadow-brutal)',
                                 overflow: 'hidden'
@@ -1098,7 +1098,7 @@ export function BuyerItemsList() {
                                     onClick={() => toggleGroup(group.requestId)}
                                     style={{
                                         padding: '16px 24px',
-                                        backgroundColor: '#f8fafc',
+                                        backgroundColor: 'var(--color-bg-page)',
                                         borderBottom: isExpanded ? '2px solid var(--color-primary)' : 'none',
                                         display: 'flex',
                                         justifyContent: 'space-between',
@@ -1256,7 +1256,7 @@ export function BuyerItemsList() {
                                                     {group.requestDescription && (
                                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                                             <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Descrição / Notas do Pedido</span>
-                                                            <span style={{ fontSize: '0.85rem', color: 'var(--color-text-body)', whiteSpace: 'pre-wrap', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '4px', border: '1px solid var(--color-border)' }}>
+                                                            <span style={{ fontSize: '0.85rem', color: 'var(--color-text-body)', whiteSpace: 'pre-wrap', backgroundColor: 'var(--color-bg-page)', padding: '12px', borderRadius: '4px', border: '1px solid var(--color-border)' }}>
                                                                 {group.requestDescription}
                                                             </span>
                                                         </div>
@@ -1273,7 +1273,7 @@ export function BuyerItemsList() {
                                                                         boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
                                                                     }}>
                                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
-                                                                            <div style={{ backgroundColor: '#fff', padding: '8px', borderRadius: '4px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+                                                                            <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '8px', borderRadius: '4px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
                                                                                 <FileText size={20} color="#1d4ed8" />
                                                                             </div>
                                                                             <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -1288,7 +1288,7 @@ export function BuyerItemsList() {
                                                                                 href={`/api/v1/attachments/download/${att.id}`}
                                                                                 target="_blank"
                                                                                 rel="noopener noreferrer"
-                                                                                style={{ color: '#1d4ed8', padding: '6px', border: '1px solid #93c5fd', borderRadius: '4px', display: 'flex', alignItems: 'center', backgroundColor: '#fff', transition: 'all 0.2s' }}
+                                                                                style={{ color: '#1d4ed8', padding: '6px', border: '1px solid #93c5fd', borderRadius: '4px', display: 'flex', alignItems: 'center', backgroundColor: 'var(--color-bg-surface)', transition: 'all 0.2s' }}
                                                                                 onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#dbeafe'; e.currentTarget.style.borderColor = '#60a5fa'; }}
                                                                                 onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#fff'; e.currentTarget.style.borderColor = '#93c5fd'; }}
                                                                                 title="Baixar Documento"
@@ -1308,7 +1308,7 @@ export function BuyerItemsList() {
                                         {/* SECTION A: Existing Quotations / Documents */}
                                         <div style={{
                                             padding: '24px',
-                                            backgroundColor: '#f8fafc',
+                                            backgroundColor: 'var(--color-bg-page)',
                                             border: '2px solid var(--color-border-heavy)',
                                             borderRadius: 'var(--radius-sm)',
                                             display: 'flex',
@@ -1399,7 +1399,7 @@ export function BuyerItemsList() {
                                                                                     onClick={() => handleEditQuotation(group.requestId, q)}
                                                                                     style={{
                                                                                         display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px',
-                                                                                        backgroundColor: '#fff', border: '1px solid #bae6fd', borderRadius: '4px',
+                                                                                        backgroundColor: 'var(--color-bg-surface)', border: '1px solid #bae6fd', borderRadius: '4px',
                                                                                         color: '#0369a1', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer',
                                                                                         textTransform: 'uppercase', transition: 'all 0.1s'
                                                                                     }}
@@ -1412,7 +1412,7 @@ export function BuyerItemsList() {
                                                                                     onClick={() => handleDeleteQuotation(group.requestId, q.id)}
                                                                                     style={{
                                                                                         display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px',
-                                                                                        backgroundColor: '#fff', border: '1px solid #fecaca', borderRadius: '4px',
+                                                                                        backgroundColor: 'var(--color-bg-surface)', border: '1px solid #fecaca', borderRadius: '4px',
                                                                                         color: '#dc2626', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer',
                                                                                         textTransform: 'uppercase', transition: 'all 0.1s'
                                                                                     }}
@@ -1442,9 +1442,9 @@ export function BuyerItemsList() {
                                                                         <div style={{
                                                                             padding: '0 16px 16px 16px',
                                                                             borderTop: '1px solid #e0f2fe',
-                                                                            backgroundColor: '#f8fafc'
+                                                                            backgroundColor: 'var(--color-bg-page)'
                                                                         }}>
-                                                                            <div style={{ marginTop: '32px', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#fff' }}>
+                                                                            <div style={{ marginTop: '32px', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden', backgroundColor: 'var(--color-bg-surface)' }}>
                                                                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                                                                                     <thead>
                                                                                          <tr style={{ backgroundColor: 'var(--color-bg-page)', borderBottom: '2px solid var(--color-border)' }}>
@@ -1466,7 +1466,7 @@ export function BuyerItemsList() {
                                                                                                 <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700 }}>{formatCurrencyAO(item.unitPrice)}</td>
                                                                                                 <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#ef4444' }}>{item.discountAmount > 0 ? formatCurrencyAO(item.discountAmount) : '---'}</td>
                                                                                                 <td style={{ padding: '12px', textAlign: 'right', fontWeight: 600, color: '#0369a1' }}>{item.ivaRatePercent > 0 ? `${item.ivaRatePercent}% (${formatCurrencyAO(item.ivaAmount)})` : 'Isento'}</td>
-                                                                                                <td style={{ padding: '12px', textAlign: 'right', fontWeight: 900, backgroundColor: '#f9fafb' }}>{formatCurrencyAO(item.lineTotal)}</td>
+                                                                                                <td style={{ padding: '12px', textAlign: 'right', fontWeight: 900, backgroundColor: 'var(--color-bg-page)' }}>{formatCurrencyAO(item.lineTotal)}</td>
                                                                                             </tr>
 
                                                                                         )) : (
@@ -1478,19 +1478,19 @@ export function BuyerItemsList() {
                                                                                         )}
                                                                                     </tbody>
                                                                                     <tfoot>
-                                                                                        <tr style={{ backgroundColor: '#f8fafc' }}>
+                                                                                        <tr style={{ backgroundColor: 'var(--color-bg-page)' }}>
                                                                                             <td colSpan={6} style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 800 }}>SUBTOTAL BRUTO:</td>
                                                                                             <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', color: 'var(--color-text-main)', fontWeight: 800 }}>{formatCurrencyAO(q.totalGrossAmount || 0)}</td>
                                                                                         </tr>
-                                                                                        <tr style={{ backgroundColor: '#f8fafc' }}>
+                                                                                        <tr style={{ backgroundColor: 'var(--color-bg-page)' }}>
                                                                                             <td colSpan={6} style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 800 }}>DESCONTOS GLOBAL:</td>
                                                                                             <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', color: '#dc2626', fontWeight: 800 }}>- {formatCurrencyAO(q.totalDiscountAmount || 0)}</td>
                                                                                         </tr>
-                                                                                        <tr style={{ backgroundColor: '#f8fafc' }}>
+                                                                                        <tr style={{ backgroundColor: 'var(--color-bg-page)' }}>
                                                                                             <td colSpan={6} style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 800 }}>BASE TRIBUTÁVEL:</td>
                                                                                             <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', color: 'var(--color-text-main)', fontWeight: 800 }}>{formatCurrencyAO(q.totalTaxableBase || 0)}</td>
                                                                                         </tr>
-                                                                                        <tr style={{ backgroundColor: '#f8fafc' }}>
+                                                                                        <tr style={{ backgroundColor: 'var(--color-bg-page)' }}>
                                                                                             <td colSpan={6} style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 800 }}>TOTAL IVA:</td>
                                                                                             <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', color: '#0284c7', fontWeight: 800 }}>{formatCurrencyAO(q.totalIvaAmount || 0)}</td>
                                                                                         </tr>
@@ -1521,7 +1521,7 @@ export function BuyerItemsList() {
                                                             {group.proformaAttachments.map((att: any) => (
                                                                 <div key={att.id} style={{
                                                                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px',
-                                                                    backgroundColor: '#f8fafc', border: '2px solid var(--color-border)', borderRadius: '6px',
+                                                                    backgroundColor: 'var(--color-bg-page)', border: '2px solid var(--color-border)', borderRadius: '6px',
                                                                     boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
                                                                 }}>
                                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
@@ -1540,7 +1540,7 @@ export function BuyerItemsList() {
                                                                             href={`/api/v1/attachments/download/${att.id}`}
                                                                             target="_blank"
                                                                             rel="noopener noreferrer"
-                                                                            style={{ color: 'var(--color-primary)', padding: '6px', border: '1px solid var(--color-border)', borderRadius: '4px', display: 'flex', alignItems: 'center', backgroundColor: '#fff' }}
+                                                                            style={{ color: 'var(--color-primary)', padding: '6px', border: '1px solid var(--color-border)', borderRadius: '4px', display: 'flex', alignItems: 'center', backgroundColor: 'var(--color-bg-surface)' }}
                                                                             title="Baixar Documento"
                                                                         >
                                                                             <ExternalLink size={16} />
@@ -1569,7 +1569,7 @@ export function BuyerItemsList() {
                                                     textAlign: 'center', 
                                                     border: '2px dashed var(--color-border)', 
                                                     borderRadius: '8px',
-                                                    backgroundColor: '#fff'
+                                                    backgroundColor: 'var(--color-bg-surface)'
                                                 }}>
                                                     <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '0.9rem', fontWeight: 600 }}>
                                                         Nenhuma cotação ou documento registrado para este pedido.
@@ -1588,7 +1588,7 @@ export function BuyerItemsList() {
                                                 className={highlightedRequestId === group.requestId ? 'section-attention-highlight' : ''}
                                                 style={{
                                                     padding: '24px',
-                                                    backgroundColor: '#fff',
+                                                    backgroundColor: 'var(--color-bg-surface)',
                                                     border: '2px solid var(--color-primary)',
                                                     borderRadius: 'var(--radius-sm)',
                                                     display: 'flex',
@@ -1626,7 +1626,7 @@ export function BuyerItemsList() {
                                                             onClick={() => setAddQuotationMode(prev => ({ ...prev, [group.requestId]: 'UPLOAD' }))}
                                                             style={{
                                                                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '32px 24px',
-                                                                backgroundColor: '#f8fafc', border: '2px solid var(--color-border)', borderRadius: '8px',
+                                                                backgroundColor: 'var(--color-bg-page)', border: '2px solid var(--color-border)', borderRadius: '8px',
                                                                 cursor: 'pointer', transition: 'all 0.2s', textAlign: 'center'
                                                             }}
                                                             onMouseOver={(e) => { e.currentTarget.style.borderColor = 'var(--color-primary)'; e.currentTarget.style.backgroundColor = '#f0f9ff'; }}
@@ -1702,7 +1702,7 @@ export function BuyerItemsList() {
                                                                     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
                                                                         <div style={{ 
                                                                             display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', 
-                                                                            backgroundColor: '#fff', border: '1px solid #bae6fd', borderRadius: '6px', width: '100%', maxWidth: '400px'
+                                                                            backgroundColor: 'var(--color-bg-surface)', border: '1px solid #bae6fd', borderRadius: '6px', width: '100%', maxWidth: '400px'
                                                                         }}>
                                                                             <FileText size={20} color="#0284c7" />
                                                                             <span style={{ flex: 1, fontSize: '0.85rem', fontWeight: 700, color: '#0369a1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1769,7 +1769,7 @@ export function BuyerItemsList() {
                                                                         {addQuotationMode[group.requestId] === 'UPLOAD' && (
                                                                             <button 
                                                                                 onClick={() => handleRestoreOcrOriginal(group.requestId)}
-                                                                                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 700, backgroundColor: '#fff', cursor: 'pointer' }}
+                                                                                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 700, backgroundColor: 'var(--color-bg-surface)', cursor: 'pointer' }}
                                                                                 title="Restaurar sugestões originais do OCR"
                                                                             >
                                                                                 <RefreshCcw size={16} /> Restaurar OCR
@@ -1791,7 +1791,7 @@ export function BuyerItemsList() {
                                                                     </div>
                                                                 ) : quotationDrafts[group.requestId] ? (
                                                                     <div className="quotation-form-body">
-                                                                        <div className="form-header-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '24px', backgroundColor: '#f8fafc', padding: '20px', borderRadius: '8px' }}>
+                                                                        <div className="form-header-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '24px', backgroundColor: 'var(--color-bg-page)', padding: '20px', borderRadius: '8px' }}>
                                                                             <div style={{ gridColumn: 'span 3' }}>
                                                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                                                                                     <label style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Fornecedor <span style={{ color: '#ef4444' }}>*</span></label>
@@ -1909,7 +1909,7 @@ export function BuyerItemsList() {
                                                                                                  </div>
                                                                                                  <button 
                                                                                                      onClick={() => handleUpdateQuotationHeader(group.requestId, 'proformaAttachmentId', null)}
-                                                                                                     style={{ display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid #fee2e2', backgroundColor: '#fff', color: '#ef4444', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 800, fontSize: '0.65rem', textTransform: 'uppercase' }}
+                                                                                                     style={{ display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid #fee2e2', backgroundColor: 'var(--color-bg-surface)', color: '#ef4444', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 800, fontSize: '0.65rem', textTransform: 'uppercase' }}
                                                                                                  >
                                                                                                      <Trash2 size={12} /> Remover e Trocar
                                                                                                  </button>
@@ -2018,7 +2018,7 @@ export function BuyerItemsList() {
 
                                                                             <div className="draft-items-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                                                                 {quotationDrafts[group.requestId].items.length === 0 ? (
-                                                                                    <div style={{ padding: '32px', textAlign: 'center', backgroundColor: '#f9fafb', border: '1px dashed #d1d5db', borderRadius: '8px' }}>
+                                                                                    <div style={{ padding: '32px', textAlign: 'center', backgroundColor: 'var(--color-bg-page)', border: '1px dashed #d1d5db', borderRadius: '8px' }}>
                                                                                         <Plus size={24} style={{ margin: '0 auto 8px', color: '#9ca3af' }} />
                                                                                         <p style={{ margin: 0, fontSize: '0.85rem', color: '#6b7280', fontWeight: 600 }}>Nenhum item adicionado à cotação.</p>
                                                                                         <button 
@@ -2042,7 +2042,7 @@ export function BuyerItemsList() {
                                                                                             <span></span>
                                                                                         </div>
                                                                                         {quotationDrafts[group.requestId].items.map((item, idx) => (
-                                                                                            <div key={idx} style={{ display: 'grid', gridTemplateColumns: '40px minmax(150px, 1fr) 60px 80px 100px 100px 110px 120px 40px', gap: '8px', alignItems: 'center', padding: '12px', backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                                                                                            <div key={idx} style={{ display: 'grid', gridTemplateColumns: '40px minmax(150px, 1fr) 60px 80px 100px 100px 110px 120px 40px', gap: '8px', alignItems: 'center', padding: '12px', backgroundColor: 'var(--color-bg-surface)', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
                                                                                                 <div style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--color-text-muted)', textAlign: 'center' }}>{item.lineNumber}</div>
                                                                                                 <input 
                                                                                                     value={item.description}
@@ -2060,7 +2060,7 @@ export function BuyerItemsList() {
                                                                                                     <select
                                                                                                         value={item.unitId || ''}
                                                                                                         onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'unitId', e.target.value ? parseInt(e.target.value) : null)}
-                                                                                                        style={{ padding: '8px', border: item.unit && !item.unitId ? '2px solid #f97316' : '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.75rem', backgroundColor: '#f8fafc', width: '100%' }}
+                                                                                                        style={{ padding: '8px', border: item.unit && !item.unitId ? '2px solid #f97316' : '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.75rem', backgroundColor: 'var(--color-bg-page)', width: '100%' }}
                                                                                                     >
                                                                                                         <option value="">...</option>
                                                                                                         {units.filter(u => u.isActive !== false || u.id === item.unitId).map(u => (
@@ -2089,7 +2089,7 @@ export function BuyerItemsList() {
                                                                                                      <select
                                                                                                          value={item.ivaRateId || ''}
                                                                                                          onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'ivaRateId', e.target.value ? parseInt(e.target.value) : null)}
-                                                                                                         style={{ padding: '8px', border: item.taxRate !== undefined && !item.ivaRateId ? '2px solid #f97316' : '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.75rem', backgroundColor: '#f8fafc', width: '100%' }}
+                                                                                                         style={{ padding: '8px', border: item.taxRate !== undefined && !item.ivaRateId ? '2px solid #f97316' : '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.75rem', backgroundColor: 'var(--color-bg-page)', width: '100%' }}
                                                                                                      >
                                                                                                          <option value="">Selecione IVA...</option>
                                                                                                          {ivaRates.filter(r => r.isActive).map(r => (
@@ -2148,7 +2148,7 @@ export function BuyerItemsList() {
                                                                                         step="0.01"
                                                                                         value={quotationDrafts[group.requestId]?.discountAmount || 0}
                                                                                         onChange={(e) => handleUpdateQuotationHeader(group.requestId, 'discountAmount', parseFloat(e.target.value) || 0)}
-                                                                                        style={{ width: '120px', padding: '6px', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.9rem', fontWeight: 600, color: '#dc2626', backgroundColor: '#fff' }}
+                                                                                        style={{ width: '120px', padding: '6px', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.9rem', fontWeight: 600, color: '#dc2626', backgroundColor: 'var(--color-bg-surface)' }}
                                                                                     />
                                                                                 </div>
                                                                                 <div style={{ textAlign: 'left' }}>
@@ -2184,7 +2184,7 @@ export function BuyerItemsList() {
                                                                                         display: 'flex', 
                                                                                         alignItems: 'center', 
                                                                                         gap: '8px', 
-                                                                                        backgroundColor: '#fff', 
+                                                                                        backgroundColor: 'var(--color-bg-surface)', 
                                                                                         color: '#64748b', 
                                                                                         padding: '12px 24px', 
                                                                                         borderRadius: '6px', 
@@ -2372,7 +2372,7 @@ export function BuyerItemsList() {
                                         {group.requestTypeCode !== 'QUOTATION' && (
                                             <div style={{
                                                 padding: '16px',
-                                                backgroundColor: '#fff',
+                                                backgroundColor: 'var(--color-bg-surface)',
                                                 border: '1px solid var(--color-border)',
                                                 borderRadius: '6px',
                                                 display: 'flex',
@@ -2702,7 +2702,7 @@ export function BuyerItemsList() {
                                     Este orçamento/proforma já foi carregado no sistema anteriormente. Deseja prosseguir mesmo assim?
                                 </p>
                                 
-                                <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', fontSize: '0.8rem', color: '#475569', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+                                <div style={{ backgroundColor: 'var(--color-bg-page)', padding: '16px', borderRadius: '8px', fontSize: '0.8rem', color: '#475569', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
                                     <p style={{ marginBottom: '6px' }}><span style={{ fontWeight: 800, color: '#1e293b', textTransform: 'uppercase', fontSize: '0.7rem' }}>Arquivo:</span> {fileDuplicateWarning.fileName}</p>
                                     <p style={{ marginBottom: '6px' }}><span style={{ fontWeight: 800, color: '#1e293b', textTransform: 'uppercase', fontSize: '0.7rem' }}>Pedido Vinculado:</span> {fileDuplicateWarning.requestNumber}</p>
                                     <p style={{ marginBottom: '6px' }}><span style={{ fontWeight: 800, color: '#1e293b', textTransform: 'uppercase', fontSize: '0.7rem' }}>Enviado por:</span> {fileDuplicateWarning.uploadedBy || 'Desconhecido'}</p>

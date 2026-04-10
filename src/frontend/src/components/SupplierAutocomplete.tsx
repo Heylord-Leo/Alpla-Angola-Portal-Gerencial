@@ -150,7 +150,7 @@ export function SupplierAutocomplete({
 
     const panelStyle: React.CSSProperties = {
         ...(dropdownStyle || {}),
-        backgroundColor: '#ffffff',
+        backgroundColor: 'var(--color-bg-surface)',
         border: '2px solid var(--color-border-heavy)',
         boxShadow: 'var(--shadow-brutal)',
         overflow: 'hidden',
@@ -162,7 +162,7 @@ export function SupplierAutocomplete({
     const searchAreaStyle: React.CSSProperties = {
         padding: '10px',
         borderBottom: '2px solid var(--color-border-heavy)',
-        backgroundColor: '#f9fafb',
+        backgroundColor: 'var(--color-bg-page)',
         position: 'relative',
     };
 
@@ -172,7 +172,7 @@ export function SupplierAutocomplete({
         border: '2px solid var(--color-border-heavy)',
         fontSize: '0.875rem',
         outline: 'none',
-        backgroundColor: '#ffffff',
+        backgroundColor: 'var(--color-bg-surface)',
         fontFamily: 'inherit',
         boxSizing: 'border-box',
     };
@@ -186,7 +186,7 @@ export function SupplierAutocomplete({
 
     const headerStyle: React.CSSProperties = {
         ...gridStyle,
-        backgroundColor: '#f3f4f6', // Light gray standard
+        backgroundColor: 'var(--color-bg-page)', // Light gray standard
         borderBottom: '2px solid var(--color-border-heavy)',
     };
 
@@ -310,7 +310,7 @@ export function SupplierAutocomplete({
                         </div>
 
                         {/* Result Rows */}
-                        <div style={{ maxHeight: '280px', overflowY: 'auto', backgroundColor: '#ffffff' }}>
+                        <div style={{ maxHeight: '280px', overflowY: 'auto', backgroundColor: 'var(--color-bg-surface)' }}>
                             {isLoading ? (
                                 <div style={{ padding: '32px', textAlign: 'center' }}>
                                     <div style={{ display: 'inline-block', width: '24px', height: '24px', border: '3px solid #e5e7eb', borderTopColor: '#111827', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />

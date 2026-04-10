@@ -230,16 +230,16 @@ export function SystemLogs() {
     filtersCard: { backgroundColor: 'var(--color-bg-surface)', padding: '16px', boxShadow: 'var(--shadow-brutal)', border: '2px solid var(--color-primary)', display: 'flex', flexDirection: 'column', gap: '16px' } as React.CSSProperties,
     filtersGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 } as React.CSSProperties,
     input: { width: '100%', padding: '10px 12px', border: '2px solid var(--color-border)', fontSize: '0.85rem', boxSizing: 'border-box', fontWeight: 600, outline: 'none' } as React.CSSProperties,
-    select: { width: '100%', padding: '10px 12px', border: '2px solid var(--color-border)', fontSize: '0.85rem', background: '#fff', boxSizing: 'border-box', fontWeight: 600, outline: 'none' } as React.CSSProperties,
+    select: { width: '100%', padding: '10px 12px', border: '2px solid var(--color-border)', fontSize: '0.85rem', background: 'var(--color-bg-surface)', boxSizing: 'border-box', fontWeight: 600, outline: 'none' } as React.CSSProperties,
     btnPrimary: { padding: '0.75rem 1.5rem', background: 'var(--color-primary)', color: '#fff', border: 'none', fontWeight: 800, cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 8, textTransform: 'uppercase', boxShadow: '4px 4px 0px var(--color-border-heavy)' } as React.CSSProperties,
-    btnSecondary: { padding: '0.75rem 1rem', background: '#fff', color: 'var(--color-text-muted)', border: '2px solid var(--color-border)', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem', textTransform: 'uppercase' } as React.CSSProperties,
+    btnSecondary: { padding: '0.75rem 1rem', background: 'var(--color-bg-surface)', color: 'var(--color-text-muted)', border: '2px solid var(--color-border)', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem', textTransform: 'uppercase' } as React.CSSProperties,
     table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: '0.85rem' },
     th: { padding: '12px', background: 'var(--color-bg-main)', color: 'var(--color-text-main)', fontWeight: 800, textAlign: 'left' as const, fontSize: '0.75rem', letterSpacing: '0.05em', textTransform: 'uppercase' as const, borderBottom: '2px solid var(--color-border-heavy)' },
     td: { padding: '12px', borderBottom: '1px solid var(--color-border-light)', verticalAlign: 'top' as const },
     trHover: { background: 'var(--color-bg-surface)' },
     pagination: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, justifyContent: 'flex-end' } as React.CSSProperties,
     modalOverlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', zIndex: Z_INDEX.MODAL, padding: 24 },
-    modalBox: { background: '#fff', width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' as const, borderRadius: 0, border: '2px solid var(--color-border-heavy)', boxShadow: 'var(--shadow-brutal)', padding: 24 },
+    modalBox: { background: 'var(--color-bg-surface)', width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' as const, borderRadius: 0, border: '2px solid var(--color-border-heavy)', boxShadow: 'var(--shadow-brutal)', padding: 24 },
     labelSm: { fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4, display: 'block' },
     codeBlock: { background: 'var(--color-bg-main)', padding: 12, border: '1px solid var(--color-border)', fontSize: '0.75rem', fontFamily: 'monospace', whiteSpace: 'pre-wrap' as const, wordBreak: 'break-word' as const, overflowX: 'auto' as const },
   };
@@ -458,7 +458,7 @@ export function SystemLogs() {
                     </div>
                     <div>
                       <div style={s.labelSm}>Tipo de Evento</div>
-                      <code style={{ fontSize: 12, background: '#f3f4f6', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>{detail.eventType}</code>
+                      <code style={{ fontSize: 12, background: 'var(--color-bg-page)', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>{detail.eventType}</code>
                     </div>
                     <div>
                       <div style={s.labelSm}>Fonte</div>
@@ -466,7 +466,7 @@ export function SystemLogs() {
                     </div>
                     <div>
                       <div style={s.labelSm}>Correlation ID</div>
-                      <code style={{ fontSize: 12, background: '#f3f4f6', padding: '2px 6px', borderRadius: 4 }}>{detail.correlationId ?? '—'}</code>
+                      <code style={{ fontSize: 12, background: 'var(--color-bg-page)', padding: '2px 6px', borderRadius: 4 }}>{detail.correlationId ?? '—'}</code>
                     </div>
                     <div>
                       <div style={s.labelSm}>Utilizador</div>
@@ -490,7 +490,7 @@ export function SystemLogs() {
 
                   {/* OCR Summary */}
                   {isOcrLog && (
-                    <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: 16 }}>
+                    <div style={{ background: 'var(--color-bg-page)', border: '1px solid #cbd5e1', padding: 16 }}>
                       <div style={{ ...s.labelSm, color: 'var(--color-primary)', marginBottom: 12 }}>Resumo de Execução OCR</div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
                         
@@ -505,7 +505,7 @@ export function SystemLogs() {
                             {detailParsedPayload.executionStatus === 'Success' && <span style={{ background: '#ecfdf5', color: '#059669', padding: '2px 6px', borderRadius: 4, fontWeight: 700, fontSize: 11 }}>SUCESSO</span>}
                             {detailParsedPayload.executionStatus === 'Partial' && <span style={{ background: '#fffbeb', color: '#d97706', padding: '2px 6px', borderRadius: 4, fontWeight: 700, fontSize: 11 }}>PARCIAL</span>}
                             {detailParsedPayload.executionStatus === 'Failed' && <span style={{ background: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: 4, fontWeight: 700, fontSize: 11 }}>FALHA</span>}
-                            {!['Success', 'Partial', 'Failed'].includes(detailParsedPayload.executionStatus) && <span style={{ background: '#f3f4f6', color: '#4b5563', padding: '2px 6px', borderRadius: 4, fontWeight: 700, fontSize: 11 }}>{detailParsedPayload.executionStatus || '—'}</span>}
+                            {!['Success', 'Partial', 'Failed'].includes(detailParsedPayload.executionStatus) && <span style={{ background: 'var(--color-bg-page)', color: '#4b5563', padding: '2px 6px', borderRadius: 4, fontWeight: 700, fontSize: 11 }}>{detailParsedPayload.executionStatus || '—'}</span>}
                           </div>
                         </div>
 
