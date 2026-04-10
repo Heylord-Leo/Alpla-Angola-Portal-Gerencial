@@ -12,6 +12,7 @@ using AlplaPortal.Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using AlplaPortal.Domain.Constants;
+using System.Linq.Expressions;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
 
@@ -274,6 +275,8 @@ public class RequestsController : BaseController
         [FromQuery] string? companyIds = null,
         [FromQuery] string? departmentIds = null,
         [FromQuery] bool? isAttention = null,
+        [FromQuery] bool? myTasksOnly = null,
+        [FromQuery] bool? excludeMyTasks = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
@@ -313,6 +316,46 @@ public class RequestsController : BaseController
             var parsedDepartmentIds = departmentIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToList();
             if (parsedDepartmentIds.Any()) query = query.Where(r => parsedDepartmentIds.Contains(r.DepartmentId));
         }
+
+        // --- Role based Responsibility Filter ---
+        var currentUserId = CurrentUserId;
+        var roles = CurrentUserRoles;
+        var isAreaApprover = roles.Contains(RoleConstants.AreaApprover);
+        var isFinalApprover = roles.Contains(RoleConstants.FinalApprover);
+        var isBuyer = roles.Contains(RoleConstants.Buyer);
+        var isFinance = roles.Contains(RoleConstants.Finance);
+        var isReceiver = roles.Contains(RoleConstants.Receiving);
+
+        Expression<Func<AlplaPortal.Domain.Entities.Request, bool>> myTasksCriteria = r =>
+            // Solicitante: Em rascunho ou ajuste
+            (r.RequesterId == currentUserId && (r.Status!.Code == RequestConstants.Statuses.Draft || r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment)) ||
+            // Aprovador de Área
+            (isAreaApprover && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
+            // Aprovador Final
+            (isFinalApprover && r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval) ||
+            // Comprador
+            (isBuyer && (r.Status!.Code == RequestConstants.Statuses.WaitingQuotation || r.Status!.Code == RequestConstants.Statuses.FinalApproved) && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
+            // Financeiro
+            (isFinance && (r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled)) ||
+            // Recebimento (Requester ou Role)
+            ((r.RequesterId == currentUserId || isReceiver) && r.Status!.Code == "WAITING_RECEIPT");
+
+        if (myTasksOnly == true)
+        {
+            query = query.Where(myTasksCriteria);
+        }
+        else if (excludeMyTasks == true)
+        {
+            query = query.Where(r => !(
+                (r.RequesterId == currentUserId && (r.Status!.Code == RequestConstants.Statuses.Draft || r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment)) ||
+                (isAreaApprover && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
+                (isFinalApprover && r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval) ||
+                (isBuyer && (r.Status!.Code == RequestConstants.Statuses.WaitingQuotation || r.Status!.Code == RequestConstants.Statuses.FinalApproved) && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
+                (isFinance && (r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled)) ||
+                ((r.RequesterId == currentUserId || isReceiver) && r.Status!.Code == "WAITING_RECEIPT")
+            ));
+        }
+        // --- 
 
         // 2. Calculate Dashboard Summary (Aware of base filters, but before status filters)
         var counts = await query

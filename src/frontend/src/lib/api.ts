@@ -169,7 +169,7 @@ export const api = {
         },
         list: async (
             search?: string, 
-            filters?: { statusIds?: string, typeIds?: string, plantIds?: string, companyIds?: string, departmentIds?: string, isAttention?: boolean, ivaRateId?: number }, 
+            filters?: { statusIds?: string, typeIds?: string, plantIds?: string, companyIds?: string, departmentIds?: string, isAttention?: boolean, ivaRateId?: number, myTasksOnly?: boolean, excludeMyTasks?: boolean }, 
             page: number = 1, 
             pageSize: number = 20
         ): Promise<RequestListResponseDto> => {
@@ -181,6 +181,8 @@ export const api = {
             if (filters?.companyIds) params.append('companyIds', filters.companyIds);
             if (filters?.departmentIds) params.append('departmentIds', filters.departmentIds);
             if (filters?.isAttention !== undefined) params.append('isAttention', String(filters.isAttention));
+            if (filters?.myTasksOnly !== undefined) params.append('myTasksOnly', String(filters.myTasksOnly));
+            if (filters?.excludeMyTasks !== undefined) params.append('excludeMyTasks', String(filters.excludeMyTasks));
             if (filters?.ivaRateId !== undefined) params.append('ivaRateId', String(filters.ivaRateId));
             params.append('page', page.toString());
             params.append('pageSize', pageSize.toString());

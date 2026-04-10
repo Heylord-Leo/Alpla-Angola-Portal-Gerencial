@@ -2,13 +2,17 @@
 
 ## Current Version
 
-v2.44.1
+v2.45.0
 
-## [2.44.1] - 2026-04-10
+## [2.45.0] - 2026-04-10
 
-### Fixed
-- **Global Discount Persistence**: Resolved a regression where the "Desconto Comercial" was being overwritten by gross totals during the Payment Request submission.
-- **Payment Request Submission Payload**: Ensured `discountAmount` is included in the initial creation request.
+### Added
+- **Dark Mode Support**: Native theme switching (Light, Dark, System) with FOUC prevention and high-contrast slate-based palettes.
+- **Stacked Requests List**: Refactored workspace with "Para Minha Ação" and "Explorador de Pedidos" sections.
+- **`RequestsGrid` Component**: Modular request list rendering with isolated state management.
+
+### Changed
+- **Responsibility Filtering**: Server-side LINQ expressions for advanced role-based task identification.
 
 ## [2.44.0] - 2026-04-10
 

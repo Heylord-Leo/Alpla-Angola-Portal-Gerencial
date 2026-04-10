@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
-import { User, LogOut, Key, ChevronDown } from 'lucide-react';
+import { User, LogOut, Key, ChevronDown, Moon, Sun, Monitor } from 'lucide-react';
+import { useTheme } from '../../hooks/useTheme';
 import { useAuth } from '../../features/auth/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserProfileDrawer } from './UserProfileDrawer';
 
 export function UserDropdown() {
     const { user, logout } = useAuth();
+    const { theme, setTheme } = useTheme();
     const [isOpen, setIsOpen] = useState(false);
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -92,6 +94,30 @@ export function UserDropdown() {
                             <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', marginBottom: 8 }}>
                                 <div style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--color-primary)' }}>{user?.fullName}</div>
                                 <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{user?.email}</div>
+                            </div>
+                            
+                            <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--color-border)', marginBottom: 8 }}>
+                                <div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>Tema Visual</div>
+                                <div style={{ display: 'flex', gap: '4px', backgroundColor: 'var(--color-bg-page)', padding: '4px', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+                                    <button 
+                                        onClick={() => setTheme('light')}
+                                        title="Claro"
+                                        style={{ flex: 1, padding: '4px', border: 'none', background: theme === 'light' ? 'var(--color-bg-surface)' : 'transparent', color: theme === 'light' ? 'var(--color-primary)' : 'var(--color-text-muted)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', boxShadow: theme === 'light' ? 'var(--shadow-sm)' : 'none', transition: 'all 0.2s', display: 'flex', justifyContent: 'center' }}>
+                                        <Sun size={14} strokeWidth={theme === 'light' ? 3 : 2} />
+                                    </button>
+                                    <button 
+                                        onClick={() => setTheme('dark')}
+                                        title="Escuro"
+                                        style={{ flex: 1, padding: '4px', border: 'none', background: theme === 'dark' ? 'var(--color-bg-surface)' : 'transparent', color: theme === 'dark' ? 'var(--color-primary)' : 'var(--color-text-muted)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', boxShadow: theme === 'dark' ? 'var(--shadow-sm)' : 'none', transition: 'all 0.2s', display: 'flex', justifyContent: 'center' }}>
+                                        <Moon size={14} strokeWidth={theme === 'dark' ? 3 : 2} />
+                                    </button>
+                                    <button 
+                                        onClick={() => setTheme('system')}
+                                        title="Sistema"
+                                        style={{ flex: 1, padding: '4px', border: 'none', background: theme === 'system' ? 'var(--color-bg-surface)' : 'transparent', color: theme === 'system' ? 'var(--color-primary)' : 'var(--color-text-muted)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', boxShadow: theme === 'system' ? 'var(--shadow-sm)' : 'none', transition: 'all 0.2s', display: 'flex', justifyContent: 'center' }}>
+                                        <Monitor size={14} strokeWidth={theme === 'system' ? 3 : 2} />
+                                    </button>
+                                </div>
                             </div>
 
                             {menuItems.map((item, idx) => (

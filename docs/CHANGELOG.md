@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.45.0] - 2026-04-10
+
+### Added
+- **Dark Mode Support**: Implemented native theme switching (Light, Dark, System) with automatic FOUC (Flash of Unstyled Content) prevention.
+    - Integrated a persistent `useTheme` hook with `localStorage` and system preference detection.
+    - Overhauled `tokens.css` with high-contrast slate-based palettes and optimized "Congress Blue" for deep backgrounds.
+    - Added an interactive theme switcher in the `UserDropdown` component.
+- **Stacked Requests List**: Refactored the core Requests Management workspace into two distinct, vertically stacked sections:
+    - **"Para Minha Ação"**: A filtered view dedicated to tasks requiring direct user intervention based on role-based responsibility logic (Requester adjustments, Area/Final approvals, Buyer quotations, Finance scheduling).
+    - **"Explorador de Pedidos"**: A global view browsing all other accessible requests.
+- **Reusable `RequestsGrid` Component**: Extracted list rendering, searching, filtering, and independent pagination into a modular component, enabling multi-list layouts without state collisions.
+
+### Changed
+- **Responsibility Filtering**: Enhanced the `RequestsController.GetRequests` endpoint with `myTasksOnly` and `excludeMyTasks` boolean flags, leveraging server-side LINQ expressions for advanced responsibility detection.
+
 ## [2.44.1] - 2026-04-10
 
 ### Fixed

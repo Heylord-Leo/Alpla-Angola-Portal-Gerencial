@@ -97,3 +97,34 @@
   --z-toast: 1600;
   --z-tooltip: 1700;
 }
+
+/* Dark Mode Overrides */
+[data-theme="dark"] {
+  /* Brand Colors */
+  --color-primary: #00A3E0; /* Lighter cyan-blue for contrast */
+  --color-primary-hover: #33b8e6;
+  --color-border-heavy: #00A3E0;
+  --color-primary-rgb: 0, 163, 224;
+
+  /* Neutrals */
+  --color-bg-page: #0f172a; /* Slate 900 */
+  --color-bg-surface: #1e293b; /* Slate 800 */
+  --color-border: rgba(255, 255, 255, 0.1); 
+
+  --color-text-main: #f8fafc; /* Slate 50 */
+  --color-text-muted: #94a3b8; /* Slate 400 */
+
+  /* Fields / Inputs specific overrides */
+  --color-placeholder: #64748b;
+  --color-placeholder-focus: #94a3b8;
+  --color-field-disabled-bg: #0f172a;
+  --color-field-disabled-text: #475569;
+  --color-field-readonly-bg: #0f172a;
+
+  /* Elevation mapping for dark mode */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+  
+  --focus-ring: 0 0 0 2px var(--color-bg-page), 0 0 0 4px rgba(0, 163, 224, 0.4);
+}
