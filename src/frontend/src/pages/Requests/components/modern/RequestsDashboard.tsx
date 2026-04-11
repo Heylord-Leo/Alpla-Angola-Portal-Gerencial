@@ -8,6 +8,7 @@ import { ActionCarouselWidget } from './ActionCarouselWidget';
 import { RequestsTableWidget } from './RequestsTableWidget';
 import { RequestDrawerPresentation } from './RequestDrawerPresentation';
 import { FilterDropdown } from '../../../../components/ui/FilterDropdown';
+import { CorrectPoModal } from '../../../../components/CorrectPoModal';
 
 export function RequestsDashboard() {
     const navigate = useNavigate();
@@ -23,6 +24,9 @@ export function RequestsDashboard() {
 
     // Navigation state (Drawer)
     const [drawerRequestId, setDrawerRequestId] = useState<string | null>(null);
+
+    // P.O. Correction Modal state
+    const [correctPoRequestId, setCorrectPoRequestId] = useState<string | null>(null);
 
     // Filters and Pagination
     const [searchTerm, setSearchTerm] = useState('');
@@ -291,7 +295,11 @@ export function RequestsDashboard() {
 
             {/* ── Action Carousel & Stats ── */}
             {summary && (
-                <ActionCarouselWidget summary={summary} onRowClick={handleRowClick} />
+                <ActionCarouselWidget 
+                    summary={summary} 
+                    onRowClick={handleRowClick}
+                    onCorrectPoClick={(requestId) => setCorrectPoRequestId(requestId)}
+                />
             )}
 
             {/* ── Explorer Section ── */}
@@ -502,6 +510,17 @@ export function RequestsDashboard() {
                 isOpen={!!drawerRequestId}
                 onClose={() => {
                     setDrawerRequestId(null);
+                    loadData();
+                }}
+            />
+
+            {/* ── P.O. Correction Modal ── */}
+            <CorrectPoModal
+                show={!!correctPoRequestId}
+                requestId={correctPoRequestId || ''}
+                onClose={() => setCorrectPoRequestId(null)}
+                onSuccess={(msg) => {
+                    setCorrectPoRequestId(null);
                     loadData();
                 }}
             />

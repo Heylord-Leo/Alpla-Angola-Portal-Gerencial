@@ -348,8 +348,23 @@ export function RequestCreate() {
         setPaymentDraft(prev => {
             if (!prev) return null;
             const nextItems = [...prev.items];
-            nextItems[index] = { ...nextItems[index], [field]: value };
             
+            // If user manually changes the absolute discount amount, clear the reactive percentage
+            if (field === 'discountAmount') {
+                nextItems[index] = { ...nextItems[index], discountAmount: value, discountPercent: undefined };
+            } else {
+                nextItems[index] = { ...nextItems[index], [field]: value };
+            }
+            
+            // Reactive discount recalculation if percentage is locked in
+            if ((field === 'quantity' || field === 'unitPrice') && nextItems[index].discountPercent !== undefined) {
+                const qty = nextItems[index].quantity || 0;
+                const price = nextItems[index].unitPrice || 0;
+                const pct = nextItems[index].discountPercent!;
+                const recalculatedDiscount = Math.round(qty * price * (pct / 100) * 100) / 100;
+                nextItems[index].discountAmount = recalculatedDiscount;
+            }
+
             if (field === 'quantity' || field === 'unitPrice' || field === 'ivaRateId' || field === 'discountAmount') {
                 nextItems[index].totalPrice = calculateItemTotal(nextItems[index]);
             }
@@ -1036,46 +1051,59 @@ export function RequestCreate() {
 
                                                  <div style={{ overflowX: 'auto', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
                                                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
-                                                         <thead>
-                                                             <tr style={{ backgroundColor: 'var(--color-bg-page)', borderBottom: '1px solid var(--color-border)' }}>
-                                                                 <th style={{ padding: '8px', textAlign: 'left', fontWeight: 800 }}>DESCRIÇÃO</th>
-                                                                 <th style={{ padding: '8px', textAlign: 'center', width: '80px', fontWeight: 800 }}>UNID.</th>
-                                                                 <th style={{ padding: '8px', textAlign: 'center', width: '80px', fontWeight: 800 }}>QTD</th>
-                                                                 <th style={{ padding: '8px', textAlign: 'right', width: '100px', fontWeight: 800 }}>P. UNIT</th>
-                                                                 <th style={{ padding: '8px', textAlign: 'center', width: '100px', fontWeight: 800 }}>IVA</th>
-                                                                 <th style={{ padding: '8px', textAlign: 'right', width: '100px', fontWeight: 800 }}>DESC.</th>
-                                                                 <th style={{ padding: '8px', textAlign: 'right', width: '100px', fontWeight: 800 }}>TOTAL</th>
-                                                                 <th style={{ padding: '8px', textAlign: 'center', width: '40px' }}></th>
-                                                             </tr>
-                                                         </thead>
-                                                         <tbody>
-                                                             {!(paymentDraft.items && paymentDraft.items.length > 0) ? (
-                                                                 <tr style={{ borderBottom: '1px solid var(--color-border-light)' }}>
-                                                                     <td colSpan={8} style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                                                                         <span style={{ fontWeight: 800, display: 'block', marginBottom: '8px' }}>Nenhum item válido identificado no documento</span>
-                                                                         <button
-                                                                             type="button"
-                                                                             onClick={handleAddOcrItem}
-                                                                             style={{ 
-                                                                                 display: 'inline-flex', alignItems: 'center', gap: '6px', 
-                                                                                 backgroundColor: 'var(--color-primary)', color: 'white', 
-                                                                                 border: 'none', padding: '8px 16px', borderRadius: '4px', 
-                                                                                 fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer' 
-                                                                             }}
-                                                                         >
-                                                                             <Plus size={16} /> ADICIONAR LINHA MANUALMENTE
-                                                                         </button>
-                                                                     </td>
-                                                                 </tr>
-                                                             ) : (
-                                                                 (paymentDraft.items || []).map((item, idx) => ({
-                                                                     ...item,
-                                                                     lineNumber: idx + 1
-                                                                 })).map((item, idx) => (
-                                                                     <tr key={idx} style={{ borderBottom: '1px solid var(--color-border-light)' }}>
-                                                                         <td style={{ padding: '4px 8px' }}>
-                                                                             <input type="text" value={String(item.description || '')} onChange={(e) => handleUpdateOcrItem(idx, 'description', e.target.value)} style={{ ...inputStyle, padding: '6px 8px', marginTop: 0 }} />
-                                                                         </td>
+                                                            <thead>
+                                                                <tr style={{ backgroundColor: 'var(--color-bg-page)', borderBottom: '1px solid var(--color-border)' }}>
+                                                                    <th style={{ padding: '8px', width: '30px', textAlign: 'center' }}></th>
+                                                                    <th style={{ padding: '8px', textAlign: 'left', fontWeight: 800 }}>DESCRIÇÃO</th>
+                                                                    <th style={{ padding: '8px', textAlign: 'center', width: '80px', fontWeight: 800 }}>UNID.</th>
+                                                                    <th style={{ padding: '8px', textAlign: 'center', width: '80px', fontWeight: 800 }}>QTD</th>
+                                                                    <th style={{ padding: '8px', textAlign: 'right', width: '100px', fontWeight: 800 }}>P. UNIT</th>
+                                                                    <th style={{ padding: '8px', textAlign: 'center', width: '100px', fontWeight: 800 }}>IVA</th>
+                                                                    <th style={{ padding: '8px', textAlign: 'right', width: '100px', fontWeight: 800 }}>DESC.</th>
+                                                                    <th style={{ padding: '8px', textAlign: 'right', width: '100px', fontWeight: 800 }}>TOTAL</th>
+                                                                    <th style={{ padding: '8px', textAlign: 'center', width: '40px' }}></th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {!(paymentDraft.items && paymentDraft.items.length > 0) ? (
+                                                                    <tr style={{ borderBottom: '1px solid var(--color-border-light)' }}>
+                                                                        <td colSpan={9} style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                                                                            <span style={{ fontWeight: 800, display: 'block', marginBottom: '8px' }}>Nenhum item válido identificado no documento</span>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={handleAddOcrItem}
+                                                                                style={{ 
+                                                                                    display: 'inline-flex', alignItems: 'center', gap: '6px', 
+                                                                                    backgroundColor: 'var(--color-primary)', color: 'white', 
+                                                                                    border: 'none', padding: '8px 16px', borderRadius: '4px', 
+                                                                                    fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer' 
+                                                                                }}
+                                                                            >
+                                                                                <Plus size={16} /> ADICIONAR LINHA MANUALMENTE
+                                                                            </button>
+                                                                        </td>
+                                                                    </tr>
+                                                                ) : (
+                                                                    (paymentDraft.items || []).map((item, idx) => ({
+                                                                        ...item,
+                                                                        lineNumber: idx + 1
+                                                                    })).map((item, idx) => (
+                                                                        <tr key={idx} style={{ 
+                                                                            borderBottom: '1px solid var(--color-border-light)', 
+                                                                            backgroundColor: item.isChecked ? '#ECFDF5' : 'transparent',
+                                                                            transition: 'background-color 0.2s ease'
+                                                                        }}>
+                                                                            <td style={{ padding: '4px 8px', textAlign: 'center' }}>
+                                                                                <input 
+                                                                                    type="checkbox" 
+                                                                                    checked={item.isChecked || false} 
+                                                                                    onChange={(e) => handleUpdateOcrItem(idx, 'isChecked', e.target.checked)}
+                                                                                    style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#10B981', marginTop: '4px' }}
+                                                                                />
+                                                                            </td>
+                                                                            <td style={{ padding: '4px 8px' }}>
+                                                                                <input type="text" value={String(item.description || '')} onChange={(e) => handleUpdateOcrItem(idx, 'description', e.target.value)} style={{ ...inputStyle, padding: '6px 8px', marginTop: 0 }} />
+                                                                            </td>
                                                                          <td style={{ padding: '4px 8px' }}>
                                                                              <select 
                                                                                  value={item.unitId || ''} 

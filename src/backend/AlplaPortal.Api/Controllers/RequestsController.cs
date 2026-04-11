@@ -261,7 +261,13 @@ public class RequestsController : BaseController
                 CreatedAtUtc = r.CreatedAtUtc,
                 // Added for Area Approval context
                 CostCenterCode = r.LineItems.Where(l => !l.IsDeleted && l.CostCenter != null).Select(l => l.CostCenter.Code).FirstOrDefault(),
-                CostCenterName = r.LineItems.Where(l => !l.IsDeleted && l.CostCenter != null).Select(l => l.CostCenter.Name).FirstOrDefault()
+                CostCenterName = r.LineItems.Where(l => !l.IsDeleted && l.CostCenter != null).Select(l => l.CostCenter.Name).FirstOrDefault(),
+                CompletedAtUtc = (r.Status.Code == "COMPLETED" || r.Status.Code == "QUOTATION_COMPLETED" || r.Status.Code == "PAID" || r.Status.Code == "PAYMENT_COMPLETED")
+                    ? r.StatusHistories.Where(sh => sh.NewStatus.Code == "COMPLETED" || sh.NewStatus.Code == "QUOTATION_COMPLETED" || sh.NewStatus.Code == "PAID" || sh.NewStatus.Code == "PAYMENT_COMPLETED")
+                        .OrderByDescending(sh => sh.CreatedAtUtc)
+                        .Select(sh => (DateTime?)sh.CreatedAtUtc)
+                        .FirstOrDefault()
+                    : null
             })
             .ToListAsync();
     }
@@ -586,12 +592,18 @@ public class RequestsController : BaseController
                 CurrencyCode = r.SelectedQuotationId.HasValue 
                     ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => q.Currency).FirstOrDefault() 
                     : (r.Currency != null ? r.Currency.Code : null),
-                CapexOpexClassificationId = r.CapexOpexClassificationId,
                 RequestedDateUtc = r.RequestedDateUtc,
                 NeedByDateUtc = r.NeedByDateUtc,
                 CreatedAtUtc = r.CreatedAtUtc,
                 IsCancelled = r.IsCancelled,
-                SelectedQuotationId = r.SelectedQuotationId
+                SelectedQuotationId = r.SelectedQuotationId,
+                CapexOpexClassificationId = r.CapexOpexClassificationId,
+                CompletedAtUtc = (r.Status.Code == "COMPLETED" || r.Status.Code == "QUOTATION_COMPLETED" || r.Status.Code == "PAID" || r.Status.Code == "PAYMENT_COMPLETED")
+                    ? r.StatusHistories.Where(sh => sh.NewStatus.Code == "COMPLETED" || sh.NewStatus.Code == "QUOTATION_COMPLETED" || sh.NewStatus.Code == "PAID" || sh.NewStatus.Code == "PAYMENT_COMPLETED")
+                        .OrderByDescending(sh => sh.CreatedAtUtc)
+                        .Select(sh => (DateTime?)sh.CreatedAtUtc)
+                        .FirstOrDefault()
+                    : null
             })
             .Skip((page - 1) * pageSize)
             .Take(pageSize)

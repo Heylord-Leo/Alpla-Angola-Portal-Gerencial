@@ -43,6 +43,9 @@ export interface RequestListItemDto {
     // Context for Area Approval
     costCenterCode?: string | null;
     costCenterName?: string | null;
+    
+    // Virtual
+    completedAtUtc?: string;
 }
 
 export interface PendingApprovalsResponseDto {
@@ -183,9 +186,11 @@ export interface OcrDraftItem {
     unit?: string; // Raw extracted unit string from OCR
     unitPrice: number;
     discountAmount: number;
+    discountPercent?: number;
     ivaRateId: number | null;
     taxRate?: number; // Raw extracted tax percentage for suggestion hint
     totalPrice: number; // Front-end calculated preview
+    isChecked?: boolean; // UI tracking variable for visual checklist
 }
 
 export interface OcrDraft {

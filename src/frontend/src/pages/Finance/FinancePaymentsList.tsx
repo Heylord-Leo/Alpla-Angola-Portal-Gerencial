@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { FinanceListResponseDto } from '../../types';
 import { useSearchParams } from 'react-router-dom';
-import { Check, Clock, AlertTriangle, FileText } from 'lucide-react';
+import { Check, Clock, AlertTriangle, FileText, MessageSquare } from 'lucide-react';
 import { KebabMenu } from '../../components/ui/KebabMenu';
 import { FinanceActionModal, FinanceActionType } from '../../components/modals/FinanceActionModal';
 import { FeedbackType } from '../../components/ui/Feedback';import { PageContainer } from '../../components/ui/PageContainer';
@@ -73,6 +73,8 @@ export default function FinancePaymentsList() {
                 await api.finance.markAsPaid(actionModal.requestId, new Date().toISOString(), payload.notes || "Liquidado via portal");
             } else if (action === 'RETURN' && payload.notes) {
                 await api.finance.returnForAdjustment(actionModal.requestId, payload.notes);
+            } else if (action === 'NOTE' && payload.notes) {
+                await api.finance.addNote(actionModal.requestId, payload.notes);
             }
             
             setActionModal({ show: false, action: null, requestId: null });
@@ -192,6 +194,7 @@ export default function FinancePaymentsList() {
                                             ...(item.availableFinanceActions.includes('SCHEDULE') ? [{ label: 'Agendar pagamento', icon: <Clock size={16} />, onClick: () => handleActionClick(item.id, 'SCHEDULE') }] : []),
                                             ...(item.availableFinanceActions.includes('PAY') ? [{ label: 'Marcar como pago', icon: <Check size={16} />, onClick: () => handleActionClick(item.id, 'PAY') }] : []),
                                             { label: 'Detalhes', icon: <FileText size={16} />, onClick: () => setDrawerRequestId(item.id.toString()) },
+                                            ...(item.availableFinanceActions.includes('ADD_NOTE') ? [{ label: 'Adicionar Observação', icon: <MessageSquare size={16} />, onClick: () => handleActionClick(item.id, 'NOTE') }] : []),
                                             ...(item.availableFinanceActions.includes('RETURN') ? [{ label: 'Devolver para ajuste', icon: <AlertTriangle size={16} color="#dc2626" />, onClick: () => handleActionClick(item.id, 'RETURN') }] : [])
                                         ]} />
                                     </div>

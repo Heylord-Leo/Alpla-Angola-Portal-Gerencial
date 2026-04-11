@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { Upload, FileText, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DropdownPortal } from '../ui/DropdownPortal';
 import { Z_INDEX } from '../../constants/ui';
 import { Feedback, FeedbackType } from '../ui/Feedback';
 
-export type FinanceActionType = 'SCHEDULE' | 'PAY' | 'RETURN' | null;
+export type FinanceActionType = 'SCHEDULE' | 'PAY' | 'RETURN' | 'NOTE' | null;
 
 interface FinanceActionModalProps {
     show: boolean;
@@ -28,6 +29,12 @@ export function FinanceActionModal({
     const [notes, setNotes] = useState('');
     const [date, setDate] = useState('');
     const [file, setFile] = useState<File | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleClearFile = () => {
+        setFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
 
     useEffect(() => {
         if (show) {
@@ -44,6 +51,7 @@ export function FinanceActionModal({
             case 'SCHEDULE': return 'Agendar Pagamento';
             case 'PAY': return 'Confirmar Liquidação';
             case 'RETURN': return 'Devolver Pedido para Ajuste';
+            case 'NOTE': return 'Adicionar Observação';
             default: return '';
         }
     };
@@ -53,12 +61,13 @@ export function FinanceActionModal({
             case 'SCHEDULE': return 'Informe a data prevista para a saída do pagamento.';
             case 'PAY': return 'Deseja confirmar que o pagamento deste pedido foi liquidado?';
             case 'RETURN': return 'Descreva o motivo da devolução para que o setor de Compras possa realizar os ajustes necessários na P.O.';
+            case 'NOTE': return 'Registre uma observação financeira sobre este pedido. Esta nota ficará visível no histórico de auditoria.';
             default: return '';
         }
     };
 
-    const isCommentRequired = action === 'RETURN';
-    const showCommentField = action === 'RETURN' || action === 'PAY' || action === 'SCHEDULE';
+    const isCommentRequired = action === 'RETURN' || action === 'NOTE';
+    const showCommentField = action === 'RETURN' || action === 'PAY' || action === 'SCHEDULE' || action === 'NOTE';
     
     // Determine button disabled state
     const isConfirmDisabled = processing || 
@@ -133,14 +142,35 @@ export function FinanceActionModal({
                                     onChange={(e) => setDate(e.target.value)}
                                     style={inputStyle}
                                 />
-                                <label style={{ display: 'block', marginTop: '16px', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
+                                <label style={{ display: 'block', marginTop: '24px', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
                                     Comprovante de Agendamento (opcional)
                                 </label>
-                                <input
-                                    type="file"
-                                    onChange={(e) => setFile(e.target.files && e.target.files.length > 0 ? e.target.files[0] : null)}
-                                    style={{...inputStyle, padding: '8px 10px'}}
-                                />
+                                {!file ? (
+                                    <div
+                                        style={{
+                                            border: '2px dashed var(--color-primary)', borderRadius: 'var(--radius-md)', padding: '24px', textAlign: 'center', backgroundColor: 'rgba(59, 130, 246, 0.02)', cursor: 'pointer', transition: 'all 0.2s ease'
+                                        }}
+                                        onClick={() => fileInputRef.current?.click()}
+                                    >
+                                        <input type="file" onChange={(e) => setFile(e.target.files && e.target.files.length > 0 ? e.target.files[0] : null)} style={{ display: 'none' }} ref={fileInputRef} />
+                                        <Upload size={28} color="var(--color-primary)" style={{ margin: '0 auto 12px', opacity: 0.8 }} />
+                                        <div style={{ fontWeight: 800, color: 'var(--color-primary)', fontSize: '0.9rem', marginBottom: '4px' }}>Clique para anexar o comprovante</div>
+                                        <div style={{ fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>Max 10MB</div>
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', backgroundColor: 'var(--color-bg-page)', border: '2px solid var(--color-text-main)', borderRadius: 'var(--radius-md)' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                            <FileText size={20} color="var(--color-text-main)" />
+                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                <span style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '0.85rem' }}>{file.name}</span>
+                                                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                                            </div>
+                                        </div>
+                                        <button onClick={handleClearFile} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: 'var(--color-status-red)' }}>
+                                            <X size={18} />
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -149,18 +179,39 @@ export function FinanceActionModal({
                                 <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
                                     Comprovante de Pagamento (obrigatório)
                                 </label>
-                                <input
-                                    type="file"
-                                    onChange={(e) => setFile(e.target.files && e.target.files.length > 0 ? e.target.files[0] : null)}
-                                    style={{...inputStyle, padding: '8px 10px'}}
-                                />
+                                {!file ? (
+                                    <div
+                                        style={{
+                                            border: '2px dashed var(--color-primary)', borderRadius: 'var(--radius-md)', padding: '24px', textAlign: 'center', backgroundColor: 'rgba(59, 130, 246, 0.02)', cursor: 'pointer', transition: 'all 0.2s ease'
+                                        }}
+                                        onClick={() => fileInputRef.current?.click()}
+                                    >
+                                        <input type="file" onChange={(e) => setFile(e.target.files && e.target.files.length > 0 ? e.target.files[0] : null)} style={{ display: 'none' }} ref={fileInputRef} />
+                                        <Upload size={28} color="var(--color-primary)" style={{ margin: '0 auto 12px', opacity: 0.8 }} />
+                                        <div style={{ fontWeight: 800, color: 'var(--color-primary)', fontSize: '0.9rem', marginBottom: '4px' }}>Clique para anexar o comprovante</div>
+                                        <div style={{ fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>Max 10MB</div>
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', backgroundColor: 'var(--color-bg-page)', border: '2px solid var(--color-text-main)', borderRadius: 'var(--radius-md)' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                            <FileText size={20} color="var(--color-text-main)" />
+                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                <span style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '0.85rem' }}>{file.name}</span>
+                                                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                                            </div>
+                                        </div>
+                                        <button onClick={handleClearFile} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: 'var(--color-status-red)' }}>
+                                            <X size={18} />
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
 
                         {showCommentField && (
                             <div style={{ marginBottom: '32px' }}>
                                 <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
-                                    {isCommentRequired ? 'Motivo da Devolução (obrigatório)' : 'Observações (opcional)'}
+                                    {action === 'NOTE' ? 'Observação (obrigatório)' : isCommentRequired ? 'Motivo da Devolução (obrigatório)' : 'Observações (opcional)'}
                                 </label>
                                 <textarea
                                     value={notes}

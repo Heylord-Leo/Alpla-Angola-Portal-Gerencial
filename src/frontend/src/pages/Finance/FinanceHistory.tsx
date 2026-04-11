@@ -82,12 +82,29 @@ export default function FinanceHistory() {
         return new Intl.NumberFormat('pt-AO', { style: 'currency', currency: currency || 'AOA' }).format(val);
     };
 
+    const cleanComment = (comment: string): string => {
+        const prefixes = [
+            'Nota de Finanças: ',
+            'Devolvido por Finanças para ajuste: ',
+            'Pagamento agendado. ',
+            'Pagamento realizado na totalidade. ',
+        ];
+        let cleaned = comment;
+        for (const prefix of prefixes) {
+            if (cleaned.startsWith(prefix)) {
+                cleaned = cleaned.substring(prefix.length);
+                break;
+            }
+        }
+        return cleaned || comment;
+    };
+
     const getActionProps = (action: string) => {
         switch (action) {
             case 'PAYMENT_SCHEDULED': return { label: 'Agendado', bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' };
             case 'PAYMENT_COMPLETED': return { label: 'Pago', bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' };
             case 'DOCUMENTO ADICIONADO': return { label: 'Comprovativo', bg: '#fdf4ff', color: '#c026d3', border: '#f5d0fe' };
-            case 'NOTA_FINANCEIRA': return { label: 'Nota Interna', bg: '#f8fafc', color: '#475569', border: '#e2e8f0' };
+            case 'NOTA_FINANCEIRA': return { label: 'Observação', bg: '#f8fafc', color: '#475569', border: '#e2e8f0' };
             case 'FINANCE_RETURN_ADJUSTMENT': return { label: 'Devolvido', bg: '#fff7ed', color: '#ea580c', border: '#fed7aa' };
             default: return { label: action, bg: '#f3f4f6', color: '#374151', border: '#d1d5db' };
         }
@@ -131,7 +148,7 @@ export default function FinanceHistory() {
                     { id: 'PAYMENT_SCHEDULED', label: 'Agendados' },
                     { id: 'PAYMENT_COMPLETED', label: 'Pagos' },
                     { id: 'DOCUMENTO ADICIONADO', label: 'Comprovativos' },
-                    { id: 'NOTA_FINANCEIRA', label: 'Notas' },
+                    { id: 'NOTA_FINANCEIRA', label: 'Observações' },
                     { id: 'FINANCE_RETURN_ADJUSTMENT', label: 'Devoluções' }
                 ]}
                 activeTabId={actionFilter}
@@ -214,7 +231,7 @@ export default function FinanceHistory() {
                                                     <div style={{ fontWeight: 600, color: '#334155', fontSize: '15px' }}>
                                                         <span style={{ color: 'var(--color-primary)', fontWeight: 800, marginRight: '6px' }}>{item.actorName}</span>
                                                         {item.comment ? (
-                                                            <span>: <span style={{ fontWeight: 500 }}>{item.comment}</span></span>
+                                                            <span>: <span style={{ fontWeight: 500 }}>{cleanComment(item.comment)}</span></span>
                                                         ) : (
                                                             <span style={{ color: '#94a3b8', fontStyle: 'italic', fontWeight: 400 }}> Executou a ação.</span>
                                                         )}

@@ -14,6 +14,11 @@ export default function FinanceOverview() {
     const [loading, setLoading] = useState(true);
     const [showHelp, setShowHelp] = useState(false);
     
+    // Independent state for cash flow projections to avoid heavy reloads
+    const [projectionInterval, setProjectionInterval] = useState('15days');
+    const [projections, setProjections] = useState<any[]>([]);
+    const [projectionsLoading, setProjectionsLoading] = useState(false);
+    
     const [companies, setCompanies] = useState<any[]>([]);
     const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null);
     
@@ -36,6 +41,17 @@ export default function FinanceOverview() {
         });
     }, [selectedCompanyId]);
 
+    useEffect(() => {
+        setProjectionsLoading(true);
+        api.finance.getCashFlowProjections(selectedCompanyId || undefined, projectionInterval).then(data => {
+            setProjections(data);
+            setProjectionsLoading(false);
+        }).catch(err => {
+            console.error(err);
+            setProjectionsLoading(false);
+        });
+    }, [selectedCompanyId, projectionInterval]);
+
     if (loading) return <div style={{ padding: '60px', textAlign: 'center', fontWeight: 'bold' }}>Carregando Dashboard Financeiro...</div>;
     if (!summary) return <div style={{ padding: '60px', textAlign: 'center', color: 'red' }}>Erro ao carregar dados.</div>;
 
@@ -46,12 +62,26 @@ export default function FinanceOverview() {
     // Recharts Data Prep
     const PIE_COLORS = ['#3b82f6', '#f97316', '#22c55e', '#a855f7'];
 
-    // Process CashFlow
-    const cashFlowData = summary.cashFlowProjections?.map(c => ({
-        name: c.date.split('-').reverse().slice(0,2).join('/'), // DD/MM
-        value: c.totalAmount,
-        currency: c.currencyCode
-    })) || [];
+    // Process CashFlow independently from summary
+    const cashFlowData = projections.map(c => {
+        let name = c.date;
+        if (projectionInterval === '15days') {
+            name = c.date.split('-').reverse().slice(0,2).join('/'); // DD/MM
+        } else if (projectionInterval === 'weeks') {
+            const weekSplit = c.date.split('-W');
+            if (weekSplit.length === 2) name = `Semana ${weekSplit[1]}`;
+        } else if (projectionInterval === 'months') {
+            const [year, month] = c.date.split('-');
+            const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+            name = `${months[parseInt(month, 10)-1]}/${year.slice(2)}`;
+        } // years will just use YYYY directly
+        
+        return {
+            name,
+            value: c.totalAmount,
+            currency: c.currencyCode
+        };
+    });
 
     // Process Aging
     const agingData = summary.agingAnalysis ? [
@@ -168,11 +198,50 @@ export default function FinanceOverview() {
                 
                 {/* Projeção de Fluxo de Caixa */}
                 <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <TrendingUp size={20} color="#0284c7" /> Projeção de Fluxo de Caixa
-                    </h3>
-                    <p style={{ margin: '0 0 24px 0', color: '#64748b', fontSize: '14px', fontWeight: 500 }}>Previsão de saída para os próximos 15 dias baseado em agendamentos faturados.</p>
-                    {cashFlowData.length > 0 ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
+                        <div>
+                            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <TrendingUp size={20} color="#0284c7" /> Projeção de Fluxo de Caixa
+                            </h3>
+                            <p style={{ margin: 0, color: '#64748b', fontSize: '14px', fontWeight: 500 }}>
+                                {projectionInterval === '15days' && 'Previsão de saída diária para os próximos 15 dias.'}
+                                {projectionInterval === 'weeks' && 'Previsão semanal agregada para os próximos 3 meses.'}
+                                {projectionInterval === 'months' && 'Previsão mensal agregada para os próximos 12 meses.'}
+                                {projectionInterval === 'years' && 'Previsão anual histórica e de longo prazo.'}
+                            </p>
+                        </div>
+                        <div style={{ display: 'flex', backgroundColor: '#f1f5f9', borderRadius: '8px', padding: '4px' }}>
+                            {['15days', 'weeks', 'months', 'years'].map((interval) => {
+                                const labels: any = { '15days': '15 Dias', 'weeks': 'Semanas', 'months': 'Meses', 'years': 'Anos' };
+                                return (
+                                    <button
+                                        key={interval}
+                                        onClick={() => setProjectionInterval(interval)}
+                                        style={{
+                                            border: 'none',
+                                            backgroundColor: projectionInterval === interval ? '#fff' : 'transparent',
+                                            color: projectionInterval === interval ? '#0f172a' : '#64748b',
+                                            padding: '6px 12px',
+                                            fontSize: '13px',
+                                            fontWeight: projectionInterval === interval ? 700 : 600,
+                                            borderRadius: '6px',
+                                            cursor: 'pointer',
+                                            boxShadow: projectionInterval === interval ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        {labels[interval]}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                    
+                    {projectionsLoading ? (
+                        <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <span style={{ fontWeight: '600', color: '#64748b' }}>Carregando projeções...</span>
+                        </div>
+                    ) : cashFlowData.length > 0 ? (
                         <div style={{ height: '300px', width: '100%' }}>
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={cashFlowData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>

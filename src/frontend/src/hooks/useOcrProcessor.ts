@@ -292,6 +292,7 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
                 const grossLineTotal = rawQty * rawPrice;
                 
                 let resolvedDiscount = rawDiscountAmt;
+                let resolvedDiscountPct: number | undefined = rawDiscountPct > 0 ? rawDiscountPct : undefined;
 
                 if (rawTotalPrice > 0 && grossLineTotal > 0) {
                     // Strategy A: Use totalPrice as anchor to reverse-engineer the actual discount
@@ -306,6 +307,7 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
                             `but document says ${rawTotalPrice}. Correcting discount to ${impliedDiscount} (${impliedDiscountPct}%).`
                         );
                         resolvedDiscount = Math.max(0, impliedDiscount);
+                        resolvedDiscountPct = impliedDiscountPct;
                     }
                 } else if (rawDiscountPct > 0) {
                     // Strategy B: No totalPrice available — calculate from percentage
@@ -316,6 +318,11 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
                     }
                 }
 
+                // Strategy C: If we only have discountAmount, calculate the percent
+                if (resolvedDiscount > 0 && !resolvedDiscountPct && grossLineTotal > 0) {
+                    resolvedDiscountPct = Math.round((resolvedDiscount / grossLineTotal) * 10000) / 100;
+                }
+
                 const baseItem = {
                     lineNumber: index + 1,
                     description: item.description || '',
@@ -324,6 +331,7 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
                     unit: matchedUnitCode,
                     unitPrice: rawPrice,
                     discountAmount: resolvedDiscount,
+                    discountPercent: resolvedDiscountPct,
                     ivaRateId,
                     taxRate: item.taxRate
                 };

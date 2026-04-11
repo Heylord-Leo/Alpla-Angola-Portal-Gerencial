@@ -61,4 +61,6 @@ public class RequestListItemDto
     // Context for Area Approval
     public string? CostCenterCode { get; set; }
     public string? CostCenterName { get; set; }
+    
+    public DateTime? CompletedAtUtc { get; set; }
 }

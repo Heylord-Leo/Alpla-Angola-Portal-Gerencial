@@ -458,7 +458,22 @@ export function BuyerItemsList() {
             if (!draft.items) return prev;
 
             const updatedItems = [...draft.items];
-            updatedItems[index] = { ...updatedItems[index], [field]: value };
+            
+            // If user manually changes the absolute discount amount, clear the reactive percentage
+            if (field === 'discountAmount') {
+                updatedItems[index] = { ...updatedItems[index], discountAmount: value, discountPercent: undefined };
+            } else {
+                updatedItems[index] = { ...updatedItems[index], [field]: value };
+            }
+            
+            // Reactive discount recalculation if percentage is locked in
+            if ((field === 'quantity' || field === 'unitPrice') && updatedItems[index].discountPercent !== undefined) {
+                const qty = updatedItems[index].quantity || 0;
+                const price = updatedItems[index].unitPrice || 0;
+                const pct = updatedItems[index].discountPercent!;
+                const recalculatedDiscount = Math.round(qty * price * (pct / 100) * 100) / 100;
+                updatedItems[index].discountAmount = recalculatedDiscount;
+            }
             
             // Recalculate deterministic line logic using shared hook logic
             updatedItems[index].totalPrice = calculateItemTotal(updatedItems[index]);
@@ -1999,7 +2014,8 @@ export function BuyerItemsList() {
                                                                                     </div>
                                                                                 ) : (
                                                                                     <>
-                                                                                        <div style={{ display: 'grid', gridTemplateColumns: '40px minmax(150px, 1fr) 60px 80px 100px 100px 110px 120px 40px', gap: '8px', padding: '0 12px', marginBottom: '4px' }}>
+                                                                                        <div style={{ display: 'grid', gridTemplateColumns: '32px 40px minmax(150px, 1fr) 60px 80px 100px 100px 110px 120px 40px', gap: '8px', padding: '0 12px', marginBottom: '4px' }}>
+                                                                                            <span></span>
                                                                                             <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>#</span>
                                                                                             <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Descrição do Item</span>
                                                                                             <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase', textAlign: 'right' }}>Qtd</span>
@@ -2011,7 +2027,21 @@ export function BuyerItemsList() {
                                                                                             <span></span>
                                                                                         </div>
                                                                                         {quotationDrafts[group.requestId].items.map((item, idx) => (
-                                                                                            <div key={idx} style={{ display: 'grid', gridTemplateColumns: '40px minmax(150px, 1fr) 60px 80px 100px 100px 110px 120px 40px', gap: '8px', alignItems: 'center', padding: '12px', backgroundColor: 'var(--color-bg-surface)', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                                                                                            <div key={idx} style={{ 
+                                                                                                display: 'grid', gridTemplateColumns: '32px 40px minmax(150px, 1fr) 60px 80px 100px 100px 110px 120px 40px', gap: '8px', alignItems: 'center', padding: '12px', 
+                                                                                                backgroundColor: item.isChecked ? '#ECFDF5' : 'var(--color-bg-surface)', 
+                                                                                                border: item.isChecked ? '1px solid #10B981' : '1px solid #e2e8f0', 
+                                                                                                borderRadius: '6px',
+                                                                                                transition: 'all 0.2s ease'
+                                                                                            }}>
+                                                                                                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                                                                                                    <input 
+                                                                                                        type="checkbox"
+                                                                                                        checked={item.isChecked || false}
+                                                                                                        onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'isChecked', e.target.checked)}
+                                                                                                        style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#10B981' }}
+                                                                                                    />
+                                                                                                </div>
                                                                                                 <div style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--color-text-muted)', textAlign: 'center' }}>{item.lineNumber}</div>
                                                                                                 <input 
                                                                                                     value={item.description}

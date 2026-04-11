@@ -102,8 +102,8 @@ public class AttachmentsController : BaseController
                 detail = "O documento Proforma só pode ser carregado nos estágios de Rascunho, Reajuste ou Cotação.";
                 break;
             case AttachmentConstants.Types.PurchaseOrder:
-                isUploadable = new[] { "APPROVED", RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup }.Contains(statusCode);
-                detail = "O documento P.O só pode ser carregado a partir do estágio de Aprovação.";
+                isUploadable = new[] { "APPROVED", RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.WaitingPoCorrection }.Contains(statusCode);
+                detail = "O documento P.O só pode ser carregado a partir do estágio de Aprovação ou quando devolvido para correção.";
                 break;
             case AttachmentConstants.Types.PaymentSchedule:
                 isUploadable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled }.Contains(statusCode);
@@ -289,8 +289,8 @@ public class AttachmentsController : BaseController
                 detail = "O documento Proforma só pode ser removido nos estágios de Rascunho, Reajuste ou Cotação.";
                 break;
             case AttachmentConstants.Types.PurchaseOrder:
-                isDeletable = new[] { "APPROVED" }.Contains(attachment.Request.Status!.Code);
-                detail = "O documento P.O só pode ser removido enquanto o pedido está no status Aprovado.";
+                isDeletable = new[] { "APPROVED", RequestConstants.Statuses.WaitingPoCorrection }.Contains(attachment.Request.Status!.Code);
+                detail = "O documento P.O só pode ser removido enquanto o pedido está no status Aprovado ou devolvido para correção.";
                 break;
             case AttachmentConstants.Types.PaymentSchedule:
                 isDeletable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled }.Contains(attachment.Request.Status!.Code);

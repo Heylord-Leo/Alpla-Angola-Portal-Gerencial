@@ -980,6 +980,14 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao carregar sumário financeiro.');
             return response.json();
         },
+        getCashFlowProjections: async (companyId?: number, interval: string = '15days'): Promise<any[]> => {
+            const params = new URLSearchParams();
+            if (companyId) params.append('companyId', companyId.toString());
+            params.append('interval', interval);
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/cashflow-projections?${params.toString()}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar projeções de fluxo de caixa.');
+            return response.json();
+        },
         getPayments: async (filter?: string, page: number = 1, pageSize: number = 20): Promise<FinanceListResponseDto> => {
             const params = new URLSearchParams();
             if (filter) params.append('filter', filter);

@@ -29,6 +29,8 @@ const STATUS_THEME: Record<string, { bg: string; fg: string; border: string; ico
     'QUOTATION_COMPLETED':{ bg: '#ECFDF5', fg: '#047857', border: '#6EE7B7', icon: CheckCircle2 },
     'CANCELLED':          { bg: '#F1F5F9', fg: '#475569', border: '#CBD5E1', icon: XCircle },
     'REJECTED':           { bg: '#FEF2F2', fg: '#DC2626', border: '#FCA5A5', icon: AlertCircle },
+    'WAITING_PO_CORRECTION': { bg: '#FEF2F2', fg: '#DC2626', border: '#FCA5A5', icon: AlertCircle },
+    'PAYMENT_REQUEST_SENT': { bg: '#FAF5FF', fg: '#7E22CE', border: '#C4B5FD', icon: CreditCard },
 };
 
 export const StatusBadge = ({ status }: { status: string }) => {
@@ -283,7 +285,17 @@ export function RequestsTableWidget({
                                             </td>
                                             {/* Data Limite */}
                                             <td style={{ padding: '12px 20px', border: 'none' }}>
-                                                {deadline ? (
+                                                {['COMPLETED', 'QUOTATION_COMPLETED', 'PAID', 'PAYMENT_COMPLETED'].includes(req.statusCode) ? (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                                                        <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-status-emerald)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                                            {isPayment ? 'Pagamento Realizado em' : 'Recebido em'}
+                                                        </span>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--color-text-main)', fontWeight: 600 }}>
+                                                            <CalendarClock size={12} style={{ color: 'var(--color-status-emerald)' }} />
+                                                            {req.completedAtUtc ? new Date(req.completedAtUtc).toLocaleDateString('pt-BR') : 'Data não disponível'}
+                                                        </div>
+                                                    </div>
+                                                ) : deadline ? (
                                                     <ModernTooltip content={urgency ? urgency.description : 'Data limite'} side="top">
                                                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
                                                             <div style={{

@@ -233,6 +233,97 @@ public class FinanceController : BaseController
         });
     }
 
+    [HttpGet("cashflow-projections")]
+    public async Task<ActionResult<List<FinanceCashFlowProjectionDto>>> GetCashFlowProjections([FromQuery] int? companyId = null, [FromQuery] string interval = "15days")
+    {
+        var scopedQuery = await GetScopedRequestsQuery();
+        
+        if (companyId.HasValue)
+        {
+            scopedQuery = scopedQuery.Where(r => r.CompanyId == companyId.Value);
+        }
+        
+        var financeStatuses = new[] 
+        { 
+            RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentRequestSent, 
+            RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.Paid,
+            RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup
+        };
+
+        var query = scopedQuery.Where(r => 
+            (financeStatuses.Contains(r.Status!.Code) || (r.RequestType!.Code == RequestConstants.Types.Payment && r.Status!.Code == RequestConstants.Statuses.FinalApproved))
+            && r.Attachments.Any(a => !a.IsDeleted && a.AttachmentTypeCode == AttachmentConstants.Types.PurchaseOrder)
+            && !new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(r.Status!.Code)
+        );
+
+        var today = DateTime.UtcNow.Date;
+        DateTime maxProjectionDate;
+
+        switch (interval.ToLowerInvariant())
+        {
+            case "weeks": maxProjectionDate = today.AddDays(7 * 12); break;
+            case "months": maxProjectionDate = today.AddMonths(12); break;
+            case "years": maxProjectionDate = today.AddYears(5); break;
+            case "15days":
+            default: maxProjectionDate = today.AddDays(15); break;
+        }
+
+        var uncompletedRequests = await query
+            .Include(r => r.Quotations)
+            .Include(r => r.Currency)
+            .Select(r => new
+            {
+                ScheduledDateUtc = r.ScheduledDateUtc,
+                NeedByDateUtc = r.NeedByDateUtc,
+                CurrencyCode = r.SelectedQuotationId.HasValue 
+                    ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.Currency
+                    : r.Currency != null ? r.Currency.Code : "---",
+                Amount = r.SelectedQuotationId.HasValue 
+                    ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.TotalAmount
+                    : r.EstimatedTotalAmount
+            })
+            .Where(s => (s.ScheduledDateUtc ?? s.NeedByDateUtc) >= today && (s.ScheduledDateUtc ?? s.NeedByDateUtc) <= maxProjectionDate)
+            .ToListAsync();
+
+        var projectionsQuery = uncompletedRequests.Select(s => new {
+            Date = (s.ScheduledDateUtc ?? s.NeedByDateUtc)!.Value.Date,
+            Currency = s.CurrencyCode,
+            Amount = s.Amount
+        });
+
+        IEnumerable<FinanceCashFlowProjectionDto> projections;
+
+        if (interval == "weeks")
+        {
+            projections = projectionsQuery
+                .GroupBy(s => new { 
+                    YearWeek = System.Globalization.ISOWeek.GetYear(s.Date).ToString() + "-W" + System.Globalization.ISOWeek.GetWeekOfYear(s.Date).ToString("D2"),
+                    Currency = s.Currency 
+                })
+                .Select(g => new FinanceCashFlowProjectionDto { Date = g.Key.YearWeek, CurrencyCode = g.Key.Currency, TotalAmount = g.Sum(x => x.Amount) });
+        }
+        else if (interval == "months")
+        {
+            projections = projectionsQuery
+                .GroupBy(s => new { YearMonth = s.Date.ToString("yyyy-MM"), Currency = s.Currency })
+                .Select(g => new FinanceCashFlowProjectionDto { Date = g.Key.YearMonth, CurrencyCode = g.Key.Currency, TotalAmount = g.Sum(x => x.Amount) });
+        }
+        else if (interval == "years")
+        {
+            projections = projectionsQuery
+                .GroupBy(s => new { Year = s.Date.ToString("yyyy"), Currency = s.Currency })
+                .Select(g => new FinanceCashFlowProjectionDto { Date = g.Key.Year, CurrencyCode = g.Key.Currency, TotalAmount = g.Sum(x => x.Amount) });
+        }
+        else 
+        {
+            projections = projectionsQuery
+                .GroupBy(s => new { Date = s.Date.ToString("yyyy-MM-dd"), Currency = s.Currency })
+                .Select(g => new FinanceCashFlowProjectionDto { Date = g.Key.Date, CurrencyCode = g.Key.Currency, TotalAmount = g.Sum(x => x.Amount) });
+        }
+
+        return Ok(projections.OrderBy(p => p.Date).ToList());
+    }
+
     [HttpGet("payments")]
     public async Task<ActionResult<FinanceListResponseDto>> GetPayments(
         [FromQuery] string? filter = null,
@@ -510,7 +601,7 @@ public class FinanceController : BaseController
                 "PAYMENT_SCHEDULED" => "Agendado",
                 "PAYMENT_COMPLETED" => "Pago",
                 "DOCUMENTO ADICIONADO" => "Comprovativo",
-                "NOTA_FINANCEIRA" => "Nota",
+                "NOTA_FINANCEIRA" => "Observação",
                 "FINANCE_RETURN_ADJUSTMENT" => "Ajuste",
                 _ => item.ActionTaken
             };

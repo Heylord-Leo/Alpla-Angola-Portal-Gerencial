@@ -10,6 +10,7 @@ import { KebabMenu } from '../../../../components/ui/KebabMenu';
 export interface ActionCarouselWidgetProps {
     summary: DashboardSummaryDto;
     onRowClick?: (id: string) => void;
+    onCorrectPoClick?: (requestId: string) => void;
 }
 
 // ── Stat card icon background/foreground color pairs ──
@@ -21,7 +22,7 @@ const STAT_THEMES: Record<string, { bg: string; fg: string }> = {
     emerald: { bg: '#ECFDF5', fg: 'var(--color-status-emerald)' },
 };
 
-export function ActionCarouselWidget({ summary, onRowClick }: ActionCarouselWidgetProps) {
+export function ActionCarouselWidget({ summary, onRowClick, onCorrectPoClick }: ActionCarouselWidgetProps) {
     const navigate = useNavigate();
     const [actionRequests, setActionRequests] = useState<RequestListItemDto[]>([]);
     const [carouselIndex, setCarouselIndex] = useState(0);
@@ -206,6 +207,7 @@ export function ActionCarouselWidget({ summary, onRowClick }: ActionCarouselWidg
                                         onQuotationClick={() => navigate(`/buyer/items?highlightRequestId=${order.id}`)}
                                         onReceivingClick={() => navigate(`/receiving/operation/${order.id}?highlightRequestId=${order.id}`)}
                                         onPaymentClick={() => navigate(`/finance/payments?highlightRequestId=${order.id}`)}
+                                        onCorrectPoClick={onCorrectPoClick ? () => onCorrectPoClick(order.id.toString()) : undefined}
                                     />
                                 </div>
                             ))}
@@ -244,7 +246,7 @@ function NavButton({ onClick, disabled, children }: { onClick: () => void; disab
     );
 }
 
-function CarouselCard({ order, onView, onOpenFull, onDuplicate, onQuotationClick, onReceivingClick, onPaymentClick }: { order: RequestListItemDto; onView: () => void; onOpenFull: () => void; onDuplicate: () => void; onQuotationClick?: () => void; onReceivingClick?: () => void; onPaymentClick?: () => void; }) {
+function CarouselCard({ order, onView, onOpenFull, onDuplicate, onQuotationClick, onReceivingClick, onPaymentClick, onCorrectPoClick }: { order: RequestListItemDto; onView: () => void; onOpenFull: () => void; onDuplicate: () => void; onQuotationClick?: () => void; onReceivingClick?: () => void; onPaymentClick?: () => void; onCorrectPoClick?: () => void; }) {
     const isPayment = order.requestTypeCode === 'PAYMENT';
 
     return (
@@ -374,6 +376,23 @@ function CarouselCard({ order, onView, onOpenFull, onDuplicate, onQuotationClick
                                 onPaymentClick();
                             }}
                             title="Ir para tela de finanças"
+                            style={{ 
+                                cursor: 'pointer', 
+                                display: 'inline-block',
+                                transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; e.currentTarget.style.transform = 'scale(1.02)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1)'; }}
+                        >
+                            <StatusBadge status={order.statusCode} />
+                        </div>
+                    ) : order.statusCode === 'WAITING_PO_CORRECTION' && onCorrectPoClick ? (
+                        <div 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onCorrectPoClick();
+                            }}
+                            title="Corrigir P.O devolvida por Finanças"
                             style={{ 
                                 cursor: 'pointer', 
                                 display: 'inline-block',
