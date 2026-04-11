@@ -84,6 +84,7 @@ export function ApprovalDetailPanel({
     // UX Tracking
     const [highlightSection, setHighlightSection] = useState(false);
     const [highlightFields, setHighlightFields] = useState(false);
+    const [highlightQuotationSection, setHighlightQuotationSection] = useState(false);
 
     // Phase 3A: Intelligence
     const [intelligence, setIntelligence] = useState<ApprovalIntelligenceDto | null>(null);
@@ -247,6 +248,16 @@ export function ApprovalDetailPanel({
     const hasItemAboveAvg = intelItemsWithHistory.some(i => i.currentUnitPrice > (i.averageHistoricalPrice || 0));
 
     // --- Handlers ---
+
+    const handleQuotationWarningClick = () => {
+        document.getElementById('cotacoes-salvas-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        
+        setHighlightQuotationSection(true);
+        
+        setTimeout(() => {
+            setHighlightQuotationSection(false);
+        }, 5000);
+    };
 
     const handleAllocationWarningClick = () => {
         document.getElementById('itens-do-pedido-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -431,11 +442,15 @@ export function ApprovalDetailPanel({
 
                 {/* --- BLOCKING ALERTS --- */}
                 {isQuotation && !hasWinnerSelected && (
-                    <div style={{
-                        marginBottom: '24px', width: '100%', backgroundColor: '#FEF2F2',
-                        border: '1px solid #FECACA', borderRadius: 'var(--radius-lg)', padding: '16px',
-                        display: 'flex', gap: '16px', boxShadow: 'var(--shadow-sm)', alignItems: 'flex-start'
-                    }}>
+                    <div 
+                        onClick={handleQuotationWarningClick}
+                        style={{
+                            marginBottom: '24px', width: '100%', backgroundColor: '#FEF2F2',
+                            border: '1px solid #FECACA', borderRadius: 'var(--radius-lg)', padding: '16px',
+                            display: 'flex', gap: '16px', boxShadow: 'var(--shadow-sm)', alignItems: 'flex-start',
+                            cursor: 'pointer'
+                        }}
+                    >
                         <AlertCircle color="var(--color-status-red)" style={{ marginTop: '2px', flexShrink: 0 }} size={20} />
                         <div style={{ display: 'flex', flexDirection: 'column' }}>
                             <span style={{ color: '#991B1B', fontWeight: 700, marginBottom: '4px' }}>Cotação Vencedora Obrigatória</span>
@@ -863,31 +878,44 @@ export function ApprovalDetailPanel({
 
                 {/* 6. COTAÇÕES SALVAS (Always Open for Quotation types) */}
                 {isQuotation && (
-                    <DecisionSection 
-                        title="Cotações Salvas" 
-                        icon={<DollarSign size={16} />}
-                        count={data.quotations?.length || 0}
-                        isCollapsible={false}
+                    <motion.div
+                        id="cotacoes-salvas-section"
+                        animate={
+                            highlightQuotationSection
+                                ? {
+                                      boxShadow: ['0 0 0px 0px transparent', '0 0 15px 5px rgba(239, 68, 68, 0.4)', '0 0 0px 0px transparent'],
+                                      transition: { duration: 1, repeat: 4 }
+                                  }
+                                : { boxShadow: '0 0 0px 0px transparent' }
+                        }
+                        style={{ borderRadius: 'var(--radius-lg)' }}
                     >
-                        {(data.quotations?.length || 0) === 0 ? (
-                            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-muted)', fontWeight: 700 }}>
-                                Nenhuma cotação registrada.
-                            </div>
-                        ) : (
-                            <div>
-                                {data.quotations?.map(q => (
-                                    <DecisionQuotationCard 
-                                        key={q.id}
-                                        quotation={q}
-                                        isLowest={data.quotations.length > 1 && q.totalAmount === lowestByCurrency[q.currency]}
-                                        canSelectWinner={canSelectWinner}
-                                        onSelectWinner={handleSelectWinner}
-                                        isProcessing={quotationProcessingId === q.id}
-                                    />
-                                ))}
-                            </div>
-                        )}
-                    </DecisionSection>
+                        <DecisionSection 
+                            title="Cotações Salvas" 
+                            icon={<DollarSign size={16} />}
+                            count={data.quotations?.length || 0}
+                            isCollapsible={false}
+                        >
+                            {(data.quotations?.length || 0) === 0 ? (
+                                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-muted)', fontWeight: 700 }}>
+                                    Nenhuma cotação registrada.
+                                </div>
+                            ) : (
+                                <div>
+                                    {data.quotations?.map(q => (
+                                        <DecisionQuotationCard 
+                                            key={q.id}
+                                            quotation={q}
+                                            isLowest={data.quotations.length > 1 && q.totalAmount === lowestByCurrency[q.currency]}
+                                            canSelectWinner={canSelectWinner}
+                                            onSelectWinner={handleSelectWinner}
+                                            isProcessing={quotationProcessingId === q.id}
+                                        />
+                                    ))}
+                                </div>
+                            )}
+                        </DecisionSection>
+                    </motion.div>
                 )}
 
                 {/* 7. RESUMO FINANCEIRO (Collapsible) */}

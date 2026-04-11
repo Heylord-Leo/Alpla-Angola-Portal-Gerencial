@@ -181,6 +181,7 @@ public class RequestsController : BaseController
         var userId = CurrentUserId;
         var roles = CurrentUserRoles;
         bool isAdmin = roles.Contains(RoleConstants.SystemAdministrator);
+        bool isAreaApprover = roles.Contains(RoleConstants.AreaApprover);
         bool isFinalApprover = roles.Contains(RoleConstants.FinalApprover);
 
         var query = await GetScopedRequestsQuery();
@@ -190,10 +191,10 @@ public class RequestsController : BaseController
 
         // 1. Logic for Area Approvals
         // Rules: status is WAITING_AREA_APPROVAL or WAITING_COST_CENTER
-        // Responsibility: either r.AreaApproverId matches or user is Admin
+        // Responsibility: User has AreaApprover role, OR r.AreaApproverId matches exactly, OR user is Admin
         var areaStatuses = new[] { RequestConstants.Statuses.WaitingAreaApproval, RequestConstants.Statuses.WaitingCostCenter };
         var areaQuery = query.Where(r => areaStatuses.Contains(r.Status!.Code));
-        if (!isAdmin)
+        if (!isAdmin && !isAreaApprover)
         {
             areaQuery = areaQuery.Where(r => r.AreaApproverId == userId);
         }
@@ -3421,7 +3422,20 @@ public class RequestsController : BaseController
         if (!CurrentUserRoles.Contains(RoleConstants.Buyer))
             return StatusCode(403, "Apenas o Comprador pode concluir a etapa de cotação.");
 
-        return await ProcessQuotationTransition(id, "COMPLETE_QUOTATION", "WAITING_AREA_APPROVAL", new[] { "WAITING_QUOTATION", "AREA_ADJUSTMENT", "FINAL_ADJUSTMENT" }, dto.Comment, "Cotação concluída e enviada para aprovação da área.");
+        var result = await ProcessQuotationTransition(id, "COMPLETE_QUOTATION", "WAITING_AREA_APPROVAL", new[] { "WAITING_QUOTATION", "AREA_ADJUSTMENT", "FINAL_ADJUSTMENT" }, dto.Comment, "Cotação concluída e enviada para aprovação da área.");
+        
+        if (result is OkObjectResult)
+        {
+            await _notificationService.CreateNotificationAsync(
+                request.RequesterId, 
+                "Cotação Concluída", 
+                $"A cotação para o pedido {request.RequestNumber ?? "S/N"} foi concluída e enviada para Etapa de Aprovação.", 
+                NotificationTypes.Success, 
+                $"/requests/{request.Id}?mode=view"
+            );
+        }
+
+        return result;
     }
 
     [HttpPost("{requestId}/quotations/{quotationId}/select")]

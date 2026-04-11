@@ -1,9 +1,11 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, ClipboardList, Search, Truck } from 'lucide-react';
+import { useAuth } from '../../../features/auth/AuthContext';
 
 export function QuickActions() {
     const navigate = useNavigate();
+    const { user } = useAuth();
 
     const actions = [
         {
@@ -30,7 +32,15 @@ export function QuickActions() {
             path: '/receiving/workspace',
             description: 'Entrada de mercadorias em armazém'
         }
-    ];
+    ].filter(action => {
+        if (action.label === 'Gestão de Cotações') {
+            return user?.roles?.includes('Buyer') || user?.roles?.includes('System Administrator');
+        }
+        if (action.label === 'Recebimento') {
+            return user?.roles?.includes('Receiving') || user?.roles?.includes('System Administrator');
+        }
+        return true;
+    });
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>

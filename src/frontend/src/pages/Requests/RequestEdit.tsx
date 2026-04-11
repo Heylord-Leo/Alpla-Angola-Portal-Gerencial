@@ -135,6 +135,8 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         location
     } = useRequestDetail({ id: inputRequestId || undefined, onClose: onDrawerClose });
 
+    const isDrawerMode = !!onDrawerClose;
+
     const inputStyle = {
         width: '100%',
         padding: '12px 14px',
@@ -366,8 +368,46 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
             {/* Sticky Header Unit - Feedback, Banners, and Main Action Header */}
             <RequestActionHeader {...headerProps}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {/* Drawer Mode Unified Redirect (Replaces direct approval buttons) */}
+                    {isDrawerMode && ((status === 'WAITING_AREA_APPROVAL' && isAreaApprover) || (status === 'WAITING_FINAL_APPROVAL' && isFinalApprover)) && (
+                        <div style={{
+                            backgroundColor: '#e0e7ff',
+                            padding: '16px',
+                            borderRadius: '4px',
+                            border: '1px solid #c7d2fe',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '16px',
+                            boxShadow: 'var(--shadow-sm)'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <ShieldAlert size={20} color="#4338ca" />
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <span style={{ fontWeight: 800, fontSize: '0.8rem', color: '#312e81', textTransform: 'uppercase' }}>APROVAÇÃO PENDENTE</span>
+                                    <span style={{ fontSize: '0.75rem', color: '#3730a3', fontWeight: 500 }}>A análise e decisão deste pedido devem ser realizadas no Centro de Aprovações.</span>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (onDrawerClose) onDrawerClose();
+                                    navigate('/approvals');
+                                }}
+                                style={{
+                                    height: '36px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: 'none',
+                                    backgroundColor: '#4338ca', color: '#ffffff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
+                                    fontWeight: 800, fontFamily: 'var(--font-family-display)', fontSize: '0.75rem',
+                                    boxShadow: '0 2px 4px rgba(67, 56, 202, 0.2)', transition: 'all 0.2s', textTransform: 'uppercase', whiteSpace: 'nowrap'
+                                }}
+                            >
+                                IR PARA CENTRO DE APROVAÇÕES
+                            </button>
+                        </div>
+                    )}
+
                     {/* Area Approval Action Bar */}
-                    {(requestTypeCode === 'PAYMENT' || requestTypeCode === 'QUOTATION') && status === 'WAITING_AREA_APPROVAL' && isAreaApprover && (
+                    {!isDrawerMode && (requestTypeCode === 'PAYMENT' || requestTypeCode === 'QUOTATION') && status === 'WAITING_AREA_APPROVAL' && isAreaApprover && (
                         <div style={{
                             backgroundColor: 'white',
                             padding: '12px 16px',
@@ -419,7 +459,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     )}
 
                     {/* Final Approval Action Bar */}
-                    {(requestTypeCode === 'PAYMENT' || requestTypeCode === 'QUOTATION') && status === 'WAITING_FINAL_APPROVAL' && isFinalApprover && (
+                    {!isDrawerMode && (requestTypeCode === 'PAYMENT' || requestTypeCode === 'QUOTATION') && status === 'WAITING_FINAL_APPROVAL' && isFinalApprover && (
                         <div style={{
                             backgroundColor: 'white',
                             padding: '12px 16px',
@@ -1136,6 +1176,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                         
                         <RequestQuotations 
                             quotations={quotations}
+                            isDrawerMode={isDrawerMode}
                             isFinalApproverMode={!!(isFinalApprover || isAreaApprover)}
                             isDecisionStage={status === 'WAITING_FINAL_APPROVAL' || status === 'WAITING_AREA_APPROVAL'}
                             onSelectWinner={async (qid) => {

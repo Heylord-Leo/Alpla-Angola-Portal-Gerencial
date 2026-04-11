@@ -36,9 +36,12 @@ public class NotificationService : INotificationService
             var opCounts = new Dictionary<string, (int Count, string Title, string Description, string TargetPath, string Type)>();
 
             // 2.1 Approvals
+            bool isAdmin = roles.Contains("System Administrator");
+            bool isAreaApprover = roles.Contains("Area Approver");
+            bool isFinalApprover = roles.Contains("Final Approver");
             var pendingApprovals = await query.CountAsync(r => 
-                (r.Status!.Code == "WAITING_AREA_APPROVAL" && r.AreaApproverId == userId) ||
-                ((r.Status.Code == "WAITING_FINAL_APPROVAL" || r.Status.Code == "WAITING_COST_CENTER") && r.FinalApproverId == userId) ||
+                (r.Status!.Code == "WAITING_AREA_APPROVAL" && (r.AreaApproverId == userId || roles.Contains("Area Approver"))) ||
+                ((r.Status.Code == "WAITING_FINAL_APPROVAL" || r.Status.Code == "WAITING_COST_CENTER") && (r.FinalApproverId == userId || roles.Contains("Final Approver"))) ||
                 (roles.Contains("System Administrator") && (r.Status.Code == "WAITING_AREA_APPROVAL" || r.Status.Code == "WAITING_FINAL_APPROVAL" || r.Status.Code == "WAITING_COST_CENTER"))
             );
             if (pendingApprovals > 0)
@@ -159,8 +162,8 @@ public class NotificationService : INotificationService
                 {
                     case NotificationCategories.Approval:
                         currentCount = await query.CountAsync(r => 
-                            (r.Status!.Code == "WAITING_AREA_APPROVAL" && r.AreaApproverId == userId) ||
-                            ((r.Status.Code == "WAITING_FINAL_APPROVAL" || r.Status.Code == "WAITING_COST_CENTER") && r.FinalApproverId == userId) ||
+                            (r.Status!.Code == "WAITING_AREA_APPROVAL" && (r.AreaApproverId == userId || roles.Contains("Area Approver"))) ||
+                            ((r.Status.Code == "WAITING_FINAL_APPROVAL" || r.Status.Code == "WAITING_COST_CENTER") && (r.FinalApproverId == userId || roles.Contains("Final Approver"))) ||
                             (roles.Contains("System Administrator") && (r.Status.Code == "WAITING_AREA_APPROVAL" || r.Status.Code == "WAITING_FINAL_APPROVAL" || r.Status.Code == "WAITING_COST_CENTER"))
                         );
                         break;
@@ -227,8 +230,8 @@ public class NotificationService : INotificationService
                 int currentCount = category switch
                 {
                     NotificationCategories.Approval => await query.CountAsync(r => 
-                        (r.Status!.Code == "WAITING_AREA_APPROVAL" && r.AreaApproverId == userId) ||
-                        ((r.Status.Code == "WAITING_FINAL_APPROVAL" || r.Status.Code == "WAITING_COST_CENTER") && r.FinalApproverId == userId) ||
+                        (r.Status!.Code == "WAITING_AREA_APPROVAL" && (r.AreaApproverId == userId || roles.Contains("Area Approver"))) ||
+                        ((r.Status.Code == "WAITING_FINAL_APPROVAL" || r.Status.Code == "WAITING_COST_CENTER") && (r.FinalApproverId == userId || roles.Contains("Final Approver"))) ||
                         (roles.Contains("System Administrator") && (r.Status.Code == "WAITING_AREA_APPROVAL" || r.Status.Code == "WAITING_FINAL_APPROVAL" || r.Status.Code == "WAITING_COST_CENTER"))
                     ),
                     NotificationCategories.Quotation => await query.CountAsync(r => r.Status!.Code == "WAITING_QUOTATION"),
@@ -349,3 +352,4 @@ public class NotificationService : INotificationService
             .ToListAsync();
     }
 }
+

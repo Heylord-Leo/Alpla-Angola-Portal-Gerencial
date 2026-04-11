@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { PlusCircle, LayoutList, Package } from 'lucide-react';
+import { useAuth } from '../../../features/auth/AuthContext';
 
 interface QuickActionItemProps {
     label: string;
@@ -69,6 +70,7 @@ function QuickActionItem({ label, icon, description, onClick, color = 'var(--col
 
 export function QuickActions() {
     const navigate = useNavigate();
+    const { user } = useAuth();
 
     const actions = [
         {
@@ -92,7 +94,12 @@ export function QuickActions() {
             color: 'var(--color-status-indigo)',
             onClick: () => navigate('/buyer/items')
         }
-    ];
+    ].filter(action => {
+        if (action.label === 'Gestão de Cotações') {
+            return user?.roles?.includes('Buyer') || user?.roles?.includes('System Administrator');
+        }
+        return true;
+    });
 
     return (
         <section style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>

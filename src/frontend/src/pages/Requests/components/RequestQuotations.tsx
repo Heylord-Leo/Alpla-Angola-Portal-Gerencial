@@ -14,13 +14,15 @@ interface RequestQuotationsProps {
     isFinalApproverMode: boolean;
     isDecisionStage: boolean;
     onSelectWinner: (quotationId: string) => Promise<void>;
+    isDrawerMode?: boolean;
 }
 
 export const RequestQuotations: React.FC<RequestQuotationsProps> = ({ 
     quotations, 
     isFinalApproverMode, 
     isDecisionStage,
-    onSelectWinner 
+    onSelectWinner,
+    isDrawerMode
 }) => {
     const [expandedQuotations, setExpandedQuotations] = useState<Record<string, boolean>>({});
     const [processingId, setProcessingId] = useState<string | null>(null);
@@ -112,8 +114,8 @@ export const RequestQuotations: React.FC<RequestQuotationsProps> = ({
                             </div>
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-                                {/* Winner Selection Action (ONLY for Final Approver in Decision stage) */}
-                                {isFinalApproverMode && isDecisionStage && !q.isSelected && (
+                                {/* Winner Selection Action (ONLY for Final Approver in Decision stage & not drawer) */}
+                                {isFinalApproverMode && isDecisionStage && !q.isSelected && !isDrawerMode && (
                                     <button 
                                         onClick={(e) => { e.stopPropagation(); handleSelect(q.id); }}
                                         disabled={!!processingId}
