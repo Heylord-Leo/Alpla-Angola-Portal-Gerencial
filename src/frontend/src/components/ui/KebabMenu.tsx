@@ -32,13 +32,15 @@ export function KebabMenu({ options }: KebabMenuProps) {
                 top: `${rect.bottom + 4}px`,
                 right: `${window.innerWidth - rect.right}px`,
                 minWidth: '160px',
-                backgroundColor: 'var(--color-bg-surface)',
-                border: '2px solid var(--color-primary)',
-                boxShadow: 'var(--shadow-brutal)',
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05)',
                 display: 'flex',
                 flexDirection: 'column',
                 zIndex: Z_INDEX.DROPDOWN as any,
-                padding: '4px 0'
+                padding: '4px 0',
+                overflow: 'hidden'
             });
         }
     }, [isOpen]);
@@ -100,21 +102,26 @@ export function KebabMenu({ options }: KebabMenuProps) {
                                 style={{
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: '12px',
-                                    padding: '10px 16px',
+                                    gap: '10px',
+                                    padding: '8px 16px',
                                     border: 'none',
                                     backgroundColor: 'transparent',
                                     width: '100%',
                                     textAlign: 'left',
                                     cursor: 'pointer',
-                                    fontWeight: 700,
+                                    fontWeight: 500,
                                     fontSize: '0.85rem',
-                                    textTransform: 'uppercase',
-                                    color: 'var(--color-primary)',
-                                    transition: 'background-color 0.1s'
+                                    color: '#334155',
+                                    transition: 'all 0.15s ease'
                                 }}
-                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-page)'}
-                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.backgroundColor = '#f1f5f9';
+                                    e.currentTarget.style.color = 'var(--color-primary)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = 'transparent';
+                                    e.currentTarget.style.color = '#334155';
+                                }}
                             >
                                 {option.icon}
                                 {option.label}

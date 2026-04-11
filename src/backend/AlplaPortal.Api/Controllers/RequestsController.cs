@@ -277,6 +277,8 @@ public class RequestsController : BaseController
         [FromQuery] bool? isAttention = null,
         [FromQuery] bool? myTasksOnly = null,
         [FromQuery] bool? excludeMyTasks = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool isDescending = true,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
@@ -481,20 +483,52 @@ public class RequestsController : BaseController
 
         // 4. Final Projection and Pagination
         var totalCount = await query.CountAsync();
+
+        if (!string.IsNullOrWhiteSpace(sortBy))
+        {
+            switch (sortBy.ToLower())
+            {
+                case "requestnumber":
+                    query = isDescending ? query.OrderByDescending(r => r.RequestNumber) : query.OrderBy(r => r.RequestNumber);
+                    break;
+                case "title":
+                    query = isDescending ? query.OrderByDescending(r => r.Title) : query.OrderBy(r => r.Title);
+                    break;
+                case "statusname":
+                    query = isDescending ? query.OrderByDescending(r => r.Status!.Name) : query.OrderBy(r => r.Status!.Name);
+                    break;
+                case "requestername":
+                    query = isDescending ? query.OrderByDescending(r => r.Requester!.FullName) : query.OrderBy(r => r.Requester!.FullName);
+                    break;
+                case "departmentname":
+                    query = isDescending ? query.OrderByDescending(r => r.Department!.Name) : query.OrderBy(r => r.Department!.Name);
+                    break;
+                case "createdatutc":
+                    query = isDescending ? query.OrderByDescending(r => r.CreatedAtUtc) : query.OrderBy(r => r.CreatedAtUtc);
+                    break;
+                default:
+                    query = isDescending ? query.OrderByDescending(r => r.CreatedAtUtc) : query.OrderBy(r => r.CreatedAtUtc);
+                    break;
+            }
+        }
+        else
+        {
+            query = query
+                .OrderByDescending(r =>
+                    // Finalized statuses always rank last (-1), below all active items including those with no deadline (0).
+                    (r.Status!.Code == "REJECTED" || r.Status.Code == "CANCELLED" ||
+                     r.Status.Code == "COMPLETED" || r.Status.Code == "QUOTATION_COMPLETED")
+                        ? -1                                                                                        // finalized — always last
+                        : (r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < today) ? 3                          // overdue
+                        : (r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value >= today && r.NeedByDateUtc.Value < tomorrow) ? 2  // due today
+                        : (r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value >= tomorrow && r.NeedByDateUtc.Value < in4Days) ? 1 // due soon (≤3 days)
+                        : 0                                                                                         // active / no urgent deadline
+                )
+                .ThenByDescending(r => r.NeedLevelId ?? 0) // Crítico(4) > Urgente(3) > Normal(2) > Baixo(1) > sem nível(0)
+                .ThenByDescending(r => r.CreatedAtUtc);
+        }
+
         var items = await query
-            .OrderByDescending(r =>
-                // Finalized statuses always rank last (-1), below all active items including those with no deadline (0).
-                // APPROVED is intentionally excluded here: it is an active operational status (Buyer registers P.O).
-                (r.Status!.Code == "REJECTED" || r.Status.Code == "CANCELLED" ||
-                 r.Status.Code == "COMPLETED" || r.Status.Code == "QUOTATION_COMPLETED")
-                    ? -1                                                                                        // finalized — always last
-                    : (r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < today) ? 3                          // overdue
-                    : (r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value >= today && r.NeedByDateUtc.Value < tomorrow) ? 2  // due today
-                    : (r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value >= tomorrow && r.NeedByDateUtc.Value < in4Days) ? 1 // due soon (≤3 days)
-                    : 0                                                                                         // active / no urgent deadline
-            )
-            .ThenByDescending(r => r.NeedLevelId ?? 0) // Crítico(4) > Urgente(3) > Normal(2) > Baixo(1) > sem nível(0)
-            .ThenByDescending(r => r.CreatedAtUtc)
             .Select(r => new RequestListItemDto
             {
                 Id = r.Id,

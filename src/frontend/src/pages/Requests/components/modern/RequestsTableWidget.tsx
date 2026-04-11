@@ -1,12 +1,16 @@
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Search, CheckCircle2, AlertCircle, Clock, CreditCard,
     FileText, XCircle, Briefcase, Package, ArrowUp, ArrowDown,
-    ArrowUpDown, CalendarClock, Copy, Eye, ChevronLeft, ChevronRight
+    ArrowUpDown, CalendarClock, Copy, Eye, ChevronLeft, ChevronRight, User
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { RequestListItemDto } from '../../../../types';
 import { KebabMenu } from '../../../../components/ui/KebabMenu';
+import { ModernRequestTimeline } from './ModernRequestTimeline';
+import { ModernTooltip } from '../../../../components/ui/ModernTooltip';
+import { getRequestGuidance, getUrgencyStyle } from '../../../../lib/utils';
 
 // ── Status Badge ──────────────────────────────────────────
 const STATUS_THEME: Record<string, { bg: string; fg: string; border: string; icon: any }> = {
@@ -84,6 +88,7 @@ export function RequestsTableWidget({
 }: RequestsTableWidgetProps) {
 
     const navigate = useNavigate();
+    const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null);
     const totalPages = Math.ceil(totalCount / pageSize);
 
     return (
@@ -201,27 +206,43 @@ export function RequestsTableWidget({
                                     const isOverdue = deadline ? deadline.getTime() < new Date().getTime() : false;
                                     const isApproaching = deadline && !isOverdue && (deadline.getTime() - new Date().getTime()) / (1000 * 3600 * 24) <= 7;
                                     const isPayment = req.requestTypeCode === 'PAYMENT';
+                                    
+                                    const guidance = getRequestGuidance(req.statusCode, req.requestTypeCode);
+                                    const urgency = getUrgencyStyle(req.needByDateUtc, req.statusCode);
 
                                     return (
-                                        <motion.tr
-                                            layout
-                                            initial={{ opacity: 0 }}
-                                            animate={{ opacity: 1 }}
-                                            exit={{ opacity: 0 }}
-                                            key={req.id.toString()}
-                                            onClick={() => onRowClick(req.id.toString())}
-                                            style={{ cursor: 'pointer', borderBottom: '1px solid var(--color-border)' }}
-                                            className="hoverable-row"
-                                        >
-                                            {/* Número */}
-                                            <td style={{ padding: '12px 20px', border: 'none' }}>
-                                                <span style={{
-                                                    fontSize: '0.8rem',
-                                                    fontFamily: 'monospace',
-                                                    color: 'var(--color-primary)',
-                                                    fontWeight: 700,
-                                                }}>{req.requestNumber || 'S/N'}</span>
-                                            </td>
+                                        <React.Fragment key={req.id.toString()}>
+                                            <motion.tr
+                                                layout
+                                                initial={{ opacity: 0 }}
+                                                animate={{ opacity: 1 }}
+                                                exit={{ opacity: 0 }}
+                                                onClick={() => setExpandedRequestId(expandedRequestId === req.id.toString() ? null : req.id.toString())}
+                                                style={{ cursor: 'pointer', borderBottom: '1px solid var(--color-border)', backgroundColor: expandedRequestId === req.id.toString() ? '#F8FAFC' : 'transparent' }}
+                                                className="hoverable-row"
+                                            >
+                                                {/* Número */}
+                                                <td style={{ padding: '12px 20px', border: 'none' }}>
+                                                    <ModernTooltip content={
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                            <User size={14} color="var(--color-primary)" />
+                                                            <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>{req.requesterName}</span>
+                                                        </div>
+                                                    } side="top">
+                                                        <span 
+                                                            onClick={(e) => { e.stopPropagation(); onRowClick(req.id.toString()); }}
+                                                            style={{
+                                                                fontSize: '0.8rem',
+                                                                fontFamily: 'monospace',
+                                                                color: 'var(--color-primary)',
+                                                                fontWeight: 700,
+                                                                cursor: 'pointer',
+                                                            }}
+                                                            onMouseEnter={(e) => e.currentTarget.style.textDecoration = 'underline'}
+                                                            onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}
+                                                        >{req.requestNumber || 'S/N'}</span>
+                                                    </ModernTooltip>
+                                                </td>
                                             {/* Título */}
                                             <td style={{ padding: '12px 20px', border: 'none' }}>
                                                 <p style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-main)', margin: 0, maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -233,15 +254,21 @@ export function RequestsTableWidget({
                                             </td>
                                             {/* Tipo */}
                                             <td style={{ padding: '12px 20px', border: 'none' }}>
-                                                <div style={{
-                                                    width: 32, height: 32,
-                                                    borderRadius: 'var(--radius-md)',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                    backgroundColor: isPayment ? '#ECFDF5' : '#EFF6FF',
-                                                    color: isPayment ? 'var(--color-status-emerald)' : 'var(--color-primary)',
-                                                }}>
-                                                    {isPayment ? <Briefcase size={14} /> : <Package size={14} />}
-                                                </div>
+                                                <ModernTooltip content={
+                                                    <span style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: '0.75rem' }}>
+                                                        {req.requestTypeName}
+                                                    </span>
+                                                } side="top">
+                                                    <div style={{
+                                                        width: 32, height: 32,
+                                                        borderRadius: 'var(--radius-md)',
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                        backgroundColor: isPayment ? '#ECFDF5' : '#EFF6FF',
+                                                        color: isPayment ? 'var(--color-status-emerald)' : 'var(--color-primary)',
+                                                    }}>
+                                                        {isPayment ? <Briefcase size={14} /> : <Package size={14} />}
+                                                    </div>
+                                                </ModernTooltip>
                                             </td>
                                             {/* Empresa / Planta */}
                                             <td style={{ padding: '12px 20px', border: 'none' }}>
@@ -257,24 +284,33 @@ export function RequestsTableWidget({
                                             {/* Data Limite */}
                                             <td style={{ padding: '12px 20px', border: 'none' }}>
                                                 {deadline ? (
-                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
-                                                        <div style={{
-                                                            display: 'flex', alignItems: 'center', gap: '6px',
-                                                            fontSize: '0.8rem',
-                                                            color: isOverdue ? 'var(--color-status-red)' : 'var(--color-text-main)',
-                                                            fontWeight: isOverdue ? 700 : 500,
-                                                        }}>
-                                                            <CalendarClock size={12} style={{ color: isOverdue ? 'var(--color-status-red)' : 'var(--color-text-muted)' }} />
-                                                            {deadline.toLocaleDateString('pt-BR')}
+                                                    <ModernTooltip content={urgency ? urgency.description : 'Data limite'} side="top">
+                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                                                            <div style={{
+                                                                display: 'flex', alignItems: 'center', gap: '6px',
+                                                                fontSize: '0.8rem',
+                                                                color: isOverdue ? 'var(--color-status-red)' : 'var(--color-text-main)',
+                                                                fontWeight: isOverdue ? 700 : 500,
+                                                            }}>
+                                                                <CalendarClock size={12} style={{ color: isOverdue ? 'var(--color-status-red)' : 'var(--color-text-muted)' }} />
+                                                                {deadline.toLocaleDateString('pt-BR')}
+                                                            </div>
+                                                            {isOverdue && <OverdueTag text="Atrasado" bg="#FEF2F2" fg="var(--color-status-red)" />}
+                                                            {isApproaching && <OverdueTag text="Próximo" bg="#FFFBEB" fg="var(--color-status-amber)" />}
                                                         </div>
-                                                        {isOverdue && <OverdueTag text="Atrasado" bg="#FEF2F2" fg="var(--color-status-red)" />}
-                                                        {isApproaching && <OverdueTag text="Próximo" bg="#FFFBEB" fg="var(--color-status-amber)" />}
-                                                    </div>
+                                                    </ModernTooltip>
                                                 ) : <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>N/A</span>}
                                             </td>
                                             {/* Status */}
                                             <td style={{ padding: '12px 20px', border: 'none' }}>
-                                                <StatusBadge status={req.statusCode || 'DRAFT'} />
+                                                <ModernTooltip content={
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                        <div><div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Situação Atual</div><div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-primary)' }}>{guidance.responsible}</div></div>
+                                                        <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '8px' }}><div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)' }}>Próxima Ação</div><div style={{ fontSize: '0.8rem', fontWeight: 600, fontStyle: 'italic', color: 'var(--color-text-main)' }}>{guidance.nextAction}</div></div>
+                                                    </div>
+                                                } side="top" align="start">
+                                                    <StatusBadge status={req.statusCode || 'DRAFT'} />
+                                                </ModernTooltip>
                                             </td>
                                             {/* Valor */}
                                             <td style={{ padding: '12px 20px', textAlign: 'right', border: 'none' }}>
@@ -292,11 +328,32 @@ export function RequestsTableWidget({
                                             <td style={{ padding: '12px 20px', textAlign: 'center', border: 'none' }} onClick={(e) => e.stopPropagation()}>
                                                 <KebabMenu options={[
                                                     { label: 'Vis. Rápida', icon: <Eye size={16} />, onClick: () => onRowClick(req.id.toString()) },
-                                                    { label: 'Pág. Completa', icon: <FileText size={16} />, onClick: () => navigate(`/requests/${req.id}`) },
                                                     { label: 'Duplicar', icon: <Copy size={16} />, onClick: () => navigate(`/requests/new?copyFrom=${req.id}`) }
                                                 ]} />
                                             </td>
                                         </motion.tr>
+                                            
+                                            {/* Timeline Expanded Row */}
+                                            <AnimatePresence>
+                                                {expandedRequestId === req.id.toString() && (
+                                                    <motion.tr 
+                                                        initial={{ opacity: 0, height: 0 }}
+                                                        animate={{ opacity: 1, height: 'auto' }}
+                                                        exit={{ opacity: 0, height: 0 }}
+                                                        style={{ 
+                                                            borderBottom: '1px solid var(--color-border)',
+                                                            backgroundColor: 'var(--color-bg-subtle)' 
+                                                        }}
+                                                    >
+                                                        <td colSpan={8} style={{ padding: 0, border: 'none' }}>
+                                                            <div style={{ boxShadow: 'inset 0 4px 6px -4px rgba(0,0,0,0.05)', backgroundColor: '#F8FAFC' }}>
+                                                                <ModernRequestTimeline requestId={req.id.toString()} />
+                                                            </div>
+                                                        </td>
+                                                    </motion.tr>
+                                                )}
+                                            </AnimatePresence>
+                                        </React.Fragment>
                                     );
                                 })}
                             </AnimatePresence>
@@ -312,11 +369,11 @@ export function RequestsTableWidget({
                 borderTop: '1px solid var(--color-border)',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
+                justifyContent: 'center',
                 fontSize: '0.75rem',
                 color: 'var(--color-text-muted)',
                 flexWrap: 'wrap',
-                gap: '12px',
+                gap: '32px',
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span>Pág:</span>

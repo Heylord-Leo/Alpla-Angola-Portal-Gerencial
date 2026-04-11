@@ -286,7 +286,6 @@ function CarouselCard({ order, onView, onOpenFull, onDuplicate }: { order: Reque
                 <div onClick={(e) => e.stopPropagation()}>
                     <KebabMenu options={[
                         { label: 'Vis. Rápida', icon: <Eye size={16} />, onClick: onView },
-                        { label: 'Pág. Completa', icon: <FileText size={16} />, onClick: onOpenFull },
                         { label: 'Duplicar', icon: <Copy size={16} />, onClick: onDuplicate }
                     ]} />
                 </div>
