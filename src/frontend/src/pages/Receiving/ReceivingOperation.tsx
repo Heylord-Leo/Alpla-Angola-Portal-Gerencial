@@ -15,6 +15,8 @@ import ReceivingModal from '../../components/modals/ReceivingModal';
 import { FeedbackType } from '../../components/ui/Feedback';
 import { RequestActionHeader } from '../Requests/components/RequestActionHeader';
 import { ApprovalModal } from '../../components/ApprovalModal';
+import { PageContainer } from '../../components/ui/PageContainer';
+import { StandardTable } from '../../components/ui/StandardTable';
 
 const ReceivingOperation: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -169,7 +171,7 @@ const ReceivingOperation: React.FC = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%' }}>
+    <PageContainer padding="24px 32px">
       <RequestActionHeader
         title="Operação de Recebimento"
         requestNumber={request.requestNumber?.startsWith('REQ') ? request.requestNumber : `REQ ${request.requestNumber}`}
@@ -248,51 +250,51 @@ const ReceivingOperation: React.FC = () => {
             </div>
 
             <div style={{ overflowX: 'auto' }}>
-              <table>
+              <StandardTable>
                 <thead>
-                  <tr>
-                    <th style={{ width: '50px', textAlign: 'center' }}>#</th>
-                    <th>Descrição</th>
-                    <th style={{ width: '150px' }}>Qtd Autorizada</th>
-                    <th style={{ width: '150px' }}>Qtd Recebida</th>
-                    <th style={{ width: '160px' }}>Status</th>
-                    <th style={{ width: '140px', textAlign: 'center' }}>Ação</th>
+                  <tr style={{ backgroundColor: '#FAFAFA', borderBottom: '1px solid var(--color-border)' }}>
+                    <th style={{ width: '50px', textAlign: 'center', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>#</th>
+                    <th style={{ padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Descrição</th>
+                    <th style={{ width: '150px', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Qtd Autorizada</th>
+                    <th style={{ width: '150px', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Qtd Recebida</th>
+                    <th style={{ width: '160px', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Status</th>
+                    <th style={{ width: '140px', textAlign: 'center', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Ação</th>
                   </tr>
                 </thead>
                 <tbody>
                   {operationalItems.map((item: any) => (
-                    <tr key={item.id}>
-                      <td style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontWeight: 800 }}>{item.lineNumber}</td>
-                      <td>
+                    <tr key={item.id || item.lineNumber}>
+                      <td style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontWeight: 800, padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>{item.lineNumber}</td>
+                      <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
                         <div style={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.85rem' }}>{item.description}</div>
                         {item.notes && (
-                           <div style={{ marginTop: '8px', padding: '8px', backgroundColor: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '0.75rem', fontWeight: 700, display: 'flex', gap: '6px' }}>
+                           <div style={{ marginTop: '8px', padding: '8px', backgroundColor: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '0.75rem', fontWeight: 700, display: 'flex', gap: '6px', borderRadius: '4px' }}>
                              <AlertTriangle size={14} style={{ flexShrink: 0 }} />
                              <span>OBS: {item.notes}</span>
                            </div>
                         )}
                       </td>
-                      <td style={{ fontWeight: 700, color: 'var(--color-text-muted)' }}>
+                      <td style={{ fontWeight: 700, color: 'var(--color-text-muted)', padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
                         {item.quantity} {item.unit}
                       </td>
-                      <td>
+                      <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
                         <span style={{ fontWeight: 900, color: item.receivedQty > 0 ? 'var(--color-primary)' : 'var(--color-text-muted)' }}>
                           {item.receivedQty} {item.unit}
                         </span>
                       </td>
-                      <td>
+                      <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
                         <div 
                           className={`badge ${item.statusCode === 'RECEIVED' ? 'badge-success' : 'badge-warning'}`}
-                          style={{ width: '100%', justifyContent: 'center' }}
+                          style={{ width: '100%', justifyContent: 'center', fontSize: '0.6rem', padding: '2px 8px' }}
                         >
                           {item.statusName}
                         </div>
                       </td>
-                      <td style={{ textAlign: 'center' }}>
+                      <td style={{ textAlign: 'center', padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
                         <button
                           onClick={() => handleOpenModal(item)}
                           className="btn-secondary"
-                          style={{ padding: '6px 12px', fontSize: '0.7rem', width: '100%', opacity: isReadOnly ? 0.7 : 1 }}
+                          style={{ padding: '6px 12px', fontSize: '0.7rem', width: '100%', opacity: isReadOnly ? 0.7 : 1, borderRadius: '6px' }}
                         >
                           {isReadOnly ? 'VER DETALHES' : 'REGISTRAR'}
                         </button>
@@ -300,7 +302,7 @@ const ReceivingOperation: React.FC = () => {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </StandardTable>
             </div>
           </div>
         </div>
@@ -412,7 +414,7 @@ const ReceivingOperation: React.FC = () => {
         onCloseFeedback={() => setFinalizeFeedback({ ...finalizeFeedback, message: null })}
         isPartial={!allReceived}
       />
-    </div>
+    </PageContainer>
   );
 };
 

@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { DashboardSummaryDto } from '../../types';
-import { OperationalCard } from './components/OperationalCard';
+import { PageContainer } from '../../components/ui/PageContainer';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { KPICard } from '../../components/ui/KPICard';
 import { QuickActions } from './components/QuickActions';
 import { AttentionList } from './components/AttentionList';
 import { WorkflowInteractive } from './components/WorkflowInteractive';
@@ -54,44 +56,11 @@ export function Dashboard() {
         : WORKFLOW_STAGES.find(s => s.id === selectedStageId) || WORKFLOW_STAGES[0];
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
-            {/* Section 1: Header */}
-            <header>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
-                    <div style={{ 
-                        backgroundColor: 'var(--color-primary)', 
-                        padding: '0.5rem', 
-                        display: 'flex', 
-                        border: '2px solid var(--color-primary)',
-                        color: 'white'
-                    }}>
-                        <LayoutDashboard size={24} />
-                    </div>
-                    <div>
-                    <h1 style={{ 
-                        margin: 0, 
-                        fontSize: '2.5rem', 
-                        fontWeight: 900, 
-                        color: 'var(--color-primary)',
-                        letterSpacing: '-0.02em',
-                        lineHeight: 1
-                    }}>
-                        Cockpit Gerencial
-                    </h1>
-                    <p style={{ 
-                        margin: '8px 0 0', 
-                        color: 'var(--color-text-muted)', 
-                        fontWeight: 800, 
-                        letterSpacing: '0.1em', 
-                        textTransform: 'uppercase',
-                        fontSize: '0.8rem',
-                        opacity: 0.8
-                    }}>
-                        Visão consolidada das operações de suprimentos
-                    </p>
-                </div>
-                </div>
-            </header>
+        <PageContainer>
+            <PageHeader 
+                title="Cockpit Gerencial"
+                subtitle="Visão consolidada das operações de suprimentos"
+            />
 
             {/* Section 2: Operational Cards */}
             <section>
@@ -100,57 +69,51 @@ export function Dashboard() {
                     gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', 
                     gap: '1.5rem' 
                 }}>
-                    <OperationalCard 
-                        label="Total de Pedidos" 
-                        value={summary?.totalRequests || 0}
+                    <KPICard 
+                        title="Total de Pedidos" 
+                        value={isLoading ? '...' : (summary?.totalRequests || 0)}
                         icon={<ShoppingCart size={20} />} 
-                        isLoading={isLoading}
-                        helperText="Volume total de solicitações"
+                        subtitle="Volume total de solicitações"
                         onClick={() => navigate('/requests')}
                     />
-                    <OperationalCard 
-                        label="Aguardando Cotação" 
-                        value={summary?.waitingQuotation || 0}
+                    <KPICard 
+                        title="Aguardando Cotação" 
+                        value={isLoading ? '...' : (summary?.waitingQuotation || 0)}
                         icon={<Users size={20} />} 
                         color="var(--color-status-blue)"
-                        isLoading={isLoading}
-                        helperText="Pedidos em fase de orçamentação"
+                        subtitle="Pedidos em fase de orçamentação"
                         onClick={() => navigate('/buyer/items?requestStatus=WAITING_QUOTATION')}
                     />
-                    <OperationalCard 
-                        label="Aguardando Aprovação Área" 
-                        value={summary?.waitingAreaApproval || 0}
+                    <KPICard 
+                        title="Aguardando Aprovação Área" 
+                        value={isLoading ? '...' : (summary?.waitingAreaApproval || 0)}
                         icon={<CheckCircle size={20} />} 
                         color="var(--color-status-indigo)"
-                        isLoading={isLoading}
-                        helperText="Análise técnica e consistência"
+                        subtitle="Análise técnica e consistência"
                         onClick={() => navigate('/requests?statusCodes=WAITING_AREA_APPROVAL')}
                     />
-                    <OperationalCard 
-                        label="Aguardando Aprovação Final" 
-                        value={summary?.waitingFinalApproval || 0}
+                    <KPICard 
+                        title="Aguardando Aprovação Final" 
+                        value={isLoading ? '...' : (summary?.waitingFinalApproval || 0)}
                         icon={<CheckCircle size={20} />} 
                         color="var(--color-status-purple)"
-                        isLoading={isLoading}
-                        helperText="Validação final e inserção C.C"
+                        subtitle="Validação final e inserção C.C"
                         onClick={() => navigate('/requests?statusCodes=WAITING_FINAL_APPROVAL,WAITING_COST_CENTER')}
                     />
-                    <OperationalCard 
-                        label="Em Reajuste" 
-                        value={summary?.inAdjustment || 0}
+                    <KPICard 
+                        title="Em Reajuste" 
+                        value={isLoading ? '...' : (summary?.inAdjustment || 0)}
                         icon={<RotateCcw size={20} />} 
                         color="var(--color-status-orange)"
-                        isLoading={isLoading}
-                        helperText="Necessitam de correção/justificativa"
+                        subtitle="Necessitam de correção/justificativa"
                         onClick={() => navigate('/requests?statusCodes=AREA_ADJUSTMENT,FINAL_ADJUSTMENT')}
                     />
-                    <OperationalCard 
-                        label="Em Atenção" 
-                        value={summary?.inAttention || 0}
+                    <KPICard 
+                        title="Em Atenção" 
+                        value={isLoading ? '...' : (summary?.inAttention || 0)}
                         icon={<AlertTriangle size={20} />} 
                         color="var(--color-status-red)"
-                        isLoading={isLoading}
-                        helperText="Próximos da data de necessidade"
+                        subtitle="Próximos da data de necessidade"
                         onClick={() => navigate('/requests?isAttention=true')}
                     />
                 </div>
@@ -230,6 +193,6 @@ export function Dashboard() {
                     <WorkflowStageDetails stage={selectedStage} />
                 </div>
             </section>
-        </div>
+        </PageContainer>
     );
 }

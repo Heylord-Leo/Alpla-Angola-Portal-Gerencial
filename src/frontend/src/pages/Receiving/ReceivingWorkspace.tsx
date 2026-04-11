@@ -1,12 +1,16 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Package, X } from 'lucide-react';
+import { Package } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../features/auth/AuthContext';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { formatCurrencyAO } from '../../lib/utils';
 import { RequestListItemDto } from '../../types';
 import { CollapsibleSection } from '../../components/ui/CollapsibleSection';
+import { PageContainer } from '../../components/ui/PageContainer';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { SearchFilterBar } from '../../components/ui/SearchFilterBar';
+import { StandardTable, TableEmptyState } from '../../components/ui/StandardTable';
 
 export function ReceivingWorkspace() {
     const { user: currentUser } = useAuth();
@@ -145,118 +149,80 @@ export function ReceivingWorkspace() {
     };
 
     const renderTable = (data: RequestListItemDto[]) => {
-        if (data.length === 0) {
-            return (
-                <div style={{ 
-                    padding: '80px 20px', 
-                    textAlign: 'center', 
-                    color: 'var(--color-text-muted)', 
-                    backgroundColor: '#fafafa',
-                    border: '1px dashed var(--color-border)',
-                    borderRadius: 'var(--radius-lg)',
-                    margin: '20px'
-                }}>
-                    <Package size={48} style={{ opacity: 0.2, margin: '0 auto 16px', color: 'var(--color-primary)' }} />
-                    <p style={{ fontWeight: 900, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Nenhum pedido nesta operacionalização.</p>
-                </div>
-            );
-        }
-
         return (
-            <table style={{ minWidth: '1000px', margin: 0, borderCollapse: 'collapse' }}>
+            <StandardTable
+                isEmpty={data.length === 0}
+                emptyState={<TableEmptyState icon={<Package size={32} />} title="Nenhum pedido nesta operacionalização." />}
+            >
                 <thead>
-                    <tr>
-                        <th style={{ textAlign: 'center', width: '100px' }}>Operação</th>
-                        <th>Número</th>
-                        <th>Tipo</th>
-                        <th>Título do Pedido</th>
-                        <th>Empresa</th>
-                        <th>Status</th>
-                        <th style={{ textAlign: 'right' }}>Valor Estimado</th>
+                    <tr style={{ backgroundColor: '#FAFAFA', borderBottom: '1px solid var(--color-border)' }}>
+                        <th style={{ padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center', width: '100px' }}>Operação</th>
+                        <th style={{ padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Número</th>
+                        <th style={{ padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Tipo</th>
+                        <th style={{ padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Título do Pedido</th>
+                        <th style={{ padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Empresa</th>
+                        <th style={{ padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Status</th>
+                        <th style={{ padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>Valor Estimado</th>
                     </tr>
                 </thead>
                 <tbody>
                     {data.map(req => (
                         <tr key={req.id}>
-                            <td style={{ textAlign: 'center' }}>
+                            <td style={{ padding: '12px 20px', textAlign: 'center', borderBottom: '1px solid var(--color-border)' }}>
                                 <Link 
                                     to={`/receiving/operation/${req.id}`} 
                                     className={(req.statusCode === 'COMPLETED' || req.statusCode === 'FINALIZADO') ? "btn-secondary" : "btn-primary"} 
-                                    style={{ padding: '8px 16px', fontSize: '0.65rem', fontWeight: 900, letterSpacing: '0.05em' }}
+                                    style={{ padding: '6px 12px', fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.05em', borderRadius: '6px' }}
                                 >
                                     {(req.statusCode === 'COMPLETED' || req.statusCode === 'FINALIZADO') ? 'VISUALIZAR' : 'RECEBER'}
                                 </Link>
                             </td>
-                            <td style={{ fontWeight: 900, color: 'var(--color-primary)', letterSpacing: '0.02em' }}>{req.requestNumber}</td>
-                            <td style={{ fontWeight: 600 }}>{req.requestTypeName}</td>
-                            <td>{req.title}</td>
-                            <td>{req.companyName}</td>
-                            <td>
+                            <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)', fontWeight: 800, color: 'var(--color-primary)' }}>{req.requestNumber}</td>
+                            <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)', fontWeight: 600 }}>{req.requestTypeName}</td>
+                            <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)', fontSize: '0.85rem' }}>{req.title}</td>
+                            <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)', fontSize: '0.85rem' }}>{req.companyName}</td>
+                            <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
                                 <span className={`badge ${
                                     req.statusBadgeColor === 'yellow' || req.statusBadgeColor === 'amber' ? 'badge-warning' :
                                     req.statusBadgeColor === 'green' || req.statusBadgeColor === 'emerald' ? 'badge-success' :
                                     req.statusBadgeColor === 'red' || req.statusBadgeColor === 'rose' || req.statusBadgeColor === 'rejected' ? 'badge-danger' :
                                     req.statusBadgeColor === 'blue' || req.statusBadgeColor === 'sky' || req.statusBadgeColor === 'indigo' ? 'badge-info' :
                                     'badge-neutral'
-                                }`}>
+                                }`} style={{ fontSize: '0.6rem', padding: '2px 8px' }}>
                                     {req.statusName}
                                 </span>
                             </td>
-                            <td style={{ textAlign: 'right', fontWeight: 800 }}>
+                            <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)', textAlign: 'right', fontWeight: 800, fontSize: '0.85rem' }}>
                                 {req.currencyCode} {formatCurrencyAO(req.estimatedTotalAmount)}
                             </td>
                         </tr>
                     ))}
                 </tbody>
-            </table>
+            </StandardTable>
         );
     };
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%' }}>
+        <PageContainer>
             {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '1px solid var(--color-border)', paddingBottom: '24px' }}>
-                <div>
-                    <h1 style={{ margin: 0, fontSize: '2.5rem', color: 'var(--color-primary)', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '16px' }}>
-                        <Package size={40} />
-                        Workspace de Recebimento
-                    </h1>
-                    <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', fontSize: '0.8rem', opacity: 0.8 }}>
-                        Gestão operacional de entrada de materiais e conferência de pedidos.
-                    </p>
-                </div>
-            </div>
+            <PageHeader
+                title="Workspace de Recebimento"
+                subtitle="Gestão operacional de entrada de materiais e conferência de pedidos."
+                icon={<Package size={28} />}
+            />
 
             {/* Sub-header info */}
-            <div style={{ padding: '12px 20px', backgroundColor: 'rgba(var(--color-primary-rgb), 0.05)', border: '2px solid var(--color-primary)', color: 'var(--color-primary)', fontWeight: 700, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '4px 4px 0px rgba(var(--color-primary-rgb), 0.1)' }}>
+            <div style={{ padding: '12px 20px', backgroundColor: 'rgba(var(--color-primary-rgb), 0.05)', border: '2px solid var(--color-primary)', color: 'var(--color-primary)', fontWeight: 700, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '4px 4px 0px rgba(var(--color-primary-rgb), 0.1)', borderRadius: 'var(--radius-md)' }}>
                 <span style={{ backgroundColor: 'var(--color-primary)', color: '#fff', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem' }}>NOTA</span>
                 Este workspace organiza os pedidos por estágio operacional após a conclusão do pagamento.
             </div>
 
             {/* Search */}
-            <div style={{ 
-                backgroundColor: 'var(--color-bg-surface)', 
-                padding: '24px', 
-                borderRadius: 'var(--radius-lg)', 
-                border: '1px solid var(--color-border)',
-                boxShadow: 'var(--shadow-sm)'
-            }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#fcfcfc', padding: '0 16px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
-                    <Search size={20} color="var(--color-primary)" strokeWidth={2.5} style={{ opacity: 0.6 }} />
-                    <input
-                        type="text"
-                        placeholder="BUSCAR NO RECEBIMENTO..."
-                        value={searchInput}
-                        onChange={(e) => setSearchInput(e.target.value)}
-                        style={{ border: 'none', outline: 'none', width: '100%', fontSize: '0.85rem', padding: '12px 0', backgroundColor: 'transparent', fontWeight: 600, color: 'var(--color-primary)', textTransform: 'uppercase' }}
-                    />
-                    {searchInput && (
-                        <button onClick={() => setSearchInput('')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                            <X size={18} />
-                        </button>
-                    )}
-                </div>
-            </div>
+            <SearchFilterBar
+                searchValue={searchInput}
+                onSearchChange={setSearchInput}
+                searchPlaceholder="BUSCAR NO RECEBIMENTO..."
+            />
 
             {feedback.message && <Feedback type={feedback.type} message={feedback.message} onClose={() => setFeedback({ ...feedback, message: null })} />}
 
@@ -294,11 +260,8 @@ export function ReceivingWorkspace() {
             )}
             
             {!loading && totalCount === 0 && (
-                <div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                    <Package size={64} style={{ opacity: 0.1, margin: '0 auto 20px' }} />
-                    <p style={{ fontWeight: 700 }}>Nenhum pedido encontrado no recebimento.</p>
-                </div>
+                <TableEmptyState icon={<Package size={48} />} title="Nenhum pedido encontrado no recebimento." description="Ajuste os termos da sua busca." />
             )}
-        </div>
+        </PageContainer>
     );
 }

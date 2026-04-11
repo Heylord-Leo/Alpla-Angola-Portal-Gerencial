@@ -2,7 +2,12 @@
 
 ## Current Version
 
-v2.46.0
+v2.47.0
+
+## [2.47.0] - 2026-04-11
+
+### Added
+- **UI/UX Standarization (Phases 1-4)**: Completely standardized the visual alignment of all legacy operational and administrative workspaces to mirror the modern "Requests" baseline structure.
 
 ## [2.46.0] - 2026-04-11
 

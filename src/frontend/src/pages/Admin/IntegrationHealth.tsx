@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Network, ArrowLeft, Database, Search, Cpu } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
+import { PageContainer } from '../../components/ui/PageContainer';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 export function IntegrationHealth() {
     const [ocrStatus, setOcrStatus] = useState<any>(null);
@@ -14,11 +16,11 @@ export function IntegrationHealth() {
 
     const IntegrationCard = ({ name, type, status, description, isRoadmap }: { name: string, type: string, status: string, description: string, isRoadmap?: boolean }) => (
         <div style={{ 
-            backgroundColor: isRoadmap ? 'var(--color-bg-main)' : 'var(--color-bg-surface)', 
-            border: `2px solid ${isRoadmap ? 'var(--color-border-light)' : 'var(--color-border-heavy)'}`, 
+            backgroundColor: isRoadmap ? 'var(--color-bg-page)' : 'var(--color-bg-surface)', 
+            border: `1px solid var(--color-border)`,
+            borderRadius: 'var(--radius-lg)', 
             padding: '1.5rem',
-            boxShadow: isRoadmap ? 'none' : 'var(--shadow-brutal)',
-            opacity: isRoadmap ? 0.7 : 1
+            opacity: isRoadmap ? 0.6 : 1
         }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
                 <div>
@@ -46,31 +48,12 @@ export function IntegrationHealth() {
     );
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-            <header style={{ borderBottom: '4px solid var(--color-primary)', paddingBottom: '16px', marginBottom: '1.5rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
-                    <Link to="/admin/workspace" style={{ color: 'var(--color-text-muted)', display: 'flex' }}>
-                        <ArrowLeft size={24} />
-                    </Link>
-                    <div style={{ 
-                        backgroundColor: 'var(--color-status-blue)', 
-                        padding: '0.5rem', 
-                        display: 'flex', 
-                        border: '2px solid var(--color-status-blue)',
-                        color: 'white'
-                    }}>
-                        <Network size={24} />
-                    </div>
-                    <div>
-                        <h1 style={{ margin: 0, fontSize: '2.5rem', fontWeight: 900, color: 'var(--color-primary)', textTransform: 'uppercase', letterSpacing: '-0.02em' }}>
-                            Saúde das Integrações
-                        </h1>
-                        <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', fontSize: '0.875rem' }}>
-                            Estado das comunicações com sistemas externos e provedores
-                        </p>
-                    </div>
-                </div>
-            </header>
+        <PageContainer>
+            <PageHeader
+                title="Saúde das Integrações"
+                subtitle="Estado das comunicações com sistemas externos e provedores"
+                icon={<Network size={32} strokeWidth={2.5} />}
+            />
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '1.5rem' }}>
                 <IntegrationCard 
@@ -95,7 +78,7 @@ export function IntegrationHealth() {
                 />
             </div>
 
-            <div style={{ border: '2px dashed var(--color-border-light)', padding: '2rem', textAlign: 'center' }}>
+            <div style={{ border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-lg)', padding: '2rem', textAlign: 'center' }}>
                 <div style={{ display: 'flex', justifyContent: 'center', gap: '2rem', opacity: 0.2 }}>
                     <Database size={48} />
                     <Search size={48} />
@@ -105,6 +88,6 @@ export function IntegrationHealth() {
                     As integrações com sistemas operacionais e ERPs estão actualmente em fase de evolução e mapeamento técnico.
                 </p>
             </div>
-        </div>
+        </PageContainer>
     );
 }

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.47.0] - 2026-04-11
+
+### Added
+- **UI/UX Standarization (Phases 1-4)**: Completely standardized the visual alignment of all legacy operational and administrative workspaces to mirror the modern "Requests" baseline structure.
+    - Decoupled brutalist grid/borders by injecting new `PageContainer`, `PageHeader`, `StandardTable`, and `SearchFilterBar` layout wrappers.
+    - Refactored `Dashboard.tsx`, `FinanceLandingPage.tsx`, `PurchasingLandingPage.tsx`, `UserManagement.tsx`, `SystemLogs.tsx`, `MasterData.tsx`, `AdministratorWorkspace.tsx`, and all core inner modules to the new corporate design language.
+    - Resolved widespread TypeScript constraints on Table wrappers, moving to native HTML tabular child declarations for superior component fluidity.
+
 ## [2.46.0] - 2026-04-11
 
 ### Added

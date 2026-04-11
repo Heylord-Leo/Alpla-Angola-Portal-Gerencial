@@ -5,7 +5,9 @@ import { useSearchParams } from 'react-router-dom';
 import { Check, Clock, AlertTriangle, FileText } from 'lucide-react';
 import { KebabMenu } from '../../components/ui/KebabMenu';
 import { FinanceActionModal, FinanceActionType } from '../../components/modals/FinanceActionModal';
-import { FeedbackType } from '../../components/ui/Feedback';
+import { FeedbackType } from '../../components/ui/Feedback';import { PageContainer } from '../../components/ui/PageContainer';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { StandardTable } from '../../components/ui/StandardTable';
 
 export default function FinancePaymentsList() {
     const [data, setData] = useState<FinanceListResponseDto | null>(null);
@@ -75,24 +77,20 @@ export default function FinancePaymentsList() {
     };
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h2 style={{ margin: 0, fontSize: '1.8rem', fontWeight: 900, textTransform: 'uppercase' }}>Obrigações & Pagamentos</h2>
-                {filter && (
-                    <div style={{ backgroundColor: '#fff7ed', padding: '8px 16px', border: '2px solid #f97316', fontWeight: 800, color: '#c2410c' }}>
-                        Filtro Ativo: {filter.toUpperCase()}
-                    </div>
-                )}
-            </div>
+        <PageContainer>
+            <PageHeader
+                title="Obrigações & Pagamentos"
+                actions={
+                    filter ? (
+                        <div style={{ backgroundColor: '#fff7ed', padding: '8px 16px', border: '2px solid #f97316', fontWeight: 800, color: '#c2410c' }}>
+                            Filtro Ativo: {filter.toUpperCase()}
+                        </div>
+                    ) : undefined
+                }
+            />
 
-            <div style={{ 
-                backgroundColor: 'var(--color-bg-surface)', 
-                border: '2px solid var(--color-border)', 
-                boxShadow: 'var(--shadow-brutal)',
-                overflowX: 'auto'
-            }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                    <thead style={{ backgroundColor: 'var(--color-border)', color: '#fff' }}>
+            <StandardTable isEmpty={!data.pagedResult || data.pagedResult.items.length === 0}>
+                <thead>
                         <tr>
                             <th style={{ padding: '16px', fontWeight: 900, textTransform: 'uppercase' }}>Identificação</th>
                             <th style={{ padding: '16px', fontWeight: 900, textTransform: 'uppercase' }}>Fornecedor</th>
@@ -166,8 +164,7 @@ export default function FinancePaymentsList() {
                             </tr>
                         )}
                     </tbody>
-                </table>
-            </div>
+            </StandardTable>
 
             <FinanceActionModal
                 show={actionModal.show}
@@ -178,6 +175,6 @@ export default function FinancePaymentsList() {
                 feedback={feedback}
                 onCloseFeedback={() => setFeedback({ type: 'success', message: null })}
             />
-        </div>
+        </PageContainer>
     );
 }

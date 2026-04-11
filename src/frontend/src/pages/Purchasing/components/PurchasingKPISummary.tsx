@@ -1,5 +1,5 @@
 import { ClipboardList, Clock, AlertCircle, DollarSign, Package } from 'lucide-react';
-import { KPICard } from '../../../components/common/dashboard/KPICard';
+import { KPICard } from '../../../components/ui/KPICard';
 import { PurchasingSummaryDto } from '../../../types';
 
 interface PurchasingKPISummaryProps {
@@ -12,36 +12,36 @@ export function PurchasingKPISummary({ summary }: PurchasingKPISummaryProps) {
             id: 'total',
             label: 'Total Pedidos Abertos',
             count: summary.totalActiveRequests,
-            icon: ClipboardList,
-            color: 'bg-blue-400'
+            icon: <ClipboardList size={20} />,
+            color: '#60a5fa' // blue-400
         },
         {
             id: 'quotation',
             label: 'Em Cotação',
             count: summary.waitingQuotation,
-            icon: Clock,
-            color: 'bg-amber-400'
+            icon: <Clock size={20} />,
+            color: '#fbbf24' // amber-400
         },
         {
             id: 'approval',
             label: 'Aguardando Aprovação',
             count: summary.awaitingApproval,
-            icon: AlertCircle,
-            color: 'bg-rose-400'
+            icon: <AlertCircle size={20} />,
+            color: '#fb7185' // rose-400
         },
         {
             id: 'payment',
             label: 'Aguardando Pagamento',
             count: summary.awaitingPayment,
-            icon: DollarSign,
-            color: 'bg-violet-400'
+            icon: <DollarSign size={20} />,
+            color: '#a78bfa' // violet-400
         },
         {
             id: 'receiving',
             label: 'Recebimentos Pendentes',
             count: summary.pendingReceiving,
-            icon: Package,
-            color: 'bg-emerald-400'
+            icon: <Package size={20} />,
+            color: '#34d399' // emerald-400
         }
     ];
 
@@ -55,13 +55,10 @@ export function PurchasingKPISummary({ summary }: PurchasingKPISummaryProps) {
             {cards.map((card, index) => (
                 <KPICard
                     key={card.id}
-                    label={card.label}
-                    count={card.count}
+                    title={card.label}
+                    value={card.count}
                     icon={card.icon}
-                    isActive={false} // No filtering on landing page cards for now
-                    onClick={() => {}} 
                     color={card.color}
-                    delay={index * 0.1}
                 />
             ))}
         </div>

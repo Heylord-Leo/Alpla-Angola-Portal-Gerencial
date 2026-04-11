@@ -12,6 +12,9 @@ import { AlertCircle, Building2, User, Landmark, ShieldCheck, Inbox, ChevronRigh
 import { formatDate, formatCurrencyAO, getUrgencyStyle } from '../../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DropdownPortal } from '../../components/ui/DropdownPortal';
+import { PageContainer } from '../../components/ui/PageContainer';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { StandardTable } from '../../components/ui/StandardTable';
 import { QueueSummary } from './components/QueueSummary';
 import { Tooltip } from '../../components/ui/Tooltip';
 
@@ -389,7 +392,7 @@ export function ApprovalCenter() {
     const totalPending = (data?.areaApprovals?.length || 0) + (data?.finalApprovals?.length || 0);
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', minWidth: 0 }}>
+        <PageContainer>
             {/* Feedback */}
             {feedback.message && (
                 <div style={{ position: 'sticky', top: 'calc(var(--header-height) - 1rem)', zIndex: 10, backgroundColor: 'var(--color-bg-surface)', padding: '2rem 0 0 0', margin: '-2rem 0 0 0', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -398,17 +401,17 @@ export function ApprovalCenter() {
             )}
 
             {/* Page Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '4px solid var(--color-primary)', paddingBottom: '16px', width: '100%', minWidth: 0 }}>
-                <div>
-                    <h1 style={{ margin: 0, fontSize: '2.5rem', color: 'var(--color-primary)' }}>Centro de Aprovações</h1>
-                    <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Workspace centralizado para decisões e aprovações de Procurement.</p>
-                </div>
-                {totalPending > 0 && (
-                    <span style={{ backgroundColor: 'var(--color-primary)', color: 'white', padding: '6px 16px', fontWeight: 800, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        {totalPending} PENDENTE{totalPending > 1 ? 'S' : ''}
-                    </span>
-                )}
-            </div>
+            <PageHeader
+                title="Centro de Aprovações"
+                subtitle="Workspace centralizado para decisões e aprovações de Procurement."
+                actions={
+                    totalPending > 0 ? (
+                        <span style={{ backgroundColor: 'var(--color-primary)', color: 'white', padding: '6px 16px', fontWeight: 800, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderRadius: '4px' }}>
+                            {totalPending} PENDENTE{totalPending > 1 ? 'S' : ''}
+                        </span>
+                    ) : undefined
+                }
+            />
 
             {/* Queue Summary — KPI Cards (Phase 4) */}
             <QueueSummary areaApprovals={data?.areaApprovals || []} finalApprovals={data?.finalApprovals || []} />
@@ -715,7 +718,7 @@ export function ApprovalCenter() {
                     </DropdownPortal>
                 )}
             </AnimatePresence>
-        </div>
+        </PageContainer>
     );
 }
 
@@ -766,9 +769,8 @@ function ApprovalQueueSection({ title, icon, requests, showCostCenter, selectedI
             </div>
 
             {/* Table — matches Pedidos border/shadow pattern */}
-            <div style={{ overflowX: 'auto', width: '100%', border: '2px solid var(--color-primary)', boxShadow: 'var(--shadow-brutal)' }}>
-                <table style={{ border: 'none', boxShadow: 'none', minWidth: '900px' }}>
-                    <thead>
+            <StandardTable isEmpty={requests.length === 0}>
+                <thead>
                         <tr>
                             <th>Pedido</th>
                             <th>Solicitante / Depto</th>
@@ -853,8 +855,7 @@ function ApprovalQueueSection({ title, icon, requests, showCostCenter, selectedI
                             );
                         })}
                     </tbody>
-                </table>
-            </div>
+            </StandardTable>
         </section>
     );
 }

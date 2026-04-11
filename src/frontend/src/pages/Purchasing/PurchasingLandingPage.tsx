@@ -7,6 +7,8 @@ import { PurchasingHelpDrawer } from './components/PurchasingHelpDrawer';
 import { PurchasingSummaryDto } from '../../types';
 import { Feedback } from '../../components/ui/Feedback';
 import { LayoutGrid, PlayCircle } from 'lucide-react';
+import { PageContainer } from '../../components/ui/PageContainer';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 export default function PurchasingLandingPage() {
     const [summary, setSummary] = useState<PurchasingSummaryDto | null>(null);
@@ -31,29 +33,13 @@ export default function PurchasingLandingPage() {
     }, []);
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '32px', width: '100%', minWidth: 0 }}>
+        <PageContainer>
             
             {/* Header Section */}
-            <div style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center', 
-                borderBottom: '4px solid var(--color-primary)', 
-                paddingBottom: '24px', 
-                width: '100%' 
-            }}>
-                <div>
-                    <h1 style={{ margin: 0, fontSize: '2.8rem', fontWeight: 900, color: 'var(--color-primary)', textTransform: 'uppercase', letterSpacing: '-0.02em' }}>
-                        Compras & Logística
-                    </h1>
-                    <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', fontSize: '0.9rem' }}>
-                        Cockpit Operacional • Portal Gerencial ALPLA
-                    </p>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', opacity: 0.6 }}>
-                    <LayoutGrid size={32} strokeWidth={2.5} />
-                </div>
-            </div>
+            <PageHeader
+                title="Compras & Logística"
+                subtitle="Cockpit Operacional • Portal Gerencial ALPLA"
+            />
 
             {error && <Feedback type="error" message={error} onClose={() => setError(null)} />}
 
@@ -158,6 +144,6 @@ export default function PurchasingLandingPage() {
                 isOpen={isHelpDrawerOpen} 
                 onClose={() => setIsHelpDrawerOpen(false)} 
             />
-        </div>
+        </PageContainer>
     );
 }

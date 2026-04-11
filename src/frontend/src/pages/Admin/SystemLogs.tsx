@@ -7,6 +7,9 @@ import {
   ChevronLeft, ChevronRight, X, RefreshCw, ShieldAlert, Download, Copy, Play, Pause, Activity
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip as RechartsTooltip, ResponsiveContainer, YAxis } from 'recharts';
+import { PageContainer } from '../../components/ui/PageContainer';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { StandardTable } from '../../components/ui/StandardTable';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -227,16 +230,12 @@ export function SystemLogs() {
     header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '4px solid var(--color-primary)', paddingBottom: '16px', width: '100%', minWidth: 0 } as React.CSSProperties,
     title: { margin: 0, fontSize: '2.5rem', fontWeight: 900, color: 'var(--color-primary)', fontFamily: 'var(--font-family-display)', textTransform: 'uppercase', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 16 } as React.CSSProperties,
     subtitle: { margin: '8px 0 0', color: 'var(--color-text-muted)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', fontSize: '0.875rem' } as React.CSSProperties,
-    filtersCard: { backgroundColor: 'var(--color-bg-surface)', padding: '16px', boxShadow: 'var(--shadow-brutal)', border: '2px solid var(--color-primary)', display: 'flex', flexDirection: 'column', gap: '16px' } as React.CSSProperties,
+    filtersCard: { backgroundColor: 'var(--color-bg-surface)', padding: '16px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', gap: '16px' } as React.CSSProperties,
     filtersGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 } as React.CSSProperties,
-    input: { width: '100%', padding: '10px 12px', border: '2px solid var(--color-border)', fontSize: '0.85rem', boxSizing: 'border-box', fontWeight: 600, outline: 'none' } as React.CSSProperties,
-    select: { width: '100%', padding: '10px 12px', border: '2px solid var(--color-border)', fontSize: '0.85rem', background: 'var(--color-bg-surface)', boxSizing: 'border-box', fontWeight: 600, outline: 'none' } as React.CSSProperties,
-    btnPrimary: { padding: '0.75rem 1.5rem', background: 'var(--color-primary)', color: '#fff', border: 'none', fontWeight: 800, cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 8, textTransform: 'uppercase', boxShadow: '4px 4px 0px var(--color-border-heavy)' } as React.CSSProperties,
-    btnSecondary: { padding: '0.75rem 1rem', background: 'var(--color-bg-surface)', color: 'var(--color-text-muted)', border: '2px solid var(--color-border)', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem', textTransform: 'uppercase' } as React.CSSProperties,
-    table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: '0.85rem' },
-    th: { padding: '12px', background: 'var(--color-bg-main)', color: 'var(--color-text-main)', fontWeight: 800, textAlign: 'left' as const, fontSize: '0.75rem', letterSpacing: '0.05em', textTransform: 'uppercase' as const, borderBottom: '2px solid var(--color-border-heavy)' },
-    td: { padding: '12px', borderBottom: '1px solid var(--color-border-light)', verticalAlign: 'top' as const },
-    trHover: { background: 'var(--color-bg-surface)' },
+    input: { width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', boxSizing: 'border-box', fontWeight: 600, outline: 'none' } as React.CSSProperties,
+    select: { width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', background: 'var(--color-bg-surface)', boxSizing: 'border-box', fontWeight: 600, outline: 'none' } as React.CSSProperties,
+    btnPrimary: { padding: '0.75rem 1.5rem', background: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: 'var(--radius-md)', fontWeight: 800, cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 8, textTransform: 'uppercase' } as React.CSSProperties,
+    btnSecondary: { padding: '0.75rem 1rem', background: 'var(--color-bg-surface)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem', textTransform: 'uppercase' } as React.CSSProperties,
     pagination: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, justifyContent: 'flex-end' } as React.CSSProperties,
     modalOverlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', zIndex: Z_INDEX.MODAL, padding: 24 },
     modalBox: { background: 'var(--color-bg-surface)', width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' as const, borderRadius: 0, border: '2px solid var(--color-border-heavy)', boxShadow: 'var(--shadow-brutal)', padding: 24 },
@@ -244,23 +243,20 @@ export function SystemLogs() {
     codeBlock: { background: 'var(--color-bg-main)', padding: 12, border: '1px solid var(--color-border)', fontSize: '0.75rem', fontFamily: 'monospace', whiteSpace: 'pre-wrap' as const, wordBreak: 'break-word' as const, overflowX: 'auto' as const },
   };
 
+    // Columns moved directly to render function for StandardTable
+
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div style={s.page}>
+    <PageContainer>
       {/* Header */}
-      <div style={s.header}>
-        <div style={s.title}>
-          <FileText size={20} /> Logs do Sistema
-        </div>
-        <div>
-          <p style={s.subtitle}>
-            Registo de eventos operacionais auditáveis.
-          </p>
-          <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-            <button onClick={() => applyPreset('ERRORS_24H')} style={{...s.btnSecondary, padding: '4px 8px', fontSize: 11}}>Erros (Últimas 24h)</button>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Logs do Sistema"
+        icon={<FileText size={32} strokeWidth={2.5} />}
+        subtitle="Registo de eventos operacionais auditáveis."
+        actions={
+          <button onClick={() => applyPreset('ERRORS_24H')} style={{...s.btnSecondary, padding: '6px 12px', fontSize: 13}}>Erros (Últimas 24h)</button>
+        }
+      />
 
       {/* Activity Graph */}
       {activity.length > 0 && (
@@ -345,57 +341,65 @@ export function SystemLogs() {
       )}
 
       {/* Table */}
-      <div style={{ overflowX: 'auto', border: '2px solid var(--color-border-heavy)', boxShadow: 'var(--shadow-brutal)' }}>
-        <table style={s.table}>
-          <thead>
-            <tr>
-              <th style={s.th}>Data / Hora</th>
-              <th style={s.th}>Nível</th>
-              <th style={s.th}>Fonte</th>
-              <th style={s.th}>Tipo de Evento</th>
-              <th style={s.th}>Mensagem</th>
-              <th style={s.th}>Correlation ID</th>
-              <th style={{ ...s.th, width: 48 }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {!loading && (!data || data.items.length === 0) && (
-              <tr>
-                <td colSpan={7} style={{ ...s.td, textAlign: 'center', color: 'var(--color-text-muted)', padding: 32, fontWeight: 600 }}>
-                  {data ? 'Nenhum log encontrado com os filtros aplicados.' : 'Execute uma pesquisa para carregar logs.'}
-                </td>
-              </tr>
-            )}
-            {data?.items.map((entry, i) => (
-              <tr key={entry.id} style={i % 2 === 0 ? {} : s.trHover}>
-                <td style={{ ...s.td, whiteSpace: 'nowrap', color: 'var(--color-text-muted)', fontSize: '0.75rem', fontWeight: 600 }}>{formatDate(entry.timestampUtc)}</td>
-                <td style={s.td}><LevelBadge level={entry.level} /></td>
-                <td style={s.td}><SourceBadge source={entry.source} /></td>
-                <td style={{ ...s.td, fontFamily: 'monospace', fontSize: '0.7rem', color: 'var(--color-text-main)', fontWeight: 600 }}>{entry.eventType}</td>
-                <td style={{ ...s.td, maxWidth: 300 }}>
+      <StandardTable
+        loading={loading}
+        loadingState={<div style={{ padding: '64px', textAlign: 'center', color: 'var(--color-text-muted)' }}>Carregando...</div>}
+        isEmpty={!data?.items || data.items.length === 0}
+        emptyState={
+          <div style={{ padding: '64px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+            Nenhum log encontrado com os filtros aplicados.
+          </div>
+        }
+      >
+        <thead>
+          <tr style={{ borderBottom: '2px solid var(--color-border)', textAlign: 'left', color: 'var(--color-text-muted)' }}>
+            <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase' }}>Data / Hora</th>
+            <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase' }}>Nível</th>
+            <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase' }}>Fonte</th>
+            <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase' }}>Tipo de Evento</th>
+            <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase' }}>Mensagem</th>
+            <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase' }}>Correlation ID</th>
+            <th style={{ padding: '16px', width: '48px' }}></th>
+          </tr>
+        </thead>
+        <tbody style={{ backgroundColor: 'white' }}>
+          {data?.items.map((entry) => (
+            <tr key={entry.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+              <td style={{ padding: '16px' }}>
+                <span style={{ whiteSpace: 'nowrap', color: 'var(--color-text-muted)', fontSize: '0.75rem', fontWeight: 600 }}>{formatDate(entry.timestampUtc)}</span>
+              </td>
+              <td style={{ padding: '16px' }}><LevelBadge level={entry.level} /></td>
+              <td style={{ padding: '16px' }}><SourceBadge source={entry.source} /></td>
+              <td style={{ padding: '16px' }}>
+                <span style={{ fontFamily: 'monospace', fontSize: '0.7rem', color: 'var(--color-text-main)', fontWeight: 600 }}>{entry.eventType}</span>
+              </td>
+              <td style={{ padding: '16px' }}>
+                <div style={{ maxWidth: 300 }}>
                   <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                     {entry.message}
                   </span>
                   {(entry.hasExceptionDetail || entry.hasPayload) && (
                     <span style={{ fontSize: '0.65rem', color: 'var(--color-status-red)', fontWeight: 800, marginLeft: 4, textTransform: 'uppercase' }}>+ detalhe</span>
                   )}
-                </td>
-                <td style={{ ...s.td, fontFamily: 'monospace', fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>{entry.correlationId ?? '—'}</td>
-                <td style={s.td}>
-                  <button
-                    id={`log-detail-btn-${entry.id}`}
-                    title="Ver detalhe"
-                    onClick={() => setSelectedId(entry.id)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)', padding: 4 }}
-                  >
-                    <Eye size={18} strokeWidth={2.5} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                </div>
+              </td>
+              <td style={{ padding: '16px' }}>
+                <span style={{ fontFamily: 'monospace', fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>{entry.correlationId ?? '—'}</span>
+              </td>
+              <td style={{ padding: '16px', textAlign: 'right' }}>
+                <button
+                  id={`log-detail-btn-${entry.id}`}
+                  title="Ver detalhe"
+                  onClick={() => setSelectedId(entry.id)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)', padding: 4 }}
+                >
+                  <Eye size={18} strokeWidth={2.5} />
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </StandardTable>
 
       {/* Pagination */}
       {data && data.totalPages > 1 && (
@@ -615,6 +619,6 @@ export function SystemLogs() {
           </div>
         </DropdownPortal>
       )}
-    </div>
+    </PageContainer>
   );
 }

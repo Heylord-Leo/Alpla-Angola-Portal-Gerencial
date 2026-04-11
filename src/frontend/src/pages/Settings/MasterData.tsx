@@ -4,7 +4,9 @@ import { LookupDto, CurrencyDto, UserDto } from '../../types';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { KebabMenu } from '../../components/ui/KebabMenu';
 import { ROLES } from '../../constants/roles';
-import { Edit2, Power, PowerOff } from 'lucide-react';
+import { Edit2, Power, PowerOff, Database } from 'lucide-react';
+import { PageContainer } from '../../components/ui/PageContainer';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 function debounce<T extends (...args: any[]) => void>(fn: T, delay: number) {
     let timeoutId: number | undefined;
@@ -258,8 +260,8 @@ export function MasterData() {
     if (loading && units.length === 0) return <div className="p-4">A carregar...</div>;
 
     return (
-        <div className="p-6 max-w-5xl mx-auto relative">
-            <div className="sticky top-0 z-50 mb-4 bg-white/80 backdrop-blur-sm -mx-6 px-6 pt-2">
+        <PageContainer>
+            <div className="sticky top-0 z-50 mb-4 bg-white/80 backdrop-blur-sm -mx-6 px-6 pt-2" style={{ marginTop: '-1rem' }}>
                 {feedback && (
                     <Feedback
                         message={feedback.message}
@@ -269,12 +271,13 @@ export function MasterData() {
                 )}
             </div>
 
-            {/* Header matches RequestsList.tsx style */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '4px solid var(--color-primary)', paddingBottom: '16px', width: '100%', minWidth: 0, marginBottom: '32px' }}>
-                <div>
-                    <h1 style={{ margin: 0, fontSize: '2.5rem', color: 'var(--color-primary)' }}>Dados Mestres</h1>
-                    <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Gerenciamento de entidades e parâmetros fundamentais do sistema.</p>
-                </div>
+            {/* Header */}
+            <div style={{ marginBottom: '32px' }}>
+                <PageHeader
+                    title="Dados Mestres"
+                    subtitle="Gerenciamento de entidades e parâmetros fundamentais do sistema."
+                    icon={<Database size={32} strokeWidth={2.5} />}
+                />
             </div>
 
             {/* Standard Underline Tab Navigation */}
@@ -321,9 +324,8 @@ export function MasterData() {
                 <div style={{
                     backgroundColor: 'var(--color-bg-surface)',
                     padding: '32px',
-                    borderRadius: 'var(--radius-md)',
-                    boxShadow: 'var(--shadow-brutal)',
-                    border: '2px solid var(--color-border-heavy)',
+                    borderRadius: 'var(--radius-lg)',
+                    border: '1px solid var(--color-border)',
                     position: 'sticky',
                     top: 'calc(var(--header-height) + 1rem)'
                 }}>
@@ -658,12 +660,10 @@ export function MasterData() {
                     </form>
                 </div>
 
-                {/* Table Column - Styled as a standard card */}
                 <div style={{
                     backgroundColor: 'var(--color-bg-surface)',
-                    borderRadius: 'var(--radius-md)',
-                    boxShadow: 'var(--shadow-brutal)',
-                    border: '2px solid var(--color-border-heavy)',
+                    borderRadius: 'var(--radius-lg)',
+                    border: '1px solid var(--color-border)',
                     overflow: 'hidden'
                 }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
@@ -967,6 +967,6 @@ export function MasterData() {
                     </table>
                 </div>
             </div>
-        </div>
+        </PageContainer>
     );
 }

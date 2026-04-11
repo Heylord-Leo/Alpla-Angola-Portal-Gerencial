@@ -23,6 +23,10 @@ import { DropdownPortal } from '../../components/ui/DropdownPortal';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { ROLE_DESCRIPTIONS } from '../../constants/roles';
 import { Z_INDEX } from '../../constants/ui';
+import { PageContainer } from '../../components/ui/PageContainer';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { SearchFilterBar } from '../../components/ui/SearchFilterBar';
+import { StandardTable } from '../../components/ui/StandardTable';
 
 interface UserListDto {
     id: string;
@@ -233,73 +237,56 @@ export default function UserManagement() {
 
     // ─── Styles ─────────────────────────────────────────────────────────────────
     const s = {
-        page: { display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', minWidth: 0 } as React.CSSProperties,
-        header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '4px solid var(--color-primary)', paddingBottom: '16px', width: '100%', minWidth: 0 } as React.CSSProperties,
-        breadcrumbs: { fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: 4 },
-        title: { margin: 0, fontSize: '2.5rem', fontWeight: 900, color: 'var(--color-primary)', fontFamily: 'var(--font-family-display)', textTransform: 'uppercase' as const, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 16 } as React.CSSProperties,
-        filtersCard: { backgroundColor: 'var(--color-bg-surface)', padding: '16px', boxShadow: 'var(--shadow-brutal)', border: '2px solid var(--color-primary)', display: 'flex', flexWrap: 'wrap' as const, gap: '16px', alignItems: 'center' } as React.CSSProperties,
-        input: { padding: '10px 12px', border: '2px solid var(--color-border)', fontSize: '0.85rem', fontWeight: 600, outline: 'none', background: 'var(--color-bg-page)' } as React.CSSProperties,
-        select: { padding: '10px 12px', border: '2px solid var(--color-border)', fontSize: '0.85rem', background: 'var(--color-bg-page)', color: 'var(--color-text-main)', fontWeight: 600, outline: 'none' } as React.CSSProperties,
-        labelSm: { fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4, display: 'block' },
-        tableContainer: { overflowX: 'auto' as const, border: '2px solid var(--color-primary)', boxShadow: 'var(--shadow-brutal)', background: 'var(--color-bg-surface)' },
-        table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: '0.85rem' },
-        th: { padding: '12px 16px', background: 'var(--color-bg-page)', color: 'var(--color-text-main)', fontWeight: 800, textAlign: 'left' as const, fontSize: '0.75rem', letterSpacing: '0.05em', textTransform: 'uppercase' as const, borderBottom: '1px solid var(--color-border)' },
-        td: { padding: '12px 16px', borderBottom: '1px solid var(--color-border)', verticalAlign: 'middle' as const },
-        trHover: { background: 'var(--color-bg-page)' },
-        badge: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase' as const, border: '1px solid currentColor' },
         drawerOverlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'flex-end', zIndex: Z_INDEX.DRAWER },
         drawer: { background: 'var(--color-bg-surface)', width: '100%', maxWidth: 560, height: '100vh', display: 'flex', flexDirection: 'column' as const, borderLeft: '4px solid var(--color-primary)', boxShadow: '-8px 0 24px rgba(0,0,0,0.2)' },
         drawerHeader: { padding: '24px', background: 'var(--color-bg-page)', borderBottom: '2px solid var(--color-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
         drawerBody: { flex: 1, overflowY: 'auto' as const, padding: '32px', display: 'flex', flexDirection: 'column' as const, gap: '24px' },
-        drawerFooter: { padding: '20px 32px', borderTop: '2px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: 12, background: 'var(--color-bg-page)' }
+        drawerFooter: { padding: '20px 32px', borderTop: '2px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: 12, background: 'var(--color-bg-page)' },
+        input: { padding: '10px 12px', border: '2px solid var(--color-border)', fontSize: '0.85rem', fontWeight: 600, outline: 'none', background: 'var(--color-bg-page)' } as React.CSSProperties,
+        labelSm: { fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4, display: 'block' },
+        badge: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase' as const, border: '1px solid currentColor' }
     };
 
+    // Columns moved directly to render function for StandardTable
+
     return (
-        <div style={s.page}>
+        <PageContainer>
             {/* Header */}
-            <div style={s.header}>
-                <div>
-                    <div style={s.breadcrumbs}>
-                        <Link to="/admin" style={{ color: 'inherit' }}>Administração</Link>
+            <PageHeader
+                title="Gestão de Utilizadores"
+                icon={<Users size={32} strokeWidth={2.5} />}
+                subtitle={
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Link to="/admin" style={{ color: 'inherit', textDecoration: 'none' }}>Administração</Link>
                         <ChevronRight size={12} />
-                        <span>Gestão de Utilizadores</span>
-                    </div>
-                    <h1 style={s.title}>
-                        <Users size={32} strokeWidth={2.5} /> Gestão de Utilizadores
-                    </h1>
-                </div>
-                <button onClick={handleOpenCreate} className="btn btn-primary" style={{ marginBottom: 4 }}>
-                    <Plus size={18} /> Criar Utilizador
-                </button>
-            </div>
+                        Gestão de Utilizadores
+                    </span>
+                }
+                actions={
+                    <button onClick={handleOpenCreate} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Plus size={18} /> Criar Utilizador
+                    </button>
+                }
+            />
 
             {/* Filters */}
-            <div style={s.filtersCard}>
-                <div style={{ flex: 1, minWidth: '300px', position: 'relative' }}>
-                    <Search size={16} style={{ position: 'absolute', left: 12, top: 12, opacity: 0.5 }} />
-                    <input 
-                        style={{ ...s.input, width: '100%', paddingLeft: 40 }}
-                        placeholder="Pesquisar por nome ou e-mail..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <span style={s.labelSm}>Estado:</span>
-                    <select 
-                        style={s.select}
-                        value={statusFilter}
-                        onChange={(e: any) => setStatusFilter(e.target.value)}
-                    >
-                        <option value="all">Todos</option>
-                        <option value="active">Ativos</option>
-                        <option value="inactive">Inativos</option>
-                    </select>
-                </div>
-                <button onClick={loadData} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)', padding: 8 }}>
-                    <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
-                </button>
-            </div>
+            <SearchFilterBar
+                searchValue={searchTerm}
+                onSearchChange={setSearchTerm}
+                searchPlaceholder="Pesquisar por nome ou e-mail..."
+                tabs={[
+                    { id: 'all', label: 'Todos' },
+                    { id: 'active', label: 'Ativos' },
+                    { id: 'inactive', label: 'Inativos' }
+                ]}
+                activeTabId={statusFilter}
+                onTabChange={(id) => setStatusFilter(id as any)}
+                actions={
+                    <button onClick={loadData} style={{ background: 'var(--color-bg-page)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', padding: '8px 12px', borderRadius: 'var(--radius-md)' }}>
+                        <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
+                    </button>
+                }
+            />
 
             {/* Error Banner */}
             {error && (
@@ -310,89 +297,94 @@ export default function UserManagement() {
             )}
 
             {/* Table */}
-            <div style={s.tableContainer}>
-                <table style={s.table}>
-                    <thead>
-                        <tr>
-                            <th style={s.th}>Utilizador / E-mail</th>
-                            <th style={{ ...s.th, textAlign: 'center' }}>Estado</th>
-                            <th style={s.th}>Funções</th>
-                            <th style={s.th}>Escopo de Atuação</th>
-                            <th style={{ ...s.th, width: 80, textAlign: 'right' }}>Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {isLoading && users.length === 0 ? (
-                            <tr><td colSpan={5} style={{ ...s.td, textAlign: 'center', padding: 48, color: 'var(--color-text-muted)', fontWeight: 600 }}>A carregar utilizadores...</td></tr>
-                        ) : filteredUsers.length === 0 ? (
-                            <tr><td colSpan={5} style={{ ...s.td, textAlign: 'center', padding: 48, color: 'var(--color-text-muted)', fontWeight: 600 }}>Nenhum utilizador encontrado.</td></tr>
-                        ) : filteredUsers.map((user, i) => (
-                            <tr key={user.id} style={i % 2 === 0 ? {} : s.trHover}>
-                                <td style={s.td}>
+            <StandardTable
+                loading={isLoading}
+                loadingState={<div style={{ padding: '64px', textAlign: 'center', color: 'var(--color-text-muted)' }}>A carregar utilizadores...</div>}
+                isEmpty={filteredUsers.length === 0}
+                emptyState={
+                    <div style={{ padding: '64px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                        {searchTerm ? 'Nenhum utilizador encontrado com estes filtros.' : 'Sem utilizadores listados.'}
+                    </div>
+                }
+            >
+                <thead>
+                    <tr style={{ borderBottom: '2px solid var(--color-border)', textAlign: 'left', color: 'var(--color-text-muted)' }}>
+                        <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase' }}>Utilizador / E-mail</th>
+                        <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', textAlign: 'center' }}>Estado</th>
+                        <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase' }}>Funções</th>
+                        <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase' }}>Escopo de Atuação</th>
+                        <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', textAlign: 'right', width: '100px' }}>Ações</th>
+                    </tr>
+                </thead>
+                <tbody style={{ backgroundColor: 'white' }}>
+                    {filteredUsers.map(user => (
+                        <tr key={user.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                            <td style={{ padding: '16px' }}>
+                                <div>
                                     <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>{user.fullName}</div>
                                     <div style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem', fontWeight: 600 }}>{user.email}</div>
-                                </td>
-                                <td style={{ ...s.td, textAlign: 'center' }}>
-                                    {user.isActive ? (
-                                        <span style={{ ...s.badge, color: 'var(--color-status-green)', background: 'var(--color-status-green)10' }}>
-                                            <CheckCircle2 size={12} /> Ativo
+                                </div>
+                            </td>
+                            <td style={{ padding: '16px', textAlign: 'center' }}>
+                                {user.isActive ? (
+                                    <span style={{ ...s.badge, color: 'var(--color-status-green)', background: 'var(--color-status-green)10' }}>
+                                        <CheckCircle2 size={12} /> Ativo
+                                    </span>
+                                ) : (
+                                    <span style={{ ...s.badge, color: 'var(--color-status-red)', background: 'var(--color-status-red)10' }}>
+                                        <XCircle size={12} /> Inativo
+                                    </span>
+                                )}
+                            </td>
+                            <td style={{ padding: '16px' }}>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                    {user.roles.map(role => (
+                                        <span key={role} style={{ ...s.badge, color: 'var(--color-primary)', background: 'var(--color-primary)10', fontSize: '9px' }}>
+                                            <Shield size={10} /> {role}
                                         </span>
-                                    ) : (
-                                        <span style={{ ...s.badge, color: 'var(--color-status-red)', background: 'var(--color-status-red)10' }}>
-                                            <XCircle size={12} /> Inativo
-                                        </span>
-                                    )}
-                                </td>
-                                <td style={s.td}>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                        {user.roles.map(role => (
-                                            <span key={role} style={{ ...s.badge, color: 'var(--color-primary)', background: 'var(--color-primary)10', fontSize: '9px' }}>
-                                                <Shield size={10} /> {role}
+                                    ))}
+                                </div>
+                            </td>
+                            <td style={{ padding: '16px' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                        {user.plants.length > 0 ? user.plants.map(p => (
+                                            <span key={p} style={{ fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, background: 'var(--color-bg-page)', padding: '2px 6px', border: '1px solid var(--color-border)' }}>
+                                                <MapPin size={10} /> {p}
                                             </span>
-                                        ))}
+                                        )) : <span style={{ fontSize: '10px', fontStyle: 'italic', color: 'var(--color-text-muted)' }}>Nenhuma Planta</span>}
                                     </div>
-                                </td>
-                                <td style={s.td}>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                                            {user.plants.length > 0 ? user.plants.map(p => (
-                                                <span key={p} style={{ fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, background: 'var(--color-bg-page)', padding: '2px 6px', border: '1px solid var(--color-border)' }}>
-                                                    <MapPin size={10} /> {p}
-                                                </span>
-                                            )) : <span style={{ fontSize: '10px', fontStyle: 'italic', color: 'var(--color-text-muted)' }}>Nenhuma Planta</span>}
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                        {user.departments.length > 0 ? user.departments.map(d => (
+                                            <span key={d} style={{ fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, background: 'var(--color-bg-page)', padding: '2px 6px', border: '1px solid var(--color-border)' }}>
+                                                <Building2 size={10} /> {d}
+                                            </span>
+                                        )) : <span style={{ fontSize: '10px', fontStyle: 'italic', color: 'var(--color-text-muted)' }}>Nenhum Departamento</span>}
+                                    </div>
+                                </div>
+                            </td>
+                            <td style={{ padding: '16px', textAlign: 'right' }}>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
+                                    {user.canEdit ? (
+                                        <>
+                                            <button onClick={() => handleOpenEdit(user.id)} title="Editar" style={{ padding: 6, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                                                <Edit2 size={18} />
+                                            </button>
+                                            <button onClick={() => handleResetPassword(user.id, user.email)} title="Repor Palavra-passe" style={{ padding: 6, color: 'var(--color-status-orange)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                                                <Key size={18} />
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <div title="Sem permissão (Fora do escopo)" style={{ opacity: 0.3, padding: 6 }}>
+                                            <Lock size={18} />
                                         </div>
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                                            {user.departments.length > 0 ? user.departments.map(d => (
-                                                <span key={d} style={{ fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, background: 'var(--color-bg-page)', padding: '2px 6px', border: '1px solid var(--color-border)' }}>
-                                                    <Building2 size={10} /> {d}
-                                                </span>
-                                            )) : <span style={{ fontSize: '10px', fontStyle: 'italic', color: 'var(--color-text-muted)' }}>Nenhum Departamento</span>}
-                                        </div>
-                                    </div>
-                                </td>
-                                <td style={{ ...s.td, textAlign: 'right' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
-                                        {user.canEdit ? (
-                                            <>
-                                                <button onClick={() => handleOpenEdit(user.id)} title="Editar" style={{ padding: 6, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer' }}>
-                                                    <Edit2 size={18} />
-                                                </button>
-                                                <button onClick={() => handleResetPassword(user.id, user.email)} title="Repor Palavra-passe" style={{ padding: 6, color: 'var(--color-status-orange)', background: 'none', border: 'none', cursor: 'pointer' }}>
-                                                    <Key size={18} />
-                                                </button>
-                                            </>
-                                        ) : (
-                                            <div title="Sem permissão (Fora do escopo)" style={{ opacity: 0.3, padding: 6 }}>
-                                                <Lock size={18} />
-                                            </div>
-                                        )}
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
+                                    )}
+                                </div>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </StandardTable>
 
             {/* Edit / Create Right-Side Drawer */}
             {isDrawerOpen && (
@@ -526,6 +518,6 @@ export default function UserManagement() {
                     </div>
                 </DropdownPortal>
             )}
-        </div>
+        </PageContainer>
     );
 }

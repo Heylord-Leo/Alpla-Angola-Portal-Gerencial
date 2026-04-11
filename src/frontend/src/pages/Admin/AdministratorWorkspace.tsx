@@ -1,6 +1,8 @@
 import React from 'react';
 import { Shield, FileText, Activity, Network, ChevronRight, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { PageContainer } from '../../components/ui/PageContainer';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 interface AdminTileProps {
     to: string;
@@ -19,8 +21,9 @@ function AdminTile({ to, icon, title, description, color }: AdminTileProps) {
                 flexDirection: 'column', 
                 padding: '2rem', 
                 backgroundColor: 'var(--color-bg-surface)', 
-                border: '2px solid var(--color-border-heavy)',
-                boxShadow: 'var(--shadow-brutal)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-lg)',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
                 transition: 'all 0.2s ease',
                 cursor: 'pointer',
                 textDecoration: 'none',
@@ -56,28 +59,11 @@ function AdminTile({ to, icon, title, description, color }: AdminTileProps) {
 
 export function AdministratorWorkspace() {
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '4px solid var(--color-primary)', paddingBottom: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
-                    <div style={{ 
-                        backgroundColor: 'var(--color-primary)', 
-                        padding: '0.5rem', 
-                        display: 'flex', 
-                        border: '2px solid var(--color-primary)',
-                        color: 'white'
-                    }}>
-                        <Shield size={24} />
-                    </div>
-                    <div>
-                        <h1 style={{ margin: 0, fontSize: '2.5rem', fontWeight: 900, color: 'var(--color-primary)', textTransform: 'uppercase', letterSpacing: '-0.02em' }}>
-                            Workspace do Administrador
-                        </h1>
-                        <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', fontSize: '0.875rem' }}>
-                            Gestão técnica, diagnósticos e saúde do ecossistema Portal Gerencial
-                        </p>
-                    </div>
-                </div>
-            </header>
+        <PageContainer>
+            <PageHeader 
+                title="Workspace do Administrador"
+                subtitle="Gestão técnica, diagnósticos e saúde do ecossistema Portal Gerencial"
+            />
 
             <div style={{ 
                 display: 'grid', 
@@ -116,10 +102,10 @@ export function AdministratorWorkspace() {
             
             <style>{`
                 .admin-tile-hover:hover {
-                    transform: translateY(-4px);
-                    box-shadow: var(--shadow-brutal-hover) !important;
+                    transform: translateY(-2px);
+                    box-shadow: 0 8px 16px rgba(0,0,0,0.1) !important;
                 }
             `}</style>
-        </div>
+        </PageContainer>
     );
 }

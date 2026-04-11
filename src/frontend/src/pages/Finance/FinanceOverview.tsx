@@ -7,6 +7,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, 
     PieChart, Pie, Cell, Legend 
 } from 'recharts';
+import { KPICard } from '../../components/ui/KPICard';
 
 export default function FinanceOverview() {
     const [summary, setSummary] = useState<FinanceSummaryDto | null>(null);
@@ -130,52 +131,36 @@ export default function FinanceOverview() {
 
             {/* KPI Cards Row */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '24px' }}>
-                <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <span style={{ fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Aguardando Ação</span>
-                        <Clock size={20} color="#0284c7" />
-                    </div>
-                    <div style={{ fontSize: '2.5rem', fontWeight: 700, lineHeight: 1, color: 'var(--color-text)' }}>{summary.waitingFinanceAction}</div>
-                    <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>
-                        {formatCurrency(summary.pendingValue, summary.currencyCodes?.[0])}
-                    </div>
-                </div>
-
-                <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <span style={{ fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Agendados</span>
-                        <CheckCircle size={20} color="#ea580c" />
-                    </div>
-                    <div style={{ fontSize: '2.5rem', fontWeight: 700, lineHeight: 1, color: 'var(--color-text)' }}>{summary.scheduledPayments}</div>
-                    <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>
-                        {formatCurrency(summary.scheduledValue, summary.currencyCodes?.[0])}
-                    </div>
-                </div>
-
-                <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', borderRadius: '12px', border: '1px solid #fca5a5', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', gap: '8px' }} 
-                     onClick={() => navigate('/finance/payments?filter=overdue')}
-                     onMouseOver={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 12px rgba(239, 68, 68, 0.1)'; }}
-                     onMouseOut={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.05)'; }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <span style={{ fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', color: '#ef4444' }}>Pagtos. Vencidos</span>
-                        <AlertCircle size={20} color="#ef4444" />
-                    </div>
-                    <div style={{ fontSize: '2.5rem', fontWeight: 700, lineHeight: 1, color: '#ef4444' }}>{summary.overduePayments}</div>
-                    <div style={{ fontSize: '1.1rem', fontWeight: 600, color: '#ef4444' }}>
-                        {formatCurrency(summary.overdueValue, summary.currencyCodes?.[0])}
-                    </div>
-                </div>
-
-                <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <span style={{ fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Pago no Mês</span>
-                        <DollarSign size={20} color="#16a34a" />
-                    </div>
-                    <div style={{ fontSize: '2.5rem', fontWeight: 700, lineHeight: 1, color: '#16a34a' }}>{summary.completedThisMonth}</div>
-                    <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>
-                        {formatCurrency(summary.paidThisMonthValue, summary.currencyCodes?.[0])}
-                    </div>
-                </div>
+                <KPICard
+                    title="Aguardando Ação"
+                    value={summary.waitingFinanceAction}
+                    icon={<Clock size={20} />}
+                    color="#0284c7"
+                    subtitle={formatCurrency(summary.pendingValue, summary.currencyCodes?.[0])}
+                />
+                <KPICard
+                    title="Agendados"
+                    value={summary.scheduledPayments}
+                    icon={<CheckCircle size={20} />}
+                    color="#ea580c"
+                    subtitle={formatCurrency(summary.scheduledValue, summary.currencyCodes?.[0])}
+                />
+                <KPICard
+                    title="Pagtos. Vencidos"
+                    value={summary.overduePayments}
+                    icon={<AlertCircle size={20} />}
+                    color="#ef4444"
+                    borderColor="#fca5a5"
+                    subtitle={formatCurrency(summary.overdueValue, summary.currencyCodes?.[0])}
+                    onClick={() => navigate('/finance/payments?filter=overdue')}
+                />
+                <KPICard
+                    title="Pago no Mês"
+                    value={summary.completedThisMonth}
+                    icon={<DollarSign size={20} />}
+                    color="#16a34a"
+                    subtitle={formatCurrency(summary.paidThisMonthValue, summary.currencyCodes?.[0])}
+                />
             </div>
 
             {/* Analytics Row 1: Diagramming */}

@@ -15,6 +15,9 @@ import { QuickCurrencyModal } from '../../components/Buyer/QuickCurrencyModal';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { Z_INDEX } from '../../constants/ui';
 import { DropdownPortal } from '../../components/ui/DropdownPortal';
+import { PageContainer } from '../../components/ui/PageContainer';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { SearchFilterBar } from '../../components/ui/SearchFilterBar';
 import { SavedQuotationDto, IvaRate, Unit, OcrDraft, OcrDraftItem } from '../../types';
 import { useOcrProcessor } from '../../hooks/useOcrProcessor';
 
@@ -964,7 +967,7 @@ export function BuyerItemsList() {
     const groupedRequests = groupItemsByRequest(items);
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', minWidth: 0 }}>
+        <PageContainer>
             <style>{highlightStyles}</style>
 
             {feedback.message && (
@@ -987,84 +990,37 @@ export function BuyerItemsList() {
                 </div>
             )}
 
-            {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '4px solid var(--color-primary)', paddingBottom: '16px', width: '100%', minWidth: 0 }}>
-                <div>
-                    <h1 style={{ margin: 0, fontSize: '2.5rem', color: 'var(--color-primary)' }}>Gestão de Cotações</h1>
-                    <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Visualize e gerencie os itens solicitados e suas cotações em um único workspace.</p>
-                </div>
-            </div>
+            <PageHeader
+                title="Gestão de Cotações"
+                subtitle="Visualize e gerencie os itens solicitados e suas cotações em um único workspace."
+            />
 
-            {/* Filter Tabs */}
-            <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid var(--color-border)', marginTop: '-8px' }}>
-                <button 
-                    onClick={() => updateParams({ owner: 'todos', page: 1 })}
-                    style={{ padding: '8px 16px', border: 'none', borderBottom: owner === 'todos' ? '4px solid var(--color-primary)' : '4px solid transparent', backgroundColor: 'transparent', fontWeight: 800, color: owner === 'todos' ? 'var(--color-primary)' : 'var(--color-text-muted)', cursor: 'pointer', textTransform: 'uppercase', marginBottom: '-2px' }}
-                >
-                    Todos
-                </button>
-                <button 
-                    onClick={() => updateParams({ owner: 'unassigned', page: 1 })}
-                    style={{ padding: '8px 16px', border: 'none', borderBottom: owner === 'unassigned' ? '4px solid var(--color-primary)' : '4px solid transparent', backgroundColor: 'transparent', fontWeight: 800, color: owner === 'unassigned' ? 'var(--color-primary)' : 'var(--color-text-muted)', cursor: 'pointer', textTransform: 'uppercase', marginBottom: '-2px' }}
-                >
-                    Não Atribuídos
-                </button>
-                <button 
-                    onClick={() => updateParams({ owner: 'me', page: 1 })}
-                    style={{ padding: '8px 16px', border: 'none', borderBottom: owner === 'me' ? '4px solid var(--color-primary)' : '4px solid transparent', backgroundColor: 'transparent', fontWeight: 800, color: owner === 'me' ? 'var(--color-primary)' : 'var(--color-text-muted)', cursor: 'pointer', textTransform: 'uppercase', marginBottom: '-2px' }}
-                >
-                    Meus Pedidos
-                </button>
-            </div>
-
-            {/* Toolbar */}
-            <div style={{
-                display: 'flex',
-                gap: '16px',
-                backgroundColor: 'var(--color-primary)',
-                padding: '16px',
-                boxShadow: 'var(--shadow-brutal)',
-                border: '2px solid var(--color-primary)',
-                width: '100%',
-                minWidth: 0,
-                flexWrap: 'wrap'
-            }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '300px', backgroundColor: 'var(--color-bg-page)', padding: '0 16px', border: '2px solid var(--color-bg-surface)' }}>
-                    <Search size={20} color="var(--color-primary)" strokeWidth={2.5} />
-                    <input
-                        type="text"
-                        placeholder="BUSCAR POR NÚMERO, TÍTULO, DESCRIÇÃO..."
-                        value={searchInput}
-                        onChange={(e) => setSearchInput(e.target.value)}
-                        style={{ border: 'none', outline: 'none', width: '100%', fontSize: '0.85rem', padding: '12px 0', backgroundColor: 'transparent', fontWeight: 600, color: 'var(--color-primary)', textTransform: 'uppercase' }}
-                    />
-                </div>
-
-                <div style={{
-                    display: 'flex', alignItems: 'center', gap: '12px',
-                    backgroundColor: 'var(--color-bg-surface)', border: '2px solid var(--color-bg-surface)',
-                    padding: '0 16px', position: 'relative', flex: 1, minWidth: '200px'
-                }}>
-                    <Filter size={20} strokeWidth={2.5} color="var(--color-primary)" style={{ pointerEvents: 'none' }} />
+            <SearchFilterBar
+                searchPlaceholder="BUSCAR POR NÚMERO, TÍTULO, DESCRIÇÃO..."
+                searchValue={searchInput}
+                onSearchChange={setSearchInput}
+                tabs={[
+                    { id: 'todos', label: 'Todos' },
+                    { id: 'unassigned', label: 'Não Atribuídos' },
+                    { id: 'me', label: 'Meus Pedidos' },
+                ]}
+                activeTabId={owner || 'todos'}
+                onTabChange={(id) => updateParams({ owner: id, page: 1 })}
+                actions={
                     <select
+                        style={{ padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', outline: 'none', background: '#fff', fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}
                         value={requestStatus}
                         onChange={(e) => handleRequestStatusChange(e.target.value)}
-                        style={{
-                            border: 'none', background: 'transparent', outline: 'none', padding: '12px 24px 12px 0',
-                            color: 'var(--color-primary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em',
-                            cursor: 'pointer', appearance: 'none', width: '100%'
-                        }}
                     >
                         <option value="">VER TODOS OS STATUS DO PEDIDO</option>
                         {statuses
                             .filter(s => ["WAITING_QUOTATION", "AREA_ADJUSTMENT", "FINAL_ADJUSTMENT", "PAYMENT_COMPLETED", "IN_FOLLOWUP"].includes(s.code))
                             .map(s => (
-                                <option key={s.id} value={s.code}>{s.name}</option>
-                            ))
-                        }
+                                <option key={s.code} value={s.code}>{s.name}</option>
+                            ))}
                     </select>
-                </div>
-            </div>
+                }
+            />
 
             {/* Grouped Area */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
@@ -2765,6 +2721,6 @@ export function BuyerItemsList() {
                 }}
                 initialCode={quickCurrencyModal.initialCode}
             />
-        </div >
+        </PageContainer>
     );
 }

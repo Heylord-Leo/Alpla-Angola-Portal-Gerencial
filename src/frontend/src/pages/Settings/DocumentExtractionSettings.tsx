@@ -3,6 +3,8 @@ import { api } from '../../lib/api';
 import { DocumentExtractionSettingsDto } from '../../types';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { Save, Info, AlertTriangle, Cpu, Globe, Braces, Settings } from 'lucide-react';
+import { PageContainer } from '../../components/ui/PageContainer';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 export function DocumentExtractionSettings() {
     const [settings, setSettings] = useState<DocumentExtractionSettingsDto | null>(null);
@@ -82,26 +84,25 @@ export function DocumentExtractionSettings() {
     }
 
     return (
-        <div style={{ padding: '2rem', maxWidth: '900px', margin: '0 auto' }}>
-            <header style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div>
-                    <h1 style={{ fontSize: '1.75rem', margin: 0 }}>Extração de Documentos</h1>
-                    <p style={{ color: 'var(--color-text-muted)', marginTop: '0.25rem' }}>
-                        Administração de provedores e parâmetros operacionais de OCR e IA.
-                    </p>
-                </div>
-                {settings && (
-                    <button
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="btn-primary"
-                        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: '180px', justifyContent: 'center' }}
-                    >
-                        <Save size={18} />
-                        {saving ? 'A GUARDAR...' : 'GUARDAR ALTERAÇÕES'}
-                    </button>
-                )}
-            </header>
+        <PageContainer>
+            <PageHeader
+                title="Extração de Documentos"
+                subtitle="Administração de provedores e parâmetros operacionais de OCR e IA."
+                icon={<Settings size={32} strokeWidth={2.5} />}
+                actions={
+                    settings ? (
+                        <button
+                            onClick={handleSave}
+                            disabled={saving}
+                            className="btn-primary"
+                            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: '180px', justifyContent: 'center' }}
+                        >
+                            <Save size={18} />
+                            {saving ? 'A GUARDAR...' : 'GUARDAR ALTERAÇÕES'}
+                        </button>
+                    ) : undefined
+                }
+            />
 
             {(feedback || testResult) && (
                 <div style={{ marginBottom: '1.5rem', position: 'sticky', top: '1rem', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -167,9 +168,9 @@ export function DocumentExtractionSettings() {
                 {/* Configurações Globais */}
                 <section style={{ 
                     backgroundColor: 'var(--color-bg-surface)', 
-                    border: '2px solid var(--color-border-heavy)', 
-                    padding: '1.5rem',
-                    boxShadow: 'var(--shadow-brutal)'
+                    border: '1px solid var(--color-border)', 
+                    borderRadius: 'var(--radius-lg)',
+                    padding: '1.5rem'
                 }}>
                     <h2 style={{ fontSize: '1.1rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.75rem' }}>
                         <Settings size={20} color="var(--color-primary)" />
@@ -239,9 +240,9 @@ export function DocumentExtractionSettings() {
                 {/* Local OCR Section */}
                 <section style={{ 
                     backgroundColor: 'var(--color-bg-surface)', 
-                    border: '2px solid var(--color-border-heavy)', 
-                    padding: '1.5rem',
-                    boxShadow: 'var(--shadow-brutal)'
+                    border: '1px solid var(--color-border)', 
+                    borderRadius: 'var(--radius-lg)',
+                    padding: '1.5rem'
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.75rem' }}>
                         <h2 style={{ fontSize: '1.1rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -292,9 +293,9 @@ export function DocumentExtractionSettings() {
                 {/* OpenAI Section */}
                 <section style={{ 
                     backgroundColor: 'var(--color-bg-surface)', 
-                    border: '2px solid var(--color-border-heavy)', 
+                    border: '1px solid var(--color-border)', 
+                    borderRadius: 'var(--radius-lg)',
                     padding: '1.5rem',
-                    boxShadow: 'var(--shadow-brutal)',
                     opacity: settings.openAiEnabled ? 1 : 0.8
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.75rem' }}>
@@ -349,7 +350,8 @@ export function DocumentExtractionSettings() {
                 {/* Azure Section (Placeholder) */}
                 <section style={{ 
                     backgroundColor: 'var(--color-bg-surface)', 
-                    border: '2px solid var(--color-border)', 
+                    border: '1px solid var(--color-border)', 
+                    borderRadius: 'var(--radius-lg)',
                     padding: '1.5rem',
                     opacity: settings.azureDocumentIntelligenceEnabled ? 1 : 0.8
                 }}>
@@ -386,13 +388,13 @@ export function DocumentExtractionSettings() {
             </form>
             ) : null}
 
-            <footer style={{ marginTop: '3rem', padding: '1rem', backgroundColor: 'rgba(217, 119, 6, 0.05)', borderLeft: '4px solid var(--color-status-amber)', display: 'flex', gap: '1rem' }}>
+            <footer style={{ marginTop: '1rem', padding: '1rem', backgroundColor: 'rgba(217, 119, 6, 0.05)', borderLeft: '4px solid var(--color-status-amber)', display: 'flex', gap: '1rem', borderRadius: 'var(--radius-md)' }}>
                 <AlertTriangle size={24} color="var(--color-status-amber)" style={{ flexShrink: 0 }} />
                 <p style={{ fontSize: '0.85rem', margin: 0, fontWeight: 500 }}>
                     <strong>Atenção:</strong> Alterações nestas configurações afetam o comportamento imediato do motor de extração para todos os utilizadores. 
                     Verifique a conectividade do provedor selecionado antes de guardar.
                 </p>
             </footer>
-        </div>
+        </PageContainer>
     );
 }

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Activity, ArrowLeft, CheckCircle2, XCircle, AlertCircle, Settings } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
+import { PageContainer } from '../../components/ui/PageContainer';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 interface ServiceStatus {
     status: string;
@@ -59,9 +61,9 @@ export function ServiceDiagnosis() {
         return (
             <div style={{ 
                 backgroundColor: 'var(--color-bg-surface)', 
-                border: '2px solid var(--color-border-heavy)', 
+                border: '1px solid var(--color-border)', 
+                borderRadius: 'var(--radius-lg)',
                 padding: '1.5rem',
-                boxShadow: 'var(--shadow-brutal)',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '1rem'
@@ -113,58 +115,35 @@ export function ServiceDiagnosis() {
     );
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '4px solid var(--color-primary)', paddingBottom: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    <Link to="/admin/workspace" style={{ color: 'var(--color-text-muted)', display: 'flex' }}>
-                        <ArrowLeft size={24} />
-                    </Link>
-                    <div style={{ 
-                        backgroundColor: 'var(--color-status-purple)', 
-                        padding: '0.5rem', 
-                        display: 'flex', 
-                        border: '2px solid var(--color-status-purple)',
-                        color: 'white'
-                    }}>
-                        <Activity size={24} />
-                    </div>
-                    <div>
-                        <h1 style={{ margin: 0, fontSize: '2.5rem', fontWeight: 900, color: 'var(--color-primary)', textTransform: 'uppercase', letterSpacing: '-0.02em' }}>
-                            Diagnóstico de Serviços
-                        </h1>
-                        <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', fontSize: '0.875rem' }}>
-                            Estado de saúde e conectividade do ecossistema
-                        </p>
-                    </div>
-                </div>
-                <button 
-                    onClick={fetchHealth}
-                    disabled={loading}
-                    style={{
-                        padding: '0.75rem 1.5rem',
-                        backgroundColor: 'var(--color-bg-surface)',
-                        border: '2px solid var(--color-border-heavy)',
-                        fontWeight: 800,
-                        textTransform: 'uppercase',
-                        cursor: 'pointer',
-                        boxShadow: '4px 4px 0px var(--color-border-heavy)',
-                        transition: 'all 0.1s ease-in-out'
-                    }}
-                    onMouseDown={(e) => {
-                        e.currentTarget.style.transform = 'translate(2px, 2px)';
-                        e.currentTarget.style.boxShadow = '2px 2px 0px var(--color-border-heavy)';
-                    }}
-                    onMouseUp={(e) => {
-                        e.currentTarget.style.transform = 'translate(0px, 0px)';
-                        e.currentTarget.style.boxShadow = '4px 4px 0px var(--color-border-heavy)';
-                    }}
-                >
-                    {loading ? 'A verificar...' : 'Actualizar'}
-                </button>
-            </header>
+        <PageContainer>
+            <PageHeader
+                title="Diagnóstico de Serviços"
+                subtitle="Estado de saúde e conectividade do ecossistema"
+                icon={<Activity size={32} strokeWidth={2.5} />}
+                actions={
+                    <button 
+                        onClick={fetchHealth}
+                        disabled={loading}
+                        style={{
+                            padding: '0.75rem 1.5rem',
+                            backgroundColor: 'var(--color-bg-surface)',
+                            border: '1px solid var(--color-border)',
+                            borderRadius: 'var(--radius-md)',
+                            color: 'var(--color-text-main)',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8
+                        }}
+                    >
+                        {loading ? 'A verificar...' : 'Actualizar'}
+                    </button>
+                }
+            />
 
             {error && (
-                <div style={{ padding: '1rem', backgroundColor: '#fee2e2', border: '2px solid #ef4444', color: '#b91c1c', fontWeight: 700 }}>
+                <div style={{ padding: '1rem', backgroundColor: 'var(--color-status-red)18', border: '1px solid var(--color-status-red)', borderRadius: 'var(--radius-md)', color: 'var(--color-status-red)', fontWeight: 700 }}>
                     {error}
                 </div>
             )}
@@ -176,7 +155,7 @@ export function ServiceDiagnosis() {
             }}>
                 {loading && !data ? (
                     Array(4).fill(0).map((_, i) => (
-                        <div key={i} style={{ height: '180px', backgroundColor: 'var(--color-bg-surface)', border: '2px solid var(--color-border-light)', opacity: 0.5 }}></div>
+                        <div key={i} style={{ height: '180px', backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', opacity: 0.5 }}></div>
                     ))
                 ) : data ? (
                     <>
@@ -190,7 +169,8 @@ export function ServiceDiagnosis() {
 
             <section style={{ 
                 backgroundColor: 'var(--color-bg-main)', 
-                border: '2px solid var(--color-border-heavy)', 
+                border: '1px solid var(--color-border)', 
+                borderRadius: 'var(--radius-lg)',
                 padding: '1.5rem',
                 marginTop: '1rem'
             }}>
@@ -201,6 +181,6 @@ export function ServiceDiagnosis() {
                     <li>As credenciais não são expostas neste painel por motivos de segurança.</li>
                 </ul>
             </section>
-        </div>
+        </PageContainer>
     );
 }

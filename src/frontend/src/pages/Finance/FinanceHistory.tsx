@@ -1,6 +1,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import { api } from '../../lib/api';
 import { FinanceHistoryItemDto, PagedResult } from '../../types';
+import { PageContainer } from '../../components/ui/PageContainer';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { SearchFilterBar } from '../../components/ui/SearchFilterBar';
 
 // Icons mapping roughly
 const SearchIcon = () => (
@@ -91,87 +94,49 @@ export default function FinanceHistory() {
     };
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <PageContainer>
             
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div>
-                    <h2 style={{ margin: 0, fontSize: '1.8rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.5px' }}>
-                        Auditoria Financeira
-                    </h2>
-                    <p style={{ margin: '8px 0 0 0', color: '#64748b', fontSize: '1rem', fontWeight: 500 }}>
-                        Acompanhe o percurso de pagamentos, agendamentos e alterações financeiras.
-                    </p>
-                </div>
-                <button
-                    onClick={handleExport}
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        padding: '12px 24px',
-                        backgroundColor: 'var(--color-bg-surface)',
-                        color: 'var(--color-primary)',
-                        border: '2px solid var(--color-primary)',
-                        fontWeight: 800,
-                        fontSize: '14px',
-                        textTransform: 'uppercase',
-                        cursor: 'pointer',
-                        boxShadow: '2px 2px 0 var(--color-primary)',
-                        transition: 'all 0.1s'
-                    }}
-                    onMouseOver={(e) => (e.currentTarget.style.transform = 'translate(-2px, -2px)', e.currentTarget.style.boxShadow = '4px 4px 0 var(--color-primary)')}
-                    onMouseOut={(e) => (e.currentTarget.style.transform = 'translate(0, 0)', e.currentTarget.style.boxShadow = '2px 2px 0 var(--color-primary)')}
-                    onMouseDown={(e) => (e.currentTarget.style.transform = 'translate(2px, 2px)', e.currentTarget.style.boxShadow = '0 0 0 var(--color-primary)')}
-                >
-                    <DownloadIcon /> Exportar CSV
-                </button>
-            </div>
+            <PageHeader
+                title="Auditoria Financeira"
+                subtitle="Acompanhe o percurso de pagamentos, agendamentos e alterações financeiras."
+                actions={
+                    <button
+                        onClick={handleExport}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '12px 24px',
+                            backgroundColor: 'white',
+                            color: 'var(--color-primary)',
+                            border: '1px solid var(--color-border)',
+                            borderRadius: 'var(--radius-sm)',
+                            fontWeight: 700,
+                            fontSize: '14px',
+                            textTransform: 'uppercase',
+                            cursor: 'pointer',
+                        }}
+                    >
+                        <DownloadIcon /> Exportar CSV
+                    </button>
+                }
+            />
 
-            <div style={{ 
-                display: 'flex', 
-                gap: '16px', 
-                backgroundColor: 'var(--color-bg-surface)', 
-                padding: '20px', 
-                border: '2px solid var(--color-border)',
-                alignItems: 'center',
-                boxShadow: 'var(--shadow-brutal)',
-                flexWrap: 'wrap'
-            }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '300px', backgroundColor: 'var(--color-bg-surface)', border: '2px solid var(--color-border)', padding: '0 16px' }}>
-                    <SearchIcon />
-                    <input 
-                        type="text" 
-                        placeholder="Pesquise por pedido, título, responsável ou palavras-chave..." 
-                        value={searchQuery}
-                        onChange={e => setSearchQuery(e.target.value)}
-                        style={{ border: 'none', outline: 'none', padding: '16px 0', fontSize: '15px', fontWeight: 600, width: '100%', backgroundColor: 'transparent' }}
-                    />
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                    {['', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'DOCUMENTO ADICIONADO', 'NOTA_FINANCEIRA', 'FINANCE_RETURN_ADJUSTMENT'].map(act => {
-                        const isActive = actionFilter === act;
-                        const label = act === '' ? 'Todos' : getActionProps(act).label;
-                        return (
-                            <button
-                                key={act}
-                                onClick={() => setActionFilter(act)}
-                                style={{
-                                    padding: '10px 16px',
-                                    backgroundColor: isActive ? 'var(--color-primary)' : '#fff',
-                                    color: isActive ? '#fff' : '#475569',
-                                    border: `2px solid ${isActive ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                                    fontWeight: 700,
-                                    fontSize: '13px',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.1s'
-                                }}
-                            >
-                                {label}
-                            </button>
-                        );
-                    })}
-                </div>
-            </div>
+            <SearchFilterBar
+                searchValue={searchQuery}
+                onSearchChange={setSearchQuery}
+                searchPlaceholder="PESQUISE POR PEDIDO, TÍTULO, RESPONSÁVEL OU PALAVRAS-CHAVE..."
+                tabs={[
+                    { id: '', label: 'Todos' },
+                    { id: 'PAYMENT_SCHEDULED', label: 'Agendados' },
+                    { id: 'PAYMENT_COMPLETED', label: 'Pagos' },
+                    { id: 'DOCUMENTO ADICIONADO', label: 'Comprovativos' },
+                    { id: 'NOTA_FINANCEIRA', label: 'Notas' },
+                    { id: 'FINANCE_RETURN_ADJUSTMENT', label: 'Devoluções' }
+                ]}
+                activeTabId={actionFilter}
+                onTabChange={(id) => setActionFilter(id)}
+            />
 
             <div style={{
                 backgroundColor: 'var(--color-bg-surface)',
@@ -275,6 +240,6 @@ export default function FinanceHistory() {
                 )}
             </div>
             
-        </div>
+        </PageContainer>
     );
 }
