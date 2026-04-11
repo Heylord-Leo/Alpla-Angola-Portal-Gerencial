@@ -24,15 +24,13 @@ For workspaces and complex forms, the project uses a standardized `CollapsibleSe
 6. **Migration Guidance**: Legacy screens may temporarily coexist with "Industrial Brutalist" styles (0px radius, heavy shadows). All new or refactored components must strictly follow the Modern Corporate standard (8px-12px radius, soft elevations).
   - **New Default Standards**:
     - **Rounded Corners**: 8px or 12px as the new standard (replacing the 0px default).
-    - **Soft Elevations**: Low-opacity, diffused shadows (replacing the "brutal" high-contrast shadows).
-    - **Subtle Borders**: Lighter borders (Slate 200) for containers, avoiding heavy default blue borders.
-    - **Blue as Accent**: Blue is strictly reserved for primary actions, indicators, and focus states.
+    - **Soft Elevations**: Low-opacity, diffused shadows (`var(--shadow-sm/md/lg)`).
+    - **Action Floating Menus**: `KebabMenu` components must rely on graceful background hovers (`#f1f5f9`), avoiding uppercase commands.
+    - **Subtle Borders**: Lighter borders (`var(--color-border)`) for containers, avoiding heavy default blue borders.
   - **Retired Standards**:
-    - **Industrial Brutalist** is no longer the official direction.
-    - **0px radius** is deprecated as a default.
-    - **Brutal/Heavy shadows** are no longer used for base components.
-    - **Heavy blue borders** on all containers are discontinued.
-  - **Migration Policy**: Existing screens will coexist with the new standards and be migrated in phases. All new or refactored screens must follow the Modern Corporate direction.
+    - **Industrial Brutalist** is completely discontinued.
+    - **Tailwind Utility Sprawl** is deprecated. Stick to object-mapped inline CSS properties utilizing token variables.
+  - **Migration Policy**: All new or refactored screens must follow the Modern Corporate direction natively.
 
 ## Contextual Help and Accessibility (v2.24.0)
 
@@ -61,7 +59,7 @@ The project has been modernized to support the Shell 2.0 architecture:
 
 1. **React 19**: Utilizing the latest React features and stricter typing for refs and hooks.
 2. **React Router 7**: Declarative routing is maintained, but the foundation is ready for future data-mode migration.
-3. **Tailwind CSS 4**: A CSS-first engine. Configuration is handled via `@theme` blocks in `globals.css`. Legacy `tailwind.config.js` and `postcss.config.js` are removed.
+3. **Inline CSS Variables**: Strict deprecation of third-party utility class frameworks (like Tailwind). Styling must be implemented deterministically via `style={{ }}` bound to global `tokens.css`. 
 4. **Motion**: Transitioned from `framer-motion` to the modular `motion/react` package.
 5. **Sonner**: Introduced as the primary toast notification system, replacing ad-hoc feedback banners where appropriate.
 
@@ -106,42 +104,23 @@ The "Copy Request" feature allows a user to create a new request using an existi
    - **Secondary Action**: `CANCELAR` is replaced by `DESCARTAR CÓPIA` to clarify that no persisted record is being deleted.
    - **Navigation Protection**: Standard `beforeunload` protection applies if the form has been touched.
 
-## Dashboard de Compras (v1.1.17)
+## Modern Dashboard Workspace (v2.40.0)
 
-The Compras Dashboard serves as the entry point for the module, combining real-time operational oversight with navigation shortcuts, quick actions, and an interactive educational guide.
+The Modern Dashboard is the unified entry point. It has been completely redesigned around the `ActionCarouselWidget` to maximize real-estate and guide immediate action focus.
 
 ### Operational Overview Segment
 
-Uses real backend data to provide immediate visibility into the module's state.
-
-1. **Clickable Operational Cards**:
-    - All summary cards are actionable shortcuts. Clicking a card navigates the user to a pre-filtered view in the `Requests List` or `Buyer Items` workspace.
-    - **Hover Effects**: Clickable cards feature a subtle upward movement and a soft elevation to signal interactivity.
-    - **Navigation Logic**:
-        - **Aguardando Cotação**: Navigates to `/buyer/items?requestStatus=WAITING_QUOTATION`.
-        - **Em Atenção**: Navigates to `/requests?isAttention=true`.
-        - **Status-based Cards**: Navigate to `/requests?statusCodes=CODE1,CODE2` (e.g., `WAITING_AREA_APPROVAL`).
-2. **Quick Actions**:
-    - A dedicated "Ações Rápidas" section provides immediate access to core functions:
-        - **Novo Pedido**: Redirection to the request creation flow.
-        - **Ver Pedidos**: Quick shortcut to the global requests list.
-        - **Ver Itens do Pedido**: Direct link to the buyer/quotation item management grid.
-    - **UI Tiles**: Action tiles use a "large button" pattern with distinctive icons and helper descriptions to guide the user.
-3. **Attention List**:
-    - A specialized "Pedidos em Atenção" section surfaces a compact, real-time list of the most critical requests (Top 5) based on current urgency rules.
-    - **Urgency Highlights**: Rows automatically inherit background colors (Yellow, Orange, Red) from `getUrgencyStyle` based on the `NeedByDateUtc`.
-    - **Actionability**: Each row is a direct operational shortcut that navigates to the request details or edit mode.
-    - "Ver Todos" Link: A footer action allows users to jump directly to the fully filtered requests list view.
-4. **Filter Translation**:
-    - The `RequestsList` component dynamically translates semantic `statusCodes` from the URL into internal database IDs for filtering.
-    - A dedicated "Em Atenção" filter chip is displayed in the list view when the urgency filter is active.
-5. **Operational Cards Definition**:
-    - **Total de Pedidos**: Cumulative count of all requests.
-    - **Aguardando Cotação**: Requests in `WAITING_QUOTATION`.
-    - **Aguardando Aprovação de Área**: Requests in `WAITING_AREA_APPROVAL`.
-    - **Aguardando Aprovação Final**: Targets `WAITING_FINAL_APPROVAL` and `WAITING_COST_CENTER`.
-    - **Em Reajuste**: Requests in `AREA_ADJUSTMENT` or `FINAL_ADJUSTMENT`.
-    - **Em Atenção**: Active requests (non-terminal) with a `NeedByDateUtc` within the next 3 days, aligned with the system's global urgency logic.
+1. **Action Carousel ("Para Minha Ação")**:
+    - A dynamic, fluidly scrolling horizontal container displaying high-urgency requests.
+    - Clickable action cards using the Modern Corporate soft-elevation standard and integrated Kebab Menus.
+2. **Status Grouping & Filter Dropdowns**:
+    - Custom `<FilterDropdown />` wrappers now group isolated statuses into user-friendly semantic modules: `INICIAL`, `APROVAÇÃO & COTAÇÃO`, `FINANCEIRO & RECEBIMENTO`, and `FINALIZADOS`.
+    - This eliminates cognitive overload when filtering standard queues.
+3. **Floating UI & Pagination Centralization**:
+    - "Total Filtrado" trackers and secondary actions are rendered as "Floating Widgets" (absolute/fixed position anchoring bottom-right).
+    - **Pagination rules**: All table pagination controls must be strictly centered at the bottom of the table to prevent `z-index` clashing with the floating summary cards. 
+4. **Attention Highlighting**:
+    - Automatic Urgency categorization (`needByDateUtc`) maps into priority highlights utilizing `var(--color-status-amber)` or `var(--color-status-rose)`.
 
 ### Status and Action Badges
 
@@ -305,7 +284,7 @@ Beginning in v2.0.0, the portal adopted the **Shell 2.0 (Modern Industrial)** la
 ### Component Preservation Rule
 1. **Black Box Data**: Redesigned UI components (e.g., `MasterData.tsx`, `DocumentExtractionSettings.tsx`) must completely preserve underlying API queries, mutation hooks, custom debounced inline-validations, RBAC evaluations, and localized error handling behavior. 
 2. **Presentation Only**: The redesign acts solely as a presentation layer overhaul (DOM structure, grid-management, and styling). It is strictly forbidden to alter backend payloads, DTO models, structural request tracking, or lookup cascades simply to satisfy an aesthetic layout.
-3. **Styling Propagation**: New visual components use Tailwind CSS v4 tightly mapped to `tokens.css`. Legacy elements and modernized structures successfully compute against the exact same color spacing and depth tokens.
+3. **Styling Propagation**: New visual components use explicit inline CSS mapped tightly to `tokens.css`. Legacy elements and modernized structures successfully compute against the exact same color spacing and depth tokens.
 4. **Independent Scoping**: Changes to isolated settings tabs or admin diagnostics must not bubble up side-effects into the `AppShell` or globally mutate navigation bounds un-prompted.
 
 ### Content Spacing

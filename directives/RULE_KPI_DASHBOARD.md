@@ -36,14 +36,13 @@ if (chip.activeCodes.length > 0 && selectedCodes.every(c => chip.activeCodes.inc
 ## 5. Modern Corporate Tone
  
 - Use the **Shell 2.0** layout (collapsible navigation).
-- **Cards**: Refined borders, soft elevations, 8px-12px rounded corners.
+- **Presentation Layer**: Static grids of raw data are deprecated. Operational dashboards must utilize dynamic `ActionCarouselWidget` containers for urgent requests, featuring interactive sliding items and `framer-motion` implementations.
+- **Cards & Floating Actions**: `var(--radius-lg)` (8px-12px rounded corners), soft elevations (`var(--shadow-sm)` and `var(--shadow-lg)` on hover). Kebab Menus must use elegant regular font weights and light blue generic hover patterns (`#f1f5f9`), completely abandoning brutalist thick borders or uppercase typography.
 - **Emphasis**:
-    - **Active Cards**: May use blue (`var(--color-primary)`) for borders or active indicators.
-    - **Default Cards**: Must remain visually lighter and neutral using surface background tokens.
-    - **Status Cards**: Green (Success) or Red (Alerts) cards must use the same radius and elevation tokens to maintain family consistency.
-- **Typography**: Refined hierarchy (Futura for headings, Helvetica/Inter for data).
-- **Responsive**: Full grid-aware reflow.
-Use CSS Grid with `repeat(auto-fit, minmax(240px, 1fr))` to ensure layout stability across screen sizes.
+    - **Active Elements**: May use blue (`var(--color-primary)`) for active indicators.
+    - **Status Grouping**: Dropdowns must use grouped contextual sets (e.g. INICIAL, FINANCEIRO) rather than raw unorganized IDs.
+- **Typography**: Refined hierarchy (sans-serif fallbacks with normalized case tracking, explicitly avoiding `textTransform: uppercase` in standard data menus).
+- **Styling Architecture**: Rely cleanly on mapped inline CSS attributes tied to system variables (e.g., `backgroundColor: 'var(--color-bg-surface)'`), officially severing required layout dependency on Tailwind CSS utility sprawls in root operational layouts.
 
 ## 6. Architecture
 

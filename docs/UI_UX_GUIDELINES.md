@@ -10,10 +10,7 @@ The visual style is a **Modern Corporate** identity, designed for premium intern
 
 - **Corporate Brand Identity (ALPLA Shell 2.0):** Adopts the official refined corporate color palette (Deep Blue), high-end typographic hierarchy (Montserrat), and a professional, fluid tone.
 - **Layout & Structure:** Adopts a clean, card-based structural containment with soft elevations, rounded corners (8px-12px), and a collapsible sidebar navigation for maximized workspace.
-- **Migration Guidance:**
-    - Legacy screens may temporarily coexist with older "Industrial Brutalist" styles.
-    - All new or refactored screens must strictly follow the Modern Corporate standard.
-    - Migration of legacy components will happen in phased cycles.
+- **Strict Adherence:** The "Industrial Brutalist" style is officially deprecated. All screens, panels, and components must strictly follow the Modern Corporate standard. No legacy styles are permitted.
 
 ## B) Color Palette
 
@@ -123,11 +120,12 @@ Optimized for wide monitors and data-heavy operations.
 - **Validation:** Error states must turn borders/text `#EF4444` and include explicit descriptive helper text below the input.
 - **Tables:** Zebra-striping or row-borders. Includes a *Dense Mode* toggle for high-volume data scanning. Row-level actions (Edit, Approve, View) placed in the far-right sticky column.
 - **Cards:** White surface with standard `sm` shadow and `8px` radius. Used to group related form fields or dashboard metrics.
-- **Modals / Drawers:** Modals for quick confirmations/small edits. Side-drawers (sliding from right) for complex filtering or quick-viewing an item without losing list context.
+- **Floating Actions:** Kebab Menus (`KebabMenu.tsx`) must use elegant normal text weight (not uppercase), `8px` borders, and soft `#f1f5f9` hover backgrounds, rather than heavy brutalist borders. Paginators should be strictly centered to prevent overlap with actionable context popups or total summaries.
+- **Modals / Drawers:** Modals for quick confirmations/small edits. Side-drawers (sliding from right) for complex filtering or quick-viewing an item without losing list context. Must use `framer-motion` for fluid `AnimatePresence` and entry micro-interactions.
 - **Tabs:** Underline style, highlighting the active tab with the primary blue `#004C90`.
 - **Badges:** Small pills with status colors (Background: `10%` opacity of status color, Text: `100%` status color) for immediate visual recognition.
 - **Notifications / Toasts:** Slide in from bottom-right or top-right. Auto-dismiss after 5s (unless error).
-- **Empty & Loading States:** Empty tables must show a friendly "No data found" illustration/icon. Data fetches must use skeleton loaders matching the table/card structure, avoiding full-page spinners where possible.
+- **Empty & Loading States:** Empty tables must show a friendly "No data found" illustration/icon. Data fetches must use skeleton loaders matching the table/card structure.
 - **Attachments:**
   - *Upload Area:* Drag-and-drop zone with a clear file browser button. Provide immediate feedback on file type/size validation errors.
   - *List Row Pattern:* Display attachment `Name`, `Size`, `Uploaded By`, and `Upload Date`.
@@ -179,10 +177,10 @@ For users staring at the screen for 8 hours a day:
 4. **Color Independence:** Never use *only* color for meaning. "Rejected" elements need both red color and an icon (e.g., ✖) or text label.
 5. **Breathing Room:** Do not artificially condense data unless the user explicitly toggles "Dense Mode." Default spacing prevents misclicks and eye strain.
 
-## J) Tailwind CSS Integration (Shell 2.0)
+## J) Deterministic Styling Integration
 
-As of the **Shell 2.0** redesign phases, Tailwind CSS v4 is used as a functional styling extension mapped to existing CSS variables (`tokens.css`) via the `@tailwindcss/postcss` plugin.
+As of the **Shell 2.0 (Modern Corporate)** redesign phases, the explicit dependency on utility-class frameworks (like Tailwind CSS) is strictly deprecated for core component structuring.
 
-1. **No-Prefix Strategy**: Tailwind utilities are applied natively without a prefix (e.g., `flex`, `p-4`, `bg-white`).
-2. **Variable Mapping**: Base colors, spacing, typography, and soft elevation tokens from `tokens.css` are configured as themes in `tailwind.config.js` (e.g., `theme: { colors: { 'portal-primary': 'var(--color-primary)' } }`).
-3. **Restricted Usage**: Tailwind is strictly confined to new `V2` components or modernized redesign bounds (e.g., `AdministratorWorkspace`, `MasterData`, `SystemLogs`). Do not inject Tailwind into legacy core structural wrappers or globally redefine fundamental elements in `index.css`.
+1. **Inline CSS Variables**: To guarantee deterministic and robust rendering, complex UI components must use React `style={{ }}` objects dynamically bound to the globally defined CSS tokens (`var(--color-primary)`, `var(--radius-lg)`, `var(--shadow-md)`).
+2. **Variable Mapping**: Base colors, spacing, typography, and elevations are centrally maintained in `tokens.css`.
+3. **Restricted Utility Usage**: Tailwind-like utilities must not be heavily relied upon for layout or alignment. If used, they should only be for absolute peripheral or temporary non-blocking styles. The golden standard is highly explicit inline mappings ensuring 100% regression-free updates.
