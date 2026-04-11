@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.50.0] - 2026-04-11
+
+### Added
+- **Password Recovery Workflow**: Implemented a complete self-service recovery flow including `Esqueceu a senha?` toggle on the login page, secure token generation with 15-minute expiry, and a dedicated `ResetPasswordPage`.
+- **Bulletproof Email Logo (CID)**: Redesigned the transactional email engine to use **CID inline embedding** for the ALPLA logo. This ensures visual assets render correctly in all email clients without relying on a publicly accessible URL, solving "localhost" image breakage during development.
+- **Robust Asset Resolution**: Implemented a multi-path fall-back strategy for locating physical assets on the server, with support for configuration overrides via `AppConfig:LogoPath`.
+- **Environment Safety Guards**: Added strict backend validation to prevent the dispatch of transactional emails containing `localhost` or `127.0.0.1` links in non-development environments.
+
+### Changed
+- **Centralized URL Configuration**: Replaced dynamic `Request.Headers["Origin"]` resolution with a deterministic `AppConfig:FrontendBaseUrl` setting in `appsettings.json`, ensuring link reliability across staging and production.
+
 ## [2.49.2] - 2026-04-11
 
 ### Added

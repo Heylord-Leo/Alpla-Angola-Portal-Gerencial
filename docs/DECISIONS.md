@@ -4,6 +4,22 @@ Purpose: record important technical and process decisions so future work preserv
 
 ---
 
+## DEC-094 — Password Recovery Infrastructure (CID Email & Config URL)
+
+- **Date:** 2026-04-11
+- **Status:** Accepted
+- **Context:** Implementing password recovery emails revealed issues with asset rendering and link reliability.
+    1. **Asset Visibility**: Remote URLs for logos often fail in development (localhost not accessible from webmail) or get blocked by strict corporate filters.
+    2. **Link Fragility**: Relying on `Origin` headers or auto-detection resulted in broken links during mixed environment testing.
+- **Decision:** 
+    1. **CID Logo Strategy**: Use `LinkedResource` to embed the ALPLA logo directly into the email body as a `cid:alpla-logo` attachment. Implementation includes a multi-path resolution helper (`ResolveLogoPath`) to find assets across dev and production layouts.
+    2. **Centralized Base URL**: Centralize the destination URL for all transactional links into `AppConfig:FrontendBaseUrl` within `appsettings.json`.
+    3. **Production Safety**: Throw `InvalidOperationException` in `EmailService` if a link containing `localhost` is generated while `ASPNETCORE_ENVIRONMENT != Development`.
+- **Alternatives considered:** Absolute remote URLs (rejected: fragile in dev/internal networks). External CDN storage for logos (rejected: adds external dependency and CORS complexity).
+- **Consequences:** Ensures branding is visible even offline or behind firewalls. Guarantees link stability across deployments. Adds a hard failure mode to prevent shipping emails with developer-local links.
+
+---
+
 ## DEC-093 — Company-Level Final Approver Resolution
 
 - **Date:** 2026-04-04

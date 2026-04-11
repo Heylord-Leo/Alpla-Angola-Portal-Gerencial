@@ -149,6 +149,24 @@ export const api = {
             });
             if (!response.ok) return handleApiError(response, 'Falha ao alterar palavra-passe.');
             return response.json();
+        },
+        forgotPassword: async (email: string): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/auth/forgot-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email }),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao pedir redefinição de palavra-passe.');
+            return response.json();
+        },
+        resetPassword: async (data: any): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/auth/reset-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao redefinir a palavra-passe.');
+            return response.json();
         }
     },
     requests: {

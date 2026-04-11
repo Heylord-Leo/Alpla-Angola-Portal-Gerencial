@@ -17,6 +17,10 @@ public class User
     public int AccessFailedCount { get; set; }
     public DateTime? LockoutEndUtc { get; set; }
 
+    // Security Phase 2: Password Reset Protection
+    public string? PasswordResetToken { get; set; }
+    public DateTime? PasswordResetTokenExpiryUtc { get; set; }
+
     public int? DepartmentId { get; set; }
     public Department? Department { get; set; }
 

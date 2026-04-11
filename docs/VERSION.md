@@ -2,7 +2,13 @@
 
 ## Current Version
 
-v2.49.2
+v2.50.0
+
+## [2.50.0] - 2026-04-11
+
+### Added
+- **Password Recovery Workflow**: Secure self-service password reset flow with token-based authentication and CID-embedded email branding.
+- **Environment Safety**: Centralized URL config and strict guards against localhost leaks.
 
 ## [2.49.2] - 2026-04-11
 

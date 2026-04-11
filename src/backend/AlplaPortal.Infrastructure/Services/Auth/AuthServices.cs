@@ -90,19 +90,22 @@ public class AuthService : IAuthService
     private readonly IJwtService _jwtService;
     private readonly SecurityOptions _securityOptions;
     private readonly AdminLogWriter _adminLogWriter;
+    private readonly IEmailService _emailService;
 
     public AuthService(
         ApplicationDbContext context, 
         IPasswordHasher passwordHasher, 
         IJwtService jwtService,
         IOptions<SecurityOptions> securityOptions,
-        AdminLogWriter adminLogWriter)
+        AdminLogWriter adminLogWriter,
+        IEmailService emailService)
     {
         _context = context;
         _passwordHasher = passwordHasher;
         _jwtService = jwtService;
         _securityOptions = securityOptions.Value;
         _adminLogWriter = adminLogWriter;
+        _emailService = emailService;
     }
 
     public async Task<LoginResponse?> LoginAsync(LoginRequest request)
@@ -198,5 +201,45 @@ public class AuthService : IAuthService
         await _context.SaveChangesAsync();
 
         return tempPassword;
+    }
+
+    public async Task<bool> ForgotPasswordAsync(string email, string frontendBaseUrl)
+    {
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == email && u.IsActive);
+        if (user == null) return true; // Security: Mask existence
+
+        string token = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
+        token = token.Replace("+", "-").Replace("/", "_").TrimEnd('=');
+
+        user.PasswordResetToken = token;
+        user.PasswordResetTokenExpiryUtc = DateTime.UtcNow.AddMinutes(15);
+        await _context.SaveChangesAsync();
+
+        var resetLink = $"{frontendBaseUrl}/reset-password?token={token}&email={Uri.EscapeDataString(email)}";
+        
+        await _emailService.SendPasswordResetEmailAsync(user.Email, resetLink);
+        
+        return true;
+    }
+
+    public async Task<bool> ResetPasswordWithTokenAsync(string email, string token, string newPassword)
+    {
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == email && u.PasswordResetToken == token && u.IsActive);
+        
+        if (user == null || !user.PasswordResetTokenExpiryUtc.HasValue || user.PasswordResetTokenExpiryUtc.Value < DateTime.UtcNow)
+        {
+            return false;
+        }
+
+        user.PasswordHash = _passwordHasher.HashPassword(newPassword);
+        user.PasswordResetToken = null;
+        user.PasswordResetTokenExpiryUtc = null;
+        user.AccessFailedCount = 0;
+        user.LockoutEndUtc = null;
+        user.MustChangePassword = false;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+        return true;
     }
 }

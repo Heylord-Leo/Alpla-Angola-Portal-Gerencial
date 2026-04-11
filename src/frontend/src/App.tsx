@@ -23,6 +23,7 @@ import { IntegrationHealth } from './pages/Admin/IntegrationHealth';
 import UserManagement from './pages/Admin/UserManagement';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import LoginPage from './pages/LoginPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import ChangePasswordPage from './pages/ChangePasswordPage';
 import { ROLES } from './constants/roles';
 
@@ -60,6 +61,7 @@ function AppContent() {
     return (
         <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
             
             <Route element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
                 <Route path="/change-password" element={<ChangePasswordPage />} />
