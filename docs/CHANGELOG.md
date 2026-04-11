@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.46.0] - 2026-04-11
+
+### Added
+- **Modern Requests Dashboard**: Completely visually overhauled the primary Requests workspace, migrating away from the legacy brutalist table patterns to a high-fidelity 'Modern Corporate' widget layout.
+    - Added `ActionCarouselWidget` to surface urgent "Para Minha Ação" tasks with high-contrast motion cards.
+    - Updated `RequestsTableWidget` to support native sticky scrolling, status chips, and integrated global Kebab menus.
+- **Drawer Presentation Mode (Dual-Mode Architecture)**: Integrated `RequestDrawerPresentation`, allowing users to open and edit full requests via a slide-out right panel directly from the dashboard without navigating away or losing context. This leverages the existing `RequestEdit` business logic securely.
+
 ## [2.45.1] - 2026-04-10
 
 ### Fixed

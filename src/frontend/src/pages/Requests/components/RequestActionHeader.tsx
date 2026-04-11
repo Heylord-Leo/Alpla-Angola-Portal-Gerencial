@@ -25,6 +25,7 @@ interface RequestActionHeaderProps {
     feedback: { type: FeedbackType; message: string | null };
     onCloseFeedback: () => void;
     children?: React.ReactNode;
+    isDrawerMode?: boolean;
 }
 
 export const RequestActionHeader: React.FC<RequestActionHeaderProps> = ({
@@ -38,10 +39,18 @@ export const RequestActionHeader: React.FC<RequestActionHeaderProps> = ({
     operationalGuidance,
     feedback,
     onCloseFeedback,
-    children
+    children,
+    isDrawerMode
 }) => {
     return (
-        <div style={{
+        <div style={isDrawerMode ? {
+            backgroundColor: 'var(--color-bg-page)',
+            padding: '16px',
+            borderBottom: '2px solid var(--color-border-heavy)',
+            display: 'flex',
+            flexDirection: 'column',
+            marginBottom: '16px',
+        } : {
             position: 'sticky',
             top: 'calc(var(--header-height) - 1rem)',
             zIndex: Z_INDEX.STICKY as any,
@@ -59,7 +68,7 @@ export const RequestActionHeader: React.FC<RequestActionHeaderProps> = ({
                 type={feedback.type}
                 message={feedback.message}
                 onClose={onCloseFeedback}
-                isFixed={true}
+                isFixed={!isDrawerMode}
             />
 
             {/* Row 1: Context & Status Context (Secondary) */}

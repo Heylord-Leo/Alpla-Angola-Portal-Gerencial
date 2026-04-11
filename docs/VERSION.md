@@ -2,7 +2,13 @@
 
 ## Current Version
 
-v2.45.1
+v2.46.0
+
+## [2.46.0] - 2026-04-11
+
+### Added
+- **Modern Requests Dashboard**: Visually overhauled the primary Requests workspace away from the legacy table patterns to a high-fidelity 'Modern Corporate' widget layout (`ActionCarouselWidget`, `RequestsTableWidget`).
+- **Drawer Presentation Mode (Dual-Mode Architecture)**: Integrated `RequestDrawerPresentation`, allowing users to open and edit full requests via a slide-out right panel directly from the dashboard without navigating away.
 
 ## [2.45.1] - 2026-04-10
 

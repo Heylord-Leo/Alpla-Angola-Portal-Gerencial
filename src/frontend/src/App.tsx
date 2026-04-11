@@ -4,6 +4,7 @@ import { AppShell } from './layouts/AppShell';
 import { RequestsList } from './pages/Requests/RequestsList';
 import { RequestCreate } from './pages/Requests/RequestCreate';
 import { RequestEdit } from './pages/Requests/RequestEdit';
+import { RequestsDashboard } from './pages/Requests/components/modern/RequestsDashboard';
 import { BuyerItemsList } from './pages/Buyer/BuyerItemsList';
 import { ReceivingWorkspace } from './pages/Receiving/ReceivingWorkspace';
 import ReceivingOperation from './pages/Receiving/ReceivingOperation';
@@ -68,6 +69,7 @@ function AppContent() {
                 <Route path="/approvals" element={<ApprovalCenter />} />
                 <Route path="/purchasing" element={<PurchasingLandingPage />} />
                 <Route path="/requests" element={<RequestsList />} />
+                <Route path="/modern-requests" element={<RequestsDashboard />} />
                 <Route path="/requests/new" element={<ErrorBoundary fallbackName="RequestCreate"><RequestCreate /></ErrorBoundary>} />
                 <Route path="/requests/:id" element={<ErrorBoundary fallbackName="RequestEdit"><RequestEdit /></ErrorBoundary>} />
                 <Route path="/requests/:id/edit" element={<ErrorBoundary fallbackName="RequestEdit"><RequestEdit /></ErrorBoundary>} />

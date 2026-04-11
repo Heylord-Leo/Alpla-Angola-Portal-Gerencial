@@ -1,17 +1,15 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Search, FileText, X, Eye, Copy, DollarSign, User, Clock, AlertTriangle } from 'lucide-react';
 import { api } from '../../../lib/api';
 import { formatCurrencyAO, getRequestGuidance, getUrgencyStyle, formatDate } from '../../../lib/utils';
 import { RequestListItemDto, DashboardSummaryDto } from '../../../types';
-import { ApprovalModal, ApprovalActionType } from '../../../components/ApprovalModal';
+import {  } from '../../../components/ApprovalModal';
 import { FilterDropdown, FilterGroup } from '../../../components/ui/FilterDropdown';
 import { KebabMenu } from '../../../components/ui/KebabMenu';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import { KPISummary } from '../../../components/common/dashboard/KPISummary';
 import { RequestTimelineInline } from '../components/RequestTimelineInline';
-import { FeedbackType } from '../../../components/ui/Feedback';
-
 const QUICK_CHIPS = [
     { label: 'Todos', activeCodes: [] },
     { label: 'Em Cotação', activeCodes: ['WAITING_QUOTATION'] },
@@ -59,8 +57,6 @@ export function RequestsGrid({ title, subtitle, emptyMessage, baseFilters, looku
     // UI State
     const navigate = useNavigate();
     const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null);
-    const [showApprovalModal, setShowApprovalModal] = useState<{ show: boolean, type: ApprovalActionType, requestId: string | null }>({ show: false, type: null, requestId: null });
-
     const toggleRow = (requestId: string) => {
         setExpandedRequestId(prev => prev === requestId ? null : requestId);
     };
