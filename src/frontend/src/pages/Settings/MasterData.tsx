@@ -67,15 +67,15 @@ export function MasterData() {
 
             const [uRes, cRes, nRes, dRes, pRes, sRes, ccRes, coRes, ivaRes, usersRes] = results;
 
-            if (uRes.status === 'fulfilled') setUnits(uRes.value);
-            if (cRes.status === 'fulfilled') setCurrencies(cRes.value);
-            if (nRes.status === 'fulfilled') setNeedLevels(nRes.value);
-            if (dRes.status === 'fulfilled') setDepartments(dRes.value);
-            if (pRes.status === 'fulfilled') setPlants(pRes.value);
-            if (sRes.status === 'fulfilled') setSuppliers(sRes.value);
-            if (ccRes.status === 'fulfilled') setCostCenters(ccRes.value);
-            if (coRes.status === 'fulfilled') setCompanies(coRes.value);
-            if (ivaRes.status === 'fulfilled') setIvaRates(ivaRes.value);
+            if (uRes.status === 'fulfilled') setUnits([...uRes.value].sort((a, b) => a.id - b.id));
+            if (cRes.status === 'fulfilled') setCurrencies([...cRes.value].sort((a, b) => a.id - b.id));
+            if (nRes.status === 'fulfilled') setNeedLevels([...nRes.value].sort((a, b) => a.id - b.id));
+            if (dRes.status === 'fulfilled') setDepartments([...dRes.value].sort((a, b) => a.id - b.id));
+            if (pRes.status === 'fulfilled') setPlants([...pRes.value].sort((a, b) => a.id - b.id));
+            if (sRes.status === 'fulfilled') setSuppliers([...sRes.value].sort((a, b) => a.id - b.id));
+            if (ccRes.status === 'fulfilled') setCostCenters([...ccRes.value].sort((a, b) => a.id - b.id));
+            if (coRes.status === 'fulfilled') setCompanies([...coRes.value].sort((a, b) => a.id - b.id));
+            if (ivaRes.status === 'fulfilled') setIvaRates([...ivaRes.value].sort((a, b) => a.id - b.id));
             if (usersRes.status === 'fulfilled') setUsers(usersRes.value);
 
             // Check for failures
@@ -281,7 +281,7 @@ export function MasterData() {
             </div>
 
             {/* Standard Underline Tab Navigation */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '32px', borderBottom: '2px solid var(--color-border)', paddingBottom: '2px', overflowX: 'auto' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 8px', marginBottom: '32px', borderBottom: '2px solid var(--color-border)', paddingBottom: '0' }}>
                 {[
                     { id: 'units', label: 'Unidades' },
                     { id: 'currencies', label: 'Moedas' },

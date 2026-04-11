@@ -2,7 +2,12 @@
 
 ## Current Version
 
-v2.47.0
+v2.48.0
+
+## [2.48.0] - 2026-04-11
+
+### Added
+- **UI/UX Standarization & Context Linking**: Enhanced the modern requests dashboard with cross-workspace deep linking functionality and persistent layout bugfixes.
 
 ## [2.47.0] - 2026-04-11
 

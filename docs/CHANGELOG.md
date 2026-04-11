@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.48.0] - 2026-04-11
+
+### Added
+- **Deep Linking Context Navigation**: The dashboard carousel now natively links urgent requests to their contextual workspaces (Purchasing: `WAITING_QUOTATION`, Receiving: `WAITING_RECEIPT` / `PAYMENT_COMPLETED`, Finance: `PO_ISSUED` / `PAYMENT_SCHEDULED`).
+- **Visual Pulse Highlight**: Deep-linking now highlights the target element in the list with an animated red pulse, immediately driving the user's attention.
+- **Drawer Integration (Finance)**: Finance obligations/payment lists now consume the standard `RequestQuickViewDrawer` for detailing objects, substituting intrusive new-tab spawning.
+
+### Fixed
+- **Roles Matrix Data Integrity**: Repaired an exclusion rule in `RequestsController.cs` that previously truncated actionable tasks for Buyers/Executors dependent on legacy timeline boundaries.
+- **Layout Contraction Flaws**: Pushed `width: 100%` overrides on global Flex wrappers (`PageContainer.tsx`) to resolve aggressive collapsing behaviors in the `/finance/history` audit logs.
+- Removed legacy UI links ("Modo Clássico") that persisted on modern component iterations.
+
 ## [2.47.0] - 2026-04-11
 
 ### Added

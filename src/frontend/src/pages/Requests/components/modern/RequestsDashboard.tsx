@@ -221,30 +221,7 @@ export function RequestsDashboard() {
                     }}>Gerencie e acompanhe todos os pedidos corporativos em tempo real.</p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <button
-                        onClick={() => navigate('/requests')}
-                        style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '8px',
-                            backgroundColor: 'var(--color-bg-surface)',
-                            border: '1px solid var(--color-border)',
-                            color: 'var(--color-text-main)',
-                            padding: '10px 18px',
-                            borderRadius: 'var(--radius-md)',
-                            fontWeight: 600,
-                            fontSize: '0.85rem',
-                            cursor: 'pointer',
-                            transition: 'all 0.15s ease',
-                            boxShadow: 'var(--shadow-sm)',
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-bg-page)'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
-                    >
-                        <FolderKanban size={18} style={{ color: 'var(--color-text-muted)' }} />
-                        Modo Clássico
-                    </button>
+
                     
                     {!isFloating && (
                         <button
@@ -493,7 +470,7 @@ export function RequestsDashboard() {
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: 20 }}
-                            style={{ position: 'fixed', bottom: '32px', right: '32px', zIndex: 9999 }}
+                            style={{ position: 'fixed', bottom: '32px', right: '32px', zIndex: 90 }}
                         >
                             <div style={{ 
                                 backgroundColor: 'rgba(255, 255, 255, 0.90)', 

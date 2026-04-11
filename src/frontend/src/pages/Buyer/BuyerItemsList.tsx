@@ -32,7 +32,7 @@ const ALLOWED_EXTENSIONS_MSG = "PDF, JPG, JPEG, PNG, DOC, DOCX, XLS e XLSX";
    100% { outline: 2px solid transparent; background-color: transparent; }
  }
  .section-attention-highlight {
-   animation: sectionHighlight 2.5s ease-out;
+   animation: sectionHighlight 5s ease-out;
  }
  `;
 
@@ -148,12 +148,25 @@ export function BuyerItemsList() {
     useEffect(() => {
         if (locationState?.successMessage) {
             setFeedback({ type: 'success', message: locationState.successMessage });
-            // Replace state so refresh doesn't trigger it again
-            const newState = { ...locationState };
-            delete newState.successMessage;
-            navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: newState });
+            // Clear location state
+            window.history.replaceState({}, document.title)
         }
-    }, [locationState, navigate, location.pathname, location.search]);
+
+        const focusId = searchParams.get('highlightRequestId');
+        if (focusId) {
+            setHighlightedRequestId(focusId);
+            setExpandedRequests(prev => {
+                const newSet = new Set(prev);
+                newSet.add(focusId);
+                return newSet;
+            });
+            // Optionally, scroll into view after a short delay
+            setTimeout(() => {
+                const el = document.getElementById(`request-group-${focusId}`);
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 500);
+        }
+    }, [locationState, searchParams]);
 
     // Helper to safely update URL parameters
     const updateParams = (updates: Record<string, string | number | null>) => {
@@ -1043,7 +1056,7 @@ export function BuyerItemsList() {
                         const canMutateQuotation = ['DRAFT', 'WAITING_QUOTATION', 'AREA_ADJUSTMENT', 'FINAL_ADJUSTMENT'].includes(group.requestStatusCode) && isAssignedToMe;
 
                         return (
-                            <div key={group.requestId} style={{
+                            <div key={group.requestId} id={`request-group-${group.requestId}`} className={highlightedRequestId === group.requestId ? 'section-attention-highlight' : ''} style={{
                                 backgroundColor: 'var(--color-bg-surface)',
                                 border: '2px solid var(--color-primary)',
                                 boxShadow: 'var(--shadow-brutal)',

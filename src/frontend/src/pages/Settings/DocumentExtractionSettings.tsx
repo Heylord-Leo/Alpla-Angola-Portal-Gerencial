@@ -193,35 +193,15 @@ export function DocumentExtractionSettings() {
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                             <label style={{ fontSize: '0.85rem', fontWeight: 700, textTransform: 'uppercase' }}>Provedor Ativo</label>
-                            <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                <select
-                                    value={settings.defaultProvider}
-                                    onChange={(e) => handleChange('defaultProvider', e.target.value)}
-                                    style={{ flex: 1 }}
-                                >
-                                    <option value="LOCAL_OCR">Local OCR (Tesseract / Python)</option>
-                                    <option value="OPENAI">OpenAI Vision (Experimental)</option>
-                                    <option value="AZURE_DOCUMENT_INTELLIGENCE">Azure Document Intelligence</option>
-                                </select>
-                                <button
-                                    type="button"
-                                    onClick={handleTestConnection}
-                                    disabled={testing || !settings.isEnabled}
-                                    className="btn-secondary"
-                                    style={{ 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
-                                        gap: '0.5rem', 
-                                        padding: '0 1rem',
-                                        fontSize: '0.75rem',
-                                        height: '2.5rem',
-                                        minWidth: '150px',
-                                        justifyContent: 'center'
-                                    }}
-                                >
-                                    {testing ? 'A TESTAR...' : 'TESTAR CONEXÃO'}
-                                </button>
-                            </div>
+                            <select
+                                value={settings.defaultProvider}
+                                onChange={(e) => handleChange('defaultProvider', e.target.value)}
+                                style={{ width: '100%' }}
+                            >
+                                <option value="LOCAL_OCR">Local OCR (Tesseract / Python)</option>
+                                <option value="OPENAI">OpenAI Vision (Experimental)</option>
+                                <option value="AZURE_DOCUMENT_INTELLIGENCE">Azure Document Intelligence</option>
+                            </select>
                         </div>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -234,6 +214,27 @@ export function DocumentExtractionSettings() {
                                 style={{ width: '100%' }}
                             />
                         </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: '1.5rem', borderTop: '1px solid var(--color-border)', paddingTop: '1.5rem' }}>
+                        <button
+                            type="button"
+                            onClick={handleTestConnection}
+                            disabled={testing || !settings.isEnabled}
+                            className="btn-secondary"
+                            style={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '0.5rem', 
+                                padding: '0 1rem',
+                                fontSize: '0.8rem',
+                                height: '2.5rem',
+                                minWidth: '180px',
+                                justifyContent: 'center'
+                            }}
+                        >
+                            <Globe size={16} /> {testing ? 'A TESTAR...' : 'TESTAR CONEXÃO DO PROVEDOR'}
+                        </button>
                     </div>
                 </section>
 

@@ -21,6 +21,7 @@ export function PageContainer({
             style={{
                 minHeight: '100vh',
                 padding: padding,
+                width: '100%',
                 maxWidth: maxWidth,
                 margin: '0 auto',
                 display: 'flex',

@@ -142,7 +142,8 @@ export default function FinanceHistory() {
                 backgroundColor: 'var(--color-bg-surface)',
                 border: '2px solid var(--color-border)',
                 boxShadow: 'var(--shadow-brutal)',
-                padding: '32px'
+                padding: '32px',
+                width: '100%'
             }}>
                 {isLoading && (!data || !data.items) ? (
                     <div style={{ padding: '60px', textAlign: 'center', fontWeight: 'bold' }}>Carregando dados...</div>

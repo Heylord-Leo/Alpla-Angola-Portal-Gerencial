@@ -18,6 +18,17 @@ import { ApprovalModal } from '../../components/ApprovalModal';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { StandardTable } from '../../components/ui/StandardTable';
 
+const highlightStyles = `
+@keyframes sectionHighlight {
+  0% { outline: 2px solid transparent; background-color: transparent; }
+  15% { outline: 3px solid #ef4444; background-color: #fef2f2; }
+  100% { outline: 2px solid transparent; background-color: transparent; }
+}
+.section-attention-highlight {
+  animation: sectionHighlight 5s ease-out;
+}
+`;
+
 const ReceivingOperation: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -54,8 +65,14 @@ const ReceivingOperation: React.FC = () => {
     }
   };
 
+  const [isHighlighted, setIsHighlighted] = useState(false);
+
   useEffect(() => {
     fetchRequest();
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('highlightRequestId') === id) {
+        setIsHighlighted(true);
+    }
   }, [id]);
 
   const isQuotationFlow = useMemo(() => 
@@ -172,6 +189,7 @@ const ReceivingOperation: React.FC = () => {
 
   return (
     <PageContainer padding="24px 32px">
+      <style>{highlightStyles}</style>
       <RequestActionHeader
         title="Operação de Recebimento"
         requestNumber={request.requestNumber?.startsWith('REQ') ? request.requestNumber : `REQ ${request.requestNumber}`}
@@ -236,7 +254,7 @@ const ReceivingOperation: React.FC = () => {
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: '24px' }}>
         {/* Main Items Block */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          <div style={cardStyle}>
+          <div className={isHighlighted ? 'section-attention-highlight' : ''} style={cardStyle}>
             <div style={sectionHeaderStyle}>
               <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 900, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <FileText size={18} color="var(--color-primary)" />

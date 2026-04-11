@@ -44,7 +44,7 @@ export function ActionCarouselWidget({ summary, onRowClick }: ActionCarouselWidg
             }
         };
         fetchAttentionRequests();
-    }, []);
+    }, [summary]); // Dependency on summary so it re-fetches when dashboard reloads data
 
     const stats = [
         { label: 'Total de Pedidos', value: summary.totalRequests || 0, icon: FileText, theme: 'blue' },
@@ -169,7 +169,7 @@ export function ActionCarouselWidget({ summary, onRowClick }: ActionCarouselWidg
                                 color: 'var(--color-text-muted)',
                                 margin: '4px 0 0',
                                 fontWeight: 500,
-                            }}>Pedidos que sugerem a sua atenção imediata.</p>
+                            }}>Pedidos atribuídos a você ou que requerem atenção imediata.</p>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <NavButton onClick={prevCarousel} disabled={carouselIndex === 0}>
@@ -203,6 +203,9 @@ export function ActionCarouselWidget({ summary, onRowClick }: ActionCarouselWidg
                                         onView={() => onRowClick && onRowClick(order.id.toString())}
                                         onOpenFull={() => navigate(`/requests/${order.id}`)}
                                         onDuplicate={() => navigate(`/requests/new?copyFrom=${order.id}`)}
+                                        onQuotationClick={() => navigate(`/buyer/items?highlightRequestId=${order.id}`)}
+                                        onReceivingClick={() => navigate(`/receiving/operation/${order.id}?highlightRequestId=${order.id}`)}
+                                        onPaymentClick={() => navigate(`/finance/payments?highlightRequestId=${order.id}`)}
                                     />
                                 </div>
                             ))}
@@ -241,7 +244,7 @@ function NavButton({ onClick, disabled, children }: { onClick: () => void; disab
     );
 }
 
-function CarouselCard({ order, onView, onOpenFull, onDuplicate }: { order: RequestListItemDto; onView: () => void; onOpenFull: () => void; onDuplicate: () => void; }) {
+function CarouselCard({ order, onView, onOpenFull, onDuplicate, onQuotationClick, onReceivingClick, onPaymentClick }: { order: RequestListItemDto; onView: () => void; onOpenFull: () => void; onDuplicate: () => void; onQuotationClick?: () => void; onReceivingClick?: () => void; onPaymentClick?: () => void; }) {
     const isPayment = order.requestTypeCode === 'PAYMENT';
 
     return (
@@ -330,7 +333,60 @@ function CarouselCard({ order, onView, onOpenFull, onDuplicate }: { order: Reque
                 marginTop: '8px',
             }}>
                 <div style={{ flex: 1 }}>
-                    <StatusBadge status={order.statusCode || 'DRAFT'} />
+                    {order.statusCode === 'WAITING_QUOTATION' && onQuotationClick ? (
+                        <div 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onQuotationClick();
+                            }}
+                            title="Ir para a tela de cotações"
+                            style={{ 
+                                cursor: 'pointer', 
+                                display: 'inline-block',
+                                transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; e.currentTarget.style.transform = 'scale(1.02)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1)'; }}
+                        >
+                            <StatusBadge status={order.statusCode} />
+                        </div>
+                    ) : (order.statusCode === 'WAITING_RECEIPT' || order.statusCode === 'PAYMENT_COMPLETED') && onReceivingClick ? (
+                        <div 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onReceivingClick();
+                            }}
+                            title="Ir para a tela de recebimento"
+                            style={{ 
+                                cursor: 'pointer', 
+                                display: 'inline-block',
+                                transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; e.currentTarget.style.transform = 'scale(1.02)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1)'; }}
+                        >
+                            <StatusBadge status={order.statusCode} />
+                        </div>
+                    ) : (order.statusCode === 'PO_ISSUED' || order.statusCode === 'PAYMENT_SCHEDULED' || order.statusCode === 'PAYMENT_REQUEST_SENT') && onPaymentClick ? (
+                        <div 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onPaymentClick();
+                            }}
+                            title="Ir para tela de finanças"
+                            style={{ 
+                                cursor: 'pointer', 
+                                display: 'inline-block',
+                                transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; e.currentTarget.style.transform = 'scale(1.02)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1)'; }}
+                        >
+                            <StatusBadge status={order.statusCode} />
+                        </div>
+                    ) : (
+                        <StatusBadge status={order.statusCode || 'DRAFT'} />
+                    )}
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     <p style={{

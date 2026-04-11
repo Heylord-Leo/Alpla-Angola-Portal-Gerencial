@@ -328,6 +328,8 @@ public class RequestsController : BaseController
         var isFinance = roles.Contains(RoleConstants.Finance);
         var isReceiver = roles.Contains(RoleConstants.Receiving);
 
+        var receivingCodes = new[] { "WAITING_RECEIPT", RequestConstants.Statuses.PaymentCompleted, "PAG_REALIZADO", "AG_RECIBO" };
+
         Expression<Func<AlplaPortal.Domain.Entities.Request, bool>> myTasksCriteria = r =>
             // Solicitante: Em rascunho ou ajuste
             (r.RequesterId == currentUserId && (r.Status!.Code == RequestConstants.Statuses.Draft || r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment)) ||
@@ -340,7 +342,7 @@ public class RequestsController : BaseController
             // Financeiro
             (isFinance && (r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled)) ||
             // Recebimento (Requester ou Role)
-            ((r.RequesterId == currentUserId || isReceiver) && r.Status!.Code == "WAITING_RECEIPT");
+            ((r.RequesterId == currentUserId || isReceiver) && receivingCodes.Contains(r.Status!.Code));
 
         if (myTasksOnly == true)
         {
@@ -395,9 +397,19 @@ public class RequestsController : BaseController
         {
             var terminalStates = new[] { "APPROVED", "REJECTED", "CANCELLED", "COMPLETED", "QUOTATION_COMPLETED" };
             query = query.Where(r => 
-                !terminalStates.Contains(r.Status!.Code) && 
-                r.NeedByDateUtc.HasValue && 
-                r.NeedByDateUtc.Value < in4Days);
+                // Urgent deadline
+                (!terminalStates.Contains(r.Status!.Code) && r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < in4Days)
+                ||
+                // My Tasks
+                (
+                    (r.RequesterId == currentUserId && (r.Status!.Code == RequestConstants.Statuses.Draft || r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment)) ||
+                    (isAreaApprover && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
+                    (isFinalApprover && r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval) ||
+                    (isBuyer && (r.Status!.Code == RequestConstants.Statuses.WaitingQuotation || r.Status!.Code == RequestConstants.Statuses.FinalApproved) && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
+                    (isFinance && (r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled)) ||
+                    ((r.RequesterId == currentUserId || isReceiver) && receivingCodes.Contains(r.Status!.Code))
+                )
+            );
         }
 
         // 3a. Calculate Filtered Total (Monetary Total)
