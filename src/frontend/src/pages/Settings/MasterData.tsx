@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../../lib/api';
-import { LookupDto, CurrencyDto, UserDto } from '../../types';
+import { LookupDto, CurrencyDto, UserDto, SmtpSettingsDto } from '../../types';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { KebabMenu } from '../../components/ui/KebabMenu';
 import { ROLES } from '../../constants/roles';
-import { Edit2, Power, PowerOff, Database } from 'lucide-react';
+import { Edit2, Power, PowerOff, Database, Mail, Server, Globe, Shield, Save } from 'lucide-react';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 
@@ -30,7 +30,15 @@ export function MasterData() {
     const [loading, setLoading] = useState(true);
 
     // Form states
-    const [activeTab, setActiveTab] = useState<'units' | 'currencies' | 'needLevels' | 'departments' | 'plants' | 'suppliers' | 'costCenters' | 'ivaRates' | 'companies'>('units');
+    const [activeTab, setActiveTab] = useState<'units' | 'currencies' | 'needLevels' | 'departments' | 'plants' | 'suppliers' | 'costCenters' | 'ivaRates' | 'companies' | 'smtpSettings'>('units');
+
+    // SMTP Settings State
+    const [smtpSettings, setSmtpSettings] = useState<SmtpSettingsDto | null>(null);
+    const [smtpLoading, setSmtpLoading] = useState(false);
+    const [smtpSaving, setSmtpSaving] = useState(false);
+    const [smtpTesting, setSmtpTesting] = useState(false);
+    const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string; responseTimeMs?: number } | null>(null);
+    const [showPasswordField, setShowPasswordField] = useState(false);
     const [editMode, setEditMode] = useState<{ type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company', id: number | null }>({ type: 'unit', id: null });
     const [formData, setFormData] = useState({
         code: '',
@@ -291,7 +299,8 @@ export function MasterData() {
                     { id: 'suppliers', label: 'Fornecedores' },
                     { id: 'costCenters', label: 'Centros de Custo' },
                     { id: 'ivaRates', label: 'Taxas de IVA' },
-                    { id: 'companies', label: 'Empresas' }
+                    { id: 'companies', label: 'Empresas' },
+                    { id: 'smtpSettings', label: '✉ SMTP' }
                 ].map((tab) => (
                     <button
                         key={tab.id}
@@ -318,6 +327,24 @@ export function MasterData() {
                 ))}
             </div>
 
+            {activeTab === 'smtpSettings' ? (
+                <SmtpSettingsPanel
+                    smtpSettings={smtpSettings}
+                    smtpLoading={smtpLoading}
+                    smtpSaving={smtpSaving}
+                    smtpTesting={smtpTesting}
+                    smtpTestResult={smtpTestResult}
+                    showPasswordField={showPasswordField}
+                    feedback={feedback}
+                    setSmtpSettings={setSmtpSettings}
+                    setSmtpLoading={setSmtpLoading}
+                    setSmtpSaving={setSmtpSaving}
+                    setSmtpTesting={setSmtpTesting}
+                    setSmtpTestResult={setSmtpTestResult}
+                    setShowPasswordField={setShowPasswordField}
+                    setFeedback={setFeedback}
+                />
+            ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(350px, 1fr) 2fr', gap: '32px', alignItems: 'start' }}>
 
                 {/* Form Column - Styled as a standard card */}
@@ -967,6 +994,395 @@ export function MasterData() {
                     </table>
                 </div>
             </div>
+            )}
         </PageContainer>
+    );
+}
+
+// =============================================
+//  SMTP Settings Panel (Internal Component)
+// =============================================
+interface SmtpSettingsPanelProps {
+    smtpSettings: SmtpSettingsDto | null;
+    smtpLoading: boolean;
+    smtpSaving: boolean;
+    smtpTesting: boolean;
+    smtpTestResult: { success: boolean; message: string; responseTimeMs?: number } | null;
+    showPasswordField: boolean;
+    feedback: { message: string; type: FeedbackType } | null;
+    setSmtpSettings: React.Dispatch<React.SetStateAction<SmtpSettingsDto | null>>;
+    setSmtpLoading: React.Dispatch<React.SetStateAction<boolean>>;
+    setSmtpSaving: React.Dispatch<React.SetStateAction<boolean>>;
+    setSmtpTesting: React.Dispatch<React.SetStateAction<boolean>>;
+    setSmtpTestResult: React.Dispatch<React.SetStateAction<{ success: boolean; message: string; responseTimeMs?: number } | null>>;
+    setShowPasswordField: React.Dispatch<React.SetStateAction<boolean>>;
+    setFeedback: React.Dispatch<React.SetStateAction<{ message: string; type: FeedbackType } | null>>;
+}
+
+function SmtpSettingsPanel({
+    smtpSettings, smtpLoading, smtpSaving, smtpTesting, smtpTestResult, showPasswordField,
+    setSmtpSettings, setSmtpLoading, setSmtpSaving, setSmtpTesting, setSmtpTestResult, setShowPasswordField, setFeedback
+}: SmtpSettingsPanelProps) {
+
+    useEffect(() => {
+        loadSmtpSettings();
+    }, []);
+
+    const loadSmtpSettings = async () => {
+        setSmtpLoading(true);
+        try {
+            const data = await api.admin.smtpSettings.get();
+            setSmtpSettings(data);
+        } catch (err: any) {
+            setFeedback({ message: err.message || 'Falha ao carregar configurações SMTP.', type: 'error' });
+        } finally {
+            setSmtpLoading(false);
+        }
+    };
+
+    const handleSaveSmtp = async () => {
+        if (!smtpSettings) return;
+        setSmtpSaving(true);
+        setFeedback(null);
+        try {
+            await api.admin.smtpSettings.update(smtpSettings);
+            setFeedback({ message: 'Configurações SMTP atualizadas com sucesso.', type: 'success' });
+            setShowPasswordField(false);
+            // Reload to get fresh state (e.g. hasPassword might have changed)
+            await loadSmtpSettings();
+        } catch (err: any) {
+            setFeedback({ message: err.message || 'Falha ao salvar configurações SMTP.', type: 'error' });
+        } finally {
+            setSmtpSaving(false);
+        }
+    };
+
+    const handleTestConnection = async () => {
+        setSmtpTesting(true);
+        setSmtpTestResult(null);
+        try {
+            const result = await api.admin.smtpSettings.testConnection();
+            setSmtpTestResult(result);
+        } catch (err: any) {
+            setSmtpTestResult({ success: false, message: err.message || 'Erro ao testar conexão.' });
+        } finally {
+            setSmtpTesting(false);
+        }
+    };
+
+    const updateField = (field: keyof SmtpSettingsDto, value: any) => {
+        setSmtpSettings(prev => prev ? { ...prev, [field]: value } : prev);
+    };
+
+    const labelStyle: React.CSSProperties = {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        fontSize: '0.75rem',
+        fontWeight: 800,
+        color: 'var(--color-text-muted)',
+        textTransform: 'uppercase',
+        letterSpacing: '0.05em',
+        marginBottom: '6px'
+    };
+
+    const inputStyle: React.CSSProperties = {
+        width: '100%',
+        padding: '12px 14px',
+        backgroundColor: 'var(--color-bg-page)',
+        border: '2px solid var(--color-border)',
+        borderRadius: 'var(--radius-sm)',
+        fontSize: '0.9rem',
+        fontWeight: 600,
+        color: 'var(--color-text)',
+        transition: 'border-color 0.15s ease',
+        outline: 'none',
+        boxSizing: 'border-box' as const
+    };
+
+    const cardStyle: React.CSSProperties = {
+        backgroundColor: 'var(--color-bg-surface)',
+        padding: '32px',
+        borderRadius: 'var(--radius-lg)',
+        border: '1px solid var(--color-border)',
+    };
+
+    if (smtpLoading) {
+        return (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '80px 0' }}>
+                <div style={{ textAlign: 'center' }}>
+                    <div style={{
+                        width: '40px', height: '40px', border: '4px solid var(--color-border)',
+                        borderTopColor: 'var(--color-primary)', borderRadius: '50%',
+                        animation: 'spin 0.8s linear infinite', margin: '0 auto 16px'
+                    }} />
+                    <p style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>A carregar configurações SMTP...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (!smtpSettings) {
+        return <div style={{ padding: '32px', color: 'var(--color-text-muted)' }}>Não foi possível carregar as configurações SMTP.</div>;
+    }
+
+    return (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', alignItems: 'start' }}>
+
+            {/* Left Card: Server Configuration */}
+            <div style={cardStyle}>
+                <h3 style={{
+                    marginTop: 0, marginBottom: '24px',
+                    fontSize: '1.1rem', fontWeight: 900, textTransform: 'uppercase',
+                    color: 'var(--color-primary)',
+                    borderBottom: '2px solid var(--color-border)', paddingBottom: '8px',
+                    display: 'flex', alignItems: 'center', gap: '10px'
+                }}>
+                    <Server size={20} /> Servidor SMTP
+                </h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div>
+                        <label style={labelStyle}><Globe size={14} /> Servidor (Host)</label>
+                        <input
+                            type="text"
+                            value={smtpSettings.server || ''}
+                            onChange={(e) => updateField('server', e.target.value)}
+                            placeholder="smtp.office365.com"
+                            style={inputStyle}
+                        />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                        <div>
+                            <label style={labelStyle}>Porta</label>
+                            <input
+                                type="number"
+                                value={smtpSettings.port || 587}
+                                onChange={(e) => updateField('port', parseInt(e.target.value) || 587)}
+                                style={inputStyle}
+                            />
+                        </div>
+                        <div>
+                            <label style={labelStyle}><Shield size={14} /> SSL/TLS</label>
+                            <div style={{
+                                display: 'flex', alignItems: 'center', gap: '12px',
+                                padding: '12px 14px',
+                                backgroundColor: 'var(--color-bg-page)',
+                                border: '2px solid var(--color-border)',
+                                borderRadius: 'var(--radius-sm)',
+                                height: '47px', boxSizing: 'border-box'
+                            }}>
+                                <input
+                                    type="checkbox"
+                                    checked={smtpSettings.enableSsl}
+                                    onChange={(e) => updateField('enableSsl', e.target.checked)}
+                                    style={{ width: '18px', height: '18px', accentColor: 'var(--color-primary)', cursor: 'pointer' }}
+                                />
+                                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-text)' }}>
+                                    {smtpSettings.enableSsl ? 'Ativado' : 'Desativado'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Right Card: Authentication */}
+            <div style={cardStyle}>
+                <h3 style={{
+                    marginTop: 0, marginBottom: '24px',
+                    fontSize: '1.1rem', fontWeight: 900, textTransform: 'uppercase',
+                    color: 'var(--color-primary)',
+                    borderBottom: '2px solid var(--color-border)', paddingBottom: '8px',
+                    display: 'flex', alignItems: 'center', gap: '10px'
+                }}>
+                    <Mail size={20} /> Remetente e Autenticação
+                </h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div>
+                        <label style={labelStyle}>E-mail do Remetente</label>
+                        <input
+                            type="email"
+                            value={smtpSettings.senderEmail || ''}
+                            onChange={(e) => updateField('senderEmail', e.target.value)}
+                            placeholder="portal@empresa.com"
+                            style={inputStyle}
+                        />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>Nome do Remetente</label>
+                        <input
+                            type="text"
+                            value={smtpSettings.senderName || ''}
+                            onChange={(e) => updateField('senderName', e.target.value)}
+                            placeholder="ALPLA Portal"
+                            style={inputStyle}
+                        />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>Senha SMTP</label>
+                        {!showPasswordField ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <div style={{
+                                    ...inputStyle,
+                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                    color: smtpSettings.hasPassword ? 'var(--color-text-muted)' : 'var(--color-danger, #E53E3E)',
+                                    fontWeight: 700,
+                                    flex: 1
+                                }}>
+                                    {smtpSettings.hasPassword ? '••••••••••••' : 'Não configurada'}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPasswordField(true)}
+                                    style={{
+                                        padding: '12px 18px',
+                                        backgroundColor: 'var(--color-bg-page)',
+                                        border: '2px solid var(--color-border)',
+                                        borderRadius: 'var(--radius-sm)',
+                                        fontWeight: 800,
+                                        fontSize: '0.75rem',
+                                        textTransform: 'uppercase',
+                                        cursor: 'pointer',
+                                        color: 'var(--color-text)',
+                                        whiteSpace: 'nowrap',
+                                        transition: 'all 0.15s ease'
+                                    }}
+                                >
+                                    Alterar
+                                </button>
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <input
+                                    type="password"
+                                    value={smtpSettings.password || ''}
+                                    onChange={(e) => updateField('password', e.target.value)}
+                                    placeholder="Digite a nova senha..."
+                                    autoFocus
+                                    style={{ ...inputStyle, flex: 1 }}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowPasswordField(false);
+                                        updateField('password', undefined);
+                                    }}
+                                    style={{
+                                        padding: '12px 16px',
+                                        backgroundColor: 'transparent',
+                                        border: '2px solid var(--color-border)',
+                                        borderRadius: 'var(--radius-sm)',
+                                        fontWeight: 800,
+                                        fontSize: '0.75rem',
+                                        cursor: 'pointer',
+                                        color: 'var(--color-text-muted)'
+                                    }}
+                                >
+                                    Cancelar
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Bottom Actions Strip — spans 2 columns */}
+            <div style={{
+                gridColumn: '1 / -1',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '16px'
+            }}>
+                {/* Left: Test Connection */}
+                <button
+                    type="button"
+                    onClick={handleTestConnection}
+                    disabled={smtpTesting}
+                    style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '8px',
+                        padding: '14px 28px',
+                        backgroundColor: 'var(--color-bg-surface)',
+                        border: '2px solid var(--color-border)',
+                        borderRadius: 'var(--radius-sm)',
+                        fontWeight: 900,
+                        fontSize: '0.8rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        cursor: smtpTesting ? 'wait' : 'pointer',
+                        color: 'var(--color-text)',
+                        opacity: smtpTesting ? 0.6 : 1,
+                        transition: 'all 0.15s ease'
+                    }}
+                >
+                    <Mail size={16} />
+                    {smtpTesting ? 'A Testar...' : 'Testar Conexão SMTP'}
+                </button>
+
+                {/* Right: Save */}
+                <button
+                    type="button"
+                    onClick={handleSaveSmtp}
+                    disabled={smtpSaving}
+                    style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '8px',
+                        padding: '14px 32px',
+                        backgroundColor: 'var(--color-primary)',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: 'var(--radius-sm)',
+                        fontWeight: 900,
+                        fontSize: '0.85rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        cursor: smtpSaving ? 'wait' : 'pointer',
+                        opacity: smtpSaving ? 0.7 : 1,
+                        transition: 'all 0.15s ease'
+                    }}
+                >
+                    <Save size={16} />
+                    {smtpSaving ? 'A Guardar...' : 'Guardar Alterações'}
+                </button>
+            </div>
+
+            {/* Test Result Banner */}
+            {smtpTestResult && (
+                <div style={{
+                    gridColumn: '1 / -1',
+                    padding: '18px 24px',
+                    borderRadius: 'var(--radius-md)',
+                    border: `2px solid ${smtpTestResult.success ? '#38A169' : '#E53E3E'}`,
+                    backgroundColor: smtpTestResult.success ? 'rgba(56, 161, 105, 0.06)' : 'rgba(229, 62, 62, 0.06)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    gap: '16px',
+                    animation: 'fadeIn 0.3s ease'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{
+                            width: '10px', height: '10px', borderRadius: '50%',
+                            backgroundColor: smtpTestResult.success ? '#38A169' : '#E53E3E'
+                        }} />
+                        <span style={{
+                            fontWeight: 700, fontSize: '0.9rem',
+                            color: smtpTestResult.success ? '#38A169' : '#E53E3E'
+                        }}>
+                            {smtpTestResult.message}
+                        </span>
+                    </div>
+                    {smtpTestResult.responseTimeMs !== undefined && (
+                        <span style={{
+                            fontWeight: 800, fontSize: '0.75rem',
+                            color: 'var(--color-text-muted)',
+                            backgroundColor: 'var(--color-bg-page)',
+                            padding: '4px 12px',
+                            borderRadius: '999px'
+                        }}>
+                            {smtpTestResult.responseTimeMs}ms
+                        </span>
+                    )}
+                </div>
+            )}
+        </div>
     );
 }

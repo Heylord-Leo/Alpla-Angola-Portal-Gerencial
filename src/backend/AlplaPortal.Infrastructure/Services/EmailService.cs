@@ -17,27 +17,25 @@ public class EmailService : IEmailService
     private readonly IConfiguration _config;
     private readonly ILogger<EmailService> _logger;
     private readonly IWebHostEnvironment _env;
+    private readonly ISmtpSettingsService _smtpSettingsService;
 
     private const string LogoContentId = "alpla-logo";
     private const string LogoFileName = "logo-v2.png";
 
-    public EmailService(IConfiguration config, ILogger<EmailService> logger, IWebHostEnvironment env)
+    public EmailService(IConfiguration config, ILogger<EmailService> logger, IWebHostEnvironment env, ISmtpSettingsService smtpSettingsService)
     {
         _config = config;
         _logger = logger;
         _env = env;
+        _smtpSettingsService = smtpSettingsService;
     }
 
     public async Task<bool> SendPasswordResetEmailAsync(string toEmail, string resetLink)
     {
         try
         {
-            var server = _config["SmtpSettings:Server"];
-            var port = int.Parse(_config["SmtpSettings:Port"] ?? "587");
-            var senderEmail = _config["SmtpSettings:SenderEmail"];
-            var senderName = _config["SmtpSettings:SenderName"];
-            var password = _config["SmtpSettings:Password"];
-            var enableSsl = bool.Parse(_config["SmtpSettings:EnableSsl"] ?? "true");
+            // --- Resolve SMTP settings from DB → appsettings → defaults ---
+            var smtp = await _smtpSettingsService.GetEffectiveSettingsAsync();
 
             // --- Safety guard: block localhost URLs outside Development ---
             if (!_env.IsDevelopment() && (resetLink.Contains("localhost") || resetLink.Contains("127.0.0.1")))
@@ -47,21 +45,22 @@ public class EmailService : IEmailService
                 throw new InvalidOperationException(errorMsg);
             }
 
-            if (string.IsNullOrEmpty(server) || string.IsNullOrEmpty(senderEmail) || string.IsNullOrEmpty(password))
+            if (string.IsNullOrEmpty(smtp.Server) || string.IsNullOrEmpty(smtp.SenderEmail) || string.IsNullOrEmpty(smtp.Password))
             {
-                _logger.LogError("SMTP configuration is missing or incomplete.");
+                _logger.LogError("SMTP configuration is missing or incomplete. Server: {Server}, SenderEmail: {SenderEmail}, HasPassword: {HasPwd}",
+                    smtp.Server, smtp.SenderEmail, !string.IsNullOrEmpty(smtp.Password));
                 return false;
             }
 
             _logger.LogInformation("Building password reset email for {Email} with resetLink base: {ResetLink}", toEmail, resetLink);
 
-            var fromAddress = new MailAddress(senderEmail, senderName);
+            var fromAddress = new MailAddress(smtp.SenderEmail, smtp.SenderName);
             var toAddress = new MailAddress(toEmail);
 
-            using var smtpClient = new SmtpClient(server, port)
+            using var smtpClient = new SmtpClient(smtp.Server, smtp.Port)
             {
-                Credentials = new NetworkCredential(senderEmail, password),
-                EnableSsl = enableSsl
+                Credentials = new NetworkCredential(smtp.SenderEmail, smtp.Password),
+                EnableSsl = smtp.EnableSsl
             };
 
             // --- Resolve logo asset with robust multi-path fallback ---

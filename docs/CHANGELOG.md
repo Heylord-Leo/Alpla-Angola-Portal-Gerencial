@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.51.0] - 2026-04-11
+
+### Added
+- **Dynamic SMTP Management**: Database-backed SMTP configuration with AES-256 encryption and real-time connectivity diagnostics.
+
 ## [2.50.0] - 2026-04-11
 
 ### Added

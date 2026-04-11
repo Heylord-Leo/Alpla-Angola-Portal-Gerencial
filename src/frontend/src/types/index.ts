@@ -313,6 +313,16 @@ export interface DocumentExtractionSettingsDto {
     azureDocumentIntelligenceEnabled: boolean;
     azureDocumentIntelligenceTimeoutSeconds?: number;
 }
+
+export interface SmtpSettingsDto {
+    server?: string;
+    port?: number;
+    senderEmail?: string;
+    senderName?: string;
+    enableSsl: boolean;
+    hasPassword: boolean;
+    password?: string; // write-only: send to update, never received from GET
+}
 export interface AttentionPointDto {
     id: string;
     title: string;

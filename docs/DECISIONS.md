@@ -4,6 +4,22 @@ Purpose: record important technical and process decisions so future work preserv
 
 ---
 
+## DEC-095 — Dynamic SMTP Management (AES-256 Encryption)
+
+- **Date:** 2026-04-11
+- **Status:** Accepted
+- **Context:** Legacy SMTP configuration was hardcoded in `appsettings.json` and required application restarts to change. Passwords were stored in plaintext within configuration files, violating security best practices for sensitive credentials.
+- **Decision:** Implement a secure, database-driven SMTP management system.
+    1. **Persistence Strategy**: Store SMTP settings in a dedicated `SmtpSettings` table, following the pattern established for Document Extraction settings. Database settings take precedence over file-based configuration.
+    2. **Encryption at Rest**: Implement a dedicated `AesEncryptionHelper` (AES-256-CBC with HMAC-SHA256) to encrypt and verify SMTP passwords in the database. Encryption keys are securely managed via environment variables.
+    3. **Resolution Fallback**: Refactor `EmailService` to resolve effective credentials via a provider chain: `Database (Encrypted)` → `appsettings.json` → `Hardcoded Defaults`.
+    4. **Write-Only Security**: The API `GET` endpoint returns only a `hasPassword` boolean. The `PUT` endpoint treats the password as write-only (update only if non-blank).
+    5. **On-Demand Diagnostics**: Expose a non-destructive SMTP handshake test (`TestConnectionAsync`) in the UI to verify configuration validity before saving.
+- **Alternatives considered:** Plaintext database storage (rejected for security). Azure KeyVault (rejected due to on-premises deployment constraints).
+- **Consequences:** Provides agility for administrators to rotate credentials without engineering intervention. Hardens security for sensitive SMTP tokens. Standardizes the "Encrypted Settings" pattern for future integrations.
+
+---
+
 ## DEC-094 — Password Recovery Infrastructure (CID Email & Config URL)
 
 - **Date:** 2026-04-11

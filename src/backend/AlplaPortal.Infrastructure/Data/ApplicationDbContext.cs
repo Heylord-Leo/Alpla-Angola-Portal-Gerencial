@@ -37,6 +37,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<QuotationItem> QuotationItems => Set<QuotationItem>();
     public DbSet<SystemCounter> SystemCounters => Set<SystemCounter>();
     public DbSet<DocumentExtractionSettings> DocumentExtractionSettings => Set<DocumentExtractionSettings>();
+    public DbSet<SmtpSettings> SmtpSettings => Set<SmtpSettings>();
     public DbSet<LogEntry> LogEntries => Set<LogEntry>();
     public DbSet<AdminLogEntry> AdminLogEntries => Set<AdminLogEntry>();
     public DbSet<NotificationStatus> NotificationStatuses => Set<NotificationStatus>();

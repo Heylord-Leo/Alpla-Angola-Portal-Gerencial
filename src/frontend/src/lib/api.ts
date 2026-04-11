@@ -1,4 +1,4 @@
-import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, DocumentExtractionSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult } from '../types';
+import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, DocumentExtractionSettingsDto, SmtpSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult } from '../types';
 import { logger, FrontendComponentKey } from './logger';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
@@ -1091,6 +1091,28 @@ export const api = {
                     method: 'POST'
                 });
                 if (!response.ok) return handleApiError(response, 'Falha ao testar conexão.', 'AdminApi');
+                return response.json();
+            }
+        },
+        smtpSettings: {
+            get: async (): Promise<SmtpSettingsDto> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/smtp-settings`);
+                if (!response.ok) return handleApiError(response, 'Falha ao carregar configurações SMTP.', 'AdminApi');
+                return response.json();
+            },
+            update: async (data: SmtpSettingsDto): Promise<void> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/smtp-settings`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao atualizar configurações SMTP.', 'AdminApi');
+            },
+            testConnection: async (): Promise<any> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/smtp-settings/test-connection`, {
+                    method: 'POST'
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao testar conexão SMTP.', 'AdminApi');
                 return response.json();
             }
         },
