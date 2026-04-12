@@ -5,6 +5,9 @@ All notable changes to this project will be documented in this file.
 ## [2.51.0] - 2026-04-11
 
 ### Added
+- **Submission Confirmation Email**: Implemented an automated confirmation email sent directly to the requester immediately after submitting or resubmitting a request. The email includes a breakdown of line items and the estimated total value.
+- **Approval Flow UX Redirection**: Transformed the standalone request view by replacing disconnected action buttons with a unified 'Pending Approval' banner.
+- **Visual Attention Triggers**: Integrated front-end routing (`react-router-dom`) between `RequestEdit` and `ApprovalCenter`, implementing a custom `flash-red-row` CSS animation to instinctively guide approvers toward their assigned tasks upon redirection.
 - **Dynamic SMTP Management**: Database-backed SMTP configuration with AES-256 encryption and real-time connectivity diagnostics.
 
 ## [2.50.0] - 2026-04-11

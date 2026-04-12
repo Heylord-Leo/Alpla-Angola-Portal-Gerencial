@@ -35,6 +35,7 @@ builder.Services.AddScoped<AdminLogWriter>();
 
 // Notification Service
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<IWorkflowNotificationOrchestrator, WorkflowNotificationOrchestrator>();
 
 // Approval Intelligence
 builder.Services.AddScoped<IApprovalIntelligenceService, ApprovalIntelligenceService>();

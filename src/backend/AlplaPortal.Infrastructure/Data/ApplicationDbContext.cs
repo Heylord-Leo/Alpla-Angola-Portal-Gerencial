@@ -143,6 +143,12 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<InformationalNotification>()
             .HasIndex(infol => infol.UserId);
 
+        // Dedup index for workflow notification orchestrator (CorrelationId + UserId)
+        modelBuilder.Entity<InformationalNotification>()
+            .HasIndex(infol => new { infol.EventCorrelationId, infol.UserId })
+            .HasFilter("[EventCorrelationId] IS NOT NULL")
+            .HasDatabaseName("IX_InformationalNotifications_EventCorrelation_User");
+
         modelBuilder.Entity<Quotation>().Property(q => q.DiscountAmount).HasColumnType("decimal(18,2)");
         
         modelBuilder.Entity<RequestLineItem>().Property(r => r.ReceivedQuantity).HasColumnType("decimal(18,4)");

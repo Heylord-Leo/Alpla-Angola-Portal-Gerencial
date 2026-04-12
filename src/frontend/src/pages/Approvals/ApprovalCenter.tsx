@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Z_INDEX } from '../../constants/ui';
 import { api } from '../../lib/api';
 import { RequestListItemDto, RequestDetailsDto, PendingApprovalsResponseDto, ItemIntelligenceDto } from '../../types';
@@ -29,6 +30,19 @@ const HIGH_VALUE_THRESHOLD = 500000;
 
 export function ApprovalCenter() {
     const { user, isAdmin } = useAuth();
+    const location = useLocation();
+
+    const [flashedRequestId, setFlashedRequestId] = useState<string | null>(location.state?.flashRequestId || null);
+
+    useEffect(() => {
+        if (flashedRequestId) {
+            window.history.replaceState({}, document.title);
+            const timer = setTimeout(() => {
+                setFlashedRequestId(null);
+            }, 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [flashedRequestId]);
 
     const isAreaApprover = isAdmin || (user?.roles?.includes(ROLES.AREA_APPROVER) ?? false);
     const isFinalApprover = isAdmin || (user?.roles?.includes(ROLES.FINAL_APPROVER) ?? false);
@@ -393,6 +407,18 @@ export function ApprovalCenter() {
 
     return (
         <PageContainer>
+            <style>{`
+                @keyframes flashRedAlert {
+                    0% { background-color: transparent; }
+                    10% { background-color: rgba(239, 68, 68, 0.2); }
+                    50% { background-color: rgba(239, 68, 68, 0.05); }
+                    90% { background-color: rgba(239, 68, 68, 0.2); }
+                    100% { background-color: transparent; }
+                }
+                .flash-red-row {
+                    animation: flashRedAlert 5s ease-out;
+                }
+            `}</style>
             {/* Feedback */}
             {feedback.message && (
                 <div style={{ position: 'sticky', top: 'calc(var(--header-height) - 1rem)', zIndex: 10, backgroundColor: 'var(--color-bg-surface)', padding: '2rem 0 0 0', margin: '-2rem 0 0 0', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -533,6 +559,7 @@ export function ApprovalCenter() {
                         requests={areaApprovals}
                         showCostCenter={true}
                         selectedId={selectedRequestId}
+                        flashedId={flashedRequestId}
                         onRowSelect={(id) => handleRowSelect(id, 'AREA')}
                     />
                 )}
@@ -543,6 +570,7 @@ export function ApprovalCenter() {
                         icon={<ShieldCheck size={20} />}
                         requests={finalApprovals}
                         selectedId={selectedRequestId}
+                        flashedId={flashedRequestId}
                         onRowSelect={(id) => handleRowSelect(id, 'FINAL')}
                     />
                 )}
@@ -732,10 +760,11 @@ interface ApprovalQueueSectionProps {
     requests: RequestListItemDto[];
     showCostCenter?: boolean;
     selectedId: string | null;
+    flashedId?: string | null;
     onRowSelect: (id: string) => void;
 }
 
-function ApprovalQueueSection({ title, icon, requests, showCostCenter, selectedId, onRowSelect }: ApprovalQueueSectionProps) {
+function ApprovalQueueSection({ title, icon, requests, showCostCenter, selectedId, flashedId, onRowSelect }: ApprovalQueueSectionProps) {
     if (requests.length === 0) {
         return (
             <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -787,7 +816,7 @@ function ApprovalQueueSection({ title, icon, requests, showCostCenter, selectedI
                             return (
                                 <tr
                                     key={req.id}
-                                    className="hoverable-row"
+                                    className={`hoverable-row ${flashedId === req.id ? 'flash-red-row' : ''}`}
                                     onClick={() => onRowSelect(req.id)}
                                     style={{
                                         cursor: 'pointer',

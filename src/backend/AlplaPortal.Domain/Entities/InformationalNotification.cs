@@ -14,4 +14,17 @@ public class InformationalNotification
     public bool IsRead { get; set; }
     public bool IsDismissed { get; set; }
     public DateTime CreatedAtUtc { get; set; }
+
+    /// <summary>
+    /// Dedup anchor — typically the RequestStatusHistory.Id that generated this notification.
+    /// Combined with UserId, prevents duplicate notifications on controller retries.
+    /// Null for legacy notifications created before the orchestrator was introduced.
+    /// </summary>
+    public Guid? EventCorrelationId { get; set; }
+
+    /// <summary>
+    /// Notification category for filtering/grouping (e.g., "APPROVAL", "PAYMENT").
+    /// See <see cref="Constants.NotificationCategories"/>.
+    /// </summary>
+    public string? Category { get; set; }
 }

@@ -6,6 +6,7 @@ using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Domain.Constants;
+using AlplaPortal.Domain.Events;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
@@ -20,11 +21,16 @@ using System.Threading.Tasks;
 [Route("api/v1/finance")]
 public class FinanceController : BaseController
 {
-    private readonly INotificationService _notificationService;
+    private readonly IWorkflowNotificationOrchestrator _orchestrator;
+    private readonly ILogger<FinanceController> _logger;
 
-    public FinanceController(ApplicationDbContext context, INotificationService notificationService) : base(context)
+    public FinanceController(
+        ApplicationDbContext context,
+        IWorkflowNotificationOrchestrator orchestrator,
+        ILogger<FinanceController> logger) : base(context)
     {
-        _notificationService = notificationService;
+        _orchestrator = orchestrator;
+        _logger = logger;
     }
 
     private IQueryable<Request> GetFinanceQuery()
@@ -639,6 +645,36 @@ public class FinanceController : BaseController
 
         _context.RequestStatusHistories.Add(history);
         await _context.SaveChangesAsync();
+
+        // [TEMPORARY NON-CENTRAL HOOK] FinanceController has its own inline status transitions.
+        // This is a temporary architecture exception — see DEC-XXX for future consolidation.
+        try
+        {
+            var actor = await _context.Users.FindAsync(CurrentUserId);
+            await _orchestrator.EmitAsync(new WorkflowEvent
+            {
+                EventCode = WorkflowEventCodes.PaymentScheduled,
+                RequestId = id,
+                RequestNumber = r.RequestNumber ?? "S/N",
+                RequestTitle = r.Title ?? "",
+                TargetStatusCode = "PAYMENT_SCHEDULED",
+                ActionTaken = "PAYMENT_SCHEDULED",
+                ActorUserId = CurrentUserId,
+                ActorName = actor?.FullName ?? "Sistema",
+                Comment = requestDto.Notes,
+                CorrelationId = history.Id,
+                RequesterId = r.RequesterId,
+                BuyerId = r.BuyerId,
+                AreaApproverId = r.AreaApproverId,
+                FinalApproverId = r.FinalApproverId,
+                PlantId = r.PlantId
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Non-critical: notification dispatch failed for SchedulePayment on Request {RequestId}", id);
+        }
+
         return Ok();
     }
 
@@ -668,6 +704,35 @@ public class FinanceController : BaseController
 
         _context.RequestStatusHistories.Add(history);
         await _context.SaveChangesAsync();
+
+        // [TEMPORARY NON-CENTRAL HOOK]
+        try
+        {
+            var actor = await _context.Users.FindAsync(CurrentUserId);
+            await _orchestrator.EmitAsync(new WorkflowEvent
+            {
+                EventCode = WorkflowEventCodes.PaymentCompleted,
+                RequestId = id,
+                RequestNumber = r.RequestNumber ?? "S/N",
+                RequestTitle = r.Title ?? "",
+                TargetStatusCode = "PAYMENT_COMPLETED",
+                ActionTaken = "PAYMENT_COMPLETED",
+                ActorUserId = CurrentUserId,
+                ActorName = actor?.FullName ?? "Sistema",
+                Comment = requestDto.Notes,
+                CorrelationId = history.Id,
+                RequesterId = r.RequesterId,
+                BuyerId = r.BuyerId,
+                AreaApproverId = r.AreaApproverId,
+                FinalApproverId = r.FinalApproverId,
+                PlantId = r.PlantId
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Non-critical: notification dispatch failed for MarkAsPaid on Request {RequestId}", id);
+        }
+
         return Ok();
     }
 
@@ -720,6 +785,36 @@ public class FinanceController : BaseController
         r.UpdatedAtUtc = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
+
+        // [TEMPORARY NON-CENTRAL HOOK]
+        try
+        {
+            var actor = await _context.Users.FindAsync(CurrentUserId);
+            var historyEntry = _context.RequestStatusHistories.Local.OrderByDescending(h => h.CreatedAtUtc).FirstOrDefault(h => h.RequestId == id);
+            await _orchestrator.EmitAsync(new WorkflowEvent
+            {
+                EventCode = WorkflowEventCodes.FinanceReturned,
+                RequestId = id,
+                RequestNumber = r.RequestNumber ?? "S/N",
+                RequestTitle = r.Title ?? "",
+                TargetStatusCode = "WAITING_PO_CORRECTION",
+                ActionTaken = "FINANCE_RETURN_ADJUSTMENT",
+                ActorUserId = CurrentUserId,
+                ActorName = actor?.FullName ?? "Sistema",
+                Comment = requestDto.Notes,
+                CorrelationId = historyEntry?.Id ?? Guid.NewGuid(),
+                RequesterId = r.RequesterId,
+                BuyerId = r.BuyerId,
+                AreaApproverId = r.AreaApproverId,
+                FinalApproverId = r.FinalApproverId,
+                PlantId = r.PlantId
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Non-critical: notification dispatch failed for ReturnForAdjustment on Request {RequestId}", id);
+        }
+
         return Ok();
     }
 }

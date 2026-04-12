@@ -326,6 +326,48 @@ public class NotificationService : INotificationService
         }
     }
 
+
+    public async Task<bool> CreateNotificationWithDedupAsync(Guid userId, string title, string message, string type, string targetPath, Guid correlationId, string? category = null)
+    {
+        try
+        {
+            // Dedup check: skip if a notification with the same correlationId + userId already exists
+            var exists = await _context.InformationalNotifications
+                .AnyAsync(n => n.EventCorrelationId == correlationId && n.UserId == userId);
+
+            if (exists)
+            {
+                _logger.LogDebug("Dedup: notification already exists for CorrelationId {CorrelationId} + User {UserId}. Skipping.", correlationId, userId);
+                return false;
+            }
+
+            var notification = new InformationalNotification
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                Title = title,
+                Message = message,
+                Type = type,
+                TargetPath = targetPath,
+                IsRead = false,
+                IsDismissed = false,
+                CreatedAtUtc = DateTime.UtcNow,
+                EventCorrelationId = correlationId,
+                Category = category
+            };
+
+            _context.InformationalNotifications.Add(notification);
+            await _context.SaveChangesAsync();
+            
+            _logger.LogInformation("Informational notification created (dedup) for User {UserId}: {Title} (CorrelationId: {CorrelationId})", userId, title, correlationId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create dedup notification for User {UserId} (CorrelationId: {CorrelationId}).", userId, correlationId);
+            return false;
+        }
+    }
     private async Task<IQueryable<Request>> GetScopedRequestsQueryInternal(Guid userId, List<string> roles)
     {
         if (roles.Contains("System Administrator"))

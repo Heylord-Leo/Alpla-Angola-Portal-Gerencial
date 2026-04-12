@@ -1,6 +1,8 @@
 namespace AlplaPortal.Api.Controllers;
 
 using AlplaPortal.Application.DTOs.Requests;
+using AlplaPortal.Domain.Events;
+using AlplaPortal.Domain.Constants;
 using AlplaPortal.Application.DTOs.Common;
 using AlplaPortal.Application.DTOs.Extraction;
 using AlplaPortal.Application.Interfaces;
@@ -26,18 +28,21 @@ public class RequestsController : BaseController
     private readonly AdminLogWriter _adminLog;
     private readonly ILogger<RequestsController> _logger;
     private readonly INotificationService _notificationService;
+    private readonly IWorkflowNotificationOrchestrator _orchestrator;
 
     public RequestsController(
         ApplicationDbContext context, 
         IDocumentExtractionService extractionService, 
         AdminLogWriter adminLog,
         ILogger<RequestsController> logger,
-        INotificationService notificationService) : base(context)
+        INotificationService notificationService,
+        IWorkflowNotificationOrchestrator orchestrator) : base(context)
     {
         _extractionService = extractionService;
         _adminLog = adminLog;
         _logger = logger;
         _notificationService = notificationService;
+        _orchestrator = orchestrator;
     }
 
 
@@ -2940,7 +2945,7 @@ public class RequestsController : BaseController
         if (string.IsNullOrWhiteSpace(dto.Comment))
             return BadRequest(new ProblemDetails { Title = "Comentário Obrigatório", Detail = "Informe o motivo da rejeição.", Status = 400 });
 
-        return await ProcessAreaApproval(id, "REJECT", "REJECTED", dto.Comment, dto.SelectedQuotationId, dto.ItemAssignments);
+        return await ProcessAreaApproval(id, "REJECT", "REJECTED", dto.Comment, dto.SelectedQuotationId, dto.ItemAssignments, WorkflowEventCodes.AreaRejected);
     }
 
     [HttpPost("{id}/area-approval/request-adjustment")]
@@ -2949,7 +2954,7 @@ public class RequestsController : BaseController
         if (string.IsNullOrWhiteSpace(dto.Comment))
             return BadRequest(new ProblemDetails { Title = "Comentário Obrigatório", Detail = "Informe o motivo do reajuste.", Status = 400 });
 
-        return await ProcessAreaApproval(id, "REQUEST_ADJUSTMENT", "AREA_ADJUSTMENT", dto.Comment, dto.SelectedQuotationId, dto.ItemAssignments);
+        return await ProcessAreaApproval(id, "REQUEST_ADJUSTMENT", "AREA_ADJUSTMENT", dto.Comment, dto.SelectedQuotationId, dto.ItemAssignments, WorkflowEventCodes.AreaAdjustment);
     }
 
     [HttpPost("{id}/final-approval/approve")]
@@ -2964,7 +2969,7 @@ public class RequestsController : BaseController
         if (string.IsNullOrWhiteSpace(dto.Comment))
             return BadRequest(new ProblemDetails { Title = "Comentário Obrigatório", Detail = "Informe o motivo da rejeição.", Status = 400 });
 
-        return await ProcessFinalApproval(id, "REJECT", "REJECTED", dto.Comment);
+        return await ProcessFinalApproval(id, "REJECT", "REJECTED", dto.Comment, WorkflowEventCodes.FinalRejected);
     }
 
     [HttpPost("{id}/final-approval/request-adjustment")]
@@ -2974,10 +2979,10 @@ public class RequestsController : BaseController
             return BadRequest(new ProblemDetails { Title = "Comentário Obrigatório", Detail = "Informe o motivo do reajuste.", Status = 400 });
 
         // Semantic grounding: FINAL_ADJUSTMENT internal code strictly represents "REAJUSTE A.F" in this stage
-        return await ProcessFinalApproval(id, "REQUEST_ADJUSTMENT", "FINAL_ADJUSTMENT", dto.Comment);
+        return await ProcessFinalApproval(id, "REQUEST_ADJUSTMENT", "FINAL_ADJUSTMENT", dto.Comment, WorkflowEventCodes.FinalAdjustment);
     }
 
-    private async Task<IActionResult> ProcessFinalApproval(Guid id, string action, string targetStatusCode, string? comment)
+    private async Task<IActionResult> ProcessFinalApproval(Guid id, string action, string targetStatusCode, string? comment, string? overrideEventCode = null)
     {
         var actorId = CurrentUserId;
 
@@ -3023,10 +3028,10 @@ public class RequestsController : BaseController
             _ => "Operação realizada com sucesso."
         };
 
-        return await ApplyStatusChangeAndSyncItemsAsync(request, targetStatusCode, action, historyComment, successMessage, actorId);
+        return await ApplyStatusChangeAndSyncItemsAsync(request, targetStatusCode, action, historyComment, successMessage, actorId, overrideEventCode);
     }
 
-    private async Task<IActionResult> ProcessAreaApproval(Guid id, string action, string targetStatusCode, string? comment, Guid? selectedQuotationId, Dictionary<Guid, ItemApprovalAssignmentDto>? itemAssignments)
+    private async Task<IActionResult> ProcessAreaApproval(Guid id, string action, string targetStatusCode, string? comment, Guid? selectedQuotationId, Dictionary<Guid, ItemApprovalAssignmentDto>? itemAssignments, string? overrideEventCode = null)
     {
         var actorId = CurrentUserId;
 
@@ -3128,7 +3133,7 @@ public class RequestsController : BaseController
             _ => "Operação realizada com sucesso."
         };
 
-        return await ApplyStatusChangeAndSyncItemsAsync(request, targetStatusCode, action, historyComment, successMessage, actorId);
+        return await ApplyStatusChangeAndSyncItemsAsync(request, targetStatusCode, action, historyComment, successMessage, actorId, overrideEventCode);
     }
 
     [HttpPost("{id}/operational/register-po")]
@@ -3290,6 +3295,35 @@ public class RequestsController : BaseController
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
 
+            // [TEMPORARY NON-CENTRAL HOOK] FinalizeRequest has its own inline transaction
+            // and does not go through ApplyStatusChangeAndSyncItemsAsync.
+            // This hook is a temporary architecture exception — see DEC-XXX for future consolidation.
+            try
+            {
+                var actor = await _context.Users.FindAsync(actorId);
+                await _orchestrator.EmitAsync(new WorkflowEvent
+                {
+                    EventCode = WorkflowEventCodes.RequestFinalized,
+                    RequestId = request.Id,
+                    RequestNumber = request.RequestNumber ?? "S/N",
+                    RequestTitle = request.Title ?? "",
+                    TargetStatusCode = nextStatusCode,
+                    ActionTaken = "FINALIZE",
+                    ActorUserId = actorId,
+                    ActorName = actor?.FullName ?? "Sistema",
+                    CorrelationId = history.Id,
+                    RequesterId = request.RequesterId,
+                    BuyerId = request.BuyerId,
+                    AreaApproverId = request.AreaApproverId,
+                    FinalApproverId = request.FinalApproverId,
+                    PlantId = request.PlantId
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Non-critical: notification dispatch failed for FinalizeRequest on Request {RequestId}", request.Id);
+            }
+
             return Ok(new { Message = "Recebimento finalizado com sucesso.", StatusCode = nextStatusCode });
         }
         catch (Exception ex)
@@ -3424,15 +3458,34 @@ public class RequestsController : BaseController
 
         var result = await ProcessQuotationTransition(id, "COMPLETE_QUOTATION", "WAITING_AREA_APPROVAL", new[] { "WAITING_QUOTATION", "AREA_ADJUSTMENT", "FINAL_ADJUSTMENT" }, dto.Comment, "Cotação concluída e enviada para aprovação da área.");
         
+        // R1 FIX: Wrap notification dispatch in try-catch so notification failures
+        // do not propagate and mask the successful quotation transition.
         if (result is OkObjectResult)
         {
-            await _notificationService.CreateNotificationAsync(
-                request.RequesterId, 
-                "Cotação Concluída", 
-                $"A cotação para o pedido {request.RequestNumber ?? "S/N"} foi concluída e enviada para Etapa de Aprovação.", 
-                NotificationTypes.Success, 
-                $"/requests/{request.Id}?mode=view"
-            );
+            try
+            {
+                await _orchestrator.EmitAsync(new WorkflowEvent
+                {
+                    EventCode = WorkflowEventCodes.QuotationCompleted,
+                    RequestId = request.Id,
+                    RequestNumber = request.RequestNumber ?? "S/N",
+                    RequestTitle = request.Title ?? "",
+                    TargetStatusCode = "WAITING_AREA_APPROVAL",
+                    ActionTaken = "COMPLETE_QUOTATION",
+                    ActorUserId = CurrentUserId,
+                    ActorName = (await _context.Users.FindAsync(CurrentUserId))?.FullName ?? "Sistema",
+                    CorrelationId = Guid.NewGuid(), // No history entry for this path; generate unique ID
+                    RequesterId = request.RequesterId,
+                    BuyerId = request.BuyerId,
+                    AreaApproverId = request.AreaApproverId,
+                    FinalApproverId = request.FinalApproverId,
+                    PlantId = request.PlantId
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Non-critical: notification dispatch failed for QuotationCompleted on Request {RequestId}", request.Id);
+            }
         }
 
         return result;
@@ -3646,13 +3699,23 @@ public class RequestsController : BaseController
         }
     }
 
+    /// <summary>
+    /// Central hub for all major workflow status transitions.
+    /// After persisting the transition, emits a WorkflowEvent to the notification orchestrator.
+    /// </summary>
+    /// <param name="overrideEventCode">
+    /// Optional event code override for ambiguous transitions (e.g., REJECT → REJECTED
+    /// could be either area or final rejection). When null, the event code is auto-resolved
+    /// from the (actionTaken, targetStatusCode) tuple.
+    /// </param>
     private async Task<IActionResult> ApplyStatusChangeAndSyncItemsAsync(
         Request request, 
         string targetStatusCode, 
         string actionTaken, 
         string historyComment, 
         string successMessage, 
-        Guid actorUserId)
+        Guid actorUserId,
+        string? overrideEventCode = null)
     {
         var targetStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == targetStatusCode);
         if (targetStatus == null) return StatusCode(500, $"Status '{targetStatusCode}' não configurado no sistema.");
@@ -3681,7 +3744,88 @@ public class RequestsController : BaseController
 
         await _context.SaveChangesAsync();
 
+        // --- Workflow Notification Emission (fire-and-forget, non-blocking) ---
+        try
+        {
+            var eventCode = overrideEventCode ?? ResolveEventCode(actionTaken, targetStatusCode);
+            if (eventCode != null)
+            {
+                var actor = await _context.Users.FindAsync(actorUserId);
+                var workflowEvent = new WorkflowEvent
+                {
+                    EventCode = eventCode,
+                    RequestId = request.Id,
+                    RequestNumber = request.RequestNumber ?? "S/N",
+                    RequestTitle = request.Title ?? "",
+                    TargetStatusCode = targetStatusCode,
+                    ActionTaken = actionTaken,
+                    ActorUserId = actorUserId,
+                    ActorName = actor?.FullName ?? "Sistema",
+                    Comment = historyComment,
+                    CorrelationId = history.Id,
+                    RequesterId = request.RequesterId,
+                    BuyerId = request.BuyerId,
+                    AreaApproverId = request.AreaApproverId,
+                    FinalApproverId = request.FinalApproverId,
+                    PlantId = request.PlantId
+                };
+                await _orchestrator.EmitAsync(workflowEvent);
+
+                // Auto-confirm for the requester (this event bypasses the "no-self-notify" rule)
+                if (actionTaken is "SUBMIT" or "RESUBMIT")
+                {
+                    var confirmationEvent = new WorkflowEvent
+                    {
+                        EventCode = WorkflowEventCodes.SubmissionConfirmed,
+                        RequestId = request.Id,
+                        RequestNumber = request.RequestNumber ?? "S/N",
+                        RequestTitle = request.Title ?? "",
+                        TargetStatusCode = targetStatusCode,
+                        ActionTaken = actionTaken,
+                        ActorUserId = actorUserId,
+                        ActorName = actor?.FullName ?? "Sistema",
+                        Comment = historyComment,
+                        // Use a slightly different CorrelationId to avoid deduplicating against the primary event if it happens to target the same user somehow
+                        CorrelationId = Guid.NewGuid(), 
+                        RequesterId = request.RequesterId,
+                        BuyerId = request.BuyerId,
+                        AreaApproverId = request.AreaApproverId,
+                        FinalApproverId = request.FinalApproverId,
+                        PlantId = request.PlantId
+                    };
+                    await _orchestrator.EmitAsync(confirmationEvent);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Non-critical: workflow notification emission failed for Request {RequestId} (Action: {ActionTaken})", request.Id, actionTaken);
+        }
+
         return Ok(new { Message = successMessage, StatusCode = targetStatusCode });
+    }
+
+    /// <summary>
+    /// Resolves the canonical WorkflowEventCode from the (actionTaken, targetStatusCode) tuple.
+    /// Returns null for unmapped transitions (no notification will be sent).
+    /// For ambiguous transitions (e.g., REJECT → REJECTED), callers should pass overrideEventCode instead.
+    /// </summary>
+    private static string? ResolveEventCode(string actionTaken, string targetStatusCode)
+    {
+        return (actionTaken, targetStatusCode) switch
+        {
+            ("SUBMIT", "WAITING_AREA_APPROVAL") => WorkflowEventCodes.RequestSubmitted,
+            ("RESUBMIT", "WAITING_AREA_APPROVAL") => WorkflowEventCodes.RequestSubmitted,
+            ("RESUBMIT", "WAITING_FINAL_APPROVAL") => WorkflowEventCodes.RequestSubmitted,
+            ("APPROVE", "WAITING_FINAL_APPROVAL") => WorkflowEventCodes.AreaApproved,
+            ("APPROVE", "APPROVED") => WorkflowEventCodes.FinalApproved,
+            ("REGISTER_PO", "PO_ISSUED") => WorkflowEventCodes.PoRegistered,
+            ("SCHEDULE_PAYMENT", "PAYMENT_SCHEDULED") => WorkflowEventCodes.PaymentScheduled,
+            ("COMPLETE_PAYMENT", "PAYMENT_COMPLETED") => WorkflowEventCodes.PaymentCompleted,
+            ("CANCELLED", "CANCELLED") => WorkflowEventCodes.RequestCancelled,
+            // REJECT and REQUEST_ADJUSTMENT are ambiguous (area vs. final) — handled via overrideEventCode
+            _ => null
+        };
     }
 
     private async Task SyncLineItemStatusesAsync(Request request, string targetRequestStatusCode, Guid actorUserId)

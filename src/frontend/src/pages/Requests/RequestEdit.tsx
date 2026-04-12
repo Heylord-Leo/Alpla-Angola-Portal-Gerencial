@@ -368,8 +368,8 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
             {/* Sticky Header Unit - Feedback, Banners, and Main Action Header */}
             <RequestActionHeader {...headerProps}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {/* Drawer Mode Unified Redirect (Replaces direct approval buttons) */}
-                    {isDrawerMode && ((status === 'WAITING_AREA_APPROVAL' && isAreaApprover) || (status === 'WAITING_FINAL_APPROVAL' && isFinalApprover)) && (
+                    {/* Unified Approval Presentation (replaces legacy direct action buttons) */}
+                    {(status === 'WAITING_AREA_APPROVAL' || status === 'WAITING_FINAL_APPROVAL') && (
                         <div style={{
                             backgroundColor: '#e0e7ff',
                             padding: '16px',
@@ -384,143 +384,30 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                 <ShieldAlert size={20} color="#4338ca" />
                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                    <span style={{ fontWeight: 800, fontSize: '0.8rem', color: '#312e81', textTransform: 'uppercase' }}>APROVAÇÃO PENDENTE</span>
-                                    <span style={{ fontSize: '0.75rem', color: '#3730a3', fontWeight: 500 }}>A análise e decisão deste pedido devem ser realizadas no Centro de Aprovações.</span>
+                                    <span style={{ fontWeight: 800, fontSize: '0.8rem', color: '#312e81', textTransform: 'uppercase' }}>EM PROCESSO DE APROVAÇÃO</span>
+                                    <span style={{ fontSize: '0.75rem', color: '#3730a3', fontWeight: 500 }}>Este pedido encontra-se atualmente em análise no fluxo de aprovação.</span>
                                 </div>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    if (onDrawerClose) onDrawerClose();
-                                    navigate('/approvals');
-                                }}
-                                style={{
-                                    height: '36px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: 'none',
-                                    backgroundColor: '#4338ca', color: '#ffffff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
-                                    fontWeight: 800, fontFamily: 'var(--font-family-display)', fontSize: '0.75rem',
-                                    boxShadow: '0 2px 4px rgba(67, 56, 202, 0.2)', transition: 'all 0.2s', textTransform: 'uppercase', whiteSpace: 'nowrap'
-                                }}
-                            >
-                                IR PARA CENTRO DE APROVAÇÕES
-                            </button>
-                        </div>
-                    )}
-
-                    {/* Area Approval Action Bar */}
-                    {!isDrawerMode && (requestTypeCode === 'PAYMENT' || requestTypeCode === 'QUOTATION') && status === 'WAITING_AREA_APPROVAL' && isAreaApprover && (
-                        <div style={{
-                            backgroundColor: 'white',
-                            padding: '12px 16px',
-                            borderRadius: '4px',
-                            border: '1px solid var(--color-primary)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: '16px',
-                            boxShadow: 'var(--shadow-sm)'
-                        }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <ShieldAlert size={18} color="var(--color-primary)" />
-                                <span style={{ fontWeight: 800, fontSize: '0.75rem', color: 'var(--color-text-main)', textTransform: 'uppercase' }}>APROVAÇÃO DA ÁREA</span>
-                            </div>
-
-                            <div style={{ display: 'flex', gap: '8px' }}>
+                            {((status === 'WAITING_AREA_APPROVAL' && isAreaApprover) || (status === 'WAITING_FINAL_APPROVAL' && isFinalApprover)) && (
                                 <button
-                                    onClick={() => setShowApprovalModal({ show: true, type: 'APPROVE' })}
-                                    className="btn-success"
-                                    style={{ height: '32px', padding: '0 12px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 800, fontSize: '0.7rem' }}
-                                >
-                                    <ShieldCheck size={14} /> APROVAR
-                                </button>
-                                {requestTypeCode !== 'PAYMENT' && (
-                                    <button
-                                        onClick={() => setShowApprovalModal({ show: true, type: 'REQUEST_ADJUSTMENT' })}
-                                        style={{
-                                            height: '32px', padding: '0 12px', background: 'none', border: '1px solid var(--color-primary)',
-                                            color: 'var(--color-primary)', cursor: 'pointer', fontWeight: 800, borderRadius: '4px',
-                                            fontFamily: 'var(--font-family-display)', fontSize: '0.7rem'
-                                        }}
-                                    >
-                                        REAJUSTE
-                                    </button>
-                                )}
-                                <button
-                                    onClick={() => setShowApprovalModal({ show: true, type: 'REJECT' })}
-                                    style={{
-                                        height: '32px', padding: '0 12px', background: 'none', border: '1px solid #EF4444',
-                                        color: '#EF4444', cursor: 'pointer', fontWeight: 800, borderRadius: '4px',
-                                        fontFamily: 'var(--font-family-display)', fontSize: '0.7rem'
-                                    }}
-                                >
-                                    REJEITAR
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Final Approval Action Bar */}
-                    {!isDrawerMode && (requestTypeCode === 'PAYMENT' || requestTypeCode === 'QUOTATION') && status === 'WAITING_FINAL_APPROVAL' && isFinalApprover && (
-                        <div style={{
-                            backgroundColor: 'white',
-                            padding: '12px 16px',
-                            borderRadius: '4px',
-                            border: '1px solid var(--color-status-green)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: '16px',
-                            boxShadow: 'var(--shadow-sm)'
-                        }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <ShieldCheck size={18} color="var(--color-status-green)" />
-                                <span style={{ fontWeight: 800, fontSize: '0.75rem', color: 'var(--color-text-main)', textTransform: 'uppercase' }}>APROVAÇÃO FINAL</span>
-                            </div>
-
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                <button
+                                    type="button"
                                     onClick={() => {
-                                        if (requestTypeCode === 'QUOTATION' && !selectedQuotationId) {
-                                            setFeedback({ type: 'error', message: 'Selecione uma cotação vencedora antes de aprovar.' });
-                                            return;
-                                        }
-                                        setShowApprovalModal({ show: true, type: 'APPROVE' });
+                                        if (onDrawerClose) onDrawerClose();
+                                        navigate('/approvals', { state: { flashRequestId: id } });
                                     }}
-                                    className="btn-success"
-                                    disabled={requestTypeCode === 'QUOTATION' && !selectedQuotationId}
-                                    style={{ 
-                                        height: '32px', padding: '0 12px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 800, fontSize: '0.7rem',
-                                        opacity: (requestTypeCode === 'QUOTATION' && !selectedQuotationId) ? 0.5 : 1,
-                                        cursor: (requestTypeCode === 'QUOTATION' && !selectedQuotationId) ? 'not-allowed' : 'pointer'
-                                    }}
-                                    title={requestTypeCode === 'QUOTATION' && !selectedQuotationId ? 'Selecione uma cotação vencedora primeiro' : 'Aprovar Pedido'}
-                                >
-                                    <ShieldCheck size={14} /> APROVAR
-                                </button>
-                                {requestTypeCode !== 'PAYMENT' && (
-                                    <button
-                                        onClick={() => setShowApprovalModal({ show: true, type: 'REQUEST_ADJUSTMENT' })}
-                                        style={{
-                                            height: '32px', padding: '0 12px', background: 'none', border: '1px solid var(--color-primary)',
-                                            color: 'var(--color-primary)', cursor: 'pointer', fontWeight: 800, borderRadius: '4px',
-                                            fontFamily: 'var(--font-family-display)', fontSize: '0.7rem'
-                                        }}
-                                    >
-                                        REAJUSTE
-                                    </button>
-                                )}
-                                <button
-                                    onClick={() => setShowApprovalModal({ show: true, type: 'REJECT' })}
                                     style={{
-                                        height: '32px', padding: '0 12px', background: 'none', border: '1px solid #EF4444',
-                                        color: '#EF4444', cursor: 'pointer', fontWeight: 800, borderRadius: '4px',
-                                        fontFamily: 'var(--font-family-display)', fontSize: '0.7rem'
+                                        height: '36px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: 'none',
+                                        backgroundColor: '#4338ca', color: '#ffffff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
+                                        fontWeight: 800, fontFamily: 'var(--font-family-display)', fontSize: '0.75rem',
+                                        boxShadow: '0 2px 4px rgba(67, 56, 202, 0.2)', transition: 'all 0.2s', textTransform: 'uppercase', whiteSpace: 'nowrap'
                                     }}
                                 >
-                                    REJEITAR
+                                    IR PARA CENTRO DE APROVAÇÕES
                                 </button>
-                            </div>
+                            )}
                         </div>
                     )}
+
 
                     {/* Procurement/Buyer Status Panel (Former Action Bar) */}
                     {canExecuteOperationalAction && ['APPROVED', 'PO_ISSUED', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT'].includes(status || '') && (

@@ -130,6 +130,93 @@ public class EmailService : IEmailService
         }
     }
 
+
+    public async Task<bool> SendWorkflowNotificationAsync(string toEmail, string recipientName, string subject, string headline, string bodyHtml, string? actionUrl = null, string? actionLabel = null)
+    {
+        try
+        {
+            var smtp = await _smtpSettingsService.GetEffectiveSettingsAsync();
+
+            if (string.IsNullOrEmpty(smtp.Server) || string.IsNullOrEmpty(smtp.SenderEmail) || string.IsNullOrEmpty(smtp.Password))
+            {
+                _logger.LogError("SMTP configuration is missing or incomplete for workflow notification. Skipping email to {Email}.", toEmail);
+                return false;
+            }
+
+            var fromAddress = new MailAddress(smtp.SenderEmail, smtp.SenderName);
+            var toAddress = new MailAddress(toEmail);
+
+            using var smtpClient = new SmtpClient(smtp.Server, smtp.Port)
+            {
+                Credentials = new NetworkCredential(smtp.SenderEmail, smtp.Password),
+                EnableSsl = smtp.EnableSsl
+            };
+
+            // Build branded template
+            var logoPath = ResolveLogoPath();
+            var hasLogo = logoPath != null;
+            var logoHtml = hasLogo
+                ? $"<img src='cid:{LogoContentId}' alt='ALPLA Portal' style='max-width: 150px; margin-bottom: 20px;' />"
+                : "<h2 style='color: #002D72; margin-bottom: 20px;'>ALPLA Portal</h2>";
+
+            var actionButtonHtml = !string.IsNullOrEmpty(actionUrl)
+                ? $@"<div style='text-align: left; margin: 24px 0;'>
+                        <a href='{actionUrl}' 
+                           style='background-color: #002D72; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;'>
+                           {actionLabel ?? "Ver Pedido"} &rarr;
+                        </a>
+                    </div>"
+                : "";
+
+            var greetingName = !string.IsNullOrWhiteSpace(recipientName) ? recipientName.Split(' ')[0] : "Utilizador";
+
+            var body = $@"
+                <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;'>
+                    {logoHtml}
+                    <h3 style='color: #002D72; margin-bottom: 8px;'>{headline}</h3>
+                    <p>Olá {greetingName},</p>
+                    <div style='margin: 16px 0; line-height: 1.6;'>{bodyHtml}</div>
+                    {actionButtonHtml}
+                    <hr style='border: none; border-top: 1px solid #eee; margin: 30px 0;' />
+                    <p style='font-size: 12px; color: #999;'>
+                        ALPLA Portal Gerencial — Notificação de Workflow<br/>
+                        Não responda a este e-mail.
+                    </p>
+                </div>
+            ";
+
+            using var message = new MailMessage(fromAddress, toAddress)
+            {
+                Subject = subject
+            };
+
+            if (hasLogo)
+            {
+                var htmlView = AlternateView.CreateAlternateViewFromString(body, null, MediaTypeNames.Text.Html);
+                var logoResource = new LinkedResource(logoPath!, MediaTypeNames.Image.Png)
+                {
+                    ContentId = LogoContentId,
+                    TransferEncoding = TransferEncoding.Base64
+                };
+                htmlView.LinkedResources.Add(logoResource);
+                message.AlternateViews.Add(htmlView);
+            }
+            else
+            {
+                message.Body = body;
+                message.IsBodyHtml = true;
+            }
+
+            await smtpClient.SendMailAsync(message);
+            _logger.LogInformation("Workflow notification email dispatched to {Email} (Subject: {Subject})", toEmail, subject);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to deliver workflow notification email to {Email} (Subject: {Subject})", toEmail, subject);
+            return false;
+        }
+    }
     /// <summary>
     /// Resolves the physical path for the ALPLA logo asset using multiple candidate locations.
     /// Priority: 1) Explicit config override  2) Frontend public dir (dev layout)  3) wwwroot (published layout).

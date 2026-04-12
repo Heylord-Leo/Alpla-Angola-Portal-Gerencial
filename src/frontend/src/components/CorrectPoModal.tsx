@@ -104,13 +104,28 @@ export function CorrectPoModal({ show, requestId, onClose, onSuccess }: CorrectP
     const supplierName = requestData?.supplierName || '---';
     const currencyCode = requestData?.currencyCode || 'AOA';
 
-    // Helper: similarity check
+    // Helper: robust supplier name similarity (case-insensitive, accent-insensitive, token-based)
+    const normalizeForComparison = (s: string) =>
+        s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
     const calculateSimilarity = (a: string, b: string) => {
-        const str1 = a.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const str2 = b.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (str1 === str2) return 1.0;
-        if (str1.includes(str2) || str2.includes(str1)) return 0.8;
-        return 0.0;
+        const na = normalizeForComparison(a);
+        const nb = normalizeForComparison(b);
+
+        // Exact match after normalization (covers pure case differences)
+        const stripped1 = na.replace(/[^a-z0-9]/g, '');
+        const stripped2 = nb.replace(/[^a-z0-9]/g, '');
+        if (stripped1 === stripped2) return 1.0;
+        if (stripped1.includes(stripped2) || stripped2.includes(stripped1)) return 0.9;
+
+        // Token-based overlap: compare word-by-word
+        const tokens1 = na.replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(t => t.length > 1);
+        const tokens2 = nb.replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(t => t.length > 1);
+        if (tokens1.length === 0 || tokens2.length === 0) return 0.0;
+
+        const set2 = new Set(tokens2);
+        const matchCount = tokens1.filter(t => set2.has(t)).length;
+        return matchCount / Math.max(tokens1.length, tokens2.length);
     };
 
     const runOcrValidation = async (selectedFile: File) => {
