@@ -8,6 +8,7 @@ using AlplaPortal.Application.DTOs.Extraction;
 using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Application.Interfaces.Extraction;
 using AlplaPortal.Api.Helpers;
+using AlplaPortal.Api.Services;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Logging;
 using AlplaPortal.Domain.Entities;
@@ -720,7 +721,9 @@ public class RequestsController : BaseController
                     SupplierId = li.SupplierId,
                     CurrencyId = li.CurrencyId,
                     CurrencyCode = li.Currency != null ? li.Currency.Code : null,
-                    DueDate = li.DueDate
+                    DueDate = li.DueDate,
+                    ItemCatalogId = li.ItemCatalogId,
+                    ItemCatalogCode = li.ItemCatalogItem != null ? li.ItemCatalogItem.Code : null
                 }).ToList(),
 
                 Attachments = r.Attachments.Where(a => !a.IsDeleted).Select(a => new RequestAttachmentDto
@@ -1113,6 +1116,7 @@ public class RequestsController : BaseController
                     CostCenterId = itemDto.CostCenterId,
                     IvaRateId = itemDto.IvaRateId,
                     CurrencyId = itemDto.CurrencyId ?? request.CurrencyId,
+                    ItemCatalogId = itemDto.ItemCatalogId,
                     LineItemStatusId = null, // Initial state
                     IsDeleted = false,
                     CreatedAtUtc = DateTime.UtcNow
@@ -1661,6 +1665,11 @@ public class RequestsController : BaseController
 
         var request = await _context.Requests
             .Include(r => r.Status)
+            .Include(r => r.LineItems.Where(li => !li.IsDeleted))
+                .ThenInclude(li => li.ItemCatalogItem)
+            .Include(r => r.LineItems.Where(li => !li.IsDeleted))
+                .ThenInclude(li => li.Unit)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == id);
         
         if (request == null) return NotFound("Pedido não encontrado.");
@@ -1687,6 +1696,89 @@ public class RequestsController : BaseController
 
             await LogOcrExecutionAsync(file.FileName, id, internalResult, null);
 
+            // ═══════════════════════════════════════════════════════════════
+            // Phase 2: Persist OCR extracted items + generate reconciliation
+            // ═══════════════════════════════════════════════════════════════
+            var extractionBatchId = Guid.NewGuid();
+            var units = await _context.Units.Where(u => u.IsActive).ToListAsync();
+
+            // Find the proforma attachment for this request (latest PROFORMA)
+            var proformaAtt = await _context.RequestAttachments
+                .Where(a => a.RequestId == id && a.AttachmentTypeCode == "PROFORMA" && !a.IsDeleted)
+                .OrderByDescending(a => a.UploadedAtUtc)
+                .FirstOrDefaultAsync();
+
+            var ocrItems = new List<OcrExtractedItem>();
+            var lineNumber = 1;
+            foreach (var item in internalResult.Items ?? new())
+            {
+                // Resolve unit from raw string
+                int? resolvedUnitId = null;
+                if (!string.IsNullOrWhiteSpace(item.Unit))
+                {
+                    var normalized = item.Unit.Trim().ToUpperInvariant().TrimEnd('.');
+                    var matched = units.FirstOrDefault(u => 
+                        u.Code.ToUpperInvariant() == normalized || 
+                        u.Name.ToUpperInvariant() == normalized);
+                    resolvedUnitId = matched?.Id;
+                }
+
+                ocrItems.Add(new OcrExtractedItem
+                {
+                    RequestId = id,
+                    ExtractionBatchId = extractionBatchId,
+                    AttachmentId = proformaAtt?.Id,
+                    LineNumber = item.LineNumber > 0 ? item.LineNumber : lineNumber,
+                    RawDescription = item.Description ?? string.Empty,
+                    Quantity = item.Quantity,
+                    RawUnit = item.Unit,
+                    ResolvedUnitId = resolvedUnitId,
+                    UnitPrice = item.UnitPrice,
+                    DiscountAmount = item.DiscountAmount,
+                    DiscountPercent = item.DiscountPercent,
+                    TaxRate = item.TaxRate,
+                    LineTotal = item.TotalPrice,
+                    QualityScore = internalResult.QualityScore,
+                    ProviderName = internalResult.ProviderName,
+                    ExtractedAtUtc = DateTime.UtcNow
+                });
+                lineNumber++;
+            }
+
+            _context.OcrExtractedItems.AddRange(ocrItems);
+
+            // Generate reconciliation records against requester items
+            var requesterItems = request.LineItems
+                .Where(li => !li.IsDeleted)
+                .OrderBy(li => li.LineNumber)
+                .ToList();
+
+            var reconciliationRecords = ReconciliationService.GenerateReconciliation(
+                id, extractionBatchId, requesterItems, ocrItems);
+
+            _context.ReconciliationRecords.AddRange(reconciliationRecords);
+
+            // Audit trail
+            var reconHistory = new RequestStatusHistory
+            {
+                Id = Guid.NewGuid(),
+                RequestId = id,
+                ActorUserId = CurrentUserId,
+                ActionTaken = "OCR_EXTRACTION_RECONCILED",
+                PreviousStatusId = request.StatusId,
+                NewStatusId = request.StatusId,
+                Comment = $"OCR executado ({internalResult.ProviderName ?? "N/A"}). {ocrItems.Count} itens extraídos, {reconciliationRecords.Count} registros de reconciliação gerados. Batch: {extractionBatchId:N}",
+                CreatedAtUtc = DateTime.UtcNow
+            };
+            _context.RequestStatusHistories.Add(reconHistory);
+
+            await _context.SaveChangesAsync();
+
+            // Enrich legacy result with reconciliation metadata for frontend
+            legacyResult.Metadata["extractionBatchId"] = extractionBatchId.ToString();
+            legacyResult.Metadata["ocrItemsPersistedCount"] = ocrItems.Count;
+            legacyResult.Metadata["reconciliationRecordCount"] = reconciliationRecords.Count;
+
             return Ok(legacyResult);
         }
         catch (Exception ex)
@@ -1705,6 +1797,192 @@ public class RequestsController : BaseController
                 }
             });
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Phase 2: Reconciliation Endpoints
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>Get the latest reconciliation batch for a request.</summary>
+    [HttpGet("{id:guid}/reconciliation")]
+    public async Task<ActionResult<ReconciliationBatchDto>> GetReconciliation(Guid id, [FromQuery] Guid? batchId = null)
+    {
+        var request = await _context.Requests.FindAsync(id);
+        if (request == null) return NotFound("Pedido não encontrado.");
+
+        // Find the target batch
+        IQueryable<OcrExtractedItem> batchQuery = _context.OcrExtractedItems
+            .Where(o => o.RequestId == id);
+
+        if (batchId.HasValue)
+            batchQuery = batchQuery.Where(o => o.ExtractionBatchId == batchId.Value);
+
+        var latestBatchItem = await batchQuery
+            .OrderByDescending(o => o.ExtractedAtUtc)
+            .FirstOrDefaultAsync();
+
+        if (latestBatchItem == null)
+            return Ok(new ReconciliationBatchDto()); // No extractions yet
+
+        var targetBatchId = latestBatchItem.ExtractionBatchId;
+
+        // Load all OCR items for the batch
+        var ocrItems = await _context.OcrExtractedItems
+            .Include(o => o.ResolvedUnit)
+            .Where(o => o.RequestId == id && o.ExtractionBatchId == targetBatchId)
+            .OrderBy(o => o.LineNumber)
+            .ToListAsync();
+
+        // Load reconciliation records
+        var records = await _context.ReconciliationRecords
+            .Include(r => r.RequesterItem).ThenInclude(ri => ri!.Unit)
+            .Include(r => r.RequesterItem).ThenInclude(ri => ri!.ItemCatalogItem)
+            .Include(r => r.OcrExtractedItem)
+            .Include(r => r.ReviewedByUser)
+            .Where(r => r.RequestId == id && r.ExtractionBatchId == targetBatchId)
+            .OrderBy(r => r.CreatedAtUtc)
+            .ToListAsync();
+
+        var recordDtos = records.Select(r => new ReconciliationRecordDto
+        {
+            Id = r.Id,
+            MatchStatus = r.MatchStatus,
+            MatchConfidence = r.MatchConfidence,
+            MatchStrategy = r.MatchStrategy,
+            QuantityDivergence = r.QuantityDivergence,
+            UnitDivergence = r.UnitDivergence,
+            BuyerReviewStatus = r.BuyerReviewStatus,
+            BuyerJustification = r.BuyerJustification,
+            ReviewedByName = r.ReviewedByUser?.FullName,
+            ReviewedAtUtc = r.ReviewedAtUtc,
+            RequesterItemId = r.RequesterItemId,
+            RequesterDescription = r.RequesterItem?.Description,
+            RequesterQuantity = r.RequesterItem?.Quantity,
+            RequesterUnitCode = r.RequesterItem?.Unit?.Code,
+            RequesterCatalogId = r.RequesterItem?.ItemCatalogId,
+            RequesterCatalogCode = r.RequesterItem?.ItemCatalogItem?.Code,
+            OcrExtractedItemId = r.OcrExtractedItemId,
+            OcrDescription = r.OcrExtractedItem?.RawDescription,
+            OcrQuantity = r.OcrExtractedItem?.Quantity,
+            OcrRawUnit = r.OcrExtractedItem?.RawUnit,
+            OcrUnitPrice = r.OcrExtractedItem?.UnitPrice,
+            OcrLineTotal = r.OcrExtractedItem?.LineTotal
+        }).ToList();
+
+        var summary = BuildReconciliationSummary(recordDtos);
+
+        return Ok(new ReconciliationBatchDto
+        {
+            ExtractionBatchId = targetBatchId,
+            ExtractedAtUtc = latestBatchItem.ExtractedAtUtc,
+            ProviderName = latestBatchItem.ProviderName,
+            QualityScore = latestBatchItem.QualityScore,
+            AttachmentId = latestBatchItem.AttachmentId,
+            OcrItemCount = ocrItems.Count,
+            Records = recordDtos,
+            Summary = summary
+        });
+    }
+
+    /// <summary>Submit buyer review decisions for reconciliation records.</summary>
+    [HttpPut("{id:guid}/reconciliation/review")]
+    public async Task<ActionResult<ReconciliationSummaryDto>> SubmitReconciliationReview(
+        Guid id, [FromBody] ReconciliationReviewRequestDto dto)
+    {
+        var actorId = CurrentUserId;
+        var request = await _context.Requests.FindAsync(id);
+        if (request == null) return NotFound("Pedido não encontrado.");
+
+        var recordIds = dto.Reviews.Select(r => r.RecordId).ToList();
+        var records = await _context.ReconciliationRecords
+            .Where(r => r.RequestId == id && recordIds.Contains(r.Id))
+            .ToListAsync();
+
+        var validStatuses = new HashSet<string> { "CONFIRMED", "REJECTED", "ADJUSTED" };
+        var now = DateTime.UtcNow;
+
+        foreach (var review in dto.Reviews)
+        {
+            var record = records.FirstOrDefault(r => r.Id == review.RecordId);
+            if (record == null) continue;
+            if (!validStatuses.Contains(review.ReviewStatus)) continue;
+
+            record.BuyerReviewStatus = review.ReviewStatus;
+            record.BuyerJustification = review.Justification;
+            record.ReviewedByUserId = actorId;
+            record.ReviewedAtUtc = now;
+        }
+
+        // Audit trail
+        var reviewHistory = new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = id,
+            ActorUserId = actorId,
+            ActionTaken = "RECONCILIATION_REVIEWED",
+            PreviousStatusId = request.StatusId,
+            NewStatusId = request.StatusId,
+            Comment = $"Reconciliação revisada: {dto.Reviews.Count} registros atualizados.",
+            CreatedAtUtc = now
+        };
+        _context.RequestStatusHistories.Add(reviewHistory);
+
+        await _context.SaveChangesAsync();
+
+        // Return updated summary
+        var batchId = records.FirstOrDefault()?.ExtractionBatchId ?? Guid.Empty;
+        var allRecords = await _context.ReconciliationRecords
+            .Where(r => r.RequestId == id && r.ExtractionBatchId == batchId)
+            .ToListAsync();
+
+        var summaryDtos = allRecords.Select(r => new ReconciliationRecordDto
+        {
+            MatchStatus = r.MatchStatus,
+            BuyerReviewStatus = r.BuyerReviewStatus
+        }).ToList();
+
+        return Ok(BuildReconciliationSummary(summaryDtos));
+    }
+
+    /// <summary>Get reconciliation summary for a request (lightweight).</summary>
+    [HttpGet("{id:guid}/reconciliation/summary")]
+    public async Task<ActionResult<ReconciliationSummaryDto>> GetReconciliationSummary(Guid id)
+    {
+        var latestBatch = await _context.OcrExtractedItems
+            .Where(o => o.RequestId == id)
+            .OrderByDescending(o => o.ExtractedAtUtc)
+            .Select(o => o.ExtractionBatchId)
+            .FirstOrDefaultAsync();
+
+        if (latestBatch == Guid.Empty)
+            return Ok(new ReconciliationSummaryDto());
+
+        var records = await _context.ReconciliationRecords
+            .Where(r => r.RequestId == id && r.ExtractionBatchId == latestBatch)
+            .Select(r => new ReconciliationRecordDto
+            {
+                MatchStatus = r.MatchStatus,
+                BuyerReviewStatus = r.BuyerReviewStatus
+            })
+            .ToListAsync();
+
+        return Ok(BuildReconciliationSummary(records));
+    }
+
+    private static ReconciliationSummaryDto BuildReconciliationSummary(List<ReconciliationRecordDto> records)
+    {
+        return new ReconciliationSummaryDto
+        {
+            TotalRecords = records.Count,
+            ExactMatches = records.Count(r => r.MatchStatus == "EXACT_MATCH"),
+            ProbableMatches = records.Count(r => r.MatchStatus == "PROBABLE_MATCH"),
+            ReviewRequired = records.Count(r => r.MatchStatus == "REVIEW_REQUIRED"),
+            ExtraSupplierItems = records.Count(r => r.MatchStatus == "EXTRA_SUPPLIER_ITEM"),
+            MissingRequestedItems = records.Count(r => r.MatchStatus == "MISSING_REQUESTED_ITEM"),
+            BuyerConfirmed = records.Count(r => r.BuyerReviewStatus == "CONFIRMED"),
+            BuyerPending = records.Count(r => r.BuyerReviewStatus == "PENDING"),
+            BuyerRejected = records.Count(r => r.BuyerReviewStatus == "REJECTED")
+        };
     }
 
     [AllowAnonymous]
@@ -2596,6 +2874,7 @@ public class RequestsController : BaseController
             SupplierId = request.RequestType?.Code == "PAYMENT" ? request.SupplierId : null,
             SupplierName = request.RequestType?.Code == "PAYMENT" ? null : dto.SupplierName,
             Notes = dto.Notes,
+            ItemCatalogId = dto.ItemCatalogId,
             DueDate = dto.DueDate,
             IsDeleted = false,
             CreatedAtUtc = DateTime.UtcNow,
@@ -2797,6 +3076,7 @@ public class RequestsController : BaseController
             item.SupplierName = dto.SupplierName;
         }
         item.Notes = dto.Notes;
+        item.ItemCatalogId = dto.ItemCatalogId;
         
         item.UpdatedAtUtc = DateTime.UtcNow;
         item.UpdatedByUserId = actorId;

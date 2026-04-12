@@ -40,4 +40,7 @@ public class UpdateRequestLineItemDto
     public string? Notes { get; set; }
 
     public DateTime? DueDate { get; set; }
+
+    /// <summary>Optional FK to ItemCatalog. Null for manual/free-text items.</summary>
+    public int? ItemCatalogId { get; set; }
 }

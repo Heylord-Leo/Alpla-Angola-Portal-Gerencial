@@ -527,6 +527,27 @@ export const api = {
                 body: JSON.stringify({ receivedQuantity, divergenceNotes }),
             });
             if (!response.ok) return handleApiError(response, 'Falha ao registrar recebimento do item da cotação.');
+        },
+        // Phase 2: Reconciliation
+        getReconciliation: async (requestId: string, batchId?: string): Promise<any> => {
+            const params = batchId ? `?batchId=${batchId}` : '';
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/reconciliation${params}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar reconciliação.');
+            return response.json();
+        },
+        submitReconciliationReview: async (requestId: string, reviews: any[]): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/reconciliation/review`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reviews }),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao submeter revisão de reconciliação.');
+            return response.json();
+        },
+        getReconciliationSummary: async (requestId: string): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/reconciliation/summary`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar resumo de reconciliação.');
+            return response.json();
         }
     },
     approvals: {
@@ -901,6 +922,53 @@ export const api = {
         toggleIvaRate: async (id: number): Promise<void> => {
             const res = await apiFetch(`${API_BASE_URL}/api/v1/iva-rates/${id}/toggle-active`, { method: 'PUT' });
             if (!res.ok) return handleApiError(res, 'Falha ao alternar estado da taxa de IVA.');
+        }
+    },
+    catalogItems: {
+        getAll: async (includeInactive = false, search?: string, take: number = 10): Promise<any[]> => {
+            const params = new URLSearchParams();
+            if (includeInactive) params.append('includeInactive', 'true');
+            if (search) params.append('search', search);
+            params.append('take', take.toString());
+
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/catalog-items?${params.toString()}`);
+            if (!res.ok) return handleApiError(res, 'Falha ao carregar itens do catálogo.');
+            return res.json();
+        },
+        search: async (q: string, take = 20): Promise<any[]> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/catalog-items/search?q=${encodeURIComponent(q)}&take=${take}`);
+            if (!res.ok) return handleApiError(res, 'Falha ao pesquisar itens do catálogo.');
+            return res.json();
+        },
+        create: async (data: { code: string; description: string; defaultUnitId?: number | null; category?: string }): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/catalog-items`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao criar item do catálogo.');
+            return res.json();
+        },
+        update: async (id: number, data: { code: string; description: string; defaultUnitId?: number | null; category?: string }): Promise<void> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/catalog-items/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao alterar item do catálogo.');
+        },
+        toggleActive: async (id: number): Promise<void> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/catalog-items/${id}/toggle-active`, { method: 'PUT' });
+            if (!res.ok) return handleApiError(res, 'Falha ao alternar estado do item do catálogo.');
+        },
+        import: async (items: any[]): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/catalog-items/import`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(items),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao importar itens do catálogo.');
+            return res.json();
         }
     },
     lineItems: {

@@ -84,6 +84,10 @@ public class RequestLineItemDto
     public string? LineItemStatusName { get; set; }
     public string? LineItemStatusBadgeColor { get; set; }
 
+    // Catalog linkage — null for manual/free-text items
+    public int? ItemCatalogId { get; set; }
+    public string? ItemCatalogCode { get; set; }
+
     // Receiving Fields
     public decimal ReceivedQuantity { get; set; }
     public string? DivergenceNotes { get; set; }

@@ -7,6 +7,7 @@ import { ROLES } from '../../constants/roles';
 import { Edit2, Power, PowerOff, Database, Mail, Server, Globe, Shield, Save } from 'lucide-react';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
+import { CatalogItemsPanel } from './CatalogItemsPanel';
 
 function debounce<T extends (...args: any[]) => void>(fn: T, delay: number) {
     let timeoutId: number | undefined;
@@ -30,7 +31,7 @@ export function MasterData() {
     const [loading, setLoading] = useState(true);
 
     // Form states
-    const [activeTab, setActiveTab] = useState<'units' | 'currencies' | 'needLevels' | 'departments' | 'plants' | 'suppliers' | 'costCenters' | 'ivaRates' | 'companies' | 'smtpSettings'>('units');
+    const [activeTab, setActiveTab] = useState<'units' | 'currencies' | 'needLevels' | 'departments' | 'plants' | 'suppliers' | 'costCenters' | 'ivaRates' | 'companies' | 'catalogItems' | 'smtpSettings'>('units');
 
     // SMTP Settings State
     const [smtpSettings, setSmtpSettings] = useState<SmtpSettingsDto | null>(null);
@@ -300,6 +301,7 @@ export function MasterData() {
                     { id: 'costCenters', label: 'Centros de Custo' },
                     { id: 'ivaRates', label: 'Taxas de IVA' },
                     { id: 'companies', label: 'Empresas' },
+                    { id: 'catalogItems', label: '📦 Catálogo de Itens' },
                     { id: 'smtpSettings', label: '✉ SMTP' }
                 ].map((tab) => (
                     <button
@@ -342,6 +344,11 @@ export function MasterData() {
                     setSmtpTesting={setSmtpTesting}
                     setSmtpTestResult={setSmtpTestResult}
                     setShowPasswordField={setShowPasswordField}
+                    setFeedback={setFeedback}
+                />
+            ) : activeTab === 'catalogItems' ? (
+                <CatalogItemsPanel
+                    feedback={feedback}
                     setFeedback={setFeedback}
                 />
             ) : (

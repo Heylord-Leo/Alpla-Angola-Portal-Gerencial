@@ -4,16 +4,19 @@ using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace AlplaPortal.Infrastructure.Migrations
+namespace AlplaPortal.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260412105910_AddItemCatalog")]
+    partial class AddItemCatalog
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -461,12 +464,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("PrimaveraCode")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("SupplierCode")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<DateTime?>("UpdatedAtUtc")
                         .HasColumnType("datetime2");
 
@@ -801,76 +798,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                     b.ToTable("NotificationStatuses");
                 });
 
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.OcrExtractedItem", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("AttachmentId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal?>("DiscountAmount")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal?>("DiscountPercent")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime>("ExtractedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("ExtractionBatchId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("LineNumber")
-                        .HasColumnType("int");
-
-                    b.Property<decimal?>("LineTotal")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("ProviderName")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal>("QualityScore")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal?>("Quantity")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("RawDescription")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("RawUnit")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid>("RequestId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int?>("ResolvedUnitId")
-                        .HasColumnType("int");
-
-                    b.Property<decimal?>("TaxRate")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal?>("UnitPrice")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AttachmentId");
-
-                    b.HasIndex("ExtractionBatchId");
-
-                    b.HasIndex("RequestId");
-
-                    b.HasIndex("ResolvedUnitId");
-
-                    b.HasIndex("RequestId", "ExtractionBatchId");
-
-                    b.ToTable("OcrExtractedItems");
-                });
-
             modelBuilder.Entity("AlplaPortal.Domain.Entities.Plant", b =>
                 {
                     b.Property<int>("Id")
@@ -1071,78 +998,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                     b.HasIndex("UnitId");
 
                     b.ToTable("QuotationItems");
-                });
-
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.ReconciliationRecord", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("BuyerJustification")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("BuyerReviewStatus")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("ExtractionBatchId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal?>("MatchConfidence")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("MatchStatus")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("MatchStrategy")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid?>("OcrExtractedItemId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal?>("QuantityDivergence")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<Guid?>("QuotationItemId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("RequestId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("RequesterItemId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime?>("ReviewedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("ReviewedByUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("UnitDivergence")
-                        .HasColumnType("bit");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ExtractionBatchId");
-
-                    b.HasIndex("OcrExtractedItemId");
-
-                    b.HasIndex("QuotationItemId");
-
-                    b.HasIndex("RequestId");
-
-                    b.HasIndex("RequesterItemId");
-
-                    b.HasIndex("ReviewedByUserId");
-
-                    b.HasIndex("RequestId", "ExtractionBatchId");
-
-                    b.ToTable("ReconciliationRecords");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.Request", b =>
@@ -2295,30 +2150,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.OcrExtractedItem", b =>
-                {
-                    b.HasOne("AlplaPortal.Domain.Entities.RequestAttachment", "Attachment")
-                        .WithMany()
-                        .HasForeignKey("AttachmentId");
-
-                    b.HasOne("AlplaPortal.Domain.Entities.Request", "Request")
-                        .WithMany()
-                        .HasForeignKey("RequestId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("AlplaPortal.Domain.Entities.Unit", "ResolvedUnit")
-                        .WithMany()
-                        .HasForeignKey("ResolvedUnitId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("Attachment");
-
-                    b.Navigation("Request");
-
-                    b.Navigation("ResolvedUnit");
-                });
-
             modelBuilder.Entity("AlplaPortal.Domain.Entities.Plant", b =>
                 {
                     b.HasOne("AlplaPortal.Domain.Entities.Company", "Company")
@@ -2383,45 +2214,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                     b.Navigation("Quotation");
 
                     b.Navigation("Unit");
-                });
-
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.ReconciliationRecord", b =>
-                {
-                    b.HasOne("AlplaPortal.Domain.Entities.OcrExtractedItem", "OcrExtractedItem")
-                        .WithMany()
-                        .HasForeignKey("OcrExtractedItemId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("AlplaPortal.Domain.Entities.QuotationItem", "QuotationItem")
-                        .WithMany()
-                        .HasForeignKey("QuotationItemId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("AlplaPortal.Domain.Entities.Request", "Request")
-                        .WithMany()
-                        .HasForeignKey("RequestId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("AlplaPortal.Domain.Entities.RequestLineItem", "RequesterItem")
-                        .WithMany()
-                        .HasForeignKey("RequesterItemId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("AlplaPortal.Domain.Entities.User", "ReviewedByUser")
-                        .WithMany()
-                        .HasForeignKey("ReviewedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("OcrExtractedItem");
-
-                    b.Navigation("QuotationItem");
-
-                    b.Navigation("Request");
-
-                    b.Navigation("RequesterItem");
-
-                    b.Navigation("ReviewedByUser");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.Request", b =>

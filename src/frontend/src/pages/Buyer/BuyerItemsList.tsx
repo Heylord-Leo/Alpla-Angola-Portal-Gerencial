@@ -18,8 +18,9 @@ import { DropdownPortal } from '../../components/ui/DropdownPortal';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { SearchFilterBar } from '../../components/ui/SearchFilterBar';
-import { SavedQuotationDto, IvaRate, Unit, OcrDraft, OcrDraftItem } from '../../types';
+import { SavedQuotationDto, IvaRate, Unit, OcrDraft, OcrDraftItem, ReconciliationBatchDto } from '../../types';
 import { useOcrProcessor } from '../../hooks/useOcrProcessor';
+import { ReconciliationPanel } from '../../components/Buyer/ReconciliationPanel';
 
 const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
 const ALLOWED_EXTENSIONS_MSG = "PDF, JPG, JPEG, PNG, DOC, DOCX, XLS e XLSX";
@@ -65,6 +66,7 @@ export function BuyerItemsList() {
     const [isSaving, setIsSaving] = useState(false);
     const [isProcessingOcr, setIsProcessingOcr] = useState<Record<string, boolean>>({});
     const [ocrErrors, setOcrErrors] = useState<Record<string, string | null>>({});
+    const [reconciliationBatches, setReconciliationBatches] = useState<Record<string, ReconciliationBatchDto>>({});
     const [editingQuotationId, setEditingQuotationId] = useState<Record<string, string | null>>({});
     const [highlightedRequestId, setHighlightedRequestId] = useState<string | null>(null);
     const [formErrors, setFormErrors] = useState<Record<string, Record<string, string>>>({});
@@ -426,6 +428,16 @@ export function BuyerItemsList() {
 
             setQuotationDrafts(prev => ({ ...prev, [requestId]: initialDraft }));
             setQuotationFlowStep(prev => ({ ...prev, [requestId]: 'EDIT_QUOTATION' }));
+
+            // Phase 2: Auto-load reconciliation after OCR
+            try {
+                const reconData = await api.requests.getReconciliation(requestId);
+                if (reconData && reconData.records && reconData.records.length > 0) {
+                    setReconciliationBatches(prev => ({ ...prev, [requestId]: reconData }));
+                }
+            } catch (reconErr) {
+                console.warn('Failed to load reconciliation:', reconErr);
+            }
         } catch (error: any) {
             setOcrErrors(prev => ({ ...prev, [requestId]: error.message }));
             setQuotationFlowStep(prev => ({ ...prev, [requestId]: 'EDIT_QUOTATION' }));
@@ -705,6 +717,7 @@ export function BuyerItemsList() {
             setEditingQuotationId(prev => { const n = { ...prev }; delete n[requestId]; return n; });
             setDraftProformaFiles(prev => { const n = { ...prev }; delete n[requestId]; return n; });
             setImportSelectedFiles(prev => { const n = { ...prev }; delete n[requestId]; return n; });
+            setReconciliationBatches(prev => { const n = { ...prev }; delete n[requestId]; return n; });
             
             loadData();
         } catch (error: any) {
@@ -739,6 +752,7 @@ export function BuyerItemsList() {
             setEditingQuotationId(prev => { const n = { ...prev }; delete n[requestId]; return n; });
             setDraftProformaFiles(prev => { const n = { ...prev }; delete n[requestId]; return n; });
             setImportSelectedFiles(prev => { const n = { ...prev }; delete n[requestId]; return n; });
+            setReconciliationBatches(prev => { const n = { ...prev }; delete n[requestId]; return n; });
             setFormErrors(prev => { const n = { ...prev }; delete n[requestId]; return n; });
         } catch (error) {
             console.error("Error cancelling quotation:", error);
@@ -789,6 +803,7 @@ export function BuyerItemsList() {
             setEditingQuotationId(prev => { const n = { ...prev }; delete n[requestId]; return n; });
             setDraftProformaFiles(prev => { const n = { ...prev }; delete n[requestId]; return n; });
             setImportSelectedFiles(prev => { const n = { ...prev }; delete n[requestId]; return n; });
+            setReconciliationBatches(prev => { const n = { ...prev }; delete n[requestId]; return n; });
             setDuplicateSupplierModal({ show: false, requestId: '', draft: null, duplicate: null });
             
             loadData();
@@ -1775,6 +1790,14 @@ export function BuyerItemsList() {
                                                                     </div>
                                                                 ) : quotationDrafts[group.requestId] ? (
                                                                     <div className="quotation-form-body">
+                                                                        {/* Phase 2: Reconciliation Panel */}
+                                                                        {reconciliationBatches[group.requestId] && (
+                                                                            <ReconciliationPanel
+                                                                                requestId={group.requestId}
+                                                                                batch={reconciliationBatches[group.requestId]}
+                                                                                onBatchUpdated={(updated) => setReconciliationBatches(prev => ({ ...prev, [group.requestId]: updated }))}
+                                                                            />
+                                                                        )}
                                                                         <div className="form-header-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '24px', backgroundColor: 'var(--color-bg-page)', padding: '20px', borderRadius: '8px' }}>
                                                                             <div style={{ gridColumn: 'span 3' }}>
                                                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>

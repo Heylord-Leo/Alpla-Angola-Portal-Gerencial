@@ -82,6 +82,10 @@ export interface RequestLineItemDto {
     ivaRateName: string | null;
     ivaRatePercent: number | null;
     dueDate: string | null;
+
+    // Catalog linkage
+    itemCatalogId: number | null;
+    itemCatalogCode: string | null;
 }
 
 export interface SavedQuotationItemDto {
@@ -191,6 +195,7 @@ export interface OcrDraftItem {
     taxRate?: number; // Raw extracted tax percentage for suggestion hint
     totalPrice: number; // Front-end calculated preview
     isChecked?: boolean; // UI tracking variable for visual checklist
+    itemCatalogId?: number | null; // Optional catalog reference
 }
 
 export interface OcrDraft {
@@ -239,6 +244,94 @@ export interface CurrencyDto {
     code: string;
     symbol: string;
     isActive: boolean;
+}
+
+// Item Catalog types
+export interface ItemCatalogDto {
+    id: number;
+    code: string;
+    description: string;
+    primaveraCode: string | null;
+    supplierCode: string | null;
+    defaultUnitId: number | null;
+    defaultUnitCode: string | null;
+    defaultUnitName: string | null;
+    category: string | null;
+    origin: string;
+    isActive: boolean;
+    createdAtUtc: string;
+    updatedAtUtc: string | null;
+}
+
+export interface RequesterItem {
+    lineNumber: number;
+    description: string;
+    quantity: number;
+    unitId: number | null;
+    notes: string;
+    itemCatalogId: number | null;
+    itemCatalogCode: string | null;
+}
+
+export interface ImportResultDto {
+    imported: number;
+    skipped: number;
+    errors: string[];
+}
+
+// Phase 2: Reconciliation types
+export interface ReconciliationRecordDto {
+    id: string;
+    matchStatus: string;
+    matchConfidence: number | null;
+    matchStrategy: string | null;
+    quantityDivergence: number | null;
+    unitDivergence: boolean;
+    buyerReviewStatus: string;
+    buyerJustification: string | null;
+    reviewedByName: string | null;
+    reviewedAtUtc: string | null;
+    requesterItemId: string | null;
+    requesterDescription: string | null;
+    requesterQuantity: number | null;
+    requesterUnitCode: string | null;
+    requesterCatalogId: number | null;
+    requesterCatalogCode: string | null;
+    ocrExtractedItemId: string | null;
+    ocrDescription: string | null;
+    ocrQuantity: number | null;
+    ocrRawUnit: string | null;
+    ocrUnitPrice: number | null;
+    ocrLineTotal: number | null;
+}
+
+export interface ReconciliationSummaryDto {
+    totalRecords: number;
+    exactMatches: number;
+    probableMatches: number;
+    reviewRequired: number;
+    extraSupplierItems: number;
+    missingRequestedItems: number;
+    buyerConfirmed: number;
+    buyerPending: number;
+    buyerRejected: number;
+}
+
+export interface ReconciliationBatchDto {
+    extractionBatchId: string;
+    extractedAtUtc: string;
+    providerName: string | null;
+    qualityScore: number;
+    attachmentId: string | null;
+    ocrItemCount: number;
+    records: ReconciliationRecordDto[];
+    summary: ReconciliationSummaryDto;
+}
+
+export interface ReconciliationReviewItemDto {
+    recordId: string;
+    reviewStatus: string;
+    justification?: string;
 }
 
 export interface UserDto {

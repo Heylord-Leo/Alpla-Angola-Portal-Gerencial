@@ -48,6 +48,10 @@ public class RequestLineItem
     public int? IvaRateId { get; set; }
     public IvaRate? IvaRate { get; set; }
 
+    /// <summary>Optional reference to the master item catalog. Null = manual/free-text item.</summary>
+    public int? ItemCatalogId { get; set; }
+    public ItemCatalog? ItemCatalogItem { get; set; }
+
     public string? Notes { get; set; }
     
     public DateTime? DueDate { get; set; }

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.52.0] - 2026-04-12
+
+### Added
+- **Server-Side Catalog Search & Pagination**: Improved performance of catalog items lookup by pushing load to the backend.
+  - Re-engineered `CatalogItemsPanel.tsx` to utilize server-side search instead of client-side filtering.
+  - Updated the backend `CatalogItemsController.cs` to accept optional `search` and `take` query parameters.
+- **Autocomplete Optimization**: The item selection "pickup list" inside Request creation now correctly queries the server and strictly bounds outputs.
+  - Limits returned UI outputs natively to a maximum of 10 items.
+  - Added inline visibility of `Cod_Primavera` and `Cod_Fornecedor` inside the item autocomplete dropdown list options.
+
 ## [2.51.0] - 2026-04-11
 
 ### Added

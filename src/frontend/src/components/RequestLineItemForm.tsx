@@ -1,6 +1,7 @@
 import React from 'react';
 import { LookupDto, RequestLineItemDto } from '../types';
 import { CurrencyInput } from './CurrencyInput';
+import { CatalogItemAutocomplete } from './CatalogItemAutocomplete';
 
 export interface RequestLineItemFormProps {
     itemForm: Partial<RequestLineItemDto>;
@@ -107,8 +108,40 @@ export function RequestLineItemForm({
                 {itemForm.id ? 'Editar Item' : 'Novo Item'}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '20px', paddingBottom: '16px' }}>
-                <label style={{ ...labelStyle, gridColumn: 'span 2' }}>Descrição <span style={{ color: 'red' }}>*</span>
-                    <input required type="text" value={itemForm.description || ''} onChange={e => { setItemForm({ ...itemForm, description: e.target.value }); clearFieldError('Description'); }} style={getInputStyle('Description')} placeholder="Ex: Cadeira Ergonômica" />
+                <label style={{ ...labelStyle, gridColumn: 'span 2' }}>Descrição / Item do Catálogo <span style={{ color: 'red' }}>*</span>
+                    <div style={{ marginTop: '8px' }}>
+                        <CatalogItemAutocomplete
+                            value={itemForm.itemCatalogCode ? `[${itemForm.itemCatalogCode}] ${itemForm.description || ''}` : (itemForm.description || '')}
+                            itemCatalogId={itemForm.itemCatalogId ?? null}
+                            onChange={(description, catalogId, catalogCode, defaultUnitId) => {
+                                const updates: Partial<RequestLineItemDto> = {
+                                    ...itemForm,
+                                    description,
+                                    itemCatalogId: catalogId,
+                                    itemCatalogCode: catalogCode
+                                };
+                                // Auto-fill unit from catalog when selecting a catalog item
+                                if (catalogId && defaultUnitId) {
+                                    const matchingUnit = units.find(u => u.id === defaultUnitId);
+                                    if (matchingUnit) {
+                                        updates.unit = matchingUnit.code;
+                                    }
+                                }
+                                setItemForm(updates);
+                                clearFieldError('Description');
+                            }}
+                            placeholder="Pesquisar item do catálogo ou digitar descrição..."
+                            style={{
+                                ...getInputStyle('Description'),
+                                marginTop: 0
+                            }}
+                        />
+                    </div>
+                    {itemForm.itemCatalogCode && (
+                        <div style={{ marginTop: '4px', fontSize: '0.7rem', color: 'var(--color-primary)', fontWeight: 600 }}>
+                            📦 Vinculado ao catálogo: {itemForm.itemCatalogCode}
+                        </div>
+                    )}
                     {renderFieldError('Description')}
                 </label>
 

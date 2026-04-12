@@ -17,8 +17,6 @@ public class CreateRequestLineItemDto
 
     public int? UnitId { get; set; }
 
-    [Required(ErrorMessage = "O preço unitário é obrigatório.")]
-    [Range(0, double.MaxValue, ErrorMessage = "O preço unitário não pode ser negativo.")]
     public decimal? UnitPrice { get; set; }
 
     public int? CurrencyId { get; set; }
@@ -30,8 +28,10 @@ public class CreateRequestLineItemDto
     public decimal? DiscountPercent { get; set; }
     public decimal? DiscountAmount { get; set; }
 
-    [Required(ErrorMessage = "A taxa de IVA é obrigatória.")]
     public int? IvaRateId { get; set; }
+
+    /// <summary>Optional reference to catalog item. Null = manual/free-text item.</summary>
+    public int? ItemCatalogId { get; set; }
 
     [MaxLength(200)]
     public string? SupplierName { get; set; }

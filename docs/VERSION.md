@@ -2,7 +2,13 @@
 
 ## Current Version
 
-v2.51.0
+v2.52.0
+
+## [2.52.0] - 2026-04-12
+
+### Added
+- **Server-Side Catalog Search & Pagination**: Improved performance of catalog items lookup by pushing load to the backend (`take=10`).
+- **Autocomplete Optimization**: Improved the UX of the "pickup list" inside Request creation with max limits and extra visibility (`Cod_Primavera`, `Cod_Fornecedor`).
 
 ## [2.51.0] - 2026-04-11
 

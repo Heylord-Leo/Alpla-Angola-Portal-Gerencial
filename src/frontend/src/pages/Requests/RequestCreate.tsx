@@ -5,13 +5,14 @@ import { api, ApiError } from '../../lib/api';
 import { SupplierAutocomplete } from '../../components/SupplierAutocomplete';
 import { QuickSupplierModal } from '../../components/Buyer/QuickSupplierModal';
 import { FeedbackType } from '../../components/ui/Feedback';
-import { LookupDto, IvaRate, Unit, CurrencyDto, OcrDraft, OcrDraftItem } from '../../types';
+import { LookupDto, IvaRate, Unit, CurrencyDto, OcrDraft, OcrDraftItem, RequesterItem } from '../../types';
 import { useOcrProcessor } from '../../hooks/useOcrProcessor';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RequestActionHeader, BreadcrumbItem } from './components/RequestActionHeader';
 import { scrollToFirstError } from '../../lib/validation';
 import { DateInput } from '../../components/DateInput';
 import { computeFileHash, formatDateTime } from '../../lib/utils';
+import { CatalogItemAutocomplete } from '../../components/CatalogItemAutocomplete';
 
 
 export function RequestCreate() {
@@ -48,6 +49,9 @@ export function RequestCreate() {
     const [quickSupplierModal, setQuickSupplierModal] = useState<{ show: boolean; initialName: string; initialTaxId: string }>({ show: false, initialName: '', initialTaxId: '' });
     const fileInputRef = useRef<HTMLInputElement>(null);
     const manualFileInputRef = useRef<HTMLInputElement>(null);
+
+    // Requester Items State (for Quotation requests)
+    const [requesterItems, setRequesterItems] = useState<RequesterItem[]>([]);
 
     const { mapOcrResultToDraft, calculateItemTotal, calculateDraftTotal } = useOcrProcessor(ivaRates, units, currencies, companies);
 
@@ -436,6 +440,45 @@ export function RequestCreate() {
         clearFieldError(name);
     };
 
+    // Requester Items Handlers (Quotation)
+    const handleAddRequesterItem = () => {
+        setRequesterItems(prev => [...prev, {
+            lineNumber: prev.length + 1,
+            description: '',
+            quantity: 1,
+            unitId: null,
+            notes: '',
+            itemCatalogId: null,
+            itemCatalogCode: null
+        }]);
+    };
+
+    const handleUpdateRequesterItem = (index: number, field: keyof RequesterItem, value: any) => {
+        setRequesterItems(prev => {
+            const next = [...prev];
+            next[index] = { ...next[index], [field]: value };
+            return next;
+        });
+    };
+
+    const handleRemoveRequesterItem = (index: number) => {
+        setRequesterItems(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleCatalogSelectRequesterItem = (index: number, description: string, catalogId: number | null, catalogCode: string | null, defaultUnitId: number | null) => {
+        setRequesterItems(prev => {
+            const next = [...prev];
+            next[index] = {
+                ...next[index],
+                description,
+                itemCatalogId: catalogId,
+                itemCatalogCode: catalogCode,
+                unitId: defaultUnitId || next[index].unitId
+            };
+            return next;
+        });
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
@@ -512,7 +555,26 @@ export function RequestCreate() {
                 currencyId: currencies.find(c => c.code === paymentDraft.currency)?.id || safeCurrencyId,
                 plantId: safePlantId,
                 costCenterId: null,
-                itemPriority: 'MEDIUM'
+                itemPriority: 'MEDIUM',
+                itemCatalogId: item.itemCatalogId || null
+            })) : Number(formData.requestTypeId) === 1 && requesterItems.length > 0 ? requesterItems.filter(ri => ri.description.trim()).map((ri, index) => ({
+                lineNumber: index + 1,
+                description: ri.description,
+                quantity: ri.quantity,
+                unitId: ri.unitId,
+                unitPrice: 0,
+                discountAmount: 0,
+                ivaRateId: null,
+                totalAmount: 0,
+                dueDate: formData.needByDateUtc && !isNaN(new Date(formData.needByDateUtc).getTime())
+                    ? new Date(formData.needByDateUtc).toISOString()
+                    : null,
+                currencyId: safeCurrencyId,
+                plantId: safePlantId,
+                costCenterId: null,
+                itemPriority: 'MEDIUM',
+                notes: ri.notes || null,
+                itemCatalogId: ri.itemCatalogId || null
             })) : []
         };
 
@@ -800,6 +862,130 @@ export function RequestCreate() {
                              </select>
                              {renderFieldError('RequestTypeId')}
                          </label>
+
+                         {/* Quotation Requester Items Section */}
+                         <AnimatePresence>
+                             {Number(formData.requestTypeId) === 1 && (
+                                 <motion.div
+                                     initial={{ opacity: 0, height: 0, overflow: 'hidden' }}
+                                     animate={{ opacity: 1, height: 'auto', transitionEnd: { overflow: 'visible' } }}
+                                     exit={{ opacity: 0, height: 0, overflow: 'hidden' }}
+                                     transition={{ duration: 0.3 }}
+                                 >
+                                     <div style={{
+                                         marginBottom: '16px',
+                                         padding: '24px',
+                                         backgroundColor: 'var(--color-bg-surface)',
+                                         border: '2px solid var(--color-primary)',
+                                         borderRadius: 'var(--radius-sm)',
+                                         boxShadow: 'var(--shadow-brutal-sm)'
+                                     }}>
+                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                                             <div>
+                                                 <h3 style={{ fontSize: '0.875rem', fontWeight: 800, textTransform: 'uppercase', margin: 0, color: 'var(--color-primary)' }}>
+                                                     Itens Solicitados
+                                                 </h3>
+                                                 <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: '2px 0 0 0' }}>
+                                                     Adicione os itens que pretende solicitar (catálogo ou manual)
+                                                 </p>
+                                             </div>
+                                             <button
+                                                 type="button"
+                                                 onClick={handleAddRequesterItem}
+                                                 style={{
+                                                     display: 'inline-flex', alignItems: 'center', gap: '6px',
+                                                     backgroundColor: 'var(--color-primary)', color: 'white',
+                                                     border: 'none', padding: '8px 16px', borderRadius: '4px',
+                                                     fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer',
+                                                     textTransform: 'uppercase'
+                                                 }}
+                                             >
+                                                 <Plus size={14} /> Adicionar Item
+                                             </button>
+                                         </div>
+
+                                         {requesterItems.length === 0 ? (
+                                             <div style={{
+                                                 textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)',
+                                                 border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)',
+                                                 fontSize: '0.8rem'
+                                             }}>
+                                                 <p style={{ marginBottom: '8px', fontWeight: 600 }}>Nenhum item adicionado ainda.</p>
+                                                 <p style={{ fontSize: '0.75rem' }}>Clique em "Adicionar Item" para especificar os materiais ou serviços necessários.</p>
+                                             </div>
+                                         ) : (
+                                             <div style={{ overflow: 'visible', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
+                                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
+                                                     <thead>
+                                                         <tr style={{ backgroundColor: 'var(--color-bg-page)', borderBottom: '1px solid var(--color-border)' }}>
+                                                             <th style={{ padding: '8px', textAlign: 'center', width: '30px', fontWeight: 800 }}>#</th>
+                                                             <th style={{ padding: '8px', textAlign: 'left', fontWeight: 800 }}>DESCRIÇÃO / ITEM DO CATÁLOGO</th>
+                                                             <th style={{ padding: '8px', textAlign: 'center', width: '100px', fontWeight: 800 }}>UNID.</th>
+                                                             <th style={{ padding: '8px', textAlign: 'center', width: '80px', fontWeight: 800 }}>QTD</th>
+                                                             <th style={{ padding: '8px', textAlign: 'left', width: '180px', fontWeight: 800 }}>NOTAS</th>
+                                                             <th style={{ padding: '8px', textAlign: 'center', width: '40px' }}></th>
+                                                         </tr>
+                                                     </thead>
+                                                     <tbody>
+                                                         {requesterItems.map((item, idx) => (
+                                                             <tr key={idx} style={{ borderBottom: '1px solid var(--color-border-light)' }}>
+                                                                 <td style={{ padding: '4px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--color-text-muted)' }}>
+                                                                     {idx + 1}
+                                                                 </td>
+                                                                 <td style={{ padding: '4px 8px' }}>
+                                                                     <CatalogItemAutocomplete
+                                                                         value={item.itemCatalogCode ? `[${item.itemCatalogCode}] ${item.description}` : item.description}
+                                                                         itemCatalogId={item.itemCatalogId}
+                                                                         onChange={(desc, catId, catCode, defaultUnitId) => handleCatalogSelectRequesterItem(idx, desc, catId, catCode, defaultUnitId)}
+                                                                         placeholder="Pesquisar item do catálogo ou digitar descrição..."
+                                                                         style={{ padding: '6px 8px', marginTop: 0 }}
+                                                                     />
+                                                                 </td>
+                                                                 <td style={{ padding: '4px 8px' }}>
+                                                                     <select
+                                                                         value={item.unitId || ''}
+                                                                         onChange={(e) => handleUpdateRequesterItem(idx, 'unitId', e.target.value ? Number(e.target.value) : null)}
+                                                                         style={{ ...inputStyle, padding: '6px 8px', marginTop: 0, textAlign: 'center' }}
+                                                                     >
+                                                                         <option value="">—</option>
+                                                                         {units.filter(u => u.isActive !== false || u.id === item.unitId).map(u => (
+                                                                             <option key={u.id} value={u.id}>{u.code}</option>
+                                                                         ))}
+                                                                     </select>
+                                                                 </td>
+                                                                 <td style={{ padding: '4px 8px' }}>
+                                                                     <input
+                                                                         type="number"
+                                                                         min={0}
+                                                                         value={item.quantity}
+                                                                         onChange={(e) => handleUpdateRequesterItem(idx, 'quantity', Number(e.target.value))}
+                                                                         style={{ ...inputStyle, padding: '6px 8px', marginTop: 0, textAlign: 'center' }}
+                                                                     />
+                                                                 </td>
+                                                                 <td style={{ padding: '4px 8px' }}>
+                                                                     <input
+                                                                         type="text"
+                                                                         value={item.notes}
+                                                                         onChange={(e) => handleUpdateRequesterItem(idx, 'notes', e.target.value)}
+                                                                         placeholder="Observações..."
+                                                                         style={{ ...inputStyle, padding: '6px 8px', marginTop: 0 }}
+                                                                     />
+                                                                 </td>
+                                                                 <td style={{ padding: '4px 8px', textAlign: 'center' }}>
+                                                                     <button type="button" onClick={() => handleRemoveRequesterItem(idx)} style={{ color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer' }}>
+                                                                         <Trash2 size={14} />
+                                                                     </button>
+                                                                 </td>
+                                                             </tr>
+                                                         ))}
+                                                     </tbody>
+                                                 </table>
+                                             </div>
+                                         )}
+                                     </div>
+                                 </motion.div>
+                             )}
+                         </AnimatePresence>
 
                          <AnimatePresence>
                              {Number(formData.requestTypeId) === 2 && (

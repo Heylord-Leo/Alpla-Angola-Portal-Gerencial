@@ -42,6 +42,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<AdminLogEntry> AdminLogEntries => Set<AdminLogEntry>();
     public DbSet<NotificationStatus> NotificationStatuses => Set<NotificationStatus>();
     public DbSet<InformationalNotification> InformationalNotifications => Set<InformationalNotification>();
+    public DbSet<ItemCatalog> ItemCatalogItems => Set<ItemCatalog>();
+    public DbSet<OcrExtractedItem> OcrExtractedItems => Set<OcrExtractedItem>();
+    public DbSet<ReconciliationRecord> ReconciliationRecords => Set<ReconciliationRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -117,6 +120,20 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Supplier>().HasIndex(s => s.PrimaveraCode).IsUnique().HasFilter("[PrimaveraCode] IS NOT NULL AND [PrimaveraCode] <> ''");
         modelBuilder.Entity<CostCenter>().HasIndex(c => c.Code).IsUnique();
 
+        // Item Catalog configuration
+        modelBuilder.Entity<ItemCatalog>().HasIndex(ic => ic.Code).IsUnique();
+        modelBuilder.Entity<ItemCatalog>()
+            .HasOne(ic => ic.DefaultUnit)
+            .WithMany()
+            .HasForeignKey(ic => ic.DefaultUnitId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<RequestLineItem>()
+            .HasOne(r => r.ItemCatalogItem)
+            .WithMany()
+            .HasForeignKey(r => r.ItemCatalogId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         modelBuilder.Entity<CostCenter>()
             .HasOne(c => c.Plant)
             .WithMany()
@@ -153,6 +170,41 @@ public class ApplicationDbContext : DbContext
         
         modelBuilder.Entity<RequestLineItem>().Property(r => r.ReceivedQuantity).HasColumnType("decimal(18,4)");
         modelBuilder.Entity<QuotationItem>().Property(q => q.ReceivedQuantity).HasColumnType("decimal(18,4)");
+
+        // Phase 2: OCR Extracted Items configuration
+        modelBuilder.Entity<OcrExtractedItem>()
+            .HasOne(o => o.ResolvedUnit)
+            .WithMany()
+            .HasForeignKey(o => o.ResolvedUnitId)
+            .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<OcrExtractedItem>().HasIndex(o => o.RequestId);
+        modelBuilder.Entity<OcrExtractedItem>().HasIndex(o => o.ExtractionBatchId);
+        modelBuilder.Entity<OcrExtractedItem>().HasIndex(o => new { o.RequestId, o.ExtractionBatchId });
+
+        // Phase 2: Reconciliation Records configuration
+        modelBuilder.Entity<ReconciliationRecord>()
+            .HasOne(r => r.RequesterItem)
+            .WithMany()
+            .HasForeignKey(r => r.RequesterItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<ReconciliationRecord>()
+            .HasOne(r => r.OcrExtractedItem)
+            .WithMany()
+            .HasForeignKey(r => r.OcrExtractedItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<ReconciliationRecord>()
+            .HasOne(r => r.QuotationItem)
+            .WithMany()
+            .HasForeignKey(r => r.QuotationItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<ReconciliationRecord>()
+            .HasOne(r => r.ReviewedByUser)
+            .WithMany()
+            .HasForeignKey(r => r.ReviewedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<ReconciliationRecord>().HasIndex(r => r.RequestId);
+        modelBuilder.Entity<ReconciliationRecord>().HasIndex(r => r.ExtractionBatchId);
+        modelBuilder.Entity<ReconciliationRecord>().HasIndex(r => new { r.RequestId, r.ExtractionBatchId });
 
         // Simple Lookup Seeding for V1 Minimums
         modelBuilder.Entity<RequestType>().HasData(

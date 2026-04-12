@@ -4,16 +4,19 @@ using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace AlplaPortal.Infrastructure.Migrations
+namespace AlplaPortal.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260412124049_AddOcrExtractedItemsAndReconciliation")]
+    partial class AddOcrExtractedItemsAndReconciliation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -459,12 +462,6 @@ namespace AlplaPortal.Infrastructure.Migrations
 
                     b.Property<string>("Origin")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("PrimaveraCode")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("SupplierCode")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
