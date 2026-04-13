@@ -2,7 +2,12 @@
 
 ## Current Version
 
-v2.55.0
+v2.57.0
+
+## [2.57.0] - 2026-04-14
+
+### Changed
+- **RequestEdit Modernization Cycle**: Decomposed `RequestEdit.tsx` into parent-orchestrator + 4 presentational children. Introduced `request-edit.module.css` for local style management. Implemented route-level code splitting via `React.lazy()` reducing core bundle by ~70%. Created `LoadingSkeleton` fallback. Cleaned dead imports.
 
 ## [2.55.0] - 2026-04-13
 

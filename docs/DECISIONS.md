@@ -2,6 +2,60 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-099 — Route-Level Code Splitting Strategy
+
+- **Date:** 2026-04-13
+- **Status:** Accepted
+- **Context:** The React SPA loaded all page components in a single monolithic bundle (~1,509 kB), causing slow initial page loads even for users who only need the login screen or dashboard.
+- **Decision:** Implement route-level code splitting using `React.lazy()` and `Suspense` in `App.tsx`.
+    1. **Eagerly Loaded**: Only the authentication critical path (`LoginPage`, `ResetPasswordPage`, `ChangePasswordPage`) and `Dashboard` remain in the main bundle.
+    2. **Lazy Loaded**: All other ~20 page components are converted to lazy imports, each generating its own chunk.
+    3. **Fallback**: A shared `LoadingSkeleton` component provides a layout-aware shimmer animation during chunk retrieval.
+    4. **Auth Guard Ordering**: `ProtectedRoute` wrappers are placed outside the `Suspense` boundary to ensure authentication checks execute before any lazy chunk is downloaded.
+- **Alternatives considered:** Component-level splitting (rejected: too granular, marginal gains for high complexity). No splitting (rejected: unacceptable initial load time for a production portal).
+- **Consequences:** Core JS bundle reduced from ~1,509 kB to ~446 kB (~70% reduction). All new pages must follow the lazy-loading pattern unless they are part of the authentication critical path.
+
+---
+
+## DEC-098 — Deferred Accessibility/Focus and Motion Polish
+
+- **Date:** 2026-04-13
+- **Status:** Accepted
+- **Context:** During the `RequestEdit.tsx` modernization planning, accessibility improvements (focus management, trap focus, keyboard navigation) and motion polish (`AnimatePresence` transitions) were identified as valuable but orthogonal to the structural decomposition goal.
+- **Decision:** Explicitly defer accessibility/focus management and motion-polish work to a future dedicated cycle. These improvements should not be mixed into structural refactoring phases because they require distinct validation criteria, testing approaches, and user-facing verification.
+- **Alternatives considered:** Including accessibility fixes within the modernization cycle (rejected: mixes concerns, increases risk, and complicates manual verification of structural changes).
+- **Consequences:** The current codebase has no regressions in accessibility or motion relative to its pre-modernization state, but also no improvements. A future dedicated cycle is recommended when accessibility becomes a priority.
+
+---
+
+## DEC-097 — Skip Generic FormField Abstraction
+
+- **Date:** 2026-04-13
+- **Status:** Accepted
+- **Context:** During the CSS Module migration (Phase 4) of the `RequestEdit.tsx` modernization, a generic `<FormField>` wrapper was considered to unify label + input + error rendering across all form fields.
+- **Decision:** Do not introduce a generic `FormField` abstraction. The variation across field types is too high to justify a single wrapper:
+    - Native `<input>`, `<select>`, `<textarea>` each have different DOM structures.
+    - `DateInput` applies `className` to a container div, not the inner input.
+    - `SupplierAutocomplete` is a fully self-contained composite component.
+    - Some fields have contextual helper text, quick-action buttons, or conditional warnings.
+- **Alternatives considered:** A thin `FormField` wrapper handling only label + error (rejected: insufficient value for the abstraction cost; most fields already follow a recognizable pattern with CSS Module classes).
+- **Consequences:** Form fields continue to use direct CSS Module class names (`formLabel`, `formInput`, `fieldError`) applied individually. This is more verbose but avoids a leaky abstraction.
+
+---
+
+## DEC-096 — Incremental Decomposition of RequestEdit.tsx
+
+- **Date:** 2026-04-13
+- **Status:** Accepted
+- **Context:** `RequestEdit.tsx` had grown to ~1,274 lines, combining UI rendering for general data, financial summary, status/action panels, and line items with complex workflow logic, making the file difficult to maintain and review.
+- **Decision:** Decompose `RequestEdit.tsx` into a parent-child architecture using an incremental, phased approach.
+    1. **Parent as Orchestrator**: `RequestEdit.tsx` retains all state management (`useRequestDetail`), event handlers, permission booleans, and workflow conditional logic. It is not a thin wrapper.
+    2. **Presentational Children**: Four child components (`RequestGeneralDataSection`, `RequestFinancialSummary`, `RequestStatusActionPanels`, `RequestLineItemsSection`) receive all data and handlers via props. They do not call hooks or manage workflow state.
+    3. **Phased Delivery**: Each section was extracted as an independent phase with manual `npm run build` verification between steps to prevent regressions.
+    4. **Local CSS Module**: Shared inline style helpers were migrated to `request-edit.module.css`, scoped exclusively to `RequestEdit` and its children.
+- **Alternatives considered:** Full rewrite of RequestEdit as a multi-page wizard (rejected: too risky, would break existing deep-linking and URL state patterns). Single-pass extraction of all sections (rejected: higher regression risk without phase-level verification checkpoints).
+- **Consequences:** `RequestEdit.tsx` reduced from ~1,274 to ~660 lines (~48% reduction). Future maintenance of individual sections can be done in focused files without navigating the full workflow logic. The parent remains the only place where workflow decisions are made.
+
 ---
 
 ## DEC-095 — Dynamic SMTP Management (AES-256 Encryption)

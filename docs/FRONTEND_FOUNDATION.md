@@ -62,6 +62,48 @@ The project has been modernized to support the Shell 2.0 architecture:
 3. **Inline CSS Variables**: Strict deprecation of third-party utility class frameworks (like Tailwind). Styling must be implemented deterministically via `style={{ }}` bound to global `tokens.css`. 
 4. **Motion**: Transitioned from `framer-motion` to the modular `motion/react` package.
 5. **Sonner**: Introduced as the primary toast notification system, replacing ad-hoc feedback banners where appropriate.
+6. **Route-Level Code Splitting (v2.57.0)**: All non-critical page components are lazy-loaded via `React.lazy()` + `Suspense` in `App.tsx`. Eagerly loaded pages are limited to the critical authentication path (`LoginPage`, `ResetPasswordPage`, `ChangePasswordPage`) and the `Dashboard`. A shared `LoadingSkeleton` component provides layout-aware fallback during chunk retrieval. New pages must follow this pattern unless they are part of the critical authentication path.
+
+## RequestEdit Component Architecture (v2.57.0)
+
+The `RequestEdit.tsx` component was decomposed into a parent-child architecture to reduce complexity while preserving all existing workflow behavior.
+
+### Parent as Orchestrator
+
+`RequestEdit.tsx` (~660 lines) retains full ownership of:
+- State management (via `useRequestDetail` hook)
+- Event handlers and mutation calls
+- Permission/role evaluation booleans (e.g., `isDraftEditable`, `canExecuteOperationalAction`)
+- Workflow conditional logic and redirects
+- Coordination between child sections
+
+The parent is **not** a thin wrapper. It remains the single source of truth for all business logic within the request detail screen.
+
+### Extracted Presentational Children
+
+Four child components live in `src/frontend/src/pages/Requests/components/`:
+
+| Component | Responsibility |
+|---|---|
+| `RequestGeneralDataSection` | Header fields (Title, Type, Company, Plant, Department, Dates, Supplier) |
+| `RequestFinancialSummary` | Currency, Estimated Total, IVA fields |
+| `RequestStatusActionPanels` | Approval banners, operational action bars, quotation action bar |
+| `RequestLineItemsSection` | Line items table, inline add/edit form, quotation-linked items |
+
+**Rules for child components:**
+1. Children receive all data and handlers via props — they do not call hooks, fetch data, or manage workflow state.
+2. Children render UI sections and delegate actions upward via callback props.
+3. Adding new fields or visual elements to a section should be done in the corresponding child component.
+4. Workflow conditions (e.g., "show this button only when status is X and role is Y") remain in the parent and are passed as boolean props.
+
+### CSS Module (`request-edit.module.css`)
+
+Shared visual styles for the RequestEdit form (labels, inputs, section titles, field errors) are centralized in `src/frontend/src/pages/Requests/request-edit.module.css`.
+
+- **Scope**: Used only by `RequestEdit` and its direct children. Not global.
+- **Pattern**: Semantic class names (`sectionTitle`, `formLabel`, `formInput`, `formInputError`, `fieldError`) replacing previously duplicated inline style objects.
+- **Inline Overrides**: Conditional styles (e.g., disabled background, error borders) remain as targeted inline `style={{ }}` overrides where the condition is dynamic.
+- **DateInput Exception**: `DateInput` applies `className` to its container div, not the inner `<input>`. It handles its own error styling internally through `hasError` prop.
 
 ## Global UI Layering and Z-Index Standardization (v2.13.0)
 

@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.57.0] - 2026-04-14
+
+### Changed
+- **RequestEdit Component Decomposition (DEC-096)**: Decomposed the monolithic `RequestEdit.tsx` (~1,274 lines) into a parent-child architecture (~660 lines in parent + 4 presentational children).
+  - **Extracted Components**: `RequestGeneralDataSection`, `RequestFinancialSummary`, `RequestStatusActionPanels`, `RequestLineItemsSection` in `src/frontend/src/pages/Requests/components/`.
+  - **Architecture**: Parent retains all state, handlers, permissions, and workflow logic. Children are strictly presentational, receiving data and callbacks via props.
+- **CSS Module Migration**: Replaced five shared inline style helpers (`inputStyle`, `sectionTitleStyle`, `labelStyle`, `getInputStyle`, `renderFieldError`) with semantic CSS classes in `request-edit.module.css`.
+- **Route-Level Code Splitting (DEC-099)**: Implemented `React.lazy()` + `Suspense` for ~20 page components in `App.tsx`. Eagerly loaded: `LoginPage`, `ResetPasswordPage`, `ChangePasswordPage`, `Dashboard`. Core JS bundle reduced from ~1,509 kB to ~446 kB (~70%).
+- **LoadingSkeleton Fallback**: Introduced `LoadingSkeleton` component (`src/frontend/src/components/ui/LoadingSkeleton.tsx`) as the layout-aware fallback for lazy-loaded routes.
+- **Dead Import Cleanup**: Removed 13 dead imports (10 Lucide icons, 3 components) from `RequestEdit.tsx` post-extraction.
+
+### Decisions Recorded
+- **DEC-096**: Incremental decomposition of `RequestEdit.tsx` with parent-orchestrator pattern.
+- **DEC-097**: Explicit skip of generic `FormField` abstraction due to high field-type variation.
+- **DEC-098**: Deferred accessibility/focus and motion-polish work to a future dedicated cycle.
+- **DEC-099**: Route-level code splitting strategy with eager/lazy classification.
+
 ## [2.56.0] - 2026-04-13
 
 ### Added
