@@ -141,6 +141,8 @@ export function QuotationEntry({
                     const safePrice = item.unitPrice || 0;
                     const grossSubtotal = Math.round(safeQty * safePrice * 100) / 100;
 
+                    const ivaUncertain = (item.taxRate === undefined || item.taxRate === null);
+
                     return {
                         lineNumber: index + 1,
                         description: item.description || '',
@@ -155,10 +157,42 @@ export function QuotationEntry({
                             return matched ? matched.id : null;
                         })(),
                         taxRate: item.taxRate,
-                        totalPrice: grossSubtotal
+                        totalPrice: grossSubtotal,
+                        ivaUncertain
                     };
                 })
             };
+
+            // Detect header IVA presence
+            const ocrGrandTotal = suggestions?.grandTotal?.value || suggestions?.totalAmount?.value || 0;
+            const itemSubtotalGross = initialDraft.items.reduce((sum, item) => {
+                return sum + Math.max(0, (item.quantity || 0) * (item.unitPrice || 0));
+            }, 0) - (initialDraft.discountAmount || 0);
+
+            // Determine if the document header implies IVA exists
+            let headerImpliesIva = false;
+            if (ocrGrandTotal > 0 && itemSubtotalGross > 0) {
+                const impliedIvaRatio = (ocrGrandTotal - itemSubtotalGross) / itemSubtotalGross;
+                headerImpliesIva = impliedIvaRatio > 0.01;
+            }
+
+            // Pass 2: If header shows IVA but all items have taxRate=0, flag them as uncertain
+            if (headerImpliesIva) {
+                const allItemsZeroOrUncertain = initialDraft.items.every(
+                    item => item.ivaUncertain || item.taxRate === 0
+                );
+                if (allItemsZeroOrUncertain) {
+                    initialDraft.items.forEach(item => {
+                        if (item.taxRate === 0) {
+                            item.ivaUncertain = true;
+                            item.ivaRateId = null;
+                        }
+                    });
+                }
+            }
+
+            const hasUncertainItems = initialDraft.items.some(item => item.ivaUncertain);
+            initialDraft.headerHasIva = headerImpliesIva && hasUncertainItems;
 
             initialDraft.totalAmount = recalculateQuotationTotal(initialDraft);
             setDraft(initialDraft);
@@ -213,19 +247,21 @@ export function QuotationEntry({
 
     const recalculateQuotationTotal = (d: QuotationDraft) => {
         let gross = 0;
-        let iva = 0;
+        let ivaTotal = 0;
         d.items.forEach(item => {
-            const itemGross = Math.round((item.quantity || 0) * (item.unitPrice || 0) * 100) / 100;
-            gross += itemGross;
+            const itemGrossRaw = Math.round(((item.quantity || 0) * (item.unitPrice || 0)) * 100) / 100;
+            const itemDiscount = item.discountAmount || 0;
+            const itemNet = Math.max(0, itemGrossRaw - itemDiscount);
+            gross += itemNet;
             const selectedIva = ivaRates.find(r => r.id === item.ivaRateId);
             const ivaPercent = selectedIva ? selectedIva.ratePercent : 0;
-            iva += Math.round(itemGross * (ivaPercent / 100) * 100) / 100;
+            ivaTotal += Math.round(itemNet * (ivaPercent / 100) * 100) / 100;
         });
 
         const discount = d.discountAmount || 0;
         const taxableBase = Math.max(0, gross - discount);
         const discountRatio = gross > 0 ? (taxableBase / gross) : 1;
-        const adjustedIva = Math.round(iva * discountRatio * 100) / 100;
+        const adjustedIva = Math.round(ivaTotal * discountRatio * 100) / 100;
         const total = Math.round((taxableBase + adjustedIva) * 100) / 100;
 
         return Math.max(0, total);
@@ -248,12 +284,14 @@ export function QuotationEntry({
             const safeQty = item.quantity || 0;
             const safePrice = item.unitPrice || 0;
             const grossSubtotal = Math.round(safeQty * safePrice * 100) / 100;
+            const itemDiscount = item.discountAmount || 0;
+            const netSubtotal = Math.max(0, grossSubtotal - itemDiscount);
             
             const selectedIva = ivaRates.find(r => r.id === item.ivaRateId);
             const ivaPercent = selectedIva ? selectedIva.ratePercent : 0;
-            const ivaAmount = Math.round(grossSubtotal * (ivaPercent / 100) * 100) / 100;
+            const ivaAmount = Math.round(netSubtotal * (ivaPercent / 100) * 100) / 100;
             
-            item.totalPrice = Math.round((grossSubtotal + ivaAmount) * 100) / 100;
+            item.totalPrice = Math.round((netSubtotal + ivaAmount) * 100) / 100;
             items[index] = item;
             
             const next = { ...prev, items };
@@ -518,14 +556,24 @@ export function QuotationEntry({
                                                 />
                                             </td>
                                             <td className="px-4 py-3">
-                                                <select
-                                                    value={item.ivaRateId || ''}
-                                                    onChange={e => updateItem(idx, 'ivaRateId', parseInt(e.target.value) || null)}
-                                                    className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-red-500 focus:outline-none py-1 text-xs font-bold transition-colors"
-                                                >
-                                                    <option value="">IVA...</option>
-                                                    {ivaRates.filter(r => r.isActive).map(r => <option key={r.id} value={r.id}>{r.name} ({r.ratePercent}%)</option>)}
-                                                </select>
+                                                <div className="flex flex-col gap-1">
+                                                    <select
+                                                        value={item.ivaRateId || ''}
+                                                        onChange={e => updateItem(idx, 'ivaRateId', parseInt(e.target.value) || null)}
+                                                        className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-red-500 focus:outline-none py-1 text-xs font-bold transition-colors"
+                                                        style={item.ivaUncertain ? { borderColor: '#ef4444', borderBottomWidth: '2px', backgroundColor: 'rgba(239,68,68,0.04)' } : undefined}
+                                                        title={item.ivaUncertain ? 'IVA não identificado pelo OCR. Verifique manualmente.' : undefined}
+                                                    >
+                                                        <option value="">IVA...</option>
+                                                        {ivaRates.filter(r => r.isActive).map(r => <option key={r.id} value={r.id}>{r.name} ({r.ratePercent}%)</option>)}
+                                                    </select>
+                                                    {item.ivaUncertain && (
+                                                        <span className="text-[9px] text-red-500 font-bold flex items-center gap-1" title="O OCR não conseguiu identificar o IVA para este item.">
+                                                            <AlertCircle className="w-2.5 h-2.5 flex-shrink-0" />
+                                                            IVA não identificado
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="px-4 py-3 text-right font-black text-slate-900">
                                                 {formatCurrencyAO(item.totalPrice)} {draft.currency || 'AOA'}
@@ -548,6 +596,17 @@ export function QuotationEntry({
                             </button>
                         </div>
 
+                        {/* IVA Uncertainty Contextual Banner */}
+                        {draft.headerHasIva && draft.items.some(i => i.ivaUncertain) && (
+                            <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-xs font-semibold">
+                                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                                <span>
+                                    <strong>Atenção:</strong> O documento contém IVA nos totais, mas o IVA por item não foi identificado pelo OCR.
+                                    Verifique e corrija manualmente o campo IVA de cada item antes de salvar.
+                                </span>
+                            </div>
+                        )}
+
                         {/* Footer Summary */}
                         <div className="flex flex-col md:flex-row justify-between items-end gap-6 pt-6">
                             <div className="w-full md:w-64">
@@ -568,7 +627,10 @@ export function QuotationEntry({
                                     <div className="flex justify-between text-slate-400 font-bold text-xs uppercase tracking-widest">
                                         <span>Total s/ IVA</span>
                                         {(() => {
-                                            const gross = draft.items.reduce((sum, item) => sum + ((item.quantity||0) * (item.unitPrice||0)), 0);
+                                            const gross = draft.items.reduce((sum, item) => {
+                                                const g = Math.round(((item.quantity||0) * (item.unitPrice||0)) * 100) / 100;
+                                                return sum + Math.max(0, g - (item.discountAmount || 0));
+                                            }, 0);
                                             const discount = draft.discountAmount || 0;
                                             const taxableBase = Math.max(0, gross - discount);
                                             return <span>{formatCurrencyAO(taxableBase)} {draft.currency || 'AOA'}</span>;
@@ -577,12 +639,16 @@ export function QuotationEntry({
                                     <div className="flex justify-between text-slate-400 font-bold text-xs uppercase tracking-widest pb-2 border-b border-white/10">
                                         <span>Total IVA</span>
                                         {(() => {
-                                            const gross = draft.items.reduce((sum, item) => sum + ((item.quantity||0) * (item.unitPrice||0)), 0);
+                                            const gross = draft.items.reduce((sum, item) => {
+                                                const g = Math.round(((item.quantity||0) * (item.unitPrice||0)) * 100) / 100;
+                                                return sum + Math.max(0, g - (item.discountAmount || 0));
+                                            }, 0);
                                             const iva = draft.items.reduce((sum, item) => {
-                                                const itemGross = (item.quantity||0) * (item.unitPrice||0);
+                                                const g = Math.round(((item.quantity||0) * (item.unitPrice||0)) * 100) / 100;
+                                                const itemNet = Math.max(0, g - (item.discountAmount || 0));
                                                 const selectedIva = ivaRates.find(r => r.id === item.ivaRateId);
                                                 const ivaPercent = selectedIva ? selectedIva.ratePercent : 0;
-                                                return sum + Math.round(itemGross * (ivaPercent / 100) * 100) / 100;
+                                                return sum + Math.round(itemNet * (ivaPercent / 100) * 100) / 100;
                                             }, 0);
                                             const discount = draft.discountAmount || 0;
                                             const taxableBase = Math.max(0, gross - discount);

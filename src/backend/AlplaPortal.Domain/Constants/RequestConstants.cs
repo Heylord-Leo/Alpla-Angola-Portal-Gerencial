@@ -29,4 +29,36 @@ public static class RequestConstants
         public const string WaitingCostCenter = "WAITING_COST_CENTER";
         public const string WaitingPoCorrection = "WAITING_PO_CORRECTION";
     }
+
+    /// <summary>
+    /// Financial Integrity Gate configuration.
+    /// Controls the tolerance used to compare OCR-extracted totals against
+    /// system-calculated quotation totals at the quotation completion stage.
+    /// Tolerance = max(AbsoluteFloor, OcrTotal × RelativeThreshold).
+    /// </summary>
+    public static class FinancialIntegrity
+    {
+        /// <summary>
+        /// Absolute minimum tolerance in currency units.
+        /// Prevents blocking for sub-unit rounding noise.
+        /// </summary>
+        public const decimal AbsoluteFloor = 1.00m;
+
+        /// <summary>
+        /// Relative tolerance as a fraction of the OCR original total.
+        /// 0.001 = 0.1% — catches real mismatches while tolerating
+        /// rounding differences between JavaScript and C# engines.
+        /// </summary>
+        public const decimal RelativeThreshold = 0.001m;
+
+        /// <summary>
+        /// Calculates the effective tolerance for a given OCR baseline amount.
+        /// Returns the greater of AbsoluteFloor or the relative threshold.
+        /// </summary>
+        public static decimal CalculateTolerance(decimal ocrOriginalTotal)
+        {
+            var relativeTolerance = Math.Abs(ocrOriginalTotal) * RelativeThreshold;
+            return Math.Max(AbsoluteFloor, relativeTolerance);
+        }
+    }
 }

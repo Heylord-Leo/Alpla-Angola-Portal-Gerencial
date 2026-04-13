@@ -85,12 +85,13 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
         const safeQty = item.quantity || 0;
         const safePrice = item.unitPrice || 0;
         const discount = item.discountAmount || 0;
-        const grossSubtotal = Math.round((safeQty * safePrice - discount) * 100) / 100;
+        const grossSubtotal = Math.round(safeQty * safePrice * 100) / 100;
+        const netSubtotal = Math.max(0, grossSubtotal - discount);
         
         const selectedIva = ivaRates.find(r => r.id === item.ivaRateId);
         const ivaPercent = selectedIva ? selectedIva.ratePercent : 0;
-        const ivaAmount = Math.round(grossSubtotal * (ivaPercent / 100) * 100) / 100;
-        return Math.round((grossSubtotal + ivaAmount) * 100) / 100;
+        const ivaAmount = Math.round(netSubtotal * (ivaPercent / 100) * 100) / 100;
+        return Math.round((netSubtotal + ivaAmount) * 100) / 100;
     };
 
     const calculateDraftTotal = (draft: Pick<OcrDraft, 'items' | 'discountAmount'>) => {
@@ -98,11 +99,13 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
         let ivaTotal = 0;
         
         draft.items.forEach(item => {
-            const itemGross = Math.round(((item.quantity || 0) * (item.unitPrice || 0) - (item.discountAmount || 0)) * 100) / 100;
-            gross += itemGross;
+            const itemGrossRaw = Math.round(((item.quantity || 0) * (item.unitPrice || 0)) * 100) / 100;
+            const itemDiscount = item.discountAmount || 0;
+            const itemNet = Math.max(0, itemGrossRaw - itemDiscount);
+            gross += itemNet;
             const selectedIva = ivaRates.find(r => r.id === item.ivaRateId);
             const ivaPercent = selectedIva ? selectedIva.ratePercent : 0;
-            ivaTotal += Math.round(itemGross * (ivaPercent / 100) * 100) / 100;
+            ivaTotal += Math.round(itemNet * (ivaPercent / 100) * 100) / 100;
         });
 
         const discount = draft.discountAmount || 0; // Global discount
@@ -279,6 +282,15 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
                     return matched ? matched.id : null;
                 })();
 
+                // --- IVA Uncertainty Detection ---
+                // OCR may fail to identify item-level IVA and default to 0 (or null).
+                // We flag items as uncertain when:
+                //   1. taxRate was not extracted at all (null/undefined)
+                //   2. taxRate is 0 but ivaRateId resolved to null (no matching rate found)
+                const ivaUncertain = (
+                    item.taxRate === undefined || item.taxRate === null
+                );
+
                 // --- Discount Cross-Validation & Recovery ---
                 // Portuguese invoices often show discount as % in the "Desc." column.
                 // The AI sometimes confuses the "Desc." (discount) and "IVA" (tax) columns,
@@ -333,7 +345,8 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
                     discountAmount: resolvedDiscount,
                     discountPercent: resolvedDiscountPct,
                     ivaRateId,
-                    taxRate: item.taxRate
+                    taxRate: item.taxRate,
+                    ivaUncertain
                 };
 
                 return {
@@ -350,12 +363,55 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
             draft.totalAmount = calculateDraftTotal(draft);
         }
 
+        // --- Header IVA Detection ---
+        // Detect if the document header/totals imply IVA exists.
+        // Compare the OCR grand total vs item-level subtotal (without IVA).
+        // If grand total is significantly higher, the document likely has IVA.
+        const ocrGrandTotal = getSafeValue<number>(suggestions?.grandTotal, 0) || getSafeValue<number>(suggestions?.totalAmount, 0);
+        const itemSubtotalGross = draft.items.reduce((sum, item) => {
+            return sum + Math.max(0, (item.quantity || 0) * (item.unitPrice || 0) - (item.discountAmount || 0));
+        }, 0) - (draft.discountAmount || 0);
+
+        // Determine if the document header implies IVA exists
+        let headerImpliesIva = false;
+        if (ocrGrandTotal > 0 && itemSubtotalGross > 0) {
+            const impliedIvaRatio = (ocrGrandTotal - itemSubtotalGross) / itemSubtotalGross;
+            headerImpliesIva = impliedIvaRatio > 0.01; // >1% difference suggests IVA
+        }
+
+        // --- Pass 2: Enhanced Uncertainty Detection ---
+        // If the header/totals show IVA exists, but items have taxRate=0, the AI likely
+        // defaulted to 0 because IVA was only in the document summary, not per line item.
+        // In this case, flag those items as uncertain too — 0 is not a confirmed "Isento".
+        if (headerImpliesIva) {
+            const allItemsZeroOrUncertain = draft.items.every(
+                item => item.ivaUncertain || item.taxRate === 0
+            );
+            if (allItemsZeroOrUncertain) {
+                draft.items.forEach(item => {
+                    if (item.taxRate === 0) {
+                        console.warn(
+                            `[OCR] Item "${(item.description || '').substring(0, 40)}": taxRate=0 but header implies IVA exists. ` +
+                            `Flagging as uncertain (AI likely defaulted 0 for missing per-item IVA).`
+                        );
+                        item.ivaUncertain = true;
+                        item.ivaRateId = null; // Clear the auto-resolved "Isento (0%)" match
+                    }
+                });
+            }
+        }
+
+        // Set headerHasIva based on whether header implies IVA AND items have uncertainty
+        const hasUncertainIvaItems = draft.items.some(item => item.ivaUncertain);
+        draft.headerHasIva = headerImpliesIva && hasUncertainIvaItems;
+
         // --- Calculation Diagnostics (visible in browser DevTools > Console) ---
         console.group('[OCR] Extraction & Calculation Diagnostics');
         console.log('Header Total (grandTotal from OCR):', getSafeValue<number>(suggestions?.grandTotal, 0));
         console.log('Header Total (totalAmount fallback):', getSafeValue<number>(suggestions?.totalAmount, 0));
         console.log('Final Draft Total:', draft.totalAmount);
         console.log('Global Discount:', draft.discountAmount);
+        console.log('Header Has IVA:', draft.headerHasIva, '| Items with uncertain IVA:', draft.items.filter(i => i.ivaUncertain).length);
         console.table(draft.items.map((item, i) => ({
             '#': i + 1,
             description: (item.description || '').substring(0, 40),
@@ -363,6 +419,7 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
             unitPrice: item.unitPrice,
             discount: item.discountAmount,
             totalPrice: item.totalPrice,
+            ivaUncertain: item.ivaUncertain,
             gross: ((item.quantity || 0) * (item.unitPrice || 0)).toFixed(2),
             net: (((item.quantity || 0) * (item.unitPrice || 0)) - (item.discountAmount || 0)).toFixed(2)
         })));

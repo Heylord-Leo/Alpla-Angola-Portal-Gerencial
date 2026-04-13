@@ -16,7 +16,8 @@ The `PAYMENT` workflow is the primary lifecycle for direct purchasing and paymen
 | `WAITING_FINAL_APPROVAL` | Aguardando Aprovação Final | Aprovador Final | Aprovar, Rejeitar ou Ajuste |
 | `FINAL_ADJUSTMENT` | Reajuste Necessário (A.F) | Solicitante | Revisar e Reenviar |
 | `APPROVED` | Aprovado | Comprador | Registrar P.O (Operational) |
-| `PO_ISSUED` | P.O Emitida | Financeiro | Pagar ou Agendar (Operational) |
+| `PO_ISSUED` | P.O Emitida | Financeiro | Pagar, Agendar ou Devolver P.O |
+| `WAITING_PO_CORRECTION` | Aguardando Correção P.O | Comprador | Corrigir e re-registrar P.O |
 | `PAYMENT_SCHEDULED` | Pagamento Agendado | Financeiro | Finalizar Pagamento (Operational) |
 | `PAYMENT_COMPLETED` | Pagamento Realizado | Recebimento | Mover p/ Recibo (Operacional) |
 | `WAITING_RECEIPT` | Aguardando Recibo | Recebimento | Operação de Recebimento (Operacional) |
@@ -49,7 +50,8 @@ The `QUOTATION` workflow is a streamlined lifecycle for price research and quota
 | `WAITING_AREA_APPROVAL` | Aguardando Aprovação da Área | Aprovador da Área | Aprovar, Rejeitar, Reajuste ou **Editar CC** |
 | `WAITING_FINAL_APPROVAL` | Aguardando Aprovação Final | Aprovador Final | Aprovar, Rejeitar, Reajuste ou **Selecionar Vencedor** |
 | `APPROVED` | Aprovado | Comprador | Registrar P.O (Operational) |
-| `PO_ISSUED` | P.O Emitida | Financeiro | Pagar ou Agendar (Operational) |
+| `PO_ISSUED` | P.O Emitida | Financeiro | Pagar, Agendar ou Devolver P.O |
+| `WAITING_PO_CORRECTION` | Aguardando Correção P.O | Comprador | Corrigir e re-registrar P.O |
 | `PAYMENT_SCHEDULED` | Pagamento Agendado | Financeiro | Finalizar Pagamento (Operational) |
 | `PAYMENT_COMPLETED` | Pagamento Realizado | Recebimento | Mover p/ Recibo (Operacional) |
 | `WAITING_RECEIPT` | Aguardando Recibo | Recebimento | Operação de Recebimento (Operacional) |
@@ -89,8 +91,9 @@ Stages from `APPROVED` to `WAITING_RECEIPT` are classified as **Operational**. T
 | Status | Header | Items | Attachments | Action Buttons |
 | :--- | :--- | :--- | :--- | :--- |
 | `APPROVED` | Locked | Locked | **Editable (P.O)** | Registrar P.O |
-| `PO_ISSUED` | Locked | Locked | **Editable (Schedule)** | Agendar / Pagar |
-| `PAYMENT_SCHEDULED` | Locked | Locked | **Editable (Proof)** | Confirmar Pagamento |
+| `WAITING_PO_CORRECTION` | Locked | Locked | **Editable (P.O)** | Corrigir P.O |
+| `PO_ISSUED` | Locked | Locked | **Editable (Schedule)** | Agendar / Pagar / Devolver |
+| `PAYMENT_SCHEDULED` | Locked | Locked | **Editable (Proof)** | Confirmar Pagamento / Devolver |
 | `PAYMENT_COMPLETED` | Locked | Locked | **Editable (Proof)** | Mover p/ Recibo |
 | `WAITING_RECEIPT` | Locked | **Conferência (Items)** | **Editable (Receipt)** | Registrar Recebimento |
 | `IN_FOLLOWUP` | Locked | **Conferência (Items)** | **Editable (Receipt)** | Finalizar Pedido |
@@ -100,7 +103,7 @@ Stages from `APPROVED` to `WAITING_RECEIPT` are classified as **Operational**. T
 Deletion is restricted by document type and status to preserve audit integrity:
 
 - **PROFORMA**: Locked once submitted for approval.
-- **PO**: Deletable only in `APPROVED`.
+- **PO**: Deletable in `APPROVED` or `WAITING_PO_CORRECTION`.
 - **PAYMENT_SCHEDULE**: Deletable in `PO_ISSUED` or `PAYMENT_SCHEDULED`.
 - **PAYMENT_PROOF**: Deletable in `PAYMENT_SCHEDULED`, `PAYMENT_COMPLETED`, or `WAITING_RECEIPT`.
 
@@ -130,8 +133,37 @@ To prevent role confusion, action bars in `RequestEdit.tsx` are strictly partiti
 
 - **Approval Actions**: Only visible in `WAITING_AREA_APPROVAL` and `WAITING_FINAL_APPROVAL`.
 - **Rework Actions**: (Reenviar) Only visible in adjustment statuses.
-- **AÇÕES OPERACIONAIS**: Only visible in `APPROVED` and subsequent operational stages.
+- **AÇÕES OPERACIONAIS**: Only visible in `APPROVED`, `WAITING_PO_CORRECTION`, and subsequent operational stages.
 - **Quotation Action Bar**: Strictly isolated to `QUOTATION` requests and stages.
+
+---
+
+## 6. Finance Return / PO Correction Loop
+
+When Finance identifies an issue with a registered PO, they can return the request to the Buyer for correction.
+
+### Transition Flow
+
+```
+PO_ISSUED ──[FINANCE_RETURN]──> WAITING_PO_CORRECTION ──[REREGISTER_PO]──> PO_ISSUED
+PAYMENT_SCHEDULED ──[FINANCE_RETURN]──> WAITING_PO_CORRECTION ──[REREGISTER_PO]──> PO_ISSUED
+```
+
+### Business Rules
+
+- **Source-Status Guard**: Finance can only return from `PO_ISSUED` or `PAYMENT_SCHEDULED`. Returns from `PAYMENT_COMPLETED` or any other status are blocked.
+- **Scheduling Invalidation**: When returning from `PAYMENT_SCHEDULED`, the prior payment scheduling is intentionally invalidated. After correction, Finance must re-evaluate and re-schedule from `PO_ISSUED`.
+- **Approval Preservation**: The correction loop does NOT reset approvals. The request returns to `PO_ISSUED` (not `APPROVED`) after correction.
+- **Distinct Action Codes**: History entries use `REGISTER_PO` for initial registration and `REREGISTER_PO` for correction, ensuring clear auditability.
+- **Notification**: `PO_CORRECTION_COMPLETED` event notifies plant-scoped Finance users when the Buyer completes the correction.
+
+### Audit Trail
+
+A correction cycle produces the following history entries:
+1. `FINANCE_RETURN_ADJUSTMENT` (PO_ISSUED → WAITING_PO_CORRECTION) with Finance justification
+2. `REREGISTER_PO` (WAITING_PO_CORRECTION → PO_ISSUED) with Buyer correction comment
+
+Both old and new PO attachments are preserved in the attachment history for traceability.
 
 ### Urgency & Sorting
 

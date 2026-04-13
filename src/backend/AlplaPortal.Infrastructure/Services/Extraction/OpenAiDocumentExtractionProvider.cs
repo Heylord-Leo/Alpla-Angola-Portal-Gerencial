@@ -551,6 +551,8 @@ CRITICAL PRECISION RULES:
     * discountAmount = THE TOTAL DISCOUNT FOR THE ENTIRE LINE = quantity × unitPrice × (discountPercent / 100).
       Example: qty=1, unitPrice=510000, Desc.=7% → discountAmount = 1 × 510000 × 0.07 = 35700.
     * taxRate = the value from the IVA/Taxa/MwSt column. This is NOT a discount. If 14.00 appears in the IVA column, taxRate=14.
+      CRITICAL: If no IVA/Taxa column exists for line items, or IVA is only shown in the document summary/totals and NOT per item, set taxRate=null (NOT 0).
+      Only set taxRate=0 when the document EXPLICITLY shows 0% IVA (Isento) for that specific item.
     * If no discount column or value exists for a line, set discountPercent=0 and discountAmount=0.
   SELF-VALIDATION: totalPrice should equal (quantity × unitPrice) - discountAmount. 
     If this does not match the printed 'Valor' column, re-examine which column is discount vs tax.
@@ -586,7 +588,7 @@ Output ONLY JSON with this structure:
       ""unitPrice"": number,
       ""discountPercent"": number (from Desc./Desconto column, e.g. 7 for 7%, 25 for 25%, 0 if none),
       ""discountAmount"": number (TOTAL line discount = qty × unitPrice × discountPercent/100),
-      ""taxRate"": number (from IVA/Taxa column — NOT the discount),
+      ""taxRate"": number or null (from IVA/Taxa column — null if not explicitly per item),
       ""totalPrice"": number (after discount, before tax)
     }
   ],
@@ -635,7 +637,7 @@ Output ONLY JSON with this structure:
                     UnitPrice = item.TryGetProperty("unitPrice", out var up) ? (up.ValueKind == JsonValueKind.Number ? up.GetDecimal() : 0) : null,
                     DiscountAmount = item.TryGetProperty("discountAmount", out var da) ? (da.ValueKind == JsonValueKind.Number ? da.GetDecimal() : 0) : 0,
                     DiscountPercent = item.TryGetProperty("discountPercent", out var dp) ? (dp.ValueKind == JsonValueKind.Number ? dp.GetDecimal() : 0) : 0,
-                    TaxRate = item.TryGetProperty("taxRate", out var tr) ? (tr.ValueKind == JsonValueKind.Number ? tr.GetDecimal() : 0) : null,
+                    TaxRate = item.TryGetProperty("taxRate", out var tr) ? (tr.ValueKind == JsonValueKind.Number ? tr.GetDecimal() : (decimal?)null) : null,
                     TotalPrice = item.TryGetProperty("totalPrice", out var tp) ? (tp.ValueKind == JsonValueKind.Number ? tp.GetDecimal() : 0) : null
                 }).ToList();
             }

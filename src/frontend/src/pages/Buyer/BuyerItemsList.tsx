@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { Link, useLocation, useSearchParams, useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, Search, Filter, FileText, CheckCircle2, X, Pencil, Trash2, ArrowLeft, AlertCircle, RefreshCcw, Hash, Calendar, UserPlus, AlertTriangle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, Search, Filter, FileText, CheckCircle2, X, Pencil, Trash2, ArrowLeft, AlertCircle, RefreshCcw, Hash, Calendar, UserPlus, AlertTriangle, BookOpen } from 'lucide-react';
 import { useAuth } from '../../features/auth/AuthContext';
 import { api } from '../../lib/api';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
@@ -117,6 +117,7 @@ export function BuyerItemsList() {
     });
     const [expandedQuotations, setExpandedQuotations] = useState<Record<string, boolean>>({});
     const [drawerRequestId, setDrawerRequestId] = useState<string | null>(null);
+    const [showHelpModal, setShowHelpModal] = useState(false);
     const [fileDuplicateWarning, setFileDuplicateWarning] = useState<{
         isOpen: boolean;
         requestId: string;
@@ -126,6 +127,22 @@ export function BuyerItemsList() {
         createdAtUtc?: string;
         uploadCallback: () => void;
     } | null>(null);
+
+    // Financial Integrity Gate Modal State
+    const [integrityModal, setIntegrityModal] = useState<{
+        show: boolean;
+        requestId: string;
+        itemsCount: number;
+        ocrOriginalTotal: number;
+        quotationTotal: number;
+        varianceAmount: number;
+        variancePercent: number;
+        toleranceApplied: number;
+        unresolvedReconciliationCount: number;
+        detail: string;
+    } | null>(null);
+    const [integrityJustification, setIntegrityJustification] = useState('');
+    const [integrityOverrideLoading, setIntegrityOverrideLoading] = useState(false);
 
     // Lookups
     const [ivaRates, setIvaRates] = useState<IvaRate[]>([]);
@@ -380,12 +397,27 @@ export function BuyerItemsList() {
         setOcrErrors(prev => ({ ...prev, [requestId]: null }));
         // Ensure we clear any edit session state when returning to selection
         setEditingQuotationId(prev => ({ ...prev, [requestId]: null }));
+        
         setDraftProformaFiles(prev => {
             const next = { ...prev };
             delete next[requestId];
             return next;
         });
+        
         setQuotationDrafts(prev => {
+            const next = { ...prev };
+            delete next[requestId];
+            return next;
+        });
+
+        // Important: Always clear OCR batches and form errors so they don't leak back if reopened.
+        setReconciliationBatches(prev => {
+            const next = { ...prev };
+            delete next[requestId];
+            return next;
+        });
+        
+        setFormErrors(prev => {
             const next = { ...prev };
             delete next[requestId];
             return next;
@@ -959,7 +991,28 @@ export function BuyerItemsList() {
             setModalFeedback({ type: 'error', message: null });
 
             if (type === 'COMPLETE_QUOTATION') {
-                await completeQuotationAction(requestId!, itemsCount, approvalComment);
+                const completionResult = await completeQuotationAction(requestId!, itemsCount, approvalComment);
+                
+                // Financial Integrity Gate: check if backend returned integrity failure
+                if (completionResult && 'integrityCheckFailed' in completionResult && completionResult.integrityCheckFailed) {
+                    // Close the approval modal and show the integrity modal instead
+                    setShowApprovalModal({ show: false, type: null, requestId: null, itemId: null, itemDescription: null, newStatusCode: null, hasProforma: false, hasSupplier: false, itemsCount: 0, isLastItem: false, quotationCount: 0, hasCompleteQuotation: false });
+                    setApprovalComment('');
+                    setIntegrityModal({
+                        show: true,
+                        requestId: requestId!,
+                        itemsCount,
+                        ocrOriginalTotal: completionResult.ocrOriginalTotal,
+                        quotationTotal: completionResult.quotationTotal,
+                        varianceAmount: completionResult.varianceAmount,
+                        variancePercent: completionResult.variancePercent,
+                        toleranceApplied: completionResult.toleranceApplied,
+                        unresolvedReconciliationCount: completionResult.unresolvedReconciliationCount,
+                        detail: completionResult.detail
+                    });
+                    setIsSaving(false);
+                    return; // Do not proceed with normal flow
+                }
                 setFeedback({ type: 'success', message: 'Cotação concluída e enviada para aprovação.' });
             } else if (type === 'CANCEL_REQUEST' && requestId) {
                 await api.requests.cancel(requestId, approvalComment);
@@ -992,6 +1045,44 @@ export function BuyerItemsList() {
             }
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    // ═══════════════════════════════════════════════════════════════
+    // FINANCIAL INTEGRITY GATE — Override Handler
+    // ═══════════════════════════════════════════════════════════════
+    const handleIntegrityOverride = async () => {
+        if (!integrityModal || !integrityJustification.trim()) return;
+
+        try {
+            setIntegrityOverrideLoading(true);
+            const result = await completeQuotationAction(
+                integrityModal.requestId,
+                integrityModal.itemsCount,
+                '', // no additional comment
+                {
+                    financialIntegrityOverride: true,
+                    overrideJustification: integrityJustification.trim()
+                }
+            );
+
+            // Check if there's still an integrity failure (shouldn't happen with override, but safety check)
+            if (result && 'integrityCheckFailed' in result && result.integrityCheckFailed) {
+                setFeedback({ type: 'error', message: 'Override falhou. Verifique os dados e tente novamente.' });
+                return;
+            }
+
+            setFeedback({ type: 'success', message: 'Cotação concluída com override financeiro e enviada para aprovação.' });
+            setIntegrityModal(null);
+            setIntegrityJustification('');
+
+            // Refresh data
+            const response = await api.lineItems.list(searchTerm, itemStatus, requestStatus, undefined, undefined, undefined, page, pageSize);
+            setItems(response.data || []);
+        } catch (err: any) {
+            setFeedback({ type: 'error', message: err.message || 'Erro ao processar override financeiro.' });
+        } finally {
+            setIntegrityOverrideLoading(false);
         }
     };
 
@@ -1039,7 +1130,133 @@ export function BuyerItemsList() {
             <PageHeader
                 title="Gestão de Cotações"
                 subtitle="Visualize e gerencie os itens solicitados e suas cotações em um único workspace."
+                actions={
+                    <button
+                        onClick={() => setShowHelpModal(true)}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            backgroundColor: '#FEF9C3',
+                            color: '#854D0E',
+                            border: '1px solid #FDE047',
+                            padding: '8px 16px',
+                            borderRadius: '6px',
+                            fontWeight: 800,
+                            fontSize: '0.8rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em'
+                        }}
+                        onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#FEF08A'; e.currentTarget.style.color = '#713F12'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                        onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#FEF9C3'; e.currentTarget.style.color = '#854D0E'; e.currentTarget.style.transform = 'none'; }}
+                    >
+                        <BookOpen size={16} /> Manual de Cotação
+                    </button>
+                }
             />
+
+            <AnimatePresence>
+                {showHelpModal && (
+                    <DropdownPortal>
+                        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(4px)', zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                                style={{ backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', position: 'relative' }}
+                            >
+                                <div style={{ position: 'sticky', top: 0, backgroundColor: '#f8fafc', padding: '24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 1 }}>
+                                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                                        <div style={{ padding: '12px', backgroundColor: '#fef3c7', color: '#d97706', borderRadius: '12px' }}>
+                                            <BookOpen size={28} strokeWidth={2.5} />
+                                        </div>
+                                        <div>
+                                            <h2 style={{ fontSize: '1.5rem', fontWeight: 900, color: '#0f172a', margin: 0, letterSpacing: '-0.02em' }}>Manual de Gestão de Cotações</h2>
+                                            <p style={{ margin: '4px 0 0 0', color: '#64748b', fontSize: '0.95rem', fontWeight: 500 }}>Guia para processamento de faturas e reconciliação OCR.</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setShowHelpModal(false)} style={{ background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', color: '#64748b', padding: '8px', borderRadius: '8px', transition: 'all 0.2s', display: 'flex' }} onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#f1f5f9'; e.currentTarget.style.color = '#0f172a'; }} onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'white'; e.currentTarget.style.color = '#64748b'; }}>
+                                        <X size={20} strokeWidth={2.5} />
+                                    </button>
+                                </div>
+                                <div style={{ padding: '32px' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+                                        {/* Step 1 */}
+                                        <div style={{ display: 'flex', gap: '20px' }}>
+                                            <div style={{ flexShrink: 0, width: '40px', height: '40px', borderRadius: '20px', backgroundColor: '#e0e7ff', color: '#4f46e5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 900 }}>1</div>
+                                            <div>
+                                                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 8px 0' }}>Receção e Atribuição do Pedido</h3>
+                                                <p style={{ fontSize: '0.95rem', color: '#475569', lineHeight: '1.6', margin: 0 }}>Tudo começa quando um requisitante cria um pedido e este entra na fila de compras. O seu primeiro passo é abrir o pedido pendente e clicar no botão <strong>"Assumir Pedido"</strong> para se colocar como responsável pela tarefa. Certifique-se que os detalhes e quantidades solicitadas estão exatas antes de contactar o fornecedor.</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Step 2 */}
+                                        <div style={{ display: 'flex', gap: '20px' }}>
+                                            <div style={{ flexShrink: 0, width: '40px', height: '40px', borderRadius: '20px', backgroundColor: '#e0e7ff', color: '#4f46e5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 900 }}>2</div>
+                                            <div>
+                                                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 8px 0' }}>Anexar Cotação e Dados Financeiros</h3>
+                                                <p style={{ fontSize: '0.95rem', color: '#475569', lineHeight: '1.6', margin: '0 0 12px 0' }}>Após negociar, clique em "Nova Cotação" e anexe a fatura/proforma correspondente. O OCR tentará extrair os dados. No entanto, é <strong>rigorosamente necessário e importante</strong> confirmar sempre manualmente se os itens extraídos, os valores unitários e o valor total correspondem ao papel. Se for um documento complexo, é sempre preferível descartar a extração clicando para <strong>inserir a cotação manualmente</strong>.</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Step 3 */}
+                                        <div style={{ display: 'flex', gap: '20px' }}>
+                                            <div style={{ flexShrink: 0, width: '40px', height: '40px', borderRadius: '20px', backgroundColor: '#e0e7ff', color: '#4f46e5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 900 }}>3</div>
+                                            <div>
+                                                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 8px 0' }}>Reconciliação e Correspondência</h3>
+                                                <p style={{ fontSize: '0.95rem', color: '#475569', lineHeight: '1.6', margin: '0 0 12px 0' }}>O sistema cruza de imediato os itens originalmente solicitados com o ficheiro faturado, sendo possível 3 cenários:</p>
+                                                <div style={{ display: 'grid', gap: '12px' }}>
+                                                    <div style={{ padding: '12px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#059669' }}></div>
+                                                            <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#059669', textTransform: 'uppercase' }}>Exact Match (Perfeito)</span>
+                                                        </div>
+                                                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>O item faturado e suas quantidades coincidem na perfeição com o item listado pelo requisitante no sistema.</p>
+                                                    </div>
+                                                    <div style={{ padding: '12px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#6366f1' }}></div>
+                                                            <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#6366f1', textTransform: 'uppercase' }}>Item Extra (Fornecedor)</span>
+                                                        </div>
+                                                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>A fatura contém um item extra, como custos de frete adicionais. Como comprador, decide se elimina a linha extra ou permite a inclusão na despesa.</p>
+                                                    </div>
+                                                    <div style={{ padding: '12px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#eab308' }}></div>
+                                                            <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#eab308', textTransform: 'uppercase' }}>Item Faltante</span>
+                                                        </div>
+                                                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>O fornecedor não incluiu um item pedido na fatura. O sistema prevê que os itens faltantes aguardem por posteriores orçamentos de outros fornecedores ou numa cotação sequencial e separada.</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Step 4 */}
+                                        <div style={{ display: 'flex', gap: '20px' }}>
+                                            <div style={{ flexShrink: 0, width: '40px', height: '40px', borderRadius: '20px', backgroundColor: '#e0e7ff', color: '#4f46e5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 900 }}>4</div>
+                                            <div>
+                                                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 8px 0' }}>Progresso de Validação Visual</h3>
+                                                <p style={{ fontSize: '0.95rem', color: '#475569', lineHeight: '1.6', margin: '0 0 12px 0' }}>Ao preencher uma ordem com dezenas de linhas, clique na <strong>checkbox circular</strong> à esquerda no final da conferência de cada linha de valor revisto. A linha fica imediatamente colorida de verde e atesta que não se perderá antes de terminar todas as linhas.</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Step 5 */}
+                                        <div style={{ display: 'flex', gap: '20px' }}>
+                                            <div style={{ flexShrink: 0, width: '40px', height: '40px', borderRadius: '20px', backgroundColor: '#22c55e', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 900 }}>5</div>
+                                            <div>
+                                                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 8px 0' }}>Submeter para Aprovação</h3>
+                                                <p style={{ fontSize: '0.95rem', color: '#475569', lineHeight: '1.6', margin: 0 }}>Terminada a gravação e correção de todos os preços e totais, submeta para a hierarquia. Note que na condição de comprador <strong>não é exigida a atribuição de Centros de Custo</strong> finais de despesa, pois esta é processada e auditada pelo seu <strong>Aprovador de Área</strong> aquando da passagem do pedido.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        </div>
+                    </DropdownPortal>
+                )}
+            </AnimatePresence>
 
             <SearchFilterBar
                 searchPlaceholder="BUSCAR POR NÚMERO, TÍTULO, DESCRIÇÃO..."
@@ -1797,7 +2014,7 @@ export function BuyerItemsList() {
                                                                 ) : quotationDrafts[group.requestId] ? (
                                                                     <div className="quotation-form-body">
                                                                         {/* Phase 2: Reconciliation Panel */}
-                                                                        {reconciliationBatches[group.requestId] && (
+                                                                        {reconciliationBatches[group.requestId] && group.items.length > 0 && (
                                                                             <ReconciliationPanel
                                                                                 requestId={group.requestId}
                                                                                 batch={reconciliationBatches[group.requestId]}
@@ -2068,6 +2285,7 @@ export function BuyerItemsList() {
                                                                                                         type="checkbox"
                                                                                                         checked={item.isChecked || false}
                                                                                                         onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'isChecked', e.target.checked)}
+                                                                                                        title="Marque esta linha para sinalizar que você já validou este item contra o documento físico."
                                                                                                         style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#10B981' }}
                                                                                                     />
                                                                                                 </div>
@@ -2117,14 +2335,30 @@ export function BuyerItemsList() {
                                                                                                      <select
                                                                                                          value={item.ivaRateId || ''}
                                                                                                          onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'ivaRateId', e.target.value ? parseInt(e.target.value) : null)}
-                                                                                                         style={{ padding: '8px', border: item.taxRate !== undefined && !item.ivaRateId ? '2px solid #f97316' : '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.75rem', backgroundColor: 'var(--color-bg-page)', width: '100%' }}
+                                                                                                         style={{
+                                                                                                             padding: '8px',
+                                                                                                             border: item.ivaUncertain
+                                                                                                                 ? '2px solid #ef4444'
+                                                                                                                 : (item.taxRate !== undefined && !item.ivaRateId ? '2px solid #f97316' : '1px solid #e2e8f0'),
+                                                                                                             borderRadius: '4px',
+                                                                                                             fontSize: '0.75rem',
+                                                                                                             backgroundColor: item.ivaUncertain ? 'rgba(239,68,68,0.06)' : 'var(--color-bg-page)',
+                                                                                                             width: '100%'
+                                                                                                         }}
+                                                                                                         title={item.ivaUncertain ? 'IVA não identificado pelo OCR. Verifique manualmente.' : undefined}
                                                                                                      >
                                                                                                          <option value="">Selecione IVA...</option>
                                                                                                          {ivaRates.filter(r => r.isActive).map(r => (
                                                                                                              <option key={r.id} value={r.id}>{r.name} ({r.ratePercent}%)</option>
                                                                                                          ))}
                                                                                                      </select>
-                                                                                                     {item.taxRate !== undefined && !item.ivaRateId && (
+                                                                                                     {item.ivaUncertain && (
+                                                                                                         <span style={{ fontSize: '0.6rem', color: '#ef4444', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: '3px' }} title="O OCR não conseguiu identificar o IVA para este item. Verifique manualmente.">
+                                                                                                             <AlertCircle size={10} style={{ flexShrink: 0 }} />
+                                                                                                             IVA não identificado
+                                                                                                         </span>
+                                                                                                     )}
+                                                                                                     {!item.ivaUncertain && item.taxRate !== undefined && !item.ivaRateId && (
                                                                                                          <span style={{ fontSize: '0.6rem', color: '#f97316', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`Extraído: ${item.taxRate}%`}>
                                                                                                              Sugestão: {item.taxRate}%
                                                                                                          </span>
@@ -2145,6 +2379,24 @@ export function BuyerItemsList() {
                                                                                 )}
                                                                             </div>
                                                                         </div>
+
+                                                                        {/* IVA Uncertainty Contextual Banner */}
+                                                                        {quotationDrafts[group.requestId]?.headerHasIva && quotationDrafts[group.requestId]?.items.some(i => i.ivaUncertain) && (
+                                                                            <div style={{
+                                                                                display: 'flex', alignItems: 'center', gap: '8px',
+                                                                                padding: '10px 16px', borderRadius: '8px',
+                                                                                background: 'rgba(239,68,68,0.06)',
+                                                                                border: '1px solid rgba(239,68,68,0.2)',
+                                                                                fontSize: '0.8rem', color: '#dc2626',
+                                                                                marginBottom: '8px'
+                                                                            }}>
+                                                                                <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+                                                                                <span>
+                                                                                    <strong>Atenção:</strong> O documento contém IVA nos totais, mas o IVA por item não foi identificado pelo OCR.
+                                                                                    Verifique e corrija manualmente o campo IVA de cada item antes de salvar.
+                                                                                </span>
+                                                                            </div>
+                                                                        )}
 
                                                                         <div className="form-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', backgroundColor: '#f0f9ff', borderRadius: '8px', border: '1px solid #bae6fd' }}>
                                                                             <div style={{ display: 'flex', gap: '32px', flex: 1 }}>
@@ -2800,6 +3052,226 @@ export function BuyerItemsList() {
                 requestId={drawerRequestId}
                 onClose={() => setDrawerRequestId(null)}
             />
+
+            {/* ═══════════════════════════════════════════════════════════════ */}
+            {/* FINANCIAL INTEGRITY GATE — Mismatch Modal                      */}
+            {/* ═══════════════════════════════════════════════════════════════ */}
+            <AnimatePresence>
+                {integrityModal && integrityModal.show && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        style={{
+                            position: 'fixed', inset: 0,
+                            backgroundColor: 'rgba(0,0,0,0.4)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            zIndex: 10000, padding: '1rem'
+                        }}
+                        onClick={() => { setIntegrityModal(null); setIntegrityJustification(''); }}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.92, opacity: 0, y: 20 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.92, opacity: 0, y: 20 }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 400 }}
+                            onClick={e => e.stopPropagation()}
+                            style={{
+                                background: '#ffffff',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '12px',
+                                width: '100%', maxWidth: '560px',
+                                overflow: 'hidden',
+                                boxShadow: '0 20px 60px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05)'
+                            }}
+                        >
+                            {/* Header */}
+                            <div style={{
+                                padding: '1.25rem 1.5rem',
+                                borderBottom: '1px solid #e2e8f0',
+                                display: 'flex', alignItems: 'center', gap: '0.75rem',
+                                background: 'linear-gradient(135deg, rgba(234,179,8,0.08), rgba(234,88,12,0.04))'
+                            }}>
+                                <div style={{
+                                    width: '40px', height: '40px', borderRadius: '10px',
+                                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    flexShrink: 0
+                                }}>
+                                    <AlertTriangle size={20} color="#fff" />
+                                </div>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#1e293b' }}>
+                                        Verificação de Integridade Financeira
+                                    </h3>
+                                    <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
+                                        O sistema detectou uma divergência entre os valores
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => { setIntegrityModal(null); setIntegrityJustification(''); }}
+                                    style={{
+                                        marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer',
+                                        color: '#94a3b8', padding: '4px'
+                                    }}
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            {/* Body */}
+                            <div style={{ padding: '1.25rem 1.5rem' }}>
+                                {/* Explanation */}
+                                <p style={{ fontSize: '0.85rem', color: '#475569', margin: '0 0 1rem 0', lineHeight: 1.5 }}>
+                                    {integrityModal.detail}
+                                </p>
+
+                                {/* Comparison Table */}
+                                <div style={{
+                                    border: '1px solid #e2e8f0',
+                                    borderRadius: '8px', overflow: 'hidden', marginBottom: '1rem'
+                                }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                                        <thead>
+                                            <tr style={{ background: '#f8fafc' }}>
+                                                <th style={{ padding: '0.6rem 1rem', textAlign: 'left', color: '#64748b', fontWeight: 600, borderBottom: '1px solid #e2e8f0', textTransform: 'uppercase', fontSize: '0.75rem' }}>Referência</th>
+                                                <th style={{ padding: '0.6rem 1rem', textAlign: 'right', color: '#64748b', fontWeight: 600, borderBottom: '1px solid #e2e8f0', textTransform: 'uppercase', fontSize: '0.75rem' }}>Valor</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td style={{ padding: '0.6rem 1rem', color: '#334155', borderBottom: '1px solid #f1f5f9' }}>
+                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                        <FileText size={14} style={{ color: '#3b82f6' }} />
+                                                        Total OCR (Documento Original)
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: '0.6rem 1rem', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#3b82f6', borderBottom: '1px solid #f1f5f9' }}>
+                                                    {integrityModal.ocrOriginalTotal.toLocaleString('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style={{ padding: '0.6rem 1rem', color: '#334155', borderBottom: '1px solid #f1f5f9' }}>
+                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                        <Hash size={14} style={{ color: '#8b5cf6' }} />
+                                                        Total da Cotação (Sistema)
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: '0.6rem 1rem', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#8b5cf6', borderBottom: '1px solid #f1f5f9' }}>
+                                                    {integrityModal.quotationTotal.toLocaleString('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </td>
+                                            </tr>
+                                            <tr style={{ background: integrityModal.varianceAmount !== 0 ? '#fef2f2' : 'transparent' }}>
+                                                <td style={{ padding: '0.6rem 1rem', color: '#334155' }}>
+                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                        <AlertTriangle size={14} style={{ color: '#ef4444' }} />
+                                                        Variação
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: '0.6rem 1rem', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#ef4444' }}>
+                                                    {integrityModal.varianceAmount > 0 ? '+' : ''}{integrityModal.varianceAmount.toLocaleString('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    {' '}
+                                                    <span style={{ fontSize: '0.75rem', color: '#f87171' }}>
+                                                        ({integrityModal.variancePercent > 0 ? '+' : ''}{integrityModal.variancePercent.toFixed(2)}%)
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {/* Unresolved reconciliation warning */}
+                                {integrityModal.unresolvedReconciliationCount > 0 && (
+                                    <div style={{
+                                        padding: '0.6rem 0.8rem', borderRadius: '8px',
+                                        background: '#fffbeb',
+                                        border: '1px solid #fde68a',
+                                        fontSize: '0.8rem', color: '#92400e',
+                                        display: 'flex', alignItems: 'center', gap: '0.5rem',
+                                        marginBottom: '1rem'
+                                    }}>
+                                        <AlertCircle size={14} />
+                                        {integrityModal.unresolvedReconciliationCount} item(ns) de reconciliação pendente(s) de revisão.
+                                    </div>
+                                )}
+
+                                {/* Override justification */}
+                                <div style={{ marginTop: '0.5rem' }}>
+                                    <label style={{
+                                        display: 'block', fontSize: '0.8rem', fontWeight: 600,
+                                        color: '#475569', marginBottom: '0.4rem'
+                                    }}>
+                                        Justificação para prosseguir (obrigatório):
+                                    </label>
+                                    <textarea
+                                        value={integrityJustification}
+                                        onChange={e => setIntegrityJustification(e.target.value)}
+                                        placeholder="Explique o motivo pelo qual deseja prosseguir com esta divergência financeira..."
+                                        rows={3}
+                                        style={{
+                                            width: '100%', padding: '0.6rem 0.8rem',
+                                            borderRadius: '8px',
+                                            border: '1px solid #cbd5e1',
+                                            background: '#f8fafc',
+                                            color: '#1e293b',
+                                            fontSize: '0.85rem', resize: 'vertical',
+                                            fontFamily: 'inherit',
+                                            boxSizing: 'border-box'
+                                        }}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Footer Actions */}
+                            <div style={{
+                                padding: '1rem 1.5rem',
+                                borderTop: '1px solid #e2e8f0',
+                                display: 'flex', gap: '0.75rem', justifyContent: 'flex-end',
+                                background: '#f8fafc'
+                            }}>
+                                <button
+                                    onClick={() => { setIntegrityModal(null); setIntegrityJustification(''); }}
+                                    style={{
+                                        padding: '0.55rem 1.2rem', borderRadius: '8px',
+                                        border: '1px solid #cbd5e1',
+                                        background: '#ffffff',
+                                        color: '#475569',
+                                        fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer',
+                                        display: 'flex', alignItems: 'center', gap: '0.4rem'
+                                    }}
+                                >
+                                    <ArrowLeft size={15} />
+                                    Voltar e Corrigir
+                                </button>
+                                <button
+                                    onClick={handleIntegrityOverride}
+                                    disabled={!integrityJustification.trim() || integrityOverrideLoading}
+                                    style={{
+                                        padding: '0.55rem 1.2rem', borderRadius: '8px',
+                                        border: 'none',
+                                        background: !integrityJustification.trim() || integrityOverrideLoading
+                                            ? '#f1f5f9'
+                                            : 'linear-gradient(135deg, #f59e0b, #d97706)',
+                                        color: !integrityJustification.trim() || integrityOverrideLoading
+                                            ? '#94a3b8'
+                                            : '#fff',
+                                        fontSize: '0.85rem', fontWeight: 700, cursor: !integrityJustification.trim() || integrityOverrideLoading ? 'not-allowed' : 'pointer',
+                                        display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {integrityOverrideLoading ? (
+                                        <RefreshCcw size={15} style={{ animation: 'spin 1s linear infinite' }} />
+                                    ) : (
+                                        <CheckCircle2 size={15} />
+                                    )}
+                                    {integrityOverrideLoading ? 'Processando...' : 'Confirmar Override'}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </PageContainer>
     );
 }

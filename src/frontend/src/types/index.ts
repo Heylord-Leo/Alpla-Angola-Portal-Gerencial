@@ -196,6 +196,7 @@ export interface OcrDraftItem {
     totalPrice: number; // Front-end calculated preview
     isChecked?: boolean; // UI tracking variable for visual checklist
     itemCatalogId?: number | null; // Optional catalog reference
+    ivaUncertain?: boolean; // True when OCR could not confidently identify item-level IVA
 }
 
 export interface OcrDraft {
@@ -215,6 +216,7 @@ export interface OcrDraft {
     totalAmount: number; // Front-end calculated preview
     proformaAttachmentId?: string; // Links attachment implicitly
     items: OcrDraftItem[];
+    headerHasIva?: boolean; // True when the document header/totals indicate IVA exists
 }
 
 export interface LookupDto {

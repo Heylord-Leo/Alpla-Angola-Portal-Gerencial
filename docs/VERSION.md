@@ -2,7 +2,12 @@
 
 ## Current Version
 
-v2.53.0
+v2.55.0
+
+## [2.55.0] - 2026-04-13
+
+### Added
+- **Financial Integrity Gate**: Server-side checkpoint at quotation completion validating OCR-extracted totals vs system-calculated totals. Centralized tolerance constants. Full audit trail for detection, blocking, and justified override. Frontend integrity modal for the Buyer workspace.
 
 ## [2.53.0] - 2026-04-13
 

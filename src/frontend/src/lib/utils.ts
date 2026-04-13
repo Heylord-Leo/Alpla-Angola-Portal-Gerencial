@@ -60,6 +60,11 @@ export function getRequestGuidance(statusCode: string, requestTypeCode: string |
                 responsible: 'Financeiro',
                 nextAction: 'Pagar ou agendar o pagamento'
             };
+        case 'WAITING_PO_CORRECTION':
+            return {
+                responsible: 'Comprador',
+                nextAction: 'Corrigir P.O devolvida por Finanças e re-registrar'
+            };
         case 'PAYMENT_SCHEDULED':
             return {
                 responsible: 'Financeiro',

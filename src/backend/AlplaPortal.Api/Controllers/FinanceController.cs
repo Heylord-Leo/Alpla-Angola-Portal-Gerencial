@@ -764,6 +764,20 @@ public class FinanceController : BaseController
         var r = await _context.Requests.Include(req => req.Status).FirstOrDefaultAsync(req => req.Id == id);
         if (r == null || !await (await GetScopedRequestsQuery()).AnyAsync(req => req.Id == id)) return NotFound();
 
+        // Source-status guard: only allow return from operational statuses where PO has been registered
+        // Note: Returning from PAYMENT_SCHEDULED intentionally invalidates the prior scheduling.
+        //       After correction, Finance must re-evaluate from PO_ISSUED.
+        var allowedReturnStatuses = new[] { "PO_ISSUED", "PAYMENT_SCHEDULED" };
+        if (r.Status == null || !allowedReturnStatuses.Contains(r.Status.Code))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Ação Inválida",
+                Detail = $"A devolução para correção de P.O só é permitida quando o pedido está nos status: {string.Join(", ", allowedReturnStatuses)}. Status atual: {r.Status?.Code ?? "desconhecido"}.",
+                Status = 400
+            });
+        }
+
         var returnStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == RequestConstants.Statuses.WaitingPoCorrection);
         if (returnStatus == null) return StatusCode(500, "Status de destino não configurado no sistema.");
 

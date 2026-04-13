@@ -46,6 +46,13 @@ public class RequestsController : BaseController
         _orchestrator = orchestrator;
     }
 
+    /// <summary>
+    /// Canonical rounding helper: 2 decimal places, MidpointRounding.AwayFromZero.
+    /// Matches JavaScript Math.round(x * 100) / 100 behavior to ensure frontend/backend
+    /// financial calculations produce identical results.
+    /// </summary>
+    private static decimal Round2(decimal value) => Math.Round(value, 2, MidpointRounding.AwayFromZero);
+
 
     [HttpGet("summary")]
     public async Task<ActionResult<DashboardSummaryDto>> GetDashboardSummary()
@@ -942,8 +949,21 @@ public class RequestsController : BaseController
                 }
             }
 
-
             result.Steps.Add(step);
+        }
+
+        // Post-process: Remove "Agendamento" step if the request completely bypassed it
+        // (i.e. Finance paid directly without ever selecting a scheduling date).
+        bool passedThroughScheduling = history.Any(h => h.NewStatus.Code == "PAYMENT_SCHEDULED") || currentStatusCode == "PAYMENT_SCHEDULED";
+        bool isPastSchedulingStage = new[] { "PAYMENT_COMPLETED", "WAITING_RECEIPT", "IN_FOLLOWUP", "COMPLETED", "QUOTATION_COMPLETED" }.Contains(currentStatusCode);
+
+        if (isPastSchedulingStage && !passedThroughScheduling)
+        {
+            var agendamentoStep = result.Steps.FirstOrDefault(s => s.Label == "Agendamento");
+            if (agendamentoStep != null)
+            {
+                result.Steps.Remove(agendamentoStep);
+            }
         }
 
         return Ok(result);
@@ -1095,9 +1115,9 @@ public class RequestsController : BaseController
             foreach (var itemDto in dto.LineItems)
             {
                 var unit = units.FirstOrDefault(u => u.Code == itemDto.Unit);
-                var netAmount = (itemDto.Quantity * itemDto.UnitPrice) - (itemDto.DiscountAmount ?? 0);
+                var netAmount = Round2((itemDto.Quantity * itemDto.UnitPrice) - (itemDto.DiscountAmount ?? 0));
                 var ivaEntity = itemDto.IvaRateId.HasValue ? allIvaRates.FirstOrDefault(r => r.Id == itemDto.IvaRateId.Value) : null;
-                var ivaAmount = ivaEntity != null ? Math.Round(netAmount * (ivaEntity.RatePercent / 100m), 2) : 0m;
+                var ivaAmount = ivaEntity != null ? Round2(netAmount * (ivaEntity.RatePercent / 100m)) : 0m;
                 var item = new RequestLineItem
                 {
                     Id = Guid.NewGuid(),
@@ -1774,6 +1794,18 @@ public class RequestsController : BaseController
             };
             _context.RequestStatusHistories.Add(reconHistory);
 
+            // ═══════════════════════════════════════════════════════════════
+            // Phase 2b: Persist OCR header grand total as integrity baseline
+            // ═══════════════════════════════════════════════════════════════
+            // This value is used by the Financial Integrity Gate at quotation
+            // completion to detect divergence between the supplier's original
+            // document total and the system-calculated quotation total.
+            var ocrGrandTotal = internalResult.Header?.GrandTotal ?? internalResult.Header?.TotalAmount;
+            if (ocrGrandTotal.HasValue && ocrGrandTotal.Value > 0)
+            {
+                request.OcrOriginalGrandTotal = ocrGrandTotal.Value;
+            }
+
             await _context.SaveChangesAsync();
 
             // Enrich legacy result with reconciliation metadata for frontend
@@ -2116,15 +2148,15 @@ public class RequestsController : BaseController
             if (item.Quantity <= 0) return BadRequest("A quantidade deve ser maior que zero.");
             if (item.UnitPrice < 0) return BadRequest("O preço unitário não pode ser negativo.");
 
-            decimal grossSubtotal = Math.Round(item.Quantity * item.UnitPrice, 2);
-            decimal itemDiscount = Math.Round(item.DiscountAmount, 2);
+            decimal grossSubtotal = Round2(item.Quantity * item.UnitPrice);
+            decimal itemDiscount = Round2(item.DiscountAmount);
             if (itemDiscount < 0) return BadRequest("O desconto do item não pode ser negativo.");
             if (itemDiscount > grossSubtotal) return BadRequest("O desconto não pode exceder o subtotal bruto no item " + item.LineNumber);
 
             decimal netSubtotal = Math.Max(0, grossSubtotal - itemDiscount);
             decimal ivaPercent = item.IvaRateId.HasValue && ivaRates.TryGetValue(item.IvaRateId.Value, out var rate) ? rate : 0m;
-            decimal ivaAmount = Math.Round(netSubtotal * (ivaPercent / 100m), 2);
-            decimal lineTotal = Math.Round(netSubtotal + ivaAmount, 2);
+            decimal ivaAmount = Round2(netSubtotal * (ivaPercent / 100m));
+            decimal lineTotal = Round2(netSubtotal + ivaAmount);
 
             quotation.Items.Add(new QuotationItem
             {
@@ -2149,22 +2181,22 @@ public class RequestsController : BaseController
         decimal totalGross = quotation.Items.Sum(i => i.GrossSubtotal);
         decimal sumItemDiscounts = quotation.Items.Sum(i => i.DiscountAmount);
         decimal totalItemIva = quotation.Items.Sum(i => i.IvaAmount);
-        decimal netAfterItemDiscounts = Math.Round(Math.Max(0, totalGross - sumItemDiscounts), 2);
+        decimal netAfterItemDiscounts = Round2(Math.Max(0, totalGross - sumItemDiscounts));
 
         // Global (commercial) discount from DTO — reduces the taxable base further
-        decimal globalDiscount = Math.Round(Math.Max(0, dto.DiscountAmount), 2);
-        decimal taxableBase = Math.Round(Math.Max(0, netAfterItemDiscounts - globalDiscount), 2);
+        decimal globalDiscount = Round2(Math.Max(0, dto.DiscountAmount));
+        decimal taxableBase = Round2(Math.Max(0, netAfterItemDiscounts - globalDiscount));
 
         // Proportionally adjust IVA based on the global discount reduction
         decimal discountRatio = netAfterItemDiscounts > 0 ? (taxableBase / netAfterItemDiscounts) : 1m;
-        decimal adjustedIva = Math.Round(totalItemIva * discountRatio, 2);
+        decimal adjustedIva = Round2(totalItemIva * discountRatio);
 
         quotation.DiscountAmount = globalDiscount;
-        quotation.TotalGrossAmount = Math.Round(totalGross, 2);
-        quotation.TotalDiscountAmount = Math.Round(sumItemDiscounts + globalDiscount, 2);
+        quotation.TotalGrossAmount = Round2(totalGross);
+        quotation.TotalDiscountAmount = Round2(sumItemDiscounts + globalDiscount);
         quotation.TotalTaxableBase = taxableBase;
         quotation.TotalIvaAmount = adjustedIva;
-        quotation.TotalAmount = Math.Round(taxableBase + adjustedIva, 2);
+        quotation.TotalAmount = Round2(taxableBase + adjustedIva);
 
         _context.Quotations.Add(quotation);
 
@@ -2319,15 +2351,15 @@ public class RequestsController : BaseController
             if (item.Quantity <= 0) return BadRequest("A quantidade deve ser maior que zero.");
             if (item.UnitPrice < 0) return BadRequest("O preço unitário não pode ser negativo.");
 
-            decimal grossSubtotal = Math.Round(item.Quantity * item.UnitPrice, 2);
-            decimal itemDiscount = Math.Round(item.DiscountAmount, 2);
+            decimal grossSubtotal = Round2(item.Quantity * item.UnitPrice);
+            decimal itemDiscount = Round2(item.DiscountAmount);
             if (itemDiscount < 0) return BadRequest("O desconto do item não pode ser negativo.");
             if (itemDiscount > grossSubtotal) return BadRequest("O desconto não pode exceder o subtotal bruto no item " + item.LineNumber);
 
             decimal netSubtotal = Math.Max(0, grossSubtotal - itemDiscount);
             decimal ivaPercent = item.IvaRateId.HasValue && ivaRates.TryGetValue(item.IvaRateId.Value, out var rate) ? rate : 0m;
-            decimal ivaAmount = Math.Round(netSubtotal * (ivaPercent / 100m), 2);
-            decimal lineTotal = Math.Round(netSubtotal + ivaAmount, 2);
+            decimal ivaAmount = Round2(netSubtotal * (ivaPercent / 100m));
+            decimal lineTotal = Round2(netSubtotal + ivaAmount);
 
             _context.QuotationItems.Add(new QuotationItem
             {
@@ -2351,22 +2383,22 @@ public class RequestsController : BaseController
         decimal totalGross = _context.QuotationItems.Local.Where(qi => qi.QuotationId == quotation.Id).Sum(i => i.GrossSubtotal);
         decimal sumItemDiscounts = _context.QuotationItems.Local.Where(qi => qi.QuotationId == quotation.Id).Sum(i => i.DiscountAmount);
         decimal totalItemIva = _context.QuotationItems.Local.Where(qi => qi.QuotationId == quotation.Id).Sum(i => i.IvaAmount);
-        decimal netAfterItemDiscounts = Math.Round(Math.Max(0, totalGross - sumItemDiscounts), 2);
+        decimal netAfterItemDiscounts = Round2(Math.Max(0, totalGross - sumItemDiscounts));
 
         // Global (commercial) discount from DTO — reduces the taxable base further
-        decimal globalDiscount = Math.Round(Math.Max(0, dto.DiscountAmount), 2);
-        decimal taxableBase = Math.Round(Math.Max(0, netAfterItemDiscounts - globalDiscount), 2);
+        decimal globalDiscount = Round2(Math.Max(0, dto.DiscountAmount));
+        decimal taxableBase = Round2(Math.Max(0, netAfterItemDiscounts - globalDiscount));
 
         // Proportionally adjust IVA based on the global discount reduction
         decimal discountRatio = netAfterItemDiscounts > 0 ? (taxableBase / netAfterItemDiscounts) : 1m;
-        decimal adjustedIva = Math.Round(totalItemIva * discountRatio, 2);
+        decimal adjustedIva = Round2(totalItemIva * discountRatio);
 
         quotation.DiscountAmount = globalDiscount;
-        quotation.TotalGrossAmount = Math.Round(totalGross, 2);
-        quotation.TotalDiscountAmount = Math.Round(sumItemDiscounts + globalDiscount, 2);
+        quotation.TotalGrossAmount = Round2(totalGross);
+        quotation.TotalDiscountAmount = Round2(sumItemDiscounts + globalDiscount);
         quotation.TotalTaxableBase = taxableBase;
         quotation.TotalIvaAmount = adjustedIva;
-        quotation.TotalAmount = Math.Round(taxableBase + adjustedIva, 2);
+        quotation.TotalAmount = Round2(taxableBase + adjustedIva);
 
 
         // Audit Trail entry for traceability
@@ -2614,10 +2646,10 @@ public class RequestsController : BaseController
 
             foreach (var item in activeItems)
             {
-                var netClone = (item.Quantity * item.UnitPrice) - (item.DiscountAmount ?? 0);
+                var netClone = Round2((item.Quantity * item.UnitPrice) - (item.DiscountAmount ?? 0));
                 var ivaClone = item.IvaRateId.HasValue ? cloneIvaRates.FirstOrDefault(r => r.Id == item.IvaRateId.Value) : null;
-                var ivaAmountClone = ivaClone != null ? Math.Round(netClone * (ivaClone.RatePercent / 100m), 2) : 0m;
-                var computedItemTotal = netClone + ivaAmountClone;
+                var ivaAmountClone = ivaClone != null ? Round2(netClone * (ivaClone.RatePercent / 100m)) : 0m;
+                var computedItemTotal = Round2(netClone + ivaAmountClone);
                 newTotalAmount += computedItemTotal;
 
                 var newItem = new RequestLineItem
@@ -2850,10 +2882,10 @@ public class RequestsController : BaseController
         var nextLineNumber = request.LineItems.Any() ? request.LineItems.Max(l => l.LineNumber) + 1 : 1;
         var quantity = dto.Quantity ?? 0;
         var unitPrice = dto.UnitPrice ?? 0;
-        var netTotal = (quantity * unitPrice) - (dto.DiscountAmount ?? 0);
+        var netTotal = Round2((quantity * unitPrice) - (dto.DiscountAmount ?? 0));
         var addIvaRate = dto.IvaRateId.HasValue ? await _context.IvaRates.FindAsync(dto.IvaRateId.Value) : null;
-        var addIvaAmount = addIvaRate != null ? Math.Round(netTotal * (addIvaRate.RatePercent / 100m), 2) : 0m;
-        var computedTotal = netTotal + addIvaAmount;
+        var addIvaAmount = addIvaRate != null ? Round2(netTotal * (addIvaRate.RatePercent / 100m)) : 0m;
+        var computedTotal = Round2(netTotal + addIvaAmount);
 
         var newItem = new RequestLineItem
         {
@@ -3025,10 +3057,10 @@ public class RequestsController : BaseController
         item.UnitPrice = dto.UnitPrice ?? item.UnitPrice;
         item.DiscountPercent = dto.DiscountPercent ?? item.DiscountPercent;
         item.DiscountAmount = dto.DiscountAmount ?? item.DiscountAmount;
-        var updateNet = (item.Quantity * item.UnitPrice) - (item.DiscountAmount ?? 0);
+        var updateNet = Round2((item.Quantity * item.UnitPrice) - (item.DiscountAmount ?? 0));
         var updateIvaRate = item.IvaRateId.HasValue ? await _context.IvaRates.FindAsync(item.IvaRateId.Value) : null;
-        var updateIvaAmount = updateIvaRate != null ? Math.Round(updateNet * (updateIvaRate.RatePercent / 100m), 2) : 0m;
-        item.TotalAmount = updateNet + updateIvaAmount;
+        var updateIvaAmount = updateIvaRate != null ? Round2(updateNet * (updateIvaRate.RatePercent / 100m)) : 0m;
+        item.TotalAmount = Round2(updateNet + updateIvaAmount);
         item.CurrencyId = (request.RequestType?.Code == "QUOTATION" && dto.CurrencyId.HasValue) ? dto.CurrencyId : request.CurrencyId;
         
         // Cross-Company Plant Validation
@@ -3457,7 +3489,18 @@ public class RequestsController : BaseController
             finalComment += $"\n[ALERTA DE SISTEMA: Override de divergência na OCR]\n{dto.MismatchDetails}";
         }
 
-        return await ProcessCommonOperationalTransition(id, "REGISTER_PO", "PO_ISSUED", new[] { "APPROVED" }, finalComment, "P.O registrada com sucesso.");
+        // Determine action code: initial registration vs. correction after Finance return
+        var request = await _context.Requests.Include(r => r.Status).FirstOrDefaultAsync(r => r.Id == id);
+        var isCorrection = request?.Status?.Code == RequestConstants.Statuses.WaitingPoCorrection;
+        var actionCode = isCorrection ? "REREGISTER_PO" : "REGISTER_PO";
+        var successMsg = isCorrection ? "P.O corrigida e re-registrada com sucesso." : "P.O registrada com sucesso.";
+
+        if (isCorrection && string.IsNullOrWhiteSpace(finalComment))
+        {
+            finalComment = "P.O corrigida após devolução por Finanças.";
+        }
+
+        return await ProcessCommonOperationalTransition(id, actionCode, "PO_ISSUED", new[] { "APPROVED", RequestConstants.Statuses.WaitingPoCorrection }, finalComment, successMsg);
     }
 
     [HttpPost("{id}/operational/schedule-payment")]
@@ -3738,6 +3781,165 @@ public class RequestsController : BaseController
         if (!CurrentUserRoles.Contains(RoleConstants.Buyer))
             return StatusCode(403, "Apenas o Comprador pode concluir a etapa de cotação.");
 
+        // ═══════════════════════════════════════════════════════════════
+        // FINANCIAL INTEGRITY GATE
+        // Compares the quotation being completed against the OCR baseline.
+        // Blocks progression on real mismatch unless buyer provides
+        // explicit override with mandatory justification.
+        // ═══════════════════════════════════════════════════════════════
+        if (request.OcrOriginalGrandTotal.HasValue && hasSavedQuotations)
+        {
+            var ocrBaseline = request.OcrOriginalGrandTotal.Value;
+
+            // Determine the quotation being completed:
+            // If only one quotation exists, use it. Otherwise, use the most recently
+            // created quotation (the one the buyer is actively finalizing).
+            var targetQuotation = request.Quotations.Count == 1
+                ? request.Quotations.First()
+                : request.Quotations.OrderByDescending(q => q.CreatedAtUtc).First();
+
+            var quotationTotal = targetQuotation.TotalAmount;
+            var varianceAmount = Math.Round(quotationTotal - ocrBaseline, 2, MidpointRounding.AwayFromZero);
+            var variancePercent = ocrBaseline != 0
+                ? Math.Round((varianceAmount / ocrBaseline) * 100, 2, MidpointRounding.AwayFromZero)
+                : 0m;
+
+            var tolerance = RequestConstants.FinancialIntegrity.CalculateTolerance(ocrBaseline);
+            var hasMismatch = Math.Abs(varianceAmount) > tolerance;
+
+            // Check for unresolved reconciliation records
+            var unresolvedReconciliation = await _context.ReconciliationRecords
+                .Where(r => r.RequestId == id
+                    && r.BuyerReviewStatus == "PENDING"
+                    && (r.MatchStatus == "REVIEW_REQUIRED" || r.MatchStatus == "MISSING_REQUESTED_ITEM"))
+                .CountAsync();
+
+            var hasReconciliationIssues = unresolvedReconciliation > 0;
+            var integrityCheckTriggered = hasMismatch || hasReconciliationIssues;
+
+            if (integrityCheckTriggered)
+            {
+                // Audit: Log detection event (regardless of override)
+                var detectionPayload = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    ocrOriginalTotal = ocrBaseline,
+                    quotationTotal,
+                    varianceAmount,
+                    variancePercent,
+                    toleranceApplied = tolerance,
+                    toleranceAbsoluteFloor = RequestConstants.FinancialIntegrity.AbsoluteFloor,
+                    toleranceRelativeThreshold = RequestConstants.FinancialIntegrity.RelativeThreshold,
+                    unresolvedReconciliationCount = unresolvedReconciliation,
+                    hasMismatch,
+                    hasReconciliationIssues,
+                    quotationId = targetQuotation.Id,
+                    requestId = id
+                });
+
+                if (!dto.FinancialIntegrityOverride)
+                {
+                    // === BLOCKED: Buyer must review and either correct or override ===
+
+                    // Audit: Log the blocking event
+                    _context.RequestStatusHistories.Add(new RequestStatusHistory
+                    {
+                        Id = Guid.NewGuid(),
+                        RequestId = id,
+                        ActorUserId = CurrentUserId,
+                        ActionTaken = "FINANCIAL_INTEGRITY_BLOCKED",
+                        PreviousStatusId = request.StatusId,
+                        NewStatusId = request.StatusId,
+                        Comment = $"Conclusão bloqueada: divergência financeira detectada. " +
+                                  $"OCR Original: {ocrBaseline:N2}, Cotação: {quotationTotal:N2}, " +
+                                  $"Variação: {varianceAmount:N2} ({variancePercent:N2}%), " +
+                                  $"Tolerância aplicada: {tolerance:N2}. " +
+                                  $"Itens de reconciliação pendentes: {unresolvedReconciliation}.",
+                        CreatedAtUtc = DateTime.UtcNow
+                    });
+                    await _context.SaveChangesAsync();
+
+                    await _adminLog.WriteAsync("WARN", "RequestsController",
+                        "FINANCIAL_INTEGRITY_BLOCKED",
+                        $"Quotation completion blocked for Request {request.RequestNumber}: " +
+                        $"OCR={ocrBaseline:N2}, Qt={quotationTotal:N2}, Var={varianceAmount:N2} ({variancePercent:N2}%)",
+                        payload: detectionPayload);
+
+                    // Build structured error detail
+                    var detail = hasMismatch
+                        ? $"O total da cotação ({quotationTotal:N2}) difere do total original do documento OCR ({ocrBaseline:N2}) " +
+                          $"em {Math.Abs(varianceAmount):N2} ({Math.Abs(variancePercent):N2}%), excedendo a tolerância de {tolerance:N2}."
+                        : $"Existem {unresolvedReconciliation} item(ns) de reconciliação pendentes de revisão.";
+
+                    if (hasMismatch && hasReconciliationIssues)
+                    {
+                        detail += $" Adicionalmente, existem {unresolvedReconciliation} item(ns) de reconciliação pendentes.";
+                    }
+
+                    return Conflict(new ProblemDetails
+                    {
+                        Title = "Verificação de Integridade Financeira",
+                        Detail = detail,
+                        Status = 409,
+                        Extensions =
+                        {
+                            ["integrityCheckFailed"] = true,
+                            ["ocrOriginalTotal"] = ocrBaseline,
+                            ["quotationTotal"] = quotationTotal,
+                            ["varianceAmount"] = varianceAmount,
+                            ["variancePercent"] = variancePercent,
+                            ["toleranceApplied"] = tolerance,
+                            ["unresolvedReconciliationCount"] = unresolvedReconciliation,
+                            ["quotationId"] = targetQuotation.Id
+                        }
+                    });
+                }
+                else
+                {
+                    // === OVERRIDE: Buyer acknowledged mismatch with justification ===
+
+                    if (string.IsNullOrWhiteSpace(dto.OverrideJustification))
+                    {
+                        return BadRequest(new ProblemDetails
+                        {
+                            Title = "Justificação Obrigatória",
+                            Detail = "É necessário fornecer uma justificação escrita para prosseguir com a divergência financeira.",
+                            Status = 400
+                        });
+                    }
+
+                    // Audit: Log the override acceptance
+                    _context.RequestStatusHistories.Add(new RequestStatusHistory
+                    {
+                        Id = Guid.NewGuid(),
+                        RequestId = id,
+                        ActorUserId = CurrentUserId,
+                        ActionTaken = "FINANCIAL_INTEGRITY_OVERRIDE",
+                        PreviousStatusId = request.StatusId,
+                        NewStatusId = request.StatusId,
+                        Comment = $"Override financeiro aceite. " +
+                                  $"OCR Original: {ocrBaseline:N2}, Cotação: {quotationTotal:N2}, " +
+                                  $"Variação: {varianceAmount:N2} ({variancePercent:N2}%), " +
+                                  $"Tolerância aplicada: {tolerance:N2}. " +
+                                  $"Justificação: {dto.OverrideJustification}",
+                        CreatedAtUtc = DateTime.UtcNow
+                    });
+                    await _context.SaveChangesAsync();
+
+                    await _adminLog.WriteAsync("WARN", "RequestsController",
+                        "FINANCIAL_INTEGRITY_OVERRIDE",
+                        $"Financial integrity override accepted for Request {request.RequestNumber}: " +
+                        $"OCR={ocrBaseline:N2}, Qt={quotationTotal:N2}, Var={varianceAmount:N2} ({variancePercent:N2}%). " +
+                        $"Justification: {dto.OverrideJustification}",
+                        payload: detectionPayload);
+
+                    // Proceed with normal completion flow below
+                }
+            }
+        }
+        // ═══════════════════════════════════════════════════════════════
+        // END FINANCIAL INTEGRITY GATE
+        // ═══════════════════════════════════════════════════════════════
+
         var result = await ProcessQuotationTransition(id, "COMPLETE_QUOTATION", "WAITING_AREA_APPROVAL", new[] { "WAITING_QUOTATION", "AREA_ADJUSTMENT", "FINAL_ADJUSTMENT" }, dto.Comment, "Cotação concluída e enviada para aprovação da área.");
         
         // R1 FIX: Wrap notification dispatch in try-catch so notification failures
@@ -3965,15 +4167,15 @@ public class RequestsController : BaseController
             decimal ivaTotal = 0;
             foreach (var li in activeItems)
             {
-                var netItem = (li.Quantity * li.UnitPrice) - (li.DiscountAmount ?? 0);
+                var netItem = Round2((li.Quantity * li.UnitPrice) - (li.DiscountAmount ?? 0));
                 grossBase += netItem;
                 var liIva = li.IvaRateId.HasValue ? allIvaRates.FirstOrDefault(r => r.Id == li.IvaRateId.Value) : null;
-                if (liIva != null) ivaTotal += Math.Round(netItem * (liIva.RatePercent / 100m), 2);
+                if (liIva != null) ivaTotal += Round2(netItem * (liIva.RatePercent / 100m));
             }
             var taxableBase = Math.Max(0, grossBase - globalDiscount);
             var discountRatio = grossBase > 0 ? (taxableBase / grossBase) : 1m;
-            var adjustedIva = Math.Round(ivaTotal * discountRatio, 2);
-            request.EstimatedTotalAmount = Math.Max(0, taxableBase + adjustedIva);
+            var adjustedIva = Round2(ivaTotal * discountRatio);
+            request.EstimatedTotalAmount = Math.Max(0, Round2(taxableBase + adjustedIva));
         }
         else
         {
@@ -4113,6 +4315,7 @@ public class RequestsController : BaseController
             ("APPROVE", "WAITING_FINAL_APPROVAL") => WorkflowEventCodes.AreaApproved,
             ("APPROVE", "APPROVED") => WorkflowEventCodes.FinalApproved,
             ("REGISTER_PO", "PO_ISSUED") => WorkflowEventCodes.PoRegistered,
+            ("REREGISTER_PO", "PO_ISSUED") => WorkflowEventCodes.PoCorrectionCompleted,
             ("SCHEDULE_PAYMENT", "PAYMENT_SCHEDULED") => WorkflowEventCodes.PaymentScheduled,
             ("COMPLETE_PAYMENT", "PAYMENT_COMPLETED") => WorkflowEventCodes.PaymentCompleted,
             ("CANCELLED", "CANCELLED") => WorkflowEventCodes.RequestCancelled,
@@ -4139,6 +4342,7 @@ public class RequestsController : BaseController
                 targetItemStatus = "PENDING";
                 break;
             case "PO_ISSUED":
+            case "WAITING_PO_CORRECTION":
             case "PAYMENT_SCHEDULED":
             case "PAYMENT_COMPLETED":
                 targetItemStatus = "WAITING_ORDER";

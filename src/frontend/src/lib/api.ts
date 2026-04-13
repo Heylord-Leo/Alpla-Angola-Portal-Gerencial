@@ -453,14 +453,31 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao finalizar o pedido.');
             return response.json();
         },
-        completeQuotation: async (id: string, comment?: string): Promise<{ message: string; statusCode: string }> => {
+        completeQuotation: async (id: string, payload?: { comment?: string, financialIntegrityOverride?: boolean, overrideJustification?: string }): Promise<{ message: string; statusCode: string } | { integrityCheckFailed: true; ocrOriginalTotal: number; quotationTotal: number; varianceAmount: number; variancePercent: number; toleranceApplied: number; unresolvedReconciliationCount: number; quotationId: string; detail: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/quotation/complete`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ comment }),
+                body: JSON.stringify(payload || {}),
             });
+            // Handle Financial Integrity Gate 409 response
+            if (response.status === 409) {
+                const body = await response.json();
+                if (body?.integrityCheckFailed) {
+                    return {
+                        integrityCheckFailed: true as const,
+                        ocrOriginalTotal: body.ocrOriginalTotal ?? 0,
+                        quotationTotal: body.quotationTotal ?? 0,
+                        varianceAmount: body.varianceAmount ?? 0,
+                        variancePercent: body.variancePercent ?? 0,
+                        toleranceApplied: body.toleranceApplied ?? 0,
+                        unresolvedReconciliationCount: body.unresolvedReconciliationCount ?? 0,
+                        quotationId: body.quotationId ?? '',
+                        detail: body.detail ?? ''
+                    };
+                }
+            }
             if (!response.ok) return handleApiError(response, 'Falha ao concluir cotação.');
             return response.json();
         },

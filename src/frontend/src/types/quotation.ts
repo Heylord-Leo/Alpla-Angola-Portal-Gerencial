@@ -21,9 +21,11 @@ export interface QuotationDraftItem {
     unitId: number | null;
     unit?: string; // Raw extracted unit string from OCR
     unitPrice: number;
+    discountAmount?: number; // Per-item discount amount (currently unused in Payment Request flow)
     ivaRateId: number | null;
     taxRate?: number; // Raw extracted tax percentage for suggestion hint
     totalPrice: number; // Front-end calculated preview
+    ivaUncertain?: boolean; // True when OCR could not confidently identify item-level IVA
 }
 
 export interface QuotationDraft {
@@ -38,4 +40,5 @@ export interface QuotationDraft {
     totalAmount: number; // Front-end calculated preview
     proformaAttachmentId?: string; // Links attachment implicitly
     items: QuotationDraftItem[];
+    headerHasIva?: boolean; // True when the document header/totals indicate IVA exists
 }

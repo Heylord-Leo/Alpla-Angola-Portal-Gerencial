@@ -52,6 +52,13 @@ public class Request
     public decimal EstimatedTotalAmount { get; set; }
     public decimal DiscountAmount { get; set; }
 
+    /// <summary>
+    /// OCR-extracted grand total from the supplier document (proforma/invoice).
+    /// Persisted during OCR extraction to serve as the financial integrity baseline.
+    /// Null for manually-created requests (integrity gate is skipped).
+    /// </summary>
+    public decimal? OcrOriginalGrandTotal { get; set; }
+
     public int? CapexOpexClassificationId { get; set; }
     public CapexOpexClassification? CapexOpexClassification { get; set; }
 

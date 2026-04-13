@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.56.0] - 2026-04-13
+
+### Added
+- **PO Correction Forward Exit**: Completed the existing `WAITING_PO_CORRECTION` operational loop, which was previously a dead-end status.
+  - **Backend**: `RegisterPo` endpoint now accepts `WAITING_PO_CORRECTION` as a valid source status, enabling the Buyer to re-register a corrected PO after Finance return.
+  - **Conditional Action Codes**: Uses `REGISTER_PO` for initial registration (from `APPROVED`) and `REREGISTER_PO` for correction flow (from `WAITING_PO_CORRECTION`), preserving distinct audit history.
+  - **Source-Status Guard (Finance Return)**: `ReturnForAdjustment` now validates that the request is in `PO_ISSUED` or `PAYMENT_SCHEDULED` before allowing a return. Returns from `PAYMENT_COMPLETED` or `WAITING_PO_CORRECTION` are blocked.
+  - **Notification**: New `PO_CORRECTION_COMPLETED` event code notifies plant-scoped Finance users when a Buyer completes the correction.
+  - **Frontend**: Added `CORRIGIR P.O` button (orange, visually distinct from `REGISTRAR P.O`) to the operational panel for `WAITING_PO_CORRECTION` status. Integrated `CorrectPoModal` in `RequestEdit.tsx`.
+  - **Guidance**: Added `WAITING_PO_CORRECTION` to `getRequestGuidance()` — Responsible: Comprador, Action: Corrigir P.O devolvida por Finanças.
+  - **Line Item Sync**: `WAITING_PO_CORRECTION` syncs items to `WAITING_ORDER` (idempotent — items are already in this state from prior `PO_ISSUED`).
+  - **Business Decision**: Returning from `PAYMENT_SCHEDULED` intentionally invalidates the prior scheduling. After correction, Finance must re-evaluate from `PO_ISSUED`.
+
+### Changed
+- **WORKFLOW_ARCHITECTURE.md**: Added Section 6 (Finance Return / PO Correction Loop) and updated state machine tables, permission matrix, and attachment deletion rules.
+
+## [2.55.0] - 2026-04-13
+
+### Added
+- **Financial Integrity Gate**: Implemented a server-side financial checkpoint at the quotation completion stage (`CompleteQuotation`).
+  - Persists the OCR-extracted grand total (`OcrOriginalGrandTotal`) on the `Request` entity during OCR extraction as the integrity baseline.
+  - Validates the completing quotation total against the OCR baseline using centralized tolerance (`max(1.0, 0.1% of original)`, configurable in `RequestConstants.FinancialIntegrity`).
+  - Blocks progression (`409 Conflict`) with structured variance data when mismatch exceeds tolerance or unresolved reconciliation records exist.
+  - Supports explicit buyer override with mandatory written justification.
+  - Full audit trail: logs detection (`FINANCIAL_INTEGRITY_BLOCKED`), override acceptance (`FINANCIAL_INTEGRITY_OVERRIDE`) in `RequestStatusHistory` and `AdminLog`.
+  - Frontend: Added Financial Integrity Modal in Quotation Management workspace (`BuyerItemsList.tsx`) with OCR vs Quotation comparison table, variance display, and override justification flow.
+  - RequestEdit path surfaces integrity failures as modal feedback, directing buyers to the Quotation Management workspace for the override flow.
+
 ## [2.54.0] - 2026-04-13
 
 ### Added

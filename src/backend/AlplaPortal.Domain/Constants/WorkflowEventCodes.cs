@@ -22,6 +22,7 @@ public static class WorkflowEventCodes
     public const string PaymentScheduled = "PAYMENT_SCHEDULED";
     public const string PaymentCompleted = "PAYMENT_COMPLETED";
     public const string FinanceReturned = "FINANCE_RETURNED";
+    public const string PoCorrectionCompleted = "PO_CORRECTION_COMPLETED";
 
     // --- Lifecycle ---
     public const string RequestCancelled = "REQUEST_CANCELLED";

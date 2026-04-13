@@ -35,6 +35,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { completeQuotationAction } from '../../lib/workflow';
 import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModal';
 import { RegisterPoModal } from '../../components/RegisterPoModal';
+import { CorrectPoModal } from '../../components/CorrectPoModal';
 import { RequestLineItemForm } from '../../components/RequestLineItemForm';
 import { RequestActionHeader, BreadcrumbItem, OperationalGuidance } from './components/RequestActionHeader';
 import { RequestQuotations } from './components/RequestQuotations';
@@ -96,6 +97,8 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         setShowApprovalModal,
         showRegisterPoModal,
         setShowRegisterPoModal,
+        showCorrectPoModal,
+        setShowCorrectPoModal,
         approvalComment,
         setApprovalComment,
         approvalProcessing,
@@ -410,7 +413,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
 
 
                     {/* Procurement/Buyer Status Panel (Former Action Bar) */}
-                    {canExecuteOperationalAction && ['APPROVED', 'PO_ISSUED', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT'].includes(status || '') && (
+                    {canExecuteOperationalAction && ['APPROVED', 'PO_ISSUED', 'WAITING_PO_CORRECTION', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT'].includes(status || '') && (
                         <div style={{
                             backgroundColor: 'white',
                             padding: '12px 24px',
@@ -453,6 +456,15 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                                                 style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
                                             >
                                                 <FileText size={14} /> REGISTRAR P.O
+                                            </button>
+                                        )}
+                                        {status === 'WAITING_PO_CORRECTION' && (
+                                            <button 
+                                                onClick={() => setShowCorrectPoModal(true)}
+                                                className="btn-primary"
+                                                style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#ea580c' }}
+                                            >
+                                                <Edit2 size={14} /> CORRIGIR P.O
                                             </button>
                                         )}
                                         {/* TRANSITIONAL FALLBACK: Removed direct access from Buyer to enforce Receiving ownership */}
@@ -1226,6 +1238,23 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     );
                 })()
             )}
+
+            {/* Correct PO Modal — only for WAITING_PO_CORRECTION correction flow (isolated from initial registration) */}
+            <CorrectPoModal
+                show={showCorrectPoModal}
+                requestId={id}
+                onClose={() => setShowCorrectPoModal(false)}
+                onSuccess={async (msg) => {
+                    setShowCorrectPoModal(false);
+                    setFeedback({ type: 'success', message: msg });
+                    const data = await api.requests.get(id);
+                    setStatus(data.statusCode);
+                    setStatusFullName(data.statusName);
+                    setStatusBadgeColor(data.statusBadgeColor);
+                    setStatusHistory(data.statusHistory || []);
+                    setAttachments(data.attachments || []);
+                }}
+            />
 
             <QuickSupplierModal 
                 isOpen={quickSupplierModal.show}

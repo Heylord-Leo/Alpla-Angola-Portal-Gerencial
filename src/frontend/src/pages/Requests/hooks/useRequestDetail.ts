@@ -106,6 +106,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         type: ApprovalActionType
     }>({ show: false, type: null });
     const [showRegisterPoModal, setShowRegisterPoModal] = useState(false);
+    const [showCorrectPoModal, setShowCorrectPoModal] = useState(false);
     const [approvalComment, setApprovalComment] = useState('');
     const [approvalProcessing, setApprovalProcessing] = useState(false);
     const [modalFeedback, setModalFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'error', message: null });
@@ -124,7 +125,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
     
     const isReworkStatus = status === 'AREA_ADJUSTMENT' || status === 'FINAL_ADJUSTMENT';
     const isQuotationStage = status === 'WAITING_QUOTATION';
-    const isOperationalStage = ['APPROVED', 'PO_ISSUED', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'WAITING_QUOTATION'].includes(status || '');
+    const isOperationalStage = ['APPROVED', 'PO_ISSUED', 'WAITING_PO_CORRECTION', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'WAITING_QUOTATION'].includes(status || '');
     const isFinalizedStatus = ['COMPLETED', 'REJECTED', 'CANCELLED', 'QUOTATION_COMPLETED'].includes(status || '');
 
     const isDraftEditable = status === 'DRAFT' || isReworkStatus || isCopyMode;
@@ -784,7 +785,17 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         if (action === 'COMPLETE_QUOTATION') {
             try {
                 const totalItemsCount = lineItems.length + quotations.reduce((acc: number, q: SavedQuotationDto) => acc + q.itemCount, 0);
-                await completeQuotationAction(id!, totalItemsCount, approvalComment);
+                const completionResult = await completeQuotationAction(id!, totalItemsCount, approvalComment);
+                
+                // Financial Integrity Gate: surface mismatch in modal feedback
+                if (completionResult && 'integrityCheckFailed' in completionResult && completionResult.integrityCheckFailed) {
+                    setModalFeedback({ 
+                        type: 'error', 
+                        message: `⚠️ Integridade Financeira: ${completionResult.detail} Utilize a tela "Gestão de Cotações" para corrigir ou confirmar o override.`
+                    });
+                    setApprovalProcessing(false);
+                    return;
+                }
                 setApprovalProcessing(false);
                 setFeedback({ type: 'success', message: 'Cotação concluída e enviada para aprovação.' });
                 setShowApprovalModal({ show: false, type: null });
@@ -1035,6 +1046,8 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         setShowApprovalModal,
         showRegisterPoModal,
         setShowRegisterPoModal,
+        showCorrectPoModal,
+        setShowCorrectPoModal,
         approvalComment,
         setApprovalComment,
         approvalProcessing,

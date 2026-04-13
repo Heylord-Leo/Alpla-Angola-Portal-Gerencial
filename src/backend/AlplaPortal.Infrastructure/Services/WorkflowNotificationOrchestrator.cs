@@ -97,7 +97,7 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         {
             // --- Approval Flow: notify the next decision-maker ---
             case WorkflowEventCodes.RequestSubmitted:
-                await AddUserRecipientAsync(recipients, evt.AreaApproverId);
+                await HandlePendingAreaApprovalFanningAsync(recipients, evt, reqRef, isQuotation: false);
                 break;
 
             case WorkflowEventCodes.SubmissionConfirmed:
@@ -114,7 +114,7 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 break;
 
             case WorkflowEventCodes.QuotationCompleted:
-                await AddUserRecipientAsync(recipients, evt.RequesterId);
+                await HandlePendingAreaApprovalFanningAsync(recipients, evt, reqRef, isQuotation: true);
                 break;
 
             // --- Rejection/Adjustment: notify the requester ---
@@ -145,6 +145,11 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 await AddUserRecipientAsync(recipients, evt.BuyerId);
                 break;
 
+            // --- PO Correction Completed: notify Finance (same plant-scoped pattern as initial PO) ---
+            case WorkflowEventCodes.PoCorrectionCompleted:
+                await AddPlantScopedFinanceRecipientsAsync(recipients, evt.PlantId);
+                break;
+
             // --- Lifecycle: notify key stakeholders ---
             case WorkflowEventCodes.RequestCancelled:
                 await AddUserRecipientAsync(recipients, evt.RequesterId);
@@ -165,6 +170,87 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
     }
 
     // Helper method to keep ResolveRecipientsAsync clean
+    private async Task HandlePendingAreaApprovalFanningAsync(List<NotificationRecipient> recipients, WorkflowEvent evt, string reqRef, bool isQuotation)
+    {
+        // 1. If Quotation Workflow, we must notify the Requester that the quotation finished. 
+        // (For Direct Requests, they already received SubmissionConfirmed event, no need to duplicate)
+        if (isQuotation)
+        {
+            await AddUserRecipientAsync(recipients, evt.RequesterId,
+                emailSubjectOverride: $"Cotação Concluída — Pedido {reqRef}",
+                emailBodyOverride: $"A cotação para o pedido <b>{reqRef}</b> foi submetida pelo departamento de compras e enviada para a Aprovação de Área.");
+        }
+
+        // 2. Notify the Area Approver(s) with the Contexto Financeiro Departamental
+        if (!evt.AreaApproverId.HasValue && !evt.DepartmentId.HasValue) return;
+
+        var req = await _context.Requests.AsNoTracking().FirstOrDefaultAsync(r => r.Id == evt.RequestId);
+        if (req == null) return;
+
+        var deptId = evt.DepartmentId ?? req.DepartmentId;
+        var thisAmount = req.EstimatedTotalAmount;
+        var monthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        
+        var summedAmount = await _context.Requests
+            .AsNoTracking()
+            .Where(r => r.DepartmentId == deptId 
+                     && (r.Status.Code == "SCHEDULED" || r.Status.Code == "PAID" || r.Status.Code == "PARTIAL_PAID")
+                     && r.UpdatedAtUtc >= monthStart)
+            .SumAsync(r => r.EstimatedTotalAmount);
+
+        var percentage = summedAmount > 0 ? (thisAmount / summedAmount * 100) : 0;
+        
+        var currency = req.CurrencyId.HasValue 
+            ? await _context.Currencies.AsNoTracking().Where(c => c.Id == req.CurrencyId).Select(c => c.Code).FirstOrDefaultAsync() ?? "AOA" 
+            : "AOA";
+
+        var htmlOverride = $@"
+<p>O pedido <b>{reqRef}</b> acabou de dar entrada na sua fila de área e aguarda a sua validação ou rateio de centro de custo.</p>
+<div style='background-color:#fff1f2; border:1px solid #fecdd3; padding:15px; border-radius:6px; margin:20px 0;'>
+    <h3 style='color:#be123c; margin-top:0;'>Contexto Financeiro Departamental (Mês Corrente)</h3>
+    <ul style='color:#881337; font-size:14px; margin-bottom:0;'>
+        <li style='margin-bottom: 5px'><b>Valor da Proposta Atual:</b> {thisAmount:N2} {currency}</li>
+        <li style='margin-bottom: 5px'><b>Consumo Departamental Atual (Agendado/Pago):</b> {summedAmount:N2} {currency}</li>
+        <li><b>Impacto Estimado:</b> Aprovar este pedido preencherá um rácio financeiro de <b>{percentage:N1}%</b> face ao orçamento consumido do departamento neste mês.</li>
+    </ul>
+</div>";
+
+        var subjectOverride = $"[AÇÃO NECESSÁRIA] Aprovação de Área pendente - Pedido {reqRef}";
+
+        if (evt.AreaApproverId.HasValue)
+        {
+            // If the specific Area Approver is known (e.g. from the Request payload)
+            await AddUserRecipientAsync(recipients, evt.AreaApproverId,
+                emailSubjectOverride: subjectOverride,
+                emailBodyOverride: htmlOverride);
+        }
+        else
+        {
+            // If we only have Department ID, notify all Area Approvers for that department
+            var areaApproverRole = await _context.Roles.AsNoTracking().FirstOrDefaultAsync(r => r.RoleName == RoleConstants.AreaApprover);
+            if (areaApproverRole == null) return;
+
+            var areaApprovers = await _context.UserDepartmentScopes
+                .AsNoTracking()
+                .Include(uds => uds.User)
+                .Where(uds => uds.DepartmentId == deptId && uds.User.IsActive)
+                .Where(uds => _context.UserRoleAssignments.Any(ura => ura.UserId == uds.UserId && ura.RoleId == areaApproverRole.Id))
+                .Select(uds => uds.User)
+                .ToListAsync();
+
+            foreach (var approver in areaApprovers)
+            {
+                if (approver.Id == evt.RequesterId) continue; // Skip if the requester is the area approver (prevents duplicate specific emails)
+                
+                recipients.Add(new NotificationRecipient(approver.Id, approver.Email, approver.FullName)
+                {
+                    EmailSubjectOverride = subjectOverride,
+                    EmailBodyOverride = htmlOverride
+                });
+            }
+        }
+    }
+
     private async Task HandleAreaFanningOverridesAsync(List<NotificationRecipient> recipients, WorkflowEvent evt, string reqRef, string commentHtml, bool isApproval)
     {
         var actionWord = isApproval ? "aprovou" : (evt.EventCode == WorkflowEventCodes.AreaAdjustment ? "pediu reajustes no" : "rejeitou o");
@@ -545,6 +631,18 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 EmailSubject = $"Pedido Devolvido para Correção — {reqRef}",
                 EmailHeadline = "Pedido Devolvido por Finanças",
                 EmailBody = BuildFinanceReturnBody(reqRef, reqContext, actorLabel, evt.Comment)
+            };
+
+            case WorkflowEventCodes.PoCorrectionCompleted: return new EventConfig
+            {
+                Category = NotificationCategories.Payment,
+                NotificationType = NotificationTypes.Info,
+                InAppTitle = "P.O Corrigida e Re-registrada",
+                InAppMessage = $"A P.O do pedido {reqRef}{reqContext} foi corrigida e re-registrada por {actorLabel} após devolução.",
+                SendEmail = true,
+                EmailSubject = $"P.O Corrigida — {reqRef}",
+                EmailHeadline = "P.O Corrigida e Re-registrada",
+                EmailBody = $"A Purchase Order do pedido <b>{reqRef}</b>{reqContext} foi corrigida e re-registrada por <b>{actorLabel}</b> após devolução por Finanças. O pedido retorna ao status de P.O emitida para processamento financeiro."
             };
 
             case WorkflowEventCodes.RequestCancelled: return new EventConfig
