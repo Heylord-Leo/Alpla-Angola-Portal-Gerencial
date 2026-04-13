@@ -4,7 +4,8 @@ import {
     Calendar, Landmark, Download,
     Paperclip, AlertCircle, List,
     MessageSquare, Users, History as HistoryIcon, DollarSign,
-    Target, TrendingUp, ArrowRightLeft, AlertTriangle, ShieldCheck
+    Target, TrendingUp, ArrowRightLeft, AlertTriangle, ShieldCheck,
+    BookOpen, X
 } from 'lucide-react';
 import { RequestDetailsDto, ApprovalIntelligenceDto } from '../../types';
 import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModal';
@@ -89,6 +90,7 @@ export function ApprovalDetailPanel({
     // Phase 3A: Intelligence
     const [intelligence, setIntelligence] = useState<ApprovalIntelligenceDto | null>(null);
     const [loadingIntelligence, setLoadingIntelligence] = useState(false);
+    const [showHelp, setShowHelp] = useState(false);
 
     // Business Control: Cost Center & Plant Selection (DEC-085/DEC-099/DEC-103)
     const [costCenters, setCostCenters] = useState<any[]>([]);
@@ -412,6 +414,34 @@ export function ApprovalDetailPanel({
 
             {/* Content Container */}
             <div style={{ maxWidth: '80rem', margin: '0 auto', width: '100%', padding: '16px 24px 96px 24px' }}>
+
+                {/* --- ACTION BAR --- */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+                    <button
+                        onClick={() => setShowHelp(true)}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '8px 16px',
+                            backgroundColor: '#FEF9C3',
+                            color: '#854D0E',
+                            border: '1px solid #FDE047',
+                            borderRadius: '8px',
+                            fontWeight: 700,
+                            fontSize: '13px',
+                            cursor: 'pointer',
+                            boxShadow: 'var(--shadow-sm)',
+                            transition: 'all 0.2s',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em'
+                        }}
+                        onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#FEF08A'; e.currentTarget.style.color = '#713F12'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                        onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#FEF9C3'; e.currentTarget.style.color = '#854D0E'; e.currentTarget.style.transform = 'none'; }}
+                    >
+                        <BookOpen size={16} /> Manual de Aprovação
+                    </button>
+                </div>
 
                 {/* --- INTELLIGENCE ALERTS --- */}
                 {hasHistoricalItems && (
@@ -1074,6 +1104,106 @@ export function ApprovalDetailPanel({
                 onCloseFeedback={() => setModalFeedback({ type: 'error', message: null })}
                 selectedQuotationName={selectedQuotation?.supplierNameSnapshot || null}
             />
+
+            {/* HELP OVERLAY (MODAL) */}
+            {showHelp && (
+                <div 
+                    onClick={() => setShowHelp(false)}
+                    style={{ 
+                    position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', 
+                    backgroundColor: 'rgba(15, 23, 42, 0.7)', zIndex: 9999, 
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    backdropFilter: 'blur(4px)'
+                }}>
+                    <div 
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                        backgroundColor: 'var(--color-bg-page)', border: '4px solid #0f172a',
+                        width: '90%', maxWidth: '750px', maxHeight: '90vh', overflowY: 'auto',
+                        boxShadow: '16px 16px 0 #0f172a', padding: '32px', position: 'relative'
+                    }}>
+                        <button 
+                            onClick={() => setShowHelp(false)}
+                            style={{
+                                position: 'absolute', top: '16px', right: '16px', backgroundColor: 'transparent',
+                                border: 'none', cursor: 'pointer', color: '#64748b'
+                            }}
+                            onMouseOver={(e) => e.currentTarget.style.color = '#0f172a'}
+                            onMouseOut={(e) => e.currentTarget.style.color = '#64748b'}
+                        >
+                            <X size={32} />
+                        </button>
+                        
+                        <h2 style={{ fontSize: '1.75em', fontWeight: 900, textTransform: 'uppercase', marginBottom: '8px', borderBottom: '4px solid #e2e8f0', paddingBottom: '16px' }}>
+                            Manual de Decisão
+                        </h2>
+                        <p style={{ fontWeight: 500, fontSize: '15px', color: '#475569', marginBottom: '32px' }}>
+                            Este guia esclarece os componentes analíticos do Centro de Aprovações para agilizar e padronizar sua tomada de decisão.
+                        </p>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                            
+                            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                                <div style={{ backgroundColor: '#e0f2fe', padding: '12px', color: '#0284c7', border: '2px solid #0284c7' }}><TrendingUp size={24} /></div>
+                                <div>
+                                    <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>Contexto Financeiro Visual</h4>
+                                    <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                                        <strong>O que é:</strong> O gráfico de tendência avalia o fluxo de caixa histórico do <strong>departamento solicitante</strong> para o <strong>mesmo fornecedor</strong> nos últimos meses e semanas.
+                                    </p>
+                                    <p style={{ margin: 0, fontSize: '14px', backgroundColor: '#f1f5f9', padding: '8px', borderLeft: '4px solid #94a3b8' }}>
+                                        <em>Por que é importante:</em> Permite visualizar picos anormais de gastos ou compras recorrentes, ajudando a identificar se este departamento já comprou demais desta mesma entidade recentemente ou se há um possível fracionamento orçamentário.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                                <div style={{ backgroundColor: '#fce7f3', padding: '12px', color: '#db2777', border: '2px solid #db2777' }}><Target size={24} /></div>
+                                <div>
+                                    <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>Inteligência para Decisão</h4>
+                                    <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                                        <strong>O que é:</strong> Um motor preditivo que cruza os itens sendo comprados neste exato pedido contra o nosso banco de dados unificado de histórico de aquisições do sistema Primavera ERP.
+                                    </p>
+                                    <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                                        <strong>Como funciona:</strong> Ao trocar de "Item" na régua de cima, o painel muda para lhe mostrar as estatísticas globais e departamentais do item alvo. Se a bolinha ao lado do item estiver <strong>vermelha</strong>, isto indica que o preço deste fornecedor está consideravelmente acima do histórico que pagamos nos últimos meses, exigindo forte questionamento.
+                                    </p>
+                                    <p style={{ margin: 0, fontSize: '14px', backgroundColor: '#f1f5f9', padding: '8px', borderLeft: '4px solid #94a3b8' }}>
+                                        <em>Abas Disponíveis:</em> Você pode alternar entre a <strong>Visão Financeira</strong> (para ver o preço médio histórico por toda a Alpla) e <strong>Visão Departamental</strong> (para ver o impacto isolado no seu departamento ou orçamento local).
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                                <div style={{ backgroundColor: '#fef3c7', padding: '12px', color: '#d97706', border: '2px solid #d97706' }}><Factory size={24} /></div>
+                                <div>
+                                    <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>Alocação de Centro de Custo</h4>
+                                    <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                                        <strong>O que é:</strong> Como aprovador da área, é a sua responsabilidade garantir que os custos da requisição sejam imputados ao local orçamentário correto. Para isso, vá à secção "Itens do pedido" e atribua uma <strong>Planta (Fábrica)</strong> e um <strong>Centro de Custo</strong> por cada linha do pedido.
+                                    </p>
+                                    <p style={{ margin: 0, fontSize: '14px', backgroundColor: '#f1f5f9', padding: '8px', borderLeft: '4px solid #94a3b8' }}>
+                                        <em>Distribuição Rápida (Bulk):</em> Para não selecionar individualmente todas as dezenas de itens que possam vir no pedido, defina o centro de custo apenas no primeiro item e cliquem no recém botão <strong>Aplicar aos X compatíveis</strong> que saltará no próprio cartão. Ele preencherá magicamente todos os itens vazios com essa exata parametrização de uma vez só!
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                                <div style={{ backgroundColor: '#f3f4f6', padding: '12px', color: '#4b5563', border: '2px solid #4b5563' }}><ShieldCheck size={24} /></div>
+                                <div>
+                                    <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>Passo a Passo da Aprovação (Checklist)</h4>
+                                    <ol style={{ margin: '8px 0', paddingLeft: '20px', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                                        <li style={{ marginBottom: '8px' }}><strong>1. Resumo e Entendimento:</strong> Revise acima quem solicitou, os níveis de urgência e leia atentamente a secção de Justificativas.</li>
+                                        <li style={{ marginBottom: '8px' }}><strong>2. Verificação de Alertas:</strong> Certifique-se de que não há caixas de aviso vermelhas ou amarelas no topo da tela sugerindo anomalias de preços ou pendência de alocação.</li>
+                                        <li style={{ marginBottom: '8px' }}><strong>3. Cotação e Valores:</strong> Para compras, analise a cotação selecionada. O valor está aderente? Verifique o Resumo Financeiro total.</li>
+                                        <li style={{ marginBottom: '8px' }}><strong>4. Mitigação de Riscos:</strong> Se houver gráfico de Contexto Visual, busque padrões anormais (ex: três pedidos iguais nos últimos 10 dias de um fornecedor).</li>
+                                        <li style={{ marginBottom: '8px' }}><strong>5. Alocação Obrigatória (Aprovadores de Filial):</strong> Certifique-se de alocar cada item listado à sua respetiva Fábrica (Planta) e Centro de Custo usando os seletivos por item.</li>
+                                        <li><strong>6. Decisão:</strong> Encontre as opções de encerramento na barra flutuante inferior. Para "Rejeitar" ou "Solicitar Ajuste", um comentário será mandatório.</li>
+                                    </ol>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            )}
         </motion.div>
     );
 }

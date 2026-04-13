@@ -1428,6 +1428,8 @@ public class RequestsController : BaseController
             .Include(r => r.RequestType)
             .Include(r => r.LineItems)
             .Include(r => r.Attachments)
+            .Include(r => r.Department)
+            .Include(r => r.Company)
             .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == id);
 
@@ -4047,6 +4049,7 @@ public class RequestsController : BaseController
                     BuyerId = request.BuyerId,
                     AreaApproverId = request.AreaApproverId,
                     FinalApproverId = request.FinalApproverId,
+                    DepartmentId = request.DepartmentId,
                     PlantId = request.PlantId
                 };
                 await _orchestrator.EmitAsync(workflowEvent);

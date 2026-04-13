@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.54.0] - 2026-04-13
+
+### Added
+- **Enriched Area Approver Notifications**: The `WorkflowNotificationOrchestrator` now intercepts payment events (`SCHEDULED`/`PAID`) and overrides the recipient footprint. Area Approvers now receive real-time financial transparency emails detailing the specific request amount, total monthly departmental spend, and percentage impact of the request on the department's monthly activity.
+- **Approval Decision Guide**: Deployed a "Manual de Aprovação" helper to the `ApprovalDetailPanel.tsx` component, introducing an interactive, styled HTML modal containing step-by-step checklists, financial definition clarity, and guidance on required cost center bulk allocations.
+- **Quotation Management UX**: Replaced the previous standalone `Link` page routing in `BuyerItemsList` with a frictionless, localized Quick View `RequestDrawerPresentation`, eliminating context loss during quote inspection.
+
 ## [2.53.0] - 2026-04-13
 
 ### Added

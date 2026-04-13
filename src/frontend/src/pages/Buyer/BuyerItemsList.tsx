@@ -21,6 +21,8 @@ import { SearchFilterBar } from '../../components/ui/SearchFilterBar';
 import { SavedQuotationDto, IvaRate, Unit, OcrDraft, OcrDraftItem, ReconciliationBatchDto } from '../../types';
 import { useOcrProcessor } from '../../hooks/useOcrProcessor';
 import { ReconciliationPanel } from '../../components/Buyer/ReconciliationPanel';
+import { RequestDrawerPresentation } from '../Requests/components/modern/RequestDrawerPresentation';
+
 
 const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
 const ALLOWED_EXTENSIONS_MSG = "PDF, JPG, JPEG, PNG, DOC, DOCX, XLS e XLSX";
@@ -114,6 +116,7 @@ export function BuyerItemsList() {
         show: false, requestId: '', draft: null, duplicate: null
     });
     const [expandedQuotations, setExpandedQuotations] = useState<Record<string, boolean>>({});
+    const [drawerRequestId, setDrawerRequestId] = useState<string | null>(null);
     const [fileDuplicateWarning, setFileDuplicateWarning] = useState<{
         isOpen: boolean;
         requestId: string;
@@ -1183,14 +1186,17 @@ export function BuyerItemsList() {
                                                 <UserPlus size={14} /> {group.buyerId ? "Assumir Pedido" : "Atribuir a Mim"}
                                             </button>
                                         )}
-                                        <Link
-                                            to={`/requests/${group.requestId}`}
-                                            onClick={(e) => e.stopPropagation()}
-                                            style={{ color: 'var(--color-primary)', padding: '8px' }}
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setDrawerRequestId(group.requestId);
+                                            }}
+                                            style={{ color: 'var(--color-primary)', padding: '8px', background: 'none', border: 'none', cursor: 'pointer' }}
                                             title="Ver Detalhes do Pedido"
                                         >
                                             <ExternalLink size={20} />
-                                        </Link>
+                                        </button>
                                     </div>
                                 </div>
 
@@ -2786,6 +2792,13 @@ export function BuyerItemsList() {
                     }
                 }}
                 initialCode={quickCurrencyModal.initialCode}
+            />
+
+            {/* Quick View Drawer */}
+            <RequestDrawerPresentation
+                isOpen={!!drawerRequestId}
+                requestId={drawerRequestId}
+                onClose={() => setDrawerRequestId(null)}
             />
         </PageContainer>
     );

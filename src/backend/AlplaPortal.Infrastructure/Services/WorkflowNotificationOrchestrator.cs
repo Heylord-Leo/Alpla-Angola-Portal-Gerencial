@@ -137,7 +137,7 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             // --- Payment Progress: notify the requester ---
             case WorkflowEventCodes.PaymentScheduled:
             case WorkflowEventCodes.PaymentCompleted:
-                await AddUserRecipientAsync(recipients, evt.RequesterId);
+                await HandlePaymentFanningOverridesAsync(recipients, evt, reqRef);
                 break;
 
             // --- Finance Return: notify the buyer ---
@@ -189,6 +189,76 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             await AddUserRecipientAsync(recipients, evt.BuyerId,
                 emailSubjectOverride: $"Cotação — Pedido {reqRef} {actionWordDesc} na área",
                 emailBodyOverride: $"O pedido de cotação <b>{reqRef}</b> foi {actionWordDesc} pelo aprovador de área (<b>{evt.ActorName}</b>).{commentHtml}");
+        }
+    }
+
+    private async Task HandlePaymentFanningOverridesAsync(List<NotificationRecipient> recipients, WorkflowEvent evt, string reqRef)
+    {
+        // 1. Always notify the Requester (using the default EventConfig)
+        await AddUserRecipientAsync(recipients, evt.RequesterId);
+
+        // 2. Area Approvers Fan-Out Notification
+        if (!evt.DepartmentId.HasValue) return;
+
+        var req = await _context.Requests.AsNoTracking().FirstOrDefaultAsync(r => r.Id == evt.RequestId);
+        if (req == null) return;
+        
+        var thisAmount = req.EstimatedTotalAmount;
+        
+        // Month boundaries: first day of current UTC month
+        var monthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        
+        // Calculate departmental financial accumulation metric (SCHEDULED / PAID in the current month)
+        var summedAmount = await _context.Requests
+            .AsNoTracking()
+            .Where(r => r.DepartmentId == evt.DepartmentId.Value 
+                     && (r.Status.Code == "SCHEDULED" || r.Status.Code == "PAID" || r.Status.Code == "PARTIAL_PAID")
+                     && r.UpdatedAtUtc >= monthStart)
+            .SumAsync(r => r.EstimatedTotalAmount);
+
+        // Safety against division by zero
+        var percentage = summedAmount > 0 ? (thisAmount / summedAmount * 100) : 0;
+        
+        // Currency formatting
+        var currency = req.CurrencyId.HasValue 
+            ? await _context.Currencies.AsNoTracking().Where(c => c.Id == req.CurrencyId).Select(c => c.Code).FirstOrDefaultAsync() ?? "AOA" 
+            : "AOA";
+
+        var areaApproverRole = await _context.Roles.AsNoTracking().FirstOrDefaultAsync(r => r.RoleName == RoleConstants.AreaApprover);
+        if (areaApproverRole == null) return;
+
+        var areaApprovers = await _context.UserDepartmentScopes
+            .AsNoTracking()
+            .Include(uds => uds.User)
+            .Where(uds => uds.DepartmentId == evt.DepartmentId.Value && uds.User.IsActive)
+            .Where(uds => _context.UserRoleAssignments.Any(ura => ura.UserId == uds.UserId && ura.RoleId == areaApproverRole.Id))
+            .Select(uds => uds.User)
+            .ToListAsync();
+
+        var paymentState = evt.EventCode == WorkflowEventCodes.PaymentScheduled ? "Agendado" : "Realizado";
+        var htmlOverride = $@"
+<p>O processo financeiro para o pedido <b>{reqRef}</b> foi <b>{paymentState.ToLower()}</b> pelas Finanças.</p>
+<div style='background-color:#f0f9ff; border:1px solid #bae6fd; padding:15px; border-radius:6px; margin:20px 0;'>
+    <h3 style='color:#0369a1; margin-top:0;'>Contexto Financeiro Departamental (Mês Corrente)</h3>
+    <ul style='color:#0c4a6e; font-size:14px; margin-bottom:0;'>
+        <li style='margin-bottom: 5px'><b>Valor deste Pedido:</b> {thisAmount:N2} {currency}</li>
+        <li style='margin-bottom: 5px'><b>Acumulado (Agendado/Pago):</b> {summedAmount:N2} {currency}</li>
+        <li><b>Impacto:</b> Este pedido representa <b>{percentage:N1}%</b> do total financeiro do seu departamento neste mês.</li>
+    </ul>
+</div>";
+
+        var subjectOverride = $"[{paymentState.ToUpper()}] Informação de departamento - Pedido {reqRef}";
+
+        foreach (var approver in areaApprovers)
+        {
+            // The Requester is already receiving the raw Requester-scoped email above. We bypass if they are the same person.
+            if (approver.Id == evt.RequesterId) continue;
+
+            recipients.Add(new NotificationRecipient(approver.Id, approver.Email, approver.FullName)
+            {
+                EmailSubjectOverride = subjectOverride,
+                EmailBodyOverride = htmlOverride
+            });
         }
     }
 
