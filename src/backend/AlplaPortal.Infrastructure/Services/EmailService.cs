@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
+using AlplaPortal.Infrastructure.Logging;
 
 namespace AlplaPortal.Infrastructure.Services;
 
@@ -18,16 +19,18 @@ public class EmailService : IEmailService
     private readonly ILogger<EmailService> _logger;
     private readonly IWebHostEnvironment _env;
     private readonly ISmtpSettingsService _smtpSettingsService;
+    private readonly AdminLogWriter _adminLog;
 
     private const string LogoContentId = "alpla-logo";
     private const string LogoFileName = "logo-v2.png";
 
-    public EmailService(IConfiguration config, ILogger<EmailService> logger, IWebHostEnvironment env, ISmtpSettingsService smtpSettingsService)
+    public EmailService(IConfiguration config, ILogger<EmailService> logger, IWebHostEnvironment env, ISmtpSettingsService smtpSettingsService, AdminLogWriter adminLog)
     {
         _config = config;
         _logger = logger;
         _env = env;
         _smtpSettingsService = smtpSettingsService;
+        _adminLog = adminLog;
     }
 
     public async Task<bool> SendPasswordResetEmailAsync(string toEmail, string resetLink)
@@ -140,7 +143,15 @@ public class EmailService : IEmailService
             if (string.IsNullOrEmpty(smtp.Server) || string.IsNullOrEmpty(smtp.SenderEmail) || string.IsNullOrEmpty(smtp.Password))
             {
                 _logger.LogError("SMTP configuration is missing or incomplete for workflow notification. Skipping email to {Email}.", toEmail);
-                return false;
+                await _adminLog.WriteAsync(
+                    "Error",
+                    "EmailService",
+                    "SMTP_DISPATCH_FAILED",
+                    $"Erro Crítico: O servidor SMTP não está configurado para tentar enviar a notificação a {toEmail}.",
+                    payload: "A configuração de SMTP não possui senha ou host."
+                );
+                // Cannot proceed, throw clear exception
+                throw new InvalidOperationException("SMTP configuration is missing or incomplete for workflow notification.");
             }
 
             var fromAddress = new MailAddress(smtp.SenderEmail, smtp.SenderName);
@@ -209,12 +220,30 @@ public class EmailService : IEmailService
 
             await smtpClient.SendMailAsync(message);
             _logger.LogInformation("Workflow notification email dispatched to {Email} (Subject: {Subject})", toEmail, subject);
+            
+            await _adminLog.WriteAsync(
+                "Info",
+                "EmailService",
+                "SMTP_DISPATCH_SUCCESS",
+                $"E-mail despachado para {toEmail}. Assunto: {subject}",
+                payload: $"Host: {smtp.Server}:{smtp.Port}. TLS: {smtp.EnableSsl}"
+            );
+            
             return true;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to deliver workflow notification email to {Email} (Subject: {Subject})", toEmail, subject);
-            return false;
+            await _adminLog.WriteAsync(
+                "Error",
+                "EmailService",
+                "SMTP_DISPATCH_FAILED",
+                $"Falha crítica ao enviar notificação por E-mail para {toEmail}",
+                exceptionDetail: ex.Message
+            );
+            
+            // Re-throw so orchestrator captures the true failure
+            throw;
         }
     }
     /// <summary>

@@ -4080,6 +4080,16 @@ public class RequestsController : BaseController
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Non-critical: workflow notification emission failed for Request {RequestId} (Action: {ActionTaken})", request.Id, actionTaken);
+            successMessage = $"{successMessage} Aviso técnica: Falha ao expedir e-mail/notificação no motor de regras.";
+            
+            // Fire-and-forget sync write to admin log
+            _ = _adminLog.WriteAsync(
+                "Error",
+                "RequestsController",
+                "WORKFLOW_NOTIFICATION_FAILED",
+                $"Falha na emissão de notificações para Pedido {request.RequestNumber} (Action: {actionTaken})",
+                exceptionDetail: ex.Message
+            );
         }
 
         return Ok(new { Message = successMessage, StatusCode = targetStatusCode });

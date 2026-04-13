@@ -54,6 +54,7 @@ export default function UserManagement() {
 
     // Drawer State
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+    const [drawerError, setDrawerError] = useState<string | null>(null);
     const [editingUser, setEditingUser] = useState<any>(null);
     const [formData, setFormData] = useState({
         fullName: '',
@@ -174,6 +175,7 @@ export default function UserManagement() {
 
     async function handleOpenCreate() {
         setEditingUser(null);
+        setDrawerError(null);
         setFormData({
             fullName: '',
             email: '',
@@ -189,6 +191,7 @@ export default function UserManagement() {
         try {
             const userDetails = await api.users.get(userId);
             setEditingUser(userDetails);
+            setDrawerError(null);
             setFormData({
                 fullName: userDetails.fullName,
                 email: userDetails.email,
@@ -205,6 +208,7 @@ export default function UserManagement() {
 
     async function handleSave(e: React.FormEvent) {
         e.preventDefault();
+        setDrawerError(null);
         try {
             if (editingUser) {
                 await api.users.update(editingUser.id, formData);
@@ -217,7 +221,7 @@ export default function UserManagement() {
                 loadData();
             }
         } catch (err: any) {
-            alert('Erro ao guardar: ' + err.message);
+            setDrawerError(err.message);
         }
     }
 
@@ -399,6 +403,12 @@ export default function UserManagement() {
                             </div>
                             
                             <form style={s.drawerBody} onSubmit={handleSave}>
+                                {drawerError && (
+                                    <div style={{ background: 'var(--color-status-red)18', border: '2px solid var(--color-status-red)', padding: '12px 16px', color: 'var(--color-status-red)', fontSize: '0.85rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 12 }}>
+                                        <XCircle size={18} />
+                                        {drawerError}
+                                    </div>
+                                )}
                                 <section style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                                     <label style={s.labelSm}>Identificação Base</label>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>

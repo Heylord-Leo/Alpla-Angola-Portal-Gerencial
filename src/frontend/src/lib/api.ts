@@ -79,8 +79,8 @@ async function handleApiError(
     } else if (response.status === 403) {
         console.error(`[AUTH] 403 Forbidden for ${response.url}. Insufficient roles/permissions.`);
         errorMsg = 'Você não tem permissão para realizar esta ação.';
-    } else if (errJson?.detail || errJson?.title) {
-        errorMsg = errJson.detail || errJson.title;
+    } else if (errJson?.detail || errJson?.title || errJson?.message) {
+        errorMsg = errJson.detail || errJson.title || errJson.message;
     }
 
     throw new ApiError(

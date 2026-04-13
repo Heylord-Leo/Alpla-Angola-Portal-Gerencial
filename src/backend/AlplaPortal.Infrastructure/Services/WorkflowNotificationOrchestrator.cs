@@ -64,18 +64,18 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
 
             foreach (var recipient in recipients)
             {
-                // Skip notifying the actor who performed the action, unless it's the specific SubmissionConfirmed event
-                if (recipient.UserId == evt.ActorUserId && evt.EventCode != WorkflowEventCodes.SubmissionConfirmed)
-                    continue;
-
+                // Self-notify restriction has been lifted based on business requirements.
+                // Every actor gets notified of their own actions to preserve email history.
+                
                 await DispatchToRecipientAsync(evt, eventConfig, recipient);
             }
         }
         catch (Exception ex)
         {
-            // Non-critical: notification failures must never break the business transaction
-            _logger.LogError(ex, "Workflow notification orchestration failed for event {EventCode} on Request {RequestId}",
+            // Bubble up the exception so the Controller knows that an orchestration path failed.
+            _logger.LogError(ex, "Workflow notification orchestration failed for event {EventCode} on Request {RequestId}. Bubbling up.",
                 evt.EventCode, evt.RequestId);
+            throw;
         }
     }
 
@@ -86,6 +86,12 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
     private async Task<List<NotificationRecipient>> ResolveRecipientsAsync(WorkflowEvent evt)
     {
         var recipients = new List<NotificationRecipient>();
+        
+        // Context variables for specialized override logic
+        var reqRef = $"{evt.RequestNumber}";
+        var commentHtml = !string.IsNullOrWhiteSpace(evt.Comment)
+            ? $"<br/><br/><b>Justificativa:</b><blockquote style='border-left: 4px solid #dc3545; margin: 10px 0; padding-left: 10px; color: #555;'>{System.Net.WebUtility.HtmlEncode(evt.Comment)}</blockquote>"
+            : "";
 
         switch (evt.EventCode)
         {
@@ -99,6 +105,10 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 break;
 
             case WorkflowEventCodes.AreaApproved:
+                await AddUserRecipientAsync(recipients, evt.FinalApproverId); // Send default to Final Approver
+                await HandleAreaFanningOverridesAsync(recipients, evt, reqRef, commentHtml, isApproval: true);
+                break;
+
             case WorkflowEventCodes.FinalApproved:
                 await AddUserRecipientAsync(recipients, evt.FinalApproverId);
                 break;
@@ -109,8 +119,12 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
 
             // --- Rejection/Adjustment: notify the requester ---
             case WorkflowEventCodes.AreaRejected:
-            case WorkflowEventCodes.FinalRejected:
             case WorkflowEventCodes.AreaAdjustment:
+                // Requester becomes part of the fanning overrides, handled centrally
+                await HandleAreaFanningOverridesAsync(recipients, evt, reqRef, commentHtml, isApproval: false);
+                break;
+
+            case WorkflowEventCodes.FinalRejected:
             case WorkflowEventCodes.FinalAdjustment:
                 await AddUserRecipientAsync(recipients, evt.RequesterId);
                 break;
@@ -150,7 +164,36 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             .ToList();
     }
 
-    private async Task AddUserRecipientAsync(List<NotificationRecipient> recipients, Guid? userId)
+    // Helper method to keep ResolveRecipientsAsync clean
+    private async Task HandleAreaFanningOverridesAsync(List<NotificationRecipient> recipients, WorkflowEvent evt, string reqRef, string commentHtml, bool isApproval)
+    {
+        var actionWord = isApproval ? "aprovou" : (evt.EventCode == WorkflowEventCodes.AreaAdjustment ? "pediu reajustes no" : "rejeitou o");
+        var actionWordDesc = isApproval ? "aprovado" : (evt.EventCode == WorkflowEventCodes.AreaAdjustment ? "com reajuste solicitado" : "rejeitado");
+        var subjectWord = isApproval ? "Aprovado" : (evt.EventCode == WorkflowEventCodes.AreaAdjustment ? "Reajuste Solicitado" : "Rejeitado");
+
+        // 1. Requester
+        await AddUserRecipientAsync(recipients, evt.RequesterId,
+            emailSubjectOverride: $"O seu pedido {reqRef} foi {actionWordDesc} na área",
+            emailBodyOverride: $"O aprovador de área (<b>{evt.ActorName}</b>) {actionWord} pedido <b>{reqRef}</b>.{commentHtml}");
+
+        // 2. Approver (Actor)
+        await AddUserRecipientAsync(recipients, evt.AreaApproverId, // Assuming actor is AreaApproverId
+            emailSubjectOverride: $"Decisão de Área Registada: {reqRef} {subjectWord}",
+            emailBodyOverride: $"Você {actionWord} pedido <b>{reqRef}</b> na etapa área.{commentHtml}",
+            bypassSelfNotifyRule: true);
+
+        // 3. Buyer (only if QUOTATION)
+        var req = await _context.Requests.Include(r => r.RequestType).FirstOrDefaultAsync(r => r.Id == evt.RequestId);
+        if (req?.RequestType?.Code == "QUOTATION")
+        {
+            await AddUserRecipientAsync(recipients, evt.BuyerId,
+                emailSubjectOverride: $"Cotação — Pedido {reqRef} {actionWordDesc} na área",
+                emailBodyOverride: $"O pedido de cotação <b>{reqRef}</b> foi {actionWordDesc} pelo aprovador de área (<b>{evt.ActorName}</b>).{commentHtml}");
+        }
+    }
+
+    private async Task AddUserRecipientAsync(List<NotificationRecipient> recipients, Guid? userId,
+        string? emailSubjectOverride = null, string? emailBodyOverride = null, bool bypassSelfNotifyRule = false)
     {
         if (!userId.HasValue || userId.Value == Guid.Empty) return;
 
@@ -162,7 +205,12 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
 
         if (user != null)
         {
-            recipients.Add(new NotificationRecipient(user.Id, user.Email, user.FullName));
+            recipients.Add(new NotificationRecipient(user.Id, user.Email, user.FullName)
+            {
+                EmailSubjectOverride = emailSubjectOverride,
+                EmailBodyOverride = emailBodyOverride,
+                BypassSelfNotifyRule = bypassSelfNotifyRule
+            });
         }
     }
 
@@ -245,25 +293,19 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         // --- Email Notification ---
         if (config.SendEmail && !recipient.SuppressEmail && !string.IsNullOrWhiteSpace(recipient.Email))
         {
-            try
-            {
-                var portalBaseUrl = _config["AppConfig:PortalBaseUrl"] ?? "";
-                var actionUrl = !string.IsNullOrEmpty(portalBaseUrl) ? $"{portalBaseUrl.TrimEnd('/')}/requests/{evt.RequestId}?mode=view" : null;
+            var portalBaseUrl = _config["AppConfig:PortalBaseUrl"] ?? "";
+            var actionUrl = !string.IsNullOrWhiteSpace(portalBaseUrl) ? $"{portalBaseUrl.TrimEnd('/')}{targetPath}" : null;
 
-                await _emailService.SendWorkflowNotificationAsync(
-                    recipient.Email,
-                    recipient.FullName,
-                    config.EmailSubject,
-                    config.EmailHeadline,
-                    config.EmailBody,
-                    actionUrl,
-                    "Ver Pedido"
-                );
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to send email notification to {Email} (Event: {EventCode})", recipient.Email, evt.EventCode);
-            }
+            // Notice we are NOT wrapping this in a catch. If it fails, EmailService will throw and it'll bubble up to EmitAsync's throw, bubbling back to the Controller.
+            await _emailService.SendWorkflowNotificationAsync(
+                recipient.Email,
+                recipient.FullName,
+                recipient.EmailSubjectOverride ?? config.EmailSubject,
+                config.EmailHeadline,
+                recipient.EmailBodyOverride ?? config.EmailBody,
+                actionUrl,
+                "Ver Pedido"
+            );
         }
     }
 
@@ -548,6 +590,10 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         /// If true, email is suppressed for this recipient (e.g., global Finance fan-out fallback).
         /// </summary>
         public bool SuppressEmail { get; init; }
+        
+        public string? EmailSubjectOverride { get; init; }
+        public string? EmailBodyOverride { get; init; }
+        public bool BypassSelfNotifyRule { get; init; }
     }
 
     private class EventConfig

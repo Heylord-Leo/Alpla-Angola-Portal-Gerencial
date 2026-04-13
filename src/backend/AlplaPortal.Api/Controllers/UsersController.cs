@@ -138,6 +138,10 @@ public class UsersController : BaseController
     {
         if (await _context.Users.AnyAsync(u => u.Email == dto.Email))
         {
+            await _adminLogWriter.WriteAsync("Activity", "UserManagement", "USER_CREATION_FAILED", 
+                $"Tentativa de criar utilizador com e-mail já existente: {dto.Email} por {User.FindFirstValue(ClaimTypes.Email)}", 
+                payload: System.Text.Json.JsonSerializer.Serialize(new { dto.Email, Reason = "Duplicate Email" }));
+            
             return BadRequest(new { message = "E-mail já está em utilização." });
         }
 

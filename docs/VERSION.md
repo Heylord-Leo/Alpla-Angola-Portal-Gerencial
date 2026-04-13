@@ -2,7 +2,17 @@
 
 ## Current Version
 
-v2.52.0
+v2.53.0
+
+## [2.53.0] - 2026-04-13
+
+### Added
+- **Workflow Notification Role-Casting**: Expanded the Orchestrator to dispatch role-specific email subjects, headlines, and contextual comments based cleanly on the actor's jurisdiction (Requester, Next Approver, or Buyer).
+- **Self-Notification Lift**: Removed the `BypassSelfNotifyRule` suppression wall, allowing users to universally retain an email trail of requests they submitted onto their own governed departments. 
+- **Admin System Logs Enhancement**: The `UsersController` backend now natively integrates `_adminLogWriter` on `USER_CREATION_FAILED`.
+
+### Fixed
+- **In-App Duplicate Handlers**: Removed obsolete `window.alert()` from identical user collisions inside `UserManagement.tsx`, channeling errors into an organic local-state UI banner.
 
 ## [2.52.0] - 2026-04-12
 
