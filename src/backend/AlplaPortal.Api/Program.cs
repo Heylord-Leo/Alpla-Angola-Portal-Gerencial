@@ -1,10 +1,12 @@
 using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Application.Interfaces.Extraction;
+using AlplaPortal.Application.Interfaces.Integration;
 using AlplaPortal.Application.Models.Configuration;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Logging;
 using AlplaPortal.Infrastructure.Services;
 using AlplaPortal.Infrastructure.Services.Extraction;
+using AlplaPortal.Infrastructure.Services.Integration;
 using AlplaPortal.Infrastructure.Services.Auth;
 using AlplaPortal.Infrastructure.Services.Approvals;
 using Microsoft.EntityFrameworkCore;
@@ -32,6 +34,20 @@ builder.Services.AddScoped<IDocumentExtractionSettingsService, DocumentExtractio
 
 // Admin audit log writer — dedicated, best-effort persistence (not a generic ILoggerProvider).
 builder.Services.AddScoped<AdminLogWriter>();
+
+// Integration Foundation — generic provider health service + concrete providers.
+builder.Services.AddScoped<IIntegrationProvider, PrimaveraIntegrationProvider>();
+builder.Services.AddScoped<IIntegrationProvider, InnuxIntegrationProvider>();
+builder.Services.AddScoped<IIntegrationHealthService, IntegrationHealthService>();
+builder.Services.AddScoped<PrimaveraConnectionFactory>();
+builder.Services.AddScoped<IPrimaveraEmployeeService, PrimaveraEmployeeService>();
+builder.Services.AddScoped<IPrimaveraArticleService, PrimaveraArticleService>();
+builder.Services.AddScoped<IPrimaveraSupplierService, PrimaveraSupplierService>();
+builder.Services.AddScoped<IPrimaveraArticleSupplierService, PrimaveraArticleSupplierService>();
+builder.Services.AddScoped<IPrimaveraRequestValidationService, PrimaveraRequestValidationService>();
+builder.Services.AddScoped<InnuxConnectionFactory>();
+builder.Services.AddScoped<IInnuxEmployeeService, InnuxEmployeeService>();
+builder.Services.AddScoped<IUnifiedEmployeeProfileService, UnifiedEmployeeProfileService>();
 
 // Notification Service
 builder.Services.AddScoped<INotificationService, NotificationService>();

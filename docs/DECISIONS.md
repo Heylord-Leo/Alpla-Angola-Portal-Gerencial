@@ -2,6 +2,63 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-104 — Innux Configuration Strategy (Phase 2B)
+
+- **Date:** 2026-04-14
+- **Status:** Accepted
+- **Context:** Integration with internal systems demands strict authentication tracking. During implementation of Phase 2B, establishing connection capabilities to the existing Biometrics database (Innux) demanded parity with the Primavera standards (preventing fallback session reliance). 
+- **Decision:** The Innux configuration must remain strictly explicitly driven.
+    1. **Identity Isolation:** Innux exclusively evaluates explicitly provided appsettings configuration overrides without falling back to host execution states.
+    2. **Graceful Failures:** Failures correctly propagate via `NOT_CONFIGURED` or real payload responses (e.g., login failure constraints), avoiding silent fallbacks or implicit data exposure.
+    3. **Runtime Scope:** `InnuxIntegrationProvider` inherits a `TIME_ATTENDANCE` category natively, superseding hardcoded metadata arrays inside Phase 1 schema definitions.
+
+
+## DEC-102 — Explicit Primavera Provider Connectivity Configuration (Phase 1B)
+
+- **Date:** 2026-04-14
+- **Status:** Accepted
+- **Context:** During the stabilization of Phase 1A (diagnostic connection path), the underlying ADO.NET stack timed out parsing TLS SNI handshakes. Furthermore, relying on desktop-session Windows Authentication proxies from the web server context proved unreliable due to constraint boundaries.
+- **Decision:** The integration provider must enforce explicitly configured identity resolution.
+    1. **Identity Isolation:** Providers must exclusively use credentials explicitly declared in configuration files or DB override settings. They must completely ignore the active context of the user driving the UI.
+    2. **Authentication Method:** SQL Authentication is enforced as the canonical operation mode for environments bridging legacy domain boundaries. Windows Authentication proxying is abandoned to prevent "double hop" drops.
+    3. **Connection Fallback Policy:** The SQL string builder forces `Encrypt=Optional` to guarantee fallback to Named Pipes / Unencrypted TCP, averting 21-second drop cycles. 
+    4. **Read-Only App Intent Removed:** Removed `ApplicationIntent.ReadOnly` flag as standalone, non-availability-group clustered resources drop connections demanding a strictly readable secondary.
+
+## DEC-101 — Primavera Provider Activation Lifecycle (Phase 1A)
+
+- **Date:** 2026-04-14
+- **Status:** Accepted
+- **Context:** Phase 1A introduces the first concrete `IIntegrationProvider` (Primavera). A decision was needed on whether the provider should be automatically enabled in all environments upon migration, or whether activation should require explicit configuration.
+- **Decision:** Provider implementation does **not** imply automatic activation.
+    1. **Seed state**: `IsPlanned = false, IsEnabled = false` — the provider is no longer a roadmap item, but it is not auto-enabled.
+    2. **Activation depends on configuration**: the provider only becomes testable when `appsettings.json` has `Integrations:Primavera:Enabled = true` and valid connection settings (`Server`, `DatabaseName`).
+    3. **Authentication flexibility**: Both `SQL` and `WINDOWS` authentication modes are supported. No default is assumed — the mode must be explicitly configured per environment.
+    4. **Diagnostic query**: Uses `SELECT @@SERVERNAME AS ServerName, DB_NAME() AS DatabaseName` instead of `SELECT 1` for richer diagnostics without business-domain coupling.
+    5. **Read-only enforcement**: Connection string includes `ApplicationIntent.ReadOnly` to prevent accidental writes at the transport level.
+    6. **Multi-database awareness**: The appsettings configuration is an initial connection template, not a permanent binding to a single database. Primavera has multiple productive databases (PRI297514001, PRI297514003). Phase 1A does not assume a single-database strategy.
+- **Alternatives considered:** Auto-enabling Primavera via seed (rejected: creates "active but misconfigured" states in environments without valid config). Using `SELECT 1` only (rejected: less diagnostic value). Defaulting to Windows Auth (rejected: not universally applicable — depends on app pool identity and service account).
+- **Consequences:** Safer deployments — no unexpected "active but misconfigured" providers. Each environment controls its own activation. Future providers (Innux, etc.) should follow the same lifecycle pattern.
+
+---
+
+## DEC-100 — Generic Integration Foundation (Phase 0)
+
+- **Date:** 2026-04-14
+- **Status:** Accepted
+- **Context:** The Portal requires a foundation for integrating with external systems (Primavera ERP, Innux Biometric, and future SQL/API providers) across multiple business domains (employees, materials, suppliers, departments, cost centers, attendance). An "employee-only integration framework" or provider-specific coupling was explicitly rejected.
+- **Decision:** Implement a **generic, provider-oriented integration platform foundation**:
+    1. **Provider Registry**: `IntegrationProvider` entity with JSON-based capabilities. Future domains are metadata, not schema changes.
+    2. **Minimal Base Contract**: `IIntegrationProvider` defines only identity and connectivity. Business-domain services (e.g., `IPrimaveraEmployeeService`) will be layered on top in future phases.
+    3. **Settings Separation**: `IntegrationProviderSettings` is strictly connection-oriented (server, auth, timeout). Business/domain settings are explicitly prohibited here and belong in dedicated entities.
+    4. **Separate Controllers**: `IntegrationHealthController` (external providers) vs `AdminDiagnosticsController` (internal services like OCR). Intentionally not merged.
+    5. **Status Code Contract**: Backend uses stable constants (`IntegrationStatusCodes`). Frontend maps to display labels independently.
+    6. **Guards**: Connection testing is disabled for planned, unconfigured, or unimplemented providers. Credentials are encrypted via `AesEncryptionHelper` and never exposed to frontend.
+    7. **Phase 0 Scope**: Foundation only — no data sync, no writes, no business operations, no background jobs. Only Primavera and Innux seeded.
+- **Alternatives considered:** Employee-specific integration framework (rejected: not extensible). Merging with AdminDiagnosticsController (rejected: different architectural categories). Relational capabilities table (rejected: premature for Phase 0).
+- **Consequences:** Future providers simply implement `IIntegrationProvider`, register in DI, seed the database, and appear automatically in the UI. Domain-specific services can be layered without refactoring the foundation. See `docs/INTEGRATION_PLAYBOOK.md` for the step-by-step guide.
+
+---
+
 ## DEC-099 — Route-Level Code Splitting Strategy
 
 - **Date:** 2026-04-13

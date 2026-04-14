@@ -1,6 +1,208 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
+
+## [v2.69.0] - 2026-04-14 - Phase 5A Primavera Request Validation Against Master Data (Read-Only)
+### Added
+- **PrimaveraRequestValidationDtos**: Input (`PrimaveraRequestValidationInputDto`) and result (`PrimaveraRequestValidationResultDto`) DTOs for structured validation:
+  - Input: `Company`, `ArticleCode`, `SupplierCode` (optional)
+  - Result: `ArticleExists`, `SupplierExists`, `RelationshipChecked`, `RelationshipExists`, `ValidationStatus`, `Messages[]`, enriched descriptions
+- **IPrimaveraRequestValidationService / PrimaveraRequestValidationService**: Composition/validation layer above existing Primavera services:
+  - Reuses `IPrimaveraArticleService` (article existence)
+  - Reuses `IPrimaveraSupplierService` (supplier existence)
+  - Reuses `IPrimaveraArticleSupplierService` (relationship existence)
+  - No direct SQL — pure service composition
+- **PrimaveraRequestValidationController**: Admin-internal API:
+  - `POST /api/admin/integrations/primavera/request-validation/validate-line`
+  - `POST /api/admin/integrations/primavera/request-validation/validate-batch` (max 50 lines)
+
+### Validation Status Model
+- **VALID**: article + supplier exist, relationship confirmed
+- **WARNING**: article exists but no supplier provided (partial), or both exist but no relationship
+- **INVALID**: article not found, or supplier provided but not found, or missing required inputs
+- **ERROR**: technical failure (SQL timeout, provider misconfigured) — distinct from business INVALID
+
+### Architecture Notes
+- **Pure composition**: No new SQL queries — all validation done by calling existing read services
+- **HTTP semantics**: Business validation results are always 200 (validation op succeeded); ValidationStatus field carries the business outcome
+- **Batch support**: Up to 50 lines validated independently per call
+
+### Decisions Recorded
+- **DEC-117**: Validation is 200-based — business INVALID is in the response body, not 4xx HTTP status
+- **DEC-118**: No-supplier = WARNING (partial validation), not INVALID
+- **DEC-119**: No-relationship = WARNING (unlinked pair), not INVALID — allows new vendor relationships
+
+## [v2.68.0] - 2026-04-14 - Phase 4C Primavera Article-Supplier Contextual Linkage (Read-Only)
+### Added
+- **PrimaveraArticleSupplierDtos**: Directional response DTOs for article-supplier relationships:
+  - `PrimaveraArticleSuppliersDto` — wraps article identity with linked suppliers enriched from `Fornecedores`
+  - `PrimaveraSupplierArticlesDto` — wraps supplier identity with linked articles enriched from `Artigo`
+  - `ArticleSupplierItemDto` / `SupplierArticleItemDto` — enriched relationship items with identity + relationship fields
+  - `PrimaveraArticleSupplierLinkDto` — raw relationship row DTO (8 fields from 25-column table)
+- **IPrimaveraArticleSupplierService / PrimaveraArticleSupplierService**: Read-only, company-aware article-supplier relationship service. Two-step approach: verifies parent entity exists, then queries enriched relationships with LEFT JOIN to identity tables. Bounded to 100 results.
+- **PrimaveraArticleSupplierController**: Admin-internal API:
+  - `GET /api/admin/integrations/primavera/articles/{code}/suppliers?company=...`
+  - `GET /api/admin/integrations/primavera/suppliers/{code}/articles?company=...`
+
+### Architecture Notes
+- **Source object**: `ArtigoFornecedor` table (25 columns; consistent across both companies)
+- **Join keys**: `ArtigoFornecedor.Artigo → Artigo.Artigo`, `ArtigoFornecedor.Fornecedor → Fornecedores.Fornecedor`
+- **Schema consistency**: Both ALPLAPLASTICO (319 rows) and ALPLASOPRO (256 rows) have identical column sets including `CDU_CodBarrasEntidade`
+- **Scope**: Read-only, relationship visibility only. No pricing/ranking/sourcing logic.
+
+### Decisions Recorded
+- **DEC-114**: `ArtigoFornecedor` is the authoritative article-supplier relationship table
+- **DEC-115**: Pricing fields (PrCustoUltimo, DescFor, PrecoUltEncomenda) excluded from first DTO — relationship visibility only
+- **DEC-116**: Supplier enrichment via LEFT JOIN to Fornecedores (Nome, NumContrib); article enrichment via LEFT JOIN to Artigo (Descricao, UnidadeBase)
+
+## [v2.67.0] - 2026-04-14 - Phase 4B Primavera Supplier Master Data Lookup (Read-Only)
+### Added
+- **PrimaveraSupplierDto**: ~15-field DTO for supplier master data. Source: Primavera `Fornecedores` table (116 columns; ~15 exposed). Fields: `Code`, `Name`, `FiscalName`, `TaxId`, `Email`, `Phone`, `Fax`, `Address`, `Address2`, `City`, `PostalCode`, `Country`, `SupplierType`, `IsCancelled`, `Currency`, `CreatedAt`, `SourceCompany`, `Source`.
+- **IPrimaveraSupplierService / PrimaveraSupplierService**: Read-only, company-aware supplier lookup and search. Uses existing `PrimaveraConnectionFactory`. Search covers code, name, fiscal name, and tax ID (NIF).
+- **PrimaveraSuppliersController**: Admin-internal API at `api/admin/integrations/primavera/suppliers`. Endpoints: `GET /{code}?company=...` (lookup) and `GET /search?company=...&q=...&limit=...` (search). Error semantics aligned with existing employee/article endpoints.
+
+### Architecture Notes
+- **Source object**: Primavera `Fornecedores` table (116 columns; consistent across both companies)
+- **No CDU mismatch**: Unlike `Artigo`, both ALPLAPLASTICO and ALPLASOPRO have the same CDU columns for `Fornecedores` — no adaptive detection needed.
+- **Search**: Bounded (max 50), min 2 chars, searches across `Fornecedor`, `Nome`, `NomeFiscal`, and `NumContrib`. Stable ordering by `Fornecedor` code.
+- **Scope**: Read-only, multi-database aware. No financial/banking/credit/transactional fields.
+
+### Decisions Recorded
+- **DEC-111**: `Fornecedores` is the authoritative supplier source table. No joins needed for first version.
+- **DEC-112**: Financial fields (CondPag, ModoPag, TotalDeb, LimiteCred, bank details) intentionally excluded — not relevant for initial lookup.
+- **DEC-113**: Supplier-article relationship logic deferred to future phase.
+
+## [v2.66.0] - 2026-04-14 - Phase 4A Primavera Article/Material Lookup (Read-Only)
+### Added
+- **PrimaveraArticleDto**: Focused ~13-field DTO for article/material master data. Source: Primavera `Artigo` table with `LEFT JOIN Familias`. Fields: `Code`, `Description`, `BaseUnit`, `PurchaseUnit`, `Family`, `FamilyDescription`, `SubFamily`, `ArticleType`, `Brand`, `IsCancelled`, `SupplierCode`, `InternalCode`, `SourceCompany`, `Source`.
+- **IPrimaveraArticleService / PrimaveraArticleService**: Read-only, company-aware article lookup and search. Uses existing `PrimaveraConnectionFactory`. Adaptive CDU column detection — gracefully omits `CDU_codforneced` / `CDU_codinterno` when absent in target database (e.g., ALPLASOPRO).
+- **PrimaveraArticlesController**: Admin-internal API at `api/admin/integrations/primavera/articles`. Endpoints: `GET /{code}?company=...` (lookup) and `GET /search?company=...&q=...&limit=...` (search). Error semantics aligned with existing Primavera employee endpoints.
+
+### Architecture Notes
+- **Source object**: Primavera `Artigo` table (154 columns; only ~13 exposed in DTO)
+- **Enrichment join**: `LEFT JOIN Familias` for `FamilyDescription`
+- **SubFamilias join**: Intentionally deferred
+- **Remarks (Observacoes)**: Intentionally deferred from first DTO version
+- **CDU fields**: `CDU_codforneced` (SupplierCode) and `CDU_codinterno` (InternalCode) are environment-specific custom fields. Present in ALPLAPLASTICO, absent in ALPLASOPRO. Detected at runtime via `INFORMATION_SCHEMA.COLUMNS`.
+- **Search**: Bounded (max 50), minimum 2 chars, parameterized SQL, stable ordering by `Artigo` code
+- **Scope**: Read-only, multi-database aware, no stock/pricing/sync/writeback
+
+### Decisions Recorded
+- **DEC-108**: CDU columns handled via runtime detection, not hardcoded per-company. Future-proof for schema changes.
+- **DEC-109**: Remarks (Observacoes) deferred from first DTO — large ntext field, not essential for initial article lookup.
+- **DEC-110**: SubFamilias enrichment deferred to keep first version simple and reduce composite-key assumptions.
+
+## [v2.65.0] - 2026-04-14 - Phase 3B Unified Employee Profile (Read-Only)
+### Added
+- **UnifiedEmployeeProfileDto**: Cross-system profile composition with separated source sections (`PrimaveraProfileSection`, `InnuxProfileSection`). Match diagnostics at top level: `HasInnuxMatch`, `InnuxMatchStrategy`, `InnuxLookupStatus`, `InnuxLookupMessage`.
+- **IUnifiedEmployeeProfileService / UnifiedEmployeeProfileService**: Read-only composition layer above both domain services. Primavera lookup first, then Innux enrichment by employee code. No direct SQL access.
+- **UnifiedEmployeesController**: Admin-internal endpoint at `api/admin/integrations/employees/{code}?company=...`. Returns unified profile with both source sections.
+
+### Architecture Notes
+- **Match key**: `Primavera.Codigo` ↔ `Innux.Numero` (deterministic, code-based)
+- **Source hierarchy**: Primavera is master; Innux is optional operational complement
+- **Graceful degradation**: Innux failure does NOT fail the unified profile — Primavera profile is always returned if Primavera succeeds. Innux status is explicit via `InnuxLookupStatus` (`MATCHED`, `NOT_FOUND`, `ERROR`).
+- **No flattening**: Source sections remain separated for clear provenance
+- **Scope**: Lookup by code only. Unified search intentionally deferred.
+
+### Decisions Recorded
+- **DEC-106**: Innux failure degrades gracefully — Primavera profile returned with `InnuxLookupStatus = "ERROR"`, not HTTP error.
+- **DEC-107**: Unified search deferred from Phase 3B to reduce composition complexity. Lookup by code is the first stable cross-system operation.
+
+## [v2.64.0] - 2026-04-14 - Phase 3A Innux Employee Lookup (Read-Only)
+### Added
+- **InnuxConnectionFactory**: Shared, domain-neutral connection factory for Innux SQL connections. Single database (no company routing). Reusable by future Innux domain services (attendance, terminals, etc.).
+- **IInnuxEmployeeService / InnuxEmployeeService**: Read-only Innux employee operational identity lookup. Queries `dbo.Funcionarios` with `LEFT JOIN dbo.Departamentos` for department enrichment. Supports lookup by employee number and search by name (bounded, max 50 results).
+- **InnuxEmployeeDto**: Operational identity DTO with 17 mapped fields. Key naming: `IsActiveOperational` (explicitly Innux operational state, not unified cross-system status), `HasPhoto` (boolean presence indicator, never exposes blob data), `Source` (always `"INNUX"`).
+- **InnuxEmployeesController**: Admin-internal API at `api/admin/integrations/innux/employees`. Error semantics aligned with Primavera controller (400/404/502/503/500).
+
+### Changed
+- **InnuxIntegrationProvider**: Refactored to delegate connection-string resolution to `InnuxConnectionFactory`, removing duplicated `BuildConnectionString()`. Single source of truth for Innux connection configuration.
+- **DI Registration**: Added `InnuxConnectionFactory` and `IInnuxEmployeeService` registrations in `Program.cs`.
+
+### Architecture Notes
+- Innux has a single database target — no company parameter needed (unlike Primavera multi-database).
+- Department JOIN key: `f.IDDepartamento = d.IDDepartamento` (runtime-validated assumption from schema discovery).
+- Phase intentionally deferred: attendance events, terminal reads, biometric reconciliation, Primavera merge logic.
+
+## [v2.63.0] - 2026-04-14 - Phase 2D Primavera Multi-Database Support
+### Added
+- **PrimaveraConnectionFactory**: Shared, domain-neutral connection factory that resolves SQL connections for any configured Primavera company/database target. Reusable by all future Primavera domain services (employees, materials, suppliers, departments, cost centers).
+- **PrimaveraCompany enum**: Strongly typed selector for Primavera business databases (`ALPLAPLASTICO`, `ALPLASOPRO`). Stable internal codes — display labels resolved separately.
+- **Multi-company configuration**: `Integrations:Primavera:Companies` section in appsettings supporting per-company `DatabaseName` and `Enabled` flags. Shared connection settings (Server, Instance, Auth, Timeout) remain at the Primavera level.
+- **SourceCompany field**: `PrimaveraEmployeeDto.SourceCompany` identifies which Primavera database each record was read from.
+
+### Changed
+- **PrimaveraEmployeeService**: Refactored to accept `PrimaveraCompany` as explicit target. Delegates all connection resolution to `PrimaveraConnectionFactory`. Removed private `BuildConnectionString()`.
+- **PrimaveraIntegrationProvider**: Refactored to use `PrimaveraConnectionFactory`. Health check uses Option A strategy: tests the first configured company (default target). Diagnostic logs include health target and configured companies list.
+- **PrimaveraEmployeesController**: Employee lookup/search endpoints now require `company` query parameter (`?company=ALPLAPLASTICO`). Returns 400 for missing/invalid company, 503 for configuration errors, 502 for SQL failures.
+- **DI Registration**: Added `PrimaveraConnectionFactory` registration in `Program.cs`.
+
+### Decisions Recorded
+- **DEC-103**: One Primavera provider, multiple business database targets. Database selection handled in domain services, not by duplicating providers.
+- **DEC-104**: Option A health strategy — provider tests first configured company only. DEGRADED status deferred to future phase.
+- **DEC-105**: Company selection via query parameter (`?company=<CODE>`). Route-segment style deferred.
+
+## [v2.62.0] - 2026-04-14 - Phase 2B Innux Connection Health
+### Added
+- **Innux Integration**: Implemented `InnuxIntegrationProvider` mapping to `TIME_ATTENDANCE`, extending the generic integration framework to its second established real provider.
+- **Provider Integrity Check**: Hooked runtime diagnostic test routines (`@@SERVERNAME`, `DB_NAME()`) to the Innux instance ensuring isolated SQL validations decoupled from existing biometric metadata pipelines. Enforced strict explicit credential validation reflecting real-world error constraints in the diagnostics UI.
+
+## [v2.61.0] - 2026-04-14 - Phase 2A Primavera Employee Master Data
+### Added
+- **Primavera Integration**: Added read-only `PrimaveraEmployeeService` exposing the `IPrimaveraEmployeeService` contract to interact cleanly with `dbo.Funcionarios` joined with `dbo.Departamentos`.
+- **Admin Endpoints**: Introduced `PrimaveraEmployeesController` (`/api/admin/integrations/primavera/employees`) to execute strict parameterized query matching.
+
+### Changed
+- Standardized cross-boundary response formats. DTO layers now map exact data states, allowing calling methods to interpret `TerminationDate` explicitly instead of risking implicit `IsActive` heuristics.
+
+## [2.60.0] - 2026-04-14
+
+### Changed
+- **Primavera Integration Provider (Phase 1B)**: Stabilized runtime diagnostic connectivity to real Primavera infrastructure.
+  - Replaced `Encrypt=false` (default) with `Encrypt=Optional` during SNI connection negotiation to gracefully downgrade on legacy SQL nodes without triggering 21-second timeouts.
+  - Removed `ApplicationIntent.ReadOnly` flag as standalone environments drop the connection if no readable secondary is explicitly configured via routing.
+  - Confirmed and applied **explicit SQL Authentication** as the canonical path. Desktop/session UI identity proxying is disallowed to prevent pipeline drops.
+  - Provider connection response time verified at ~35ms.
+
+### Decisions Recorded
+- **DEC-102**: Explicit configured credentials required for real integrations; desktop session proxying disabled.
+
+## [2.59.0] - 2026-04-14
+
+### Added
+- **Primavera Connection Health (Phase 1A)**: First concrete `IIntegrationProvider` implementation on the generic integration platform.
+  - `PrimaveraIntegrationProvider`: validates SQL connectivity to Primavera ERP SQL Server. Uses diagnostic query (`SELECT @@SERVERNAME, DB_NAME()`) for identity confirmation. Read-only, no business-domain queries.
+  - Supports both **SQL Server Authentication** and **Windows Authentication** modes — no default assumed.
+  - Connection string built with `ApplicationIntent.ReadOnly` to enforce read-only at the transport level.
+  - Integration logs emitted for connection test lifecycle (`STARTED`, `OK`, `FAILED`) via existing `IntegrationLogEventTypes`.
+  - DI registration in `Program.cs`: `IIntegrationProvider → PrimaveraIntegrationProvider`.
+
+### Changed
+- **Primavera seed data**: Transitioned from `IsPlanned = true` (roadmap) to `IsPlanned = false` (real implementation exists). `IsEnabled` remains `false` — activation depends on explicit environment configuration, not provider existence.
+- **Primavera connection status seed**: Updated from `PLANNED` to `NOT_CONFIGURED`.
+- **Integration Playbook**: Added Phase 1A reference section, updated step 5 guidance (activation requires configuration), added activation lifecycle table.
+- **appsettings.json**: Added `Username` and `Password` fields to Primavera config template for SQL auth mode support.
+
+### Decisions Recorded
+- **DEC-101**: Primavera provider activation lifecycle — implementation ≠ activation.
+
+## [2.58.0] - 2026-04-14
+
+### Added
+- **Generic Integration Foundation (Phase 0)**: Implemented a provider-agnostic integration platform foundation supporting multiple external systems and business domains.
+  - **Domain Entities**: `IntegrationProvider` (registry), `IntegrationConnectionStatus` (runtime health), `IntegrationProviderSettings` (connection config). All entities are generic — no coupling to specific providers or business domains.
+  - **Application Layer**: `IIntegrationProvider` (minimal base contract: identity + connection test), `IIntegrationHealthService` (provider-agnostic aggregation), standardized DTOs (`IntegrationHealthSummaryDto`, `IntegrationProviderStatusDto`, `IntegrationConnectionTestResultDto`).
+  - **Constants**: `IntegrationStatusCodes` (stable machine-readable: `HEALTHY`, `UNHEALTHY`, `UNREACHABLE`, `NOT_CONFIGURED`, `PLANNED`), `IntegrationLogEventTypes` (standardized `AdminLogWriter` event types).
+  - **Infrastructure**: `IntegrationHealthService` — resolves providers from DI, aggregates status, executes connection tests, persists results, and logs events.
+  - **API**: `IntegrationHealthController` — separate from `AdminDiagnosticsController`. `GET /api/admin/integrations/health` (summary), `POST /api/admin/integrations/{code}/test-connection` (manual test).
+  - **Database**: EF Core migration `AddIntegrationFoundation` creating 3 tables with seed data for `PRIMAVERA` (ERP/SQL) and `INNUX` (Biometric/SQL) — both planned/disabled.
+  - **Frontend**: Fully data-driven `IntegrationHealth.tsx` — renders provider cards dynamically from API. OCR explicitly separated as "internal service" from external providers. Test Connection button guarded (disabled for planned/unconfigured/unimplemented providers).
+  - **Configuration**: `Integrations` section in `appsettings.json` with Primavera + Innux connection templates (disabled by default).
+  - **Documentation**: Created `docs/INTEGRATION_PLAYBOOK.md` — comprehensive step-by-step guide for adding new providers.
+
+### Decisions Recorded
+- **DEC-100**: Generic integration foundation architecture — provider-agnostic, capabilities-as-metadata, strict settings separation.
 
 ## [2.57.0] - 2026-04-14
 

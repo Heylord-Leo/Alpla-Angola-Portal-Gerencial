@@ -46,6 +46,11 @@ public class ApplicationDbContext : DbContext
     public DbSet<OcrExtractedItem> OcrExtractedItems => Set<OcrExtractedItem>();
     public DbSet<ReconciliationRecord> ReconciliationRecords => Set<ReconciliationRecord>();
 
+    // Integration Foundation (Phase 0)
+    public DbSet<IntegrationProvider> IntegrationProviders => Set<IntegrationProvider>();
+    public DbSet<IntegrationConnectionStatus> IntegrationConnectionStatuses => Set<IntegrationConnectionStatus>();
+    public DbSet<IntegrationProviderSettings> IntegrationProviderSettings => Set<IntegrationProviderSettings>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -356,6 +361,61 @@ public class ApplicationDbContext : DbContext
             new CostCenter { Id = 3, Code = "PET2",  Name = "PET 2",  PlantId = 2, IsActive = true }, // Viana 2
             new CostCenter { Id = 4, Code = "CAPS2", Name = "CAPS 2", PlantId = 2, IsActive = true }, // Viana 2
             new CostCenter { Id = 5, Code = "SBM",   Name = "SBM",    PlantId = 3, IsActive = true }  // Viana 3
+        );
+
+        // ─── Integration Foundation (Phase 0) ───
+
+        // IntegrationProvider configuration
+        modelBuilder.Entity<IntegrationProvider>().HasIndex(p => p.Code).IsUnique();
+        modelBuilder.Entity<IntegrationProvider>()
+            .HasOne(p => p.ConnectionStatus)
+            .WithOne(s => s.Provider)
+            .HasForeignKey<IntegrationConnectionStatus>(s => s.IntegrationProviderId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<IntegrationProvider>()
+            .HasOne(p => p.Settings)
+            .WithOne(s => s.Provider)
+            .HasForeignKey<IntegrationProviderSettings>(s => s.IntegrationProviderId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Seed: Primavera + Innux (Phase 1A — Primavera has real implementation, Innux remains planned)
+        modelBuilder.Entity<IntegrationProvider>().HasData(
+            new IntegrationProvider
+            {
+                Id = 1,
+                Code = "PRIMAVERA",
+                Name = "Primavera ERP",
+                ProviderType = "ERP",
+                ConnectionType = "SQL",
+                Description = "Enterprise Resource Planning — master data source for employees, articles, suppliers, departments, and cost centers.",
+                Environment = "PRODUCTION",
+                IsEnabled = false,
+                IsPlanned = false,
+                DisplayOrder = 1,
+                Capabilities = "[\"EMPLOYEES\",\"MATERIALS\",\"SUPPLIERS\",\"DEPARTMENTS\",\"COST_CENTERS\"]",
+                CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new IntegrationProvider
+            {
+                Id = 2,
+                Code = "INNUX",
+                Name = "Innux Time & Attendance",
+                ProviderType = "TIME_ATTENDANCE",
+                ConnectionType = "SQL",
+                Description = "Biometric time and attendance system — complementary employee/attendance data source.",
+                Environment = "PRODUCTION",
+                IsEnabled = false,
+                IsPlanned = false,
+                DisplayOrder = 2,
+                Capabilities = "[\"EMPLOYEES\",\"ATTENDANCE\"]",
+                CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, DateTimeKind.Utc)
+            }
+        );
+
+        // Seed: initial connection status records
+        modelBuilder.Entity<IntegrationConnectionStatus>().HasData(
+            new IntegrationConnectionStatus { Id = 1, IntegrationProviderId = 1, CurrentStatus = IntegrationStatusCodes.NotConfigured },
+            new IntegrationConnectionStatus { Id = 2, IntegrationProviderId = 2, CurrentStatus = IntegrationStatusCodes.Planned }
         );
     }
 }

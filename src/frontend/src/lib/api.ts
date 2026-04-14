@@ -1207,6 +1207,20 @@ export const api = {
                 if (!response.ok) return handleApiError(response, 'Falha ao carregar diagnóstico de serviços.', 'AdminApi');
                 return response.json();
             }
+        },
+        integrations: {
+            getHealth: async (): Promise<any> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integrations/health`);
+                if (!response.ok) return handleApiError(response, 'Falha ao carregar saúde das integrações.', 'AdminApi');
+                return response.json();
+            },
+            testConnection: async (providerCode: string): Promise<any> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integrations/${providerCode}/test-connection`, {
+                    method: 'POST'
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao testar conexão do provedor.', 'AdminApi');
+                return response.json();
+            }
         }
     }
 };
