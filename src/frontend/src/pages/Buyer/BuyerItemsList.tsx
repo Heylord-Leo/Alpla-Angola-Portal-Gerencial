@@ -12,6 +12,7 @@ import { completeQuotationAction } from '../../lib/workflow';
 import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModal';
 import { QuickSupplierModal } from '../../components/Buyer/QuickSupplierModal';
 import { QuickCurrencyModal } from '../../components/Buyer/QuickCurrencyModal';
+import { CatalogItemAutocomplete } from '../../components/CatalogItemAutocomplete';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { Z_INDEX } from '../../constants/ui';
 import { DropdownPortal } from '../../components/ui/DropdownPortal';
@@ -499,25 +500,31 @@ export function BuyerItemsList() {
         });
     };
 
-    const handleUpdateQuotationItem = (requestId: string, index: number, field: keyof QuotationDraftItem, value: any) => {
+    const handleUpdateQuotationItem = (requestId: string, index: number, fieldOrData: keyof QuotationDraftItem | Partial<QuotationDraftItem>, value?: any) => {
         setQuotationDrafts(prev => {
             const draft = { ...prev[requestId] };
             if (!draft.items) return prev;
 
             const updatedItems = [...draft.items];
             
-            // If user manually changes the absolute discount amount, clear the reactive percentage
-            if (field === 'discountAmount') {
-                updatedItems[index] = { ...updatedItems[index], discountAmount: value, discountPercent: undefined };
+            if (typeof fieldOrData === 'object') {
+                updatedItems[index] = { ...updatedItems[index], ...fieldOrData };
             } else {
-                updatedItems[index] = { ...updatedItems[index], [field]: value };
+                const field = fieldOrData as keyof QuotationDraftItem;
+                // If user manually changes the absolute discount amount, clear the reactive percentage
+                if (field === 'discountAmount') {
+                    updatedItems[index] = { ...updatedItems[index], discountAmount: value, discountPercent: undefined };
+                } else {
+                    updatedItems[index] = { ...updatedItems[index], [field]: value };
+                }
             }
             
             // Reactive discount recalculation if percentage is locked in
-            if ((field === 'quantity' || field === 'unitPrice') && updatedItems[index].discountPercent !== undefined) {
-                const qty = updatedItems[index].quantity || 0;
-                const price = updatedItems[index].unitPrice || 0;
-                const pct = updatedItems[index].discountPercent!;
+            const item = updatedItems[index];
+            if (item.discountPercent !== undefined) {
+                const qty = item.quantity || 0;
+                const price = item.unitPrice || 0;
+                const pct = item.discountPercent!;
                 const recalculatedDiscount = Math.round(qty * price * (pct / 100) * 100) / 100;
                 updatedItems[index].discountAmount = recalculatedDiscount;
             }
@@ -729,7 +736,8 @@ export function BuyerItemsList() {
                     unitId: item.unitId,
                     unitPrice: item.unitPrice,
                     discountAmount: item.discountAmount || 0,
-                    ivaRateId: item.ivaRateId
+                    ivaRateId: item.ivaRateId,
+                    itemCatalogId: item.itemCatalogId
                 }))
             };
             
@@ -822,7 +830,8 @@ export function BuyerItemsList() {
                     quantity: item.quantity,
                     unitId: item.unitId,
                     unitPrice: item.unitPrice,
-                    ivaRateId: item.ivaRateId
+                    ivaRateId: item.ivaRateId,
+                    itemCatalogId: item.itemCatalogId
                 }))
             };
 
@@ -874,7 +883,8 @@ export function BuyerItemsList() {
                 unitPrice: item.unitPrice,
                 ivaRateId: item.ivaRateId,
                 totalPrice: item.lineTotal,
-                discountAmount: 0
+                discountAmount: 0,
+                itemCatalogId: item.itemCatalogId
             }))
         };
 
@@ -2290,11 +2300,23 @@ export function BuyerItemsList() {
                                                                                                     />
                                                                                                 </div>
                                                                                                 <div style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--color-text-muted)', textAlign: 'center' }}>{item.lineNumber}</div>
-                                                                                                <input 
+                                                                                                <CatalogItemAutocomplete
                                                                                                     value={item.description}
-                                                                                                    onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'description', e.target.value)}
-                                                                                                    placeholder="Ex: Item de Teste"
-                                                                                                    style={{ padding: '8px', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.8rem' }}
+                                                                                                    itemCatalogId={item.itemCatalogId || null}
+                                                                                                    onChange={(description, catalogId, catalogCode, defaultUnitId) => handleUpdateQuotationItem(group.requestId, idx, {
+                                                                                                        description: description,
+                                                                                                        itemCatalogId: catalogId || undefined,
+                                                                                                        unitId: defaultUnitId || item.unitId
+                                                                                                    })}
+                                                                                                    placeholder="Buscar no catálogo..."
+                                                                                                    style={{ 
+                                                                                                        padding: '8px', 
+                                                                                                        border: '1px solid #e2e8f0', 
+                                                                                                        borderRadius: '4px', 
+                                                                                                        fontSize: '0.8rem',
+                                                                                                        width: '100%',
+                                                                                                        backgroundColor: 'var(--color-bg-page)'
+                                                                                                    }}
                                                                                                 />
                                                                                                 <input 
                                                                                                     type="number"

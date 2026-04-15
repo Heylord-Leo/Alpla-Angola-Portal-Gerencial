@@ -416,6 +416,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 ivaRates={ivaRates}
                 companyId={formData.companyId}
                 requestTypeCode={requestTypeCode}
+                supplierId={formData.supplierId ?? null}
                 fieldErrors={fieldErrors}
                 clearFieldError={clearFieldError}
                 canEditItems={canEditItems}

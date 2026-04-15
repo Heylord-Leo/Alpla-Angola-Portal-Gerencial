@@ -1,4 +1,4 @@
-import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, DocumentExtractionSettingsDto, SmtpSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult } from '../types';
+import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, DocumentExtractionSettingsDto, SmtpSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto } from '../types';
 import { logger, FrontendComponentKey } from './logger';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
@@ -170,6 +170,15 @@ export const api = {
         }
     },
     requests: {
+        validateLine: async (payload: { companyId: number; itemCatalogCode: string; supplierId?: number | null }): Promise<import('../types').PrimaveraRequestValidationResultDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/validate-line`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao validar artigo no Primavera.');
+            return response.json();
+        },
         getDashboardSummary: async (): Promise<DashboardSummaryDto> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/summary`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar sumário do dashboard.');
@@ -957,7 +966,7 @@ export const api = {
             if (!res.ok) return handleApiError(res, 'Falha ao pesquisar itens do catálogo.');
             return res.json();
         },
-        create: async (data: { code: string; description: string; defaultUnitId?: number | null; category?: string }): Promise<any> => {
+        create: async (data: { description: string; primaveraCode?: string; supplierCode?: string; defaultUnitId?: number | null; category?: string }): Promise<any> => {
             const res = await apiFetch(`${API_BASE_URL}/api/v1/catalog-items`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -966,7 +975,7 @@ export const api = {
             if (!res.ok) return handleApiError(res, 'Falha ao criar item do catálogo.');
             return res.json();
         },
-        update: async (id: number, data: { code: string; description: string; defaultUnitId?: number | null; category?: string }): Promise<void> => {
+        update: async (id: number, data: { description: string; primaveraCode?: string; supplierCode?: string; defaultUnitId?: number | null; category?: string }): Promise<void> => {
             const res = await apiFetch(`${API_BASE_URL}/api/v1/catalog-items/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -1219,6 +1228,52 @@ export const api = {
                     method: 'POST'
                 });
                 if (!response.ok) return handleApiError(response, 'Falha ao testar conexão do provedor.', 'AdminApi');
+                return response.json();
+            }
+        }
+    },
+
+    // ─── Primavera Synchronization ────────────────────────────────────────
+    sync: {
+        catalog: {
+            preview: async (companyId: number, params: { search?: string; statusFilter?: string; page?: number; pageSize?: number } = {}): Promise<CatalogSyncPreviewDto> => {
+                const query = new URLSearchParams({ companyId: String(companyId) });
+                if (params.search) query.set('search', params.search);
+                if (params.statusFilter) query.set('statusFilter', params.statusFilter);
+                if (params.page) query.set('page', String(params.page));
+                if (params.pageSize) query.set('pageSize', String(params.pageSize));
+                const response = await apiFetch(`${API_BASE_URL}/api/v1/sync/catalog/preview?${query}`);
+                if (!response.ok) return handleApiError(response, 'Falha ao carregar preview do catálogo.', 'SyncApi');
+                return response.json();
+            },
+            import: async (companyId: number, body: SyncImportRequestDto): Promise<SyncImportResultDto> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/v1/sync/catalog/import?companyId=${companyId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao importar itens do catálogo.', 'SyncApi');
+                return response.json();
+            }
+        },
+        suppliers: {
+            preview: async (companyId: number, params: { search?: string; statusFilter?: string; page?: number; pageSize?: number } = {}): Promise<SupplierSyncPreviewDto> => {
+                const query = new URLSearchParams({ companyId: String(companyId) });
+                if (params.search) query.set('search', params.search);
+                if (params.statusFilter) query.set('statusFilter', params.statusFilter);
+                if (params.page) query.set('page', String(params.page));
+                if (params.pageSize) query.set('pageSize', String(params.pageSize));
+                const response = await apiFetch(`${API_BASE_URL}/api/v1/sync/suppliers/preview?${query}`);
+                if (!response.ok) return handleApiError(response, 'Falha ao carregar preview de fornecedores.', 'SyncApi');
+                return response.json();
+            },
+            import: async (companyId: number, body: SyncImportRequestDto): Promise<SyncImportResultDto> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/v1/sync/suppliers/import?companyId=${companyId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao importar fornecedores.', 'SyncApi');
                 return response.json();
             }
         }

@@ -18,6 +18,8 @@ using AlplaPortal.Domain.Constants;
 using System.Linq.Expressions;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
+using AlplaPortal.Application.DTOs.Integration;
+using AlplaPortal.Application.Interfaces.Integration;
 
 
 [Authorize]
@@ -30,6 +32,7 @@ public class RequestsController : BaseController
     private readonly ILogger<RequestsController> _logger;
     private readonly INotificationService _notificationService;
     private readonly IWorkflowNotificationOrchestrator _orchestrator;
+    private readonly IPrimaveraRequestValidationService _primaveraValidationService;
 
     public RequestsController(
         ApplicationDbContext context, 
@@ -37,13 +40,15 @@ public class RequestsController : BaseController
         AdminLogWriter adminLog,
         ILogger<RequestsController> logger,
         INotificationService notificationService,
-        IWorkflowNotificationOrchestrator orchestrator) : base(context)
+        IWorkflowNotificationOrchestrator orchestrator,
+        IPrimaveraRequestValidationService primaveraValidationService) : base(context)
     {
         _extractionService = extractionService;
         _adminLog = adminLog;
         _logger = logger;
         _notificationService = notificationService;
         _orchestrator = orchestrator;
+        _primaveraValidationService = primaveraValidationService;
     }
 
     /// <summary>
@@ -776,6 +781,8 @@ public class RequestsController : BaseController
                         Quantity = qi.Quantity,
                         UnitPrice = qi.UnitPrice,
                         LineTotal = qi.LineTotal,
+                        ItemCatalogId = qi.ItemCatalogId,
+                        ItemCatalogCode = qi.ItemCatalog != null ? qi.ItemCatalog.Code : null,
                         UnitId = qi.UnitId,
                         // Ensure Unit properties are projected; EF Core will join Units table
                         UnitName = qi.Unit != null ? qi.Unit.Name : null,
@@ -2165,6 +2172,7 @@ public class RequestsController : BaseController
                 LineNumber = item.LineNumber,
                 Description = item.Description,
                 UnitId = item.UnitId,
+                ItemCatalogId = item.ItemCatalogId,
                 Quantity = item.Quantity,
                 UnitPrice = item.UnitPrice,
                 DiscountAmount = itemDiscount,
@@ -2224,6 +2232,7 @@ public class RequestsController : BaseController
         // RE-QUERY items with Units to ensure the response projection is complete
         var savedItems = await _context.QuotationItems
             .Include(qi => qi.Unit)
+            .Include(qi => qi.ItemCatalog)
             .Where(qi => qi.QuotationId == quotation.Id)
             .OrderBy(i => i.LineNumber)
             .ToListAsync();
@@ -2264,7 +2273,9 @@ public class RequestsController : BaseController
                 IvaRatePercent = qi.IvaRatePercent,
                 GrossSubtotal = qi.GrossSubtotal,
                 IvaAmount = qi.IvaAmount,
-                LineTotal = qi.LineTotal
+                LineTotal = qi.LineTotal,
+                ItemCatalogId = qi.ItemCatalogId,
+                ItemCatalogCode = qi.ItemCatalog != null ? qi.ItemCatalog.Code : null
             }).ToList()
         });
     }
@@ -2368,6 +2379,7 @@ public class RequestsController : BaseController
                 LineNumber = item.LineNumber,
                 Description = item.Description,
                 UnitId = item.UnitId,
+                ItemCatalogId = item.ItemCatalogId,
                 Quantity = item.Quantity,
                 UnitPrice = item.UnitPrice,
                 DiscountAmount = itemDiscount,
@@ -2438,6 +2450,7 @@ public class RequestsController : BaseController
         // RE-QUERY items with Units to ensure the response projection is complete
         var updatedItems = await _context.QuotationItems
             .Include(qi => qi.Unit)
+            .Include(qi => qi.ItemCatalog)
             .Where(qi => qi.QuotationId == quotation.Id)
             .OrderBy(i => i.LineNumber)
             .ToListAsync();
@@ -2476,7 +2489,9 @@ public class RequestsController : BaseController
                 IvaRatePercent = qi.IvaRatePercent,
                 GrossSubtotal = qi.GrossSubtotal,
                 IvaAmount = qi.IvaAmount,
-                LineTotal = qi.LineTotal
+                LineTotal = qi.LineTotal,
+                ItemCatalogId = qi.ItemCatalogId,
+                ItemCatalogCode = qi.ItemCatalog != null ? qi.ItemCatalog.Code : null
             }).ToList()
         });
     }
@@ -2796,6 +2811,71 @@ public class RequestsController : BaseController
         var historyComment = $"Pedido cancelado por {user.FullName}. Motivo: {dto.Reason}";
 
         return await ApplyStatusChangeAndSyncItemsAsync(request, "CANCELLED", "CANCELLED", historyComment, "Pedido cancelado com sucesso.", actorId);
+    }
+
+    [HttpPost("validate-line")]
+    public async Task<IActionResult> ValidateLine([FromBody] RequestLineValidationInputDto dto)
+    {
+        if (dto == null) return BadRequest("Missing request body");
+
+        // 1) Translate CompanyId -> PrimaveraCompany code
+        var company = await _context.Companies.FindAsync(dto.CompanyId);
+        if (company == null) 
+        {
+            return Ok(new PrimaveraRequestValidationResultDto 
+            {
+                ValidationStatus = "WARNING",
+                Messages = new List<string> { "Companhia não identificada. Selecione uma companhia válida para validação." },
+                Source = "PORTAL"
+            });
+        }
+        string primaveraCompany = company.Name.Contains("SOPRO", StringComparison.OrdinalIgnoreCase) ? "ALPLASOPRO" : "ALPLAPLASTICO";
+
+        // 2) Translate SupplierId -> SupplierCode
+        string? supplierCode = null;
+        if (dto.SupplierId.HasValue)
+        {
+            var supplier = await _context.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId.Value && s.IsActive);
+            if (supplier != null && !string.IsNullOrEmpty(supplier.PrimaveraCode))
+            {
+                supplierCode = supplier.PrimaveraCode;
+            }
+        }
+
+        var input = new PrimaveraRequestValidationInputDto
+        {
+            Company = primaveraCompany,
+            ArticleCode = dto.ItemCatalogCode,
+            SupplierCode = supplierCode
+        };
+
+        try
+        {
+            var result = await _primaveraValidationService.ValidateRequestLineAsync(input);
+
+            // Post-process logic for missing supplier if needed
+            if (!dto.SupplierId.HasValue)
+            {
+                // The Primavera layer checks this and correctly sets "WARNING" with "Apenas verificação do artigo efetuada."
+                // But let's append a more user-friendly help text.
+                if (!result.Messages.Any(m => m.Contains("fornecedor não selecionado")))
+                {
+                    result.Messages.Add("Validação parcial (nenhum fornecedor selecionado ainda).");
+                }
+            }
+
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to call Primavera validation for article code: {ArticleCode}", dto.ItemCatalogCode);
+            return Ok(new PrimaveraRequestValidationResultDto
+            {
+                ValidationStatus = "ERROR",
+                Messages = new List<string> { "Serviço do Primavera indisponível no momento. Não foi possível validar o artigo." },
+                Source = "PORTAL"
+            });
+        }
     }
 
     [HttpPost("{requestId:guid}/line-items")]

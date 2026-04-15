@@ -142,6 +142,90 @@ public class PrimaveraArticleService : IPrimaveraArticleService
         }
     }
 
+    public async Task<(List<PrimaveraArticleDto> Items, int TotalCount)> ListArticlesAsync(
+        PrimaveraCompany company, string? search = null, int page = 1, int pageSize = 50)
+    {
+        var results = new List<PrimaveraArticleDto>();
+        var boundedPage = Math.Max(page, 1);
+        var boundedPageSize = Math.Min(Math.Max(pageSize, 1), 200);
+        var offset = (boundedPage - 1) * boundedPageSize;
+
+        try
+        {
+            await using var connection = await _connectionFactory.CreateConnectionAsync(company);
+            var hasCdu = await HasCduColumnsAsync(connection);
+
+            // Build WHERE clause
+            var whereConditions = new List<string> { "a.ArtigoAnulado = 0" };
+            if (!string.IsNullOrWhiteSpace(search) && search.Trim().Length >= MinQueryLength)
+            {
+                whereConditions.Add("(a.Artigo LIKE @pattern OR a.Descricao LIKE @pattern)");
+            }
+            var whereClause = string.Join(" AND ", whereConditions);
+
+            // Count total matching records
+            var countSql = $"SELECT COUNT(*) FROM Artigo a LEFT JOIN Familias f ON f.Familia = a.Familia WHERE {whereClause}";
+            await using var countCmd = new SqlCommand(countSql, connection);
+            if (!string.IsNullOrWhiteSpace(search) && search.Trim().Length >= MinQueryLength)
+                countCmd.Parameters.AddWithValue("@pattern", $"%{search.Trim()}%");
+            var totalCount = Convert.ToInt32(await countCmd.ExecuteScalarAsync());
+
+            // Fetch page
+            var selectSql = BuildSelectQuery(hasCdu, whereClause,
+                orderClause: "ORDER BY a.Artigo OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY",
+                topClause: null);
+
+            await using var cmd = new SqlCommand(selectSql, connection);
+            if (!string.IsNullOrWhiteSpace(search) && search.Trim().Length >= MinQueryLength)
+                cmd.Parameters.AddWithValue("@pattern", $"%{search.Trim()}%");
+            cmd.Parameters.AddWithValue("@offset", offset);
+            cmd.Parameters.AddWithValue("@pageSize", boundedPageSize);
+
+            await using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                results.Add(MapArticle(reader, company, hasCdu));
+            }
+
+            _logger.LogInformation(
+                "Primavera article list completed. Company: {Company}, Search: {Search}, Page: {Page}, PageSize: {PageSize}, Total: {Total}, Returned: {Count}",
+                company, search ?? "(all)", boundedPage, boundedPageSize, totalCount, results.Count);
+
+            return (results, totalCount);
+        }
+        catch (SqlException ex)
+        {
+            _logger.LogError(ex,
+                "SQL error during Primavera article list. Company: {Company}, Search: {Search}",
+                company, search);
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<List<PrimaveraArticleDto>> ListAllArticlesAsync(
+        PrimaveraCompany company, string? search = null)
+    {
+        const int batchSize = 200;
+        var allItems = new List<PrimaveraArticleDto>();
+        int page = 1;
+        int totalCount;
+
+        do
+        {
+            var (items, total) = await ListArticlesAsync(company, search, page, batchSize);
+            totalCount = total;
+            allItems.AddRange(items);
+            page++;
+        } while (allItems.Count < totalCount);
+
+        _logger.LogInformation(
+            "Primavera article full fetch completed. Company: {Company}, Search: {Search}, Total: {Total}",
+            company, search ?? "(all)", allItems.Count);
+
+        return allItems;
+    }
+
     // ─── SQL builder ───
 
     /// <summary>

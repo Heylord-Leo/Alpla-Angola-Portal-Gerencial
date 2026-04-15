@@ -2,9 +2,15 @@
 
 ## Current Version
 
-v2.57.0
+v2.74.0
 
-## [2.57.0] - 2026-04-14
+## [2.74.0] - 2026-04-15
+
+### Added
+- **Catalog Linkage in Manual Quotation Entry**: Integrated `CatalogItemAutocomplete` into the manual quotation entry mode within `BuyerItemsList.tsx`. This allows buyers to link manual entries directly to official Portal catalog items, ensuring data consistency for inventory and receiving.
+- **Backend Catalog Traceability**: Updated `SavedQuotationItemDto` and `RequestsController` projections to persist and retrieve `ItemCatalogId` and `ItemCatalogCode` for quotation line items.
+
+## [2.73.0] - 2026-04-15
 
 ### Changed
 - **RequestEdit Modernization Cycle**: Decomposed `RequestEdit.tsx` into parent-orchestrator + 4 presentational children. Introduced `request-edit.module.css` for local style management. Implemented route-level code splitting via `React.lazy()` reducing core bundle by ~70%. Created `LoadingSkeleton` fallback. Cleaned dead imports.

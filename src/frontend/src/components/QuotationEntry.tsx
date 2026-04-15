@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Upload, Trash2, RefreshCcw, Hash, Calendar, CheckCircle2, AlertCircle, AlertTriangle } from 'lucide-react';
 import { api } from '../lib/api';
 import { SupplierAutocomplete } from './SupplierAutocomplete';
+import { CatalogItemAutocomplete } from './CatalogItemAutocomplete';
 import { QuotationDraft, QuotationDraftItem, IvaRate, Unit } from '../types/quotation';
 import { formatCurrencyAO, computeFileHash, formatDateTime } from '../lib/utils';
 import { Feedback, FeedbackType } from './ui/Feedback';
@@ -309,7 +310,9 @@ export function QuotationEntry({
                 unitId: null,
                 unitPrice: 0,
                 ivaRateId: null,
-                totalPrice: 0
+                totalPrice: 0,
+                itemCatalogId: null,
+                itemCatalogCode: null
             };
             const next = { ...prev, items: [...prev.items, newItem] };
             return next;
@@ -355,6 +358,7 @@ export function QuotationEntry({
                     unitId: it.unitId!,
                     unitPrice: it.unitPrice,
                     ivaRateId: it.ivaRateId,
+                    itemCatalogId: it.itemCatalogId || null,
                     lineTotal: it.totalPrice
                 }))
             });
@@ -517,14 +521,46 @@ export function QuotationEntry({
                                     {draft.items.map((item, idx) => (
                                         <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50/50">
                                             <td className="px-4 py-3 text-center font-bold text-slate-400">{item.lineNumber}</td>
-                                            <td className="px-4 py-3">
-                                                <input 
-                                                    type="text"
-                                                    value={item.description}
-                                                    onChange={e => updateItem(idx, 'description', e.target.value)}
-                                                    className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-red-500 focus:outline-none py-1 font-medium transition-colors"
-                                                    placeholder="Descrição do produto ou serviço..."
+                                            <td className="px-4 py-3" style={{ minWidth: '300px' }}>
+                                                <CatalogItemAutocomplete
+                                                    value={item.itemCatalogCode ? `[${item.itemCatalogCode}] ${item.description}` : item.description}
+                                                    itemCatalogId={item.itemCatalogId ?? null}
+                                                    onChange={(description, catalogId, catalogCode, defaultUnitId) => {
+                                                        setDraft(prev => {
+                                                            const items = [...prev.items];
+                                                            const current = { ...items[idx] };
+                                                            current.description = description;
+                                                            current.itemCatalogId = catalogId;
+                                                            current.itemCatalogCode = catalogCode;
+                                                            // Auto-fill unit from catalog when selecting a catalog item
+                                                            if (catalogId && defaultUnitId) {
+                                                                const matchingUnit = units.find(u => u.id === defaultUnitId);
+                                                                if (matchingUnit) {
+                                                                    current.unitId = matchingUnit.id;
+                                                                }
+                                                            }
+                                                            items[idx] = current;
+                                                            const next = { ...prev, items };
+                                                            next.totalAmount = recalculateQuotationTotal(next);
+                                                            return next;
+                                                        });
+                                                    }}
+                                                    placeholder="Pesquisar catálogo ou digitar descrição..."
+                                                    style={{
+                                                        border: 'none',
+                                                        borderBottom: '1px solid transparent',
+                                                        borderRadius: 0,
+                                                        padding: '4px 0',
+                                                        fontSize: '0.875rem',
+                                                        backgroundColor: 'transparent',
+                                                        fontWeight: 500
+                                                    }}
                                                 />
+                                                {item.itemCatalogCode && (
+                                                    <div className="text-[9px] text-indigo-600 font-bold mt-0.5 flex items-center gap-1">
+                                                        📦 {item.itemCatalogCode}
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3">
                                                 <input 

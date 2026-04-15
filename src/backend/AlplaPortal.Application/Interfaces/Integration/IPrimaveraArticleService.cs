@@ -26,4 +26,20 @@ public interface IPrimaveraArticleService
     /// </summary>
     Task<List<PrimaveraArticleDto>> SearchArticlesAsync(
         PrimaveraCompany company, string query, int limit = 50);
+
+    /// <summary>
+    /// Lists articles from Primavera with optional search filtering and pagination.
+    /// Used by the synchronization preview to fetch large datasets.
+    /// When search is null/empty, returns all non-cancelled articles.
+    /// </summary>
+    Task<(List<PrimaveraArticleDto> Items, int TotalCount)> ListArticlesAsync(
+        PrimaveraCompany company, string? search = null, int page = 1, int pageSize = 50);
+
+    /// <summary>
+    /// Lists ALL articles from Primavera with optional search filtering (no pagination).
+    /// Used when post-match filtering (e.g., by status) requires full dataset access
+    /// to produce correctly paginated results.
+    /// </summary>
+    Task<List<PrimaveraArticleDto>> ListAllArticlesAsync(
+        PrimaveraCompany company, string? search = null);
 }

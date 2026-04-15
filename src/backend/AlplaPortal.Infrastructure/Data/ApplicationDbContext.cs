@@ -350,8 +350,8 @@ public class ApplicationDbContext : DbContext
         );
 
         modelBuilder.Entity<Supplier>().HasData(
-            new Supplier { Id = 1, Name = "Alpla Global Services", PortalCode = "SUP-000001", IsActive = true },
-            new Supplier { Id = 2, Name = "Standard Supplier 01", PortalCode = "SUP-000002", IsActive = true }
+            new Supplier { Id = 1, Name = "Alpla Global Services", PortalCode = "SUP-000001", IsActive = true, Origin = "MANUAL" },
+            new Supplier { Id = 2, Name = "Standard Supplier 01", PortalCode = "SUP-000002", IsActive = true, Origin = "MANUAL" }
         );
 
         // Real operational Cost Centers — linked to Plants per allocation rules (DEC-078)

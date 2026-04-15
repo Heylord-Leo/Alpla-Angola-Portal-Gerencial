@@ -31,7 +31,13 @@ The system operates using the following foundational roles:
 2. **Aprovador de Área (Area Approver):** The manager or designated authority responsible for reviewing and approving requests from their assigned department(s)/area(s).
 3. **Comprador (Purchaser):** Procurement staff responsible for advancing approved purchase requests to quotation or PO stages based on operational rules.
 4. **Financeiro (Finance):** Staff handling the payment side of operations, monitoring payment requests, and updating financial tracking/statuses.
-5. **Administrador do Sistema (Admin):** IT or module administrator who maintains lookup values, user-role associations, and provides overarching operational support.
+5. **Administrador do Sistema (System Administrator):** IT or module administrator who maintains lookup values, user-role associations, and provides overarching operational support.
+
+> **⚠️ Authorization Key Clarification:**
+> The administrative role key used in the system (database, JWT claims, backend `[Authorize]` attributes, and frontend route guards) is **`System Administrator`** — NOT `Admin`.
+> The shorthand **"Admin"** may appear informally in documentation and UI labels, but it is **not** a valid authorization role string. Code must always reference the centralized constants:
+> - **Backend:** `RoleConstants.SystemAdministrator`
+> - **Frontend:** `ROLES.SYSTEM_ADMINISTRATOR`
 
 ---
 

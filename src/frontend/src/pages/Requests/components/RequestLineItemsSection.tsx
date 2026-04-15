@@ -41,6 +41,7 @@ export interface RequestLineItemsSectionProps {
     // Form context
     companyId: string | number;
     requestTypeCode: string | undefined;
+    supplierId: number | null;
     fieldErrors: Record<string, string[]>;
     clearFieldError: (fieldName: string) => void;
 
@@ -70,7 +71,7 @@ export function RequestLineItemsSection({
     lineItems, itemForm, setItemForm, itemSaving,
     selectedQuotationId, quotations,
     units, plants, costCenters, ivaRates,
-    companyId, requestTypeCode, fieldErrors, clearFieldError,
+    companyId, requestTypeCode, supplierId, fieldErrors, clearFieldError,
     canEditItems,
     handleSaveItem, handleDeleteItem,
     isOpen, onToggle,
@@ -208,6 +209,7 @@ export function RequestLineItemsSection({
                             requestTypeCode={requestTypeCode || undefined}
                             costCenters={costCenters}
                             ivaRates={ivaRates}
+                            supplierId={supplierId}
                         />
                     </motion.div>
                 )}

@@ -1144,7 +1144,7 @@ export function RequestCreate() {
                                                  )}
 
                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-                                                      <label style={{ ...labelStyle, marginBottom: 0, gridColumn: '1 / -1' }}>
+                                                      <div style={{ ...labelStyle, marginBottom: 0, gridColumn: '1 / -1' }}>
                                                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                               <span>Fornecedor</span>
                                                               <button
@@ -1202,7 +1202,7 @@ export function RequestCreate() {
                                                                   </button>
                                                               </motion.div>
                                                           )}
-                                                      </label>
+                                                      </div>
                                                      <label style={{ ...labelStyle, marginBottom: 0 }}>
                                                          Nº Documento
                                                          <input type="text" value={String(paymentDraft.documentNumber || '')} onChange={(e) => handleUpdateOcrDraft('documentNumber', e.target.value)} style={inputStyle} />

@@ -127,6 +127,11 @@ public class QuotationItemConfiguration : IEntityTypeConfiguration<QuotationItem
                .WithMany()
                .HasForeignKey(qi => qi.IvaRateId)
                .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(qi => qi.ItemCatalog)
+               .WithMany()
+               .HasForeignKey(qi => qi.ItemCatalogId)
+               .OnDelete(DeleteBehavior.SetNull);
     }
 }
 

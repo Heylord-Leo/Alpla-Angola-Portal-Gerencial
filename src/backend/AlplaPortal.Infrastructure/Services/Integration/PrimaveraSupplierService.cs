@@ -165,6 +165,93 @@ public class PrimaveraSupplierService : IPrimaveraSupplierService
         }
     }
 
+    public async Task<(List<PrimaveraSupplierDto> Items, int TotalCount)> ListSuppliersAsync(
+        PrimaveraCompany company, string? search = null, int page = 1, int pageSize = 50)
+    {
+        var results = new List<PrimaveraSupplierDto>();
+        var boundedPage = Math.Max(page, 1);
+        var boundedPageSize = Math.Min(Math.Max(pageSize, 1), 200);
+        var offset = (boundedPage - 1) * boundedPageSize;
+
+        try
+        {
+            await using var connection = await _connectionFactory.CreateConnectionAsync(company);
+
+            // Build WHERE clause
+            var whereConditions = new List<string> { "FornecedorAnulado = 0" };
+            if (!string.IsNullOrWhiteSpace(search) && search.Trim().Length >= MinQueryLength)
+            {
+                whereConditions.Add("(Fornecedor LIKE @pattern OR Nome LIKE @pattern OR NomeFiscal LIKE @pattern OR NumContrib LIKE @pattern)");
+            }
+            var whereClause = string.Join(" AND ", whereConditions);
+
+            // Count total matching records
+            var countSql = $"SELECT COUNT(*) FROM Fornecedores WHERE {whereClause}";
+            await using var countCmd = new SqlCommand(countSql, connection);
+            if (!string.IsNullOrWhiteSpace(search) && search.Trim().Length >= MinQueryLength)
+                countCmd.Parameters.AddWithValue("@pattern", $"%{search.Trim()}%");
+            var totalCount = Convert.ToInt32(await countCmd.ExecuteScalarAsync());
+
+            // Fetch page
+            var sql = $@"
+                SELECT
+                    {SelectColumns}
+                FROM Fornecedores
+                WHERE {whereClause}
+                ORDER BY Fornecedor
+                OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY";
+
+            await using var cmd = new SqlCommand(sql, connection);
+            if (!string.IsNullOrWhiteSpace(search) && search.Trim().Length >= MinQueryLength)
+                cmd.Parameters.AddWithValue("@pattern", $"%{search.Trim()}%");
+            cmd.Parameters.AddWithValue("@offset", offset);
+            cmd.Parameters.AddWithValue("@pageSize", boundedPageSize);
+
+            await using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                results.Add(MapSupplier(reader, company));
+            }
+
+            _logger.LogInformation(
+                "Primavera supplier list completed. Company: {Company}, Search: {Search}, Page: {Page}, PageSize: {PageSize}, Total: {Total}, Returned: {Count}",
+                company, search ?? "(all)", boundedPage, boundedPageSize, totalCount, results.Count);
+
+            return (results, totalCount);
+        }
+        catch (SqlException ex)
+        {
+            _logger.LogError(ex,
+                "SQL error during Primavera supplier list. Company: {Company}, Search: {Search}",
+                company, search);
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<List<PrimaveraSupplierDto>> ListAllSuppliersAsync(
+        PrimaveraCompany company, string? search = null)
+    {
+        const int batchSize = 200;
+        var allItems = new List<PrimaveraSupplierDto>();
+        int page = 1;
+        int totalCount;
+
+        do
+        {
+            var (items, total) = await ListSuppliersAsync(company, search, page, batchSize);
+            totalCount = total;
+            allItems.AddRange(items);
+            page++;
+        } while (allItems.Count < totalCount);
+
+        _logger.LogInformation(
+            "Primavera supplier full fetch completed. Company: {Company}, Search: {Search}, Total: {Total}",
+            company, search ?? "(all)", allItems.Count);
+
+        return allItems;
+    }
+
     // ─── Mapping helper ───
 
     private static PrimaveraSupplierDto MapSupplier(SqlDataReader reader, PrimaveraCompany company)

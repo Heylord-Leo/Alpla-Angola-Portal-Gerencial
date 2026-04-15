@@ -26,6 +26,8 @@ export interface QuotationDraftItem {
     taxRate?: number; // Raw extracted tax percentage for suggestion hint
     totalPrice: number; // Front-end calculated preview
     ivaUncertain?: boolean; // True when OCR could not confidently identify item-level IVA
+    itemCatalogId?: number | null; // Linked catalog item (from autocomplete selection)
+    itemCatalogCode?: string | null; // Catalog item code for display/traceability
 }
 
 export interface QuotationDraft {

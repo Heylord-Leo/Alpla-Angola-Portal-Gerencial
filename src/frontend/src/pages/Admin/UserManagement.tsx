@@ -21,7 +21,7 @@ import { useAuth } from '../../features/auth/AuthContext';
 import { Link } from 'react-router-dom';
 import { DropdownPortal } from '../../components/ui/DropdownPortal';
 import { Tooltip } from '../../components/ui/Tooltip';
-import { ROLE_DESCRIPTIONS } from '../../constants/roles';
+import { ROLES, ROLE_DESCRIPTIONS } from '../../constants/roles';
 import { Z_INDEX } from '../../constants/ui';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -68,8 +68,8 @@ export default function UserManagement() {
     // Result Password Modal
     const [resultPassword, setResultPassword] = useState<string | null>(null);
 
-    const isSystemAdmin = currentUser?.roles.includes('System Administrator');
-    const isLocalManager = currentUser?.roles.includes('Local Manager');
+    const isSystemAdmin = currentUser?.roles.includes(ROLES.SYSTEM_ADMINISTRATOR);
+    const isLocalManager = currentUser?.roles.includes(ROLES.LOCAL_MANAGER);
 
     useEffect(() => {
         loadData();
@@ -114,7 +114,7 @@ export default function UserManagement() {
                 ? roles
                 : isLocalManager
                 ? roles.filter((r: any) => managerAssignableRoles.includes(r.roleName))
-                : roles.filter((r: any) => ![ 'System Administrator', 'Local Manager' ].includes(r.roleName));
+                : roles.filter((r: any) => ![ ROLES.SYSTEM_ADMINISTRATOR, ROLES.LOCAL_MANAGER ].includes(r.roleName));
 
             // Filter plants and departments for Local Manager scope (Case-insensitive Code match)
             const filteredPlants = isSystemAdmin

@@ -165,7 +165,7 @@ export function RequestGeneralDataSection({
                             {renderFieldError('RequestTypeId')}
                         </label>
 
-                        <label className={labelClassName}>
+                        <div className={labelClassName}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <span>
                                     Fornecedor {Number(formData.requestTypeId) === 1 && <span style={{ color: 'red' }}>*</span>}
@@ -229,7 +229,7 @@ export function RequestGeneralDataSection({
                                 </span>
                             )}
                             {renderFieldError('SupplierId')}
-                        </label>
+                        </div>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '24px' }}>

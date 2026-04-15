@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, ClipboardList, Search, Truck } from 'lucide-react';
 import { useAuth } from '../../../features/auth/AuthContext';
+import { ROLES } from '../../../constants/roles';
 
 export function QuickActions() {
     const navigate = useNavigate();
@@ -34,10 +35,10 @@ export function QuickActions() {
         }
     ].filter(action => {
         if (action.label === 'Gestão de Cotações') {
-            return user?.roles?.includes('Buyer') || user?.roles?.includes('System Administrator');
+            return user?.roles?.includes(ROLES.BUYER) || user?.roles?.includes(ROLES.SYSTEM_ADMINISTRATOR);
         }
         if (action.label === 'Recebimento') {
-            return user?.roles?.includes('Receiving') || user?.roles?.includes('System Administrator');
+            return user?.roles?.includes(ROLES.RECEIVING) || user?.roles?.includes(ROLES.SYSTEM_ADMINISTRATOR);
         }
         return true;
     });

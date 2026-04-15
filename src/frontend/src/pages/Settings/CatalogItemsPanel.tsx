@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { ItemCatalogDto, Unit } from '../../types';
 import { FeedbackType } from '../../components/ui/Feedback';
 import { KebabMenu } from '../../components/ui/KebabMenu';
-import { Edit2, Power, PowerOff, Upload, Search } from 'lucide-react';
+import { Edit2, Power, PowerOff, Search, Database } from 'lucide-react';
 
 interface CatalogItemsPanelProps {
     feedback: { message: string; type: FeedbackType } | null;
@@ -15,6 +16,7 @@ interface CatalogItemsPanelProps {
  * Follows the same card-based layout as other MasterData tabs.
  */
 export function CatalogItemsPanel({ setFeedback }: CatalogItemsPanelProps) {
+    const navigate = useNavigate();
     const [items, setItems] = useState<ItemCatalogDto[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
     const [loading, setLoading] = useState(true);
@@ -22,9 +24,6 @@ export function CatalogItemsPanel({ setFeedback }: CatalogItemsPanelProps) {
     const [searchQuery, setSearchQuery] = useState('');
     const [showInactive] = useState(true);
     const [categoryFilter, setCategoryFilter] = useState('');
-    const [importMode, setImportMode] = useState(false);
-    const [importText, setImportText] = useState('');
-    const [importLoading, setImportLoading] = useState(false);
 
     const [formData, setFormData] = useState({
         description: '',
@@ -121,36 +120,6 @@ export function CatalogItemsPanel({ setFeedback }: CatalogItemsPanelProps) {
             loadItems(searchQuery);
         } catch (err: any) {
             setFeedback({ message: err.message || 'Falha ao alternar estado.', type: 'error' });
-        }
-    };
-
-    const handleImport = async () => {
-        setImportLoading(true);
-        setFeedback(null);
-        try {
-            const parsed = JSON.parse(importText);
-            if (!Array.isArray(parsed)) {
-                setFeedback({ message: 'O conteúdo deve ser um array JSON.', type: 'error' });
-                return;
-            }
-            const result = await api.catalogItems.import(parsed);
-            setFeedback({
-                message: `Importação concluída: ${result.imported} importados, ${result.skipped} ignorados.${result.errors.length > 0 ? ' Erros: ' + result.errors.join('; ') : ''}`,
-                type: result.imported > 0 ? 'success' : 'error'
-            });
-            if (result.imported > 0) {
-                setImportText('');
-                setImportMode(false);
-                loadItems(searchQuery);
-            }
-        } catch (err: any) {
-            if (err instanceof SyntaxError) {
-                setFeedback({ message: 'JSON inválido. Verifique o formato.', type: 'error' });
-            } else {
-                setFeedback({ message: err.message || 'Falha na importação.', type: 'error' });
-            }
-        } finally {
-            setImportLoading(false);
         }
     };
 
@@ -318,67 +287,34 @@ export function CatalogItemsPanel({ setFeedback }: CatalogItemsPanelProps) {
                     </div>
                 </form>
 
-                {/* Import Section */}
+                {/* Primavera Sync Navigation */}
                 <div style={{ marginTop: '24px', borderTop: '2px solid var(--color-border)', paddingTop: '16px' }}>
                     <button
                         type="button"
-                        onClick={() => setImportMode(!importMode)}
+                        onClick={() => navigate('/settings/sync/catalog')}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '6px',
-                            padding: '10px 16px',
-                            backgroundColor: 'transparent',
-                            border: '2px solid var(--color-border)',
-                            fontWeight: 700,
-                            fontSize: '0.75rem',
-                            textTransform: 'uppercase',
+                            gap: '8px',
+                            padding: '12px 16px',
+                            backgroundColor: 'rgba(var(--color-primary-rgb), 0.06)',
+                            border: '1px solid rgba(var(--color-primary-rgb), 0.15)',
+                            borderRadius: 'var(--radius-md)',
+                            fontWeight: 600,
+                            fontSize: '0.8rem',
                             cursor: 'pointer',
-                            color: 'var(--color-text-muted)',
+                            color: 'var(--color-primary)',
                             width: '100%',
-                            justifyContent: 'center'
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease'
                         }}
                     >
-                        <Upload size={14} />
-                        {importMode ? 'Fechar Importação' : 'Importação em Lote'}
+                        <Database size={16} />
+                        Sincronizar com Primavera
                     </button>
-
-                    {importMode && (
-                        <div style={{ marginTop: '12px' }}>
-                            <label style={labelStyle}>JSON Array de Itens</label>
-                            <textarea
-                                value={importText}
-                                onChange={e => setImportText(e.target.value)}
-                                style={{
-                                    ...inputStyle,
-                                    minHeight: '120px',
-                                    fontFamily: 'monospace',
-                                    fontSize: '0.75rem'
-                                }}
-                                placeholder={'[\n  { "code": "MAT-001", "description": "Papel A4", "unit": "CX", "category": "Escritório" }\n]'}
-                            />
-                            <button
-                                type="button"
-                                onClick={handleImport}
-                                disabled={importLoading || !importText.trim()}
-                                style={{
-                                    marginTop: '8px',
-                                    padding: '10px 16px',
-                                    backgroundColor: '#16a34a',
-                                    color: '#fff',
-                                    border: 'none',
-                                    fontWeight: 700,
-                                    fontSize: '0.75rem',
-                                    textTransform: 'uppercase',
-                                    cursor: importLoading ? 'wait' : 'pointer',
-                                    width: '100%',
-                                    opacity: importLoading ? 0.6 : 1
-                                }}
-                            >
-                                {importLoading ? 'Importando...' : 'Executar Importação'}
-                            </button>
-                        </div>
-                    )}
+                    <p style={{ marginTop: '8px', fontSize: '0.7rem', color: 'var(--color-text-muted)', lineHeight: 1.4 }}>
+                        Compare e importe itens do catálogo Primavera de forma controlada.
+                    </p>
                 </div>
             </div>
 

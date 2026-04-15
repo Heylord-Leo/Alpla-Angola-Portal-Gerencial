@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ROLES } from '../../constants/roles';
 
 interface User {
   id: string;
@@ -60,8 +61,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     navigate('/login');
   };
 
-  const isAdmin = user?.roles.includes('System Administrator') || false;
-  const isLocalManager = user?.roles.includes('Local Manager') || false;
+  const isAdmin = user?.roles.includes(ROLES.SYSTEM_ADMINISTRATOR) || false;
+  const isLocalManager = user?.roles.includes(ROLES.LOCAL_MANAGER) || false;
 
   if (isLoading) {
     return null; // Or a loading spinner

@@ -36,9 +36,22 @@ public class ItemCatalog
 
     /// <summary>
     /// Record origin for operational traceability.
-    /// Values: "MANUAL", "IMPORTED_SHAREPOINT"
+    /// Values: "MANUAL", "IMPORTED_SHAREPOINT", "SYNCED_PRIMAVERA"
     /// </summary>
     public string Origin { get; set; } = "MANUAL";
+
+    /// <summary>
+    /// Source Primavera company/database this record was synchronized from.
+    /// Null for manually created or SharePoint-imported records.
+    /// Values: "ALPLAPLASTICO", "ALPLASOPRO"
+    /// </summary>
+    public string? SourceCompany { get; set; }
+
+    /// <summary>
+    /// Timestamp of the last synchronization that touched this record.
+    /// Null for manually created records.
+    /// </summary>
+    public DateTime? LastSyncedAtUtc { get; set; }
 
     /// <summary>Soft lifecycle flag — inactive items are hidden from selection but preserved for history.</summary>
     public bool IsActive { get; set; } = true;
@@ -46,3 +59,4 @@ public class ItemCatalog
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAtUtc { get; set; }
 }
+

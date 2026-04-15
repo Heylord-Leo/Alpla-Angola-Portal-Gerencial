@@ -2,6 +2,74 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.74.0] - 2026-04-15 - Feature: Catalog Linkage in Manual Quotation Entry
+### Added
+- **Catalog Linkage in Manual Quotation Entry**: Integrated `CatalogItemAutocomplete` into the manual quotation entry mode within `BuyerItemsList.tsx`. This allows buyers to link manual entries directly to official Portal catalog items, ensuring data consistency for inventory and receiving.
+- **Backend Catalog Traceability**: Updated `SavedQuotationItemDto` and `RequestsController` projections to persist and retrieve `ItemCatalogId` and `ItemCatalogCode` for quotation line items.
+
+## [v2.73.0] - 2026-04-15 - Fix: Status Filter Pagination Architecture
+### Fixed
+- **Root cause**: Status is computed *after* matching Primavera items against the Portal catalog — it does not exist in the Primavera source system. The previous implementation paginated at the Primavera SQL level (`OFFSET/FETCH NEXT`), then applied the status filter post-match on each page. This caused pages to contain random numbers of matching items (e.g., page 2 = 0 items, page 4 = 13 items when filtering by "New").
+- **Architecture change**: When `statusFilter` is active, the backend now fetches ALL Primavera records via `ListAllArticlesAsync` / `ListAllSuppliersAsync` (batched in pages of 200), performs matching on the full dataset, filters by status, then paginates the **filtered result** in-memory. This guarantees every page contains exactly `pageSize` items (except the last page).
+- **Pagination accuracy**: `TotalPrimaveraRecords` now reflects the **filtered count** when a status filter is active, ensuring the frontend pagination ("Page X of Y") is correct for the filtered dataset.
+- **Summary counts**: `NewCount`, `ExistsCount`, `ConflictCount` are now computed from the full matched dataset (not just the current Primavera page), providing accurate global counts regardless of which page is displayed.
+- **Performance path preserved**: Without `statusFilter`, the original efficient per-page Primavera SQL pagination is still used — no behavioral change for unfiltered browsing.
+### Added
+- `ListAllArticlesAsync` on `IPrimaveraArticleService` / `PrimaveraArticleService` — sequential batch fetch (200 items/batch) for full dataset access.
+- `ListAllSuppliersAsync` on `IPrimaveraSupplierService` / `PrimaveraSupplierService` — same pattern for suppliers.
+### Changed (Frontend — v2.72.1)
+- Status header filter drives `statusFilter` state (server query param) instead of client-side `columnFilters`.
+- Header ↔ top dropdown are bidirectionally synced.
+- "Limpar tudo" resets both client-side column filters and server-side status filter.
+
+## [v2.72.0] - 2026-04-15 - Sync Workspace: Excel-Like Column Headers
+### Added
+- **Column Sorting**: Click any sortable column header to toggle ascending → descending → clear. Visual arrow indicators (▲/▼) show active sort direction.
+- **Column Filtering**: Filter icon on each header opens a compact popover:
+  - **Text columns** (Código, Descrição, Família, Unidade, Nome, NIF): case-insensitive, accent-insensitive "contains" search.
+  - **Status column**: multi-select checkbox filter with localized labels (Novo, Existente, Conflito).
+- **Reusable `SortableFilterHeader` component** (`components/shared/SortableFilterHeader.tsx`): shared by both Catalog and Supplier sync tables.
+- **Page-scope banner**: Visible info banner when column filters/sort are active, explicitly stating: "Ordenação e filtros de coluna aplicados apenas aos itens visíveis nesta página." Shows active filter count, sort direction, and items visible vs total.
+- **Global reset**: "Limpar tudo" button clears all column filters and sorting in one action.
+- **Filter persistence**: Column filters and sort state persist across page changes and are reapplied to each newly loaded page.
+- **Empty state**: Friendly message when column filters exclude all items on the current page.
+### Technical Notes
+- Client-side only: sorting and column filtering operate on the current page (up to 50 items) returned from the server. This is consistent with the existing post-match status filter behavior and does not mislead the user about cross-page effects.
+- Stacking: top-level server controls (company, search, status) narrow the Primavera result; column header filters further refine the visible page; sort applies last.
+- Columns supported — Catalog: Status, Código Primavera, Descrição (Primavera), Família, Unidade, Código Portal, Descrição (Portal). Supplier: Status, Código Primavera, Nome (Primavera), NIF (Primavera), Nome (Portal), NIF (Portal).
+
+## [v2.71.0] - 2026-04-15 - Catalog Sync: Description-Based Matching (V2.1)
+### Changed
+- **Catalog Sync Matching Strategy (V2.1)**: Replaced PrimaveraCode-based matching with description-based comparison for the Item Catalog sync preview, with duplicate detection on both sides.
+  - `Exists` → exact normalized description match between Primavera and Portal
+  - `Conflict` → similar description (one contains the other, min 5 chars) — requires manual review
+  - `Conflict` → duplicate description detected in Primavera result set (source ambiguity)
+  - `Conflict` → duplicate description detected in Portal catalog (target ambiguity)
+  - `New` → no relevant description match **and** no ambiguity on either side
+- **Normalization Rules**: Descriptions are normalized before comparison: trim, uppercase, strip accents/diacritics, remove simple punctuation (`.` `,` `;` `:` `/` `-`), collapse repeated spaces.
+- **Import Dedup Check**: Now uses normalized description matching instead of PrimaveraCode to prevent importing items that already exist in the Portal under a different code.
+- **CatalogTable UI**: Added "Detalhe" column to display `conflictDetail` for Conflict-status catalog items.
+
+### Fixed
+- **Catalog Import 500 Error**: Added missing EF Core migration `AddItemCatalogSyncTraceabilityFields` for `SourceCompany` and `LastSyncedAtUtc` columns on `ItemCatalogItems` (and `Suppliers`). The entity model had these fields but the database schema did not, causing `SqlException: Invalid column name` on every import attempt.
+
+## [v2.70.0] - 2026-04-15 - Authorization Hardening: Centralized Role Constants
+### Fixed
+- **SyncController 403 Regression**: Corrected `[Authorize(Roles = "Admin")]` to `[Authorize(Roles = RoleConstants.SystemAdministrator)]`. The `Admin` role does not exist in the system; the correct administrative role key is `System Administrator`.
+
+### Changed
+- **Backend Role Constant Enforcement**: Replaced all 7 hardcoded `"System Administrator"` string literals in `NotificationService.cs` with `RoleConstants.SystemAdministrator`.
+- **Frontend Role Constant Enforcement**: Replaced all hardcoded role string literals with `ROLES.*` constants across:
+  - `AuthContext.tsx` (central `isAdmin` and `isLocalManager` checks)
+  - `ReceivingWorkspace.tsx` (scope filtering)
+  - `QuickActions.tsx` (Purchasing — role-based action visibility)
+  - `QuickActions.tsx` (Dashboard — role-based action visibility)
+  - `UserManagement.tsx` (admin/manager role checks and role filtering)
+
+### Documentation
+- **ACCESS_MODEL.md**: Updated role label from "Admin" to "System Administrator" with explicit authorization key clarification warning.
+- **DECISIONS.md**: Added DEC-105 — mandatory use of centralized role constants for all authorization checks.
+
 ## [v2.69.0] - 2026-04-14 - Phase 5A Primavera Request Validation Against Master Data (Read-Only)
 ### Added
 - **PrimaveraRequestValidationDtos**: Input (`PrimaveraRequestValidationInputDto`) and result (`PrimaveraRequestValidationResultDto`) DTOs for structured validation:

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Package } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../features/auth/AuthContext';
+import { ROLES } from '../../constants/roles';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { formatCurrencyAO } from '../../lib/utils';
 import { RequestListItemDto } from '../../types';
@@ -67,7 +68,7 @@ export function ReceivingWorkspace() {
             let plantIdsString = '';
             let departmentIdsString = '';
             
-            const isSystemAdmin = currentUser?.roles.includes('System Administrator');
+            const isSystemAdmin = currentUser?.roles.includes(ROLES.SYSTEM_ADMINISTRATOR);
             
             if (!isSystemAdmin) {
                 const [allPlants, allDepts] = await Promise.all([

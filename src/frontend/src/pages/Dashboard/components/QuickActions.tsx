@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { PlusCircle, LayoutList, Package } from 'lucide-react';
 import { useAuth } from '../../../features/auth/AuthContext';
+import { ROLES } from '../../../constants/roles';
 
 interface QuickActionItemProps {
     label: string;
@@ -96,7 +97,7 @@ export function QuickActions() {
         }
     ].filter(action => {
         if (action.label === 'Gestão de Cotações') {
-            return user?.roles?.includes('Buyer') || user?.roles?.includes('System Administrator');
+            return user?.roles?.includes(ROLES.BUYER) || user?.roles?.includes(ROLES.SYSTEM_ADMINISTRATOR);
         }
         return true;
     });

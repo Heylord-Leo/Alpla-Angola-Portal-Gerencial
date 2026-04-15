@@ -1,7 +1,9 @@
 import React from 'react';
-import { LookupDto, RequestLineItemDto } from '../types';
+import { LookupDto, RequestLineItemDto, PrimaveraRequestValidationResultDto } from '../types';
 import { CurrencyInput } from './CurrencyInput';
 import { CatalogItemAutocomplete } from './CatalogItemAutocomplete';
+import { api } from '../lib/api';
+import { AlertCircle, CheckCircle, Info, XCircle } from 'lucide-react';
 
 export interface RequestLineItemFormProps {
     itemForm: Partial<RequestLineItemDto>;
@@ -16,6 +18,7 @@ export interface RequestLineItemFormProps {
     requestTypeCode?: string;
     costCenters: LookupDto[];
     ivaRates: LookupDto[];
+    supplierId?: number | null;
 }
 
 export function RequestLineItemForm({
@@ -30,8 +33,48 @@ export function RequestLineItemForm({
     plants,
     requestTypeCode,
     costCenters,
-    ivaRates
+    ivaRates,
+    supplierId
 }: RequestLineItemFormProps) {
+    const [validationResult, setValidationResult] = React.useState<PrimaveraRequestValidationResultDto | null>(null);
+    const [isValidating, setIsValidating] = React.useState<boolean>(false);
+
+    React.useEffect(() => {
+        // Clear state if no catalog code or company selected
+        if (!itemForm.itemCatalogCode || !companyId) {
+            setValidationResult(null);
+            setIsValidating(false);
+            return;
+        }
+
+        const runValidation = async () => {
+            setIsValidating(true);
+            setValidationResult(null);
+            try {
+                const res = await api.requests.validateLine({
+                    companyId: companyId as number,
+                    itemCatalogCode: itemForm.itemCatalogCode as string,
+                    supplierId: supplierId || null
+                });
+                setValidationResult(res);
+            } catch (error) {
+                console.error("Validation error:", error);
+                setValidationResult({
+                    status: "ERROR",
+                    messages: ["Ocorreu um erro ao validar os dados no Primavera."],
+                    isArticleFound: false,
+                    isSupplierFound: false,
+                    isRelationshipValid: false
+                });
+            } finally {
+                setIsValidating(false);
+            }
+        };
+
+        const timeoutId = setTimeout(runValidation, 500);
+        return () => clearTimeout(timeoutId);
+    }, [itemForm.itemCatalogCode, companyId, supplierId]);
+
     const hasError = (fieldName: string) => {
         const normalizedField = fieldName.toLowerCase();
         return Object.keys(fieldErrors).some(k => {
@@ -261,9 +304,69 @@ export function RequestLineItemForm({
                     <input type="text" value={itemForm.notes || ''} onChange={e => setItemForm({ ...itemForm, notes: e.target.value })} style={inputStyle} placeholder="Opcional..." />
                 </label>
 
+                {/* Validation Banner UI */}
+                {(isValidating || validationResult) && (
+                    <div style={{ gridColumn: '1 / -1', marginTop: '16px', marginBottom: '8px' }}>
+                        {isValidating ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', backgroundColor: 'var(--color-bg-page)', border: '1px solid var(--color-border-heavy)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text-main)', fontSize: '0.875rem' }}>
+                                <div className="spinner" style={{ width: '16px', height: '16px', border: '2px solid var(--color-border-heavy)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                                Validando artigo no Primavera...
+                            </div>
+                        ) : validationResult && (
+                            <div style={{ 
+                                display: 'flex', 
+                                alignItems: 'flex-start', 
+                                gap: '12px', 
+                                padding: '12px 16px', 
+                                borderRadius: 'var(--radius-sm)', 
+                                border: `1px solid ${
+                                    validationResult.status === 'VALID' ? '#10B981' : 
+                                    validationResult.status === 'WARNING' ? '#F59E0B' : 
+                                    validationResult.status === 'INVALID' ? '#EF4444' : '#6B7280'
+                                }`,
+                                backgroundColor: 
+                                    validationResult.status === 'VALID' ? 'rgba(16, 185, 129, 0.1)' : 
+                                    validationResult.status === 'WARNING' ? 'rgba(245, 158, 11, 0.1)' : 
+                                    validationResult.status === 'INVALID' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(107, 114, 128, 0.1)'
+                            }}>
+                                <div style={{ marginTop: '2px' }}>
+                                    {validationResult.status === 'VALID' ? <CheckCircle size={20} color="#10B981" /> :
+                                     validationResult.status === 'WARNING' ? <AlertCircle size={20} color="#F59E0B" /> :
+                                     validationResult.status === 'INVALID' ? <XCircle size={20} color="#EF4444" /> :
+                                     <Info size={20} color="#6B7280" />}
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    <strong style={{ 
+                                        fontSize: '0.875rem',
+                                        color: 
+                                            validationResult.status === 'VALID' ? '#047857' : 
+                                            validationResult.status === 'WARNING' ? '#B45309' : 
+                                            validationResult.status === 'INVALID' ? '#B91C1C' : '#374151'
+                                    }}>
+                                        {validationResult.status === 'VALID' ? 'Validação Concluída' :
+                                         validationResult.status === 'WARNING' ? 'Aviso de Validação' :
+                                         validationResult.status === 'INVALID' ? 'Erro de Validação (Bloqueante)' :
+                                         'Erro de Sistema'}
+                                    </strong>
+                                    {validationResult.messages.map((msg, idx) => (
+                                        <span key={idx} style={{ fontSize: '0.875rem', color: 'var(--color-text-main)' }}>{msg}</span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
                     <button type="button" onClick={() => setItemForm(null)} className="btn-secondary" style={{ padding: '10px 20px' }}>Cancelar</button>
-                    <button type="button" onClick={onSaveItem} disabled={itemSaving} className="btn-primary" style={{ padding: '10px 20px', opacity: itemSaving ? 0.7 : 1 }}>{itemSaving ? 'Salvando...' : 'Salvar Item'}</button>
+                    <button 
+                        type="button" 
+                        onClick={onSaveItem} 
+                        disabled={itemSaving || isValidating || validationResult?.status === 'INVALID' || validationResult?.status === 'ERROR'} 
+                        className="btn-primary" 
+                        style={{ padding: '10px 20px', opacity: (itemSaving || isValidating || validationResult?.status === 'INVALID' || validationResult?.status === 'ERROR') ? 0.7 : 1 }}>
+                        {itemSaving ? 'Salvando...' : 'Salvar Item'}
+                    </button>
                 </div>
             </div>
         </div>

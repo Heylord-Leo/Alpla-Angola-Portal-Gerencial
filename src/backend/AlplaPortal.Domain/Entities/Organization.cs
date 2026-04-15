@@ -40,6 +40,24 @@ public class Supplier
     public string? PrimaveraCode { get; set; } // ERP/Future integration code
     public string? TaxId { get; set; } // NIF/VAT
     public bool IsActive { get; set; } = true;
+
+    /// <summary>
+    /// Record origin for operational traceability.
+    /// Values: "MANUAL", "SYNCED_PRIMAVERA"
+    /// </summary>
+    public string Origin { get; set; } = "MANUAL";
+
+    /// <summary>
+    /// Source Primavera company/database this record was synchronized from.
+    /// Null for manually created records.
+    /// </summary>
+    public string? SourceCompany { get; set; }
+
+    /// <summary>
+    /// Timestamp of the last synchronization that touched this record.
+    /// Null for manually created records.
+    /// </summary>
+    public DateTime? LastSyncedAtUtc { get; set; }
 }
 
 public class CostCenter

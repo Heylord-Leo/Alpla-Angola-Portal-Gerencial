@@ -107,6 +107,10 @@ export interface SavedQuotationItemDto {
     unitName: string | null;
     unitCode: string | null;
     
+    // Catalog linkage
+    itemCatalogId?: number | null;
+    itemCatalogCode?: string | null;
+    
     // Receiving Fields
     receivedQuantity?: number;
     divergenceNotes?: string;
@@ -582,3 +586,68 @@ export interface FinanceHistoryItemDto {
     newStatusName: string | null;
 }
 
+export type PrimaveraRequestValidationStatus = 'VALID' | 'WARNING' | 'INVALID' | 'ERROR';
+
+export interface PrimaveraRequestValidationResultDto {
+    status: PrimaveraRequestValidationStatus;
+    messages: string[];
+    isSupplierFound: boolean;
+    isArticleFound: boolean;
+    isRelationshipValid: boolean;
+}
+
+// ─── Primavera Synchronization Types ──────────────────────────────────────
+
+export type SyncMatchStatus = 'New' | 'Exists' | 'Conflict';
+
+export interface CatalogSyncPreviewItemDto {
+    primaveraCode: string;
+    primaveraDescription: string | null;
+    primaveraFamily: string | null;
+    primaveraBaseUnit: string | null;
+    primaveraIsCancelled: boolean;
+    portalItemId: number | null;
+    portalCode: string | null;
+    portalDescription: string | null;
+    status: SyncMatchStatus;
+    conflictDetail: string | null;
+}
+
+export interface CatalogSyncPreviewDto {
+    totalPrimaveraRecords: number;
+    newCount: number;
+    existsCount: number;
+    conflictCount: number;
+    items: CatalogSyncPreviewItemDto[];
+}
+
+export interface SupplierSyncPreviewItemDto {
+    primaveraCode: string;
+    primaveraName: string | null;
+    primaveraTaxId: string | null;
+    primaveraIsCancelled: boolean;
+    portalSupplierId: number | null;
+    portalName: string | null;
+    portalPrimaveraCode: string | null;
+    portalTaxId: string | null;
+    status: SyncMatchStatus;
+    conflictDetail: string | null;
+}
+
+export interface SupplierSyncPreviewDto {
+    totalPrimaveraRecords: number;
+    newCount: number;
+    existsCount: number;
+    conflictCount: number;
+    items: SupplierSyncPreviewItemDto[];
+}
+
+export interface SyncImportRequestDto {
+    selectedPrimaveraCodes: string[];
+}
+
+export interface SyncImportResultDto {
+    created: number;
+    skipped: number;
+    errors: string[];
+}

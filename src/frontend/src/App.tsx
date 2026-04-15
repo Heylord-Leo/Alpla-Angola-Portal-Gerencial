@@ -72,6 +72,9 @@ const IntegrationHealth = React.lazy(() =>
 const UserManagement = React.lazy(() =>
     import('./pages/Admin/UserManagement')
 );
+const SyncWorkspace = React.lazy(() =>
+    import('./pages/Settings/SyncWorkspace').then(m => ({ default: m.SyncWorkspace }))
+);
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const { isAuthenticated, user } = useAuth();
@@ -133,6 +136,7 @@ function AppContent() {
 
                 {/* Settings Routes */}
                 <Route path="/settings/master-data" element={<AdminRoute><Suspense fallback={<LoadingSkeleton />}><MasterData /></Suspense></AdminRoute>} />
+                <Route path="/settings/sync/:entityType" element={<AdminRoute><Suspense fallback={<LoadingSkeleton />}><SyncWorkspace /></Suspense></AdminRoute>} />
                 <Route path="/settings/document-extraction" element={<AdminRoute><Suspense fallback={<LoadingSkeleton />}><DocumentExtractionSettings /></Suspense></AdminRoute>} />
                 
                 {/* Administrator Workspace Routes */}

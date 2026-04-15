@@ -2,6 +2,33 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-106 — Catalog Sync Uses Description-Based Matching (V2.1)
+
+- **Date:** 2026-04-15
+- **Status:** Accepted
+- **Context:** The original PrimaveraCode-based catalog sync matching produced false positives because Portal items imported from SharePoint had `PrimaveraCode` values that were not real Primavera article codes. Additionally, the Primavera source itself contains duplicate descriptions (e.g., "BALL-BEARING ROLLER", "WASHER") that make automatic imports unsafe without manual review.
+- **Decision:** Catalog sync matching is based **exclusively on normalized description comparison**, with ambiguity detection on both sides.
+    1. **Exists:** Exact match after normalization (trim, uppercase, strip accents, remove `.`,`,`,`;`,`:`,`/`,`-`, collapse spaces).
+    2. **Conflict (similar):** Similar description (one contains the other, minimum 5 chars). Requires manual review.
+    3. **Conflict (source dup):** Multiple Primavera items share the same normalized description. Source-side ambiguity cannot be safely auto-imported.
+    4. **Conflict (target dup):** Multiple Portal items share the same normalized description. Target-side ambiguity requires manual review.
+    5. **New:** No relevant match **and** no duplicates on either side. Safe for import.
+    6. **Import dedup:** Uses the same normalized description check to prevent duplicates.
+- **Rationale:** Description is the most reliable human-verifiable field. Ambiguity in either source or target makes automatic classification unsafe. Conservative approach: any doubt becomes Conflict, never New or Exists.
+
+## DEC-105 — Authorization Must Use Centralized Role Constants
+
+- **Date:** 2026-04-15
+- **Status:** Accepted
+- **Context:** A sync feature was implemented with `[Authorize(Roles = "Admin")]`, but the system's administrative role has always been `"System Administrator"` (not `"Admin"`). The `"Admin"` role does not exist in the database, seed data, or anywhere in the role model. This caused all sync endpoints to return HTTP 403 for every user. The `ACCESS_MODEL.md` documentation used "Admin" as an informal shorthand, which may have contributed to the confusion.
+- **Decision:** All authorization checks must reference centralized role constants, never hardcoded string literals.
+    1. **Backend:** Use `RoleConstants.SystemAdministrator` (from `AlplaPortal.Domain.Constants`) in `[Authorize]` attributes and inline role checks.
+    2. **Frontend:** Use `ROLES.SYSTEM_ADMINISTRATOR` (from `constants/roles.ts`) in route guards, menu visibility, and permission checks.
+    3. **No aliases:** The string `"Admin"` is NOT a valid authorization role key. It must not appear in any `[Authorize]`, `roles.Contains()`, or `roles.includes()` call.
+    4. **Documentation:** Where `ACCESS_MODEL.md` uses "Admin" as a display label, it must explicitly note that the real authorization key is `System Administrator`.
+
+
+
 ## DEC-104 — Innux Configuration Strategy (Phase 2B)
 
 - **Date:** 2026-04-14
