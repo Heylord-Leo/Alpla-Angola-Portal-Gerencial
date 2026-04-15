@@ -11,6 +11,7 @@ export interface ActionCarouselWidgetProps {
     summary: DashboardSummaryDto;
     onRowClick?: (id: string) => void;
     onCorrectPoClick?: (requestId: string) => void;
+    onHelpClick?: () => void;
 }
 
 // ── Stat card icon background/foreground color pairs ──
@@ -22,7 +23,7 @@ const STAT_THEMES: Record<string, { bg: string; fg: string }> = {
     emerald: { bg: '#ECFDF5', fg: 'var(--color-status-emerald)' },
 };
 
-export function ActionCarouselWidget({ summary, onRowClick, onCorrectPoClick }: ActionCarouselWidgetProps) {
+export function ActionCarouselWidget({ summary, onRowClick, onCorrectPoClick, onHelpClick }: ActionCarouselWidgetProps) {
     const navigate = useNavigate();
     const [actionRequests, setActionRequests] = useState<RequestListItemDto[]>([]);
     const [carouselIndex, setCarouselIndex] = useState(0);
@@ -164,6 +165,21 @@ export function ActionCarouselWidget({ summary, onRowClick, onCorrectPoClick }: 
                                     padding: '2px 8px',
                                     borderRadius: 'var(--radius-full)',
                                 }}>{actionRequests.length}</span>
+                                {onHelpClick && (
+                                    <button 
+                                        onClick={onHelpClick}
+                                        style={{
+                                            background: 'none', border: 'none', cursor: 'pointer',
+                                            color: '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            padding: '4px', borderRadius: '50%', transition: 'all 0.2s'
+                                        }}
+                                        onMouseOver={(e) => { e.currentTarget.style.color = 'var(--color-primary)'; e.currentTarget.style.backgroundColor = '#EFF6FF'; }}
+                                        onMouseOut={(e) => { e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                        title="Ajuda sobre esta seção"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                                    </button>
+                                )}
                             </h2>
                             <p style={{
                                 fontSize: '0.75rem',

@@ -2,7 +2,13 @@
 
 ## Current Version
 
-v2.76.0
+v2.76.1
+
+## [2.76.1] - 2026-04-15
+
+### Added
+- **Global Search Scope**: Expanded the main Requests Dashboard search capabilities. The system now seamlessly searches by Requester Name (`Solicitante`) in addition to Request Number and Title.
+- **Contextual Help Search Glossary**: Updated the contextual help (the "i" icon) in the "Explorador de Pedidos" modal to precisely reflect all actively indexable search parameters.
 
 ## [2.76.0] - 2026-04-15
 

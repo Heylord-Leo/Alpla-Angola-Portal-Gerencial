@@ -317,7 +317,8 @@ public class RequestsController : BaseController
         {
             var searchTerm = search.Trim().ToLower();
             query = query.Where(r => (r.RequestNumber != null && r.RequestNumber.ToLower().Contains(searchTerm)) || 
-                                     r.Title.ToLower().Contains(searchTerm));
+                                     r.Title.ToLower().Contains(searchTerm) ||
+                                     (r.Requester != null && r.Requester.FullName != null && r.Requester.FullName.ToLower().Contains(searchTerm)));
         }
 
         if (!string.IsNullOrWhiteSpace(typeIds))
