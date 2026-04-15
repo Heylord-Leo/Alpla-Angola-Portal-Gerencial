@@ -110,7 +110,7 @@ export function ApprovalModal({
                 return isLastItem 
                     ? 'Este é o último item pendente do pedido. Ao confirmar, todos os itens estarão recebidos e o pedido será finalizado.' 
                     : 'Deseja confirmar a alteração de status deste item? Esta ação requer uma observação obrigatória.';
-            case 'CANCEL_REQUEST': return 'Tem certeza que deseja cancelar este pedido? Informe o motivo abaixo.';
+            case 'CANCEL_REQUEST': return 'Tem certeza que deseja cancelar este pedido? O solicitante será notificado automaticamente. Informe o motivo abaixo.';
             case 'DUPLICATE_REQUEST': return 'Deseja criar uma cópia deste pedido? Um novo rascunho será gerado com os mesmos dados básicos e itens, sem copiar o histórico ou anexos.';
             case 'SAVE_QUOTATION_OCR': return 'A extração de informações via OCR não é 100% precisa. Você verificou todas as informações?';
             case 'SAVE_QUOTATION_MANUAL': return 'Tem certeza de que todas as informações inseridas estão corretas?';

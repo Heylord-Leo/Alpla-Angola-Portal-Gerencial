@@ -137,6 +137,7 @@ public class LineItemsController : BaseController
                 RequestPlantId = x.Request.PlantId,
                 RequestPlantName = x.Request.Plant != null ? x.Request.Plant.Name : null,
                 RequesterName = x.Request.Requester!.FullName,
+                RequesterEmail = x.Request.Requester!.Email,
                 NeedByDateUtc = x.Request.NeedByDateUtc,
                 DepartmentName = x.Request.Department!.Name,
                 CompanyId = x.Request.CompanyId,
@@ -149,6 +150,13 @@ public class LineItemsController : BaseController
                 RequestCreatedAtUtc = x.Request.CreatedAtUtc,
                 RequestBuyerId = x.Request.BuyerId,
                 RequestBuyerName = x.Request.Buyer != null ? x.Request.Buyer.FullName : null,
+                RequestBuyerEmail = x.Request.Buyer != null ? x.Request.Buyer.Email : null,
+                RequestAreaApproverId = x.Request.AreaApproverId,
+                RequestAreaApproverName = x.Request.AreaApprover != null ? x.Request.AreaApprover.FullName : null,
+                RequestAreaApproverEmail = x.Request.AreaApprover != null ? x.Request.AreaApprover.Email : null,
+                RequestFinalApproverId = x.Request.FinalApproverId,
+                RequestFinalApproverName = x.Request.FinalApprover != null ? x.Request.FinalApprover.FullName : null,
+                RequestFinalApproverEmail = x.Request.FinalApprover != null ? x.Request.FinalApprover.Email : null,
                 
                 // Line Item specific flat fields
                 ItemPlantName = x.LineItem != null && x.LineItem.Plant != null ? x.LineItem.Plant.Name : null,
@@ -277,6 +285,7 @@ public class LineItemsController : BaseController
                 RequestPlantId = x.RequestPlantId,
                 RequestPlantName = x.RequestPlantName,
                 RequesterName = x.RequesterName,
+                RequesterEmail = x.RequesterEmail,
                 NeedByDateUtc = x.NeedByDateUtc,
                 
                 ItemDescription = x.LineItem != null ? x.LineItem.Description : string.Empty,
@@ -307,6 +316,13 @@ public class LineItemsController : BaseController
                 
                 BuyerId = x.RequestBuyerId,
                 BuyerName = x.RequestBuyerName,
+                BuyerEmail = x.RequestBuyerEmail,
+                AreaApproverId = x.RequestAreaApproverId,
+                AreaApproverName = x.RequestAreaApproverName,
+                AreaApproverEmail = x.RequestAreaApproverEmail,
+                FinalApproverId = x.RequestFinalApproverId,
+                FinalApproverName = x.RequestFinalApproverName,
+                FinalApproverEmail = x.RequestFinalApproverEmail,
 
                 CostCenterId = x.LineItem != null ? x.LineItem.CostCenterId : null,
                 CostCenterName = x.ItemCostCenterName,
