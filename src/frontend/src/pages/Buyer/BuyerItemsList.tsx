@@ -45,6 +45,53 @@ const ALLOWED_EXTENSIONS_MSG = "PDF, JPG, JPEG, PNG, DOC, DOCX, XLS e XLSX";
 type QuotationDraftItem = OcrDraftItem;
 type QuotationDraft = OcrDraft;
 
+const RequestGroupSkeleton: React.FC = () => {
+    return (
+        <div style={{
+            backgroundColor: 'var(--color-bg-surface)',
+            border: '2px solid var(--color-border)',
+            boxShadow: 'var(--shadow-brutal)',
+            overflow: 'hidden',
+            marginBottom: '32px'
+        }}>
+            <div style={{
+                cursor: 'default',
+                padding: '24px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '24px',
+                animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+            }}>
+                <div style={{ flex: '1' }}>
+                    <div style={{ width: '40%', height: '28px', marginBottom: '8px', backgroundColor: 'var(--color-border)', borderRadius: '4px' }}></div>
+                    <div style={{ width: '50%', height: '20px', backgroundColor: 'var(--color-border)', borderRadius: '4px' }}></div>
+                </div>
+                <div style={{ flex: '2', display: 'flex', gap: '32px' }}>
+                    <div>
+                        <div style={{ width: '80px', height: '12px', marginBottom: '8px', backgroundColor: 'var(--color-border)', borderRadius: '4px' }}></div>
+                        <div style={{ width: '120px', height: '24px', backgroundColor: 'var(--color-border)', borderRadius: '4px' }}></div>
+                    </div>
+                    <div>
+                        <div style={{ width: '80px', height: '12px', marginBottom: '8px', backgroundColor: 'var(--color-border)', borderRadius: '4px' }}></div>
+                        <div style={{ width: '120px', height: '24px', backgroundColor: 'var(--color-border)', borderRadius: '4px' }}></div>
+                    </div>
+                    <div>
+                        <div style={{ width: '80px', height: '12px', marginBottom: '8px', backgroundColor: 'var(--color-border)', borderRadius: '4px' }}></div>
+                        <div style={{ width: '120px', height: '24px', backgroundColor: 'var(--color-border)', borderRadius: '4px' }}></div>
+                    </div>
+                </div>
+                <div style={{ flex: '0 0 auto', width: '24px', height: '24px', backgroundColor: 'var(--color-border)', borderRadius: '4px' }}></div>
+            </div>
+            <style>{`
+                @keyframes pulse {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.5; }
+                }
+            `}</style>
+        </div>
+    );
+};
+
 
 export function BuyerItemsList() {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -52,6 +99,7 @@ export function BuyerItemsList() {
 
     const [items, setItems] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [feedback, setFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'success', message: null });
     const [statuses, setStatuses] = useState<any[]>([]);
     const mode = 'BUYER'; // Standardized as Buyer-only Workspace
@@ -244,6 +292,7 @@ export function BuyerItemsList() {
 
     const loadData = async () => {
         try {
+            setError(null);
             setLoading(true);
             const response = await api.lineItems.list(
                 searchTerm, 
@@ -258,7 +307,7 @@ export function BuyerItemsList() {
             setItems(response.data || []);
             setTotalCount(response.totalCount || 0);
         } catch (err: any) {
-            setFeedback({ type: 'error', message: err.message || 'Erro desconhecido' });
+            setError(err.message || 'Falha ao carregar as cotações. Por favor, tente novamente.');
         } finally {
             setLoading(false);
         }
@@ -514,6 +563,9 @@ export function BuyerItemsList() {
                 // If user manually changes the absolute discount amount, clear the reactive percentage
                 if (field === 'discountAmount') {
                     updatedItems[index] = { ...updatedItems[index], discountAmount: value, discountPercent: undefined };
+                } else if (field === 'ivaRateId') {
+                    // CRITICAL UX: When user manually selects an IVA rate, the "uncertainty" state must be cleared.
+                    updatedItems[index] = { ...updatedItems[index], ivaRateId: value, ivaUncertain: false };
                 } else {
                     updatedItems[index] = { ...updatedItems[index], [field]: value };
                 }
@@ -1298,13 +1350,46 @@ export function BuyerItemsList() {
             {/* Grouped Area */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
                 {loading ? (
-                    <div style={{ padding: '60px', textAlign: 'center', color: 'var(--color-primary)', fontWeight: 700, fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '0.1em', border: '2px solid var(--color-primary)', backgroundColor: 'var(--color-bg-surface)' }}>
-                        Carregando Cotações...
+                    <>
+                        <RequestGroupSkeleton />
+                        <RequestGroupSkeleton />
+                        <RequestGroupSkeleton />
+                        <RequestGroupSkeleton />
+                    </>
+                ) : error ? (
+                    <div style={{ padding: '40px', textAlign: 'center', border: '2px solid var(--color-danger)', backgroundColor: 'var(--color-bg-surface)', boxShadow: 'var(--shadow-brutal)' }}>
+                        <h3 style={{ color: 'var(--color-danger)', marginBottom: '16px', fontWeight: 700, fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Falha ao Carregar</h3>
+                        <p style={{ color: 'var(--color-text-secondary)', marginBottom: '24px' }}>{error}</p>
+                        <button className="btn btn-primary" onClick={() => loadData()}>
+                            TENTAR NOVAMENTE
+                        </button>
                     </div>
                 ) : groupedRequests.length === 0 ? (
-                    <div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--color-text-muted)', border: '4px dashed var(--color-border)', backgroundColor: 'var(--color-bg-surface)' }}>
-                        <FileText size={64} strokeWidth={1.5} style={{ opacity: 0.2, margin: '0 auto 24px', color: 'var(--color-primary)' }} />
-                        <p style={{ fontWeight: 700, fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-primary)' }}>Nenhuma cotação localizada.</p>
+                    <div style={{ padding: '80px 20px', textAlign: 'center', border: '2px dashed var(--color-border)', backgroundColor: 'var(--color-bg-surface)', boxShadow: 'var(--shadow-brutal)' }}>
+                        <FileText size={64} strokeWidth={1.5} style={{ margin: '0 auto 24px', color: 'var(--color-primary)', opacity: 0.8 }} />
+                        <h3 style={{ fontWeight: 700, fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-primary)', marginBottom: '16px' }}>Nenhuma cotação localizada.</h3>
+                        
+                        {(searchInput || requestStatus || itemStatus || owner !== 'todos') ? (
+                            <>
+                                <p style={{ color: 'var(--color-text-secondary)', marginBottom: '24px' }}>Tente limpar seus filtros para ver mais resultados.</p>
+                                <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
+                                    {searchInput && (
+                                        <button className="btn btn-secondary" onClick={() => { setSearchInput(''); updateParams({ search: null, page: 1 }); }}>
+                                            LIMPAR BUSCA
+                                        </button>
+                                    )}
+                                    {(requestStatus || itemStatus || owner !== 'todos') && (
+                                        <button className="btn btn-secondary" onClick={() => updateParams({ requestStatus: null, itemStatus: null, owner: null, page: 1 })}>
+                                            LIMPAR FILTROS
+                                        </button>
+                                    )}
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <p style={{ color: 'var(--color-text-secondary)', marginBottom: '24px' }}>Você não tem cotações pendentes ou atribuídas a você no momento.</p>
+                            </>
+                        )}
                     </div>
                 ) : (
                     groupedRequests.map((group) => {
@@ -2021,8 +2106,96 @@ export function BuyerItemsList() {
                                                                         <div className="animate-spin" style={{ width: '32px', height: '32px', border: '4px solid #f1f5f9', borderTopColor: 'var(--color-primary)', borderRadius: '50%', margin: '0 auto 16px' }}></div>
                                                                         <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>Extraindo dados do documento...</span>
                                                                     </div>
-                                                                ) : quotationDrafts[group.requestId] ? (
-                                                                    <div className="quotation-form-body">
+                                                                 ) : quotationDrafts[group.requestId] ? (
+                                                                     <div className="quotation-form-body">
+                                                                         {/* STEP 1: Global Workflow Actions (Moved to Top) */}
+                                                                         <div style={{ 
+                                                                             display: 'flex', 
+                                                                             justifyContent: 'space-between', 
+                                                                             alignItems: 'center',
+                                                                             padding: '16px 20px',
+                                                                             backgroundColor: 'var(--color-bg-page)',
+                                                                             border: '1px solid var(--color-border)',
+                                                                             borderRadius: '8px',
+                                                                             marginBottom: '20px',
+                                                                             boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+                                                                         }}>
+                                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                                                 <div style={{ 
+                                                                                     backgroundColor: group.requestStatusCode === 'WAITING_QUOTATION' ? '#f59e0b' : '#64748b',
+                                                                                     color: '#fff',
+                                                                                     padding: '4px 10px',
+                                                                                     borderRadius: '4px',
+                                                                                     fontSize: '0.7rem',
+                                                                                     fontWeight: 900,
+                                                                                     textTransform: 'uppercase'
+                                                                                 }}>
+                                                                                     FLUXO GLOBAL
+                                                                                 </div>
+                                                                                 <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-main)' }}>
+                                                                                     {group.requestStatusCode === 'WAITING_QUOTATION' 
+                                                                                         ? 'Deseja finalizar a etapa de cotação para este pedido completo?' 
+                                                                                         : 'Status do Pedido: ' + group.requestStatusName}
+                                                                                 </span>
+                                                                             </div>
+                                                                             <div style={{ display: 'flex', gap: '12px' }}>
+                                                                                 {group.requestStatusCode === 'WAITING_QUOTATION' && mode === 'BUYER' && isAssignedToMe && (
+                                                                                     <>
+                                                                                         <button
+                                                                                             onClick={() => {
+                                                                                                 const anySupplierSet = !!group.requestSupplierId || group.items.every((item: any) => item.supplierId || item.supplierName);
+                                                                                                 const qCount = group.quotations.length;
+                                                                                                 const hasCompQ = group.quotations.some((q: SavedQuotationDto) => 
+                                                                                                     (q.itemCount > 0) && (!!q.proformaAttachmentId) && (!!q.supplierId)
+                                                                                                 );
+                                                                                                 const totalItemsCount = group.items.length + group.quotations.reduce((acc: number, q: SavedQuotationDto) => acc + q.itemCount, 0);
+                                                                                                 handleCompleteQuotation(group.requestId, !!group.proformaId, anySupplierSet, totalItemsCount, qCount, hasCompQ);
+                                                                                             }}
+                                                                                             disabled={isSaving || !!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]}
+                                                                                             style={{ 
+                                                                                                 display: 'flex', 
+                                                                                                 alignItems: 'center', 
+                                                                                                 gap: '8px', 
+                                                                                                 padding: '10px 24px', 
+                                                                                                 fontSize: '0.85rem',
+                                                                                                 backgroundColor: !!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? '#e5e7eb' : '#059669',
+                                                                                                 border: '1px solid #047857',
+                                                                                                 color: !!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? '#9ca3af' : '#ffffff',
+                                                                                                 borderRadius: '6px',
+                                                                                                 fontWeight: 900,
+                                                                                                 cursor: !!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? 'not-allowed' : 'pointer',
+                                                                                                 boxShadow: (!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]) ? 'none' : '0 4px 0px #046c4e'
+                                                                                             }}
+                                                                                             title={!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? "Salve ou cancele a cotação em andamento antes de concluir o pedido" : "Finalizar etapa de cotação"}
+                                                                                         >
+                                                                                             <CheckCircle2 size={18} /> CONCLUIR COTAÇÃO
+                                                                                         </button>
+
+                                                                                         {!group.proformaId && 
+                                                                                          !group.requestSupplierId && 
+                                                                                          !group.items.some((item: any) => item.supplierName || (item.lineItemStatusCode && item.lineItemStatusCode !== 'WAITING_QUOTATION' && item.lineItemStatusCode !== 'PENDING')) && (
+                                                                                             <button
+                                                                                                 onClick={() => setShowApprovalModal({ show: true, type: 'CANCEL_REQUEST', requestId: group.requestId, itemId: null, itemDescription: null, newStatusCode: null, hasProforma: false, hasSupplier: false, itemsCount: 0, isLastItem: false, quotationCount: 0, hasCompleteQuotation: false })}
+                                                                                                 disabled={isSaving}
+                                                                                                 style={{
+                                                                                                     display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 24px', fontSize: '0.85rem',
+                                                                                                     backgroundColor: 'transparent',
+                                                                                                     border: '1px solid #ef4444',
+                                                                                                     color: '#ef4444',
+                                                                                                     borderRadius: '6px',
+                                                                                                     fontWeight: 800,
+                                                                                                     textTransform: 'uppercase',
+                                                                                                     cursor: isSaving ? 'not-allowed' : 'pointer',
+                                                                                                     transition: 'all 0.2s'
+                                                                                                 }}
+                                                                                             >
+                                                                                                 <X size={18} /> CANCELAR PEDIDO
+                                                                                             </button>
+                                                                                         )}
+                                                                                     </>
+                                                                                 )}
+                                                                             </div>
+                                                                         </div>
                                                                         {/* Phase 2: Reconciliation Panel */}
                                                                         {reconciliationBatches[group.requestId] && group.items.length > 0 && (
                                                                             <ReconciliationPanel
@@ -2530,7 +2703,7 @@ export function BuyerItemsList() {
                                                                                  </button>
                                                                             </div>
                                                                         </div>
-                                                                        {!quotationDrafts[group.requestId].supplierId && (
+                                                                        {!quotationDrafts[group.requestId]?.supplierId && (
                                                                             <p style={{ textAlign: 'right', fontSize: '0.75rem', color: '#b91c1c', fontWeight: 700, marginTop: '8px' }}>
                                                                                 * Selecione um fornecedor para habilitar o salvamento.
                                                                             </p>
@@ -2539,161 +2712,35 @@ export function BuyerItemsList() {
                                                                 ) : null}
                                                             </div>
                                                         )}
+
+                                                        {/* Supplier Card - Only for PAYMENT or if not QUOTATION */}
+                                                        {group.requestTypeCode !== 'QUOTATION' && (
+                                                            <div style={{
+                                                                padding: '16px',
+                                                                backgroundColor: 'var(--color-bg-surface)',
+                                                                border: '1px solid var(--color-border)',
+                                                                borderRadius: '6px',
+                                                                display: 'flex',
+                                                                flexDirection: 'column',
+                                                                gap: '12px',
+                                                                marginTop: '24px'
+                                                            }}>
+                                                                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Fornecedor do Pedido (Geral)</div>
+                                                                <SupplierAutocomplete
+                                                                    onChange={(id, name) => handleUpdateGroupSupplier(group.requestId, id, name)}
+                                                                    initialName={group.requestSupplierName}
+                                                                    initialPortalCode={group.requestSupplierCode}
+                                                                    disabled={mode !== 'BUYER' || isSaving}
+                                                                />
+                                                                <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                                                                    Este fornecedor será o destinatário principal do pedido na aprovação.
+                                                                </p>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
                                             </div>
                                         )}
-
-                                        {/* Action Bar (Operational) */}
-                                        <div style={{ 
-                                            display: 'flex', 
-                                            justifyContent: 'space-between', 
-                                            alignItems: 'center',
-                                            padding: '16px 24px',
-                                            backgroundColor: group.requestStatusCode === 'WAITING_QUOTATION' ? '#fffbeb' : '#f1f5f9',
-                                            border: '1px solid',
-                                            borderColor: group.requestStatusCode === 'WAITING_QUOTATION' ? '#fef3c7' : 'var(--color-border)',
-                                            borderRadius: '6px'
-                                        }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                <div style={{ 
-                                                    backgroundColor: group.requestStatusCode === 'WAITING_QUOTATION' ? '#f59e0b' : '#64748b',
-                                                    color: '#fff',
-                                                    padding: '4px 10px',
-                                                    borderRadius: '4px',
-                                                    fontSize: '0.7rem',
-                                                    fontWeight: 900,
-                                                    textTransform: 'uppercase'
-                                                }}>
-                                                    AÇÕES DO PEDIDO
-                                                </div>
-                                                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-main)' }}>
-                                                    {group.requestStatusCode === 'WAITING_QUOTATION' 
-                                                        ? 'Finalizar etapa de cotação?' 
-                                                        : 'Status atual: ' + group.requestStatusName}
-                                                </span>
-                                            </div>
-
-                                            <div style={{ display: 'flex', gap: '12px' }}>
-                                                {!isAssignedToMe && (
-                                                    <button 
-                                                        onClick={(e) => { e.stopPropagation(); handleAssignToMe(group.requestId); }}
-                                                        disabled={isSaving}
-                                                        style={{ 
-                                                            backgroundColor: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '4px', padding: '10px 24px', fontSize: '0.85rem', fontWeight: 800, cursor: isSaving ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', boxShadow: '2px 2px 0px rgba(0,0,0,0.15)' 
-                                                        }}
-                                                        title="Reivindicar pedido para mim para editá-lo"
-                                                    >
-                                                        <UserPlus size={18} /> {group.buyerId ? "Assumir Pedido" : "Atribuir a Mim"}
-                                                    </button>
-                                                )}
-
-                                                {group.requestStatusCode === 'WAITING_QUOTATION' && mode === 'BUYER' && isAssignedToMe && (
-                                                    <>
-                                                        <button
-                                                            onClick={() => {
-                                                                const anySupplierSet = !!group.requestSupplierId || group.items.every((item: any) => item.supplierId || item.supplierName);
-                                                                const qCount = group.quotations.length;
-                                                                const hasCompQ = group.quotations.some((q: SavedQuotationDto) => 
-                                                                    (q.itemCount > 0) && (!!q.proformaAttachmentId) && (!!q.supplierId)
-                                                                );
-                                                                const totalItemsCount = group.items.length + group.quotations.reduce((acc: number, q: SavedQuotationDto) => acc + q.itemCount, 0);
-                                                                handleCompleteQuotation(group.requestId, !!group.proformaId, anySupplierSet, totalItemsCount, qCount, hasCompQ);
-                                                            }}
-                                                            disabled={isSaving || !!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]}
-                                                            className={!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? "" : "btn-primary"}
-                                                            style={{ 
-                                                                display: 'flex', 
-                                                                alignItems: 'center', 
-                                                                gap: '8px', 
-                                                                padding: '10px 24px', 
-                                                                fontSize: '0.85rem',
-                                                                backgroundColor: !!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? '#e5e7eb' : '#059669',
-                                                                border: !!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? '2px solid #d1d5db' : '2px solid #047857',
-                                                                color: !!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? '#9ca3af' : '#ffffff',
-                                                                cursor: !!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? 'not-allowed' : 'pointer'
-                                                            }}
-                                                            title={!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? "Salve ou cancele a cotação em andamento antes de concluir" : "Concluir etapa de cotação"}
-                                                        >
-                                                            <CheckCircle2 size={18} /> CONCLUIR COTAÇÃO
-                                                        </button>
-
-                                                        {!group.proformaId && 
-                                                         !group.requestSupplierId && 
-                                                         !group.items.some((item: any) => item.supplierName || (item.lineItemStatusCode && item.lineItemStatusCode !== 'WAITING_QUOTATION' && item.lineItemStatusCode !== 'PENDING')) && (
-                                                            <button
-                                                                onClick={() => setShowApprovalModal({ show: true, type: 'CANCEL_REQUEST', requestId: group.requestId, itemId: null, itemDescription: null, newStatusCode: null, hasProforma: false, hasSupplier: false, itemsCount: 0, isLastItem: false, quotationCount: 0, hasCompleteQuotation: false })}
-                                                                disabled={isSaving}
-                                                                style={{
-                                                                    display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 24px', fontSize: '0.85rem',
-                                                                    backgroundColor: 'transparent',
-                                                                    border: '2px solid #ef4444',
-                                                                    color: '#ef4444',
-                                                                    borderRadius: 'var(--radius-sm)',
-                                                                    fontWeight: 800,
-                                                                    textTransform: 'uppercase',
-                                                                    fontFamily: 'var(--font-family-display)',
-                                                                    cursor: isSaving ? 'not-allowed' : 'pointer'
-                                                                }}
-                                                            >
-                                                                <X size={18} /> CANCELAR PEDIDO
-                                                            </button>
-                                                        )}
-                                                    </>
-                                                )}
-
-                                                {isAdjustmentPhase && mode === 'BUYER' && isAssignedToMe && (
-                                                    <button
-                                                        onClick={() => {
-                                                            const qCount = group.quotations.length;
-                                                            const hasCompQ = group.quotations.some((q: SavedQuotationDto) => 
-                                                                (q.itemCount > 0) && (!!q.proformaAttachmentId) && (!!q.supplierId)
-                                                            );
-                                                            const totalItemsCount = group.items.length + group.quotations.reduce((acc: number, q: SavedQuotationDto) => acc + q.itemCount, 0);
-                                                            handleCompleteQuotation(group.requestId, !!group.proformaId, !!group.requestSupplierId, totalItemsCount, qCount, hasCompQ);
-                                                        }}
-                                                        disabled={isSaving}
-                                                        className="btn-primary"
-                                                        style={{ 
-                                                            display: 'flex', 
-                                                            alignItems: 'center', 
-                                                            gap: '8px', 
-                                                            padding: '10px 24px', 
-                                                            fontSize: '0.85rem',
-                                                            backgroundColor: '#f59e0b',
-                                                            border: '2px solid #d97706'
-                                                        }}
-                                                    >
-                                                        <CheckCircle2 size={18} /> RESUBMETER PEDIDO
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Supplier Card - Only for PAYMENT or if not QUOTATION */}
-                                        {group.requestTypeCode !== 'QUOTATION' && (
-                                            <div style={{
-                                                padding: '16px',
-                                                backgroundColor: 'var(--color-bg-surface)',
-                                                border: '1px solid var(--color-border)',
-                                                borderRadius: '6px',
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                gap: '12px'
-                                            }}>
-                                                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Fornecedor do Pedido (Geral)</div>
-                                                <SupplierAutocomplete
-                                                    onChange={(id, name) => handleUpdateGroupSupplier(group.requestId, id, name)}
-                                                    initialName={group.requestSupplierName}
-                                                    initialPortalCode={group.requestSupplierCode}
-                                                    disabled={mode !== 'BUYER' || isSaving}
-                                                />
-                                                <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-                                                    Este fornecedor será o destinatário principal do pedido na aprovação.
-                                                </p>
-                                            </div>
-                                        )}
-
                                     </div>
                                 )}
                             </div>

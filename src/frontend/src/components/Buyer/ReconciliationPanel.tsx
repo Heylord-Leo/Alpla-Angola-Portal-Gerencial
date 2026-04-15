@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { CheckCircle2, AlertTriangle, HelpCircle, XCircle, ArrowRight, GitCompareArrows, ChevronDown, ChevronUp, Send, Package } from 'lucide-react';
+import { Tooltip } from '../ui/Tooltip';
 import { ReconciliationBatchDto, ReconciliationRecordDto, ReconciliationReviewItemDto } from '../../types';
 import { formatCurrencyAO } from '../../lib/utils';
 import { api } from '../../lib/api';
@@ -10,12 +11,27 @@ interface ReconciliationPanelProps {
     onBatchUpdated: (updatedBatch: ReconciliationBatchDto) => void;
 }
 
-const MATCH_STATUS_CONFIG: Record<string, { label: string; icon: React.ReactNode; color: string; bg: string }> = {
-    'EXACT_MATCH': { label: 'Correspondência Exata', icon: <CheckCircle2 size={14} />, color: '#059669', bg: '#ecfdf5' },
-    'PROBABLE_MATCH': { label: 'Correspondência Provável', icon: <HelpCircle size={14} />, color: '#d97706', bg: '#fffbeb' },
-    'REVIEW_REQUIRED': { label: 'Revisão Necessária', icon: <AlertTriangle size={14} />, color: '#dc2626', bg: '#fef2f2' },
-    'EXTRA_SUPPLIER_ITEM': { label: 'Item Extra (Fornecedor)', icon: <ArrowRight size={14} />, color: '#6366f1', bg: '#eef2ff' },
-    'MISSING_REQUESTED_ITEM': { label: 'Item Ausente (Pedido)', icon: <XCircle size={14} />, color: '#dc2626', bg: '#fef2f2' },
+const MATCH_STATUS_CONFIG: Record<string, { label: string; icon: React.ReactNode; color: string; bg: string; tooltip: string }> = {
+    'EXACT_MATCH': { 
+        label: 'Correspondência Exata', icon: <CheckCircle2 size={14} />, color: '#059669', bg: '#ecfdf5',
+        tooltip: 'O sistema encontrou uma correspondência perfeita entre a descrição, quantidade e unidade do documento e o item solicitado.'
+    },
+    'PROBABLE_MATCH': { 
+        label: 'Correspondência Provável', icon: <HelpCircle size={14} />, color: '#d97706', bg: '#fffbeb',
+        tooltip: 'Encontrado um item similar no documento. Verifique se a descrição e os códigos correspondem ao esperado.'
+    },
+    'REVIEW_REQUIRED': { 
+        label: 'Revisão Necessária', icon: <AlertTriangle size={14} />, color: '#dc2626', bg: '#fef2f2',
+        tooltip: 'Existem divergências significativas (unidade ou quantidade) ou baixa confiança na leitura OCR para este item.'
+    },
+    'EXTRA_SUPPLIER_ITEM': { 
+        label: 'Item Extra (Fornecedor)', icon: <ArrowRight size={14} />, color: '#6366f1', bg: '#eef2ff',
+        tooltip: 'Este item consta no documento extraído mas não foi encontrado no pedido de mercadorias original.'
+    },
+    'MISSING_REQUESTED_ITEM': { 
+        label: 'Item Ausente (Pedido)', icon: <XCircle size={14} />, color: '#dc2626', bg: '#fef2f2',
+        tooltip: 'Este item foi solicitado pelo requisitante mas não foi identificado no documento processado pelo OCR.'
+    },
 };
 
 const REVIEW_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -234,24 +250,30 @@ export const ReconciliationPanel: React.FC<ReconciliationPanelProps> = ({ reques
                                         {/* Match Status */}
                                         <td style={{ ...tdStyle, textAlign: 'center' }}>
                                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                                                <span style={{
-                                                    display: 'inline-flex', alignItems: 'center', gap: '4px',
-                                                    fontSize: '0.6rem', fontWeight: 800, padding: '3px 8px',
-                                                    borderRadius: '4px', backgroundColor: matchConfig.bg, color: matchConfig.color,
-                                                    textTransform: 'uppercase', whiteSpace: 'nowrap'
-                                                }}>
-                                                    {matchConfig.icon} {matchConfig.label}
-                                                </span>
+                                                <Tooltip content={matchConfig.tooltip}>
+                                                    <span style={{
+                                                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                                        fontSize: '0.6rem', fontWeight: 800, padding: '3px 8px',
+                                                        borderRadius: '4px', backgroundColor: matchConfig.bg, color: matchConfig.color,
+                                                        textTransform: 'uppercase', whiteSpace: 'nowrap', cursor: 'help'
+                                                    }}>
+                                                        {matchConfig.icon} {matchConfig.label}
+                                                    </span>
+                                                </Tooltip>
                                                 {getConfidenceBar(record.matchConfidence)}
                                                 {record.quantityDivergence != null && record.quantityDivergence !== 0 && (
-                                                    <span style={{ fontSize: '0.6rem', color: record.quantityDivergence > 0 ? '#059669' : '#dc2626', fontWeight: 700 }}>
-                                                        Qtd: {record.quantityDivergence > 0 ? '+' : ''}{record.quantityDivergence}
-                                                    </span>
+                                                    <Tooltip content="A quantidade extraída do documento difere da quantidade solicitada. Revise se a entrega parcial é esperada ou se houve erro na extração.">
+                                                        <span style={{ fontSize: '0.6rem', color: record.quantityDivergence > 0 ? '#059669' : '#dc2626', fontWeight: 700, cursor: 'help' }}>
+                                                            Qtd: {record.quantityDivergence > 0 ? '+' : ''}{record.quantityDivergence}
+                                                        </span>
+                                                    </Tooltip>
                                                 )}
                                                 {record.unitDivergence && (
-                                                    <span style={{ fontSize: '0.6rem', color: '#d97706', fontWeight: 700 }}>
-                                                        ⚠ Unid. diferente
-                                                    </span>
+                                                    <Tooltip content="A unidade extraída pelo OCR difere da unidade solicitada/esperada. Verifique se ambas representam a mesma medida (ex: KG vs UN).">
+                                                        <span style={{ fontSize: '0.6rem', color: '#d97706', fontWeight: 700, cursor: 'help' }}>
+                                                            ⚠ Unid. diferente
+                                                        </span>
+                                                    </Tooltip>
                                                 )}
                                             </div>
                                         </td>
