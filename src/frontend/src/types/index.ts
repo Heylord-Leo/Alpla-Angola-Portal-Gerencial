@@ -651,3 +651,11 @@ export interface SyncImportResultDto {
     skipped: number;
     errors: string[];
 }
+
+export interface DepartmentMasterDto {
+    id: number;
+    departmentCode: string;
+    departmentName: string;
+    companyCode: string;
+    displayName: string;
+}

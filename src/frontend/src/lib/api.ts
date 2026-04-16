@@ -576,6 +576,82 @@ export const api = {
             return response.json();
         }
     },
+    hrLeave: {
+        syncEmployees: async (): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/employees/sync`, { method: 'POST' });
+            if (!response.ok) {
+                // Return json anyway if 207 or specialized error
+                if (response.status === 207) return response.json();
+                return handleApiError(response, 'Falha ao sincronizar funcionários.');
+            }
+            return response.json();
+        },
+        getDashboard: async (): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/dashboard`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar dashboard de férias.');
+            return response.json();
+        },
+        getEmployees: async (params?: Record<string, string | number | boolean>): Promise<any> => {
+            const qs = params ? '?' + new URLSearchParams(params as any).toString() : '';
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/employees${qs}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao buscar funcionários.');
+            return response.json();
+        },
+        getDepartmentMasters: async (search?: string): Promise<import('../types').DepartmentMasterDto[]> => {
+            const qs = search ? `?search=${encodeURIComponent(search)}` : '';
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/departments/master${qs}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao buscar departamentos mestre.');
+            return response.json();
+        },
+        syncDepartments: async (): Promise<{ message: string, created: number, updated: number, processed: number, errors?: string[] }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/departments/sync`, { method: 'POST' });
+            if (!response.ok && response.status !== 207) return handleApiError(response, 'Falha ao sincronizar departamentos mestre.');
+            return response.json();
+        },
+        updateEmployeeMapping: async (id: string, payload: { plantId?: number | null, portalDepartmentId?: number | null, managerUserId?: string | null, departmentMasterId?: number | null }): Promise<void> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/employees/${id}/mapping`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao atualizar mapeamento.');
+        },
+        getRecords: async (params?: Record<string, string | number>): Promise<any> => {
+            const qs = params ? '?' + new URLSearchParams(params as any).toString() : '';
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/records${qs}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao buscar registos de ausência.');
+            return response.json();
+        },
+        createRecord: async (data: any): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/records`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao criar registo de ausência.');
+            return response.json();
+        },
+        updateRecordStatus: async (id: string, action: string, payload?: any): Promise<void> => {
+            const body = payload ? JSON.stringify(payload) : JSON.stringify({});
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/records/${id}/${action}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao atualizar o estado do registo.');
+        },
+        getCalendar: async (params?: Record<string, string | number>): Promise<any> => {
+            const qs = params ? '?' + new URLSearchParams(params as any).toString() : '';
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/calendar${qs}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao buscar calendário de equipa.');
+            return response.json();
+        },
+        getTypes: async (): Promise<any[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/types`);
+            if (!response.ok) return handleApiError(response, 'Falha ao buscar tipos de ausência.');
+            return response.json();
+        }
+    },
     approvals: {
         getIntelligence: async (id: string): Promise<ApprovalIntelligenceDto> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/approvals/${id}/intelligence`);

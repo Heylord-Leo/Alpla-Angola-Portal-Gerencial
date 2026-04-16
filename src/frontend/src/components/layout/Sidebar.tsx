@@ -17,7 +17,7 @@ interface SidebarProps {
 export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
     const location = useLocation() as { pathname: string; state: { fromList?: string } | null };
     const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
-    const { user, logout } = useAuth();
+    const { user, logout, hasHRModuleAccess } = useAuth();
     
     // Header Flyout State
     const [hoveredItem, setHoveredItem] = useState<NavItem | null>(null);
@@ -26,7 +26,7 @@ export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
     const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const sidebarRef = useRef<HTMLElement>(null);
 
-    const MENU_ITEMS = getNavigationConfig(user?.roles || []);
+    const MENU_ITEMS = getNavigationConfig(user?.roles || [], hasHRModuleAccess);
 
     // Auto-expand groups if child is active - but only if sidebar is expanded
     useEffect(() => {

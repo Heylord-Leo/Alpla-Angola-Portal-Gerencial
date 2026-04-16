@@ -2,7 +2,7 @@ import React from 'react';
 import { 
     FileText, Home, Settings, List, ShoppingCart, 
     Package, Activity, Network, Shield, CheckCircle,
-    CreditCard, DollarSign, Archive, Users, UserCheck
+    CreditCard, DollarSign, Archive, Users, UserCheck, Calendar
 } from 'lucide-react';
 import { ROLES } from './roles';
 
@@ -18,6 +18,7 @@ export interface NavItem {
     children?: NavItem[];
     keywords?: string[];
     roles?: string[];      // New: explicit allowed roles
+    isHrModule?: boolean;  // New: explicit HR module flag
     isAdminOnly?: boolean;  // Legacy
     isManagerOnly?: boolean; // Legacy
 }
@@ -27,7 +28,7 @@ export interface NavItem {
  * All new modules must be registered here to automatically appear
  * in both the Sidebar and the Global Search.
  */
-export const getNavigationConfig = (userRoles: string[]): NavItem[] => {
+export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: boolean = false): NavItem[] => {
     const isAdmin = userRoles.includes(ROLES.SYSTEM_ADMINISTRATOR);
     const isLocalManager = userRoles.includes(ROLES.LOCAL_MANAGER);
 
@@ -181,17 +182,36 @@ export const getNavigationConfig = (userRoles: string[]): NavItem[] => {
             id: 'rh',
             type: 'group',
             label: 'R.H.',
+            to: '/hr/overview',
             icon: <Users size={18} strokeWidth={2.5} />,
-            roles: [ROLES.HR, ROLES.SYSTEM_ADMINISTRATOR],
-            keywords: ['rh', 'recursos humanos', 'funcionários', 'colaboradores', 'pessoal'],
+            isHrModule: true,
+            keywords: ['rh', 'recursos humanos', 'funcionários', 'colaboradores', 'pessoal', 'férias', 'ausências'],
             children: [
+                {
+                    id: 'rh-overview',
+                    type: 'link',
+                    label: 'Visão Geral',
+                    icon: <Activity size={18} strokeWidth={2.5} />,
+                    to: '/hr/overview',
+                    isHrModule: true,
+                    keywords: ['rh', 'dashboard', 'resumo', 'kpi']
+                },
+                {
+                    id: 'rh-leave',
+                    type: 'link',
+                    label: 'Férias e Ausências',
+                    icon: <Calendar size={18} strokeWidth={2.5} />,
+                    to: '/hr/leave',
+                    isHrModule: true,
+                    keywords: ['férias', 'ausência', 'falta', 'baixa', 'licença', 'aprovação']
+                },
                 {
                     id: 'rh-cadastro',
                     type: 'link',
                     label: 'Cadastro de Funcionários',
                     icon: <UserCheck size={18} strokeWidth={2.5} />,
                     to: '/hr/employees',
-                    roles: [ROLES.HR, ROLES.SYSTEM_ADMINISTRATOR],
+                    isHrModule: true,
                     keywords: ['rh', 'funcionários', 'cadastro', 'crachá', 'badge', 'foto', 'consulta', 'pessoal']
                 }
             ]
@@ -234,6 +254,7 @@ export const getNavigationConfig = (userRoles: string[]): NavItem[] => {
             // Priority 2: Legacy Booleans (Fallback)
             if (item.isAdminOnly && !isAdmin) return false;
             if (item.isManagerOnly && !isLocalManager) return false;
+            if (item.isHrModule && !hasHRModuleAccess) return false;
 
             return true;
         })
@@ -247,6 +268,7 @@ export const getNavigationConfig = (userRoles: string[]): NavItem[] => {
                         }
                         if (child.isAdminOnly && !isAdmin) return false;
                         if (child.isManagerOnly && !isLocalManager) return false;
+                        if (child.isHrModule && !hasHRModuleAccess) return false;
                         return true;
                     })
                 };

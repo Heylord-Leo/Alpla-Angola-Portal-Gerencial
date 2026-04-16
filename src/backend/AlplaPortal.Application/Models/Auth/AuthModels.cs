@@ -26,6 +26,14 @@ public class UserProfileDto
     public List<string> Roles { get; set; } = new();
     public List<string> Plants { get; set; } = new();
     public List<string> Departments { get; set; } = new();
+
+    /// <summary>
+    /// Department IDs where this user is the ResponsibleUser.
+    /// Used to grant implicit HR module access to Department Managers
+    /// without requiring the HR role.
+    /// </summary>
+    public List<int> ManagedDepartmentIds { get; set; } = new();
+
     public bool MustChangePassword { get; set; }
 }
 

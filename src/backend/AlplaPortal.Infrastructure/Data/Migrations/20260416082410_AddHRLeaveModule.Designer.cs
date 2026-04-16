@@ -4,16 +4,19 @@ using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace AlplaPortal.Infrastructure.Migrations
+namespace AlplaPortal.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260416082410_AddHRLeaveModule")]
+    partial class AddHRLeaveModule
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -326,48 +329,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                         });
                 });
 
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.DepartmentMaster", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("CompanyCode")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("DepartmentCode")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<string>("DepartmentName")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTime?>("LastSyncedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("SourceDatabase")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<string>("SourceSystem")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(450)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SourceSystem", "SourceDatabase", "DepartmentCode")
-                        .IsUnique();
-
-                    b.ToTable("DepartmentMasters");
-                });
-
             modelBuilder.Entity("AlplaPortal.Domain.Entities.DocumentExtractionSettings", b =>
                 {
                     b.Property<int>("Id")
@@ -432,9 +393,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
 
-                    b.Property<int?>("DepartmentMasterId")
-                        .HasColumnType("int");
-
                     b.Property<string>("Email")
                         .HasColumnType("nvarchar(max)");
 
@@ -489,8 +447,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                         .HasColumnType("datetime2");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("DepartmentMasterId");
 
                     b.HasIndex("EmployeeCode")
                         .IsUnique();
@@ -2884,11 +2840,6 @@ namespace AlplaPortal.Infrastructure.Migrations
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.HREmployee", b =>
                 {
-                    b.HasOne("AlplaPortal.Domain.Entities.DepartmentMaster", "DepartmentMaster")
-                        .WithMany("Employees")
-                        .HasForeignKey("DepartmentMasterId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("AlplaPortal.Domain.Entities.User", "ManagerUser")
                         .WithMany()
                         .HasForeignKey("ManagerUserId")
@@ -2903,8 +2854,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("PortalDepartmentId")
                         .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("DepartmentMaster");
 
                     b.Navigation("ManagerUser");
 
@@ -3445,11 +3394,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                     b.Navigation("Role");
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.DepartmentMaster", b =>
-                {
-                    b.Navigation("Employees");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.IntegrationProvider", b =>

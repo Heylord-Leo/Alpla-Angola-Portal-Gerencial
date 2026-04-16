@@ -9,6 +9,7 @@ interface User {
   roles: string[];
   plants: string[];
   departments: string[];
+  managedDepartmentIds: number[];
   mustChangePassword: boolean;
 }
 
@@ -20,7 +21,10 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isAdmin: boolean;
   isLocalManager: boolean;
+  isDepartmentManager: boolean;
   hasHRAccess: boolean;
+  /** True if user can access the HR module (HR role, admin, or department manager). */
+  hasHRModuleAccess: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -64,7 +68,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isAdmin = user?.roles.includes(ROLES.SYSTEM_ADMINISTRATOR) || false;
   const isLocalManager = user?.roles.includes(ROLES.LOCAL_MANAGER) || false;
+  const isDepartmentManager = (user?.managedDepartmentIds?.length ?? 0) > 0;
   const hasHRAccess = user?.roles.includes(ROLES.HR) || isAdmin;
+  // HR Module access: HR role users, admins, or department managers (ResponsibleUser of any department)
+  const hasHRModuleAccess = hasHRAccess || isDepartmentManager;
 
   if (isLoading) {
     return null; // Or a loading spinner
@@ -79,7 +86,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isAuthenticated: !!token,
       isAdmin,
       isLocalManager,
-      hasHRAccess
+      isDepartmentManager,
+      hasHRAccess,
+      hasHRModuleAccess
     }}>
       {children}
     </AuthContext.Provider>

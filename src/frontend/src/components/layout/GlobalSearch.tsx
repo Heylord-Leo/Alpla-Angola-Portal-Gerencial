@@ -10,10 +10,10 @@ export function GlobalSearch() {
     const [isFocused, setIsFocused] = useState(false);
     const navigate = useNavigate();
     const searchRef = useRef<HTMLDivElement>(null);
-    const { user } = useAuth();
+    const { user, hasHRModuleAccess } = useAuth();
 
     // Obter configuração de navegação autorizada
-    const authorizedNav = useMemo(() => getNavigationConfig(user?.roles || []), [user?.roles]);
+    const authorizedNav = useMemo(() => getNavigationConfig(user?.roles || [], hasHRModuleAccess), [user?.roles, hasHRModuleAccess]);
 
     // Achatar a árvore de navegação para apenas itens navegáveis (folhas)
     const searchableModules = useMemo(() => {

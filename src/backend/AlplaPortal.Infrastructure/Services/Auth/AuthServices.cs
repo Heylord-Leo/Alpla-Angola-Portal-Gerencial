@@ -169,6 +169,12 @@ public class AuthService : IAuthService
             .Select(uds => uds.Department.Code)
             .ToListAsync();
 
+        // HR Module: Fetch departments where this user is the ResponsibleUser (Department Manager)
+        var managedDepartmentIds = await _context.Departments
+            .Where(d => d.ResponsibleUserId == user.Id)
+            .Select(d => d.Id)
+            .ToListAsync();
+
         var token = _jwtService.GenerateToken(user, roles);
         
         await _context.SaveChangesAsync();
@@ -184,6 +190,7 @@ public class AuthService : IAuthService
                 Roles = roles,
                 Plants = plantCodes,
                 Departments = departmentCodes,
+                ManagedDepartmentIds = managedDepartmentIds,
                 MustChangePassword = user.MustChangePassword
             }
         };

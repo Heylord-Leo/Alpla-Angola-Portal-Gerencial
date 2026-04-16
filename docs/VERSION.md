@@ -2,7 +2,17 @@
 
 ## Current Version
 
-v2.77.0
+v2.77.1
+
+## [2.77.1] - 2026-04-16
+
+### Fixed
+- **Primavera Department Sync Integration**: Fixed a silent synchronization failure by removing the invalid `Inactivo` column mapping constraint. The backend now cascades a comprehensive `207 Multi-Status` detailing Created, Updated, Processed, and Errors metrics directly to the user interface.
+- **Department Master Mapping Quality**: Reconstructed the HR department lookup DTO, resolving blank text regressions during rendering.
+
+### Added
+- **Intelligent Origem Reconciliation**: Activated an automated normalization and suggestions engine for HR mapping logic. The drop-down actively scores the source Innux department against available HR records resulting in safe, isolated top-level `✨ PROVÁVEL` / `SUGESTÃO` selections.
+- **Isolated Plant Topology**: Configured UX boundaries around Company/Plant. The Department Master autocomplete immediately unlinks state data and actively issues an isolated invalidation toaster if users navigate their form across organizational Plant constraints (e.g. AlplaPLASTICOS to AlplaSOPRO).
 
 ## [2.77.0] - 2026-04-16
 

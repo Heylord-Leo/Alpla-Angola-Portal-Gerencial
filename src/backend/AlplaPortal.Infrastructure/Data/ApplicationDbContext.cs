@@ -51,6 +51,14 @@ public class ApplicationDbContext : DbContext
     public DbSet<IntegrationConnectionStatus> IntegrationConnectionStatuses => Set<IntegrationConnectionStatus>();
     public DbSet<IntegrationProviderSettings> IntegrationProviderSettings => Set<IntegrationProviderSettings>();
 
+    // HR Leave Module (Phase 1)
+    public DbSet<HREmployee> HREmployees => Set<HREmployee>();
+    public DbSet<DepartmentMaster> DepartmentMasters => Set<DepartmentMaster>();
+    public DbSet<LeaveType> LeaveTypes => Set<LeaveType>();
+    public DbSet<LeaveRecord> LeaveRecords => Set<LeaveRecord>();
+    public DbSet<LeaveStatusHistory> LeaveStatusHistories => Set<LeaveStatusHistory>();
+    public DbSet<HRSyncLog> HRSyncLogs => Set<HRSyncLog>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -112,6 +120,105 @@ public class ApplicationDbContext : DbContext
             .WithMany()
             .HasForeignKey(u => u.DepartmentId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        // ─── HR Leave Module Configuration ───
+
+        // DepartmentMaster
+        modelBuilder.Entity<DepartmentMaster>(entity =>
+        {
+            entity.HasIndex(d => new { d.SourceSystem, d.SourceDatabase, d.DepartmentCode }).IsUnique();
+        });
+
+        // HREmployee
+        modelBuilder.Entity<HREmployee>(entity =>
+        {
+            entity.HasIndex(e => e.InnuxEmployeeId).IsUnique();
+            entity.HasIndex(e => e.EmployeeCode).IsUnique();
+            entity.HasIndex(e => e.PlantId);
+            entity.HasIndex(e => e.PortalDepartmentId);
+            entity.HasIndex(e => e.DepartmentMasterId);
+            entity.HasIndex(e => e.ManagerUserId);
+            entity.HasIndex(e => e.IsActive);
+            entity.HasIndex(e => e.IsMapped);
+
+            entity.HasOne(e => e.Plant)
+                .WithMany()
+                .HasForeignKey(e => e.PlantId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.PortalDepartment)
+                .WithMany()
+                .HasForeignKey(e => e.PortalDepartmentId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.DepartmentMaster)
+                .WithMany(d => d.Employees)
+                .HasForeignKey(e => e.DepartmentMasterId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.ManagerUser)
+                .WithMany()
+                .HasForeignKey(e => e.ManagerUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // LeaveType
+        modelBuilder.Entity<LeaveType>(entity =>
+        {
+            entity.HasIndex(lt => lt.Code).IsUnique();
+        });
+
+        // LeaveRecord
+        modelBuilder.Entity<LeaveRecord>(entity =>
+        {
+            entity.HasIndex(lr => lr.EmployeeId);
+            entity.HasIndex(lr => lr.StatusCode);
+            entity.HasIndex(lr => lr.StartDate);
+            entity.HasIndex(lr => lr.EndDate);
+
+            entity.HasOne(lr => lr.Employee)
+                .WithMany()
+                .HasForeignKey(lr => lr.EmployeeId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(lr => lr.LeaveType)
+                .WithMany()
+                .HasForeignKey(lr => lr.LeaveTypeId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(lr => lr.RequestedByUser)
+                .WithMany()
+                .HasForeignKey(lr => lr.RequestedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(lr => lr.ApprovedByUser)
+                .WithMany()
+                .HasForeignKey(lr => lr.ApprovedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(lr => lr.StatusHistory)
+                .WithOne(sh => sh.LeaveRecord)
+                .HasForeignKey(sh => sh.LeaveRecordId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // LeaveStatusHistory
+        modelBuilder.Entity<LeaveStatusHistory>(entity =>
+        {
+            entity.HasOne(sh => sh.ActorUser)
+                .WithMany()
+                .HasForeignKey(sh => sh.ActorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // HRSyncLog
+        modelBuilder.Entity<HRSyncLog>(entity =>
+        {
+            entity.HasOne(sl => sl.TriggeredByUser)
+                .WithMany()
+                .HasForeignKey(sl => sl.TriggeredByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
 
         // Unique Constraints for Master Data
         modelBuilder.Entity<Unit>().HasIndex(u => u.Code).IsUnique();
@@ -417,6 +524,17 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<IntegrationConnectionStatus>().HasData(
             new IntegrationConnectionStatus { Id = 1, IntegrationProviderId = 1, CurrentStatus = IntegrationStatusCodes.NotConfigured },
             new IntegrationConnectionStatus { Id = 2, IntegrationProviderId = 2, CurrentStatus = IntegrationStatusCodes.Planned }
+        );
+
+        // Seed: HR Leave Types
+        modelBuilder.Entity<LeaveType>().HasData(
+            new LeaveType { Id = 1, Code = "VACATION", DisplayNamePt = "Férias", Color = "#3b82f6", CountsAgainstBalance = true, DisplayOrder = 1 },
+            new LeaveType { Id = 2, Code = "SICK_LEAVE", DisplayNamePt = "Licença Médica", Color = "#ef4444", CountsAgainstBalance = false, DisplayOrder = 2 },
+            new LeaveType { Id = 3, Code = "JUSTIFIED_ABSENCE", DisplayNamePt = "Falta Justificada", Color = "#f59e0b", CountsAgainstBalance = false, DisplayOrder = 3 },
+            new LeaveType { Id = 4, Code = "UNJUSTIFIED_ABSENCE", DisplayNamePt = "Falta Injustificada", Color = "#dc2626", CountsAgainstBalance = false, DisplayOrder = 4 },
+            new LeaveType { Id = 5, Code = "PERSONAL_LEAVE", DisplayNamePt = "Licença Pessoal", Color = "#8b5cf6", CountsAgainstBalance = true, DisplayOrder = 5 },
+            new LeaveType { Id = 6, Code = "COMPENSATION_DAY", DisplayNamePt = "Dia de Compensação", Color = "#06b6d4", CountsAgainstBalance = false, DisplayOrder = 6 },
+            new LeaveType { Id = 7, Code = "OTHER", DisplayNamePt = "Outros", Color = "#6b7280", CountsAgainstBalance = false, DisplayOrder = 7 }
         );
     }
 }

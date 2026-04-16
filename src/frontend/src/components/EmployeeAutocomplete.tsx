@@ -1,47 +1,43 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../lib/api';
-import { SupplierSearchDto } from '../types';
 import { ChevronDown, Search } from 'lucide-react';
 import { useDropdownPosition } from '../hooks/useDropdownPosition';
 import { DropdownPortal } from './ui/DropdownPortal';
 
-interface SupplierAutocompleteProps {
+interface EmployeeAutocompleteProps {
     initialName?: string;
-    initialPortalCode?: string;
-    onChange: (id: number | null, name: string, portalCode?: string) => void;
+    initialCode?: string;
+    onChange: (id: string | null, name: string, code?: string) => void;
     placeholder?: string;
     disabled?: boolean;
     hasError?: boolean;
-    isUnresolved?: boolean;
     className?: string;
     name?: string;
 }
 
-// Column widths for the tabular layout — must match exactly in header and rows
-const COL_WIDTHS = '110px 110px 1fr';
+const COL_WIDTHS = '110px 1fr 140px';
 
-export function SupplierAutocomplete({
+export function EmployeeAutocomplete({
     initialName = '',
-    initialPortalCode = '',
+    initialCode = '',
     onChange,
-    placeholder = 'Selecionar fornecedor...',
+    placeholder = 'Selecionar funcionário...',
     disabled = false,
     hasError = false,
-    isUnresolved = false,
     className,
-    name = 'SupplierId'
-}: SupplierAutocompleteProps) {
+    name = 'EmployeeId'
+}: EmployeeAutocompleteProps) {
     const getInitialDisplay = () => {
         if (!initialName) return '';
-        return initialPortalCode ? `[${initialPortalCode}] ${initialName}` : initialName;
+        return initialCode ? `[${initialCode}] ${initialName}` : initialName;
     };
 
     const [selectedDisplay, setSelectedDisplay] = useState(getInitialDisplay());
     const [searchTerm, setSearchTerm] = useState('');
-    const [results, setResults] = useState<SupplierSearchDto[]>([]);
+    const [results, setResults] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isOpen, setIsOpen] = useState(false);
-    const [hoveredId, setHoveredId] = useState<number | null>(null);
+    const [hoveredId, setHoveredId] = useState<string | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
     const searchInputRef = useRef<HTMLInputElement>(null);
@@ -51,7 +47,7 @@ export function SupplierAutocomplete({
 
     useEffect(() => {
         setSelectedDisplay(getInitialDisplay());
-    }, [initialName, initialPortalCode]);
+    }, [initialName, initialCode]);
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
@@ -68,7 +64,6 @@ export function SupplierAutocomplete({
 
     useEffect(() => {
         if (isOpen && searchInputRef.current) {
-            // Small delay to ensure panel is rendered
             setTimeout(() => searchInputRef.current?.focus(), 50);
         }
     }, [isOpen]);
@@ -76,8 +71,9 @@ export function SupplierAutocomplete({
     const performSearch = async (term: string) => {
         setIsLoading(true);
         try {
-            const data = await api.lookups.searchSuppliers(term);
-            setResults(data);
+            // Respecting scoped visibility. getEmployees in backend filters by ManagerUserId / Dept
+            const res = await api.hrLeave.getEmployees({ search: term, active: true, pageSize: 20 });
+            setResults(res.items);
         } catch (error) {
             console.error('Search failed', error);
             setResults([]);
@@ -110,12 +106,12 @@ export function SupplierAutocomplete({
         debounceTimer.current = setTimeout(() => performSearch(val), 300);
     };
 
-    const handleSelect = (s: SupplierSearchDto) => {
-        const displayName = `[${s.portalCode}] ${s.name}`;
+    const handleSelect = (e: any) => {
+        const displayName = `[${e.employeeCode}] ${e.fullName}`;
         setSelectedDisplay(displayName);
         setIsOpen(false);
         setHoveredId(null);
-        onChange(s.id, s.name, s.portalCode);
+        onChange(e.id, e.fullName, e.employeeCode);
     };
 
     const clearSelection = (e: React.MouseEvent) => {
@@ -143,9 +139,10 @@ export function SupplierAutocomplete({
         alignItems: 'center',
         justifyContent: 'space-between',
         opacity: disabled ? 0.7 : 1,
-        minHeight: '48px',
+        minHeight: '46px',
         transition: 'all 0.15s ease-out',
         userSelect: 'none',
+        borderRadius: '6px',
     };
 
     const panelStyle: React.CSSProperties = {
@@ -157,6 +154,7 @@ export function SupplierAutocomplete({
         minWidth: '480px',
         display: 'flex',
         flexDirection: 'column',
+        borderRadius: '6px',
         zIndex: 10000,
     };
 
@@ -176,9 +174,9 @@ export function SupplierAutocomplete({
         backgroundColor: 'var(--color-bg-surface)',
         fontFamily: 'inherit',
         boxSizing: 'border-box',
+        borderRadius: '6px',
     };
 
-    // Header and row grid: both use the same gridTemplateColumns
     const gridStyle: React.CSSProperties = {
         display: 'grid',
         gridTemplateColumns: COL_WIDTHS,
@@ -187,7 +185,7 @@ export function SupplierAutocomplete({
 
     const headerStyle: React.CSSProperties = {
         ...gridStyle,
-        backgroundColor: 'var(--color-bg-page)', // Light gray standard
+        backgroundColor: 'var(--color-bg-page)', 
         borderBottom: '2px solid var(--color-border-heavy)',
     };
 
@@ -205,15 +203,15 @@ export function SupplierAutocomplete({
         borderRight: '1px solid var(--color-border)',
     };
 
-    const getRowStyle = (id: number): React.CSSProperties => ({
+    const getRowStyle = (id: string): React.CSSProperties => ({
         ...gridStyle,
         cursor: 'pointer',
         borderBottom: '1px solid #f3f4f6',
-        backgroundColor: hoveredId === id ? '#f3f4f6' : '#ffffff', // Subtle gray hover
+        backgroundColor: hoveredId === id ? '#f3f4f6' : '#ffffff',
         transition: 'background-color 0.1s ease',
     });
 
-    const getCellStyle = (_id: number, extra?: React.CSSProperties): React.CSSProperties => ({
+    const getCellStyle = (_id: string, extra?: React.CSSProperties): React.CSSProperties => ({
         padding: '12px 10px',
         fontSize: '0.825rem',
         color: 'var(--color-text-main)',
@@ -223,7 +221,7 @@ export function SupplierAutocomplete({
         ...extra,
     });
 
-    const getPortalCellStyle = (id: number): React.CSSProperties => ({
+    const getPortalCellStyle = (id: string): React.CSSProperties => ({
         ...getCellStyle(id),
         borderRight: `1px solid ${hoveredId === id ? '#e5e7eb' : '#f3f4f6'}`,
         fontFamily: 'monospace',
@@ -232,15 +230,7 @@ export function SupplierAutocomplete({
         fontSize: '0.75rem',
     });
 
-    const getPrimaveraStyle = (id: number): React.CSSProperties => ({
-        ...getCellStyle(id),
-        borderRight: `1px solid ${hoveredId === id ? '#e5e7eb' : '#f3f4f6'}`,
-        fontFamily: 'monospace',
-        fontSize: '0.75rem',
-        color: 'var(--color-text-muted)',
-    });
-
-    const getNameStyle = (id: number): React.CSSProperties => ({
+    const getNameStyle = (id: string): React.CSSProperties => ({
         ...getCellStyle(id),
         fontWeight: 600,
         textTransform: 'uppercase',
@@ -248,12 +238,17 @@ export function SupplierAutocomplete({
         whiteSpace: 'nowrap',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
+        borderRight: `1px solid ${hoveredId === id ? '#e5e7eb' : '#f3f4f6'}`,
+    });
+
+    const getDeptStyle = (id: string): React.CSSProperties => ({
+        ...getCellStyle(id),
+        fontSize: '0.75rem',
+        color: 'var(--color-text-muted)',
     });
 
     return (
-        <div className={className} ref={containerRef} style={{ position: 'relative', marginTop: '8px' }}>
-
-            {/* ── Trigger (Closed State) ── */}
+        <div className={className} ref={containerRef} style={{ position: 'relative' }}>
             <div 
                 onClick={toggleDropdown} 
                 onKeyDown={handleKeyDown}
@@ -264,11 +259,9 @@ export function SupplierAutocomplete({
                 <span style={{ 
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: '8px', 
                     fontWeight: 600, textTransform: 'none', letterSpacing: '0.01em', fontSize: '0.85rem',
-                    fontStyle: isUnresolved ? 'italic' : 'normal',
-                    color: isUnresolved ? '#9a3412' : selectedDisplay ? 'var(--color-text-main)' : 'var(--color-placeholder)'
+                    color: selectedDisplay ? 'var(--color-text-main)' : 'var(--color-placeholder)'
                 }}>
                     {selectedDisplay || placeholder}
-                    {isUnresolved && selectedDisplay && ' (SUGESTÃO OCR - NÃO ENCONTRADO)'}
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
                     {selectedDisplay && !disabled && (
@@ -285,12 +278,9 @@ export function SupplierAutocomplete({
                 </div>
             </div>
 
-            {/* ── Dropdown Panel (Open State via Portal) ── */}
             {isOpen && (
                 <DropdownPortal>
                     <div style={panelStyle} ref={panelRef}>
-
-                        {/* Search Box */}
                         <div style={searchAreaStyle}>
                             <Search size={15} style={{ position: 'absolute', left: '22px', top: '50%', transform: 'translateY(-50%)', color: '#6b7280', pointerEvents: 'none' }} />
                             <input
@@ -303,14 +293,12 @@ export function SupplierAutocomplete({
                             />
                         </div>
 
-                        {/* Column Header */}
                         <div style={headerStyle}>
-                            <div style={headerCellBorderStyle}>Portal</div>
-                            <div style={headerCellBorderStyle}>Primavera</div>
-                            <div style={headerCellStyle}>Descrição</div>
+                            <div style={headerCellBorderStyle}>Matrícula</div>
+                            <div style={headerCellBorderStyle}>Nome</div>
+                            <div style={headerCellStyle}>Departamento</div>
                         </div>
 
-                        {/* Result Rows */}
                         <div style={{ maxHeight: '280px', overflowY: 'auto', backgroundColor: 'var(--color-bg-surface)' }}>
                             {isLoading ? (
                                 <div style={{ padding: '32px', textAlign: 'center' }}>
@@ -318,23 +306,23 @@ export function SupplierAutocomplete({
                                 </div>
                             ) : results.length === 0 ? (
                                 <div style={{ padding: '24px', textAlign: 'center', color: '#9ca3af', fontSize: '0.875rem', fontStyle: 'italic' }}>
-                                    Nenhum fornecedor encontrado.
+                                    Nenhum funcionário encontrado.
                                 </div>
                             ) : (
-                                results.map((s) => (
+                                results.map((emp) => (
                                     <div
-                                        key={s.id}
-                                        style={getRowStyle(s.id)}
-                                        onMouseEnter={() => setHoveredId(s.id)}
+                                        key={emp.id}
+                                        style={getRowStyle(emp.id)}
+                                        onMouseEnter={() => setHoveredId(emp.id)}
                                         onMouseLeave={() => setHoveredId(null)}
                                         onMouseDown={(e) => {
-                                            e.preventDefault(); // Prevent blur before select
-                                            handleSelect(s);
+                                            e.preventDefault();
+                                            handleSelect(emp);
                                         }}
                                     >
-                                        <div style={getPortalCellStyle(s.id)}>{s.portalCode}</div>
-                                        <div style={getPrimaveraStyle(s.id)}>{s.primaveraCode || '—'}</div>
-                                        <div style={getNameStyle(s.id)}>{s.name}</div>
+                                        <div style={getPortalCellStyle(emp.id)}>{emp.employeeCode}</div>
+                                        <div style={getNameStyle(emp.id)}>{emp.fullName}</div>
+                                        <div style={getDeptStyle(emp.id)}>{emp.portalDepartmentName || emp.innuxDepartmentName || '—'}</div>
                                     </div>
                                 ))
                             )}

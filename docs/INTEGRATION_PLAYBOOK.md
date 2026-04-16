@@ -853,5 +853,42 @@ Business validation (VALID/WARNING/INVALID) is returned as HTTP 200 because the 
 - Price comparison / availability checks
 - OCR reconciliation
 - Portal sync/writeback
-- Automatic suggestion engines
 - Procurement workflow integration
+
+---
+
+## Phase 5B — Primavera Department Sync & HR Mapping
+
+> Synchronization of master department definitions from Primavera into Portal local storage to unify HR employee mapping.
+
+### Architecture
+
+This phase introduces a robust department sync and safe field transition in the Portal schema:
+- **Direct Database Sync**: Reads `dbo.Departamentos` from all enabled Primavera Database Companies via `PrimaveraConnectionFactory`.
+- **Master Data Entity**: Introduces `DepartmentMaster` into `AlplaPortal.Domain` to stage cross-system department metadata.
+- **Safe Field Evolution**: Introduces `DepartmentMasterId` on `HREmployee` mapping entity. The legacy `PortalDepartmentId` is intentionally preserved during the migration to ensure backward capability and no loss of prior mapping data.
+
+### Sync Logic
+
+| Key | Detail |
+|---|---|
+| Strategy | Full upsert based on Composite Unique Index (`SourceSystem`, `SourceDatabase`, `DepartmentCode`). |
+| Conflict Resolution | Re-activates inactive departments if found active in source. Does not delete missing departments (soft updates tracking capability). |
+| Disambiguation | Due to differing databases, Department code collisions between ALPLAPLASTICO and ALPLASOPRO are resolved via `SourceDatabase` segmentation. |
+
+### API Surface
+
+| Method | Route | Description |
+|---|---|---|
+| `POST` | `/api/hr/leave/departments/sync` | Trigger an immediate ad-hoc synchronization of departments. |
+| `GET` | `/api/hr/leave/departments/master` | Returns a list of `DepartmentMasterDto` formatted for autocompletes. |
+| `PUT` | `/api/hr/leave/employees/{id}/mapping` | Expanded to accept and persist `DepartmentMasterId`. |
+
+### Client-Side Updates
+
+Implemented a new `DepartmentMasterAutocomplete` component using portal-standard design system patterns to lookup and assign the new Master Department fields while natively supporting duplicate codes disambiguated by their `SourceDatabase` lineage.
+
+### Key Decisions
+
+- **DEC-120**: "Safe Transition" for schema fields. Legacy `PortalDepartmentId` explicitly retained for data preservation; strict drop postponed to later phases.
+- **DEC-121**: UI/UX Feedback standardization. Native `window.confirm` / `alert` patterns stripped from HR Sync and replaced by standardized `HRActionModal` and Portal Feedback blocks. 

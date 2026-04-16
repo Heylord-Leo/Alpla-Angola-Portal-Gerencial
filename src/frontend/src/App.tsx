@@ -51,6 +51,18 @@ const FinanceHistory = React.lazy(() =>
 );
 
 // HR pages
+const HRLandingPage = React.lazy(() =>
+    import('./pages/HR/HRLandingPage')
+);
+const HROverview = React.lazy(() =>
+    import('./pages/HR/HROverview')
+);
+const HRLeaveList = React.lazy(() =>
+    import('./pages/HR/HRLeaveList')
+);
+const HRTeamCalendar = React.lazy(() =>
+    import('./pages/HR/HRTeamCalendar')
+);
 const EmployeeWorkspace = React.lazy(() =>
     import('./pages/HR/EmployeeWorkspace')
 );
@@ -79,6 +91,9 @@ const UserManagement = React.lazy(() =>
 );
 const SyncWorkspace = React.lazy(() =>
     import('./pages/Settings/SyncWorkspace').then(m => ({ default: m.SyncWorkspace }))
+);
+const HREmployeeDirectory = React.lazy(() =>
+    import('./pages/HR/HREmployeeDirectory')
 );
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -111,6 +126,14 @@ function AdminRoute({ children, allowedRoles }: { children: React.ReactNode, all
     return <>{children}</>;
 }
 
+/** HR Module route guard — allows HR role, System Administrator, or Department Managers. */
+function HRRoute({ children }: { children: React.ReactNode }) {
+    const { isAuthenticated, hasHRModuleAccess } = useAuth();
+    if (!isAuthenticated) return <Navigate to="/login" replace />;
+    if (!hasHRModuleAccess) return <Navigate to="/dashboard" replace />;
+    return <>{children}</>;
+}
+
 function AppContent() {
     return (
         <Routes>
@@ -140,7 +163,14 @@ function AppContent() {
                 </Route>
 
                 {/* HR Workspace */}
-                <Route path="/hr/employees" element={<AdminRoute allowedRoles={[ROLES.HR]}><Suspense fallback={<LoadingSkeleton />}><EmployeeWorkspace /></Suspense></AdminRoute>} />
+                <Route path="/hr" element={<HRRoute><Suspense fallback={<LoadingSkeleton />}><HRLandingPage /></Suspense></HRRoute>}>
+                    <Route index element={<Navigate to="overview" replace />} />
+                    <Route path="overview" element={<Suspense fallback={<LoadingSkeleton />}><HROverview /></Suspense>} />
+                    <Route path="leave" element={<Suspense fallback={<LoadingSkeleton />}><HRLeaveList /></Suspense>} />
+                    <Route path="calendar" element={<Suspense fallback={<LoadingSkeleton />}><HRTeamCalendar /></Suspense>} />
+                    <Route path="directory" element={<Suspense fallback={<LoadingSkeleton />}><HREmployeeDirectory /></Suspense>} />
+                    <Route path="employees" element={<Suspense fallback={<LoadingSkeleton />}><EmployeeWorkspace /></Suspense>} />
+                </Route>
 
                 {/* Settings Routes */}
                 <Route path="/settings/master-data" element={<AdminRoute><Suspense fallback={<LoadingSkeleton />}><MasterData /></Suspense></AdminRoute>} />
