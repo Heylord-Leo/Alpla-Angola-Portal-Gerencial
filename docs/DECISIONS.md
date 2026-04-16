@@ -2,6 +2,26 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-107 — Dedicated HR Role for V1 Employee Workspace Security
+
+- **Date:** 2026-04-15
+- **Status:** Accepted
+- **Context:** The HR Employee Workspace (`Cadastro de Funcionários`) was initially protected only by the `Local Manager` role, which piggy-backed HR access onto user management privileges. This was inadequate because: (1) not all Local Managers need HR access, (2) some users need HR access without management privileges, and (3) future HR submenus (Vacation, Time Attendance, Badge Layout) will require independent feature-level authorization.
+- **Decision:** Introduce a dedicated `HR` role for the V1 Employee Workspace.
+    1. **New role:** `HR` (backend: `RoleConstants.HR`, frontend: `ROLES.HR`). Added to the domain role table.
+    2. **Authorization:** `HRController` now uses `[Authorize(Roles = "System Administrator,HR")]`. `System Administrator` retains unrestricted access.
+    3. **Breaking change:** `Local Manager` no longer has implicit HR access. Existing Local Managers must be explicitly assigned the `HR` role to retain access.
+    4. **Scope enforcement:** HR users are subject to plant/department scope filtering via `UserPlantScopes` and `UserDepartmentScopes`, consistent with the existing `BaseController` pattern.
+    5. **User Management:** Local Managers can assign the `HR` role to users within their scope. A validation warning appears when the `HR` role is selected but no plants/departments are assigned.
+    6. **Login response:** `UserProfileDto` now includes `Plants` and `Departments` fields, populated from scope tables during login.
+- **Future evolution (explicitly incomplete):**
+    - This PR secures only the current V1 HR Employee Workspace.
+    - Parent HR menu visibility is currently tied to the single `HR` role.
+    - Future HR submenus (Vacation Management, Time Attendance, Badge Layout Management) will require an additional authorization evolution — likely per-submenu feature flags or a hierarchical permission model — where `Local Manager` may access some HR submenus while being blocked from others.
+- **Alternatives considered:** Reusing `Local Manager` with a feature flag (rejected: conflates management privilege with HR access). Creating per-submenu roles immediately (rejected: premature — only one HR screen exists today).
+- **Consequences:** Clean separation of HR access from management privileges. Scalable foundation for future HR submodule authorization. Requires explicit role assignment for existing Local Managers who need continued HR access.
+
+
 ## DEC-106 — Catalog Sync Uses Description-Based Matching (V2.1)
 
 - **Date:** 2026-04-15

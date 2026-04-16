@@ -303,7 +303,8 @@ public class ApplicationDbContext : DbContext
             new Role { Id = 8, RoleName = "Receiving" },
             new Role { Id = 9, RoleName = "Contracts" },
             new Role { Id = 10, RoleName = "Import" },
-            new Role { Id = 11, RoleName = "Viewer / Management" }
+            new Role { Id = 11, RoleName = "Viewer / Management" },
+            new Role { Id = 12, RoleName = "HR" }
         );
 
         // Initial Users & Roles Seed

@@ -22,7 +22,7 @@ public class UsersController : BaseController
     // Roles allowed for Local Managers to assign
     private static readonly string[] AllowedRolesForLM = 
     { 
-        "Requester", "Buyer", "Area Approver", "Final Approver", "Finance", "Receiving", "Import", "Viewer / Management" 
+        "Requester", "Buyer", "Area Approver", "Final Approver", "Finance", "Receiving", "Import", "Viewer / Management", "HR" 
     };
 
     public UsersController(

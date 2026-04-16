@@ -43,6 +43,8 @@ export function KPICard({
                 display: 'flex', 
                 flexDirection: 'column', 
                 gap: '8px',
+                position: 'relative',
+                overflow: 'hidden',
                 cursor: isInteractive ? 'pointer' : 'default',
                 transition: 'all 0.2s',
                 ...style 
@@ -50,17 +52,19 @@ export function KPICard({
             onMouseOver={(e) => {
                 if (isInteractive) {
                     e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = `0 6px 12px ${borderColor ? borderColor + '33' : 'rgba(0,0,0,0.1)'}`;
+                    e.currentTarget.style.boxShadow = '0 10px 25px rgba(56, 189, 248, 0.25), 0 0 0 1px rgba(56, 189, 248, 0.2)';
+                    e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.4)';
                 }
             }}
             onMouseOut={(e) => {
                 if (isInteractive) {
                     e.currentTarget.style.transform = 'none';
                     e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.05)';
+                    e.currentTarget.style.borderColor = borderColor || 'var(--color-border)';
                 }
             }}
         >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', position: 'relative', zIndex: 1 }}>
                 <span style={{ 
                     fontWeight: 600, 
                     fontSize: '13px', 
@@ -70,7 +74,16 @@ export function KPICard({
                     {title}
                 </span>
                 {icon && (
-                    <div style={{ color: color || 'var(--color-text-muted)' }}>
+                    <div style={{ 
+                        width: 40,
+                        height: 40,
+                        backgroundColor: color ? `${color}1A` : 'rgba(0, 0, 0, 0.05)',
+                        color: color || 'var(--color-text-muted)',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                    }}>
                         {icon}
                     </div>
                 )}
@@ -83,7 +96,9 @@ export function KPICard({
                 color: color || 'var(--color-text)',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '12px'
+                gap: '12px',
+                position: 'relative',
+                zIndex: 1
             }}>
                 {value}
                 
@@ -109,9 +124,24 @@ export function KPICard({
                     fontSize: '1.1rem', 
                     fontWeight: 600, 
                     color: color || 'var(--color-text-muted)',
-                    marginTop: '4px'
+                    marginTop: '4px',
+                    position: 'relative',
+                    zIndex: 1
                 }}>
                     {subtitle}
+                </div>
+            )}
+
+            {icon && React.isValidElement(icon) && (
+                <div style={{
+                    position: 'absolute',
+                    right: -8,
+                    bottom: -8,
+                    opacity: 0.04,
+                    pointerEvents: 'none',
+                    zIndex: 0
+                }}>
+                    {React.cloneElement(icon as React.ReactElement<any>, { size: 80 })}
                 </div>
             )}
         </div>

@@ -94,45 +94,48 @@ export default function FinanceOverview() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
             
             {/* Action Bar: Company Switcher + Help Button */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '-16px' }}>
-                <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
-                    <button
-                        onClick={() => setSelectedCompanyId(null)}
-                        style={{
-                            padding: '8px 16px',
-                            backgroundColor: selectedCompanyId === null ? 'var(--color-primary)' : 'var(--color-bg-surface)',
-                            color: selectedCompanyId === null ? '#fff' : 'var(--color-text-muted)',
-                            border: selectedCompanyId === null ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
-                            borderRadius: '8px',
-                            fontWeight: 600,
-                            fontSize: '14px',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s',
-                            boxShadow: selectedCompanyId === null ? '0 4px 6px rgba(0,0,0,0.1)' : '0 1px 2px rgba(0,0,0,0.05)',
-                        }}
-                    >
-                        Consolidado Global
-                    </button>
-                    {companies.map(c => (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '16px', marginBottom: '-16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Filtrar por Entidade</span>
+                    <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
                         <button
-                            key={c.id}
-                            onClick={() => setSelectedCompanyId(c.id)}
+                            onClick={() => setSelectedCompanyId(null)}
                             style={{
                                 padding: '8px 16px',
-                                backgroundColor: selectedCompanyId === c.id ? 'var(--color-primary)' : 'var(--color-bg-surface)',
-                                color: selectedCompanyId === c.id ? '#fff' : 'var(--color-text-muted)',
-                                border: selectedCompanyId === c.id ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                backgroundColor: selectedCompanyId === null ? 'var(--color-primary)' : 'var(--color-bg-surface)',
+                                color: selectedCompanyId === null ? '#fff' : 'var(--color-text-muted)',
+                                border: selectedCompanyId === null ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
                                 borderRadius: '8px',
                                 fontWeight: 600,
                                 fontSize: '14px',
                                 cursor: 'pointer',
                                 transition: 'all 0.2s',
-                                boxShadow: selectedCompanyId === c.id ? '0 4px 6px rgba(0,0,0,0.1)' : '0 1px 2px rgba(0,0,0,0.05)',
+                                boxShadow: selectedCompanyId === null ? '0 4px 6px rgba(0,0,0,0.1)' : '0 1px 2px rgba(0,0,0,0.05)',
                             }}
                         >
-                            {c.name}
+                            Consolidado Global
                         </button>
-                    ))}
+                        {companies.map(c => (
+                            <button
+                                key={c.id}
+                                onClick={() => setSelectedCompanyId(c.id)}
+                                style={{
+                                    padding: '8px 16px',
+                                    backgroundColor: selectedCompanyId === c.id ? 'var(--color-primary)' : 'var(--color-bg-surface)',
+                                    color: selectedCompanyId === c.id ? '#fff' : 'var(--color-text-muted)',
+                                    border: selectedCompanyId === c.id ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                    borderRadius: '8px',
+                                    fontWeight: 600,
+                                    fontSize: '14px',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s',
+                                    boxShadow: selectedCompanyId === c.id ? '0 4px 6px rgba(0,0,0,0.1)' : '0 1px 2px rgba(0,0,0,0.05)',
+                                }}
+                            >
+                                {c.name}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 <button
@@ -142,18 +145,19 @@ export default function FinanceOverview() {
                         alignItems: 'center',
                         gap: '8px',
                         padding: '8px 16px',
-                        backgroundColor: 'var(--color-bg-surface)',
-                        color: 'var(--color-text-muted)',
-                        border: '1px solid var(--color-border)',
+                        backgroundColor: '#eab308',
+                        color: '#ffffff',
+                        border: '1px solid #ca8a04',
                         borderRadius: '8px',
-                        fontWeight: 600,
+                        fontWeight: 700,
                         fontSize: '14px',
                         cursor: 'pointer',
                         boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                        transition: 'all 0.2s'
+                        transition: 'all 0.2s',
+                        height: 'fit-content'
                     }}
-                    onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'; e.currentTarget.style.color = 'var(--color-text)'; }}
-                    onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; e.currentTarget.style.color = 'var(--color-text-muted)'; }}
+                    onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#ca8a04'; }}
+                    onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#eab308'; }}
                 >
                     <BookOpen size={18} /> Guia Financeiro
                 </button>
@@ -167,6 +171,7 @@ export default function FinanceOverview() {
                     icon={<Clock size={20} />}
                     color="#0284c7"
                     subtitle={formatCurrency(summary.pendingValue, summary.currencyCodes?.[0])}
+                    onClick={() => navigate('/finance/payments?filter=action')}
                 />
                 <KPICard
                     title="Agendados"
@@ -174,6 +179,7 @@ export default function FinanceOverview() {
                     icon={<CheckCircle size={20} />}
                     color="#ea580c"
                     subtitle={formatCurrency(summary.scheduledValue, summary.currencyCodes?.[0])}
+                    onClick={() => navigate('/finance/payments?filter=scheduled')}
                 />
                 <KPICard
                     title="Pagtos. Vencidos"
@@ -190,6 +196,7 @@ export default function FinanceOverview() {
                     icon={<DollarSign size={20} />}
                     color="#16a34a"
                     subtitle={formatCurrency(summary.paidThisMonthValue, summary.currencyCodes?.[0])}
+                    onClick={() => navigate('/finance/payments?filter=completedThisMonth')}
                 />
             </div>
 

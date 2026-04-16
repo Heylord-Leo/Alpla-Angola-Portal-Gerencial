@@ -47,6 +47,7 @@ builder.Services.AddScoped<IPrimaveraArticleSupplierService, PrimaveraArticleSup
 builder.Services.AddScoped<IPrimaveraRequestValidationService, PrimaveraRequestValidationService>();
 builder.Services.AddScoped<InnuxConnectionFactory>();
 builder.Services.AddScoped<IInnuxEmployeeService, InnuxEmployeeService>();
+builder.Services.AddScoped<IInnuxEmployeePhotoService, InnuxEmployeePhotoService>();
 builder.Services.AddScoped<IUnifiedEmployeeProfileService, UnifiedEmployeeProfileService>();
 
 // Notification Service

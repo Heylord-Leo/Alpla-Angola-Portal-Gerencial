@@ -2,7 +2,7 @@ import React from 'react';
 import { 
     FileText, Home, Settings, List, ShoppingCart, 
     Package, Activity, Network, Shield, CheckCircle,
-    CreditCard, DollarSign, Archive
+    CreditCard, DollarSign, Archive, Users, UserCheck
 } from 'lucide-react';
 import { ROLES } from './roles';
 
@@ -174,6 +174,25 @@ export const getNavigationConfig = (userRoles: string[]): NavItem[] => {
                     to: '/finance/history',
                     roles: [ROLES.FINANCE, ROLES.SYSTEM_ADMINISTRATOR],
                     keywords: ['finanças', 'histórico', 'log', 'auditoria']
+                }
+            ]
+        },
+        {
+            id: 'rh',
+            type: 'group',
+            label: 'R.H.',
+            icon: <Users size={18} strokeWidth={2.5} />,
+            roles: [ROLES.HR, ROLES.SYSTEM_ADMINISTRATOR],
+            keywords: ['rh', 'recursos humanos', 'funcionários', 'colaboradores', 'pessoal'],
+            children: [
+                {
+                    id: 'rh-cadastro',
+                    type: 'link',
+                    label: 'Cadastro de Funcionários',
+                    icon: <UserCheck size={18} strokeWidth={2.5} />,
+                    to: '/hr/employees',
+                    roles: [ROLES.HR, ROLES.SYSTEM_ADMINISTRATOR],
+                    keywords: ['rh', 'funcionários', 'cadastro', 'crachá', 'badge', 'foto', 'consulta', 'pessoal']
                 }
             ]
         },

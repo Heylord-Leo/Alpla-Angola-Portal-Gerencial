@@ -364,6 +364,17 @@ public class FinanceController : BaseController
 
         switch(filter)
         {
+            case "action":
+                var waitingActions = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentRequestSent };
+                query = query.Where(r => waitingActions.Contains(r.Status!.Code) || (r.RequestType!.Code == RequestConstants.Types.Payment && r.Status!.Code == RequestConstants.Statuses.FinalApproved));
+                break;
+            case "scheduled":
+                query = query.Where(r => r.Status!.Code == RequestConstants.Statuses.PaymentScheduled);
+                break;
+            case "completedThisMonth":
+                var firstDayOfMonth = new DateTime(today.Year, today.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+                query = query.Where(r => new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(r.Status!.Code) && r.StatusHistories.Any(sh => (sh.NewStatus!.Code == RequestConstants.Statuses.Paid || sh.NewStatus!.Code == RequestConstants.Statuses.PaymentCompleted) && sh.CreatedAtUtc >= firstDayOfMonth));
+                break;
             case "overdue":
                 query = query.Where(r => !new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(r.Status!.Code) && r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < today);
                 break;
@@ -403,7 +414,7 @@ public class FinanceController : BaseController
         foreach (var item in items)
         {
             var r = item.Request;
-            var isPaid = r.Status!.Code == RequestConstants.Statuses.Paid || r.Status.Code == RequestConstants.Statuses.PaymentCompleted;
+            var isPaid = r.Status!.Code == RequestConstants.Statuses.Paid || r.Status.Code == RequestConstants.Statuses.PaymentCompleted || item.PaidHistory != null;
             var isQuotation = r.RequestType!.Code == RequestConstants.Types.Quotation;
             
             var missingDocs = new List<string>();

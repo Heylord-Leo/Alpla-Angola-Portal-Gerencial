@@ -32,6 +32,7 @@ The system operates using the following foundational roles:
 3. **Comprador (Purchaser):** Procurement staff responsible for advancing approved purchase requests to quotation or PO stages based on operational rules.
 4. **Financeiro (Finance):** Staff handling the payment side of operations, monitoring payment requests, and updating financial tracking/statuses.
 5. **Administrador do Sistema (System Administrator):** IT or module administrator who maintains lookup values, user-role associations, and provides overarching operational support.
+6. **Recursos Humanos (HR):** Staff managing employee registration, badge preparation, and workforce data within their assigned plant/department scope. Access is controlled via the dedicated `HR` role. _(Added v2.77.0 — DEC-107)_
 
 > **⚠️ Authorization Key Clarification:**
 > The administrative role key used in the system (database, JWT claims, backend `[Authorize]` attributes, and frontend route guards) is **`System Administrator`** — NOT `Admin`.
@@ -56,16 +57,20 @@ Permissions within the system are evaluated across the following dimensions:
 
 ## 4. Role x Screen Matrix
 
-| Screen \ Role | Solicitante | Aprovador | Comprador | Financeiro | Admin |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **New/Edit Request (Form)** | Yes | No* | No | No | Read-Only |
-| **My Requests (List)** | Yes | Yes (As Requester)| Yes (As Requester)| Yes (As Requester)| Yes |
-| **Pending Approvals (List)**| No | Yes | No | No | No |
-| **Work Queue (List)**| No | No | Yes (Procurement)| Yes (Payments) | Yes |
-| **Request Detail** | Yes (Own)| Yes (Assigned) | Yes | Yes | Yes |
-| **Admin/Settings** | No | No | No | No | Yes |
+| Screen \ Role | Solicitante | Aprovador | Comprador | Financeiro | HR | Admin |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **New/Edit Request (Form)** | Yes | No* | No | No | No | Read-Only |
+| **My Requests (List)** | Yes | Yes (As Requester)| Yes (As Requester)| Yes (As Requester)| No | Yes |
+| **Pending Approvals (List)**| No | Yes | No | No | No | No |
+| **Work Queue (List)**| No | No | Yes (Procurement)| Yes (Payments) | No | Yes |
+| **Request Detail** | Yes (Own)| Yes (Assigned) | Yes | Yes | No | Yes |
+| **HR Workspace (Employees)**| No | No | No | No | Yes (Scoped) | Yes |
+| **Admin/Settings** | No | No | No | No | No | Yes |
 
 *\*Approvers can view details in a read-only context, but editing the core form structure during the pending state is generally restricted to prevent unapproved alterations.*
+
+> **⚠️ Breaking Change (v2.77.0):**
+> The `Local Manager` role no longer grants implicit access to the HR Workspace. Users who need HR access must be explicitly assigned the `HR` role. Local Managers can assign the `HR` role to users within their organizational scope via User Management.
 
 ---
 

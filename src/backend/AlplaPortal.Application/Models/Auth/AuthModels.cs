@@ -24,6 +24,8 @@ public class UserProfileDto
     public string Email { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
     public List<string> Roles { get; set; } = new();
+    public List<string> Plants { get; set; } = new();
+    public List<string> Departments { get; set; } = new();
     public bool MustChangePassword { get; set; }
 }
 

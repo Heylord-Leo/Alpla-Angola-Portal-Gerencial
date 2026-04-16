@@ -84,11 +84,19 @@ export function ActionCarouselWidget({ summary, onRowClick, onCorrectPoClick, on
                                 position: 'relative',
                                 overflow: 'hidden',
                                 boxShadow: 'var(--shadow-sm)',
-                                transition: 'box-shadow 0.2s ease',
+                                transition: 'all 0.2s ease',
                                 cursor: 'default',
                             }}
-                            onMouseEnter={(e) => { e.currentTarget.style.boxShadow = 'var(--shadow-md)'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
+                            onMouseEnter={(e) => { 
+                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                e.currentTarget.style.boxShadow = '0 10px 25px rgba(56, 189, 248, 0.25), 0 0 0 1px rgba(56, 189, 248, 0.2)'; 
+                                e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.4)';
+                            }}
+                            onMouseLeave={(e) => { 
+                                e.currentTarget.style.transform = 'none';
+                                e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; 
+                                e.currentTarget.style.borderColor = 'var(--color-border)';
+                            }}
                         >
                             {/* Icon */}
                             <div style={{
@@ -272,16 +280,18 @@ function CarouselCard({ order, onView, onOpenFull, onDuplicate, onQuotationClick
             padding: '20px',
             borderRadius: 'var(--radius-lg)',
             boxShadow: 'var(--shadow-sm)',
-            transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
+            transition: 'all 0.2s ease',
             height: '100%',
             display: 'flex',
             flexDirection: 'column',
         }}
             onMouseEnter={(e) => {
-                e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
-                e.currentTarget.style.borderColor = 'var(--color-primary)';
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 10px 25px rgba(56, 189, 248, 0.25), 0 0 0 1px rgba(56, 189, 248, 0.2)';
+                e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.4)';
             }}
             onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'none';
                 e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
                 e.currentTarget.style.borderColor = 'var(--color-border)';
             }}

@@ -20,6 +20,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isAdmin: boolean;
   isLocalManager: boolean;
+  hasHRAccess: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -63,6 +64,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isAdmin = user?.roles.includes(ROLES.SYSTEM_ADMINISTRATOR) || false;
   const isLocalManager = user?.roles.includes(ROLES.LOCAL_MANAGER) || false;
+  const hasHRAccess = user?.roles.includes(ROLES.HR) || isAdmin;
 
   if (isLoading) {
     return null; // Or a loading spinner
@@ -76,7 +78,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       logout, 
       isAuthenticated: !!token,
       isAdmin,
-      isLocalManager
+      isLocalManager,
+      hasHRAccess
     }}>
       {children}
     </AuthContext.Provider>

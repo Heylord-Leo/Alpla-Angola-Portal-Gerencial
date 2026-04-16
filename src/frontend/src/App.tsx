@@ -50,6 +50,11 @@ const FinanceHistory = React.lazy(() =>
     import('./pages/Finance/FinanceHistory')
 );
 
+// HR pages
+const EmployeeWorkspace = React.lazy(() =>
+    import('./pages/HR/EmployeeWorkspace')
+);
+
 // Admin pages (isolated, rarely visited)
 const MasterData = React.lazy(() =>
     import('./pages/Settings/MasterData').then(m => ({ default: m.MasterData }))
@@ -133,6 +138,9 @@ function AppContent() {
                     <Route path="payments" element={<Suspense fallback={<LoadingSkeleton />}><FinancePaymentsList /></Suspense>} />
                     <Route path="history" element={<Suspense fallback={<LoadingSkeleton />}><FinanceHistory /></Suspense>} />
                 </Route>
+
+                {/* HR Workspace */}
+                <Route path="/hr/employees" element={<AdminRoute allowedRoles={[ROLES.HR]}><Suspense fallback={<LoadingSkeleton />}><EmployeeWorkspace /></Suspense></AdminRoute>} />
 
                 {/* Settings Routes */}
                 <Route path="/settings/master-data" element={<AdminRoute><Suspense fallback={<LoadingSkeleton />}><MasterData /></Suspense></AdminRoute>} />

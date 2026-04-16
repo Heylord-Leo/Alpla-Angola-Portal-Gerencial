@@ -13,7 +13,8 @@ export const ROLES = {
     RECEIVING: 'Receiving',
     IMPORT: 'Import',
     CONTRACTS: 'Contracts',
-    VIEWER_MANAGEMENT: 'Viewer / Management'
+    VIEWER_MANAGEMENT: 'Viewer / Management',
+    HR: 'HR'
 };
 
 /**
@@ -31,5 +32,6 @@ export const ROLE_DESCRIPTIONS: Record<string, string> = {
     [ROLES.RECEIVING]: 'Atua no recebimento físico e validação de entregas.',
     [ROLES.REQUESTER]: 'Cria e acompanha os próprios pedidos.',
     [ROLES.SYSTEM_ADMINISTRATOR]: 'Possui permissões administrativas amplas no sistema.',
-    [ROLES.VIEWER_MANAGEMENT]: 'Pode consultar informações conforme o escopo permitido, sem atuar diretamente no processo.'
+    [ROLES.VIEWER_MANAGEMENT]: 'Pode consultar informações conforme o escopo permitido, sem atuar diretamente no processo.',
+    [ROLES.HR]: 'Acede às funcionalidades de Recursos Humanos (cadastro, crachás) dentro do escopo de planta e departamento atribuído.'
 };

@@ -107,7 +107,8 @@ export default function UserManagement() {
                 'Receiving', 
                 'Viewer / Management', 
                 'Import', 
-                'Area Approver'
+                'Area Approver',
+                'HR'
             ];
 
             const filteredRoles = isSystemAdmin
@@ -471,6 +472,26 @@ export default function UserManagement() {
                                         ))}
                                     </div>
                                 </section>
+
+                                {/* HR Scope Validation Warning */}
+                                {allRoles.some((r: any) => r.roleName === 'HR' && formData.roleIds.includes(r.id)) && 
+                                 (formData.plantIds.length === 0 || formData.departmentIds.length === 0) && (
+                                    <div style={{ 
+                                        background: 'var(--color-status-orange)12', 
+                                        border: '2px solid var(--color-status-orange)', 
+                                        padding: '12px 16px', 
+                                        display: 'flex', 
+                                        alignItems: 'flex-start', 
+                                        gap: 10,
+                                        fontSize: '0.78rem',
+                                        fontWeight: 700,
+                                        color: 'var(--color-status-orange)',
+                                        lineHeight: 1.5
+                                    }}>
+                                        <Info size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+                                        <span>O perfil <strong>R.H.</strong> requer pelo menos uma planta e um departamento no escopo para funcionar corretamente. Sem escopo definido, o utilizador não poderá visualizar nenhum funcionário.</span>
+                                    </div>
+                                )}
 
                                 <section style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
                                     <div>
