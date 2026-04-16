@@ -13,6 +13,8 @@ public class RequestConfiguration : IEntityTypeConfiguration<Request>
         builder.Property(r => r.Title).IsRequired().HasMaxLength(255);
         builder.Property(r => r.RequestNumber).HasMaxLength(50);
         builder.Property(r => r.EstimatedTotalAmount).HasColumnType("decimal(18,2)");
+        builder.Property(r => r.DiscountAmount).HasColumnType("decimal(18,2)");
+        builder.Property(r => r.OcrOriginalGrandTotal).HasColumnType("decimal(18,2)");
         
         // Strict mapping: A Request has many LineItems, Histories, Attachments
         builder.HasMany(r => r.LineItems)
@@ -41,6 +43,8 @@ public class RequestLineItemConfiguration : IEntityTypeConfiguration<RequestLine
         builder.Property(li => li.Quantity).HasColumnType("decimal(18,4)");
         builder.Property(li => li.UnitPrice).HasColumnType("decimal(18,2)");
         builder.Property(li => li.TotalAmount).HasColumnType("decimal(18,2)");
+        builder.Property(li => li.DiscountPercent).HasColumnType("decimal(9,4)");
+        builder.Property(li => li.DiscountAmount).HasColumnType("decimal(18,2)");
     }
 }
 
@@ -122,6 +126,8 @@ public class QuotationItemConfiguration : IEntityTypeConfiguration<QuotationItem
         builder.Property(qi => qi.IvaRatePercent).HasColumnType("decimal(18,2)");
         builder.Property(qi => qi.IvaAmount).HasColumnType("decimal(18,2)");
         builder.Property(qi => qi.LineTotal).HasColumnType("decimal(18,2)");
+        builder.Property(qi => qi.DiscountAmount).HasColumnType("decimal(18,2)");
+        builder.Property(qi => qi.DiscountPercent).HasColumnType("decimal(9,4)");
 
         builder.HasOne(qi => qi.IvaRate)
                .WithMany()

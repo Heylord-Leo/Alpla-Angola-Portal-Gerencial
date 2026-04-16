@@ -616,10 +616,24 @@ export const api = {
             });
             if (!response.ok) return handleApiError(response, 'Falha ao atualizar mapeamento.');
         },
+        updateBulkEmployeeMapping: async (payload: { employeeIds: string[], plantId?: number | null, departmentMasterId?: number | null, managerUserId?: string | null, clearDepartmentMaster?: boolean, clearManager?: boolean }): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/employees/bulk/mapping`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao processar atualização em massa.');
+            return response.json();
+        },
         getRecords: async (params?: Record<string, string | number>): Promise<any> => {
             const qs = params ? '?' + new URLSearchParams(params as any).toString() : '';
             const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/records${qs}`);
             if (!response.ok) return handleApiError(response, 'Falha ao buscar registos de ausência.');
+            return response.json();
+        },
+        getLeaveOverlap: async (id: string): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/records/${id}/overlap`);
+            if (!response.ok) return handleApiError(response, 'Falha ao buscar conflitos de cobertura.');
             return response.json();
         },
         createRecord: async (data: any): Promise<any> => {
@@ -919,10 +933,22 @@ export const api = {
             const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/companies/${id}/toggle-active`, { method: 'PUT' });
             if (!res.ok) return handleApiError(res, 'Falha ao alternar estado da empresa.');
         },
-        getSuppliers: async (includeInactive = false): Promise<any[]> => {
-            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers?includeInactive=${includeInactive}`);
+        getSuppliers: async (includeInactive = false, search?: string, page: number = 1, pageSize: number = 15): Promise<{ data: any[], totalCount: number, page: number, pageSize: number }> => {
+            const params = new URLSearchParams();
+            if (includeInactive) params.append('includeInactive', 'true');
+            if (search) params.append('search', search);
+            params.append('page', page.toString());
+            params.append('pageSize', pageSize.toString());
+
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers?${params.toString()}`);
             if (!res.ok) return handleApiError(res, 'Falha ao carregar fornecedores.');
-            return res.json();
+            const json = await res.json();
+            return {
+                data: json.items || json.data || [],
+                totalCount: json.totalCount || 0,
+                page: json.page || 1,
+                pageSize: json.pageSize || 15
+            };
         },
         searchSuppliers: async (term: string): Promise<any[]> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/search?q=${encodeURIComponent(term)}`);
@@ -1027,15 +1053,22 @@ export const api = {
         }
     },
     catalogItems: {
-        getAll: async (includeInactive = false, search?: string, take: number = 10): Promise<any[]> => {
+        getAll: async (includeInactive = false, search?: string, page: number = 1, pageSize: number = 15): Promise<{ data: any[], totalCount: number, page: number, pageSize: number }> => {
             const params = new URLSearchParams();
             if (includeInactive) params.append('includeInactive', 'true');
             if (search) params.append('search', search);
-            params.append('take', take.toString());
+            params.append('page', page.toString());
+            params.append('pageSize', pageSize.toString());
 
             const res = await apiFetch(`${API_BASE_URL}/api/v1/catalog-items?${params.toString()}`);
             if (!res.ok) return handleApiError(res, 'Falha ao carregar itens do catálogo.');
-            return res.json();
+            const json = await res.json();
+            return {
+                data: json.items || json.data || [],
+                totalCount: json.totalCount || 0,
+                page: json.page || 1,
+                pageSize: json.pageSize || 15
+            };
         },
         search: async (q: string, take = 20): Promise<any[]> => {
             const res = await apiFetch(`${API_BASE_URL}/api/v1/catalog-items/search?q=${encodeURIComponent(q)}&take=${take}`);

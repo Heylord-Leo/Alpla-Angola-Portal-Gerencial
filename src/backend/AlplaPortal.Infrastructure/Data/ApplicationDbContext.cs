@@ -284,39 +284,55 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<QuotationItem>().Property(q => q.ReceivedQuantity).HasColumnType("decimal(18,4)");
 
         // Phase 2: OCR Extracted Items configuration
-        modelBuilder.Entity<OcrExtractedItem>()
-            .HasOne(o => o.ResolvedUnit)
-            .WithMany()
-            .HasForeignKey(o => o.ResolvedUnitId)
-            .OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<OcrExtractedItem>().HasIndex(o => o.RequestId);
-        modelBuilder.Entity<OcrExtractedItem>().HasIndex(o => o.ExtractionBatchId);
-        modelBuilder.Entity<OcrExtractedItem>().HasIndex(o => new { o.RequestId, o.ExtractionBatchId });
+        modelBuilder.Entity<OcrExtractedItem>(entity =>
+        {
+            entity.HasOne(o => o.ResolvedUnit)
+                .WithMany()
+                .HasForeignKey(o => o.ResolvedUnitId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(o => o.RequestId);
+            entity.HasIndex(o => o.ExtractionBatchId);
+            entity.HasIndex(o => new { o.RequestId, o.ExtractionBatchId });
+
+            // Decimal precision — OCR extraction values
+            entity.Property(o => o.Quantity).HasColumnType("decimal(18,4)");
+            entity.Property(o => o.UnitPrice).HasColumnType("decimal(18,2)");
+            entity.Property(o => o.DiscountAmount).HasColumnType("decimal(18,2)");
+            entity.Property(o => o.DiscountPercent).HasColumnType("decimal(9,4)");
+            entity.Property(o => o.TaxRate).HasColumnType("decimal(9,4)");
+            entity.Property(o => o.LineTotal).HasColumnType("decimal(18,2)");
+            entity.Property(o => o.QualityScore).HasColumnType("decimal(9,4)");
+        });
 
         // Phase 2: Reconciliation Records configuration
-        modelBuilder.Entity<ReconciliationRecord>()
-            .HasOne(r => r.RequesterItem)
-            .WithMany()
-            .HasForeignKey(r => r.RequesterItemId)
-            .OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<ReconciliationRecord>()
-            .HasOne(r => r.OcrExtractedItem)
-            .WithMany()
-            .HasForeignKey(r => r.OcrExtractedItemId)
-            .OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<ReconciliationRecord>()
-            .HasOne(r => r.QuotationItem)
-            .WithMany()
-            .HasForeignKey(r => r.QuotationItemId)
-            .OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<ReconciliationRecord>()
-            .HasOne(r => r.ReviewedByUser)
-            .WithMany()
-            .HasForeignKey(r => r.ReviewedByUserId)
-            .OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<ReconciliationRecord>().HasIndex(r => r.RequestId);
-        modelBuilder.Entity<ReconciliationRecord>().HasIndex(r => r.ExtractionBatchId);
-        modelBuilder.Entity<ReconciliationRecord>().HasIndex(r => new { r.RequestId, r.ExtractionBatchId });
+        modelBuilder.Entity<ReconciliationRecord>(entity =>
+        {
+            entity.HasOne(r => r.RequesterItem)
+                .WithMany()
+                .HasForeignKey(r => r.RequesterItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.OcrExtractedItem)
+                .WithMany()
+                .HasForeignKey(r => r.OcrExtractedItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.QuotationItem)
+                .WithMany()
+                .HasForeignKey(r => r.QuotationItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.ReviewedByUser)
+                .WithMany()
+                .HasForeignKey(r => r.ReviewedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(r => r.RequestId);
+            entity.HasIndex(r => r.ExtractionBatchId);
+            entity.HasIndex(r => new { r.RequestId, r.ExtractionBatchId });
+
+            // Decimal precision — reconciliation analysis values
+            entity.Property(r => r.MatchConfidence).HasColumnType("decimal(9,4)");
+            entity.Property(r => r.QuantityDivergence).HasColumnType("decimal(18,4)");
+        });
 
         // Simple Lookup Seeding for V1 Minimums
         modelBuilder.Entity<RequestType>().HasData(

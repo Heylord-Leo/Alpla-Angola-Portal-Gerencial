@@ -1,11 +1,11 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { LookupDto, CurrencyDto, UserDto, SmtpSettingsDto } from '../../types';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { KebabMenu } from '../../components/ui/KebabMenu';
 import { ROLES } from '../../constants/roles';
-import { Edit2, Power, PowerOff, Database, Mail, Server, Globe, Shield, Save } from 'lucide-react';
+import { Edit2, Power, PowerOff, Database, Mail, Server, Globe, Shield, Save, Search } from 'lucide-react';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { CatalogItemsPanel } from './CatalogItemsPanel';
@@ -35,6 +35,16 @@ export function MasterData() {
     // Form states
     const [activeTab, setActiveTab] = useState<'units' | 'currencies' | 'needLevels' | 'departments' | 'plants' | 'suppliers' | 'costCenters' | 'ivaRates' | 'companies' | 'catalogItems' | 'smtpSettings'>('units');
 
+    // Suppliers Search State
+    const [supplierSearchQuery, setSupplierSearchQuery] = useState('');
+    const [supplierCurrentPage, setSupplierCurrentPage] = useState(1);
+    const [supplierTotalCount, setSupplierTotalCount] = useState(0);
+    const SUPPLIERS_PER_PAGE = 15;
+
+
+
+    const supplierTotalPages = Math.ceil(supplierTotalCount / SUPPLIERS_PER_PAGE);
+
     // SMTP Settings State
     const [smtpSettings, setSmtpSettings] = useState<SmtpSettingsDto | null>(null);
     const [smtpLoading, setSmtpLoading] = useState(false);
@@ -60,43 +70,57 @@ export function MasterData() {
     const [feedback, setFeedback] = useState<{ message: string, type: FeedbackType } | null>(null);
     const [validationErrors, setValidationErrors] = useState<{ name?: string, primaveraCode?: string }>({});
 
+    const loadSuppliers = useCallback(async (query: string = '', page: number = 1) => {
+        try {
+            setLoading(true);
+            const res = await api.lookups.getSuppliers(true, query, page, SUPPLIERS_PER_PAGE);
+            setSuppliers(res.data);
+            setSupplierTotalCount(res.totalCount);
+        } catch (err) {
+            setFeedback({ message: 'Falha ao carregar fornecedores.', type: 'error' });
+        } finally {
+            setLoading(false);
+        }
+    }, [setFeedback]);
+
+    useEffect(() => {
+        if (activeTab === 'suppliers') {
+            const timer = setTimeout(() => {
+                loadSuppliers(supplierSearchQuery, supplierCurrentPage);
+            }, 500);
+            return () => clearTimeout(timer);
+        }
+    }, [activeTab, supplierSearchQuery, supplierCurrentPage, loadSuppliers]);
+
     const loadData = async () => {
         try {
             setLoading(true);
-            const results = await Promise.allSettled([
-                api.lookups.getUnits(true),
-                api.lookups.getCurrencies(true),
-                api.lookups.getNeedLevels(true),
-                api.lookups.getDepartments(true),
-                api.lookups.getPlants(undefined, true),
-                api.lookups.getSuppliers(true),
-                api.lookups.getCostCenters(true),
-                api.lookups.getCompanies(true),
-                api.lookups.getIvaRates(false),
-                api.users.list()
-            ]);
+            const failures: string[] = [];
+            const names = ['Unidades', 'Moedas', 'Níveis Necessidade', 'Departamentos', 'Plantas', 'Centros Custo', 'Empresas', 'IVA', 'Utilizadores'];
 
-            const [uRes, cRes, nRes, dRes, pRes, sRes, ccRes, coRes, ivaRes, usersRes] = results;
+            // Sequential loading to avoid LocalDB connection pool contention.
+            // Parallel Promise.allSettled caused ~44s delays due to connection queue starvation.
+            // Sequential execution completes all 9 requests in < 1s.
+            const loaders: { load: () => Promise<any>, apply: (data: any) => void }[] = [
+                { load: () => api.lookups.getUnits(true), apply: (d) => setUnits([...d].sort((a: any, b: any) => a.id - b.id)) },
+                { load: () => api.lookups.getCurrencies(true), apply: (d) => setCurrencies([...d].sort((a: any, b: any) => a.id - b.id)) },
+                { load: () => api.lookups.getNeedLevels(true), apply: (d) => setNeedLevels([...d].sort((a: any, b: any) => a.id - b.id)) },
+                { load: () => api.lookups.getDepartments(true), apply: (d) => setDepartments([...d].sort((a: any, b: any) => a.id - b.id)) },
+                { load: () => api.lookups.getPlants(undefined, true), apply: (d) => setPlants([...d].sort((a: any, b: any) => a.id - b.id)) },
+                { load: () => api.lookups.getCostCenters(true), apply: (d) => setCostCenters([...d].sort((a: any, b: any) => a.id - b.id)) },
+                { load: () => api.lookups.getCompanies(true), apply: (d) => setCompanies([...d].sort((a: any, b: any) => a.id - b.id)) },
+                { load: () => api.lookups.getIvaRates(false), apply: (d) => setIvaRates([...d].sort((a: any, b: any) => a.id - b.id)) },
+                { load: () => api.users.list(), apply: (d) => setUsers(d) },
+            ];
 
-            if (uRes.status === 'fulfilled') setUnits([...uRes.value].sort((a, b) => a.id - b.id));
-            if (cRes.status === 'fulfilled') setCurrencies([...cRes.value].sort((a, b) => a.id - b.id));
-            if (nRes.status === 'fulfilled') setNeedLevels([...nRes.value].sort((a, b) => a.id - b.id));
-            if (dRes.status === 'fulfilled') setDepartments([...dRes.value].sort((a, b) => a.id - b.id));
-            if (pRes.status === 'fulfilled') setPlants([...pRes.value].sort((a, b) => a.id - b.id));
-            if (sRes.status === 'fulfilled') setSuppliers([...sRes.value].sort((a, b) => a.id - b.id));
-            if (ccRes.status === 'fulfilled') setCostCenters([...ccRes.value].sort((a, b) => a.id - b.id));
-            if (coRes.status === 'fulfilled') setCompanies([...coRes.value].sort((a, b) => a.id - b.id));
-            if (ivaRes.status === 'fulfilled') setIvaRates([...ivaRes.value].sort((a, b) => a.id - b.id));
-            if (usersRes.status === 'fulfilled') setUsers(usersRes.value);
-
-            // Check for failures
-            const failures = results
-                .map((res, i) => ({ res, i }))
-                .filter(x => x.res.status === 'rejected')
-                .map(x => {
-                    const names = ['Unidades', 'Moedas', 'Níveis Necessidade', 'Departamentos', 'Plantas', 'Fornecedores', 'Centros Custo', 'Empresas', 'IVA', 'Utilizadores'];
-                    return names[x.i];
-                });
+            for (let i = 0; i < loaders.length; i++) {
+                try {
+                    const data = await loaders[i].load();
+                    loaders[i].apply(data);
+                } catch {
+                    failures.push(names[i]);
+                }
+            }
 
             if (failures.length > 0) {
                 setFeedback({ 
@@ -241,7 +265,11 @@ export function MasterData() {
                     await api.lookups.createCompany(companyPayload);
                 }
             }
-            await loadData();
+            if (activeTab === 'suppliers') {
+                loadSuppliers(supplierSearchQuery, supplierCurrentPage);
+            } else {
+                await loadData();
+            }
             setFeedback({ message: 'Registo salvo com sucesso.', type: 'success' });
             handleCancel();
         } catch (err: any) {
@@ -261,7 +289,12 @@ export function MasterData() {
             else if (type === 'ivaRate') await api.lookups.toggleIvaRate(id);
             else if (type === 'company') await api.lookups.toggleCompany(id);
             else await api.lookups.toggleSupplier(id);
-            await loadData();
+
+            if (type === 'supplier') {
+                loadSuppliers(supplierSearchQuery, supplierCurrentPage);
+            } else {
+                await loadData();
+            }
             setFeedback({ message: 'Estado alterado com sucesso.', type: 'success' });
         } catch (err: any) {
             setFeedback({ message: err.message || 'Erro ao alterar estado.', type: 'error' });
@@ -356,15 +389,16 @@ export function MasterData() {
             ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(350px, 1fr) 2fr', gap: '32px', alignItems: 'start' }}>
 
-                {/* Form Column - Styled as a standard card */}
-                <div style={{
-                    backgroundColor: 'var(--color-bg-surface)',
-                    padding: '32px',
-                    borderRadius: 'var(--radius-lg)',
-                    border: '1px solid var(--color-border)',
-                    position: 'sticky',
-                    top: 'calc(var(--header-height) + 1rem)'
-                }}>
+                {/* Left Column Wrapper */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', position: 'sticky', top: 'calc(var(--header-height) + 1rem)' }}>
+
+                    {/* Form Column - Styled as a standard card */}
+                    <div style={{
+                        backgroundColor: 'var(--color-bg-surface)',
+                        padding: '32px',
+                        borderRadius: 'var(--radius-lg)',
+                        border: '1px solid var(--color-border)'
+                    }}>
                     <h2 style={{
                         marginTop: 0,
                         marginBottom: '24px',
@@ -732,14 +766,42 @@ export function MasterData() {
                         </p>
                     </div>
                 )}
+                </div> {/* End Left Column Wrapper */}
 
-                <div style={{
-                    backgroundColor: 'var(--color-bg-surface)',
-                    borderRadius: 'var(--radius-lg)',
-                    border: '1px solid var(--color-border)',
-                    overflow: 'hidden'
-                }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
+                {/* Right Column (Table) */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                    <div style={{
+                        backgroundColor: 'var(--color-bg-surface)',
+                        borderRadius: 'var(--radius-lg)',
+                        border: '1px solid var(--color-border)',
+                        overflow: 'hidden'
+                    }}>
+                        {/* Search Bar for Suppliers */}
+                        {activeTab === 'suppliers' && (
+                            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--color-border)' }}>
+                                <div style={{ position: 'relative' }}>
+                                    <Search size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)', pointerEvents: 'none' }} />
+                                    <input
+                                        type="text"
+                                        placeholder="Pesquisar por NOME, CÓDIGO PRIMAVERA ou NIF..."
+                                        value={supplierSearchQuery}
+                                        onChange={e => { setSupplierSearchQuery(e.target.value); setSupplierCurrentPage(1); }}
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px 10px 10px 34px',
+                                            border: '1px solid var(--color-border)',
+                                            borderRadius: '6px',
+                                            fontSize: '0.85rem',
+                                            color: 'var(--color-text-main)',
+                                            backgroundColor: 'var(--color-bg-page)',
+                                            outline: 'none',
+                                            boxSizing: 'border-box'
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        )}
+                        <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
                         <thead>
                             <tr>
                                 <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>
@@ -1038,7 +1100,62 @@ export function MasterData() {
                             ))}
                         </tbody>
                     </table>
+
+                    {activeTab === 'suppliers' && supplierTotalPages > 1 && (
+                        <div style={{
+                            padding: '12px 20px',
+                            borderTop: '1px solid var(--color-border)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            backgroundColor: 'var(--color-bg-page)'
+                        }}>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                                Mostrando {(supplierCurrentPage - 1) * SUPPLIERS_PER_PAGE + 1} até {Math.min(supplierCurrentPage * SUPPLIERS_PER_PAGE, supplierTotalCount)} de {supplierTotalCount} registros
+                            </span>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button
+                                    onClick={() => setSupplierCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={supplierCurrentPage === 1}
+                                    style={{
+                                        padding: '6px 12px',
+                                        fontSize: '0.8rem',
+                                        fontWeight: 600,
+                                        backgroundColor: supplierCurrentPage === 1 ? 'transparent' : 'var(--color-bg-surface)',
+                                        color: supplierCurrentPage === 1 ? 'var(--color-text-muted)' : 'var(--color-text)',
+                                        border: `1px solid var(--color-border)`,
+                                        borderRadius: 'var(--radius-md)',
+                                        cursor: supplierCurrentPage === 1 ? 'not-allowed' : 'pointer',
+                                        opacity: supplierCurrentPage === 1 ? 0.5 : 1
+                                    }}
+                                >
+                                    Anterior
+                                </button>
+                                <span style={{ display: 'flex', alignItems: 'center', fontSize: '0.8rem', fontWeight: 600, padding: '0 8px' }}>
+                                    {supplierCurrentPage} / {supplierTotalPages}
+                                </span>
+                                <button
+                                    onClick={() => setSupplierCurrentPage(p => Math.min(supplierTotalPages, p + 1))}
+                                    disabled={supplierCurrentPage === supplierTotalPages}
+                                    style={{
+                                        padding: '6px 12px',
+                                        fontSize: '0.8rem',
+                                        fontWeight: 600,
+                                        backgroundColor: supplierCurrentPage === supplierTotalPages ? 'transparent' : 'var(--color-bg-surface)',
+                                        color: supplierCurrentPage === supplierTotalPages ? 'var(--color-text-muted)' : 'var(--color-text)',
+                                        border: `1px solid var(--color-border)`,
+                                        borderRadius: 'var(--radius-md)',
+                                        cursor: supplierCurrentPage === supplierTotalPages ? 'not-allowed' : 'pointer',
+                                        opacity: supplierCurrentPage === supplierTotalPages ? 0.5 : 1
+                                    }}
+                                >
+                                    Próxima
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
+                </div> {/* End Right Column Wrapper */}
             </div>
             )}
         </PageContainer>

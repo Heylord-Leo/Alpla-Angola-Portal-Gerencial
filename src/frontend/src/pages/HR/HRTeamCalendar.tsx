@@ -167,9 +167,14 @@ export default function HRTeamCalendar() {
                                                 let cellBg = isWeekend(d) ? '#f8fafc' : '#fff';
                                                 
                                                 if (recordForDay) {
-                                                    const color = recordForDay.leaveTypeColor || '#0ea5e9';
                                                     const isDraftOrSubmitted = recordForDay.statusCode === 'DRAFT' || recordForDay.statusCode === 'SUBMITTED';
-                                                    cellBg = isDraftOrSubmitted ? `${color}1A` : color;
+                                                    const isApproved = recordForDay.statusCode === 'APPROVED';
+                                                    
+                                                    let baseColor = '#94a3b8';
+                                                    if (isDraftOrSubmitted) baseColor = '#f97316';
+                                                    if (isApproved) baseColor = '#22c55e';
+                                                    
+                                                    cellBg = isDraftOrSubmitted ? `${baseColor}33` : baseColor;
                                                     
                                                     // Determine if it's the first day, middle, or last day to adjust visual connecting blocks
                                                     const rStart = new Date(recordForDay.startDate); rStart.setHours(0,0,0,0);
@@ -188,7 +193,7 @@ export default function HRTeamCalendar() {
                                                                 backgroundColor: cellBg, 
                                                                 width: '100%', 
                                                                 position: 'relative',
-                                                                border: isDraftOrSubmitted ? `1px dashed ${color}` : 'none',
+                                                                border: isDraftOrSubmitted ? `1px dashed ${baseColor}` : 'none',
                                                                 borderRadius: borderRadius,
                                                                 display: 'flex',
                                                                 alignItems: 'center',
@@ -204,7 +209,17 @@ export default function HRTeamCalendar() {
                                                 }
 
                                                 return (
-                                                    <td key={d.toISOString()} style={{ padding: 0, borderRight: '1px solid #f1f5f9', backgroundColor: !recordForDay && isWeekend(d) ? '#f8fafc' : 'transparent', verticalAlign: 'middle' }}>
+                                                    <td key={d.toISOString()} style={{ 
+                                                        padding: 0, 
+                                                        borderRight: isToday(d) ? '2px dashed #0ea5e9' : '1px solid #f1f5f9', 
+                                                        borderLeft: isToday(d) ? '2px dashed #0ea5e9' : 'none',
+                                                        backgroundColor: !recordForDay && isWeekend(d) ? '#f8fafc' : isToday(d) && !recordForDay ? '#f0f9ff' : 'transparent', 
+                                                        verticalAlign: 'middle',
+                                                        position: 'relative'
+                                                    }}>
+                                                        {isToday(d) && (
+                                                            <div style={{ position: 'absolute', left: '-1px', top: 0, bottom: 0, width: '2px', backgroundColor: '#0ea5e9', zIndex: 6 }} />
+                                                        )}
                                                         {cellContent}
                                                     </td>
                                                 );
@@ -218,19 +233,19 @@ export default function HRTeamCalendar() {
                     {/* Legend */}
                     <div style={{ padding: '16px', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '24px', flexWrap: 'wrap', backgroundColor: '#f8fafc' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <div style={{ width: '16px', height: '16px', borderRadius: '4px', backgroundColor: '#0ea5e9' }}></div>
+                            <div style={{ width: '16px', height: '16px', borderRadius: '4px', backgroundColor: '#22c55e' }}></div>
                             <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Férias (Aprovado)</span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <div style={{ width: '16px', height: '16px', borderRadius: '4px', backgroundColor: '#0ea5e91A', border: '1px dashed #0ea5e9' }}></div>
+                            <div style={{ width: '16px', height: '16px', borderRadius: '4px', backgroundColor: '#f9731633', border: '1px dashed #f97316' }}></div>
                             <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Férias (Pendente)</span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <div style={{ width: '16px', height: '16px', borderRadius: '4px', backgroundColor: '#f43f5e' }}></div>
-                            <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Faltas / Doença</span>
+                            <div style={{ width: '16px', height: '16px', borderRadius: '2px', border: '2px dashed #0ea5e9' }}></div>
+                            <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Hoje</span>
                         </div>
                         <span style={{ marginLeft: 'auto', fontSize: '12px', color: '#94a3b8', fontStyle: 'italic' }}>
-                            Cores exatas variam conforme o padrão configurado no RH.
+                            A visão prioriza o painel de impacto na cobertura operacional local.
                         </span>
                     </div>
                 </div>

@@ -100,7 +100,7 @@ public class CatalogItemsController : ControllerBase
 
     /// <summary>List all catalog items with optional inactive filter.</summary>
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] bool includeInactive = false, [FromQuery] string? search = null, [FromQuery] int take = 10)
+    public async Task<IActionResult> GetAll([FromQuery] bool includeInactive = false, [FromQuery] string? search = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 15)
     {
         var query = _context.ItemCatalogItems
             .Include(ic => ic.DefaultUnit)
@@ -119,9 +119,12 @@ public class CatalogItemsController : ControllerBase
                 (ic.SupplierCode != null && ic.SupplierCode.ToLower().Contains(normalizedQ)));
         }
 
+        var totalCount = await query.CountAsync();
+
         var items = await query
             .OrderByDescending(ic => ic.Id)
-            .Take(take)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(ic => new CatalogItemResponseDto
             {
                 Id = ic.Id,
@@ -140,7 +143,13 @@ public class CatalogItemsController : ControllerBase
             })
             .ToListAsync();
 
-        return Ok(items);
+        return Ok(new Application.DTOs.Common.PagedResult<CatalogItemResponseDto>
+        {
+            Items = items,
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize
+        });
     }
 
     /// <summary>Search catalog items by code or description. Used for autocomplete in request forms.</summary>

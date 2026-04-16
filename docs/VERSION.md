@@ -2,7 +2,22 @@
 
 ## Current Version
 
-v2.77.1
+v2.77.3
+
+## [2.77.3] - 2026-04-16
+
+### Performance
+- **Master Data Page Load Optimization (50s → 2s)**: Diagnosed and resolved two compounding performance issues causing the Master Data page to take ~50 seconds to load:
+  1. **Backend: GetUsers Cartesian Explosion** — The `/api/v1/users` endpoint used 4 eager-loading Include chains (Department, Roles, Plants, Departments) that produced a cartesian join taking 25s+ for just 10 users. Replaced with direct `Select` projection in SQL, reducing the endpoint to <200ms.
+  2. **Frontend: Parallel API Contention** — `Promise.allSettled` fired 9 API calls simultaneously, overwhelming LocalDB's connection pool. Switched to sequential loading, which completes all 9 requests in <1s vs the previous 44s under contention.
+
+## [2.77.2] - 2026-04-16
+
+### Fixed
+- **EF Core Decimal Precision Standardization**: Added explicit `HasColumnType` precision/scale for all decimal properties across `OcrExtractedItem`, `ReconciliationRecord`, `QuotationItem`, `RequestLineItem`, and `Request` entities. Eliminates all "No store type was specified for the decimal property" model validation warnings and prevents potential silent data truncation. Convention: money `(18,2)`, percentages `(9,4)`, quantities `(18,4)`.
+
+### Documentation
+- **DECISIONS.md**: Added DEC-108 — Mandatory Explicit Decimal Precision rule as a permanent backend convention.
 
 ## [2.77.1] - 2026-04-16
 

@@ -59,9 +59,14 @@ export default function HRLeaveList() {
 
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault();
+        
         if (!formEmployeeId) {
             setFeedback({ type: 'error', message: 'Selecione um funcionário.' });
-            setIsDrawerOpen(false);
+            return;
+        }
+
+        if (formStartDate && formEndDate && new Date(formStartDate) > new Date(formEndDate)) {
+            setFeedback({ type: 'error', message: 'A data de fim deve ser igual ou posterior à data de início.' });
             return;
         }
 
@@ -155,6 +160,7 @@ export default function HRLeaveList() {
             <HRActionModal
                 show={actionModal.show}
                 action={actionModal.action}
+                recordId={actionModal.recordId}
                 onClose={() => {
                     setActionModal({ show: false, action: null, recordId: null });
                     setModalFeedback({ type: 'info', message: null });
@@ -313,16 +319,16 @@ export default function HRLeaveList() {
             {/* Slider Drawer Overlay for New Record */}
             {isDrawerOpen && (
                 <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, display: 'flex', justifyContent: 'flex-end', backgroundColor: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(2px)' }}>
-                    <div style={{ width: '100%', maxWidth: '450px', backgroundColor: '#fff', height: '100%', display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)', animation: 'slideIn 0.3s ease-out' }}>
-                        <div style={{ padding: '24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f8fafc' }}>
+                    <div style={{ width: '100%', maxWidth: '450px', backgroundColor: '#fff', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)', animation: 'slideIn 0.3s ease-out' }}>
+                        <div style={{ padding: '24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f8fafc', boxSizing: 'border-box' }}>
                             <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#0f172a' }}>Nova Solicitação</h3>
                             <button onClick={() => setIsDrawerOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
                                 <X size={24} />
                             </button>
                         </div>
                         
-                        <div style={{ padding: '24px', flex: 1, overflowY: 'auto' }}>
-                            <form id="create-leave-form" onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        <div style={{ padding: '24px', flex: 1, overflowY: 'auto', overflowX: 'hidden', boxSizing: 'border-box' }}>
+                            <form id="create-leave-form" onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%', boxSizing: 'border-box' }}>
                                 
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                     <label style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>Funcionário *</label>
@@ -331,7 +337,31 @@ export default function HRLeaveList() {
                                     />
                                 </div>
 
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', opacity: formEmployeeId ? 1 : 0.5, pointerEvents: formEmployeeId ? 'auto' : 'none' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 150px' }}>
+                                        <label style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>Data de Início *</label>
+                                        <DateInput 
+                                            required 
+                                            value={formStartDate} 
+                                            onChange={(v) => { setFormStartDate(v); if (formEndDate && new Date(v) > new Date(formEndDate)) setFormEndDate(v); }}
+                                            style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontWeight: 500, color: '#0f172a' }}
+                                        />
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 150px' }}>
+                                        <label style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>Data de Fim *</label>
+                                        <DateInput 
+                                            required 
+                                            value={formEndDate} 
+                                            onChange={(v) => setFormEndDate(v)}
+                                            style={{ padding: '10px', borderRadius: '8px', border: formStartDate && formEndDate && new Date(formStartDate) > new Date(formEndDate) ? '1px solid #ef4444' : '1px solid #cbd5e1', outline: 'none', fontWeight: 500, color: '#0f172a' }}
+                                        />
+                                        {formStartDate && formEndDate && new Date(formStartDate) > new Date(formEndDate) && (
+                                            <span style={{ fontSize: '11px', color: '#ef4444', fontWeight: 600 }}>A data de fim deve ser posterior ao início.</span>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', opacity: (formStartDate && formEndDate && new Date(formStartDate) <= new Date(formEndDate)) ? 1 : 0.5, pointerEvents: (formStartDate && formEndDate && new Date(formStartDate) <= new Date(formEndDate)) ? 'auto' : 'none' }}>
                                     <label style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>Tipo de Ausência *</label>
                                     <select 
                                         required 
@@ -346,28 +376,7 @@ export default function HRLeaveList() {
                                     </select>
                                 </div>
 
-                                <div style={{ display: 'flex', gap: '16px' }}>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-                                        <label style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>Data de Início *</label>
-                                        <DateInput 
-                                            required 
-                                            value={formStartDate} 
-                                            onChange={(v) => setFormStartDate(v)}
-                                            style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontWeight: 500, color: '#0f172a' }}
-                                        />
-                                    </div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-                                        <label style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>Data de Fim *</label>
-                                        <DateInput 
-                                            required 
-                                            value={formEndDate} 
-                                            onChange={(v) => setFormEndDate(v)}
-                                            style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontWeight: 500, color: '#0f172a' }}
-                                        />
-                                    </div>
-                                </div>
-
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', opacity: formLeaveTypeId ? 1 : 0.5, pointerEvents: formLeaveTypeId ? 'auto' : 'none' }}>
                                     <label style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>Observações / Motivo</label>
                                     <textarea 
                                         rows={4}
@@ -380,7 +389,7 @@ export default function HRLeaveList() {
                             </form>
                         </div>
                         
-                        <div style={{ padding: '24px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '12px', backgroundColor: '#f8fafc' }}>
+                        <div style={{ padding: '24px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: '12px', backgroundColor: '#f8fafc', boxSizing: 'border-box' }}>
                             <button 
                                 type="button"
                                 onClick={() => setIsDrawerOpen(false)}
@@ -391,8 +400,8 @@ export default function HRLeaveList() {
                             <button 
                                 form="create-leave-form"
                                 type="submit"
-                                disabled={submitting}
-                                style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', backgroundColor: submitting ? '#94a3b8' : '#0ea5e9', color: '#fff', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}
+                                disabled={submitting || !formEmployeeId || !formStartDate || !formEndDate || !formLeaveTypeId || new Date(formStartDate) > new Date(formEndDate)}
+                                style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', backgroundColor: (submitting || !formEmployeeId || !formStartDate || !formEndDate || !formLeaveTypeId || new Date(formStartDate) > new Date(formEndDate)) ? '#cbd5e1' : '#0ea5e9', color: '#fff', fontWeight: 700, cursor: (submitting || !formEmployeeId || !formStartDate || !formEndDate || !formLeaveTypeId || new Date(formStartDate) > new Date(formEndDate)) ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}
                             >
                                 {submitting ? 'A submeter...' : 'Criar Solicitação'}
                             </button>

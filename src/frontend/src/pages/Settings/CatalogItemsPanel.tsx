@@ -18,12 +18,16 @@ interface CatalogItemsPanelProps {
 export function CatalogItemsPanel({ setFeedback }: CatalogItemsPanelProps) {
     const navigate = useNavigate();
     const [items, setItems] = useState<ItemCatalogDto[]>([]);
+    const [totalCount, setTotalCount] = useState(0);
     const [units, setUnits] = useState<Unit[]>([]);
     const [loading, setLoading] = useState(true);
     const [editId, setEditId] = useState<number | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [showInactive] = useState(true);
-    const [categoryFilter, setCategoryFilter] = useState('');
+    
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const ITEMS_PER_PAGE = 15;
 
     const [formData, setFormData] = useState({
         description: '',
@@ -33,11 +37,12 @@ export function CatalogItemsPanel({ setFeedback }: CatalogItemsPanelProps) {
         category: ''
     });
 
-    const loadItems = useCallback(async (query: string = '') => {
+    const loadItems = useCallback(async (query: string = '', page: number = 1) => {
         try {
             setLoading(true);
-            const itemsData = await api.catalogItems.getAll(showInactive, query, query ? 50 : 10);
-            setItems(itemsData);
+            const res = await api.catalogItems.getAll(showInactive, query, page, ITEMS_PER_PAGE);
+            setItems(res.data);
+            setTotalCount(res.totalCount);
         } catch (err: any) {
             setFeedback({ message: 'Falha ao carregar catálogo de itens.', type: 'error' });
         } finally {
@@ -60,10 +65,10 @@ export function CatalogItemsPanel({ setFeedback }: CatalogItemsPanelProps) {
 
     useEffect(() => {
         const timer = setTimeout(() => {
-            loadItems(searchQuery);
+            loadItems(searchQuery, currentPage);
         }, 500);
         return () => clearTimeout(timer);
-    }, [searchQuery, loadItems]);
+    }, [searchQuery, currentPage, loadItems]);
 
     const handleEdit = (item: ItemCatalogDto) => {
         setEditId(item.id);
@@ -107,7 +112,7 @@ export function CatalogItemsPanel({ setFeedback }: CatalogItemsPanelProps) {
                 setFeedback({ message: 'Item do catálogo criado.', type: 'success' });
             }
             handleCancel();
-            loadItems(searchQuery);
+            loadItems(searchQuery, currentPage);
         } catch (err: any) {
             setFeedback({ message: err.message || 'Falha ao salvar item.', type: 'error' });
         }
@@ -117,20 +122,13 @@ export function CatalogItemsPanel({ setFeedback }: CatalogItemsPanelProps) {
         try {
             await api.catalogItems.toggleActive(id);
             setFeedback({ message: 'Estado do item alterado.', type: 'success' });
-            loadItems(searchQuery);
+            loadItems(searchQuery, currentPage);
         } catch (err: any) {
             setFeedback({ message: err.message || 'Falha ao alternar estado.', type: 'error' });
         }
     };
 
-    // Extract unique categories for filter
-    const categories = Array.from(new Set(items.map(i => i.category).filter(Boolean)));
-
-    // Filtered items (Server-side search handles text, leaving Category filtering local)
-    const filteredItems = items.filter(item => {
-        const matchesCategory = !categoryFilter || item.category === categoryFilter;
-        return matchesCategory;
-    });
+    const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
 
     const labelStyle: React.CSSProperties = {
         display: 'block',
@@ -347,7 +345,7 @@ export function CatalogItemsPanel({ setFeedback }: CatalogItemsPanelProps) {
                             type="text"
                             placeholder="Pesquisar por código ou descrição..."
                             value={searchQuery}
-                            onChange={e => setSearchQuery(e.target.value)}
+                            onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
                             style={{
                                 ...inputStyle,
                                 paddingLeft: '34px',
@@ -355,25 +353,8 @@ export function CatalogItemsPanel({ setFeedback }: CatalogItemsPanelProps) {
                             }}
                         />
                     </div>
-                    {categories.length > 0 && (
-                        <select
-                            value={categoryFilter}
-                            onChange={e => setCategoryFilter(e.target.value)}
-                            style={{
-                                ...inputStyle,
-                                width: 'auto',
-                                minWidth: '150px',
-                                border: '1px solid var(--color-border)'
-                            }}
-                        >
-                            <option value="">Todas Categorias</option>
-                            {categories.map(cat => (
-                                <option key={cat} value={cat!}>{cat}</option>
-                            ))}
-                        </select>
-                    )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                        <span style={{ fontWeight: 700 }}>{filteredItems.length}</span>
+                        <span style={{ fontWeight: 700 }}>{totalCount}</span>
                         <span>itens</span>
                     </div>
                 </div>
@@ -393,14 +374,14 @@ export function CatalogItemsPanel({ setFeedback }: CatalogItemsPanelProps) {
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredItems.length === 0 ? (
+                            {items.length === 0 ? (
                                 <tr>
                                     <td colSpan={7} style={{ ...tdStyle, textAlign: 'center', color: 'var(--color-text-muted)', fontStyle: 'italic', padding: '32px' }}>
                                         Nenhum item encontrado.
                                     </td>
                                 </tr>
                             ) : (
-                                filteredItems.map(item => (
+                                items.map(item => (
                                     <tr key={item.id} style={{ opacity: item.isActive ? 1 : 0.5 }}>
                                         <td style={{ ...tdStyle, fontFamily: 'monospace', fontWeight: 700, color: 'var(--color-primary)', fontSize: '0.8rem' }}>
                                             {item.code}
@@ -463,6 +444,66 @@ export function CatalogItemsPanel({ setFeedback }: CatalogItemsPanelProps) {
                         </tbody>
                     </table>
                 </div>
+
+                {totalPages > 1 && (
+                    <div style={{
+                        padding: '12px 20px',
+                        borderTop: '1px solid var(--color-border)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        backgroundColor: 'var(--color-bg-page)'
+                    }}>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                            Mostrando {(currentPage - 1) * ITEMS_PER_PAGE + 1} até {Math.min(currentPage * ITEMS_PER_PAGE, totalCount)} de {totalCount} registros
+                        </span>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                                style={{
+                                    padding: '6px 12px',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 600,
+                                    backgroundColor: currentPage === 1 ? 'transparent' : 'var(--color-bg-surface)',
+                                    color: currentPage === 1 ? 'var(--color-text-muted)' : 'var(--color-text)',
+                                    border: `1px solid var(--color-border)`,
+                                    borderRadius: 'var(--radius-md)',
+                                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                                    opacity: currentPage === 1 ? 0.5 : 1
+                                }}
+                            >
+                                Anterior
+                            </button>
+                            <span style={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                fontSize: '0.8rem', 
+                                fontWeight: 600,
+                                padding: '0 8px'
+                            }}>
+                                {currentPage} / {totalPages}
+                            </span>
+                            <button
+                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                disabled={currentPage === totalPages}
+                                style={{
+                                    padding: '6px 12px',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 600,
+                                    backgroundColor: currentPage === totalPages ? 'transparent' : 'var(--color-bg-surface)',
+                                    color: currentPage === totalPages ? 'var(--color-text-muted)' : 'var(--color-text)',
+                                    border: `1px solid var(--color-border)`,
+                                    borderRadius: 'var(--radius-md)',
+                                    cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                                    opacity: currentPage === totalPages ? 0.5 : 1
+                                }}
+                            >
+                                Próxima
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

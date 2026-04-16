@@ -77,34 +77,32 @@ public class UsersController : BaseController
             ? await _context.UserDepartmentScopes.Where(s => s.UserId == CurrentUserId).Select(s => s.DepartmentId).ToListAsync()
             : new List<int>();
 
-        var query = _context.Users
-            .Include(u => u.Department)
-            .Include(u => u.UserRoleAssignments).ThenInclude(ura => ura.Role)
-            .Include(u => u.UserPlantScopes).ThenInclude(ups => ups.Plant)
-            .Include(u => u.UserDepartmentScopes).ThenInclude(uds => uds.Department)
-            .AsNoTracking()
-            .AsQueryable();
+        var query = _context.Users.AsNoTracking().AsQueryable();
 
         if (!includeInactive)
         {
             query = query.Where(u => u.IsActive);
         }
 
-        var users = await query
+        // Project directly in SQL to avoid cartesian explosion from multiple Include chains.
+        // Previous implementation used 4 Include/ThenInclude chains which produced 25s+ queries.
+        var result = await query
             .OrderBy(u => u.FullName)
+            .Select(u => new UserListDto
+            {
+                Id = u.Id,
+                FullName = u.FullName,
+                Email = u.Email,
+                IsActive = u.IsActive,
+                Roles = u.UserRoleAssignments.Select(ra => ra.Role.RoleName).ToList(),
+                Plants = u.UserPlantScopes.Select(ps => ps.Plant.Code).ToList(),
+                Departments = u.UserDepartmentScopes.Select(ds => ds.Department.Code).ToList(),
+                CanEdit = isSystemAdmin || (isLocalManager && (
+                    u.UserPlantScopes.Any(ps => lmPlantIds.Contains(ps.PlantId)) ||
+                    u.UserDepartmentScopes.Any(ds => lmDeptIds.Contains(ds.DepartmentId))
+                ))
+            })
             .ToListAsync();
-
-        var result = users.Select(u => new UserListDto
-        {
-            Id = u.Id,
-            FullName = u.FullName,
-            Email = u.Email,
-            IsActive = u.IsActive,
-            Roles = u.UserRoleAssignments.Select(ra => ra.Role.RoleName).ToList(),
-            Plants = u.UserPlantScopes.Select(ps => ps.Plant.Code).ToList(),
-            Departments = u.UserDepartmentScopes.Select(ds => ds.Department.Code).ToList(),
-            CanEdit = isSystemAdmin || (isLocalManager && CanManageUserSubset(u, lmPlantIds, lmDeptIds))
-        }).ToList();
 
         return Ok(result);
     }

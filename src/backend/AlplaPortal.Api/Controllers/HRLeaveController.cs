@@ -225,6 +225,84 @@ public class HRLeaveController : ControllerBase
         return Ok(new { message = "Mapeamento atualizado." });
     }
 
+    /// <summary>Bulk update Portal mapping fields for multiple HR employees.</summary>
+    [HttpPut("employees/bulk/mapping")]
+    public async Task<IActionResult> BulkUpdateEmployeeMapping([FromBody] BulkUpdateMappingRequest request)
+    {
+        if (!IsAdminOrHR)
+            return Forbid();
+
+        if (request.EmployeeIds == null || !request.EmployeeIds.Any())
+            return BadRequest(new { message = "Nenhum funcionário selecionado." });
+
+        var employees = await _context.HREmployees
+            .Where(e => request.EmployeeIds.Contains(e.Id))
+            .ToListAsync();
+
+        var result = new BulkUpdateMappingResult { Processed = request.EmployeeIds.Count };
+
+        foreach (var employee in employees)
+        {
+            bool modified = false;
+
+            if (request.PlantId.HasValue) 
+            {
+                employee.PlantId = request.PlantId;
+                modified = true;
+            }
+
+            if (request.ClearDepartmentMaster)
+            {
+                employee.DepartmentMasterId = null;
+                modified = true;
+            }
+            else if (request.DepartmentMasterId.HasValue)
+            {
+                employee.DepartmentMasterId = request.DepartmentMasterId;
+                modified = true;
+            }
+
+            if (request.ClearManager)
+            {
+                employee.ManagerUserId = null;
+                modified = true;
+            }
+            else if (request.ManagerUserId.HasValue)
+            {
+                employee.ManagerUserId = request.ManagerUserId;
+                modified = true;
+            }
+
+            if (modified)
+            {
+                // Re-evaluate mapping status
+                employee.IsMapped = employee.PlantId.HasValue || 
+                                    employee.PortalDepartmentId.HasValue || 
+                                    employee.DepartmentMasterId.HasValue ||
+                                    employee.ManagerUserId.HasValue;
+                result.Updated++;
+            }
+            else
+            {
+                result.Skipped++;
+            }
+        }
+
+        result.NotFound = request.EmployeeIds.Count - employees.Count;
+
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            result.Errors++;
+            return StatusCode(500, new { message = "Erro ao processar atualização em massa.", details = ex.Message, result });
+        }
+
+        return Ok(result);
+    }
+
     /// <summary>Trigger Innux → local sync (Admin/HR only).</summary>
     [HttpPost("employees/sync")]
     public async Task<IActionResult> SyncEmployees()
@@ -786,6 +864,17 @@ public class HRLeaveController : ControllerBase
 
         var activeEmployees = scopedIds.Count;
 
+        // ActionRequired logic
+        var missingMappings = await scopedEmployees.CountAsync(e => e.IsActive && (e.PlantId == null || e.DepartmentMasterId == null));
+
+        var staleThreshold = DateTime.UtcNow.AddHours(-48);
+        var staleRequests = await _context.LeaveRecords
+            .CountAsync(lr =>
+                scopedIds.Contains(lr.EmployeeId) &&
+                lr.StatusCode == LeaveStatusCodes.Submitted &&
+                (lr.UpdatedAtUtc ?? lr.CreatedAtUtc) < staleThreshold);
+
+        // CurrentSituation logic
         var pendingLeave = await _context.LeaveRecords
             .CountAsync(lr =>
                 scopedIds.Contains(lr.EmployeeId) &&
@@ -806,13 +895,21 @@ public class HRLeaveController : ControllerBase
                 lr.StartDate <= weekFromNow);
 
         var lastSync = await _syncService.GetLastSyncAsync();
+        var syncIssuesCount = (lastSync != null && lastSync.Status == "Failed") ? 1 : 0;
 
         return Ok(new
         {
-            activeEmployees,
-            pendingLeave,
-            absentToday,
-            upcomingLeave,
+            currentSituation = new {
+                activeEmployees,
+                pendingLeave,
+                absentToday,
+                upcomingLeave
+            },
+            actionRequired = new {
+                missingMappings,
+                staleRequests,
+                syncIssuesCount
+            },
             lastSync = lastSync != null ? new
             {
                 lastSync.StartedAtUtc,
@@ -820,6 +917,52 @@ public class HRLeaveController : ControllerBase
                 lastSync.Status,
                 lastSync.TotalProcessed
             } : null
+        });
+    }
+
+    [HttpGet("records/{id}/overlap")]
+    public async Task<IActionResult> GetLeaveOverlap(Guid id)
+    {
+        if (!await HasHRModuleAccess())
+            return Forbid();
+
+        var record = await _context.LeaveRecords
+            .Include(r => r.Employee)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (record == null) return NotFound("Record não encontrado.");
+
+        var targetDepartmentId = record.Employee.DepartmentMasterId;
+        var targetPlantId = record.Employee.PlantId;
+        
+        var query = _context.LeaveRecords
+            .Include(r => r.Employee)
+            .Where(r => 
+                r.Id != record.Id && // exclude self
+                r.StatusCode == LeaveStatusCodes.Approved && 
+                r.StartDate <= record.EndDate && 
+                r.EndDate >= record.StartDate);
+
+        if (targetDepartmentId.HasValue)
+        {
+            query = query.Where(r => r.Employee.DepartmentMasterId == targetDepartmentId.Value);
+        }
+        else if (targetPlantId.HasValue)
+        {
+            query = query.Where(r => r.Employee.PlantId == targetPlantId.Value);
+        }
+        else 
+        {
+            return Ok(new { overlapCount = 0, overlappingNames = new string[0], scopeUsed = "None" });
+        }
+
+        var overlapCount = await query.CountAsync();
+        var overlappingNames = await query.Select(r => r.Employee.FullName).Take(5).ToListAsync();
+        
+        return Ok(new {
+            overlapCount,
+            overlappingNames,
+            scopeUsed = targetDepartmentId.HasValue ? "Department" : "Plant"
         });
     }
 
@@ -858,6 +1001,25 @@ public class HRLeaveController : ControllerBase
         public int? PortalDepartmentId { get; set; }
         public int? DepartmentMasterId { get; set; }
         public Guid? ManagerUserId { get; set; }
+    }
+
+    public class BulkUpdateMappingRequest
+    {
+        public List<Guid> EmployeeIds { get; set; } = new();
+        public int? PlantId { get; set; }
+        public int? DepartmentMasterId { get; set; }
+        public Guid? ManagerUserId { get; set; }
+        public bool ClearDepartmentMaster { get; set; }
+        public bool ClearManager { get; set; }
+    }
+
+    public class BulkUpdateMappingResult
+    {
+        public int Processed { get; set; }
+        public int Updated { get; set; }
+        public int Skipped { get; set; }
+        public int NotFound { get; set; }
+        public int Errors { get; set; }
     }
 
     public class WorkflowActionRequest

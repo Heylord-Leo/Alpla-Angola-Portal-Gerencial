@@ -3,12 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { DropdownPortal } from '../ui/DropdownPortal';
 import { Z_INDEX } from '../../constants/ui';
 import { Feedback, FeedbackType } from '../ui/Feedback';
+import { api } from '../../lib/api';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
 
-export type HRActionType = 'APPROVE' | 'REJECT' | 'CANCEL' | 'SYNC' | 'SYNC_DEPARTMENTS' | null;
+export type HRActionType = 'APPROVE' | 'REJECT' | 'CANCEL' | 'SYNC' | 'SYNC_DEPARTMENTS' | 'SYNC_ALL' | null;
 
 interface HRActionModalProps {
     show: boolean;
     action: HRActionType;
+    recordId?: string | null;
     onClose: () => void;
     onConfirm: (action: HRActionType, payload: { notes?: string }) => void;
     processing: boolean;
@@ -19,6 +22,7 @@ interface HRActionModalProps {
 export function HRActionModal({
     show,
     action,
+    recordId,
     onClose,
     onConfirm,
     processing,
@@ -26,12 +30,24 @@ export function HRActionModal({
     onCloseFeedback
 }: HRActionModalProps) {
     const [notes, setNotes] = useState('');
+    const [overlapData, setOverlapData] = useState<any>(null);
+    const [loadingOverlap, setLoadingOverlap] = useState(false);
 
     useEffect(() => {
         if (show) {
             setNotes('');
+            if (action === 'APPROVE' && recordId) {
+                setLoadingOverlap(true);
+                api.hrLeave.getLeaveOverlap(recordId)
+                    .then(data => setOverlapData(data))
+                    .catch(e => console.error(e))
+                    .finally(() => setLoadingOverlap(false));
+            } else {
+                setOverlapData(null);
+                setLoadingOverlap(false);
+            }
         }
-    }, [show]);
+    }, [show, action, recordId]);
 
     if (!show || !action) return null;
 
@@ -42,6 +58,7 @@ export function HRActionModal({
             case 'CANCEL': return 'Cancelar Pedido';
             case 'SYNC': return 'Sincronizar Innux';
             case 'SYNC_DEPARTMENTS': return 'Sincronizar Departamentos';
+            case 'SYNC_ALL': return 'Sincronizar Dados Mestre';
             default: return '';
         }
     };
@@ -53,6 +70,7 @@ export function HRActionModal({
             case 'CANCEL': return 'Tem certeza que deseja cancelar este pedido? Esta ação não pode ser desfeita.';
             case 'SYNC': return 'Esta ação irá sincronizar a lista de funcionários do Innux para a BD do Portal. Pretende continuar?';
             case 'SYNC_DEPARTMENTS': return 'Esta ação irá importar a lista mestra de departamentos do Primavera (AlplaSOPRO e AlplaPLASTICOS) para o Portal. Alterações em departamentos inativos serão preservadas até que sejam reativados. Pretende continuar?';
+            case 'SYNC_ALL': return 'Esta ação irá importar a lista mestra de departamentos (Primavera) e em seguida sincronizar a base de funcionários (Innux). Esta operação processa grande volume de dados e pode levar alguns momentos. Pretende continuar?';
             default: return '';
         }
     };
@@ -136,6 +154,26 @@ export function HRActionModal({
                             </div>
                         )}
 
+                        {loadingOverlap && action === 'APPROVE' && (
+                            <div style={{ marginBottom: '24px', fontSize: '0.9rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>Verificando cobertura da equipe...</div>
+                        )}
+                        
+                        {!loadingOverlap && overlapData && overlapData.overlapCount > 0 && action === 'APPROVE' && (
+                            <div style={{ marginBottom: '24px', padding: '16px', backgroundColor: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', color: '#b45309', fontWeight: 800 }}>
+                                    <AlertTriangle size={18} /> Atenção: Conflito de Cobertura
+                                </div>
+                                <p style={{ margin: 0, color: '#d97706', fontSize: '0.875rem', fontWeight: 600 }}>
+                                    Existem {overlapData.overlapCount} colaborador(es) no mesmo escopo ({overlapData.scopeUsed === 'Department' ? 'Departamento' : 'Fábrica'}) com férias aprovadas nesse período.
+                                </p>
+                                {overlapData.overlappingNames?.length > 0 && (
+                                    <ul style={{ margin: '8px 0 0 0', paddingLeft: '20px', color: '#b45309', fontSize: '0.875rem', fontWeight: 500 }}>
+                                        {overlapData.overlappingNames.map((n: string, i: number) => <li key={i}>{n}</li>)}
+                                    </ul>
+                                )}
+                            </div>
+                        )}
+
                         {feedback && feedback.message && (
                             <div style={{ marginBottom: '24px' }}>
                                 <Feedback
@@ -171,11 +209,15 @@ export function HRActionModal({
                                     fontWeight: 800,
                                     borderRadius: 'var(--radius-sm)',
                                     boxShadow: isConfirmDisabled ? 'none' : '4px 4px 0 var(--color-accent)',
-                                    fontFamily: 'var(--font-family-display)',
                                     fontSize: '0.875rem',
-                                    opacity: isConfirmDisabled ? 0.6 : 1
+                                    opacity: isConfirmDisabled ? 0.6 : 1,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px'
                                 }}
                             >
+                                {processing && <RefreshCw size={16} className="animate-spin" />}
                                 {processing ? 'PROCESSANDO...' : 'CONFIRMAR'}
                             </button>
                         </div>

@@ -32,6 +32,17 @@ export default function HREmployeeDirectory() {
     const [saving, setSaving] = useState(false);
     const [syncing] = useState(false); // remove setSyncing
 
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    const [bulkModalVisible, setBulkModalVisible] = useState(false);
+    const [bulkStep, setBulkStep] = useState<1 | 2>(1);
+    const [bulkSaving, setBulkSaving] = useState(false);
+    const [bulkForm, setBulkForm] = useState({
+        plantId: '' as string | number,
+        departmentMasterId: '' as string | number | null,
+        departmentMasterName: '' as string,
+        managerUserId: '' as string
+    });
+
     const [feedback, setFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'info', message: null });
     const [actionModal, setActionModal] = useState<HRActionType>(null);
     const [modalProcessing, setModalProcessing] = useState(false);
@@ -42,6 +53,7 @@ export default function HREmployeeDirectory() {
     }, []);
 
     useEffect(() => {
+        setSelectedIds([]);
         loadEmployees();
     }, [page, search]);
 
@@ -145,56 +157,87 @@ export default function HREmployeeDirectory() {
         }
     };
 
+    const handleBulkPlantChange = (newPlantId: string) => {
+        const oldCompany = getCompanyForPlant(bulkForm.plantId);
+        const newCompany = getCompanyForPlant(newPlantId);
+
+        const updates: any = { plantId: newPlantId };
+        
+        if (bulkForm.departmentMasterId && newCompany !== oldCompany) {
+            updates.departmentMasterId = null;
+            updates.departmentMasterName = '';
+        }
+        
+        setBulkForm({ ...bulkForm, ...updates });
+    };
+
+    const submitBulkMapping = async () => {
+        setBulkSaving(true);
+        try {
+            const payload = {
+                employeeIds: selectedIds,
+                plantId: bulkForm.plantId ? Number(bulkForm.plantId) : null,
+                departmentMasterId: bulkForm.departmentMasterId && bulkForm.departmentMasterId !== 'CLEAR' ? Number(bulkForm.departmentMasterId) : null,
+                managerUserId: bulkForm.managerUserId && bulkForm.managerUserId !== 'CLEAR' ? bulkForm.managerUserId : null,
+                clearDepartmentMaster: bulkForm.departmentMasterId === 'CLEAR',
+                clearManager: bulkForm.managerUserId === 'CLEAR'
+            };
+            
+            const res = await api.hrLeave.updateBulkEmployeeMapping(payload);
+            setFeedback({ 
+                type: res.errors > 0 ? 'warning' : 'success', 
+                message: `Atualização em massa concluída. Processados: ${res.processed} | Atualizados: ${res.updated} | Ignorados: ${res.skipped} | Não encontrados: ${res.notFound} | Erros: ${res.errors}` 
+            });
+            
+            setSelectedIds([]);
+            setBulkModalVisible(false);
+            await loadEmployees();
+        } catch (error: any) {
+            console.error('Error in bulk mapping', error);
+            setFeedback({ type: 'error', message: error.message || 'Falha ao processar atribuição em massa.' });
+        } finally {
+            setBulkSaving(false);
+        }
+    };
+
     const handleSync = async () => {
-        setActionModal('SYNC');
+        setActionModal('SYNC_ALL');
     };
 
     const handleConfirmAction = async (action: HRActionType) => {
-        if (action === 'SYNC') {
+        if (action === 'SYNC_ALL' || action === 'SYNC' || action === 'SYNC_DEPARTMENTS') {
             setModalProcessing(true);
             setModalFeedback({ type: 'info', message: null });
             try {
-                const data = await api.hrLeave.syncEmployees();
-                if (data.status === 'FAILED') throw new Error(data.message || 'Erro de rede ao sincronizar');
+                // 1. Departamentos
+                const deptData = await api.hrLeave.syncDepartments();
                 
-                let msg = `Criados: ${data.employeesCreated} | Atualizados: ${data.employeesUpdated} | Desativados: ${data.employeesDeactivated}`;
-                if (data.status === 'PARTIAL') {
-                    msg = `Alguns erros ocorreram. ${msg}. ${data.message}`;
+                // 2. Funcionários
+                const empData = await api.hrLeave.syncEmployees();
+                
+                let deptMsg = `[Mestre] Processados: ${deptData.processed} | Criados: ${deptData.created} | Erros: ${deptData.errors ? deptData.errors.length : 0}`;
+                let empMsg = `[Innux] Criados: ${empData.employeesCreated} | Atualizados: ${empData.employeesUpdated} | Desativados: ${empData.employeesDeactivated}`;
+                
+                let finalStatus: FeedbackType = 'success';
+                let alertContext = '';
+
+                if (deptData.errors && deptData.errors.length > 0) {
+                    finalStatus = 'warning';
                 }
-                setFeedback({ type: 'success', message: msg });
-                loadEmployees();
-                setActionModal(null);
-            } catch (error: any) {
-                console.error('Sync error', error);
-                setModalFeedback({ type: 'error', message: error.message || 'Erro durante a sincronização com o Innux. Verifique se o módulo está ativo e configurado corretamente.' });
-            } finally {
-                setModalProcessing(false);
-            }
-        } else if (action === 'SYNC_DEPARTMENTS') {
-            setModalProcessing(true);
-            setModalFeedback({ type: 'info', message: null });
-            try {
-                const data = await api.hrLeave.syncDepartments();
-                
-                let msg = `Criados: ${data.created} | Atualizados: ${data.updated} | Total Processados: ${data.processed}`;
-                
-                if (data.errors && data.errors.length > 0) {
-                    msg = `Sincronização concluída com erros. ${msg}. Erros em: ${data.errors.length} database(s).`;
-                    setFeedback({ type: 'warning', message: msg });
-                } else if (data.processed === 0) {
-                    msg = `Nenhum departamento encontrado nas bases configuradas.`;
-                    setFeedback({ type: 'warning', message: msg });
-                } else {
-                    setFeedback({ type: 'success', message: `${data.message} ${msg}` });
+                if (empData.status === 'PARTIAL') {
+                    finalStatus = 'warning';
+                    alertContext = ` Aviso: ${empData.message}`;
                 }
+
+                setFeedback({ type: finalStatus, message: `Sincronização global concluída com sucesso. ${deptMsg}. ${empMsg}.${alertContext}` });
                 
-                // reload current employees and maybe masters
+                // Recarrega tudo
                 loadEmployees();
                 loadMasterData();
                 setActionModal(null);
             } catch (error: any) {
-                console.error('Dept Sync error', error);
-                setModalFeedback({ type: 'error', message: error.message || 'Erro durante a sincronização de departamentos com o Primavera.' });
+                console.error('Unified Sync error', error);
+                setModalFeedback({ type: 'error', message: error.message || 'Falha ao processar as sincronizações. Verifique se os serviços (Innux e/ou Primavera) estão operacionais na rede.' });
             } finally {
                 setModalProcessing(false);
             }
@@ -245,31 +288,46 @@ export default function HREmployeeDirectory() {
                         />
                     </div>
                     <button 
-                        onClick={() => setActionModal('SYNC_DEPARTMENTS' as unknown as HRActionType)}
-                        disabled={syncing}
-                        className="btn-secondary"
-                        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '8px' }}
-                    >
-                        <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
-                        Sincronizar Departamentos
-                    </button>
-                    <button 
-                        onClick={handleSync}
-                        disabled={syncing}
+                        onClick={() => setActionModal('SYNC_ALL')}
                         className="btn-primary"
                         style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '8px' }}
                     >
-                        <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
-                        Sincronizar Innux
+                        <RefreshCw size={16} />
+                        Sincronizar Dados Mestre
                     </button>
                 </div>
             </div>
+
+            {selectedIds.length > 0 && (
+                <div style={{ backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: '#0369a1', fontWeight: 600, fontSize: '14px' }}>{selectedIds.length} funcionário(s) selecionado(s)</span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                        <button onClick={() => setSelectedIds([])} style={{ padding: '8px 12px', border: '1px solid #bae6fd', background: '#fff', borderRadius: '6px', color: '#0369a1', fontWeight: 600, fontSize: '13px', cursor: 'pointer' }}>
+                            Cancelar
+                        </button>
+                        <button onClick={() => { setBulkModalVisible(true); setBulkStep(1); setBulkForm({ plantId: '', departmentMasterId: null, departmentMasterName: '', managerUserId: '' }); }} style={{ padding: '8px 12px', border: 'none', background: '#0284c7', color: '#fff', borderRadius: '6px', fontWeight: 600, fontSize: '13px', cursor: 'pointer' }}>
+                            Atribuir departamento (Massa)
+                        </button>
+                    </div>
+                </div>
+            )}
 
             <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: '12px', overflow: 'hidden' }}>
                 <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '800px' }}>
                         <thead>
                             <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                                <th style={{ padding: '16px', width: '40px' }}>
+                                    <input 
+                                        type="checkbox" 
+                                        checked={employees.length > 0 && selectedIds.length === employees.length}
+                                        onChange={(e) => {
+                                            if (e.target.checked) setSelectedIds(employees.map(emp => emp.id));
+                                            else setSelectedIds([]);
+                                        }}
+                                        style={{ cursor: 'pointer' }}
+                                    />
+                                </th>
                                 <th style={{ padding: '16px', fontSize: '12px', fontWeight: 800, color: '#475569', textTransform: 'uppercase' }}>Funcionário / Rolo</th>
                                 <th style={{ padding: '16px', fontSize: '12px', fontWeight: 800, color: '#475569', textTransform: 'uppercase' }}>Planta (Portal)</th>
                                 <th style={{ padding: '16px', fontSize: '12px', fontWeight: 800, color: '#475569', textTransform: 'uppercase' }}>Departamento (Mestre)</th>
@@ -280,14 +338,14 @@ export default function HREmployeeDirectory() {
                         <tbody>
                             {loading ? (
                                 <tr>
-                                    <td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>
+                                    <td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>
                                         <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 12px' }} />
                                         A carregar diretório...
                                     </td>
                                 </tr>
                             ) : employees.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>
+                                    <td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>
                                         Nenhum funcionário encontrado. {search ? 'Limpe a pesquisa ou tente outro termo.' : 'Sincronize com o Innux para popular a base.'}
                                     </td>
                                 </tr>
@@ -297,6 +355,17 @@ export default function HREmployeeDirectory() {
                                     
                                     return (
                                         <tr key={emp.id} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: !emp.isMapped ? '#fffbeb' : '#fff' }}>
+                                            <td style={{ padding: '16px' }}>
+                                                <input 
+                                                    type="checkbox"
+                                                    checked={selectedIds.includes(emp.id)}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) setSelectedIds(prev => [...prev, emp.id]);
+                                                        else setSelectedIds(prev => prev.filter(id => id !== emp.id));
+                                                    }}
+                                                    style={{ cursor: 'pointer' }}
+                                                />
+                                            </td>
                                             <td style={{ padding: '16px' }}>
                                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                                                     <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -440,6 +509,138 @@ export default function HREmployeeDirectory() {
                     </div>
                 )}
             </div>
+
+            {bulkModalVisible && (
+                <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,0.6)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ backgroundColor: '#fff', borderRadius: '12px', width: '500px', maxWidth: '90vw', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+                        <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#0f172a' }}>Atribuição em Massa</h3>
+                            <button onClick={() => setBulkModalVisible(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '4px' }}>
+                                <X size={20} color="#64748b" />
+                            </button>
+                        </div>
+                        
+                        <div style={{ padding: '24px' }}>
+                            {bulkStep === 1 ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, color: '#334155', fontSize: '13px' }}>Planta *</label>
+                                        <select 
+                                            value={bulkForm.plantId} 
+                                            onChange={e => handleBulkPlantChange(e.target.value)}
+                                            style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                                        >
+                                            <option value="" disabled>Selecione a planta</option>
+                                            {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                        </select>
+                                    </div>
+                                    
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, color: bulkForm.plantId ? '#334155' : '#94a3b8', fontSize: '13px' }}>Departamento (Mestre) {bulkForm.plantId && '*'}</label>
+                                        {bulkForm.plantId ? (
+                                            <DepartmentMasterAutocomplete
+                                                initialId={bulkForm.departmentMasterId && bulkForm.departmentMasterId !== 'CLEAR' ? bulkForm.departmentMasterId as number : null}
+                                                initialName={bulkForm.departmentMasterId === 'CLEAR' ? '' : bulkForm.departmentMasterName}
+                                                suggestedMatchText=""
+                                                allowedCompanyCode={getCompanyForPlant(bulkForm.plantId)}
+                                                plantNotSelected={!bulkForm.plantId}
+                                                onChange={(id, name) => setBulkForm(prev => ({ ...prev, departmentMasterId: id, departmentMasterName: name }))}
+                                            />
+                                        ) : (
+                                            <div style={{ padding: '10px', backgroundColor: '#f1f5f9', borderRadius: '6px', color: '#64748b', fontSize: '13px', border: '1px dashed #cbd5e1' }}>
+                                                Selecione primeiro a planta para habilitar os departamentos.
+                                            </div>
+                                        )}
+                                        {bulkForm.plantId && (
+                                            <div style={{ marginTop: '8px' }}>
+                                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#64748b', cursor: 'pointer' }}>
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={bulkForm.departmentMasterId === 'CLEAR'}
+                                                        onChange={e => {
+                                                            if (e.target.checked) setBulkForm(prev => ({ ...prev, departmentMasterId: 'CLEAR', departmentMasterName: '' }));
+                                                            else setBulkForm(prev => ({ ...prev, departmentMasterId: null, departmentMasterName: '' }));
+                                                        }}
+                                                    />
+                                                    Remover Departamento Mestre
+                                                </label>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, color: '#334155', fontSize: '13px' }}>Gestor / Responsável</label>
+                                        <select 
+                                            value={bulkForm.managerUserId} 
+                                            onChange={e => setBulkForm({...bulkForm, managerUserId: e.target.value})}
+                                            style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                                        >
+                                            <option value="">Sem alteração / Manter atual</option>
+                                            <option value="CLEAR">🛑 Remover Responsável/Gestor</option>
+                                            {managers.map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                    <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                                        <h4 style={{ margin: '0 0 12px 0', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <AlertTriangle size={18} color="#d97706" />
+                                            Confirme as alterações
+                                        </h4>
+                                        <p style={{ margin: '0 0 16px 0', fontSize: '14px', color: '#475569' }}>
+                                            Esta ação irá atualizar os seguintes campos para <strong>{selectedIds.length}</strong> funcionário(s) selecionado(s):
+                                        </p>
+                                        
+                                        <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '14px' }}>
+                                            <li style={{ display: 'flex', gap: '8px' }}>
+                                                <Building size={16} color="#64748b" /> 
+                                                <span>Planta: <strong>{plants.find(p => p.id.toString() === bulkForm.plantId.toString())?.name}</strong></span>
+                                            </li>
+                                            <li style={{ display: 'flex', gap: '8px' }}>
+                                                <Users size={16} color="#64748b" /> 
+                                                <span>Departamento: <strong>{bulkForm.departmentMasterId === 'CLEAR' ? 'Remover Departamento Mestre' : (bulkForm.departmentMasterName || 'Sem alteração')}</strong></span>
+                                            </li>
+                                            <li style={{ display: 'flex', gap: '8px' }}>
+                                                <Users size={16} color="#64748b" /> 
+                                                <span>Gestor: <strong>{bulkForm.managerUserId === 'CLEAR' ? 'Remover Gestor' : (bulkForm.managerUserId ? managers.find(m => m.id === bulkForm.managerUserId)?.fullName : 'Sem alteração')}</strong></span>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div style={{ padding: '16px 24px', backgroundColor: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                            <button 
+                                onClick={() => bulkStep === 2 ? setBulkStep(1) : setBulkModalVisible(false)}
+                                disabled={bulkSaving}
+                                style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', cursor: 'pointer', fontWeight: 600, color: '#475569' }}
+                            >
+                                {bulkStep === 2 ? 'Voltar' : 'Cancelar'}
+                            </button>
+                            {bulkStep === 1 ? (
+                                <button 
+                                    onClick={() => setBulkStep(2)}
+                                    disabled={!bulkForm.plantId}
+                                    style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#0ea5e9', color: '#fff', cursor: bulkForm.plantId ? 'pointer' : 'not-allowed', fontWeight: 600, opacity: bulkForm.plantId ? 1 : 0.6 }}
+                                >
+                                    Continuar
+                                </button>
+                            ) : (
+                                <button 
+                                    onClick={submitBulkMapping}
+                                    disabled={bulkSaving}
+                                    style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#0284c7', color: '#fff', cursor: bulkSaving ? 'not-allowed' : 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
+                                >
+                                    {bulkSaving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
+                                    Aplicar
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

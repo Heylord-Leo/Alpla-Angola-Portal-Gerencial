@@ -2,6 +2,24 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-108 — Mandatory Explicit Decimal Precision in EF Core Configurations
+
+- **Date:** 2026-04-16
+- **Status:** Accepted
+- **Context:** Multiple EF Core decimal properties across the domain model (`OcrExtractedItem`, `ReconciliationRecord`, `QuotationItem`, `RequestLineItem`, `Request`) were relying on SQL Server provider defaults for precision/scale. This generated startup warnings (`No store type was specified for the decimal property...`) and risked silent data truncation — especially critical for financial amounts, OCR-extracted values, percentages, and reconciliation scores.
+- **Decision:** Establish a **mandatory convention** for all backend decimal fields. Every new or modified `decimal` property must define explicit database precision/scale in EF Core Fluent API configuration. Provider defaults must never be relied upon.
+    1. **Convention Table:**
+        | Domain Category | EF Core Configuration | Examples |
+        |---|---|---|
+        | Money / totals / prices / amounts | `HasColumnType("decimal(18,2)")` | `UnitPrice`, `TotalAmount`, `DiscountAmount`, `LineTotal`, `OcrOriginalGrandTotal` |
+        | Percentages / rates / confidence scores | `HasColumnType("decimal(9,4)")` | `DiscountPercent`, `TaxRate`, `IvaRatePercent`, `MatchConfidence`, `QualityScore` |
+        | Quantities / fractional quantities / divergence | `HasColumnType("decimal(18,4)")` | `Quantity`, `ReceivedQuantity`, `QuantityDivergence` |
+        | File sizes / metadata | `HasPrecision(10, 3)` | `FileSizeMBytes` |
+    2. **Configuration location:** All precision must be declared in the entity's `IEntityTypeConfiguration<T>` class inside `EntityConfigurations.cs`, or in the `OnModelCreating` block in `ApplicationDbContext.cs` if the entity doesn't have a dedicated configuration class.
+    3. **Enforcement:** Any PR introducing a new `decimal` property without explicit precision must be rejected during code review.
+- **Alternatives considered:** A global model convention using `modelBuilder.Properties<decimal>().HavePrecision(18,2)` (rejected: masks domain intent — percentages, quantities, and scores require different precision than monetary values).
+- **Consequences:** Eliminates all EF Core decimal warnings at startup. Prevents silent truncation. Establishes a clear, auditable standard for data-layer integrity. Requires all existing decimal fields to be audited and configured (completed in this change).
+
 ## DEC-107 — Dedicated HR Role for V1 Employee Workspace Security
 
 - **Date:** 2026-04-15

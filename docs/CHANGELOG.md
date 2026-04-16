@@ -2,6 +2,17 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.77.3] - 2026-04-16 - Performance: Master Data Page Load Optimization (50s → 2s)
+### Performance
+- **GetUsers Cartesian Explosion Fix**: Replaced 4 eager-loading Include/ThenInclude chains with direct SQL projection in `UsersController.GetUsers`. The cartesian join was taking 25s+ for 10 users; now resolves in <200ms.
+- **Frontend Sequential Loading**: Replaced `Promise.allSettled` (9 parallel API calls causing LocalDB connection pool contention at 44s) with sequential loading that completes in <1s.
+
+## [v2.77.2] - 2026-04-16 - Backend: EF Core Decimal Precision Standardization
+### Fixed
+- **EF Core Decimal Precision**: Added explicit `HasColumnType` precision/scale for 16 decimal properties across 5 entities (`OcrExtractedItem`, `ReconciliationRecord`, `QuotationItem`, `RequestLineItem`, `Request`). Eliminates all model validation warnings at startup and prevents silent financial data truncation. Convention: money `decimal(18,2)`, percentages `decimal(9,4)`, quantities `decimal(18,4)`.
+### Documentation
+- **DECISIONS.md**: Added DEC-108 establishing mandatory decimal precision as a permanent backend architecture rule.
+
 ## [v2.77.0] - 2026-04-15 - Security: Dedicated HR Role & Scope Model
 ### Added
 - **Dedicated HR Role**: Introduced `HR` as a standalone role (`RoleConstants.HR` / `ROLES.HR`) to decouple HR workspace access from the `Local Manager` privilege.

@@ -592,7 +592,7 @@ public class LookupsController : ControllerBase
 
     // Suppliers
     [HttpGet("suppliers")]
-    public async Task<IActionResult> GetSuppliers([FromQuery] bool includeInactive = false)
+    public async Task<IActionResult> GetSuppliers([FromQuery] bool includeInactive = false, [FromQuery] string? search = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 15)
     {
         var query = _context.Suppliers.AsQueryable();
 
@@ -601,12 +601,31 @@ public class LookupsController : ControllerBase
             query = query.Where(s => s.IsActive);
         }
 
+        if (!string.IsNullOrEmpty(search))
+        {
+            var normalizedQ = search.Trim().ToLower();
+            query = query.Where(s => s.Name.ToLower().Contains(normalizedQ) || 
+                                     (s.TaxId != null && s.TaxId.ToLower().Contains(normalizedQ)) || 
+                                     (s.PrimaveraCode != null && s.PrimaveraCode.ToLower().Contains(normalizedQ)) ||
+                                     (s.PortalCode != null && s.PortalCode.ToLower().Contains(normalizedQ)));
+        }
+
+        var totalCount = await query.CountAsync();
+
         var items = await query
             .OrderBy(s => s.Name)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(s => new { s.Id, s.PortalCode, s.PrimaveraCode, s.Name, s.TaxId, s.IsActive })
             .ToListAsync();
 
-        return Ok(items);
+        return Ok(new Application.DTOs.Common.PagedResult<object>
+        {
+            Items = items,
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize
+        });
     }
 
     [HttpGet("suppliers/search")]

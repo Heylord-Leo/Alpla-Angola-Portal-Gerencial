@@ -15,7 +15,7 @@ interface EmployeeAutocompleteProps {
     name?: string;
 }
 
-const COL_WIDTHS = '110px 1fr 140px';
+const COL_WIDTHS = '100px 1fr 120px';
 
 export function EmployeeAutocomplete({
     initialName = '',
@@ -151,7 +151,8 @@ export function EmployeeAutocomplete({
         border: '2px solid var(--color-border-heavy)',
         boxShadow: 'var(--shadow-brutal)',
         overflow: 'hidden',
-        minWidth: '480px',
+        minWidth: 'max(100%, 350px)',
+        maxWidth: '90vw',
         display: 'flex',
         flexDirection: 'column',
         borderRadius: '6px',
