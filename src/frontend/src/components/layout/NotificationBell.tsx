@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Z_INDEX } from '../../constants/ui';
-import { Bell, Info, AlertCircle, Clock, Shield, ShoppingCart, Package, CreditCard, Check, Trash2 } from 'lucide-react';
+import { Bell, Info, AlertCircle, Shield, ShoppingCart, Package, CreditCard, Check, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../lib/api';
 import { useNavigate } from 'react-router-dom';
@@ -94,20 +94,7 @@ export function NotificationBell() {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const getIcon = (category: string, type: string) => {
-        const size = 18;
-        const strokeWidth = 2.5;
 
-        switch (category) {
-            case NotificationCategories.APPROVAL: return <Shield size={size} strokeWidth={strokeWidth} color="var(--color-status-orange)" />;
-            case NotificationCategories.QUOTATION: return <ShoppingCart size={size} strokeWidth={strokeWidth} color="var(--color-primary)" />;
-            case NotificationCategories.RECEIPT: return <Package size={size} strokeWidth={strokeWidth} color="var(--color-status-green)" />;
-            case NotificationCategories.PAYMENT: return <CreditCard size={size} strokeWidth={strokeWidth} color="var(--color-status-blue)" />;
-            default:
-                if (type === 'ERROR') return <AlertCircle size={size} strokeWidth={strokeWidth} color="var(--color-status-red)" />;
-                return <Info size={size} strokeWidth={strokeWidth} color="var(--color-primary)" />;
-        }
-    };
 
     const unreadCount = notifications.filter(n => !n.isRead).length;
 
@@ -417,3 +404,4 @@ export function NotificationBell() {
         </div>
     );
 }
+

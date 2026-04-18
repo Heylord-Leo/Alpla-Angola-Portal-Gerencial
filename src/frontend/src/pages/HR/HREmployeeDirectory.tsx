@@ -30,7 +30,7 @@ export default function HREmployeeDirectory() {
     });
     
     const [saving, setSaving] = useState(false);
-    const [syncing] = useState(false); // remove setSyncing
+    
 
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [bulkModalVisible, setBulkModalVisible] = useState(false);
@@ -200,9 +200,6 @@ export default function HREmployeeDirectory() {
         }
     };
 
-    const handleSync = async () => {
-        setActionModal('SYNC_ALL');
-    };
 
     const handleConfirmAction = async (action: HRActionType) => {
         if (action === 'SYNC_ALL' || action === 'SYNC' || action === 'SYNC_DEPARTMENTS') {

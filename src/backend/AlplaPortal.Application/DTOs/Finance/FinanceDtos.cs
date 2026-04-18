@@ -4,6 +4,12 @@ using System;
 using System.Collections.Generic;
 using AlplaPortal.Application.DTOs.Common;
 
+public class FinanceCurrencyValueDto
+{
+    public string CurrencyCode { get; set; } = string.Empty;
+    public decimal TotalAmount { get; set; }
+}
+
 public class FinanceSummaryDto
 {
     public int WaitingFinanceAction { get; set; }
@@ -11,10 +17,11 @@ public class FinanceSummaryDto
     public int OverduePayments { get; set; }
     public int CompletedThisMonth { get; set; }
     
-    public decimal PendingValue { get; set; }
-    public decimal ScheduledValue { get; set; }
-    public decimal OverdueValue { get; set; }
-    public decimal PaidThisMonthValue { get; set; }
+    public List<FinanceCurrencyValueDto> PendingValues { get; set; } = new();
+    public List<FinanceCurrencyValueDto> ScheduledValues { get; set; } = new();
+    public List<FinanceCurrencyValueDto> OverdueValues { get; set; } = new();
+    public List<FinanceCurrencyValueDto> PaidThisMonthValues { get; set; } = new();
+    
     public List<string> CurrencyCodes { get; set; } = new();
 
     public List<FinanceAttentionPointDto> AttentionPoints { get; set; } = new();
@@ -89,6 +96,14 @@ public class FinanceListItemDto
     
     public List<string> MissingDocumentTypes { get; set; } = new();
     public List<string> AvailableFinanceActions { get; set; } = new();
+
+    // DEC-110: Financial snapshot & payment divergence
+    public decimal? ApprovedTotalAmount { get; set; }
+    public string? ApprovedCurrencyCode { get; set; }
+    public DateTime? ApprovedAtUtc { get; set; }
+    public decimal? ActualPaidAmount { get; set; }
+    public DateTime? ActualPaidAtUtc { get; set; }
+    public bool HasPaymentDivergence { get; set; }
 }
 
 public class FinanceListResponseDto
@@ -118,4 +133,8 @@ public class FinanceActionRequestDto
 {
     public DateTime? ActionDateUtc { get; set; }
     public string? Notes { get; set; }
+    /// <summary>
+    /// DEC-110: Mandatory when action is PAY. The actual amount disbursed.
+    /// </summary>
+    public decimal? ActualPaidAmount { get; set; }
 }

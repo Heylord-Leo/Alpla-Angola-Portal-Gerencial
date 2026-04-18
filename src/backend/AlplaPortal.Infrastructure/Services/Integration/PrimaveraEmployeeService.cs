@@ -2,6 +2,7 @@ using AlplaPortal.Application.DTOs.Integration;
 using AlplaPortal.Application.Interfaces.Integration;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
 
 namespace AlplaPortal.Infrastructure.Services.Integration;
 
@@ -14,11 +15,25 @@ namespace AlplaPortal.Infrastructure.Services.Integration;
 /// This service handles employee-specific queries only.
 /// Connection resolution, credential validation, and database targeting
 /// are delegated to the shared PrimaveraConnectionFactory.
+///
+/// Schema-aware: Before querying identity document columns (NumBI, Nacionalidade,
+/// NumPassaporte), the service checks INFORMATION_SCHEMA.COLUMNS to confirm
+/// they exist in the target database. Results are cached per database for the
+/// lifetime of the application.
 /// </summary>
 public class PrimaveraEmployeeService : IPrimaveraEmployeeService
 {
     private readonly PrimaveraConnectionFactory _connectionFactory;
     private readonly ILogger<PrimaveraEmployeeService> _logger;
+
+    /// <summary>
+    /// Cached per-database column availability for the Funcionarios table.
+    /// Key = database name (connection.Database), Value = set of column names present.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, HashSet<string>> _columnCache = new();
+
+    /// <summary>HR identity document columns that may or may not exist in a given deployment.</summary>
+    private static readonly string[] OptionalHrColumns = ["NumBI", "Nacionalidade", "NumPassaporte"];
 
     public PrimaveraEmployeeService(
         PrimaveraConnectionFactory connectionFactory,
@@ -36,8 +51,11 @@ public class PrimaveraEmployeeService : IPrimaveraEmployeeService
         try
         {
             await using var connection = await _connectionFactory.CreateConnectionAsync(company);
+            var availableCols = await GetAvailableColumnsAsync(connection);
 
-            var query = @"
+            var extraSelect = BuildOptionalSelectClause(availableCols);
+
+            var query = $@"
                 SELECT TOP 1 
                     f.Codigo, 
                     f.Nome, 
@@ -52,7 +70,7 @@ public class PrimaveraEmployeeService : IPrimaveraEmployeeService
                     f.DataAdmissao, 
                     f.DataDemissao, 
                     f.InactivoTemp,
-                    d.Descricao as DepartmentName 
+                    d.Descricao as DepartmentName{extraSelect}
                 FROM Funcionarios f 
                 LEFT JOIN Departamentos d ON f.CodDepartamento = d.Departamento 
                 WHERE f.Codigo = @Code";
@@ -63,7 +81,7 @@ public class PrimaveraEmployeeService : IPrimaveraEmployeeService
             await using var reader = await command.ExecuteReaderAsync();
             if (await reader.ReadAsync())
             {
-                return MapToDto(reader, company);
+                return MapToDto(reader, company, availableCols);
             }
 
             return null;
@@ -94,6 +112,9 @@ public class PrimaveraEmployeeService : IPrimaveraEmployeeService
         try
         {
             await using var connection = await _connectionFactory.CreateConnectionAsync(company);
+            var availableCols = await GetAvailableColumnsAsync(connection);
+
+            var extraSelect = BuildOptionalSelectClause(availableCols);
 
             var query = $@"
                 SELECT TOP {limit} 
@@ -110,7 +131,7 @@ public class PrimaveraEmployeeService : IPrimaveraEmployeeService
                     f.DataAdmissao, 
                     f.DataDemissao, 
                     f.InactivoTemp,
-                    d.Descricao as DepartmentName 
+                    d.Descricao as DepartmentName{extraSelect}
                 FROM Funcionarios f 
                 LEFT JOIN Departamentos d ON f.CodDepartamento = d.Departamento 
                 WHERE f.Nome LIKE @Query 
@@ -122,7 +143,7 @@ public class PrimaveraEmployeeService : IPrimaveraEmployeeService
             await using var reader = await command.ExecuteReaderAsync();
             while (await reader.ReadAsync())
             {
-                employees.Add(MapToDto(reader, company));
+                employees.Add(MapToDto(reader, company, availableCols));
             }
 
             return employees;
@@ -138,9 +159,78 @@ public class PrimaveraEmployeeService : IPrimaveraEmployeeService
         }
     }
 
-    private static PrimaveraEmployeeDto MapToDto(SqlDataReader reader, PrimaveraCompany company)
+    // ─── Schema-Aware Column Detection ───
+
+    /// <summary>
+    /// Returns the set of optional HR columns that exist in the Funcionarios table
+    /// for the current database. Results are cached per database name.
+    /// </summary>
+    private async Task<HashSet<string>> GetAvailableColumnsAsync(SqlConnection connection)
     {
-        return new PrimaveraEmployeeDto
+        var dbName = connection.Database;
+        if (_columnCache.TryGetValue(dbName, out var cached))
+            return cached;
+
+        var available = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        try
+        {
+            var query = @"
+                SELECT COLUMN_NAME 
+                FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_NAME = 'Funcionarios' 
+                  AND COLUMN_NAME IN ('NumBI', 'Nacionalidade', 'NumPassaporte')";
+
+            await using var cmd = new SqlCommand(query, connection);
+            await using var reader = await cmd.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                available.Add(reader.GetString(0));
+            }
+
+            _logger.LogInformation(
+                "Primavera schema detection for {Database}: Funcionarios optional columns found: [{Columns}]",
+                dbName,
+                available.Count > 0 ? string.Join(", ", available) : "none");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to detect optional HR columns in {Database}. Proceeding without identity document fields.",
+                dbName);
+        }
+
+        _columnCache[dbName] = available;
+        return available;
+    }
+
+    /// <summary>
+    /// Builds the extra SELECT clause fragment for optional columns,
+    /// only including columns that actually exist in the schema.
+    /// Returns empty string if no optional columns are available.
+    /// </summary>
+    private static string BuildOptionalSelectClause(HashSet<string> availableCols)
+    {
+        var parts = new List<string>();
+
+        foreach (var col in OptionalHrColumns)
+        {
+            if (availableCols.Contains(col))
+            {
+                parts.Add($"f.{col}");
+            }
+        }
+
+        return parts.Count > 0 ? ", " + string.Join(", ", parts) : "";
+    }
+
+    // ─── DTO Mapping ───
+
+    private static PrimaveraEmployeeDto MapToDto(
+        SqlDataReader reader, PrimaveraCompany company, HashSet<string> availableCols)
+    {
+        var dto = new PrimaveraEmployeeDto
         {
             Code = reader["Codigo"]?.ToString() ?? "",
             Name = reader["Nome"]?.ToString() ?? "",
@@ -158,5 +248,17 @@ public class PrimaveraEmployeeService : IPrimaveraEmployeeService
             IsTemporarilyInactive = reader["InactivoTemp"] as bool?,
             SourceCompany = company.ToString()
         };
+
+        // Map optional identity document columns — only read if present in schema
+        if (availableCols.Contains("NumBI"))
+            dto.IdentityDocNumber = reader["NumBI"] as string;
+
+        if (availableCols.Contains("Nacionalidade"))
+            dto.Nationality = reader["Nacionalidade"] as string;
+
+        if (availableCols.Contains("NumPassaporte"))
+            dto.PassportNumber = reader["NumPassaporte"] as string;
+
+        return dto;
     }
 }

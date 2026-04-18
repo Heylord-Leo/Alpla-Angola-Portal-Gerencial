@@ -165,7 +165,7 @@
 /* ── Employee Workspace Grid ── */
 .hr-workspace-grid {
     display: grid;
-    grid-template-columns: 1fr 360px;
+    grid-template-columns: 1fr 380px;
     gap: 24px;
     align-items: start;
 }
@@ -424,140 +424,17 @@
         left: 0;
         top: 0;
         width: 100%;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
     }
 
-    /* CR-80 badge standard: 85.6mm × 53.98mm */
-    .badge-card {
-        width: 85.6mm !important;
-        height: 53.98mm !important;
+    .hr-badge-print-area .badge-card-container {
         margin: 0 !important;
         box-shadow: none !important;
         border: none !important;
         page-break-inside: avoid;
     }
-}
-
-/* ── Badge Card Component ── */
-.badge-card {
-    width: 340px;
-    height: 214px;
-    background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
-    border-radius: 10px;
-    border: 1px solid var(--color-border);
-    box-shadow: var(--shadow-lg);
-    overflow: hidden;
-    display: grid;
-    grid-template-rows: auto 1fr auto;
-    font-family: var(--font-family-body);
-    position: relative;
-}
-
-.badge-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 16px;
-    background: var(--color-primary);
-    color: white;
-}
-
-.badge-header img {
-    height: 24px;
-    width: auto;
-    filter: brightness(0) invert(1);
-}
-
-.badge-header .company-name {
-    font-size: 0.7rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-}
-
-.badge-body {
-    display: grid;
-    grid-template-columns: 80px 1fr;
-    gap: 12px;
-    padding: 12px 16px;
-    align-items: center;
-}
-
-.badge-photo {
-    width: 72px;
-    height: 90px;
-    border-radius: 6px;
-    border: 2px solid var(--color-border);
-    overflow: hidden;
-    background: #e5e7eb;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.badge-photo img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.badge-info {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-}
-
-.badge-name {
-    font-size: 0.9rem;
-    font-weight: 800;
-    color: var(--color-text-main);
-    line-height: 1.2;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.badge-department {
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: var(--color-primary);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-}
-
-.badge-category {
-    font-size: 0.68rem;
-    color: var(--color-text-muted);
-    font-weight: 500;
-}
-
-.badge-footer {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 4px;
-    padding: 8px 16px;
-    background: rgba(var(--color-primary-rgb), 0.04);
-    border-top: 1px solid var(--color-border);
-}
-
-.badge-footer-item {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-}
-
-.badge-footer-label {
-    font-size: 0.55rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--color-text-muted);
-}
-
-.badge-footer-value {
-    font-size: 0.72rem;
-    font-weight: 700;
-    color: var(--color-text-main);
 }
 
 /* ── Loading Spinner ── */

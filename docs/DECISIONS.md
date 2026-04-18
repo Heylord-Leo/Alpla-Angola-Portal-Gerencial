@@ -2,6 +2,26 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-110 — Financial Snapshot & Payment Divergence Detection (Phase 1)
+
+- **Date:** 2026-04-17
+- **Status:** Accepted
+- **Context:** The system had no mechanism to preserve approved financial values or compare them against actual payments. Once approved, financial values were frozen by convention but not by enforcement. Commercial conditions (total amount, VAT, currency impact, supplier terms) could change between approval and payment with no structured detection or audit trail.
+- **Decision:** Implement a phased delivery for post-approval commercial change handling.
+    1. **Phase 1 (this implementation):**
+        - Add `ApprovedTotalAmount`, `ApprovedCurrencyCode`, `ApprovedAtUtc` to `Request` entity — immutable snapshot captured at final approval.
+        - Add `ActualPaidAmount`, `ActualPaidAtUtc` to `Request` entity — mandatory input when confirming payment via `MarkAsPaid`.
+        - Add status guards to `SchedulePayment` and `MarkAsPaid` in `FinanceController` — only allowed from valid source statuses.
+        - Implement divergence detection: if `|ActualPaidAmount - ApprovedTotalAmount| > max(1.00, ApprovedTotalAmount × 0.01)`, create a `PAYMENT_DIVERGENCE_DETECTED` audit entry.
+        - Phase 1 divergence is **informational** — payment proceeds, divergence is logged and visible.
+        - All new fields are nullable for backward compatibility with legacy requests.
+    2. **Phase 2 (documented, not implemented):**
+        - New exception workflow statuses: `COMMERCIAL_CHANGE_REVIEW`, `REAPPROVAL_REQUIRED`, `POST_PAYMENT_REGULARIZATION`.
+        - Complementary payment mechanism with cumulative tracking.
+        - Pre-payment commercial revalidation endpoint.
+- **Alternatives considered:** (1) Making divergence blocking in Phase 1 (rejected: requires new statuses, approval center changes, and sidebar updates — too much scope). (2) Making `ActualPaidAmount` optional (rejected: defeats the purpose of divergence detection).
+- **Consequences:** Establishes the data foundation for full commercial change handling. `ActualPaidAmount` is mandatory when paying. Legacy requests with null snapshot fields skip divergence detection gracefully. Finance payments list shows divergence badge for affected requests. Full documentation in `WORKFLOW_ARCHITECTURE.md §6`.
+
 ## DEC-108 — Mandatory Explicit Decimal Precision in EF Core Configurations
 
 - **Date:** 2026-04-16
@@ -1433,5 +1453,27 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
     3. **Multi-Step Matching**: Frontend supplier matching now follows a three-step sequence: Normalized Name Match -> NIF/TaxId API Search -> Fuzzy Name Match. 
     4. **Normalization Standards**: Standardized stripping of common punctuation and corporate suffixes during the search phase to bridge the gap between extraction strings and Master Data records.
 - **Consequences:** Dramatically increases extraction reliability for first-time uploads. Eliminates the most common cause of "Partial" extraction states for invoices. Provides a significantly cleaner Supplier master dataset by preventing "punctuation-based" duplicates.
+
+---
+
+## DEC-110 — Financial Snapshot & Payment Divergence Detection (Phase 1)
+
+- **Date:** 2026-04-17
+- **Status:** Accepted
+- **Context:** The system had no mechanism to preserve approved financial values or compare them against actual payments. Once approved, financial values were frozen by convention but not by enforcement. Commercial conditions (total amount, VAT, currency impact, supplier terms) could change between approval and payment with no structured detection or audit trail.
+- **Decision:** Implement a phased delivery for post-approval commercial change handling.
+    1. **Phase 1 (this implementation):**
+        - Add `ApprovedTotalAmount`, `ApprovedCurrencyCode`, `ApprovedAtUtc` to `Request` entity — immutable snapshot captured at final approval.
+        - Add `ActualPaidAmount`, `ActualPaidAtUtc` to `Request` entity — mandatory input when confirming payment via `MarkAsPaid`.
+        - Add status guards to `SchedulePayment` and `MarkAsPaid` in `FinanceController` — only allowed from valid source statuses.
+        - Implement divergence detection: if `|ActualPaidAmount - ApprovedTotalAmount| > max(1.00, ApprovedTotalAmount × 0.01)`, create a `PAYMENT_DIVERGENCE_DETECTED` audit entry.
+        - Phase 1 divergence is **informational** — payment proceeds, divergence is logged and visible.
+        - All new fields are nullable for backward compatibility with legacy requests.
+    2. **Phase 2 (documented, not implemented):**
+        - New exception workflow statuses: `COMMERCIAL_CHANGE_REVIEW`, `REAPPROVAL_REQUIRED`, `POST_PAYMENT_REGULARIZATION`.
+        - Complementary payment mechanism with cumulative tracking.
+        - Pre-payment commercial revalidation endpoint.
+- **Alternatives considered:** (1) Making divergence blocking in Phase 1 (rejected: requires new statuses, approval center changes, and sidebar updates — too much scope). (2) Making `ActualPaidAmount` optional (rejected: defeats the purpose of divergence detection).
+- **Consequences:** Establishes the data foundation for full commercial change handling. `ActualPaidAmount` is mandatory when paying. Legacy requests with null snapshot fields skip divergence detection gracefully. Finance payments list shows divergence badge for affected requests. Full documentation in `WORKFLOW_ARCHITECTURE.md §6`.
 
 ---

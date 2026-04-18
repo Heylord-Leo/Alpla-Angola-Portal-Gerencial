@@ -357,16 +357,16 @@ public class RequestsController : BaseController
         var receivingCodes = new[] { "WAITING_RECEIPT", RequestConstants.Statuses.PaymentCompleted, "PAG_REALIZADO", "AG_RECIBO" };
 
         Expression<Func<AlplaPortal.Domain.Entities.Request, bool>> myTasksCriteria = r =>
-            // Solicitante: Em rascunho ou ajuste
-            (r.RequesterId == currentUserId && (r.Status!.Code == RequestConstants.Statuses.Draft || r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment)) ||
+            // Solicitante: Em rascunho, ajuste ou Aprovado (Pagamento - para acompanhamento/vencimento)
+            (r.RequesterId == currentUserId && (r.Status!.Code == RequestConstants.Statuses.Draft || r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment))) ||
             // Aprovador de Área
             (isAreaApprover && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
             // Aprovador Final
             (isFinalApprover && r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval) ||
             // Comprador
-            (isBuyer && (r.Status!.Code == RequestConstants.Statuses.WaitingQuotation || r.Status!.Code == RequestConstants.Statuses.FinalApproved) && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
+            (isBuyer && (r.Status!.Code == RequestConstants.Statuses.WaitingQuotation || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Quotation)) && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
             // Financeiro
-            (isFinance && (r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled)) ||
+            (isFinance && ((r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled)) ||
             // Recebimento (Requester ou Role)
             ((r.RequesterId == currentUserId || isReceiver) && receivingCodes.Contains(r.Status!.Code));
 
@@ -377,12 +377,12 @@ public class RequestsController : BaseController
         else if (excludeMyTasks == true)
         {
             query = query.Where(r => !(
-                (r.RequesterId == currentUserId && (r.Status!.Code == RequestConstants.Statuses.Draft || r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment)) ||
+                (r.RequesterId == currentUserId && (r.Status!.Code == RequestConstants.Statuses.Draft || r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment))) ||
                 (isAreaApprover && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
                 (isFinalApprover && r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval) ||
-                (isBuyer && (r.Status!.Code == RequestConstants.Statuses.WaitingQuotation || r.Status!.Code == RequestConstants.Statuses.FinalApproved) && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
-                (isFinance && (r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled)) ||
-                ((r.RequesterId == currentUserId || isReceiver) && r.Status!.Code == "WAITING_RECEIPT")
+                (isBuyer && (r.Status!.Code == RequestConstants.Statuses.WaitingQuotation || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Quotation)) && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
+                (isFinance && ((r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled)) ||
+                ((r.RequesterId == currentUserId || isReceiver) && receivingCodes.Contains(r.Status!.Code))
             ));
         }
         // --- 
@@ -395,8 +395,8 @@ public class RequestsController : BaseController
                 Total = g.Count(),
                 WaitingQuotation = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingQuotation && r.RequestType!.Code == RequestConstants.Types.Quotation),
                 AwaitingApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval || r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval || r.Status!.Code == RequestConstants.Statuses.WaitingCostCenter),
-                AwaitingPo = g.Count(r => r.Status!.Code == RequestConstants.Statuses.FinalApproved),
-                AwaitingPayment = g.Count(r => r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled),
+                AwaitingPo = g.Count(r => r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Quotation),
+                AwaitingPayment = g.Count(r => (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled),
                 Completed = g.Count(r => r.Status!.Code == "COMPLETED") // COMPLETED status not yet in constants
             })
             .OrderBy(g => 1)
@@ -421,21 +421,10 @@ public class RequestsController : BaseController
 
         if (isAttention == true)
         {
-            var terminalStates = new[] { "APPROVED", "REJECTED", "CANCELLED", "COMPLETED", "QUOTATION_COMPLETED" };
-            query = query.Where(r => 
-                // Urgent deadline
-                (!terminalStates.Contains(r.Status!.Code) && r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < in4Days)
-                ||
-                // My Tasks
-                (
-                    (r.RequesterId == currentUserId && (r.Status!.Code == RequestConstants.Statuses.Draft || r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment)) ||
-                    (isAreaApprover && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
-                    (isFinalApprover && r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval) ||
-                    (isBuyer && (r.Status!.Code == RequestConstants.Statuses.WaitingQuotation || r.Status!.Code == RequestConstants.Statuses.FinalApproved) && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
-                    (isFinance && (r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled)) ||
-                    ((r.RequesterId == currentUserId || isReceiver) && receivingCodes.Contains(r.Status!.Code))
-                )
-            );
+            // O dashboard "Para Minha Ação" agora é puramente baseado em tarefas pendentes,
+            // independentemente do prazo (vencimento), para garantir que processos "parados" no fluxo
+            // fiquem visíveis para os responsáveis.
+            query = query.Where(myTasksCriteria);
         }
 
         // 3a. Calculate Filtered Total (Monetary Total)
@@ -3422,6 +3411,37 @@ public class RequestsController : BaseController
             "REQUEST_ADJUSTMENT" => "Pedido devolvido para reajuste final com sucesso.",
             _ => "Operação realizada com sucesso."
         };
+
+        // ── DEC-110: Financial Snapshot at Approval ──────────────────────────
+        // Captures an immutable financial snapshot at the moment of final approval.
+        // This snapshot serves as the baseline for divergence detection at payment.
+        if (action == "APPROVE")
+        {
+            if (request.RequestType!.Code == RequestConstants.Types.Quotation && request.SelectedQuotationId.HasValue)
+            {
+                var winnerQuotation = await _context.Quotations
+                    .FirstOrDefaultAsync(q => q.Id == request.SelectedQuotationId.Value);
+                if (winnerQuotation != null)
+                {
+                    request.ApprovedTotalAmount = winnerQuotation.TotalAmount;
+                    request.ApprovedCurrencyCode = winnerQuotation.Currency;
+                }
+            }
+            else
+            {
+                // PAYMENT flow: snapshot from EstimatedTotalAmount
+                request.ApprovedTotalAmount = request.EstimatedTotalAmount;
+                if (request.CurrencyId.HasValue)
+                {
+                    var currCode = await _context.Currencies
+                        .Where(c => c.Id == request.CurrencyId.Value)
+                        .Select(c => c.Code)
+                        .FirstOrDefaultAsync();
+                    request.ApprovedCurrencyCode = currCode;
+                }
+            }
+            request.ApprovedAtUtc = DateTime.UtcNow;
+        }
 
         return await ApplyStatusChangeAndSyncItemsAsync(request, targetStatusCode, action, historyComment, successMessage, actorId, overrideEventCode);
     }

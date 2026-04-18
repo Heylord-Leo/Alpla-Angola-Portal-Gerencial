@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Save, X, Paperclip, Trash2, AlertTriangle, FileText, RefreshCw, UploadCloud, CheckCircle2, UserPlus, AlertCircle, Edit2, Plus } from 'lucide-react';
+import { Save, X, Paperclip, Trash2, AlertTriangle, FileText, RefreshCw, UploadCloud, CheckCircle2, UserPlus, AlertCircle, Edit2, Plus, ArrowLeft } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { SupplierAutocomplete } from '../../components/SupplierAutocomplete';
 import { QuickSupplierModal } from '../../components/Buyer/QuickSupplierModal';
@@ -1104,44 +1104,72 @@ export function RequestCreate() {
                                                  style={{ display: 'block' }}
                                              >
                                                  {isManualOcr ? (
-                                                     <div style={{ 
-                                                         display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-                                                         padding: '12px 16px', backgroundColor: '#FDF4FF', border: '1px solid #F0ABFC', 
-                                                         borderRadius: 'var(--radius-sm)', marginBottom: '16px' 
-                                                     }}>
-                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#86198F' }}>
-                                                             <Edit2 size={16} />
-                                                             <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>INSCRIÇÃO MANUAL DA FATURA</span>
-                                                             <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>({ocrFile?.name})</span>
-                                                         </div>
-                                                         <button 
-                                                            type="button"
-                                                            onClick={() => { setPaymentDraft(null); setOcrFile(null); setIsManualOcr(false); }}
-                                                            style={{ fontSize: '0.7rem', fontWeight: 800, color: '#86198F', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
-                                                         >
-                                                             TROCAR ARQUIVO
-                                                         </button>
-                                                     </div>
-                                                 ) : (
-                                                     <div style={{ 
-                                                         display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-                                                         padding: '12px 16px', backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', 
-                                                         borderRadius: 'var(--radius-sm)', marginBottom: '16px' 
-                                                     }}>
-                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#166534' }}>
-                                                             <CheckCircle2 size={16} />
-                                                             <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>DADOS EXTRAÍDOS COM SUCESSO</span>
-                                                             <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>({ocrFile?.name})</span>
-                                                         </div>
-                                                         <button 
-                                                            type="button"
-                                                            onClick={() => { setPaymentDraft(null); setOcrFile(null); setIsManualOcr(false); }}
-                                                            style={{ fontSize: '0.7rem', fontWeight: 800, color: '#166534', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
-                                                         >
-                                                             TROCAR ARQUIVO
-                                                         </button>
-                                                     </div>
-                                                 )}
+                                                      <div style={{ 
+                                                          display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                                                          padding: '12px 16px', backgroundColor: '#FDF4FF', border: '1px solid #F0ABFC', 
+                                                          borderRadius: 'var(--radius-sm)', marginBottom: '16px',
+                                                          boxShadow: '2px 2px 0 #F0ABFC'
+                                                      }}>
+                                                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#86198F' }}>
+                                                              <div style={{ backgroundColor: '#FAE8FF', padding: '6px', borderRadius: '50%', display: 'flex' }}>
+                                                                <Edit2 size={16} />
+                                                              </div>
+                                                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                                <span style={{ fontSize: '0.8rem', fontWeight: 800, letterSpacing: '0.025em' }}>INSCRIÇÃO MANUAL DA FATURA</span>
+                                                                <span style={{ fontSize: '0.7rem', opacity: 0.8, fontWeight: 600 }}>Arquivo: {ocrFile?.name}</span>
+                                                              </div>
+                                                          </div>
+                                                          <button 
+                                                             type="button"
+                                                             onClick={() => { setPaymentDraft(null); setOcrFile(null); setIsManualOcr(false); }}
+                                                             style={{ 
+                                                                display: 'flex', alignItems: 'center', gap: '6px',
+                                                                fontSize: '0.75rem', fontWeight: 900, color: '#86198F', 
+                                                                backgroundColor: 'white', border: '2px solid #F0ABFC', 
+                                                                padding: '6px 12px', borderRadius: '6px', cursor: 'pointer',
+                                                                boxShadow: '2px 2px 0 #F0ABFC', transition: 'all 0.1s ease',
+                                                                textTransform: 'uppercase'
+                                                             }}
+                                                             onMouseOver={(e) => { e.currentTarget.style.transform = 'translate(-1px, -1px)'; e.currentTarget.style.boxShadow = '3px 3px 0 #F0ABFC'; }}
+                                                             onMouseOut={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '2px 2px 0 #F0ABFC'; }}
+                                                          >
+                                                              <ArrowLeft size={14} /> VOLTAR / TROCAR DOCUMENTO
+                                                          </button>
+                                                      </div>
+                                                  ) : (
+                                                      <div style={{ 
+                                                          display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                                                          padding: '12px 16px', backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', 
+                                                          borderRadius: 'var(--radius-sm)', marginBottom: '16px',
+                                                          boxShadow: '2px 2px 0 #BBF7D0'
+                                                      }}>
+                                                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#166534' }}>
+                                                              <div style={{ backgroundColor: '#DCFCE7', padding: '6px', borderRadius: '50%', display: 'flex' }}>
+                                                                <CheckCircle2 size={16} />
+                                                              </div>
+                                                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                                <span style={{ fontSize: '0.8rem', fontWeight: 800, letterSpacing: '0.025em' }}>DADOS EXTRAÍDOS COM SUCESSO via OCR</span>
+                                                                <span style={{ fontSize: '0.7rem', opacity: 0.8, fontWeight: 600 }}>Arquivo: {ocrFile?.name}</span>
+                                                              </div>
+                                                          </div>
+                                                          <button 
+                                                             type="button"
+                                                             onClick={() => { setPaymentDraft(null); setOcrFile(null); setIsManualOcr(false); }}
+                                                             style={{ 
+                                                                display: 'flex', alignItems: 'center', gap: '6px',
+                                                                fontSize: '0.75rem', fontWeight: 900, color: '#166534', 
+                                                                backgroundColor: 'white', border: '2px solid #BBF7D0', 
+                                                                padding: '6px 12px', borderRadius: '6px', cursor: 'pointer',
+                                                                boxShadow: '2px 2px 0 #BBF7D0', transition: 'all 0.1s ease',
+                                                                textTransform: 'uppercase'
+                                                             }}
+                                                             onMouseOver={(e) => { e.currentTarget.style.transform = 'translate(-1px, -1px)'; e.currentTarget.style.boxShadow = '3px 3px 0 #BBF7D0'; }}
+                                                             onMouseOut={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '2px 2px 0 #BBF7D0'; }}
+                                                          >
+                                                              <ArrowLeft size={14} /> VOLTAR / TROCAR DOCUMENTO
+                                                          </button>
+                                                      </div>
+                                                  )}
 
                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
                                                       <div style={{ ...labelStyle, marginBottom: 0, gridColumn: '1 / -1' }}>

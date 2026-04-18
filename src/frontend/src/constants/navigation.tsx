@@ -2,7 +2,8 @@ import React from 'react';
 import { 
     FileText, Home, Settings, List, ShoppingCart, 
     Package, Activity, Network, Shield, CheckCircle,
-    CreditCard, DollarSign, Archive, Users, UserCheck, Calendar
+    CreditCard, DollarSign, Archive, Users, UserCheck, Calendar,
+    Layers, History
 } from 'lucide-react';
 import { ROLES } from './roles';
 
@@ -206,13 +207,31 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                     keywords: ['férias', 'ausência', 'falta', 'baixa', 'licença', 'aprovação']
                 },
                 {
-                    id: 'rh-cadastro',
+                    id: 'rh-badges-employees',
                     type: 'link',
-                    label: 'Cadastro de Funcionários',
+                    label: 'Funcionários',
                     icon: <UserCheck size={18} strokeWidth={2.5} />,
-                    to: '/hr/employees',
+                    to: '/hr/badges/employees',
                     isHrModule: true,
-                    keywords: ['rh', 'funcionários', 'cadastro', 'crachá', 'badge', 'foto', 'consulta', 'pessoal']
+                    keywords: ['rh', 'funcionários', 'cadastro', 'crachá', 'badge', 'foto', 'consulta', 'pessoal', 'impressão']
+                },
+                {
+                    id: 'rh-badges-layouts',
+                    type: 'link',
+                    label: 'Layouts',
+                    icon: <Layers size={18} strokeWidth={2.5} />,
+                    to: '/hr/badges/layouts',
+                    isHrModule: true,
+                    keywords: ['rh', 'crachá', 'layout', 'template', 'design', 'modelo']
+                },
+                {
+                    id: 'rh-badges-history',
+                    type: 'link',
+                    label: 'Histórico de Impressão',
+                    icon: <History size={18} strokeWidth={2.5} />,
+                    to: '/hr/badges/history',
+                    isHrModule: true,
+                    keywords: ['rh', 'crachá', 'impressão', 'histórico', 'reimpressão', 'auditoria']
                 }
             ]
         },

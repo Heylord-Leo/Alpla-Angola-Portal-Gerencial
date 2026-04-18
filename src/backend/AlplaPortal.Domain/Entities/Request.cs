@@ -59,6 +59,37 @@ public class Request
     /// </summary>
     public decimal? OcrOriginalGrandTotal { get; set; }
 
+    // ── DEC-110: Financial Snapshot (populated at Final Approval — immutable) ─────
+    /// <summary>
+    /// Immutable snapshot of the total amount at the time of final approval.
+    /// For QUOTATION: captured from SelectedQuotation.TotalAmount.
+    /// For PAYMENT: captured from EstimatedTotalAmount.
+    /// Null for requests approved before this feature was deployed.
+    /// </summary>
+    public decimal? ApprovedTotalAmount { get; set; }
+
+    /// <summary>
+    /// Currency code snapshot at approval time (e.g., "AOA", "USD", "EUR").
+    /// </summary>
+    public string? ApprovedCurrencyCode { get; set; }
+
+    /// <summary>
+    /// UTC timestamp when the financial snapshot was captured (final approval moment).
+    /// </summary>
+    public DateTime? ApprovedAtUtc { get; set; }
+
+    // ── DEC-110: Actual Payment (populated at MarkAsPaid — mandatory) ─────────────
+    /// <summary>
+    /// The actual amount paid by Finance, as entered at payment confirmation.
+    /// Mandatory when confirming payment. Null until payment is executed.
+    /// </summary>
+    public decimal? ActualPaidAmount { get; set; }
+
+    /// <summary>
+    /// UTC timestamp when the actual payment was recorded.
+    /// </summary>
+    public DateTime? ActualPaidAtUtc { get; set; }
+
     public int? CapexOpexClassificationId { get; set; }
     public CapexOpexClassification? CapexOpexClassification { get; set; }
 

@@ -66,6 +66,15 @@ const HRTeamCalendar = React.lazy(() =>
 const EmployeeWorkspace = React.lazy(() =>
     import('./pages/HR/EmployeeWorkspace')
 );
+const HRBadgesLandingPage = React.lazy(() =>
+    import('./pages/HR/HRBadgesLandingPage')
+);
+const BadgeLayoutDesigner = React.lazy(() =>
+    import('./pages/HR/BadgeLayoutDesigner')
+);
+const BadgePrintHistoryPage = React.lazy(() =>
+    import('./pages/HR/BadgePrintHistoryPage')
+);
 
 // Admin pages (isolated, rarely visited)
 const MasterData = React.lazy(() =>
@@ -169,7 +178,17 @@ function AppContent() {
                     <Route path="leave" element={<Suspense fallback={<LoadingSkeleton />}><HRLeaveList /></Suspense>} />
                     <Route path="calendar" element={<Suspense fallback={<LoadingSkeleton />}><HRTeamCalendar /></Suspense>} />
                     <Route path="directory" element={<Suspense fallback={<LoadingSkeleton />}><HREmployeeDirectory /></Suspense>} />
-                    <Route path="employees" element={<Suspense fallback={<LoadingSkeleton />}><EmployeeWorkspace /></Suspense>} />
+                    
+                    {/* Compatibility Redirects */}
+                    <Route path="employees" element={<Navigate to="badges/employees" replace />} />
+                    <Route path="team-calendar" element={<Navigate to="calendar" replace />} />
+
+                    <Route path="badges" element={<Suspense fallback={<LoadingSkeleton />}><HRBadgesLandingPage /></Suspense>}>
+                        <Route index element={<Navigate to="employees" replace />} />
+                        <Route path="employees" element={<Suspense fallback={<LoadingSkeleton />}><EmployeeWorkspace /></Suspense>} />
+                        <Route path="layouts" element={<Suspense fallback={<LoadingSkeleton />}><BadgeLayoutDesigner /></Suspense>} />
+                        <Route path="history" element={<Suspense fallback={<LoadingSkeleton />}><BadgePrintHistoryPage /></Suspense>} />
+                    </Route>
                 </Route>
 
                 {/* Settings Routes */}

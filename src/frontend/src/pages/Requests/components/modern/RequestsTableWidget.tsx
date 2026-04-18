@@ -288,7 +288,7 @@ export function RequestsTableWidget({
                                                 {['COMPLETED', 'QUOTATION_COMPLETED', 'PAID', 'PAYMENT_COMPLETED'].includes(req.statusCode) ? (
                                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
                                                         <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-status-emerald)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                                            {isPayment ? 'Pagamento Realizado em' : 'Recebido em'}
+                                                            {['PAID', 'PAYMENT_COMPLETED'].includes(req.statusCode) ? 'Pagamento Realizado em' : (isPayment ? 'Pagamento Realizado em' : 'Recebido em')}
                                                         </span>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--color-text-main)', fontWeight: 600 }}>
                                                             <CalendarClock size={12} style={{ color: 'var(--color-status-emerald)' }} />

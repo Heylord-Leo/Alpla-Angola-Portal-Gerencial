@@ -159,7 +159,10 @@ public class UnifiedEmployeeProfileService : IUnifiedEmployeeProfileService
             HireDate = dto.HireDate,
             TerminationDate = dto.TerminationDate,
             IsTemporarilyInactive = dto.IsTemporarilyInactive,
-            SourceCompany = dto.SourceCompany
+            SourceCompany = dto.SourceCompany,
+            IdentityDocNumber = dto.IdentityDocNumber,
+            PassportNumber = dto.PassportNumber,
+            Nationality = dto.Nationality
         };
     }
 

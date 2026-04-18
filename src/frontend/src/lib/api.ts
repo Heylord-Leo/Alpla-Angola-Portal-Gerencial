@@ -1209,11 +1209,12 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao carregar projeções de fluxo de caixa.');
             return response.json();
         },
-        getPayments: async (filter?: string, page: number = 1, pageSize: number = 20): Promise<FinanceListResponseDto> => {
+        getPayments: async (filter?: string, page: number = 1, pageSize: number = 20, plantId?: number): Promise<FinanceListResponseDto> => {
             const params = new URLSearchParams();
             if (filter) params.append('filter', filter);
             params.append('page', page.toString());
             params.append('pageSize', pageSize.toString());
+            if (plantId) params.append('plantId', plantId.toString());
             const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/payments?${params.toString()}`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar pagamentos.');
             return response.json();
@@ -1249,11 +1250,11 @@ export const api = {
             });
             if (!response.ok) return handleApiError(response, 'Falha ao agendar pagamento.');
         },
-        markAsPaid: async (id: string, actionDateUtc?: string, notes?: string): Promise<void> => {
+        markAsPaid: async (id: string, actionDateUtc?: string, notes?: string, actualPaidAmount?: number): Promise<void> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/${id}/pay`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ actionDateUtc, notes })
+                body: JSON.stringify({ actionDateUtc, notes, actualPaidAmount })
             });
             if (!response.ok) return handleApiError(response, 'Falha ao registar pagamento.');
         },

@@ -15,6 +15,8 @@ public class DevSeedingController : BaseController
     {
     }
 
+
+
     [HttpDelete("cleanup-intelligence")]
     public async Task<IActionResult> CleanupIntelligence()
     {

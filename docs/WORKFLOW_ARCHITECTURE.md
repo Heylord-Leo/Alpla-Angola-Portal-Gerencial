@@ -173,3 +173,112 @@ Both old and new PO attachments are preserved in the attachment history for trac
 
 > **Finalized statuses** (`REJECTED`, `CANCELLED`, `COMPLETED`, `QUOTATION_COMPLETED`) receive score **-1** and always rank below all active items, including active items with no deadline (score 0).
 > `APPROVED` is an active operational status and receives a date-based score like any other working status.
+
+---
+
+## 6. Financial Lifecycle (DEC-110)
+
+> **Phase 1 — Implemented.** This section documents the financial snapshot, payment capture, and divergence detection mechanisms introduced in DEC-110. Phase 2 (exception workflow statuses) is documented but not yet implemented.
+
+### Overview
+
+The financial lifecycle tracks three critical monetary values across a request's journey:
+
+1. **Estimated Amount** (`EstimatedTotalAmount`) — The initial value set by the requester or calculated from quotation items. Mutable during draft and quotation phases.
+2. **Approved Amount** (`ApprovedTotalAmount`) — An immutable snapshot captured at the moment of final approval. This is the amount the organization committed to pay.
+3. **Actual Paid Amount** (`ActualPaidAmount`) — The actual amount disbursed by Finance, captured at payment confirmation. This is the amount that left the bank account.
+
+### Value Source by Stage
+
+| Stage | Active Financial Value | Source | Mutable? |
+|:---|:---|:---|:---|
+| `DRAFT` | `EstimatedTotalAmount` | Requester line items sum | ✅ Yes |
+| `WAITING_QUOTATION` | `Quotation.TotalAmount` | Buyer's quotation items | ✅ Yes |
+| `WAITING_AREA_APPROVAL` | `Quotation.TotalAmount` or `EstimatedTotalAmount` | Financial Integrity Gate validated | ❌ No |
+| `WAITING_FINAL_APPROVAL` | Same as above | Carried forward | ❌ No |
+| `APPROVED` | **`ApprovedTotalAmount`** (snapshot) | Captured from winner quotation (QUOTATION) or `EstimatedTotalAmount` (PAYMENT) | ❌ Immutable |
+| `PO_ISSUED` | `ApprovedTotalAmount` | Reference for Finance | ❌ Immutable |
+| `PAYMENT_SCHEDULED` | `ApprovedTotalAmount` | Reference for Finance | ❌ Immutable |
+| `PAYMENT_COMPLETED` | `ApprovedTotalAmount` + **`ActualPaidAmount`** | Both preserved for comparison | ❌ Immutable |
+
+### Financial Snapshot Rules
+
+| Rule | Description |
+|:---|:---|
+| **Trigger** | Final Approval action (`ProcessFinalApproval` with action `APPROVE`) |
+| **QUOTATION flow** | `ApprovedTotalAmount` = `SelectedQuotation.TotalAmount`; `ApprovedCurrencyCode` = `SelectedQuotation.Currency` |
+| **PAYMENT flow** | `ApprovedTotalAmount` = `Request.EstimatedTotalAmount`; `ApprovedCurrencyCode` = `Request.Currency.Code` |
+| **Timestamp** | `ApprovedAtUtc` = `DateTime.UtcNow` at approval moment |
+| **Immutability** | Once set, these fields are **never** updated by any subsequent action |
+| **Legacy requests** | Requests approved before this feature have `null` snapshot fields. All downstream logic handles `null` gracefully. |
+
+### Actor Responsibilities
+
+| Actor | Stage | Financial Responsibility |
+|:---|:---|:---|
+| **Requester** | `DRAFT` | Enters estimated values via line items |
+| **Buyer** | `WAITING_QUOTATION` | Completes quotation with itemized pricing; OCR validation |
+| **Area Approver** | `WAITING_AREA_APPROVAL` | Reviews financial values; selects winner (QUOTATION) |
+| **Final Approver** | `WAITING_FINAL_APPROVAL` | Approves commitment → **system captures snapshot automatically** |
+| **Buyer** | `APPROVED` → `PO_ISSUED` | Registers PO document; OCR divergence check against approved amount |
+| **Finance** | `PO_ISSUED` → `PAYMENT_COMPLETED` | Enters mandatory `ActualPaidAmount`; system runs divergence detection |
+
+### Payment Stage Validation Rules
+
+#### SchedulePayment — Status Guards
+
+| Rule | Value |
+|:---|:---|
+| **Allowed source statuses** | `PO_ISSUED`, `PAYMENT_REQUEST_SENT`, `APPROVED` (PAYMENT flow) |
+| **Required inputs** | `ActionDateUtc` (scheduling date) |
+| **Optional inputs** | `Notes`, scheduling proof attachment |
+| **Rejection** | HTTP 400 with explicit error listing allowed statuses |
+
+#### MarkAsPaid — Status Guards + Payment Capture
+
+| Rule | Value |
+|:---|:---|
+| **Allowed source statuses** | `PO_ISSUED`, `PAYMENT_REQUEST_SENT`, `PAYMENT_SCHEDULED`, `APPROVED` (PAYMENT flow) |
+| **Required inputs** | `ActualPaidAmount` (mandatory, must be > 0), payment proof attachment |
+| **Optional inputs** | `Notes` |
+| **Post-save** | Divergence detection runs automatically |
+
+### Divergence Detection
+
+**Tolerance calculation:**
+```
+tolerance = max(1.00, ApprovedTotalAmount × 0.01)
+divergence_detected = |ActualPaidAmount - ApprovedTotalAmount| > tolerance
+```
+
+**Scenario matrix (Phase 1):**
+
+| Scenario | Trigger | Phase 1 Behavior |
+|:---|:---|:---|
+| **No divergence** | Paid == Approved (within tolerance) | Normal flow. No additional audit entry. |
+| **Divergence before payment** | Finance notices changed conditions | Use "Return for PO Correction" or proceed; divergence logged at payment. |
+| **Divergence after payment** | Paid ≠ Approved beyond tolerance | Payment proceeds. `PAYMENT_DIVERGENCE_DETECTED` audit entry created. |
+| **Complementary payment** | Partial payment, remainder due later | Record partial as `ActualPaidAmount`; add `NOTA_FINANCEIRA` for remainder. |
+
+**Audit action codes:**
+
+| Action Code | Trigger | Actor |
+|:---|:---|:---|
+| `PAYMENT_DIVERGENCE_DETECTED` | `MarkAsPaid` detects variance > tolerance | System (automatic) |
+| `PAYMENT_COMPLETED` | Payment confirmed (existing) | Finance user |
+
+**History entry format for divergence:**
+```
+[SISTEMA] Divergência de pagamento detectada:
+Montante Aprovado=150,000.00, Montante Pago=165,000.00,
+Diferença=15,000.00 (10.00%)
+```
+
+### Phase 2 Intent (Documented, Not Implemented)
+
+| Condition | Phase 2 Action |
+|:---|:---|
+| Pre-payment: commercial value changed by >5% | → `COMMERCIAL_CHANGE_REVIEW` → `REAPPROVAL_REQUIRED` |
+| Pre-payment: commercial value changed by ≤5% | → `COMMERCIAL_CHANGE_REVIEW` → Finance proceeds with acknowledgment |
+| Post-payment: divergence >1% | → `POST_PAYMENT_REGULARIZATION` → requires manager sign-off |
+| Post-payment: complementary needed | → Complementary payment endpoint → cumulative `TotalPaidAmount` |

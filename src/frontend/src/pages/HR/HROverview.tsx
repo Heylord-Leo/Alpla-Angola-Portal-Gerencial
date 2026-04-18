@@ -56,7 +56,7 @@ export default function HROverview() {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
                         {actionRequired.missingMappings > 0 && (
                             <div 
-                                onClick={() => navigate('/hr/employees')} 
+                                onClick={() => navigate('/hr/badges/employees')} 
                                 style={{ padding: '16px', backgroundColor: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', gap: '12px', alignItems: 'center', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
                             >
                                 <div style={{ backgroundColor: '#fee2e2', padding: '10px', borderRadius: '50%', color: '#ef4444' }}><UserX size={20} /></div>
@@ -104,7 +104,7 @@ export default function HROverview() {
                         icon={<CalendarX size={20} />}
                         color="#ef4444"
                         borderColor="#fca5a5"
-                        onClick={() => navigate('/hr/team-calendar')}
+                        onClick={() => navigate('/hr/calendar')}
                     />
                     <KPICard
                         title="Em Férias (Próx 7 Dias)"
@@ -112,7 +112,7 @@ export default function HROverview() {
                         icon={<CalendarClock size={20} />}
                         color="#0ea5e9"
                         borderColor="#7dd3fc"
-                        onClick={() => navigate('/hr/team-calendar')}
+                        onClick={() => navigate('/hr/calendar')}
                     />
                     <KPICard
                         title="Aguardando Análise"
@@ -128,7 +128,7 @@ export default function HROverview() {
                         icon={<Users size={20} />}
                         color="#10b981"
                         borderColor="#6ee7b7"
-                        onClick={() => navigate('/hr/employees')}
+                        onClick={() => navigate('/hr/badges/employees')}
                     />
                 </div>
             </div>

@@ -493,6 +493,11 @@ export interface HistoricalPurchaseRecordDto {
     departmentName?: string;
 }
 
+export interface FinanceCurrencyValueDto {
+    totalAmount: number;
+    currencyCode: string;
+}
+
 export interface FinanceAttentionPointDto {
     id: string;
     title: string;
@@ -507,10 +512,10 @@ export interface FinanceSummaryDto {
     scheduledPayments: number;
     overduePayments: number;
     completedThisMonth: number;
-    pendingValue: number;
-    scheduledValue: number;
-    overdueValue: number;
-    paidThisMonthValue: number;
+    pendingValues: FinanceCurrencyValueDto[];
+    scheduledValues: FinanceCurrencyValueDto[];
+    overdueValues: FinanceCurrencyValueDto[];
+    paidThisMonthValues: FinanceCurrencyValueDto[];
     currencyCodes: string[];
     attentionPoints: FinanceAttentionPointDto[];
     cashFlowProjections: FinanceCashFlowProjectionDto[];

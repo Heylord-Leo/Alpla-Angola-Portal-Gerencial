@@ -2,6 +2,24 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.79.0] - 2026-04-18 - Feature: Manual Badge Creation (Visitor Workflow)
+### Added
+- **Manual Badge Entry**: Added a new "Entrada Manual" toggle in the HR Employee Workspace. When activated, it seamlessly replaces the Primavera API search with a manual data entry form.
+- **Visitor Badge Lifecycle**: The system can now issue badges for visitors or temporary staff without requiring them to be pre-registered in the Primavera ERP. These badges are logged into `BadgePrintHistory` utilizing a specialized `MANUAL-[timestamp]` employee code to maintain audit traceability.
+- **Resilient Badge Rendering**: Upgraded the `BadgePreview` engine and `BadgeLayoutEditorV3` configurations to robustly handle multi-line text wrapping. Names that exceed container constraints now gracefully wrap to a newly allocated second text box, preventing truncation.
+- **Contextual Form Validation**: Added visual validation logic blocking manual badge printing if requisite parameters (Name, Category, missing RFID card) aren't satisfied, ensuring blank or malformed visitor badges are not dispatched.
+
+## [v2.78.0] - 2026-04-17 - Feature: Financial Snapshot & Payment Divergence Detection (Phase 1 — DEC-110)
+### Added
+- **Financial Snapshot at Approval**: `ApprovedTotalAmount`, `ApprovedCurrencyCode`, and `ApprovedAtUtc` are now captured immutably on the `Request` entity at the moment of final approval. QUOTATION flow sources the winning quotation total; PAYMENT flow sources `EstimatedTotalAmount`.
+- **Mandatory Payment Amount Capture**: `ActualPaidAmount` and `ActualPaidAtUtc` are now required inputs when confirming payment via `MarkAsPaid`. The `FinanceActionModal` includes a new "Montante Efetivamente Pago" input field.
+- **Payment Divergence Detection**: Automated comparison of `ActualPaidAmount` vs `ApprovedTotalAmount` using a 1% relative tolerance (with 1.00 absolute floor). When divergence exceeds tolerance, a `PAYMENT_DIVERGENCE_DETECTED` audit entry is created in `RequestStatusHistory` with detailed variance data.
+- **Finance Status Guards**: `SchedulePayment` and `MarkAsPaid` endpoints now enforce explicit source-status validation. Actions from invalid workflow states return HTTP 400 with descriptive error messages listing allowed statuses.
+- **Finance List Enrichment**: `FinanceListItemDto` now exposes `ApprovedTotalAmount`, `ActualPaidAmount`, `ApprovedCurrencyCode`, `ApprovedAtUtc`, `ActualPaidAtUtc`, and a computed `HasPaymentDivergence` flag.
+### Documentation
+- **WORKFLOW_ARCHITECTURE.md**: Added §6 — Financial Lifecycle covering value source by stage, snapshot rules, actor responsibilities, payment validation rules, divergence detection algorithm, and Phase 2 intent.
+- **DECISIONS.md**: Added DEC-110 — Financial Snapshot & Payment Divergence Detection phased delivery rationale.
+
 ## [v2.77.3] - 2026-04-16 - Performance: Master Data Page Load Optimization (50s → 2s)
 ### Performance
 - **GetUsers Cartesian Explosion Fix**: Replaced 4 eager-loading Include/ThenInclude chains with direct SQL projection in `UsersController.GetUsers`. The cartesian join was taking 25s+ for 10 users; now resolves in <200ms.

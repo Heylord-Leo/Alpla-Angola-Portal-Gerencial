@@ -59,6 +59,11 @@ export default function FinanceOverview() {
         return new Intl.NumberFormat('pt-AO', { style: 'currency', currency: currency || 'AOA' }).format(val);
     };
 
+    const formatCurrencyList = (values: any[]) => {
+        if (!values || values.length === 0) return '---';
+        return values.map(v => formatCurrency(v.totalAmount, v.currencyCode)).join(' / ');
+    };
+
     // Recharts Data Prep
     const PIE_COLORS = ['#3b82f6', '#f97316', '#22c55e', '#a855f7'];
 
@@ -170,7 +175,7 @@ export default function FinanceOverview() {
                     value={summary.waitingFinanceAction}
                     icon={<Clock size={20} />}
                     color="#0284c7"
-                    subtitle={formatCurrency(summary.pendingValue, summary.currencyCodes?.[0])}
+                    subtitle={formatCurrencyList(summary.pendingValues)}
                     onClick={() => navigate('/finance/payments?filter=action')}
                 />
                 <KPICard
@@ -178,7 +183,7 @@ export default function FinanceOverview() {
                     value={summary.scheduledPayments}
                     icon={<CheckCircle size={20} />}
                     color="#ea580c"
-                    subtitle={formatCurrency(summary.scheduledValue, summary.currencyCodes?.[0])}
+                    subtitle={formatCurrencyList(summary.scheduledValues)}
                     onClick={() => navigate('/finance/payments?filter=scheduled')}
                 />
                 <KPICard
@@ -187,7 +192,7 @@ export default function FinanceOverview() {
                     icon={<AlertCircle size={20} />}
                     color="#ef4444"
                     borderColor="#fca5a5"
-                    subtitle={formatCurrency(summary.overdueValue, summary.currencyCodes?.[0])}
+                    subtitle={formatCurrencyList(summary.overdueValues)}
                     onClick={() => navigate('/finance/payments?filter=overdue')}
                 />
                 <KPICard
@@ -195,7 +200,7 @@ export default function FinanceOverview() {
                     value={summary.completedThisMonth}
                     icon={<DollarSign size={20} />}
                     color="#16a34a"
-                    subtitle={formatCurrency(summary.paidThisMonthValue, summary.currencyCodes?.[0])}
+                    subtitle={formatCurrencyList(summary.paidThisMonthValues)}
                     onClick={() => navigate('/finance/payments?filter=completedThisMonth')}
                 />
             </div>

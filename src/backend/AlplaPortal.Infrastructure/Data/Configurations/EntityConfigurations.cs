@@ -15,6 +15,11 @@ public class RequestConfiguration : IEntityTypeConfiguration<Request>
         builder.Property(r => r.EstimatedTotalAmount).HasColumnType("decimal(18,2)");
         builder.Property(r => r.DiscountAmount).HasColumnType("decimal(18,2)");
         builder.Property(r => r.OcrOriginalGrandTotal).HasColumnType("decimal(18,2)");
+
+        // DEC-110: Financial snapshot & payment fields
+        builder.Property(r => r.ApprovedTotalAmount).HasColumnType("decimal(18,2)");
+        builder.Property(r => r.ApprovedCurrencyCode).HasMaxLength(10);
+        builder.Property(r => r.ActualPaidAmount).HasColumnType("decimal(18,2)");
         
         // Strict mapping: A Request has many LineItems, Histories, Attachments
         builder.HasMany(r => r.LineItems)

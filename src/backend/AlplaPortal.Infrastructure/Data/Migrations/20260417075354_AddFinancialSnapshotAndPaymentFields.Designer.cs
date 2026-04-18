@@ -4,16 +4,19 @@ using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace AlplaPortal.Infrastructure.Migrations
+namespace AlplaPortal.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260417075354_AddFinancialSnapshotAndPaymentFields")]
+    partial class AddFinancialSnapshotAndPaymentFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -69,169 +72,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("AdminLogEntries");
-                });
-
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.BadgeLayout", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime?>("ActivatedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("ArchivedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("BadgeType")
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<string>("CompanyCode")
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("CreatedByUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("LayoutConfigJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<string>("PlantCode")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("UpdatedByUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("Version")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("Status");
-
-                    b.HasIndex("UpdatedByUserId");
-
-                    b.HasIndex("Name", "Version")
-                        .IsUnique();
-
-                    b.HasIndex("CompanyCode", "BadgeType", "Status");
-
-                    b.ToTable("BadgeLayouts");
-                });
-
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.BadgePrintEvent", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("BadgePrintHistoryId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Reason")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("ReprintedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("ReprintedByUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BadgePrintHistoryId");
-
-                    b.HasIndex("ReprintedAtUtc");
-
-                    b.HasIndex("ReprintedByUserId");
-
-                    b.ToTable("BadgePrintEvents");
-                });
-
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.BadgePrintHistory", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("BadgeLayoutId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("CardNumber")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Category")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("CompanyCode")
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<string>("Department")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("EmployeeCode")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<string>("EmployeeName")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("PhotoReference")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("PhotoSource")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("PlantCode")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("PrintCount")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("PrintedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("PrintedByUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("SnapshotPayloadJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BadgeLayoutId");
-
-                    b.HasIndex("CompanyCode");
-
-                    b.HasIndex("EmployeeCode");
-
-                    b.HasIndex("PrintedAtUtc");
-
-                    b.HasIndex("PrintedByUserId");
-
-                    b.ToTable("BadgePrintHistories");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.CapexOpexClassification", b =>
@@ -3031,61 +2871,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                         });
                 });
 
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.BadgeLayout", b =>
-                {
-                    b.HasOne("AlplaPortal.Domain.Entities.User", "CreatedByUser")
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("AlplaPortal.Domain.Entities.User", "UpdatedByUser")
-                        .WithMany()
-                        .HasForeignKey("UpdatedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("CreatedByUser");
-
-                    b.Navigation("UpdatedByUser");
-                });
-
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.BadgePrintEvent", b =>
-                {
-                    b.HasOne("AlplaPortal.Domain.Entities.BadgePrintHistory", "BadgePrintHistory")
-                        .WithMany("ReprintEvents")
-                        .HasForeignKey("BadgePrintHistoryId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("AlplaPortal.Domain.Entities.User", "ReprintedByUser")
-                        .WithMany()
-                        .HasForeignKey("ReprintedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("BadgePrintHistory");
-
-                    b.Navigation("ReprintedByUser");
-                });
-
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.BadgePrintHistory", b =>
-                {
-                    b.HasOne("AlplaPortal.Domain.Entities.BadgeLayout", "BadgeLayout")
-                        .WithMany()
-                        .HasForeignKey("BadgeLayoutId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("AlplaPortal.Domain.Entities.User", "PrintedByUser")
-                        .WithMany()
-                        .HasForeignKey("PrintedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("BadgeLayout");
-
-                    b.Navigation("PrintedByUser");
-                });
-
             modelBuilder.Entity("AlplaPortal.Domain.Entities.Company", b =>
                 {
                     b.HasOne("AlplaPortal.Domain.Entities.User", "FinalApproverUser")
@@ -3679,11 +3464,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                     b.Navigation("Role");
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.BadgePrintHistory", b =>
-                {
-                    b.Navigation("ReprintEvents");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.DepartmentMaster", b =>

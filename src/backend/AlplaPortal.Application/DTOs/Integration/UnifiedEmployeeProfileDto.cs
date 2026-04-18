@@ -75,6 +75,17 @@ public class PrimaveraProfileSection
     public DateTime? TerminationDate { get; set; }
     public bool? IsTemporarilyInactive { get; set; }
     public string? SourceCompany { get; set; }
+
+    // ─── Identity Document Fields ───
+
+    /// <summary>Bilhete de Identidade number (Funcionarios.NumBI).</summary>
+    public string? IdentityDocNumber { get; set; }
+
+    /// <summary>Passport number (Funcionarios.NumPassaporte).</summary>
+    public string? PassportNumber { get; set; }
+
+    /// <summary>Nationality (Funcionarios.Nacionalidade).</summary>
+    public string? Nationality { get; set; }
 }
 
 /// <summary>

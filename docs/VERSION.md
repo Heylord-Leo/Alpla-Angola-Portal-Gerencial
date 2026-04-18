@@ -2,7 +2,19 @@
 
 ## Current Version
 
-v2.77.3
+v2.79.0
+
+## [2.79.0] - 2026-04-18
+
+### Added
+- **Manual Badge Creation**: Added a new "Entrada Manual" toggle in the HR Employee Workspace. This allows issuing badges manually avoiding prerequisite Primavera registration schemas logic.
+- **Resilient Multi-line Layouts**: Upgraded `BadgePreview` capabilities, granting robust text-wrapping functionality for long strings like multi-line complete names over constrained areas.
+
+## [2.78.0] - 2026-04-17
+
+### Added
+- **Financial Snapshot & Payment Divergence Detection (Phase 1 — DEC-110)**: Automated comparisons across requested vs actually paid amounts via `ActualPaidAmount` capturing procedures.
+- **Workflow Overrides**: Hardened endpoints like `SchedulePayment` with active status checks.
 
 ## [2.77.3] - 2026-04-16
 

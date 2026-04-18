@@ -87,13 +87,15 @@ public class FinanceController : BaseController
                 Amount = r.SelectedQuotationId.HasValue 
                     ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.TotalAmount
                     : r.EstimatedTotalAmount,
+                ActualPaidAmount = r.ActualPaidAmount,
+                ActualPaidAtUtc = r.ActualPaidAtUtc,
                 CurrencyCode = r.SelectedQuotationId.HasValue 
                     ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.Currency
                     : r.Currency != null ? r.Currency.Code : "---",
                 SupplierName = r.SelectedQuotationId.HasValue 
                     ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.SupplierNameSnapshot
                     : r.Supplier != null ? r.Supplier.Name : "---",
-                CompletedAtUtc = r.StatusHistories
+                HistoryPaidAtUtc = r.StatusHistories
                     .Where(sh => sh.NewStatus!.Code == RequestConstants.Statuses.Paid || sh.NewStatus!.Code == RequestConstants.Statuses.PaymentCompleted)
                     .OrderByDescending(sh => sh.CreatedAtUtc)
                     .Select(sh => (DateTime?)sh.CreatedAtUtc)
@@ -104,78 +106,85 @@ public class FinanceController : BaseController
             })
             .ToListAsync();
 
+        // Define a consolidated "IsPaid" rule
+        var processedStats = stats.Select(s => new {
+            s.Id, s.StatusCode, s.NeedByDateUtc, s.ScheduledDateUtc, s.RequestedDateUtc, s.RequestTypeCode,
+            s.CurrencyCode, s.SupplierName, s.HasProforma, s.HasPO, s.HasProof,
+            IsPaid = s.StatusCode == RequestConstants.Statuses.Paid || 
+                     s.StatusCode == RequestConstants.Statuses.PaymentCompleted || 
+                     s.StatusCode == RequestConstants.Statuses.InFollowup ||
+                     s.ActualPaidAtUtc.HasValue ||
+                     s.HistoryPaidAtUtc.HasValue,
+            PaidAtUtc = s.ActualPaidAtUtc ?? s.HistoryPaidAtUtc,
+            Amount = s.ActualPaidAmount ?? s.Amount // Use actual paid amount if available
+        }).ToList();
+
         var waitingActions = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentRequestSent };
-        int waitingFinance = stats.Count(s => waitingActions.Contains(s.StatusCode) || (s.RequestTypeCode == RequestConstants.Types.Payment && s.StatusCode == RequestConstants.Statuses.FinalApproved));
         
-        // Refine waiting finance (needs payment scheduling/execution)
-        var scheduled = stats.Count(s => s.StatusCode == RequestConstants.Statuses.PaymentScheduled);
-        
-        // Active and overdue
-        var activeOverdue = stats.Count(s => 
-            !new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(s.StatusCode) 
-            && s.NeedByDateUtc.HasValue && s.NeedByDateUtc.Value < today);
+        // Metrics excluding paid ones
+        int waitingFinance = processedStats.Count(s => !s.IsPaid && (waitingActions.Contains(s.StatusCode) || (s.RequestTypeCode == RequestConstants.Types.Payment && s.StatusCode == RequestConstants.Statuses.FinalApproved)));
+        var scheduledCount = processedStats.Count(s => !s.IsPaid && s.StatusCode == RequestConstants.Statuses.PaymentScheduled);
+        var overdueCount = processedStats.Count(s => !s.IsPaid && s.NeedByDateUtc.HasValue && s.NeedByDateUtc.Value < today);
+        var completedCountThisMonth = processedStats.Count(s => s.IsPaid && s.PaidAtUtc >= firstDayOfMonth);
 
-        // Completed this month
-        var completedThisMonth = stats.Count(s => 
-            new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(s.StatusCode) 
-            && s.CompletedAtUtc >= firstDayOfMonth);
+        // Values grouped by currency
+        var pendingValues = processedStats
+            .Where(s => !s.IsPaid)
+            .GroupBy(s => s.CurrencyCode)
+            .Select(g => new FinanceCurrencyValueDto { CurrencyCode = g.Key, TotalAmount = g.Sum(x => x.Amount) })
+            .ToList();
 
-        var pendingList = stats.Where(s => !new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(s.StatusCode)).ToList();
-        var pendingValue = pendingList.Sum(s => s.Amount); // Aggregation
-        var currencyCodes = pendingList.Select(s => s.CurrencyCode).Distinct().ToList();
+        var scheduledValues = processedStats
+            .Where(s => !s.IsPaid && s.StatusCode == RequestConstants.Statuses.PaymentScheduled)
+            .GroupBy(s => s.CurrencyCode)
+            .Select(g => new FinanceCurrencyValueDto { CurrencyCode = g.Key, TotalAmount = g.Sum(x => x.Amount) })
+            .ToList();
 
-        var paidList = stats.Where(s => new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(s.StatusCode) && s.CompletedAtUtc >= firstDayOfMonth).ToList();
-        var paidValue = paidList.Sum(s => s.Amount);
+        var overdueValues = processedStats
+            .Where(s => !s.IsPaid && s.NeedByDateUtc.HasValue && s.NeedByDateUtc.Value < today)
+            .GroupBy(s => s.CurrencyCode)
+            .Select(g => new FinanceCurrencyValueDto { CurrencyCode = g.Key, TotalAmount = g.Sum(x => x.Amount) })
+            .ToList();
 
-        // Missing Documents
-        int missingDocs = stats.Count(s => 
-            !new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(s.StatusCode) &&
-            ((s.RequestTypeCode == RequestConstants.Types.Quotation && !s.HasProforma) ||
-            (!s.HasPO))
+        var paidThisMonthValues = processedStats
+            .Where(s => s.IsPaid && s.PaidAtUtc >= firstDayOfMonth)
+            .GroupBy(s => s.CurrencyCode)
+            .Select(g => new FinanceCurrencyValueDto { CurrencyCode = g.Key, TotalAmount = g.Sum(x => x.Amount) })
+            .ToList();
+
+        var currencyCodes = processedStats.Where(s => !s.IsPaid).Select(s => s.CurrencyCode).Distinct().ToList();
+
+        // Warning points
+        int missingDocs = processedStats.Count(s => 
+            !s.IsPaid &&
+            ((s.RequestTypeCode == RequestConstants.Types.Quotation && !s.HasProforma) || (!s.HasPO))
         );
 
-        var dueSoon = stats.Count(s => 
-            !new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(s.StatusCode) 
-            && s.NeedByDateUtc.HasValue && s.NeedByDateUtc.Value >= today && s.NeedByDateUtc.Value <= in4Days);
+        var dueSoonCount = processedStats.Count(s => 
+            !s.IsPaid && s.NeedByDateUtc.HasValue && s.NeedByDateUtc.Value >= today && s.NeedByDateUtc.Value <= in4Days);
 
         var attentionPoints = new List<FinanceAttentionPointDto>();
-        
-        if (activeOverdue > 0)
+        if (overdueCount > 0)
         {
-            attentionPoints.Add(new FinanceAttentionPointDto
-            {
-                Id = "overdue", Title = "Pagamentos Vencidos", Description = "Requer ação imediata de tesouraria.", Count = activeOverdue, TargetPath = "/finance/payments?filter=overdue", Type = "DANGER"
-            });
+            attentionPoints.Add(new FinanceAttentionPointDto { Id = "overdue", Title = "Pagamentos Vencidos", Description = "Requer ação imediata de tesouraria.", Count = overdueCount, TargetPath = "/finance/payments?filter=overdue", Type = "DANGER" });
         }
-        if (dueSoon > 0)
+        if (dueSoonCount > 0)
         {
-            attentionPoints.Add(new FinanceAttentionPointDto
-            {
-                Id = "due-soon", Title = "Vencendo em breve", Description = "Pagamentos vencendo nos próximos 4 dias.", Count = dueSoon, TargetPath = "/finance/payments?filter=dueSoon", Type = "WARNING"
-            });
+            attentionPoints.Add(new FinanceAttentionPointDto { Id = "due-soon", Title = "Vencendo em breve", Description = "Pagamentos vencendo nos próximos 4 dias.", Count = dueSoonCount, TargetPath = "/finance/payments?filter=dueSoon", Type = "WARNING" });
         }
         if (missingDocs > 0)
         {
-            attentionPoints.Add(new FinanceAttentionPointDto
-            {
-                Id = "missing-docs", Title = "Falta Documento", Description = "Pedidos sem Proforma ou P.O pendentes de ação.", Count = missingDocs, TargetPath = "/finance/payments?filter=missingDocs", Type = "INFO"
-            });
+            attentionPoints.Add(new FinanceAttentionPointDto { Id = "missing-docs", Title = "Falta Documento", Description = "Pedidos sem Proforma ou P.O pendentes de ação.", Count = missingDocs, TargetPath = "/finance/payments?filter=missingDocs", Type = "INFO" });
         }
 
-        var scheduledValue = stats.Where(s => s.StatusCode == RequestConstants.Statuses.PaymentScheduled).Sum(s => s.Amount);
-        var overdueValue = stats.Where(s => !new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(s.StatusCode) && s.NeedByDateUtc.HasValue && s.NeedByDateUtc.Value < today).Sum(s => s.Amount);
-
-        // --- NEW DATA SCIENCE METRICS ---
-
-        // 1. Projeção de Fluxo de Caixa (Próximos 15 dias)
+        // --- DATA SCIENCE METRICS ---
         var maxProjectionDate = today.AddDays(15);
-        var uncompletedRequests = stats.Where(s => !new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(s.StatusCode)).ToList();
+        var uncompletedRequests = processedStats.Where(s => !s.IsPaid).ToList();
         
         var projections = uncompletedRequests
             .Where(s => (s.ScheduledDateUtc ?? s.NeedByDateUtc) >= today && (s.ScheduledDateUtc ?? s.NeedByDateUtc) <= maxProjectionDate)
             .GroupBy(s => new { Date = (s.ScheduledDateUtc ?? s.NeedByDateUtc).Value.Date, Currency = s.CurrencyCode })
-            .Select(g => new FinanceCashFlowProjectionDto
-            {
+            .Select(g => new FinanceCashFlowProjectionDto {
                 Date = g.Key.Date.ToString("yyyy-MM-dd"),
                 CurrencyCode = g.Key.Currency,
                 TotalAmount = g.Sum(x => x.Amount)
@@ -183,11 +192,9 @@ public class FinanceController : BaseController
             .OrderBy(p => p.Date)
             .ToList();
 
-        // 2. Exposição Cambial
         var currencyExposures = uncompletedRequests
             .GroupBy(s => s.CurrencyCode)
-            .Select(g => new FinanceCurrencyExposureDto
-            {
+            .Select(g => new FinanceCurrencyExposureDto {
                 CurrencyCode = g.Key ?? "N/A",
                 Amount = g.Sum(x => x.Amount),
                 Count = g.Count()
@@ -195,11 +202,9 @@ public class FinanceController : BaseController
             .OrderByDescending(c => c.Amount)
             .ToList();
 
-        // 3. Top 5 Fornecedores (Concentração financeira pendente)
         var topSuppliers = uncompletedRequests
             .GroupBy(s => new { s.SupplierName, s.CurrencyCode })
-            .Select(g => new FinanceTopSupplierDto
-            {
+            .Select(g => new FinanceTopSupplierDto {
                 SupplierName = string.IsNullOrWhiteSpace(g.Key.SupplierName) ? "Fornecedor Não Declarado" : g.Key.SupplierName,
                 CurrencyCode = g.Key.CurrencyCode ?? "---",
                 TotalPendingAmount = g.Sum(x => x.Amount),
@@ -209,7 +214,6 @@ public class FinanceController : BaseController
             .Take(5)
             .ToList();
 
-        // 4. Aging Operational (Idade dos processos esperando finanças)
         var waitingFinanceAging = uncompletedRequests.Where(s => waitingActions.Contains(s.StatusCode) || (s.RequestTypeCode == RequestConstants.Types.Payment && s.StatusCode == RequestConstants.Statuses.FinalApproved)).ToList();
         var agingAnalysis = new FinanceAgingAnalysisDto();
         foreach (var req in waitingFinanceAging)
@@ -223,13 +227,13 @@ public class FinanceController : BaseController
         return Ok(new FinanceSummaryDto
         {
             WaitingFinanceAction = waitingFinance,
-            ScheduledPayments = scheduled,
-            OverduePayments = activeOverdue,
-            CompletedThisMonth = completedThisMonth,
-            PendingValue = pendingValue,
-            ScheduledValue = scheduledValue,
-            OverdueValue = overdueValue,
-            PaidThisMonthValue = paidValue,
+            ScheduledPayments = scheduledCount,
+            OverduePayments = overdueCount,
+            CompletedThisMonth = completedCountThisMonth,
+            PendingValues = pendingValues,
+            ScheduledValues = scheduledValues,
+            OverdueValues = overdueValues,
+            PaidThisMonthValues = paidThisMonthValues,
             CurrencyCodes = currencyCodes,
             AttentionPoints = attentionPoints,
             CashFlowProjections = projections,
@@ -334,6 +338,7 @@ public class FinanceController : BaseController
     public async Task<ActionResult<FinanceListResponseDto>> GetPayments(
         [FromQuery] string? filter = null,
         [FromQuery] string? statusIds = null,
+        [FromQuery] int? plantId = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
@@ -356,6 +361,11 @@ public class FinanceController : BaseController
             && r.Attachments.Any(a => !a.IsDeleted && a.AttachmentTypeCode == AttachmentConstants.Types.PurchaseOrder)
         );
 
+        if (plantId.HasValue)
+        {
+            query = query.Where(r => r.PlantId == plantId.Value);
+        }
+
         if (!string.IsNullOrWhiteSpace(statusIds))
         {
             var parsedStatusIds = statusIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToList();
@@ -376,10 +386,10 @@ public class FinanceController : BaseController
                 query = query.Where(r => new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(r.Status!.Code) && r.StatusHistories.Any(sh => (sh.NewStatus!.Code == RequestConstants.Statuses.Paid || sh.NewStatus!.Code == RequestConstants.Statuses.PaymentCompleted) && sh.CreatedAtUtc >= firstDayOfMonth));
                 break;
             case "overdue":
-                query = query.Where(r => !new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(r.Status!.Code) && r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < today);
+                query = query.Where(r => !new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup }.Contains(r.Status!.Code) && !r.ActualPaidAtUtc.HasValue && r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < today);
                 break;
             case "dueSoon":
-                query = query.Where(r => !new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(r.Status!.Code) && r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value >= today && r.NeedByDateUtc.Value <= in4Days);
+                query = query.Where(r => !new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup }.Contains(r.Status!.Code) && !r.ActualPaidAtUtc.HasValue && r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value >= today && r.NeedByDateUtc.Value <= in4Days);
                 break;
         }
 
@@ -414,7 +424,7 @@ public class FinanceController : BaseController
         foreach (var item in items)
         {
             var r = item.Request;
-            var isPaid = r.Status!.Code == RequestConstants.Statuses.Paid || r.Status.Code == RequestConstants.Statuses.PaymentCompleted || item.PaidHistory != null;
+            var isPaid = r.Status!.Code == RequestConstants.Statuses.Paid || r.Status.Code == RequestConstants.Statuses.PaymentCompleted || r.Status.Code == RequestConstants.Statuses.InFollowup || r.ActualPaidAtUtc.HasValue || item.PaidHistory != null;
             var isQuotation = r.RequestType!.Code == RequestConstants.Types.Quotation;
             
             var missingDocs = new List<string>();
@@ -462,7 +472,16 @@ public class FinanceController : BaseController
                 IsDueSoon = !isPaid && (r.ScheduledDateUtc ?? r.NeedByDateUtc) >= today && (r.ScheduledDateUtc ?? r.NeedByDateUtc) <= in4Days,
                 IsMissingDocuments = isMissingDocuments,
                 MissingDocumentTypes = missingDocs,
-                AvailableFinanceActions = actions
+                AvailableFinanceActions = actions,
+                // DEC-110: Financial snapshot & payment divergence
+                ApprovedTotalAmount = r.ApprovedTotalAmount,
+                ApprovedCurrencyCode = r.ApprovedCurrencyCode,
+                ApprovedAtUtc = r.ApprovedAtUtc,
+                ActualPaidAmount = r.ActualPaidAmount,
+                ActualPaidAtUtc = r.ActualPaidAtUtc,
+                HasPaymentDivergence = r.ApprovedTotalAmount.HasValue && r.ActualPaidAmount.HasValue
+                    && Math.Abs(r.ActualPaidAmount.Value - r.ApprovedTotalAmount.Value)
+                       > Math.Max(1.00m, r.ApprovedTotalAmount.Value * 0.01m)
             });
         }
 
@@ -492,7 +511,7 @@ public class FinanceController : BaseController
         var scopedQuery = await GetScopedRequestsQuery();
         var requestIds = await scopedQuery.Select(r => r.Id).ToListAsync();
 
-        var financeActionCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "DOCUMENTO ADICIONADO", "NOTA_FINANCEIRA", "FINANCE_RETURN_ADJUSTMENT" };
+        var financeActionCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "DOCUMENTO ADICIONADO", "NOTA_FINANCEIRA", "FINANCE_RETURN_ADJUSTMENT", "PAYMENT_DIVERGENCE_DETECTED" };
         var financeStatusCodes = new[] { RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted };
 
         var query = _context.RequestStatusHistories
@@ -558,7 +577,7 @@ public class FinanceController : BaseController
         var scopedQuery = await GetScopedRequestsQuery();
         var requestIds = await scopedQuery.Select(r => r.Id).ToListAsync();
 
-        var financeActionCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "DOCUMENTO ADICIONADO", "NOTA_FINANCEIRA", "FINANCE_RETURN_ADJUSTMENT" };
+        var financeActionCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "DOCUMENTO ADICIONADO", "NOTA_FINANCEIRA", "FINANCE_RETURN_ADJUSTMENT", "PAYMENT_DIVERGENCE_DETECTED" };
         var financeStatusCodes = new[] { RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted };
 
         var query = _context.RequestStatusHistories
@@ -620,6 +639,7 @@ public class FinanceController : BaseController
                 "DOCUMENTO ADICIONADO" => "Comprovativo",
                 "NOTA_FINANCEIRA" => "Observação",
                 "FINANCE_RETURN_ADJUSTMENT" => "Ajuste",
+                "PAYMENT_DIVERGENCE_DETECTED" => "Divergência",
                 _ => item.ActionTaken
             };
             csv.AppendLine($"{item.CreatedAtUtc:yyyy-MM-dd HH:mm:ss};{actionStr};{item.ActorName};{item.RequestNumber};{item.RequestTitle};{item.CurrencyCode};{item.Amount};{comment}");
@@ -634,6 +654,22 @@ public class FinanceController : BaseController
     {
         var r = await _context.Requests.Include(req => req.Status).FirstOrDefaultAsync(req => req.Id == id);
         if (r == null || !await (await GetScopedRequestsQuery()).AnyAsync(req => req.Id == id)) return NotFound();
+
+        // ── DEC-110: Status Guard ────────────────────────────────────────────
+        var allowedScheduleStatuses = new[] {
+            RequestConstants.Statuses.PoIssued,
+            RequestConstants.Statuses.PaymentRequestSent,
+            RequestConstants.Statuses.FinalApproved  // PAYMENT flow direct
+        };
+        if (r.Status == null || !allowedScheduleStatuses.Contains(r.Status.Code))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Ação Inválida",
+                Detail = $"O agendamento de pagamento só é permitido nos status: {string.Join(", ", allowedScheduleStatuses)}. Status atual: {r.Status?.Code ?? "desconhecido"}.",
+                Status = 400
+            });
+        }
 
         var scheduledStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == RequestConstants.Statuses.PaymentScheduled);
         if (scheduledStatus == null) return BadRequest("Status SCHEDULED não configurado.");
@@ -695,6 +731,34 @@ public class FinanceController : BaseController
         var r = await _context.Requests.Include(req => req.Status).FirstOrDefaultAsync(req => req.Id == id);
         if (r == null || !await (await GetScopedRequestsQuery()).AnyAsync(req => req.Id == id)) return NotFound();
 
+        // ── DEC-110: Status Guard ────────────────────────────────────────────
+        var allowedPayStatuses = new[] {
+            RequestConstants.Statuses.PoIssued,
+            RequestConstants.Statuses.PaymentRequestSent,
+            RequestConstants.Statuses.PaymentScheduled,
+            RequestConstants.Statuses.FinalApproved  // PAYMENT flow direct
+        };
+        if (r.Status == null || !allowedPayStatuses.Contains(r.Status.Code))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Ação Inválida",
+                Detail = $"A confirmação de pagamento só é permitida nos status: {string.Join(", ", allowedPayStatuses)}. Status atual: {r.Status?.Code ?? "desconhecido"}.",
+                Status = 400
+            });
+        }
+
+        // ── DEC-110: Mandatory ActualPaidAmount ──────────────────────────────
+        if (!requestDto.ActualPaidAmount.HasValue || requestDto.ActualPaidAmount.Value <= 0)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Montante Obrigatório",
+                Detail = "O montante efetivamente pago (ActualPaidAmount) é obrigatório e deve ser superior a zero.",
+                Status = 400
+            });
+        }
+
         var paidStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == RequestConstants.Statuses.PaymentCompleted || s.Code == RequestConstants.Statuses.Paid);
         if (paidStatus == null) return BadRequest("Status PAID não configurado.");
 
@@ -706,15 +770,51 @@ public class FinanceController : BaseController
             ActionTaken = "PAYMENT_COMPLETED",
             PreviousStatusId = r.StatusId,
             NewStatusId = paidStatus.Id,
-            Comment = $"Pagamento realizado na totalidade. " + (requestDto.Notes ?? ""),
+            Comment = $"Pagamento realizado. Montante: {requestDto.ActualPaidAmount.Value:N2}. " + (requestDto.Notes ?? ""),
             CreatedAtUtc = DateTime.UtcNow
         };
 
         r.StatusId = paidStatus.Id;
         r.UpdatedAtUtc = DateTime.UtcNow;
 
+        // ── DEC-110: Actual Payment Capture ──────────────────────────────────
+        r.ActualPaidAmount = requestDto.ActualPaidAmount.Value;
+        r.ActualPaidAtUtc = DateTime.UtcNow;
+
         _context.RequestStatusHistories.Add(history);
         await _context.SaveChangesAsync();
+
+        // ── DEC-110: Divergence Detection (Phase 1 — informational audit) ────
+        if (r.ApprovedTotalAmount.HasValue)
+        {
+            var diff = Math.Abs(r.ActualPaidAmount.Value - r.ApprovedTotalAmount.Value);
+            var tolerance = Math.Max(1.00m, r.ApprovedTotalAmount.Value * 0.01m);
+
+            if (diff > tolerance)
+            {
+                var pctDiff = r.ApprovedTotalAmount.Value != 0
+                    ? (diff / r.ApprovedTotalAmount.Value * 100).ToString("F2")
+                    : "N/A";
+
+                var divergenceComment = $"[SISTEMA] Divergência de pagamento detectada: " +
+                    $"Montante Aprovado={r.ApprovedTotalAmount.Value:N2}, " +
+                    $"Montante Pago={r.ActualPaidAmount.Value:N2}, " +
+                    $"Diferença={diff:N2} ({pctDiff}%)";
+
+                _context.RequestStatusHistories.Add(new RequestStatusHistory
+                {
+                    Id = Guid.NewGuid(),
+                    RequestId = r.Id,
+                    ActorUserId = CurrentUserId,
+                    ActionTaken = "PAYMENT_DIVERGENCE_DETECTED",
+                    PreviousStatusId = paidStatus.Id,
+                    NewStatusId = paidStatus.Id,
+                    Comment = divergenceComment,
+                    CreatedAtUtc = DateTime.UtcNow
+                });
+                await _context.SaveChangesAsync();
+            }
+        }
 
         // [TEMPORARY NON-CENTRAL HOOK]
         try

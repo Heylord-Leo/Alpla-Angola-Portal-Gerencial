@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { DropdownPortal } from '../ui/DropdownPortal';
 import { Z_INDEX } from '../../constants/ui';
 import { Feedback, FeedbackType } from '../ui/Feedback';
+import { CurrencyInput } from '../CurrencyInput';
 
 export type FinanceActionType = 'SCHEDULE' | 'PAY' | 'RETURN' | 'NOTE' | null;
 
@@ -11,7 +12,7 @@ interface FinanceActionModalProps {
     show: boolean;
     action: FinanceActionType;
     onClose: () => void;
-    onConfirm: (action: FinanceActionType, payload: { date?: string; notes?: string; file?: File | null }) => void;
+    onConfirm: (action: FinanceActionType, payload: { date?: string; notes?: string; file?: File | null; amount?: string }) => void;
     processing: boolean;
     feedback: { type: FeedbackType; message: string | null };
     onCloseFeedback: () => void;
@@ -29,6 +30,7 @@ export function FinanceActionModal({
     const [notes, setNotes] = useState('');
     const [date, setDate] = useState('');
     const [file, setFile] = useState<File | null>(null);
+    const [amount, setAmount] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleClearFile = () => {
@@ -41,6 +43,7 @@ export function FinanceActionModal({
             setNotes('');
             setDate('');
             setFile(null);
+            setAmount('');
         }
     }, [show]);
 
@@ -59,7 +62,7 @@ export function FinanceActionModal({
     const getDescription = () => {
         switch (action) {
             case 'SCHEDULE': return 'Informe a data prevista para a saída do pagamento.';
-            case 'PAY': return 'Deseja confirmar que o pagamento deste pedido foi liquidado?';
+            case 'PAY': return 'Informe o montante efetivamente pago e anexe o comprovante de pagamento.';
             case 'RETURN': return 'Descreva o motivo da devolução para que o setor de Compras possa realizar os ajustes necessários na P.O.';
             case 'NOTE': return 'Registre uma observação financeira sobre este pedido. Esta nota ficará visível no histórico de auditoria.';
             default: return '';
@@ -72,7 +75,7 @@ export function FinanceActionModal({
     // Determine button disabled state
     const isConfirmDisabled = processing || 
         (action === 'SCHEDULE' && !date) || 
-        (action === 'PAY' && !file) ||
+        (action === 'PAY' && (!file || !amount || parseFloat(amount) <= 0)) ||
         (isCommentRequired && !notes.trim());
 
     const inputStyle = {
@@ -159,10 +162,19 @@ export function FinanceActionModal({
                                     </div>
                                 ) : (
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', backgroundColor: 'var(--color-bg-page)', border: '2px solid var(--color-text-main)', borderRadius: 'var(--radius-md)' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
                                             <FileText size={20} color="var(--color-text-main)" />
-                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                <span style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '0.85rem' }}>{file.name}</span>
+                                            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                                                <span style={{ 
+                                                    fontWeight: 800, 
+                                                    color: 'var(--color-text-main)', 
+                                                    fontSize: '0.85rem',
+                                                    whiteSpace: 'nowrap',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis'
+                                                }}>
+                                                    {file.name}
+                                                </span>
                                                 <span style={{ fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>{(file.size / 1024 / 1024).toFixed(2)} MB</span>
                                             </div>
                                         </div>
@@ -171,6 +183,20 @@ export function FinanceActionModal({
                                         </button>
                                     </div>
                                 )}
+                            </div>
+                        )}
+
+                        {action === 'PAY' && (
+                            <div style={{ marginBottom: '24px' }}>
+                                <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
+                                    Montante Efetivamente Pago (obrigatório)
+                                </label>
+                                <CurrencyInput
+                                    value={amount}
+                                    onChange={(val) => setAmount(val)}
+                                    placeholder="0,00"
+                                    style={inputStyle}
+                                />
                             </div>
                         )}
 
@@ -193,10 +219,19 @@ export function FinanceActionModal({
                                     </div>
                                 ) : (
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', backgroundColor: 'var(--color-bg-page)', border: '2px solid var(--color-text-main)', borderRadius: 'var(--radius-md)' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
                                             <FileText size={20} color="var(--color-text-main)" />
-                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                <span style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '0.85rem' }}>{file.name}</span>
+                                            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                                                <span style={{ 
+                                                    fontWeight: 800, 
+                                                    color: 'var(--color-text-main)', 
+                                                    fontSize: '0.85rem',
+                                                    whiteSpace: 'nowrap',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis'
+                                                }}>
+                                                    {file.name}
+                                                </span>
                                                 <span style={{ fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>{(file.size / 1024 / 1024).toFixed(2)} MB</span>
                                             </div>
                                         </div>
@@ -246,7 +281,7 @@ export function FinanceActionModal({
                             </button>
                             <button
                                 disabled={isConfirmDisabled}
-                                onClick={() => onConfirm(action, { date, notes, file })}
+                                onClick={() => onConfirm(action, { date, notes, file, amount })}
                                 style={{
                                     height: '48px',
                                     padding: '0 40px',

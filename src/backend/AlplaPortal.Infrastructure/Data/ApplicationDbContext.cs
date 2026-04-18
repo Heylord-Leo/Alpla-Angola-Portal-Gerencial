@@ -59,6 +59,11 @@ public class ApplicationDbContext : DbContext
     public DbSet<LeaveStatusHistory> LeaveStatusHistories => Set<LeaveStatusHistory>();
     public DbSet<HRSyncLog> HRSyncLogs => Set<HRSyncLog>();
 
+    // Badge Management Module
+    public DbSet<BadgeLayout> BadgeLayouts => Set<BadgeLayout>();
+    public DbSet<BadgePrintHistory> BadgePrintHistories => Set<BadgePrintHistory>();
+    public DbSet<BadgePrintEvent> BadgePrintEvents => Set<BadgePrintEvent>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -218,6 +223,62 @@ public class ApplicationDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(sl => sl.TriggeredByUserId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // ─── Badge Management Module Configuration ───
+
+        // BadgeLayout
+        modelBuilder.Entity<BadgeLayout>(entity =>
+        {
+            entity.HasIndex(bl => bl.Status);
+            entity.HasIndex(bl => new { bl.Name, bl.Version }).IsUnique();
+            entity.HasIndex(bl => new { bl.CompanyCode, bl.BadgeType, bl.Status });
+
+            entity.HasOne(bl => bl.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(bl => bl.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(bl => bl.UpdatedByUser)
+                .WithMany()
+                .HasForeignKey(bl => bl.UpdatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // BadgePrintHistory
+        modelBuilder.Entity<BadgePrintHistory>(entity =>
+        {
+            entity.HasIndex(bph => bph.EmployeeCode);
+            entity.HasIndex(bph => bph.PrintedAtUtc);
+            entity.HasIndex(bph => bph.PrintedByUserId);
+            entity.HasIndex(bph => bph.CompanyCode);
+
+            entity.HasOne(bph => bph.BadgeLayout)
+                .WithMany()
+                .HasForeignKey(bph => bph.BadgeLayoutId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(bph => bph.PrintedByUser)
+                .WithMany()
+                .HasForeignKey(bph => bph.PrintedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(bph => bph.ReprintEvents)
+                .WithOne(ev => ev.BadgePrintHistory)
+                .HasForeignKey(ev => ev.BadgePrintHistoryId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // BadgePrintEvent
+        modelBuilder.Entity<BadgePrintEvent>(entity =>
+        {
+            entity.HasIndex(ev => ev.BadgePrintHistoryId);
+            entity.HasIndex(ev => ev.ReprintedAtUtc);
+
+            entity.HasOne(ev => ev.ReprintedByUser)
+                .WithMany()
+                .HasForeignKey(ev => ev.ReprintedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         // Unique Constraints for Master Data

@@ -17,8 +17,8 @@ export default function HRLeaveList() {
     // Create Drawer state
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
     const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
-    const [employees, setEmployees] = useState<any[]>([]);
     
+
     // Form state
     const [formEmployeeId, setFormEmployeeId] = useState('');
     const [formLeaveTypeId, setFormLeaveTypeId] = useState('');
