@@ -403,6 +403,93 @@ public class LookupsController : ControllerBase
         return NoContent();
     }
 
+    // Contract Types
+    [HttpGet("contract-types")]
+    public async Task<IActionResult> GetContractTypes([FromQuery] bool includeInactive = false)
+    {
+        var query = _context.ContractTypes.AsQueryable();
+
+        if (!includeInactive)
+        {
+            query = query.Where(t => t.IsActive);
+        }
+
+        var items = await query
+            .OrderBy(t => t.DisplayOrder).ThenBy(t => t.Name)
+            .Select(t => new { t.Id, t.Code, t.Name, t.IsActive })
+            .ToListAsync();
+
+        return Ok(items);
+    }
+
+    [HttpPost("contract-types")]
+    [Authorize(Roles = "System Administrator")]
+    public async Task<IActionResult> CreateContractType([FromBody] CreateLookupDto dto)
+    {
+        var entity = new Domain.Entities.ContractType 
+        { 
+            Code = dto.Code?.ToUpper() ?? string.Empty, 
+            Name = dto.Name, 
+            IsActive = true
+        };
+        _context.ContractTypes.Add(entity);
+        
+        try
+        {
+            await _context.SaveChangesAsync();
+            return Created($"/api/v1/lookups/contract-types/{entity.Id}", new { entity.Id, entity.Code, entity.Name, entity.IsActive });
+        }
+        catch (DbUpdateException ex)
+        {
+            return StatusCode(500, new ProblemDetails { Title = "Erro ao criar Tipo de Contrato", Detail = ex.InnerException?.Message ?? ex.Message });
+        }
+    }
+
+    [HttpPut("contract-types/{id}")]
+    [Authorize(Roles = "System Administrator")]
+    public async Task<IActionResult> UpdateContractType(int id, [FromBody] CreateLookupDto dto)
+    {
+        var entity = await _context.ContractTypes.FindAsync(id);
+        if (entity == null) return NotFound();
+
+        bool fundamentalFieldsChanged = entity.Name != dto.Name || (entity.Code != (dto.Code?.ToUpper() ?? string.Empty));
+        
+        if (fundamentalFieldsChanged && await _context.Contracts.AnyAsync(r => r.ContractTypeId == id))
+        {
+            return Conflict(new ProblemDetails
+            {
+                Title = "Regra de Negócio Violada",
+                Detail = "Este registro já está em uso por contratos. O nome e o código não podem ser alterados para preservar a integridade do histórico.",
+                Status = 409
+            });
+        }
+
+        entity.Code = dto.Code?.ToUpper() ?? string.Empty;
+        entity.Name = dto.Name;
+
+        try
+        {
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+        catch (DbUpdateException ex)
+        {
+            return StatusCode(500, new ProblemDetails { Title = "Erro ao atualizar Tipo de Contrato", Detail = ex.InnerException?.Message ?? ex.Message });
+        }
+    }
+
+    [HttpPut("contract-types/{id}/toggle-active")]
+    [Authorize(Roles = "System Administrator")]
+    public async Task<IActionResult> ToggleContractTypeActive(int id)
+    {
+        var entity = await _context.ContractTypes.FindAsync(id);
+        if (entity == null) return NotFound();
+        
+        entity.IsActive = !entity.IsActive;
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+
     // Departments
     [HttpGet("departments")]
     public async Task<IActionResult> GetDepartments([FromQuery] bool includeInactive = false)

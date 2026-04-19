@@ -3309,6 +3309,30 @@ public class RequestsController : BaseController
             _context.RequestStatusHistories.RemoveRange(request.StatusHistories);
         }
 
+        // If this request is linked to a contract payment obligation, we must reset the obligation status
+        if (request.ContractPaymentObligationId.HasValue)
+        {
+            var obligation = await _context.ContractPaymentObligations
+                .FirstOrDefaultAsync(o => o.Id == request.ContractPaymentObligationId.Value);
+
+            if (obligation != null)
+            {
+                var oldStatus = obligation.StatusCode;
+                obligation.StatusCode = ContractConstants.ObligationStatuses.Pending;
+                
+                _context.ContractHistories.Add(new ContractHistory
+                {
+                    ContractId = obligation.ContractId,
+                    EventType = ContractConstants.HistoryEventTypes.StatusChanged,
+                    FromStatusCode = oldStatus,
+                    ToStatusCode = ContractConstants.ObligationStatuses.Pending,
+                    Comment = $"Obrigação reaberta após obliteração/exclusão do pedido base rascunho ({request.RequestNumber}).",
+                    OccurredAtUtc = DateTime.UtcNow,
+                    ActorUserId = CurrentUserId
+                });
+            }
+        }
+
         // LineItems and Attachments will cascade delete based on EntityConfigurations.cs
         _context.Requests.Remove(request);
 
@@ -4304,6 +4328,25 @@ public class RequestsController : BaseController
     {
         var targetStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == targetStatusCode);
         if (targetStatus == null) return StatusCode(500, $"Status '{targetStatusCode}' não configurado no sistema.");
+
+        // If the request is being cancelled or rejected and was linked to a Contract Obligation, we must revert it
+        if ((targetStatusCode == "CANCELLED" || targetStatusCode == "REJECTED") && request.ContractPaymentObligationId.HasValue)
+        {
+            var obligation = await _context.ContractPaymentObligations.FindAsync(request.ContractPaymentObligationId.Value);
+            if (obligation != null && obligation.StatusCode != "PAID")
+            {
+                obligation.StatusCode = "PENDING";
+                
+                _context.ContractHistories.Add(new ContractHistory
+                {
+                    ContractId = obligation.ContractId,
+                    EventType = "OBLIGATION_RESET",
+                    Comment = $"Obrigação {obligation.SequenceNumber} revertida para PENDENTE porque o pedido gerado foi {targetStatusCode.ToLower()}.",
+                    OccurredAtUtc = DateTime.UtcNow,
+                    ActorUserId = actorUserId
+                });
+            }
+        }
 
         var oldStatusId = request.StatusId;
 

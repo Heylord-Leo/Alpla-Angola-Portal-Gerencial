@@ -108,6 +108,13 @@ public class Request
     public bool IsCancelled { get; set; }
     public Guid? SelectedQuotationId { get; set; }
 
+    // Contract linkage (DEC-111 — unidirectional FK design)
+    public Guid? ContractId { get; set; }
+    public Contract? Contract { get; set; }
+
+    public Guid? ContractPaymentObligationId { get; set; }
+    public ContractPaymentObligation? ContractPaymentObligation { get; set; }
+
     // Integration Placeholders
     public string? PrimaveraReference { get; set; }
     public string? AlplaProdReference { get; set; }

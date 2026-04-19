@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { LookupDto, CurrencyDto, UserDto, SmtpSettingsDto } from '../../types';
@@ -29,11 +29,12 @@ export function MasterData() {
     const [costCenters, setCostCenters] = useState<LookupDto[]>([]);
     const [companies, setCompanies] = useState<LookupDto[]>([]);
     const [ivaRates, setIvaRates] = useState<any[]>([]);
+    const [contractTypes, setContractTypes] = useState<LookupDto[]>([]);
     const [users, setUsers] = useState<UserDto[]>([]);
     const [loading, setLoading] = useState(true);
 
     // Form states
-    const [activeTab, setActiveTab] = useState<'units' | 'currencies' | 'needLevels' | 'departments' | 'plants' | 'suppliers' | 'costCenters' | 'ivaRates' | 'companies' | 'catalogItems' | 'smtpSettings'>('units');
+    const [activeTab, setActiveTab] = useState<'units' | 'currencies' | 'needLevels' | 'departments' | 'plants' | 'suppliers' | 'costCenters' | 'ivaRates' | 'companies' | 'contractTypes' | 'catalogItems' | 'smtpSettings'>('units');
 
     // Suppliers Search State
     const [supplierSearchQuery, setSupplierSearchQuery] = useState('');
@@ -52,7 +53,7 @@ export function MasterData() {
     const [smtpTesting, setSmtpTesting] = useState(false);
     const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string; responseTimeMs?: number } | null>(null);
     const [showPasswordField, setShowPasswordField] = useState(false);
-    const [editMode, setEditMode] = useState<{ type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company', id: number | null }>({ type: 'unit', id: null });
+    const [editMode, setEditMode] = useState<{ type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company' | 'contractType', id: number | null }>({ type: 'unit', id: null });
     const [formData, setFormData] = useState({
         code: '',
         name: '',
@@ -96,7 +97,7 @@ export function MasterData() {
         try {
             setLoading(true);
             const failures: string[] = [];
-            const names = ['Unidades', 'Moedas', 'Níveis Necessidade', 'Departamentos', 'Plantas', 'Centros Custo', 'Empresas', 'IVA', 'Utilizadores'];
+            const names = ['Unidades', 'Moedas', 'Níveis Necessidade', 'Departamentos', 'Plantas', 'Centros Custo', 'Empresas', 'IVA', 'Tipos de Contrato', 'Utilizadores'];
 
             // Sequential loading to avoid LocalDB connection pool contention.
             // Parallel Promise.allSettled caused ~44s delays due to connection queue starvation.
@@ -110,6 +111,7 @@ export function MasterData() {
                 { load: () => api.lookups.getCostCenters(true), apply: (d) => setCostCenters([...d].sort((a: any, b: any) => a.id - b.id)) },
                 { load: () => api.lookups.getCompanies(true), apply: (d) => setCompanies([...d].sort((a: any, b: any) => a.id - b.id)) },
                 { load: () => api.lookups.getIvaRates(false), apply: (d) => setIvaRates([...d].sort((a: any, b: any) => a.id - b.id)) },
+                { load: () => api.lookups.getContractTypes(true), apply: (d) => setContractTypes([...d].sort((a: any, b: any) => a.id - b.id)) },
                 { load: () => api.users.list(), apply: (d) => setUsers(d) },
             ];
 
@@ -156,7 +158,7 @@ export function MasterData() {
         loadData();
     }, []);
 
-    const handleEdit = (item: any, type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company') => {
+    const handleEdit = (item: any, type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company' | 'contractType') => {
         setEditMode({ type, id: item.id });
         setValidationErrors({});
         setFormData({
@@ -176,7 +178,7 @@ export function MasterData() {
     };
 
     const handleCancel = () => {
-        let defaultType: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company' = 'unit';
+        let defaultType: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company' | 'contractType' = 'unit';
         if (activeTab === 'currencies') defaultType = 'currency';
         if (activeTab === 'needLevels') defaultType = 'needLevel';
         if (activeTab === 'departments') defaultType = 'department';
@@ -185,6 +187,7 @@ export function MasterData() {
         if (activeTab === 'costCenters') defaultType = 'costCenter';
         if (activeTab === 'ivaRates') defaultType = 'ivaRate';
         if (activeTab === 'companies') defaultType = 'company';
+        if (activeTab === 'contractTypes') defaultType = 'contractType';
 
         setEditMode({ type: defaultType, id: null });
         setValidationErrors({});
@@ -264,6 +267,12 @@ export function MasterData() {
                 } else {
                     await api.lookups.createCompany(companyPayload);
                 }
+            } else if (activeTab === 'contractTypes') {
+                if (editMode.id) {
+                    await api.lookups.updateContractType(editMode.id, { code: formData.code, name: formData.name });
+                } else {
+                    await api.lookups.createContractType({ code: formData.code, name: formData.name });
+                }
             }
             if (activeTab === 'suppliers') {
                 loadSuppliers(supplierSearchQuery, supplierCurrentPage);
@@ -277,7 +286,7 @@ export function MasterData() {
         }
     };
 
-    const handleToggleActive = async (id: number, type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company') => {
+    const handleToggleActive = async (id: number, type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company' | 'contractType') => {
         try {
             setFeedback(null);
             if (type === 'unit') await api.lookups.toggleUnit(id);
@@ -288,6 +297,7 @@ export function MasterData() {
             else if (type === 'costCenter') await api.lookups.toggleCostCenter(id);
             else if (type === 'ivaRate') await api.lookups.toggleIvaRate(id);
             else if (type === 'company') await api.lookups.toggleCompany(id);
+            else if (type === 'contractType') await api.lookups.toggleContractType(id);
             else await api.lookups.toggleSupplier(id);
 
             if (type === 'supplier') {
@@ -336,6 +346,7 @@ export function MasterData() {
                     { id: 'costCenters', label: 'Centros de Custo' },
                     { id: 'ivaRates', label: 'Taxas de IVA' },
                     { id: 'companies', label: 'Empresas' },
+                    { id: 'contractTypes', label: 'Tipos de Contrato' },
                     { id: 'catalogItems', label: '📦 Catálogo de Itens' },
                     { id: 'smtpSettings', label: '✉ SMTP' }
                 ].map((tab) => (
@@ -1092,6 +1103,34 @@ export function MasterData() {
                                                     label: c.isActive ? 'Desativar' : 'Ativar',
                                                     icon: c.isActive ? <PowerOff size={16} /> : <Power size={16} />,
                                                     onClick: () => handleToggleActive(c.id, 'company')
+                                                }
+                                            ]}
+                                        />
+                                    </td>
+                                </tr>
+                            ))}
+                            {activeTab === 'contractTypes' && contractTypes.map((ct) => (
+                                <tr key={ct.id} style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: !ct.isActive ? 'rgba(var(--color-bg-page-rgb), 0.5)' : 'inherit' }}>
+                                    <td style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>{ct.id}</td>
+                                    <td style={{ padding: '16px', fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-primary)' }}>{ct.code}</td>
+                                    <td style={{ padding: '16px', fontSize: '0.85rem', fontWeight: 600 }}>{ct.name}</td>
+                                    <td style={{ padding: '16px', fontSize: '0.8rem' }}>
+                                        <span className={`badge ${ct.isActive ? 'badge-success' : 'badge-neutral'}`}>
+                                            {ct.isActive ? 'ATIVO' : 'INATIVO'}
+                                        </span>
+                                    </td>
+                                    <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                        <KebabMenu
+                                            options={[
+                                                {
+                                                    label: 'Editar',
+                                                    icon: <Edit2 size={16} />,
+                                                    onClick: () => handleEdit(ct, 'contractType')
+                                                },
+                                                {
+                                                    label: ct.isActive ? 'Desativar' : 'Ativar',
+                                                    icon: ct.isActive ? <PowerOff size={16} /> : <Power size={16} />,
+                                                    onClick: () => handleToggleActive(ct.id, 'contractType')
                                                 }
                                             ]}
                                         />

@@ -3,7 +3,7 @@ import {
     FileText, Home, Settings, List, ShoppingCart, 
     Package, Activity, Network, Shield, CheckCircle,
     CreditCard, DollarSign, Archive, Users, UserCheck, Calendar,
-    Layers, History
+    Layers, History, FileSignature, Bell
 } from 'lucide-react';
 import { ROLES } from './roles';
 
@@ -176,6 +176,35 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                     to: '/finance/history',
                     roles: [ROLES.FINANCE, ROLES.SYSTEM_ADMINISTRATOR],
                     keywords: ['finanças', 'histórico', 'log', 'auditoria']
+                }
+            ]
+        },
+        {
+            id: 'contratos',
+            type: 'group',
+            label: 'Contratos',
+            to: '/contracts/list',
+            icon: <FileSignature size={18} strokeWidth={2.5} />,
+            roles: [ROLES.CONTRACTS, ROLES.FINANCE, ROLES.SYSTEM_ADMINISTRATOR],
+            keywords: ['contratos', 'obrigações', 'pagamento', 'fornecedor', 'contratual', 'renovação'],
+            children: [
+                {
+                    id: 'contracts-list',
+                    type: 'link',
+                    label: 'Lista de Contratos',
+                    icon: <List size={18} strokeWidth={2.5} />,
+                    to: '/contracts/list',
+                    roles: [ROLES.CONTRACTS, ROLES.FINANCE, ROLES.SYSTEM_ADMINISTRATOR],
+                    keywords: ['contratos', 'lista', 'consulta', 'pesquisa', 'ativos']
+                },
+                {
+                    id: 'contracts-alerts',
+                    type: 'link',
+                    label: 'Alertas',
+                    icon: <Bell size={18} strokeWidth={2.5} />,
+                    to: '/contracts/alerts',
+                    roles: [ROLES.CONTRACTS, ROLES.FINANCE, ROLES.SYSTEM_ADMINISTRATOR],
+                    keywords: ['contratos', 'alertas', 'vencimento', 'renovação', 'notificação']
                 }
             ]
         },

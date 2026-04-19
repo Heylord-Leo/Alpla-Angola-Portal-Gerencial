@@ -22,6 +22,9 @@ export type ApprovalActionType =
     | 'DUPLICATE_REQUEST'
     | 'SAVE_QUOTATION_OCR'
     | 'SAVE_QUOTATION_MANUAL'
+    | 'DELETE_OBLIGATION'
+    | 'GENERATE_PAYMENT'
+    | 'CHANGE_CONTRACT_STATUS'
     | null;
 
 interface ApprovalModalProps {
@@ -78,6 +81,9 @@ export function ApprovalModal({
             case 'DUPLICATE_REQUEST': return 'Duplicar Pedido';
             case 'SAVE_QUOTATION_OCR':
             case 'SAVE_QUOTATION_MANUAL': return 'Confirmar salvamento';
+            case 'DELETE_OBLIGATION': return 'Confirmar exclusão';
+            case 'GENERATE_PAYMENT': return 'Gerar Pedido de Pagamento';
+            case 'CHANGE_CONTRACT_STATUS': return 'Confirmar alteração de status';
             default: return '';
         }
     };
@@ -114,6 +120,9 @@ export function ApprovalModal({
             case 'DUPLICATE_REQUEST': return 'Deseja criar uma cópia deste pedido? Um novo rascunho será gerado com os mesmos dados básicos e itens, sem copiar o histórico ou anexos.';
             case 'SAVE_QUOTATION_OCR': return 'A extração de informações via OCR não é 100% precisa. Você verificou todas as informações?';
             case 'SAVE_QUOTATION_MANUAL': return 'Tem certeza de que todas as informações inseridas estão corretas?';
+            case 'DELETE_OBLIGATION': return 'Tem certeza que deseja apagar esta obrigação?';
+            case 'GENERATE_PAYMENT': return 'Tem certeza que deseja gerar um Pedido de Pagamento para esta obrigação?';
+            case 'CHANGE_CONTRACT_STATUS': return 'Tem certeza que deseja alterar o status deste contrato?';
             default: return '';
         }
     };
@@ -224,7 +233,7 @@ export function ApprovalModal({
                                 style={{
                                     height: '48px',
                                     padding: '0 40px',
-                                    backgroundColor: (type === 'REJECT' || type === 'DELETE' || type === 'DELETE_ITEM' || type === 'DELETE_QUOTATION' || type === 'CANCEL_REQUEST') ? 'var(--color-status-red)' : 'var(--color-primary)',
+                                    backgroundColor: (type === 'REJECT' || type === 'DELETE' || type === 'DELETE_ITEM' || type === 'DELETE_QUOTATION' || type === 'CANCEL_REQUEST' || type === 'DELETE_OBLIGATION') ? 'var(--color-status-red)' : 'var(--color-primary)',
                                     color: '#fff',
                                     border: 'none',
                                     cursor: 'pointer',

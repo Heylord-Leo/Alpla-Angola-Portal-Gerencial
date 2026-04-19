@@ -2,7 +2,12 @@
 
 ## Current Version
 
-v2.80.0
+v2.81.0
+
+## [2.81.0] - 2026-04-19
+
+### Added
+- **Contracts Management Module (First Vertical Slice)**: Full vertical delivery including domain model (6 entities), REST API (18 endpoints), and frontend workspace (5 pages). Supports contract lifecycle state machine (DRAFT → ACTIVE → TERMINATED), payment obligation management, and manual Payment Request generation from obligations. Scoped data access via plant/department visibility rules. Documented in `CONTRACTS_WORKFLOW.md` and `DEC-111`.
 
 ## [2.80.0] - 2026-04-18
 

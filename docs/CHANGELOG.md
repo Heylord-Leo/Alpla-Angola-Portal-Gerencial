@@ -2,6 +2,25 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.81.0] - 2026-04-19 - Feature: Contracts Management Module (First Vertical Slice)
+### Added
+- **Contract Domain Model**: Introduced 6 new entities — `Contract` (aggregate root), `ContractType`, `ContractDocument`, `ContractHistory`, `ContractAlert`, and `ContractPaymentObligation` — forming a complete contract lifecycle domain.
+- **Contract Number Generation**: Automated sequential contract numbering via `SystemCounter` (`CTR-{year}-{sequence}`), following the same atomic counter pattern established for Request numbers.
+- **Scoped Data Access**: `GetScopedContractsQuery` in `BaseController` derives company scope from user plant assignments, supports company-wide contracts (`PlantId = NULL`), and respects plant + department visibility rules.
+- **Full REST API**: `ContractsController` with 18 endpoints covering list (filtered, paged, with summary KPIs), detail, create, update, 5 status transitions, obligation CRUD, payment request generation, document upload/download, alerts, and type lookups.
+- **Generate Payment Request**: Core business action creating a `Request` (type=PAYMENT) from a `ContractPaymentObligation`, inheriting all organizational context and linking via unidirectional FKs (`Request.ContractId`, `Request.ContractPaymentObligationId`).
+- **Contract Lifecycle State Machine**: 6 statuses (`DRAFT → UNDER_REVIEW → ACTIVE → SUSPENDED → TERMINATED → EXPIRED`) with enforced transition rules and full audit history.
+- **Frontend Workspace**: New `/contracts` workspace with landing page shell, tabbed navigation, contracts list with summary cards, contract creation form (4 sections), and contract detail page with obligations, documents, history, and alerts tabs.
+- **Obligation Management UI**: Inline obligation creation, status badges, and the "Gerar Pedido" action button directly in the obligations table for pending items on active contracts.
+- **Sidebar Navigation**: `Contratos` group added with `FileSignature` icon, scoped to `Contracts`, `Finance`, and `System Administrator` roles.
+- **Seed Data**: 4 contract types seeded — Service (`SERVICE`), Lease (`LEASE`), Supply (`SUPPLY`), Maintenance (`MAINTENANCE`).
+### Changed
+- **Proforma Validation UX**: Improved the Payment Request submission flow. When proforma validation fails, the system now automatically expands the attachments section and smooth-scrolls it into view to immediately guide the user's attention.
+### Database
+- **Migration**: `AddContractsModule` — creates 6 tables (`Contracts`, `ContractTypes`, `ContractDocuments`, `ContractHistories`, `ContractAlerts`, `ContractPaymentObligations`), adds `ContractId` and `ContractPaymentObligationId` nullable FKs to `Requests` table with `RESTRICT` delete behavior.
+### Documentation
+- **CONTRACTS_WORKFLOW.md**: Full BPM reference document with state machines, obligation lifecycle, payment request generation flow, scope rules, ERD, API endpoint catalog, history event types, and alert types.
+
 ## [v2.80.0] - 2026-04-18 - Feature: Finance Budget Tracking MVP (Phase 1)
 ### Added
 - **Annual Budget Domain**: Introduced the `AnnualBudget` entity to manage distinct yearly budgets for departments based on a native currency, preventing duplicate budget definitions via `Year + DepartmentId + CurrencyId` constraints.

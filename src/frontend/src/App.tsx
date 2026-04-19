@@ -53,6 +53,23 @@ const FinanceBudgetConfig = React.lazy(() =>
     import('./pages/Finance/FinanceBudgetConfig')
 );
 
+// Contracts pages
+const ContractsLandingPage = React.lazy(() =>
+    import('./pages/Contracts/ContractsLandingPage')
+);
+const ContractsList = React.lazy(() =>
+    import('./pages/Contracts/ContractsList')
+);
+const ContractsAlerts = React.lazy(() =>
+    import('./pages/Contracts/ContractsAlerts')
+);
+const ContractCreate = React.lazy(() =>
+    import('./pages/Contracts/ContractCreate')
+);
+const ContractDetail = React.lazy(() =>
+    import('./pages/Contracts/ContractDetail')
+);
+
 // HR pages
 const HRLandingPage = React.lazy(() =>
     import('./pages/HR/HRLandingPage')
@@ -174,6 +191,16 @@ function AppContent() {
                     <Route path="history" element={<Suspense fallback={<LoadingSkeleton />}><FinanceHistory /></Suspense>} />
                     <Route path="budget-config" element={<Suspense fallback={<LoadingSkeleton />}><FinanceBudgetConfig /></Suspense>} />
                 </Route>
+
+                {/* Contracts Workspace */}
+                <Route path="/contracts" element={<Suspense fallback={<LoadingSkeleton />}><ContractsLandingPage /></Suspense>}>
+                    <Route index element={<Navigate to="list" replace />} />
+                    <Route path="list" element={<Suspense fallback={<LoadingSkeleton />}><ContractsList /></Suspense>} />
+                    <Route path="alerts" element={<Suspense fallback={<LoadingSkeleton />}><ContractsAlerts /></Suspense>} />
+                </Route>
+                <Route path="/contracts/new" element={<Suspense fallback={<LoadingSkeleton />}><ContractCreate /></Suspense>} />
+                <Route path="/contracts/:id/edit" element={<Suspense fallback={<LoadingSkeleton />}><ContractCreate /></Suspense>} />
+                <Route path="/contracts/:id" element={<Suspense fallback={<LoadingSkeleton />}><ContractDetail /></Suspense>} />
 
                 {/* HR Workspace */}
                 <Route path="/hr" element={<HRRoute><Suspense fallback={<LoadingSkeleton />}><HRLandingPage /></Suspense></HRRoute>}>

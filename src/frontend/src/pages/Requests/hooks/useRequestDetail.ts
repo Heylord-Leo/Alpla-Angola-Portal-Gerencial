@@ -915,15 +915,22 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 type: 'error',
                 message: 'É necessário anexar a Proforma antes de submeter o pedido.'
             });
+            
+            // Expand the attachments section
+            setSectionsOpen(prev => ({ ...prev, attachments: true }));
+
             // Scroll to attachments section and highlight
-            const attachmentsSection = document.getElementById('attachments-section');
-            if (attachmentsSection) {
-                attachmentsSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            } else {
-                window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-            }
-            setIsAttachmentsHighlighted(true);
-            setTimeout(() => setIsAttachmentsHighlighted(false), 5000);
+            // We use a small timeout to allow the section to expand in the DOM before scrolling
+            setTimeout(() => {
+                const attachmentsSection = document.getElementById('attachments-section');
+                if (attachmentsSection) {
+                    attachmentsSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } else {
+                    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+                }
+                setIsAttachmentsHighlighted(true);
+                setTimeout(() => setIsAttachmentsHighlighted(false), 5000);
+            }, 100);
             return;
         }
 

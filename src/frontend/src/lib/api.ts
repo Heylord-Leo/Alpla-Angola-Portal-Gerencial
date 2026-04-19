@@ -907,6 +907,32 @@ export const api = {
             const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/plants/${id}/toggle-active`, { method: 'PUT' });
             if (!res.ok) return handleApiError(res, 'Falha ao alternar estado da planta.');
         },
+        getContractTypes: async (includeInactive = false): Promise<any[]> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/contract-types?includeInactive=${includeInactive}`);
+            if (!res.ok) return handleApiError(res, 'Falha ao carregar tipos de contrato.');
+            return res.json();
+        },
+        createContractType: async (data: any): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/contract-types`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao salvar tipo de contrato.');
+            return res.json();
+        },
+        updateContractType: async (id: number, data: any): Promise<void> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/contract-types/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao alterar tipo de contrato.');
+        },
+        toggleContractType: async (id: number): Promise<void> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/contract-types/${id}/toggle-active`, { method: 'PUT' });
+            if (!res.ok) return handleApiError(res, 'Falha ao alternar estado do tipo de contrato.');
+        },
         getCompanies: async (includeInactive = false): Promise<any[]> => {
             const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/companies?includeInactive=${includeInactive}`);
             if (!res.ok) return handleApiError(res, 'Falha ao carregar empresas.');

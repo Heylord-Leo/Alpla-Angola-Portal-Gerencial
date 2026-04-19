@@ -2,6 +2,21 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-111 — Contracts Management Module Architecture
+
+- **Date:** 2026-04-19
+- **Status:** Accepted
+- **Context:** The portal needed a Contracts module to manage external agreements (service contracts, leases, supply, maintenance) and connect them to the existing payment request workflow. Key challenge: linking contracts to payment requests without introducing circular dependencies or breaking existing cascade delete paths.
+- **Decision:** Implement a first vertical slice with the following architectural decisions:
+    1. **Unidirectional FK Strategy:** `Request` references `Contract` and `ContractPaymentObligation` via nullable FKs — NOT the reverse. The `Contract` entity has no direct navigation collection to `Request`. This eliminates circular cascade path conflicts with EF Core's existing `Company → Department → Request` chain.
+    2. **RESTRICT Delete Behavior:** Both FKs (`Request.ContractId`, `Request.ContractPaymentObligationId`) use `DeleteBehavior.Restrict` to prevent accidental deletion of contracts that have linked payment requests.
+    3. **Manual Payment Request Generation:** Payment requests are NEVER auto-created. A user must explicitly trigger `POST /contracts/{id}/obligations/{oblId}/generate-request` on a PENDING obligation of an ACTIVE contract. This preserves the human-in-the-loop audit principle established in the existing workflow.
+    4. **Contract Number Atomicity:** Uses the existing `SystemCounters` table with a new `CONTRACT_COUNTER` key, following the same `FindAsync + SaveChanges` atomic pattern as `GLOBAL_REQUEST_COUNTER`. Format: `CTR-{year}-{sequence:00000}`.
+    5. **Company-Aware Scope Derivation:** `GetScopedContractsQuery()` derives company scope from user plant assignments (`UserPlants → Plant.CompanyId`), supporting both plant-specific and company-wide contracts (`PlantId = NULL`). This mirrors the `Requests` scope model.
+    6. **Contract Types as Lookup Entity:** `ContractType` is a seeded reference table (SERVICE, LEASE, SUPPLY, MAINTENANCE) — not an enum — to allow future additions without code changes.
+- **Alternatives considered:** (1) Bidirectional FK with `Contract.Requests` collection (rejected: creates cascade cycle with `Company → Department → Request` path). (2) Auto-generating Payment Requests on obligation creation (rejected: violates audit principle, user must decide when to trigger payment). (3) Using the `Request.RequestTypeId` as the only link (rejected: insufficient — need `ContractId` + `ObligationId` for traceability and lifecycle sync).
+- **Consequences:** The `Request` entity gains two nullable FK columns. Existing requests with `NULL` contract fields are unaffected. The obligation lifecycle (`PENDING → REQUEST_CREATED → PAID → CANCELLED`) enables future auto-sync when the linked Request reaches a terminal payment state. Full workflow documented in `docs/CONTRACTS_WORKFLOW.md`.
+
 ## DEC-110 — Financial Snapshot & Payment Divergence Detection (Phase 1)
 
 - **Date:** 2026-04-17

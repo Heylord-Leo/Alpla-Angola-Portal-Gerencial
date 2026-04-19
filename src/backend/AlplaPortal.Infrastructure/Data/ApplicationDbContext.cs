@@ -65,6 +65,14 @@ public class ApplicationDbContext : DbContext
     public DbSet<BadgePrintHistory> BadgePrintHistories => Set<BadgePrintHistory>();
     public DbSet<BadgePrintEvent> BadgePrintEvents => Set<BadgePrintEvent>();
 
+    // Contracts Management Module
+    public DbSet<ContractType> ContractTypes => Set<ContractType>();
+    public DbSet<Contract> Contracts => Set<Contract>();
+    public DbSet<ContractDocument> ContractDocuments => Set<ContractDocument>();
+    public DbSet<ContractHistory> ContractHistories => Set<ContractHistory>();
+    public DbSet<ContractAlert> ContractAlerts => Set<ContractAlert>();
+    public DbSet<ContractPaymentObligation> ContractPaymentObligations => Set<ContractPaymentObligation>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -298,6 +306,147 @@ public class ApplicationDbContext : DbContext
                 .HasForeignKey(ev => ev.ReprintedByUserId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
+
+        // ─── Contracts Management Module Configuration ───
+
+        modelBuilder.Entity<ContractType>(entity =>
+        {
+            entity.HasIndex(ct => ct.Code).IsUnique();
+        });
+
+        modelBuilder.Entity<Contract>(entity =>
+        {
+            entity.HasIndex(c => c.ContractNumber).IsUnique();
+            entity.HasIndex(c => c.StatusCode);
+            entity.HasIndex(c => c.CompanyId);
+            entity.HasIndex(c => c.PlantId);
+            entity.HasIndex(c => c.DepartmentId);
+            entity.HasIndex(c => c.SupplierId);
+            entity.HasIndex(c => c.ExpirationDateUtc);
+
+            entity.Property(c => c.TotalContractValue).HasColumnType("decimal(18,2)");
+
+            entity.HasOne(c => c.ContractType)
+                .WithMany()
+                .HasForeignKey(c => c.ContractTypeId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(c => c.Supplier)
+                .WithMany()
+                .HasForeignKey(c => c.SupplierId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(c => c.Department)
+                .WithMany()
+                .HasForeignKey(c => c.DepartmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(c => c.Company)
+                .WithMany()
+                .HasForeignKey(c => c.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(c => c.Plant)
+                .WithMany()
+                .HasForeignKey(c => c.PlantId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(c => c.Currency)
+                .WithMany()
+                .HasForeignKey(c => c.CurrencyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(c => c.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(c => c.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(c => c.Documents)
+                .WithOne(d => d.Contract)
+                .HasForeignKey(d => d.ContractId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(c => c.Histories)
+                .WithOne(h => h.Contract)
+                .HasForeignKey(h => h.ContractId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(c => c.PaymentObligations)
+                .WithOne(o => o.Contract)
+                .HasForeignKey(o => o.ContractId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(c => c.Alerts)
+                .WithOne(a => a.Contract)
+                .HasForeignKey(a => a.ContractId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Reverse navigation: Request.ContractId → Contract.LinkedRequests
+            // Restrict (not SetNull) to avoid SQL Server multiple cascade path conflict.
+            // Application layer guards against deleting contracts with linked requests.
+            entity.HasMany(c => c.LinkedRequests)
+                .WithOne(r => r.Contract)
+                .HasForeignKey(r => r.ContractId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ContractDocument>(entity =>
+        {
+            entity.HasIndex(cd => cd.ContractId);
+            entity.HasIndex(cd => cd.FileHash).HasFilter("[FileHash] IS NOT NULL");
+
+            entity.HasOne(cd => cd.UploadedByUser)
+                .WithMany()
+                .HasForeignKey(cd => cd.UploadedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ContractHistory>(entity =>
+        {
+            entity.HasIndex(ch => ch.ContractId);
+            entity.HasIndex(ch => ch.OccurredAtUtc);
+
+            entity.HasOne(ch => ch.ActorUser)
+                .WithMany()
+                .HasForeignKey(ch => ch.ActorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ContractAlert>(entity =>
+        {
+            entity.HasIndex(ca => ca.ContractId);
+            entity.HasIndex(ca => new { ca.IsDismissed, ca.TriggerDateUtc });
+        });
+
+        modelBuilder.Entity<ContractPaymentObligation>(entity =>
+        {
+            entity.HasIndex(o => o.ContractId);
+            entity.HasIndex(o => o.StatusCode);
+            entity.HasIndex(o => o.DueDateUtc);
+
+            entity.Property(o => o.ExpectedAmount).HasColumnType("decimal(18,2)");
+
+            entity.HasOne(o => o.Currency)
+                .WithMany()
+                .HasForeignKey(o => o.CurrencyId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // Request → ContractPaymentObligation FK (unidirectional, Restrict)
+        // Restrict to avoid SQL Server multiple cascade path conflict.
+        modelBuilder.Entity<Request>()
+            .HasOne(r => r.ContractPaymentObligation)
+            .WithMany()
+            .HasForeignKey(r => r.ContractPaymentObligationId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Request>()
+            .HasIndex(r => r.ContractPaymentObligationId)
+            .HasFilter("[ContractPaymentObligationId] IS NOT NULL");
+
+        modelBuilder.Entity<Request>()
+            .HasIndex(r => r.ContractId)
+            .HasFilter("[ContractId] IS NOT NULL");
 
         // Unique Constraints for Master Data
         modelBuilder.Entity<Unit>().HasIndex(u => u.Code).IsUnique();
@@ -630,6 +779,14 @@ public class ApplicationDbContext : DbContext
             new LeaveType { Id = 5, Code = "PERSONAL_LEAVE", DisplayNamePt = "Licença Pessoal", Color = "#8b5cf6", CountsAgainstBalance = true, DisplayOrder = 5 },
             new LeaveType { Id = 6, Code = "COMPENSATION_DAY", DisplayNamePt = "Dia de Compensação", Color = "#06b6d4", CountsAgainstBalance = false, DisplayOrder = 6 },
             new LeaveType { Id = 7, Code = "OTHER", DisplayNamePt = "Outros", Color = "#6b7280", CountsAgainstBalance = false, DisplayOrder = 7 }
+        );
+
+        // Seed: Contract Types (Phase 1 — procurement-oriented only)
+        modelBuilder.Entity<ContractType>().HasData(
+            new ContractType { Id = 1, Code = "SERVICE", Name = "Serviço", IsActive = true, DisplayOrder = 1 },
+            new ContractType { Id = 2, Code = "LEASE", Name = "Locação", IsActive = true, DisplayOrder = 2 },
+            new ContractType { Id = 3, Code = "SUPPLY", Name = "Fornecimento", IsActive = true, DisplayOrder = 3 },
+            new ContractType { Id = 4, Code = "MAINTENANCE", Name = "Manutenção", IsActive = true, DisplayOrder = 4 }
         );
     }
 }
