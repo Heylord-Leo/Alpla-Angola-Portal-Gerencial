@@ -338,6 +338,9 @@ public class FinanceController : BaseController
     public async Task<ActionResult<FinanceListResponseDto>> GetPayments(
         [FromQuery] string? filter = null,
         [FromQuery] string? statusIds = null,
+        [FromQuery] string? statusCodes = null,
+        [FromQuery] string? currencyCode = null,
+        [FromQuery] string? searchSupplier = null,
         [FromQuery] int? plantId = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
@@ -370,6 +373,28 @@ public class FinanceController : BaseController
         {
             var parsedStatusIds = statusIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToList();
             if (parsedStatusIds.Any()) query = query.Where(r => parsedStatusIds.Contains(r.StatusId));
+        }
+
+        if (!string.IsNullOrWhiteSpace(statusCodes))
+        {
+            var parsedCodes = statusCodes.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim().ToUpper()).ToList();
+            if (parsedCodes.Any()) query = query.Where(r => r.Status != null && parsedCodes.Contains(r.Status.Code));
+        }
+
+        if (!string.IsNullOrWhiteSpace(currencyCode))
+        {
+            var ccUpper = currencyCode.ToUpper();
+            query = query.Where(r => 
+                (r.SelectedQuotationId.HasValue && r.Quotations.Any(q => q.Id == r.SelectedQuotationId.Value && q.Currency != null && q.Currency.ToUpper() == ccUpper))
+                || (!r.SelectedQuotationId.HasValue && r.Currency != null && r.Currency.Code.ToUpper() == ccUpper));
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchSupplier))
+        {
+            var searchLower = searchSupplier.ToLower();
+            query = query.Where(r => 
+                (r.SelectedQuotationId.HasValue && r.Quotations.Any(q => q.Id == r.SelectedQuotationId.Value && q.SupplierNameSnapshot != null && q.SupplierNameSnapshot.ToLower().Contains(searchLower)))
+                || (!r.SelectedQuotationId.HasValue && r.Supplier != null && r.Supplier.Name != null && r.Supplier.Name.ToLower().Contains(searchLower)));
         }
 
         switch(filter)

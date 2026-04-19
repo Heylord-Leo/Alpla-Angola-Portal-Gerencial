@@ -1209,12 +1209,15 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao carregar projeções de fluxo de caixa.');
             return response.json();
         },
-        getPayments: async (filter?: string, page: number = 1, pageSize: number = 20, plantId?: number): Promise<FinanceListResponseDto> => {
+        getPayments: async (filter?: string, page: number = 1, pageSize: number = 20, plantId?: number, statusCodes?: string, currencyCode?: string, searchSupplier?: string): Promise<FinanceListResponseDto> => {
             const params = new URLSearchParams();
             if (filter) params.append('filter', filter);
             params.append('page', page.toString());
             params.append('pageSize', pageSize.toString());
             if (plantId) params.append('plantId', plantId.toString());
+            if (statusCodes) params.append('statusCodes', statusCodes);
+            if (currencyCode) params.append('currencyCode', currencyCode);
+            if (searchSupplier) params.append('searchSupplier', searchSupplier);
             const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/payments?${params.toString()}`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar pagamentos.');
             return response.json();
@@ -1273,6 +1276,31 @@ export const api = {
                 body: JSON.stringify({ notes })
             });
             if (!response.ok) return handleApiError(response, 'Falha ao devolver pedido.');
+        }
+    },
+    financeBudget: {
+        getOverview: async (year: number): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/budget/overview/${year}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar visão geral do orçamento.');
+            return response.json();
+        },
+        getDepartmentDetails: async (departmentId: number, year: number): Promise<any[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/budget/department/${departmentId}/details/${year}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar detalhes do orçamento do departamento.');
+            return response.json();
+        },
+        getConfig: async (year: number): Promise<any[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/budget/config/${year}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar configurações de orçamento.');
+            return response.json();
+        },
+        saveConfig: async (configs: any[]): Promise<void> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/budget/config`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(configs)
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao salvar configurações de orçamento.');
         }
     },
     admin: {

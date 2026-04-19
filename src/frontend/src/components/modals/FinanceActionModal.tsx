@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Upload, FileText, X } from 'lucide-react';
+import { Upload, FileText, X, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DropdownPortal } from '../ui/DropdownPortal';
 import { Z_INDEX } from '../../constants/ui';
@@ -91,6 +91,13 @@ export function FinanceActionModal({
         fontFamily: 'inherit'
     };
 
+    const formatDate = (d: string) => {
+        if (!d) return '';
+        const [year, month, day] = d.split('-');
+        if (!year || !month || !day) return d;
+        return `${day}/${month}/${year}`;
+    };
+
     return (
         <DropdownPortal>
             <AnimatePresence>
@@ -139,12 +146,23 @@ export function FinanceActionModal({
                                 <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
                                     Data de Agendamento (obrigatório)
                                 </label>
-                                <input
-                                    type="date"
-                                    value={date}
-                                    onChange={(e) => setDate(e.target.value)}
-                                    style={inputStyle}
-                                />
+                                <div style={{ position: 'relative' }}>
+                                    <input
+                                        type="date"
+                                        value={date}
+                                        onChange={(e) => setDate(e.target.value)}
+                                        onClick={(e) => {
+                                            if ('showPicker' in HTMLInputElement.prototype) {
+                                                try { e.currentTarget.showPicker(); } catch (err) {}
+                                            }
+                                        }}
+                                        style={{ ...inputStyle, opacity: 0, position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 2, cursor: 'pointer', padding: 0 }}
+                                    />
+                                    <div style={{ ...inputStyle, position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: date ? 'var(--color-text-main)' : '#94a3b8' }}>
+                                        <span>{date ? formatDate(date) : 'DD/MM/YYYY'}</span>
+                                        <Calendar size={18} color="#94a3b8" />
+                                    </div>
+                                </div>
                                 <label style={{ display: 'block', marginTop: '24px', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
                                     Comprovante de Agendamento (opcional)
                                 </label>

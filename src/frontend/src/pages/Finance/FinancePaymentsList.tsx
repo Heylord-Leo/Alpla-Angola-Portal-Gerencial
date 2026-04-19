@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { FinanceListResponseDto } from '../../types';
 import { useSearchParams } from 'react-router-dom';
-import { Check, Clock, AlertTriangle, FileText, MessageSquare } from 'lucide-react';
+import { Check, Clock, AlertTriangle, FileText, MessageSquare, ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
 import { KebabMenu } from '../../components/ui/KebabMenu';
 import { ModernTooltip } from '../../components/ui/ModernTooltip';
 import { FinanceActionModal, FinanceActionType } from '../../components/modals/FinanceActionModal';
@@ -14,8 +14,14 @@ import { RequestDrawerPresentation } from '../Requests/components/modern/Request
 
 export default function FinancePaymentsList() {
     const [data, setData] = useState<FinanceListResponseDto | null>(null);
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const filter = searchParams.get('filter') || undefined;
+    const page = parseInt(searchParams.get('page') || '1');
+    const pageSize = parseInt(searchParams.get('pageSize') || '20');
+    const statusCodes = searchParams.get('statusCodes') || undefined;
+    const currencyCode = searchParams.get('currencyCode') || undefined;
+    const searchSupplier = searchParams.get('searchSupplier') || undefined;
+    
     const [highlightedRequestId, setHighlightedRequestId] = useState<string | null>(null);
     const [drawerRequestId, setDrawerRequestId] = useState<string | null>(null);
 
@@ -25,7 +31,7 @@ export default function FinancePaymentsList() {
 
     useEffect(() => {
         loadData();
-    }, [filter]);
+    }, [filter, page, pageSize, statusCodes, currencyCode, searchSupplier]);
 
     useEffect(() => {
         const focusId = searchParams.get('highlightRequestId');
@@ -49,7 +55,28 @@ export default function FinancePaymentsList() {
     }, [searchParams]);
 
     const loadData = () => {
-        api.finance.getPayments(filter).then(res => setData(res));
+        api.finance.getPayments(filter, page, pageSize, undefined, statusCodes, currencyCode, searchSupplier).then(res => setData(res));
+    };
+
+    const handleSetParam = (key: string, value: string) => {
+        const newParams = new URLSearchParams(searchParams);
+        if (value) newParams.set(key, value);
+        else newParams.delete(key);
+        newParams.set('page', '1');
+        setSearchParams(newParams);
+    };
+
+    const handlePageChange = (newPage: number) => {
+        const newParams = new URLSearchParams(searchParams);
+        newParams.set('page', newPage.toString());
+        setSearchParams(newParams);
+    };
+
+    const handlePageSizeChange = (newPageSize: number) => {
+        const newParams = new URLSearchParams(searchParams);
+        newParams.set('pageSize', newPageSize.toString());
+        newParams.set('page', '1');
+        setSearchParams(newParams);
     };
 
     const handleActionClick = (requestId: string, action: FinanceActionType) => {
@@ -146,12 +173,81 @@ export default function FinancePaymentsList() {
                 title="Obrigações & Pagamentos"
                 actions={
                     filter ? (
-                        <div style={{ backgroundColor: '#fff7ed', padding: '8px 16px', border: '2px solid #f97316', fontWeight: 800, color: '#c2410c' }}>
-                            Filtro Ativo: {filter.toUpperCase()}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#fff7ed', padding: '6px 12px', border: '2px solid #f97316', borderRadius: 'var(--radius-md, 6px)', fontWeight: 800, color: '#c2410c' }}>
+                            <span>Filtro Ativo: {filter.toUpperCase()}</span>
+                            <button
+                                onClick={() => {
+                                    const p = new URLSearchParams(searchParams);
+                                    p.delete('filter');
+                                    p.set('page', '1');
+                                    setSearchParams(p);
+                                }}
+                                style={{ background: 'transparent', border: 'none', color: '#c2410c', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '2px', borderRadius: '4px' }}
+                                title="Remover filtro"
+                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(194, 65, 12, 0.1)'}
+                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                                <X size={16} />
+                            </button>
                         </div>
                     ) : undefined
                 }
             />
+
+            <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', alignItems: 'flex-end', backgroundColor: '#fff', padding: '16px 20px', borderRadius: 'var(--radius-lg, 8px)', border: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Status</label>
+                    <select
+                        value={statusCodes || ''}
+                        onChange={(e) => handleSetParam('statusCodes', e.target.value)}
+                        style={{ padding: '8px 12px', borderRadius: 'var(--radius-md, 6px)', border: '1px solid var(--color-border)', width: '220px', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-main)' }}
+                    >
+                        <option value="">Todos os status</option>
+                        <option value="PAID,PAYMENT_COMPLETED">Pagos</option>
+                        <option value="PAYMENT_SCHEDULED">Agendados</option>
+                        <option value="PO_ISSUED">P.O Emitida</option>
+                    </select>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Moeda</label>
+                    <select
+                        value={currencyCode || ''}
+                        onChange={(e) => handleSetParam('currencyCode', e.target.value)}
+                        style={{ padding: '8px 12px', borderRadius: 'var(--radius-md, 6px)', border: '1px solid var(--color-border)', width: '150px', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-main)' }}
+                    >
+                        <option value="">Todas</option>
+                        <option value="AOA">AOA (Kwanzas)</option>
+                        <option value="USD">USD (Dólares)</option>
+                        <option value="EUR">EUR (Euros)</option>
+                        <option value="ZAR">ZAR (Rands)</option>
+                    </select>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: '250px' }}>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Fornecedor</label>
+                    <div style={{ position: 'relative' }}>
+                        <input
+                            type="text"
+                            placeholder="Buscar fornecedor..."
+                            value={searchSupplier || ''}
+                            onChange={(e) => handleSetParam('searchSupplier', e.target.value)}
+                            style={{ padding: '8px 12px', paddingLeft: '36px', borderRadius: 'var(--radius-md, 6px)', border: '1px solid var(--color-border)', width: '100%', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-main)' }}
+                        />
+                        <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+                    </div>
+                </div>
+                {(statusCodes || currencyCode || searchSupplier) && (
+                    <button
+                        onClick={() => {
+                            const p = new URLSearchParams(searchParams);
+                            p.delete('statusCodes'); p.delete('currencyCode'); p.delete('searchSupplier'); p.set('page', '1');
+                            setSearchParams(p);
+                        }}
+                        style={{ padding: '8px 16px', background: 'transparent', border: 'none', color: '#dc2626', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', textTransform: 'uppercase' }}
+                    >
+                        Limpar
+                    </button>
+                )}
+            </div>
 
             <StandardTable isEmpty={!data.pagedResult || data.pagedResult.items.length === 0}>
                 <thead>
@@ -184,7 +280,7 @@ export default function FinancePaymentsList() {
 
                                     {item.paidDateUtc ? (
                                         <ModernTooltip content={
-                                            <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Data do pagamento: {new Date(item.paidDateUtc).toLocaleDateString()}</div>
+                                            <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Data do pagamento: {new Date(item.paidDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</div>
                                         } side="top">
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#15803d', fontWeight: 800, fontSize: '0.75rem', cursor: 'help' }}>
                                                 <Check size={16} strokeWidth={3} /> Pago
@@ -192,7 +288,7 @@ export default function FinancePaymentsList() {
                                         </ModernTooltip>
                                     ) : item.scheduledDateUtc ? (
                                         <ModernTooltip content={
-                                            <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Data de agendamento do pagamento: {new Date(item.scheduledDateUtc).toLocaleDateString()}</div>
+                                            <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Data de agendamento do pagamento: {new Date(item.scheduledDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</div>
                                         } side="top">
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#0369a1', fontWeight: 800, fontSize: '0.75rem', cursor: 'help' }}>
                                                 <Clock size={16} strokeWidth={3} /> Agendado
@@ -203,12 +299,12 @@ export default function FinancePaymentsList() {
                                 {item.needByDateUtc && (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '8px' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.80rem', fontWeight: 600, color: '#64748b' }}>
-                                            Original: {new Date(item.needByDateUtc).toLocaleDateString()}
+                                            Original: {new Date(item.needByDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
                                         </div>
                                         {(item.scheduledDateUtc || item.isOverdue || item.isDueSoon) && (
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: item.isOverdue ? 800 : 700, color: item.isOverdue ? '#dc2626' : item.scheduledDateUtc ? '#0284c7' : item.isDueSoon ? '#d97706' : '#475569' }}>
                                                 <Clock size={16} />
-                                                {item.scheduledDateUtc ? `Agendado: ${new Date(item.scheduledDateUtc).toLocaleDateString()}` : `Vence: ${new Date(item.needByDateUtc).toLocaleDateString()}`}
+                                                {item.scheduledDateUtc ? `Agendado: ${new Date(item.scheduledDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}` : `Vence: ${new Date(item.needByDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}`}
                                                 {item.isOverdue && <span style={{ backgroundColor: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', border: '1px solid #fca5a5', fontSize: '0.75rem', fontWeight: 800 }}>Atrasado</span>}
                                             </div>
                                         )}
@@ -252,6 +348,91 @@ export default function FinancePaymentsList() {
                     )}
                 </tbody>
             </StandardTable>
+
+            {data.pagedResult && data.pagedResult.totalCount > 0 && (
+                <div style={{
+                    padding: '12px 20px',
+                    backgroundColor: '#FAFAFA',
+                    border: '1px solid var(--color-border)',
+                    borderTop: 'none',
+                    borderBottomLeftRadius: 'var(--radius-lg, 8px)',
+                    borderBottomRightRadius: 'var(--radius-lg, 8px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.75rem',
+                    color: 'var(--color-text-muted)',
+                    flexWrap: 'wrap',
+                    gap: '32px',
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>Pág:</span>
+                        <select
+                            value={pageSize.toString()}
+                            onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                            style={{
+                                padding: '2px 6px',
+                                fontSize: '0.75rem',
+                                border: '1px solid var(--color-border)',
+                                borderRadius: 'var(--radius-sm, 4px)',
+                                backgroundColor: 'var(--color-bg-surface, #fff)',
+                                color: 'var(--color-text-main, #0f172a)',
+                            }}
+                        >
+                            <option value="20">20</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span>
+                            Mostrando {data.pagedResult.items.length > 0 ? (page - 1) * pageSize + 1 : 0} - {Math.min(page * pageSize, data.pagedResult.totalCount)} de {data.pagedResult.totalCount}
+                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <button
+                                disabled={page === 1}
+                                onClick={() => handlePageChange(page - 1)}
+                                style={{
+                                    padding: '6px',
+                                    border: '1px solid var(--color-border)',
+                                    borderRadius: 'var(--radius-sm, 4px)',
+                                    backgroundColor: 'var(--color-bg-surface, #fff)',
+                                    cursor: page === 1 ? 'default' : 'pointer',
+                                    opacity: page === 1 ? 0.4 : 1,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: 'var(--color-text-main, #0f172a)',
+                                }}
+                            >
+                                <ChevronLeft size={14} />
+                            </button>
+                            <span style={{ fontWeight: 700 }}>
+                                {page} / {Math.ceil(data.pagedResult.totalCount / pageSize) > 0 ? Math.ceil(data.pagedResult.totalCount / pageSize) : 1}
+                            </span>
+                            <button
+                                disabled={page >= Math.ceil(data.pagedResult.totalCount / pageSize)}
+                                onClick={() => handlePageChange(page + 1)}
+                                style={{
+                                    padding: '6px',
+                                    border: '1px solid var(--color-border)',
+                                    borderRadius: 'var(--radius-sm, 4px)',
+                                    backgroundColor: 'var(--color-bg-surface, #fff)',
+                                    cursor: page >= Math.ceil(data.pagedResult.totalCount / pageSize) ? 'default' : 'pointer',
+                                    opacity: page >= Math.ceil(data.pagedResult.totalCount / pageSize) ? 0.4 : 1,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: 'var(--color-text-main, #0f172a)',
+                                }}
+                            >
+                                <ChevronRight size={14} />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <FinanceActionModal
                 show={actionModal.show}

@@ -49,6 +49,9 @@ const FinancePaymentsList = React.lazy(() =>
 const FinanceHistory = React.lazy(() =>
     import('./pages/Finance/FinanceHistory')
 );
+const FinanceBudgetConfig = React.lazy(() =>
+    import('./pages/Finance/FinanceBudgetConfig')
+);
 
 // HR pages
 const HRLandingPage = React.lazy(() =>
@@ -169,6 +172,7 @@ function AppContent() {
                     <Route path="overview" element={<Suspense fallback={<LoadingSkeleton />}><FinanceOverview /></Suspense>} />
                     <Route path="payments" element={<Suspense fallback={<LoadingSkeleton />}><FinancePaymentsList /></Suspense>} />
                     <Route path="history" element={<Suspense fallback={<LoadingSkeleton />}><FinanceHistory /></Suspense>} />
+                    <Route path="budget-config" element={<Suspense fallback={<LoadingSkeleton />}><FinanceBudgetConfig /></Suspense>} />
                 </Route>
 
                 {/* HR Workspace */}

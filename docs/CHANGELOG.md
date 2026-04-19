@@ -2,6 +2,13 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.80.0] - 2026-04-18 - Feature: Finance Budget Tracking MVP (Phase 1)
+### Added
+- **Annual Budget Domain**: Introduced the `AnnualBudget` entity to manage distinct yearly budgets for departments based on a native currency, preventing duplicate budget definitions via `Year + DepartmentId + CurrencyId` constraints.
+- **Budget Setup Interface**: Created `FinanceBudgetConfig.tsx` to enable users with `Finance` or `SystemAdministrator` roles to maintain annual departmental limits seamlessly.
+- **Committed Spend Engine**: Configured the new `FinanceBudgetController` to calculate "Committed" vs "Paid" spend continuously in real-time, leveraging active request statuses while actively excluding any cancelled workloads.
+- **Executive Overview Tracking**: Integrated an 'Acompanhamento Orçamental' panel into `FinanceOverview.tsx`. This view delivers a macro synthesis across currencies, highlights the top 5 departments at risk of breaching limits, and provides contextual drill-down into cost-center execution.
+
 ## [v2.79.0] - 2026-04-18 - Feature: Manual Badge Creation (Visitor Workflow)
 ### Added
 - **Manual Badge Entry**: Added a new "Entrada Manual" toggle in the HR Employee Workspace. When activated, it seamlessly replaces the Primavera API search with a manual data entry form.

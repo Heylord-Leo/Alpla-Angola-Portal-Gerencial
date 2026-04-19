@@ -19,6 +19,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Plant> Plants => Set<Plant>();
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<CostCenter> CostCenters => Set<CostCenter>();
+    public DbSet<AnnualBudget> AnnualBudgets => Set<AnnualBudget>();
 
     public DbSet<RequestType> RequestTypes => Set<RequestType>();
     public DbSet<RequestStatus> RequestStatuses => Set<RequestStatus>();
@@ -111,6 +112,23 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<UserRoleAssignment>().HasKey(ura => new { ura.UserId, ura.RoleId });
         modelBuilder.Entity<UserPlantScope>().HasKey(ups => new { ups.UserId, ups.PlantId });
         modelBuilder.Entity<UserDepartmentScope>().HasKey(uds => new { uds.UserId, uds.DepartmentId });
+
+        // Annual Budget Constraints
+        modelBuilder.Entity<AnnualBudget>()
+            .HasIndex(a => new { a.Year, a.DepartmentId, a.CurrencyId })
+            .IsUnique();
+
+        modelBuilder.Entity<AnnualBudget>()
+            .HasOne(a => a.Department)
+            .WithMany()
+            .HasForeignKey(a => a.DepartmentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<AnnualBudget>()
+            .HasOne(a => a.Currency)
+            .WithMany()
+            .HasForeignKey(a => a.CurrencyId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // Department Responsible User mapping (ambiguity resolution)
         modelBuilder.Entity<Department>()
