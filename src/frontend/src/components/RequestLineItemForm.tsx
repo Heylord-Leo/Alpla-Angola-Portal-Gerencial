@@ -90,8 +90,8 @@ export function RequestLineItemForm({
             width: '100%',
             padding: '12px 14px',
             borderRadius: 'var(--radius-sm)',
-            border: `1px solid ${isError ? '#EF4444' : 'var(--color-border-heavy)'}`,
-            boxShadow: isError ? '0 0 0 2px rgba(239, 68, 68, 0.2)' : 'var(--shadow-brutal)',
+            border: `1px solid ${isError ? '#EF4444' : 'var(--color-border)'}`,
+            boxShadow: isError ? '0 0 0 3px rgba(239, 68, 68, 0.2)' : 'var(--shadow-sm)',
             fontSize: '0.875rem',
             fontFamily: 'var(--font-family-body)',
             color: 'var(--color-text-main)',
@@ -123,8 +123,8 @@ export function RequestLineItemForm({
         width: '100%',
         padding: '12px 14px',
         borderRadius: 'var(--radius-sm)',
-        border: '1px solid var(--color-border-heavy)',
-        boxShadow: 'var(--shadow-brutal)',
+        border: '1px solid var(--color-border)',
+        boxShadow: 'var(--shadow-sm)',
         fontSize: '0.875rem',
         fontFamily: 'var(--font-family-body)',
         color: 'var(--color-text-main)',
@@ -146,7 +146,7 @@ export function RequestLineItemForm({
     };
 
     return (
-        <div style={{ padding: '24px', backgroundColor: 'var(--color-bg-page)', borderRadius: 'var(--radius-md)', border: '2px solid var(--color-primary)', boxShadow: '4px 4px 0px var(--color-primary-light)' }}>
+        <div style={{ padding: '24px', backgroundColor: 'var(--color-bg-page)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-md)' }}>
             <h3 style={{ margin: '0 0 24px 0', fontSize: '1.25rem', fontFamily: 'var(--font-family-display)', color: 'var(--color-primary)' }}>
                 {itemForm.id ? 'Editar Item' : 'Novo Item'}
             </h3>

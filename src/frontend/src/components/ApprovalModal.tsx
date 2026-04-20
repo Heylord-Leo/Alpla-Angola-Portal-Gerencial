@@ -178,8 +178,8 @@ export function ApprovalModal({
                             borderRadius: 'var(--radius-md)',
                             maxWidth: '600px',
                             width: '100%',
-                            border: '4px solid var(--color-border-heavy)',
-                            boxShadow: 'var(--shadow-brutal)'
+                            border: '1px solid var(--color-border)',
+                            boxShadow: 'var(--shadow-lg)'
                         }}
                     >
                         <h2 style={{ fontSize: '1.5rem', fontWeight: 900, marginBottom: '24px', color: 'var(--color-text-main)', textTransform: 'uppercase', letterSpacing: '-0.02em' }}>
@@ -220,7 +220,7 @@ export function ApprovalModal({
                             <button
                                 onClick={onClose}
                                 style={{
-                                    height: '48px', padding: '0 32px', background: 'none', border: '2px solid var(--color-border-heavy)',
+                                    height: '48px', padding: '0 32px', background: 'none', border: '1px solid var(--color-border)',
                                     cursor: 'pointer', fontWeight: 800, borderRadius: 'var(--radius-sm)',
                                     fontFamily: 'var(--font-family-display)', fontSize: '0.875rem'
                                 }}
@@ -239,7 +239,7 @@ export function ApprovalModal({
                                     cursor: 'pointer',
                                     fontWeight: 800,
                                     borderRadius: 'var(--radius-sm)',
-                                    boxShadow: '4px 4px 0 var(--color-accent)',
+                                    boxShadow: 'var(--shadow-md)',
                                     fontFamily: 'var(--font-family-display)',
                                     fontSize: '0.875rem',
                                     opacity: processing ? 0.7 : 1

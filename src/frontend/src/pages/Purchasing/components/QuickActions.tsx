@@ -72,21 +72,22 @@ export function QuickActions() {
                             gap: '16px',
                             padding: '16px',
                             backgroundColor: 'var(--color-bg-surface)',
-                            border: '2px solid var(--color-border)',
+                            border: '1px solid var(--color-border)',
+                            borderRadius: 'var(--radius-md)',
                             cursor: 'pointer',
                             textAlign: 'left',
-                            transition: 'all 0.1s ease',
-                            boxShadow: '4px 4px 0px var(--color-border)',
+                            transition: 'all 0.15s ease',
+                            boxShadow: 'var(--shadow-sm)',
                         }}
                         onMouseOver={(e) => {
                             e.currentTarget.style.borderColor = 'var(--color-primary)';
-                            e.currentTarget.style.transform = 'translate(-2px, -2px)';
-                            e.currentTarget.style.boxShadow = '6px 6px 0px var(--color-primary)';
+                            e.currentTarget.style.transform = 'translateY(-2px)';
+                            e.currentTarget.style.boxShadow = 'var(--shadow-md)';
                         }}
                         onMouseOut={(e) => {
                             e.currentTarget.style.borderColor = 'var(--color-border)';
-                            e.currentTarget.style.transform = 'translate(0, 0)';
-                            e.currentTarget.style.boxShadow = '4px 4px 0px var(--color-border)';
+                            e.currentTarget.style.transform = 'translateY(0)';
+                            e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
                         }}
                     >
                         <div style={{ 

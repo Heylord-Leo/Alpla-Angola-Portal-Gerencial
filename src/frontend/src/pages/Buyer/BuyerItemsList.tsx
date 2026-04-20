@@ -1805,7 +1805,7 @@ export function BuyerItemsList() {
                                         <div style={{
                                             padding: '24px',
                                             backgroundColor: 'var(--color-bg-page)',
-                                            border: '2px solid var(--color-border-heavy)',
+                                            border: '1px solid var(--color-border)',
                                             borderRadius: 'var(--radius-sm)',
                                             display: 'flex',
                                             flexDirection: 'column',
@@ -2085,12 +2085,12 @@ export function BuyerItemsList() {
                                                 style={{
                                                     padding: '24px',
                                                     backgroundColor: 'var(--color-bg-surface)',
-                                                    border: '2px solid var(--color-primary)',
+                                                    border: '1px solid var(--color-border)',
                                                     borderRadius: 'var(--radius-sm)',
                                                     display: 'flex',
                                                     flexDirection: 'column',
                                                     gap: '20px',
-                                                    boxShadow: 'var(--shadow-brutal)',
+                                                    boxShadow: 'var(--shadow-md)',
                                                     transition: 'all 0.3s ease'
                                                 }}
                                             >
@@ -2921,7 +2921,7 @@ export function BuyerItemsList() {
                         border: '2px solid var(--color-border)',
                         width: '100%',
                         minWidth: 0,
-                        boxShadow: 'var(--shadow-brutal)'
+                        boxShadow: 'var(--shadow-md)'
                     }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <span style={{ fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.9rem', textTransform: 'uppercase' }}>Itens por página:</span>
@@ -2931,7 +2931,7 @@ export function BuyerItemsList() {
                                     updateParams({ pageSize: Number(e.target.value), page: 1 });
                                 }}
                                 style={{
-                                    padding: '8px 12px', border: '2px solid var(--color-primary)',
+                                    padding: '8px 12px', border: '1px solid var(--color-border)',
                                     backgroundColor: 'var(--color-bg-page)', outline: 'none',
                                     fontWeight: 700, color: 'var(--color-primary)', cursor: 'pointer'
                                 }}
@@ -3007,7 +3007,7 @@ export function BuyerItemsList() {
                     }}>
                         <div style={{
                             backgroundColor: 'var(--color-bg-surface)', borderRadius: 'var(--radius-md)',
-                            border: '2px solid var(--color-border-heavy)', boxShadow: 'var(--shadow-brutal)',
+                            border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-md)',
                             padding: '32px', maxWidth: '440px', width: '90%', display: 'flex', flexDirection: 'column', gap: '20px'
                         }}>
                             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
@@ -3028,7 +3028,7 @@ export function BuyerItemsList() {
                                 <button
                                     onClick={() => setDeleteConfirm(null)}
                                     disabled={isSaving}
-                                    style={{ padding: '10px 20px', border: '2px solid var(--color-border-heavy)', borderRadius: 'var(--radius-sm)', background: 'none', fontWeight: 700, cursor: 'pointer', fontSize: '0.875rem' }}
+                                    style={{ padding: '10px 20px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'none', fontWeight: 700, cursor: 'pointer', fontSize: '0.875rem' }}
                                 >
                                     Cancelar
                                 </button>
@@ -3089,8 +3089,8 @@ export function BuyerItemsList() {
                                     borderRadius: 'var(--radius-md)',
                                     maxWidth: '550px',
                                     width: '100%',
-                                    border: '4px solid var(--color-border-heavy)',
-                                    boxShadow: 'var(--shadow-brutal)',
+                                    border: '1px solid var(--color-border)',
+                                    boxShadow: 'var(--shadow-md)',
                                     position: 'relative'
                                 }}
                             >
@@ -3156,7 +3156,7 @@ export function BuyerItemsList() {
                                         onClick={cancelDuplicateFlow}
                                         disabled={isSaving}
                                         style={{
-                                            flex: 1, height: '48px', padding: '0 24px', background: 'none', border: '2px solid var(--color-border-heavy)',
+                                            flex: 1, height: '48px', padding: '0 24px', background: 'none', border: '1px solid var(--color-border)',
                                             cursor: 'pointer', fontWeight: 800, borderRadius: 'var(--radius-sm)',
                                             fontFamily: 'var(--font-family-display)', fontSize: '0.875rem'
                                         }}
@@ -3170,7 +3170,7 @@ export function BuyerItemsList() {
                                         style={{
                                             flex: 2, height: '48px', padding: '0 24px', backgroundColor: '#f59e0b', color: '#fff',
                                             border: 'none', cursor: 'pointer', fontWeight: 800, borderRadius: 'var(--radius-sm)',
-                                            boxShadow: '4px 4px 0px #b45309', fontFamily: 'var(--font-family-display)',
+                                            boxShadow: 'var(--shadow-md)', fontFamily: 'var(--font-family-display)',
                                             fontSize: '0.875rem', opacity: isSaving ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
                                         }}
                                     >

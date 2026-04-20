@@ -238,7 +238,7 @@ export function SystemLogs() {
     btnSecondary: { padding: '0.75rem 1rem', background: 'var(--color-bg-surface)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem', textTransform: 'uppercase' } as React.CSSProperties,
     pagination: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, justifyContent: 'flex-end' } as React.CSSProperties,
     modalOverlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', zIndex: Z_INDEX.MODAL, padding: 24 },
-    modalBox: { background: 'var(--color-bg-surface)', width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' as const, borderRadius: 0, border: '2px solid var(--color-border-heavy)', boxShadow: 'var(--shadow-brutal)', padding: 24 },
+    modalBox: { background: 'var(--color-bg-surface)', width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' as const, borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-md)', padding: 24 },
     labelSm: { fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4, display: 'block' },
     codeBlock: { background: 'var(--color-bg-main)', padding: 12, border: '1px solid var(--color-border)', fontSize: '0.75rem', fontFamily: 'monospace', whiteSpace: 'pre-wrap' as const, wordBreak: 'break-word' as const, overflowX: 'auto' as const },
   };

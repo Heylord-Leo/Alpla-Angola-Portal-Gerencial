@@ -534,7 +534,7 @@ export default function UserManagement() {
             {resultPassword && (
                 <DropdownPortal>
                     <div style={{ ...s.drawerOverlay, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <div style={{ background: 'var(--color-bg-surface)', padding: 48, border: '4px solid var(--color-primary)', boxShadow: 'var(--shadow-brutal)', maxWidth: 440, textAlign: 'center' }}>
+                        <div style={{ background: 'var(--color-bg-surface)', padding: 48, border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-md)', maxWidth: 440, textAlign: 'center' }}>
                             <div style={{ color: 'var(--color-primary)', marginBottom: 24 }}><Key size={64} style={{ margin: '0 auto' }} /></div>
                             <h2 style={{ fontSize: '1.5rem', fontWeight: 900, marginBottom: 12 }}>AUTENTICAÇÃO GERADA</h2>
                             <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', fontWeight: 700, marginBottom: 24 }}>Copiue e guarde. Esta informação não será exibida novamente.</p>

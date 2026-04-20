@@ -632,8 +632,8 @@ export function RequestCreate() {
         width: '100%',
         padding: '12px 14px',
         borderRadius: 'var(--radius-sm)',
-        border: '1px solid var(--color-border-heavy)',
-        boxShadow: 'var(--shadow-brutal)',
+        border: '1px solid var(--color-border)',
+        boxShadow: 'var(--shadow-md)',
         fontSize: '0.875rem',
         fontFamily: 'var(--font-family-body)',
         color: 'var(--color-text-main)',
@@ -688,7 +688,7 @@ export function RequestCreate() {
 
     const getInputStyle = (fieldName: string) => ({
         ...inputStyle,
-        ...(getFieldErrors(fieldName) ? { borderColor: '#EF4444', backgroundColor: '#FEF2F2', boxShadow: '3px 3px 0px #EF4444' } : {})
+        ...(getFieldErrors(fieldName) ? { borderColor: '#EF4444', backgroundColor: '#FEF2F2', boxShadow: '0 0 0 3px rgba(239,68,68,0.2)' } : {})
     });
 
     const headerProps = {
@@ -703,7 +703,7 @@ export function RequestCreate() {
                 type="button"
                 onClick={() => navigate(`/requests${location.state?.fromList || ''}`)}
                 style={{
-                    height: '36px', padding: '0 12px', borderRadius: 'var(--radius-sm)', border: '2px solid var(--color-border-heavy)',
+                    height: '36px', padding: '0 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)',
                     backgroundColor: 'var(--color-bg-page)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
                     fontWeight: 800, fontFamily: 'var(--font-family-display)', fontSize: '0.75rem', color: 'var(--color-text-main)'
                 }}
@@ -742,7 +742,7 @@ export function RequestCreate() {
             {!isScopeLoading && allowedPlantCodes.length === 0 && (
                 <div style={{
                     backgroundColor: '#FEF2F2', border: '2px solid #EF4444', padding: '24px', borderRadius: 'var(--radius-sm)',
-                    boxShadow: 'var(--shadow-brutal)', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', textAlign: 'center'
+                    boxShadow: 'var(--shadow-md)', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', textAlign: 'center'
                 }}>
                     <div style={{ color: '#EF4444', fontWeight: 800, fontSize: '1.25rem' }}>ACESSO RESTRITO</div>
                     <p style={{ color: 'var(--color-text-main)', fontSize: '0.875rem', maxWidth: '500px' }}>
@@ -768,7 +768,7 @@ export function RequestCreate() {
                     flexDirection: 'column', gap: '32px', opacity: isScopeLoading ? 0.5 : 1, pointerEvents: isScopeLoading ? 'none' : 'auto'
                 }}
             >
-                <section style={{ backgroundColor: 'var(--color-bg-surface)', padding: '32px', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-brutal)', border: '2px solid var(--color-border-heavy)' }}>
+                <section style={{ backgroundColor: 'var(--color-bg-surface)', padding: '32px', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', border: '1px solid var(--color-border)' }}>
                     <h2 style={sectionTitleStyle}>Dados Gerais do Pedido</h2>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -816,7 +816,7 @@ export function RequestCreate() {
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-start' }}>
                                 <div style={{ 
-                                    border: '1px solid var(--color-border-heavy)', padding: '8px 16px', textAlign: 'left', borderRadius: 'var(--radius-sm)',
+                                    border: '1px solid var(--color-border)', padding: '8px 16px', textAlign: 'left', borderRadius: 'var(--radius-sm)',
                                     backgroundColor: 'var(--color-bg-page)', cursor: 'pointer', position: 'relative', transition: 'all 0.2s ease',
                                     display: 'inline-flex', alignItems: 'center', gap: '8px', boxShadow: 'var(--shadow-sm)'
                                 }}>
@@ -834,7 +834,7 @@ export function RequestCreate() {
                                             <div key={idx} style={{ 
                                                 display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
                                                 padding: '8px 12px', backgroundColor: 'white', border: '1px solid var(--color-border)', 
-                                                borderRadius: 'var(--radius-sm)', boxShadow: '1px 1px 0px var(--color-border)'
+                                                borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-sm)'
                                             }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                                                     <Paperclip size={14} style={{ flexShrink: 0 }} />
@@ -876,9 +876,9 @@ export function RequestCreate() {
                                          marginBottom: '16px',
                                          padding: '24px',
                                          backgroundColor: 'var(--color-bg-surface)',
-                                         border: '2px solid var(--color-primary)',
+                                         border: '1px solid var(--color-border)',
                                          borderRadius: 'var(--radius-sm)',
-                                         boxShadow: 'var(--shadow-brutal-sm)'
+                                         boxShadow: 'var(--shadow-sm)'
                                      }}>
                                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                                              <div>
@@ -995,7 +995,7 @@ export function RequestCreate() {
                                  >
                                      <div style={{ 
                                          marginBottom: '32px', padding: '24px', backgroundColor: 'var(--color-bg-surface)', 
-                                         border: '2px solid var(--color-primary)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-brutal-sm)',
+                                         border: '1px solid var(--color-border)',  borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-sm)',
                                          position: 'relative'
                                      }}>
                                          <AnimatePresence>
@@ -1205,7 +1205,7 @@ export function RequestCreate() {
                                                               <motion.div 
                                                                   initial={{ opacity: 0, height: 0 }} 
                                                                   animate={{ opacity: 1, height: 'auto' }}
-                                                                  style={{ marginTop: '8px', padding: '12px', backgroundColor: '#fff7ed', border: '2px solid #fdba74', borderRadius: 'var(--radius-sm)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: 'var(--shadow-brutal-sm)' }}
+                                                                  style={{ marginTop: '8px', padding: '12px', backgroundColor: '#fff7ed', border: '2px solid #fdba74', borderRadius: 'var(--radius-sm)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: 'var(--shadow-sm)' }}
                                                               >
                                                                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                                                       <AlertCircle size={18} color="#c2410c" style={{ flexShrink: 0 }} />

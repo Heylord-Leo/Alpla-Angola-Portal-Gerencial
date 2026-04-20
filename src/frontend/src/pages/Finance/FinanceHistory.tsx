@@ -166,7 +166,7 @@ export default function FinanceHistory() {
             <div style={{
                 backgroundColor: 'var(--color-bg-surface)',
                 border: '2px solid var(--color-border)',
-                boxShadow: 'var(--shadow-brutal)',
+                boxShadow: 'var(--shadow-md)',
                 padding: '32px',
                 width: '100%'
             }}>

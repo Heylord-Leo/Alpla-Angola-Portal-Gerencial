@@ -57,8 +57,8 @@ const ChangePasswordPage: React.FC = () => {
                     maxWidth: '480px', 
                     width: '100%', 
                     backgroundColor: 'var(--color-bg-surface)', 
-                    border: '4px solid var(--color-primary)', 
-                    boxShadow: 'var(--shadow-brutal)',
+                    border: '1px solid var(--color-border)', 
+                    boxShadow: 'var(--shadow-md)',
                     padding: '3rem',
                     textAlign: 'center'
                 }}>
@@ -136,8 +136,8 @@ const ChangePasswordPage: React.FC = () => {
 
             <div style={{ 
                 backgroundColor: 'var(--color-bg-surface)', 
-                border: '4px solid var(--color-primary)', 
-                boxShadow: 'var(--shadow-brutal)',
+                border: '1px solid var(--color-border)', 
+                boxShadow: 'var(--shadow-md)',
                 padding: '2.5rem'
             }}>
                 <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>

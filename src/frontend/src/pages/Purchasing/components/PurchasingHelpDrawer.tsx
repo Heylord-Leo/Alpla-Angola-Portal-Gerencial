@@ -160,7 +160,7 @@ export function PurchasingHelpDrawer({ isOpen, onClose }: PurchasingHelpDrawerPr
                                     color: 'var(--color-primary)',
                                     padding: '12px',
                                     border: '3px solid var(--color-accent)',
-                                    boxShadow: '4px 4px 0 var(--color-accent)'
+                                    boxShadow: 'var(--shadow-md)'
                                 }}>
                                     <BookOpen size={24} strokeWidth={2.5} />
                                 </div>
@@ -266,7 +266,7 @@ export function PurchasingHelpDrawer({ isOpen, onClose }: PurchasingHelpDrawerPr
                                     textTransform: 'uppercase',
                                     fontSize: '0.85rem',
                                     cursor: 'pointer',
-                                    boxShadow: '4px 4px 0 var(--color-accent)',
+                                    boxShadow: 'var(--shadow-md)',
                                     transition: 'all 0.1s'
                                 }}
                                 onMouseOver={(e) => (e.currentTarget.style.opacity = '0.88')}

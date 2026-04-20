@@ -372,8 +372,9 @@ export function QuotationEntry({
     return (
         <div style={{
             backgroundColor: '#fff',
-            border: '2px solid #0f172a',
-            boxShadow: '4px 4px 0px 0px rgba(15,23,42,1)',
+            border: '1px solid var(--color-border)',
+            boxShadow: 'var(--shadow-lg)',
+            borderRadius: 'var(--radius-md)',
             padding: '24px',
         }}>
             <AnimatePresence mode="wait">
@@ -819,7 +820,7 @@ export function QuotationEntry({
                                         letterSpacing: '0.1em', border: 'none',
                                         cursor: isProcessing ? 'not-allowed' : 'pointer',
                                         display: 'flex', alignItems: 'center', gap: '8px',
-                                        boxShadow: '4px 4px 0px 0px rgba(239,68,68,1)',
+                                        boxShadow: 'var(--shadow-md)',
                                         transition: 'background-color 0.15s',
                                     }}
                                     onMouseEnter={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = '#dc2626'; }}

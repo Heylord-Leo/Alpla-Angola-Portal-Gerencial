@@ -68,7 +68,7 @@ export default function PurchasingLandingPage() {
                             backgroundColor: 'var(--color-bg-surface)', 
                             padding: '24px', 
                             border: '2px solid var(--color-border)',
-                            boxShadow: 'var(--shadow-brutal)',
+                            boxShadow: 'var(--shadow-md)',
                             minHeight: '400px'
                         }}>
                             <AttentionPanel points={summary.attentionPoints} />
@@ -80,7 +80,7 @@ export default function PurchasingLandingPage() {
                                 backgroundColor: 'var(--color-bg-surface)', 
                                 padding: '24px', 
                                 border: '2px solid var(--color-border)',
-                                boxShadow: 'var(--shadow-brutal)'
+                                boxShadow: 'var(--shadow-md)'
                             }}>
                                 <QuickActions />
                             </section>
@@ -92,7 +92,7 @@ export default function PurchasingLandingPage() {
                                     backgroundColor: 'var(--color-primary)', 
                                     color: '#fff',
                                     padding: '24px', 
-                                    boxShadow: 'var(--shadow-brutal)',
+                                    boxShadow: 'var(--shadow-md)',
                                     display: 'flex',
                                     flexDirection: 'column',
                                     gap: '12px',
@@ -103,14 +103,14 @@ export default function PurchasingLandingPage() {
                                 onMouseOver={(e) => {
                                     e.currentTarget.style.backgroundColor = 'var(--color-bg-page)';
                                     e.currentTarget.style.color = 'var(--color-primary)';
-                                    e.currentTarget.style.transform = 'translate(-2px, -2px)';
-                                    e.currentTarget.style.boxShadow = '6px 6px 0 var(--color-primary)';
+                                    e.currentTarget.style.transform = 'translateY(-3px)';
+                                    e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
                                 }}
                                 onMouseOut={(e) => {
                                     e.currentTarget.style.backgroundColor = 'var(--color-primary)';
                                     e.currentTarget.style.color = '#fff';
-                                    e.currentTarget.style.transform = 'none';
-                                    e.currentTarget.style.boxShadow = 'var(--shadow-brutal)';
+                                    e.currentTarget.style.transform = 'translateY(0)';
+                                    e.currentTarget.style.boxShadow = 'var(--shadow-md)';
                                 }}
                             >
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 900, textTransform: 'uppercase', fontSize: '1rem' }}>

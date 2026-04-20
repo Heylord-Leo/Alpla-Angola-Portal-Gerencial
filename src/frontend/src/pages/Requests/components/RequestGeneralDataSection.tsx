@@ -89,7 +89,7 @@ export function RequestGeneralDataSection({
             )}
 
             {/* Dados Gerais do Pedido */}
-            <section style={{ backgroundColor: 'var(--color-bg-surface)', padding: '32px', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-brutal)', border: '2px solid var(--color-border-heavy)' }}>
+            <section style={{ backgroundColor: 'var(--color-bg-surface)', padding: '32px', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', border: '1px solid var(--color-border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', borderBottom: '3px solid var(--color-primary)', paddingBottom: '12px' }}>
                     <h2 className={sectionTitleClassName} style={{ borderBottom: 'none', marginBottom: 0, paddingBottom: 0, marginTop: 0, fontSize: '1.1rem', fontWeight: 900 }}>Dados Gerais do Pedido</h2>
                     {requestNumber && (

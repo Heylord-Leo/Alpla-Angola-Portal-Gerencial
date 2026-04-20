@@ -135,7 +135,7 @@ export function UserProfileDrawer({ isOpen, onClose }: UserProfileDrawerProps) {
                                         fontSize: '2rem',
                                         fontWeight: 900,
                                         border: '4px solid var(--color-accent)',
-                                        boxShadow: '4px 4px 0 var(--color-accent)'
+                                        boxShadow: 'var(--shadow-md)'
                                     }}>
                                         {profile ? getInitials(profile.fullName) : '--'}
                                     </div>
@@ -480,7 +480,7 @@ export function UserProfileDrawer({ isOpen, onClose }: UserProfileDrawerProps) {
                                         textTransform: 'uppercase',
                                         fontSize: '0.8rem',
                                         cursor: 'pointer',
-                                        boxShadow: '4px 4px 0 var(--color-accent)'
+                                        boxShadow: 'var(--shadow-md)'
                                     }}
                                     onMouseOver={(e) => (e.currentTarget.style.opacity = '0.88')}
                                     onMouseOut={(e) => (e.currentTarget.style.opacity = '1')}

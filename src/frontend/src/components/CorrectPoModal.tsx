@@ -301,8 +301,8 @@ export function CorrectPoModal({ show, requestId, onClose, onSuccess }: CorrectP
                             borderRadius: 'var(--radius-md)',
                             maxWidth: '700px',
                             width: '100%',
-                            border: '4px solid var(--color-border-heavy)',
-                            boxShadow: 'var(--shadow-brutal)',
+                            border: '1px solid var(--color-border)',
+                            boxShadow: 'var(--shadow-lg)',
                             maxHeight: '90vh',
                             overflowY: 'auto'
                         }}
@@ -574,7 +574,7 @@ export function CorrectPoModal({ show, requestId, onClose, onSuccess }: CorrectP
                                         onClick={onClose}
                                         disabled={processing}
                                         style={{
-                                            height: '48px', padding: '0 24px', background: 'none', border: '2px solid var(--color-border-heavy)',
+                                            height: '48px', padding: '0 24px', background: 'none', border: '1px solid var(--color-border)',
                                             cursor: processing ? 'not-allowed' : 'pointer', fontWeight: 800, borderRadius: 'var(--radius-sm)',
                                             fontFamily: 'var(--font-family-display)', fontSize: '0.875rem',
                                             opacity: processing ? 0.5 : 1
@@ -597,7 +597,7 @@ export function CorrectPoModal({ show, requestId, onClose, onSuccess }: CorrectP
                                             cursor: (processing || !file || ocrLoading || (ocrResult?.hasMismatches && !overrideConfirmed) || (ocrResult?.hasMismatches && !comment.trim())) ? 'not-allowed' : 'pointer',
                                             fontWeight: 800,
                                             borderRadius: 'var(--radius-sm)',
-                                            boxShadow: '4px 4px 0 var(--color-accent)',
+                                            boxShadow: 'var(--shadow-md)',
                                             fontFamily: 'var(--font-family-display)',
                                             fontSize: '0.875rem',
                                             opacity: (processing || !file || ocrLoading || (ocrResult?.hasMismatches && !overrideConfirmed) || (ocrResult?.hasMismatches && !comment.trim())) ? 0.7 : 1

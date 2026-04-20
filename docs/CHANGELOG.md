@@ -2,6 +2,16 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.83.1] - 2026-04-20 - Refactor: UI Modernization — Legacy Brutalist → Modern Corporate (Final Pass)
+### Changed
+- **Full Brutalist Remediation (31 files)**: Systematic elimination of all remaining "Industrial Brutalist" design patterns. Zero occurrences of `var(--shadow-brutal)`, `4px/6px offset shadows`, `translate(-2px,-2px)` hover effects, or `2px/4px solid border-heavy` borders remain in the codebase.
+  - **globals.css**: Removed `.btn-primary:active` translate/shadow offset; buttons now use `opacity:0.9` active state.
+  - **Shared Components (12)**: `ApprovalModal`, `CorrectPoModal`, `RegisterPoModal`, `RequestLineItemForm`, `RequestAttachments`, `Feedback`, `Tooltip`, `CostCenterAutocomplete`, `DepartmentMasterAutocomplete`, `EmployeeAutocomplete`, `SupplierAutocomplete`, `QuotationEntry` — heavy borders and offset shadows replaced with `var(--shadow-sm/md)` and `1px solid var(--color-border)`.
+  - **Layout / Modais (7)**: `UserProfileDrawer`, `UserDropdown`, `QuickSupplierModal`, `HRActionModal`, `ReceivingModal`, `FinanceActionModal`, `PurchasingHelpDrawer` — modal containers and action buttons fully aligned to Modern Corporate tokens.
+  - **Páginas (10)**: `RequestCreate`, `RequestGeneralDataSection`, `RequestActionHeader`, `PurchasingLandingPage`, `Purchasing/QuickActions`, `BuyerItemsList`, `SystemLogs`, `FinanceHistory`, `ChangePasswordPage`, `AttentionList` — interactive hover states migrated from `translate(-2px,-2px) + 6px offset` to `translateY(-2px/3px) + var(--shadow-md/lg)`.
+- **Token Standards established**: shadows → `var(--shadow-sm/md/lg)` · borders → `1px solid var(--color-border)` · interactive lift → `translateY(-Npx)` · radii → `var(--radius-md/lg)`.
+- **Accepted exceptions** (2, consciously retained): `DecisionTimeline` `borderLeft: 4px` (semantic timeline indicator) · `RequestLineItemForm` spinner border-top (CSS loading circle).
+
 ## [v2.82.0] - 2026-04-20 - Feature: Payment Deadline Rules — Frontend & Documentation (DEC-117)
 ### Added
 - **"Regras de Pagamento" Section in Contract Create/Edit**: Collapsible form section with progressive disclosure. Hidden by default; auto-opens when editing a contract with an existing rule. Driven by two new lookup endpoints (`/payment-term-types`, `/reference-event-types`).

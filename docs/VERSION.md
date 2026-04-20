@@ -2,7 +2,17 @@
 
 ## Current Version
 
-v2.83.0
+v2.83.1
+
+## [2.83.1] - 2026-04-20
+
+### Changed
+- **UI Modernization — Legacy Brutalist → Modern Corporate (Final Pass)**: Systematic elimination of all remaining "Industrial Brutalist" design patterns across 31 frontend files. Zero occurrences of `var(--shadow-brutal)`, `4px/6px offset shadows`, `translate(-2px,-2px)` hover effects, or `2px/4px solid border-heavy` heavy borders remain in the codebase.
+  - **Shared Components**: `ApprovalModal`, `CorrectPoModal`, `RegisterPoModal`, `RequestLineItemForm`, `RequestAttachments`, `Feedback`, `Tooltip`, `CostCenterAutocomplete`, `DepartmentMasterAutocomplete`, `EmployeeAutocomplete`, `SupplierAutocomplete`, `QuotationEntry`.
+  - **Layout / Modais**: `UserProfileDrawer`, `UserDropdown`, `QuickSupplierModal`, `HRActionModal`, `ReceivingModal`, `FinanceActionModal`, `PurchasingHelpDrawer`.
+  - **Páginas**: `RequestCreate`, `RequestGeneralDataSection`, `RequestActionHeader`, `PurchasingLandingPage`, `Purchasing/QuickActions`, `BuyerItemsList`, `SystemLogs`, `FinanceHistory`, `ChangePasswordPage`, `AttentionList`.
+  - **globals.css**: Removed `.btn-primary:active` translate offset.
+  - **Token Standards**: All shadows → `var(--shadow-sm/md/lg)`. All borders → `1px solid var(--color-border)`. All interactive lifts → `translateY(-2px/3px)`. All radii → `var(--radius-md/lg)`.
 
 ## [2.83.0] - 2026-04-20
 

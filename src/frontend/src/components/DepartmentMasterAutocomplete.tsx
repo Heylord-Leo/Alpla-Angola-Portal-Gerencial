@@ -159,8 +159,8 @@ export function DepartmentMasterAutocomplete({
     const triggerStyle: React.CSSProperties = {
         width: '100%',
         padding: '12px 14px',
-        border: `2px solid ${hasError ? '#EF4444' : 'var(--color-border-heavy)'}`,
-        boxShadow: hasError ? '6px 6px 0px #EF4444' : 'var(--shadow-brutal)',
+        border: `1px solid ${hasError ? '#EF4444' : 'var(--color-border)'}`,
+        boxShadow: hasError ? '0 0 0 3px rgba(239,68,68,0.25)' : 'var(--shadow-md)',
         fontSize: '0.875rem',
         color: selectedDisplay ? 'var(--color-text-main)' : 'var(--color-placeholder)',
         backgroundColor: hasError ? '#FEF2F2' : disabled ? 'var(--color-field-disabled-bg)' : '#ffffff',
@@ -177,8 +177,8 @@ export function DepartmentMasterAutocomplete({
     const panelStyle: React.CSSProperties = {
         ...(dropdownStyle || {}),
         backgroundColor: 'var(--color-bg-surface)',
-        border: '2px solid var(--color-border-heavy)',
-        boxShadow: 'var(--shadow-brutal)',
+        border: '1px solid var(--color-border)',
+        boxShadow: 'var(--shadow-md)',
         overflow: 'hidden',
         minWidth: '550px',
         display: 'flex',
@@ -187,7 +187,7 @@ export function DepartmentMasterAutocomplete({
 
     const searchAreaStyle: React.CSSProperties = {
         padding: '10px',
-        borderBottom: '2px solid var(--color-border-heavy)',
+        borderBottom: '1px solid var(--color-border)',
         backgroundColor: 'var(--color-bg-page)',
         position: 'relative',
     };
@@ -195,7 +195,7 @@ export function DepartmentMasterAutocomplete({
     const searchInputStyle: React.CSSProperties = {
         width: '100%',
         padding: '8px 12px 8px 36px',
-        border: '2px solid var(--color-border-heavy)',
+        border: '1px solid var(--color-border)',
         fontSize: '0.875rem',
         outline: 'none',
         backgroundColor: 'var(--color-bg-surface)',
@@ -212,7 +212,7 @@ export function DepartmentMasterAutocomplete({
     const headerStyle: React.CSSProperties = {
         ...gridStyle,
         backgroundColor: 'var(--color-bg-page)',
-        borderBottom: '2px solid var(--color-border-heavy)',
+        borderBottom: '1px solid var(--color-border)',
     };
 
     const headerCellStyle: React.CSSProperties = {

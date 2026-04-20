@@ -87,7 +87,7 @@ export function UserDropdown() {
                                 width: '240px',
                                 backgroundColor: 'white',
                                 border: '2px solid var(--color-primary)',
-                                boxShadow: 'var(--shadow-brutal)',
+                                boxShadow: 'var(--shadow-md)',
                                 zIndex: 100,
                                 padding: '8px 0'
                             }}

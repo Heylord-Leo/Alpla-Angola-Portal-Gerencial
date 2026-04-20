@@ -97,13 +97,8 @@ a:hover {
 }
 
 .btn-primary:active:not(:disabled) {
-    transform: translateY(0);
+    transform: translateY(1px);
     box-shadow: var(--shadow-sm);
-}
-
-.btn-primary:active:not(:disabled) {
-    transform: translate(2px, 2px);
-    box-shadow: 2px 2px 0px var(--color-border-heavy);
 }
 
 .btn-primary:disabled {

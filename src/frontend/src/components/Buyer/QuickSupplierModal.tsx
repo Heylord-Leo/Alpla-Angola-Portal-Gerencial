@@ -108,8 +108,8 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
                             borderRadius: 'var(--radius-md)',
                             maxWidth: '500px',
                             width: '100%',
-                            border: '4px solid var(--color-border-heavy)',
-                            boxShadow: 'var(--shadow-brutal)',
+                            border: '1px solid var(--color-border)',
+                            boxShadow: 'var(--shadow-md)',
                             position: 'relative'
                         }}
                     >
@@ -192,7 +192,7 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
                                 type="button"
                                 onClick={onClose}
                                 style={{
-                                    flex: 1, height: '48px', padding: '0 24px', background: 'none', border: '2px solid var(--color-border-heavy)',
+                                    flex: 1, height: '48px', padding: '0 24px', background: 'none', border: '1px solid var(--color-border)',
                                     cursor: 'pointer', fontWeight: 800, borderRadius: 'var(--radius-sm)',
                                     fontFamily: 'var(--font-family-display)', fontSize: '0.875rem'
                                 }}
@@ -205,7 +205,7 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
                                 style={{
                                     flex: 1, height: '48px', padding: '0 24px', backgroundColor: 'var(--color-primary)', color: '#fff',
                                     border: 'none', cursor: 'pointer', fontWeight: 800, borderRadius: 'var(--radius-sm)',
-                                    boxShadow: '4px 4px 0 var(--color-accent)', fontFamily: 'var(--font-family-display)',
+                                    boxShadow: 'var(--shadow-md)', fontFamily: 'var(--font-family-display)',
                                     fontSize: '0.875rem', opacity: isSaving ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
                                 }}
                             >
