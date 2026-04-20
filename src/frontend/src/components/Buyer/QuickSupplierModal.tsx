@@ -125,7 +125,7 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
                             color: 'var(--color-text-muted)'
                         }}
                     >
-                        <X className="w-6 h-6" />
+                        <X size={24} />
                     </button>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
@@ -210,9 +210,9 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
                                 }}
                             >
                                 {isSaving ? (
-                                    <RefreshCcw className="w-4 h-4 animate-spin" />
+                                    <RefreshCcw size={16} style={{ animation: 'spin 1s linear infinite' }} />
                                 ) : (
-                                    <Save className="w-4 h-4" />
+                                    <Save size={16} />
                                 )}
                                 SALVAR
                             </button>

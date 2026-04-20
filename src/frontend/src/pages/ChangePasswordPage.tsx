@@ -204,7 +204,7 @@ const ChangePasswordPage: React.FC = () => {
                         }}
                     >
                         {isLoading ? (
-                            <Loader2 className="animate-spin" size={20} />
+                            <Loader2 style={{ animation: 'spin 1s linear infinite' }} size={20} />
                         ) : (
                             <>
                                 <Lock size={18} />

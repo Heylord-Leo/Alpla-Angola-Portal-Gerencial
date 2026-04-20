@@ -232,9 +232,9 @@ function AreaEmphasisBlock({ intelligence, requestData }: {
                     }}>
                         <div style={{ display: 'flex', flexShrink: 0 }}>
                             {item.ok ? (
-                                <CheckCircle2 size={16} strokeWidth={3} className="text-green-600" />
+                                <CheckCircle2 size={16} strokeWidth={3} style={{ color: '#16a34a' }} />
                             ) : (
-                                <AlertOctagon size={16} strokeWidth={3} className="text-orange-500" />
+                                <AlertOctagon size={16} strokeWidth={3} style={{ color: '#f97316' }} />
                             )}
                         </div>
                         <span style={{ 
@@ -328,7 +328,7 @@ function FinalEmphasisBlock({ intelligence }: { intelligence: ApprovalIntelligen
                                 Variação Consolidada
                             </div>
                             <Tooltip content="Média ponderada da variação de preço dos itens deste pedido em relação aos preços médios praticados no histórico.">
-                                <HelpCircle size={12} className="text-gray-400 cursor-help" />
+                                <HelpCircle size={12} style={{ color: '#9ca3af', cursor: 'help' }} />
                             </Tooltip>
                         </div>
                         <div style={{ 
@@ -403,7 +403,7 @@ function KpiCard({ label, value, muted, tooltip }: { label: string; value: strin
                 <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 900, letterSpacing: '0.1em', color: 'var(--color-text-muted)' }}>
                     {label}
                 </div>
-                {tooltip && <HelpCircle size={12} className="text-gray-400" />}
+                {tooltip && <HelpCircle size={12} style={{ color: '#9ca3af' }} />}
             </div>
             <div style={{ fontSize: '1.5rem', fontWeight: 950, color: muted ? 'var(--color-text-muted)' : 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>
                 {value}
@@ -541,7 +541,8 @@ function ItemCard({
                                     boxShadow: 'var(--shadow-sm)',
                                     letterSpacing: '0.05em'
                                 }}
-                                className="hover:-translate-y-0.5 hover:shadow-md transition-all"
+                                onMouseOver={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = 'var(--shadow-md)'; }}
+                                onMouseOut={(e) => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
                             >
                                 {isArea ? 'Analisar Histórico' : 'Ver Detalhes'}
                             </button>

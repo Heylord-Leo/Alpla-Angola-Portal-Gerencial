@@ -161,7 +161,7 @@ export function DecisionFinancialTrendLine({ requestId }: DecisionFinancialTrend
             backgroundColor: 'rgba(255,255,255,0.7)',
             borderRadius: '0.375rem'
           }}>
-            <Loader2 style={{ color: '#1E40AF' }} className="w-6 h-6 animate-spin" />
+            <Loader2 size={24} style={{ color: '#1E40AF', animation: 'spin 1s linear infinite' }} />
           </div>
         )}
 

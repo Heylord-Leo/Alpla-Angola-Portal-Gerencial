@@ -1,0 +1,771 @@
+﻿
+
+Filename   : QuickCurrencyModal.tsx
+LineNumber : 72
+Line       :         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 
+             backdrop-blur-sm">
+
+Filename   : QuickCurrencyModal.tsx
+LineNumber : 73
+Line       :             <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+
+Filename   : QuickCurrencyModal.tsx
+LineNumber : 74
+Line       :                 <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between 
+             bg-gray-50/50">
+
+Filename   : QuickCurrencyModal.tsx
+LineNumber : 75
+Line       :                     <h3 className="text-lg font-semibold text-gray-900">Nova Moeda</h3>
+
+Filename   : QuickCurrencyModal.tsx
+LineNumber : 78
+Line       :                         className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full 
+             transition-colors"
+
+Filename   : QuickCurrencyModal.tsx
+LineNumber : 80
+Line       :                         <X className="w-5 h-5" />
+
+Filename   : QuickCurrencyModal.tsx
+LineNumber : 84
+Line       :                 <form onSubmit={handleSave} className="p-6 space-y-4">
+
+Filename   : QuickCurrencyModal.tsx
+LineNumber : 90
+Line       :                         <label className="block text-sm font-medium text-gray-700 mb-1">
+
+Filename   : QuickCurrencyModal.tsx
+LineNumber : 91
+Line       :                             Código (ISO) <span className="text-red-500">*</span>
+
+Filename   : QuickCurrencyModal.tsx
+LineNumber : 99
+Line       :                             className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 
+             focus:ring-blue-500 focus:border-transparent outline-none transition-all uppercase"
+
+Filename   : QuickCurrencyModal.tsx
+LineNumber : 102
+Line       :                         <p className="mt-1 text-xs text-gray-500">Deve conter exatamente 3 letras.</p>
+
+Filename   : QuickCurrencyModal.tsx
+LineNumber : 106
+Line       :                         <label className="block text-sm font-medium text-gray-700 mb-1">
+
+Filename   : QuickCurrencyModal.tsx
+LineNumber : 114
+Line       :                             className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 
+             focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+
+Filename   : QuickCurrencyModal.tsx
+LineNumber : 118
+Line       :                     <div className="pt-4 flex items-center justify-end space-x-3">
+
+Filename   : QuickCurrencyModal.tsx
+LineNumber : 123
+Line       :                             className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 
+             transition-colors"
+
+Filename   : QuickCurrencyModal.tsx
+LineNumber : 130
+Line       :                             className="px-6 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg 
+             hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center"
+
+Filename   : QuickCurrencyModal.tsx
+LineNumber : 134
+Line       :                                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+
+Filename   : QuickSupplierModal.tsx
+LineNumber : 128
+Line       :                         <X className="w-6 h-6" />
+
+Filename   : QuickSupplierModal.tsx
+LineNumber : 213
+Line       :                                     <RefreshCcw className="w-4 h-4 animate-spin" />
+
+Filename   : QuickSupplierModal.tsx
+LineNumber : 215
+Line       :                                     <Save className="w-4 h-4" />
+
+Filename   : NotificationBell.tsx
+LineNumber : 119
+Line       :                 className="hover:bg-primary-hover"
+
+Filename   : UserDropdown.tsx
+LineNumber : 49
+Line       :                     className="hover:bg-primary-hover"
+
+Filename   : UserDropdown.tsx
+LineNumber : 142
+Line       :                                     className="hover:bg-slate-50"
+
+Filename   : UserProfileDrawer.tsx
+LineNumber : 121
+Line       :                                     className="hover:bg-accent-hover"
+
+Filename   : UserProfileDrawer.tsx
+LineNumber : 191
+Line       :                                             <div key={i} style={{ height: '80px', backgroundColor: 
+             'var(--color-bg-surface)', opacity: 0.5 }} className="animate-pulse" />
+
+Filename   : UserProfileDrawer.tsx
+LineNumber : 430
+Line       :                                                     className="hover:translate-x-1"
+
+Filename   : UserProfileDrawer.tsx
+LineNumber : 452
+Line       :                                                     className="hover:translate-x-1"
+
+Filename   : UserProfileDrawer.tsx
+LineNumber : 483
+Line       :                                     className="hover:bg-primary-hover active:translate-y-1 
+             active:shadow-none"
+
+Filename   : SortableFilterHeader.tsx
+LineNumber : 188
+Line       :         <div className="sfh-text-filter">
+
+Filename   : SortableFilterHeader.tsx
+LineNumber : 192
+Line       :                 className="sfh-text-input"
+
+Filename   : CostCenterAutocomplete.tsx
+LineNumber : 235
+Line       :         <div className={className} ref={containerRef} style={{ position: 'relative', marginTop: '8px', 
+             zIndex: isOpen ? 5 : 1 }}>
+
+Filename   : DepartmentMasterAutocomplete.tsx
+LineNumber : 260
+Line       :         <div className={className} ref={containerRef} style={{ position: 'relative', marginTop: '8px', 
+             zIndex: isOpen ? 5 : 1 }}>
+
+Filename   : EmployeeAutocomplete.tsx
+LineNumber : 252
+Line       :         <div className={className} ref={containerRef} style={{ position: 'relative' }}>
+
+Filename   : QuotationEntry.tsx
+LineNumber : 374
+Line       :         <div className="bg-white border-2 border-slate-900 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] p-6">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 382
+Line       :                         className="text-center py-8"
+
+Filename   : QuotationEntry.tsx
+LineNumber : 384
+Line       :                         <Upload className="w-12 h-12 mx-auto text-slate-400 mb-4" />
+
+Filename   : QuotationEntry.tsx
+LineNumber : 385
+Line       :                         <h3 className="text-xl font-black text-slate-900 mb-2 uppercase tracking-tight">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 388
+Line       :                         <p className="text-slate-500 mb-8 max-w-md mx-auto">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 392
+Line       :                         <div className="flex flex-col gap-4 items-center">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 396
+Line       :                                 className="group relative px-8 py-3 bg-red-600 text-white font-black 
+             uppercase text-sm tracking-widest hover:bg-slate-900 transition-all flex items-center gap-2"
+
+Filename   : QuotationEntry.tsx
+LineNumber : 399
+Line       :                                     <RefreshCcw className="w-5 h-5 animate-spin" />
+
+Filename   : QuotationEntry.tsx
+LineNumber : 401
+Line       :                                     <Upload className="w-5 h-5" />
+
+Filename   : QuotationEntry.tsx
+LineNumber : 409
+Line       :                                 className="text-slate-500 font-bold hover:text-slate-900 text-sm flex 
+             items-center gap-1"
+
+Filename   : QuotationEntry.tsx
+LineNumber : 411
+Line       :                                 <Plus className="w-4 h-4" />
+
+Filename   : QuotationEntry.tsx
+LineNumber : 421
+Line       :                             className="hidden" 
+
+Filename   : QuotationEntry.tsx
+LineNumber : 425
+Line       :                             <div className="mt-6">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 435
+Line       :                         className="space-y-6"
+
+Filename   : QuotationEntry.tsx
+LineNumber : 437
+Line       :                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 438
+Line       :                             <div className="md:col-span-2">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 439
+Line       :                                 <label className="block text-xs font-black uppercase text-slate-500 
+             mb-1">Fornecedor</label>
+
+Filename   : QuotationEntry.tsx
+LineNumber : 440
+Line       :                                 <div className="space-y-1">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 451
+Line       :                                         <div className="flex items-center gap-1 text-[10px] 
+             text-amber-600 font-bold">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 452
+Line       :                                             <AlertCircle className="w-3 h-3" />
+
+Filename   : QuotationEntry.tsx
+LineNumber : 460
+Line       :                                 <label className="block text-xs font-black uppercase text-slate-500 
+             mb-1">Nº Documento</label>
+
+Filename   : QuotationEntry.tsx
+LineNumber : 461
+Line       :                                 <div className="relative">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 462
+Line       :                                     <Hash className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+
+Filename   : QuotationEntry.tsx
+LineNumber : 467
+Line       :                                         className={`w-full pl-9 pr-4 py-2 bg-slate-50 border-2 font-bold 
+             focus:bg-white focus:outline-none transition-colors ${formErrors.documentNumber ? 'border-red-500 
+             text-red-600' : 'border-slate-200'}`}
+
+Filename   : QuotationEntry.tsx
+LineNumber : 474
+Line       :                                 <label className="block text-xs font-black uppercase text-slate-500 
+             mb-1">Data Documento</label>
+
+Filename   : QuotationEntry.tsx
+LineNumber : 475
+Line       :                                 <div className="relative">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 476
+Line       :                                     <Calendar className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" 
+             />
+
+Filename   : QuotationEntry.tsx
+LineNumber : 481
+Line       :                                         className={`w-full pl-9 pr-4 py-2 bg-slate-50 border-2 font-bold 
+             focus:bg-white focus:outline-none transition-colors ${formErrors.documentDate ? 'border-red-500 
+             text-red-600' : 'border-slate-200'}`}
+
+Filename   : QuotationEntry.tsx
+LineNumber : 487
+Line       :                                 <label className="block text-xs font-black uppercase text-slate-500 
+             mb-1">Moeda</label>
+
+Filename   : QuotationEntry.tsx
+LineNumber : 491
+Line       :                                     className={`w-full px-4 py-2 bg-slate-50 border-2 font-bold 
+             focus:bg-white focus:outline-none transition-colors ${formErrors.currency ? 'border-red-500 text-red-600 
+             text-sm' : 'border-slate-200'}`}
+
+Filename   : QuotationEntry.tsx
+LineNumber : 497
+Line       :                                     <div className="mt-1 flex items-center gap-1 text-[10px] 
+             text-amber-600 font-bold">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 498
+Line       :                                         <AlertCircle className="w-3 h-3" />
+
+Filename   : QuotationEntry.tsx
+LineNumber : 506
+Line       :                         <div className="overflow-x-auto border-2 border-slate-200">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 507
+Line       :                             <table className="w-full text-sm">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 508
+Line       :                                 <thead className="bg-slate-50 border-b-2 border-slate-200">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 510
+Line       :                                         <th className="px-4 py-2 text-left font-black uppercase 
+             text-[10px] text-slate-500 w-12 text-center">#</th>
+
+Filename   : QuotationEntry.tsx
+LineNumber : 511
+Line       :                                         <th className="px-4 py-2 text-left font-black uppercase 
+             text-[10px] text-slate-500 MIN-W-[300PX]">Descrição do Item</th>
+
+Filename   : QuotationEntry.tsx
+LineNumber : 512
+Line       :                                         <th className="px-4 py-2 text-left font-black uppercase 
+             text-[10px] text-slate-500 w-24">Qtd</th>
+
+Filename   : QuotationEntry.tsx
+LineNumber : 513
+Line       :                                         <th className="px-4 py-2 text-left font-black uppercase 
+             text-[10px] text-slate-500 w-32">Unidade</th>
+
+Filename   : QuotationEntry.tsx
+LineNumber : 514
+Line       :                                         <th className="px-4 py-2 text-left font-black uppercase 
+             text-[10px] text-slate-500 w-40 text-right">Preço Unit</th>
+
+Filename   : QuotationEntry.tsx
+LineNumber : 515
+Line       :                                         <th className="px-4 py-2 text-left font-black uppercase 
+             text-[10px] text-slate-500 w-40">Taxa IVA</th>
+
+Filename   : QuotationEntry.tsx
+LineNumber : 516
+Line       :                                         <th className="px-4 py-2 text-left font-black uppercase 
+             text-[10px] text-slate-500 w-40 text-right">Total c/ IVA</th>
+
+Filename   : QuotationEntry.tsx
+LineNumber : 517
+Line       :                                         <th className="px-4 py-2 w-12"></th>
+
+Filename   : QuotationEntry.tsx
+LineNumber : 522
+Line       :                                         <tr key={idx} className="border-b border-slate-100 
+             hover:bg-slate-50/50">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 523
+Line       :                                             <td className="px-4 py-3 text-center font-bold 
+             text-slate-400">{item.lineNumber}</td>
+
+Filename   : QuotationEntry.tsx
+LineNumber : 524
+Line       :                                             <td className="px-4 py-3" style={{ minWidth: '300px' }}>
+
+Filename   : QuotationEntry.tsx
+LineNumber : 560
+Line       :                                                     <div className="text-[9px] text-indigo-600 font-bold 
+             mt-0.5 flex items-center gap-1">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 565
+Line       :                                             <td className="px-4 py-3">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 570
+Line       :                                                     className="w-full bg-transparent border-b 
+             border-transparent hover:border-slate-300 focus:border-red-500 focus:outline-none py-1 font-bold 
+             text-center transition-colors"
+
+Filename   : QuotationEntry.tsx
+LineNumber : 573
+Line       :                                             <td className="px-4 py-3">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 577
+Line       :                                                     className="w-full bg-transparent border-b 
+             border-transparent hover:border-slate-300 focus:border-red-500 focus:outline-none py-1 text-xs font-bold 
+             transition-colors"
+
+Filename   : QuotationEntry.tsx
+LineNumber : 583
+Line       :                                                     <div className="absolute top-full z-10 text-[9px] 
+             text-amber-600 bg-amber-50 px-1 border border-amber-200">Sug: {item.unit}</div>
+
+Filename   : QuotationEntry.tsx
+LineNumber : 586
+Line       :                                             <td className="px-4 py-3">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 591
+Line       :                                                     className="w-full bg-transparent border-b 
+             border-transparent hover:border-slate-300 focus:border-red-500 focus:outline-none py-1 font-bold 
+             text-right transition-colors"
+
+Filename   : QuotationEntry.tsx
+LineNumber : 594
+Line       :                                             <td className="px-4 py-3">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 595
+Line       :                                                 <div className="flex flex-col gap-1">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 599
+Line       :                                                         className="w-full bg-transparent border-b 
+             border-transparent hover:border-slate-300 focus:border-red-500 focus:outline-none py-1 text-xs font-bold 
+             transition-colors"
+
+Filename   : QuotationEntry.tsx
+LineNumber : 607
+Line       :                                                         <span className="text-[9px] text-red-500 
+             font-bold flex items-center gap-1" title="O OCR não conseguiu identificar o IVA para este item.">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 608
+Line       :                                                             <AlertCircle className="w-2.5 h-2.5 
+             flex-shrink-0" />
+
+Filename   : QuotationEntry.tsx
+LineNumber : 614
+Line       :                                             <td className="px-4 py-3 text-right font-black 
+             text-slate-900">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 617
+Line       :                                             <td className="px-4 py-3">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 618
+Line       :                                                 <button onClick={() => removeItem(idx)} 
+             className="text-slate-300 hover:text-red-600 transition-colors">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 619
+Line       :                                                     <Trash2 className="w-4 h-4" />
+
+Filename   : QuotationEntry.tsx
+LineNumber : 628
+Line       :                                 className="w-full py-3 bg-slate-50 hover:bg-slate-100 text-slate-500 
+             font-black uppercase text-[10px] tracking-tight flex items-center justify-center gap-2 transition-colors"
+
+Filename   : QuotationEntry.tsx
+LineNumber : 630
+Line       :                                 <Plus className="w-4 h-4" />
+
+Filename   : QuotationEntry.tsx
+LineNumber : 637
+Line       :                             <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 
+             rounded text-red-700 text-xs font-semibold">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 638
+Line       :                                 <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+
+Filename   : QuotationEntry.tsx
+LineNumber : 647
+Line       :                         <div className="flex flex-col md:flex-row justify-between items-end gap-6 pt-6">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 648
+Line       :                             <div className="w-full md:w-64">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 649
+Line       :                                 <label className="block text-xs font-black uppercase text-slate-500 
+             mb-1">Desconto Comercial</label>
+
+Filename   : QuotationEntry.tsx
+LineNumber : 650
+Line       :                                 <div className="relative">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 655
+Line       :                                         className="w-full px-4 py-2 bg-slate-50 border-2 border-slate-200 
+             font-bold focus:bg-white focus:outline-none transition-colors text-right"
+
+Filename   : QuotationEntry.tsx
+LineNumber : 660
+Line       :                             <div className="bg-slate-900 text-white p-6 min-w-[300px] relative 
+             overflow-hidden">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 661
+Line       :                                 <div className="absolute top-0 right-0 w-24 h-24 bg-red-600/10 
+             rounded-full -mr-8 -mt-8" />
+
+Filename   : QuotationEntry.tsx
+LineNumber : 662
+Line       :                                 <div className="space-y-2 relative">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 663
+Line       :                                     <div className="flex justify-between text-slate-400 font-bold text-xs 
+             uppercase tracking-widest">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 675
+Line       :                                     <div className="flex justify-between text-slate-400 font-bold text-xs 
+             uppercase tracking-widest pb-2 border-b border-white/10">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 695
+Line       :                                     <div className="flex justify-between items-center pt-2">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 696
+Line       :                                         <span className="font-black uppercase text-xs 
+             tracking-tighter">Valor Líquido</span>
+
+Filename   : QuotationEntry.tsx
+LineNumber : 697
+Line       :                                         <span className="text-2xl font-black text-red-500">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 706
+Line       :                         <div className="flex justify-between items-center pt-6 border-t-2 
+             border-slate-900">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 709
+Line       :                                 className="px-6 py-2 text-slate-500 font-black uppercase text-xs 
+             tracking-widest hover:text-slate-900 transition-colors"
+
+Filename   : QuotationEntry.tsx
+LineNumber : 713
+Line       :                             <div className="flex gap-4">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 717
+Line       :                                         className="px-6 py-2 bg-slate-100 text-slate-900 font-black 
+             uppercase text-xs tracking-widest hover:bg-slate-200 transition-colors flex items-center gap-2"
+
+Filename   : QuotationEntry.tsx
+LineNumber : 719
+Line       :                                         <RefreshCcw className="w-4 h-4" />
+
+Filename   : QuotationEntry.tsx
+LineNumber : 726
+Line       :                                     className="px-8 py-3 bg-slate-900 text-white font-black uppercase 
+             text-sm tracking-widest hover:bg-red-600 transition-all flex items-center gap-2 
+             shadow-[4px_4px_0px_0px_rgba(239,68,68,1)]"
+
+Filename   : QuotationEntry.tsx
+LineNumber : 728
+Line       :                                     {isProcessing ? <RefreshCcw className="w-5 h-5 animate-spin" /> : 
+             <CheckCircle2 className="w-5 h-5" />}
+
+Filename   : QuotationEntry.tsx
+LineNumber : 735
+Line       :                             <div className="flex items-center gap-2 text-red-600 justify-end font-bold 
+             text-sm">
+
+Filename   : QuotationEntry.tsx
+LineNumber : 736
+Line       :                                 <AlertCircle className="w-4 h-4" />
+
+Filename   : RequestLineItemForm.tsx
+LineNumber : 312
+Line       :                                 <div className="spinner" style={{ width: '16px', height: '16px', border: 
+             '2px solid var(--color-border-heavy)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', 
+             animation: 'spin 1s linear infinite' }} />
+
+Filename   : SupplierAutocomplete.tsx
+LineNumber : 254
+Line       :         <div className={className} ref={containerRef} style={{ position: 'relative', marginTop: '8px' }}>
+
+Filename   : SystemLogs.tsx
+LineNumber : 439
+Line       :                   <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 12px', display: 
+             'block' }} />
+
+Filename   : UserManagement.tsx
+LineNumber : 271
+Line       :                     <button onClick={handleOpenCreate} className="btn btn-primary" style={{ display: 
+             'flex', alignItems: 'center', gap: 8 }}>
+
+Filename   : DecisionFinancialTrendLine.tsx
+LineNumber : 164
+Line       :             <Loader2 style={{ color: '#1E40AF' }} className="w-6 h-6 animate-spin" />
+
+Filename   : DecisionInsightsPanel.tsx
+LineNumber : 235
+Line       :                                 <CheckCircle2 size={16} strokeWidth={3} className="text-green-600" />
+
+Filename   : DecisionInsightsPanel.tsx
+LineNumber : 237
+Line       :                                 <AlertOctagon size={16} strokeWidth={3} className="text-orange-500" />
+
+Filename   : DecisionInsightsPanel.tsx
+LineNumber : 331
+Line       :                                 <HelpCircle size={12} className="text-gray-400 cursor-help" />
+
+Filename   : DecisionInsightsPanel.tsx
+LineNumber : 406
+Line       :                 {tooltip && <HelpCircle size={12} className="text-gray-400" />}
+
+Filename   : DecisionInsightsPanel.tsx
+LineNumber : 544
+Line       :                                 className="hover:-translate-y-0.5 hover:shadow-md transition-all"
+
+Filename   : DecisionQuotationCard.tsx
+LineNumber : 125
+Line       :                                 <Hash size={13} strokeWidth={3} className="text-gray-500" /> 
+             {q.documentNumber || 'S/N'}
+
+Filename   : DecisionQuotationCard.tsx
+LineNumber : 128
+Line       :                                 <Calendar size={13} strokeWidth={3} className="text-gray-500" /> 
+             {q.documentDate ? formatDate(q.documentDate) : '---'}
+
+Filename   : DecisionQuotationCard.tsx
+LineNumber : 180
+Line       :                         className="hover:bg-gray-50 hover:shadow-md"
+
+Filename   : DecisionQuotationCard.tsx
+LineNumber : 202
+Line       :                     <CheckCircle2 size={16} strokeWidth={3} className="text-white" /> Cotação selecionada 
+             para aprovação
+
+Filename   : DetailedHistoryPanel.tsx
+LineNumber : 37
+Line       :             className="flex-1 bg-[var(--color-bg-page)] z-[60] flex flex-col animate-in 
+             slide-in-from-right duration-300 relative"
+
+Filename   : DetailedHistoryPanel.tsx
+LineNumber : 67
+Line       :                     className="hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none"
+
+Filename   : DetailedHistoryPanel.tsx
+LineNumber : 201
+Line       :                                             className="hover:bg-gray-50 transition-colors"
+
+Filename   : ApprovalCenter.tsx
+LineNumber : 748
+Line       :                                         <div className="p-0">
+
+Filename   : ApprovalDetailPanel.tsx
+LineNumber : 515
+Line       :                 <div className="mb-8">
+
+Filename   : ApprovalDetailPanel.tsx
+LineNumber : 520
+Line       :                 <div className="mb-8">
+
+Filename   : ApprovalDetailPanel.tsx
+LineNumber : 523
+Line       :                         icon={<TrendingUp size={16} className="text-black" />}
+
+Filename   : ApprovalDetailPanel.tsx
+LineNumber : 536
+Line       :                     icon={<TrendingUp size={16} className="text-black" />}
+
+Filename   : BuyerItemsList.tsx
+LineNumber : 2242
+Line       :                                                                 <div className="review-header" style={{ 
+             display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', 
+             paddingBottom: '16px', borderBottom: '1px solid #e2e8f0' }}>
+
+Filename   : BuyerItemsList.tsx
+LineNumber : 2264
+Line       :                                                                     <div className="review-actions" 
+             style={{ display: 'flex', gap: '12px' }}>
+
+Filename   : BuyerItemsList.tsx
+LineNumber : 2366
+Line       :                                                                         <div className="form-header-grid" 
+             style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '24px', 
+             backgroundColor: 'var(--color-bg-page)', padding: '20px', borderRadius: '8px' }}>
+
+Filename   : BuyerItemsList.tsx
+LineNumber : 2580
+Line       :                                                                         <div className="form-items-area" 
+             style={{ marginBottom: '24px' }}>
+
+Filename   : BuyerItemsList.tsx
+LineNumber : 2591
+Line       :                                                                             <div 
+             className="draft-items-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+
+Filename   : BuyerItemsList.tsx
+LineNumber : 2755
+Line       :                                                                         <div className="form-footer" 
+             style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', 
+             backgroundColor: '#f0f9ff', borderRadius: '8px', border: '1px solid #bae6fd' }}>
+
+Filename   : BuyerItemsList.tsx
+LineNumber : 3109
+Line       :                                     <X className="w-6 h-6" />
+
+Filename   : BuyerItemsList.tsx
+LineNumber : 3179
+Line       :                                                 <RefreshCcw className="w-4 h-4 animate-spin" />
+
+Filename   : FinancePaymentsList.tsx
+LineNumber : 264
+Line       :                         <tr key={item.id} id={`payment-row-${item.id}`} className={highlightedRequestId 
+             === item.id.toString() ? 'section-attention-highlight' : ''} style={{ borderBottom: '1px solid 
+             var(--color-border)', backgroundColor: i % 2 === 0 ? '#fff' : '#f8fafc' }}>
+
+Filename   : BadgeLayoutDesigner.tsx
+LineNumber : 291
+Line       :                 <div className="bld-grid">
+
+Filename   : BadgeLayoutEditorV3.tsx
+LineNumber : 309
+Line       :                                 className={`ble-element-item${isSelected ? ' selected' : ''}${isHidden ? 
+             ' hidden-el' : ''}`}
+
+Filename   : EmployeeWorkspace.tsx
+LineNumber : 480
+Line       :                             <div className="hr-search-field" style={{ flex: 1 }}>
+
+Filename   : EmployeeWorkspace.tsx
+LineNumber : 621
+Line       :                         className="hr-workspace-grid"
+
+Filename   : EmployeeWorkspace.tsx
+LineNumber : 635
+Line       :                                     <div className="hr-form-grid">
+
+Filename   : EmployeeWorkspace.tsx
+LineNumber : 725
+Line       :                                         <div className="hr-form-grid">
+
+Filename   : EmployeeWorkspace.tsx
+LineNumber : 757
+Line       :                                         <div className="hr-details-grid">
+
+Filename   : PurchasingHelpDrawer.tsx
+LineNumber : 151
+Line       :                                 className="hover:bg-primary-hover"
+
+Filename   : PurchasingHelpDrawer.tsx
+LineNumber : 271
+Line       :                                 className="hover:bg-primary-hover active:translate-y-1 active:shadow-none"
+
+Filename   : RequestGeneralDataSection.tsx
+LineNumber : 198
+Line       :                                 className="mt-1"
+
+Filename   : RequestLineItemsSection.tsx
+LineNumber : 101
+Line       :                     <h2 id="items-section" className={sectionTitleClassName} style={{ borderBottom: 
+             'none', marginBottom: 0, marginTop: 0 }}>
+
+Filename   : RequestCreate.tsx
+LineNumber : 1202
+Line       :                                                               className="mt-1"
+
+Filename   : MasterData.tsx
+LineNumber : 314
+Line       :     if (loading && units.length === 0) return <div className="p-4">A carregar...</div>;
+
+Filename   : MasterData.tsx
+LineNumber : 318
+Line       :             <div className="sticky top-0 z-50 mb-4 bg-white/80 backdrop-blur-sm -mx-6 px-6 pt-2" style={{ 
+             marginTop: '-1rem' }}>
+
+Filename   : MasterData.tsx
+LineNumber : 355
+Line       :                         className={activeTab === tab.id ? '' : 'hover:text-primary'}
+
+Filename   : SyncWorkspace.tsx
+LineNumber : 645
+Line       :                             className={`sync-row ${cfg.bgClass} ${isSelected ? 'sync-row-selected' : ''}`}
+
+Filename   : SyncWorkspace.tsx
+LineNumber : 734
+Line       :                             className={`sync-row ${cfg.bgClass} ${isSelected ? 'sync-row-selected' : ''}`}
+
+
+

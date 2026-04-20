@@ -2,7 +2,26 @@
 
 ## Current Version
 
-v2.82.0
+v2.83.0
+
+## [2.83.0] - 2026-04-20
+
+### Added
+- **Contract-Driven Cash Flow Projection (Phase 1 — DEC-118)**: Full-stack delivery of the contractual projection feature in the Finance module.
+  - New `ContractProjectionSection.tsx` component with 6 KPI cards (Compromissos do Mês, Próximos 90 Dias, Em Pipeline, Confirmado, Vencidos s/ Pedido, Risco de Penalidade), bar chart (6 meses por bucket), and paginated detail table with filters por bucket e risco.
+  - New backend endpoints `GET /api/v1/finance/contract-projections/summary` e `/contract-projections` in `FinanceController.cs`.
+  - New `ContractProjectionDtos.cs` with typed DTOs: Summary, MonthySeries, Item, PagedResult.
+  - Forecast buckets (`PROJECTED`, `OVERDUE_NO_REQUEST`, `PIPELINE`, `CONFIRMED`, `REALIZED`) and risk levels (`HIGH`, `MEDIUM`, `LOW`) derived at query time from active contract obligations — no duplication of financial state.
+  - Integrated lazily (React.lazy + Suspense) at the bottom of `FinanceOverview.tsx`.
+  - Filterable by `companyId`, `bucket`, `onlyAtRisk`, and date range. Paginated (15 items/page).
+
+### Changed
+- **Tailwind CSS Remediation — 100% Complete (Phases 1–3)**: Systematic removal of all Tailwind utility classes from 31 frontend files (~167 occurrences). Replaced with inline styles using `var(--color-*)` CSS tokens and native CSS pseudo-classes. Tailwind is no longer a dependency.
+  - Phase 1 (Critical): `QuotationEntry.tsx` (89 classes), `QuickCurrencyModal.tsx` (17 classes) — full JSX rewrite with inline styles.
+  - Phase 2 (High): `UserProfileDrawer`, `DecisionInsightsPanel`, `DecisionQuotationCard`, `ApprovalDetailPanel`, `EmployeeWorkspace`, `QuickSupplierModal`, `DetailedHistoryPanel`, `BuyerItemsList` — surgical conversion.
+  - Phase 3 (Medium/Low): Remaining 16 files with 1–3 occurrences, including `MasterData`, `ApprovalCenter`, `UserManagement` (with custom `slideInFromRight` keyframe added to `globals.css`).
+- **Finance Budget Config**: Restored missing styles and colors on the `FinanceBudgetConfig` page, aligning it with the design system.
+
 
 ## [2.82.0] - 2026-04-20
 

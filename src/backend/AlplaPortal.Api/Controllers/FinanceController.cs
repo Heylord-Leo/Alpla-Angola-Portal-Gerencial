@@ -967,4 +967,345 @@ public class FinanceController : BaseController
 
         return Ok();
     }
+
+    // ─── Contract-Driven Cash Flow Projection (Phase 1) ──────────────────────────
+
+    /// <summary>
+    /// Returns aggregated KPI totals and monthly series for contractual payment obligations.
+    /// Source: ACTIVE contracts → ContractPaymentObligation. No monetary calculations.
+    /// Forecast buckets and risk levels are derived at query time.
+    /// </summary>
+    [HttpGet("contract-projections/summary")]
+    public async Task<ActionResult<ContractProjectionSummaryDto>> GetContractProjectionSummary(
+        [FromQuery] int? companyId = null,
+        [FromQuery] int? plantId = null,
+        [FromQuery] int? departmentId = null)
+    {
+        var today = DateTime.UtcNow.Date;
+        var currentMonthStart = new DateTime(today.Year, today.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var currentMonthEnd = currentMonthStart.AddMonths(1).AddDays(-1);
+        var next90Days = today.AddDays(90);
+        var currentYearStart = new DateTime(today.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        // Build base query: ACTIVE contracts only
+        var baseQuery = _context.ContractPaymentObligations
+            .Include(o => o.Contract)
+                .ThenInclude(c => c.Supplier)
+            .Include(o => o.Contract)
+                .ThenInclude(c => c.Company)
+            .Include(o => o.Contract)
+                .ThenInclude(c => c.Department)
+            .Include(o => o.Currency)
+            .Where(o =>
+                o.Contract.StatusCode == ContractConstants.Statuses.Active &&
+                o.StatusCode != ContractConstants.ObligationStatuses.Cancelled);
+
+        if (companyId.HasValue)
+            baseQuery = baseQuery.Where(o => o.Contract.CompanyId == companyId.Value);
+        if (plantId.HasValue)
+            baseQuery = baseQuery.Where(o => o.Contract.PlantId == plantId.Value);
+        if (departmentId.HasValue)
+            baseQuery = baseQuery.Where(o => o.Contract.DepartmentId == departmentId.Value);
+
+        // Load minimal projection with linked request info
+        var obligations = await baseQuery
+            .Select(o => new
+            {
+                ObligationId = o.Id,
+                ObligationStatusCode = o.StatusCode,
+                Amount = o.ExpectedAmount,
+                CurrencyCode = o.Currency != null ? o.Currency.Code : o.Contract.Currency != null ? o.Contract.Currency.Code : "AOA",
+                DueDateUtc = o.DueDateUtc,
+                GraceDateUtc = o.GraceDateUtc,
+                PenaltyStartDateUtc = o.PenaltyStartDateUtc,
+                ContractHasLatePenalty = o.Contract.HasLatePenalty,
+                // Linked request info (navigated via Requests table FK)
+                LinkedRequest = _context.Requests
+                    .Where(r => r.ContractPaymentObligationId == o.Id)
+                    .OrderByDescending(r => r.RequestedDateUtc)
+                    .Select(r => new { r.Status!.Code, r.RequestNumber })
+                    .FirstOrDefault()
+            })
+            .ToListAsync();
+
+        // Derive forecast bucket and risk for each obligation
+        var projectionData = obligations.Select(o =>
+        {
+            DateTime? dueDateNullable = o.DueDateUtc;
+            var bucket = DeriveContractForecastBucket(o.ObligationStatusCode, o.LinkedRequest?.Code, dueDateNullable, today);
+            var risk = DeriveContractRiskLevel(bucket, dueDateNullable, o.GraceDateUtc, o.PenaltyStartDateUtc, o.ContractHasLatePenalty, today);
+            return new
+            {
+                o.Amount,
+                o.CurrencyCode,
+                DueDateUtc = dueDateNullable,
+                Bucket = bucket,
+                Risk = risk
+            };
+        }).ToList();
+
+        // KPI 1: Projected obligations due this calendar month
+        var currentMonth = projectionData
+            .Where(p => p.Bucket is "PROJECTED" or "OVERDUE_NO_REQUEST" && p.DueDateUtc.HasValue && p.DueDateUtc.Value >= currentMonthStart && p.DueDateUtc.Value <= currentMonthEnd)
+            .GroupBy(p => p.CurrencyCode)
+            .Select(g => new ContractProjectionCurrencyTotalDto { CurrencyCode = g.Key, TotalAmount = g.Sum(x => x.Amount) })
+            .ToList();
+
+        // KPI 2: PROJECTED + OVERDUE in next 90 days
+        var next3Months = projectionData
+            .Where(p => p.Bucket is "PROJECTED" or "OVERDUE_NO_REQUEST" && p.DueDateUtc.HasValue && p.DueDateUtc.Value >= today && p.DueDateUtc.Value <= next90Days)
+            .GroupBy(p => p.CurrencyCode)
+            .Select(g => new ContractProjectionCurrencyTotalDto { CurrencyCode = g.Key, TotalAmount = g.Sum(x => x.Amount) })
+            .ToList();
+
+        // KPI 3: Pipeline
+        var pipeline = projectionData
+            .Where(p => p.Bucket == "PIPELINE")
+            .GroupBy(p => p.CurrencyCode)
+            .Select(g => new ContractProjectionCurrencyTotalDto { CurrencyCode = g.Key, TotalAmount = g.Sum(x => x.Amount) })
+            .ToList();
+
+        // KPI 4: Confirmed (APPROVED + SCHEDULED)
+        var confirmed = projectionData
+            .Where(p => p.Bucket == "CONFIRMED")
+            .GroupBy(p => p.CurrencyCode)
+            .Select(g => new ContractProjectionCurrencyTotalDto { CurrencyCode = g.Key, TotalAmount = g.Sum(x => x.Amount) })
+            .ToList();
+
+        // KPI 5: Realized this year
+        var realized = projectionData
+            .Where(p => p.Bucket == "REALIZED")
+            .GroupBy(p => p.CurrencyCode)
+            .Select(g => new ContractProjectionCurrencyTotalDto { CurrencyCode = g.Key, TotalAmount = g.Sum(x => x.Amount) })
+            .ToList();
+
+        // KPI 6: Risk counts
+        int overdueNoRequestCount = projectionData.Count(p => p.Bucket == "OVERDUE_NO_REQUEST");
+        int penaltyRiskCount = projectionData.Count(p => p.Risk == "HIGH");
+
+        // Monthly series: next 6 months
+        var monthlySeries = new List<ContractProjectionMonthlySeriesDto>();
+        for (int m = 0; m < 6; m++)
+        {
+            var monthStart = new DateTime(today.Year, today.Month, 1).AddMonths(m);
+            var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+            var yearMonth = monthStart.ToString("yyyy-MM");
+
+            var monthItems = projectionData.Where(p =>
+                p.DueDateUtc.HasValue &&
+                p.DueDateUtc!.Value >= monthStart &&
+                p.DueDateUtc!.Value <= monthEnd &&
+                p.Bucket != "REALIZED")
+                .ToList();
+
+            var currencies = monthItems.Select(x => x.CurrencyCode).Distinct();
+            foreach (var curr in currencies)
+            {
+                var currItems = monthItems.Where(x => x.CurrencyCode == curr).ToList();
+                monthlySeries.Add(new ContractProjectionMonthlySeriesDto
+                {
+                    YearMonth = yearMonth,
+                    CurrencyCode = curr,
+                    ProjectedAmount = currItems.Where(x => x.Bucket is "PROJECTED" or "OVERDUE_NO_REQUEST").Sum(x => x.Amount),
+                    PipelineAmount = currItems.Where(x => x.Bucket == "PIPELINE").Sum(x => x.Amount),
+                    ConfirmedAmount = currItems.Where(x => x.Bucket == "CONFIRMED").Sum(x => x.Amount)
+                });
+            }
+        }
+
+        return Ok(new ContractProjectionSummaryDto
+        {
+            CurrentMonthByCurrency = currentMonth,
+            NextThreeMonthsByCurrency = next3Months,
+            PipelineByCurrency = pipeline,
+            ConfirmedByCurrency = confirmed,
+            RealizedByCurrency = realized,
+            OverdueNoRequestCount = overdueNoRequestCount,
+            PenaltyRiskCount = penaltyRiskCount,
+            MonthlySeries = monthlySeries
+        });
+    }
+
+    /// <summary>
+    /// Returns a paged list of contractual projection items for the detail table.
+    /// Source: ACTIVE contracts → ContractPaymentObligation.
+    /// </summary>
+    [HttpGet("contract-projections")]
+    public async Task<ActionResult<ContractProjectionPagedResultDto>> GetContractProjections(
+        [FromQuery] int? companyId = null,
+        [FromQuery] int? plantId = null,
+        [FromQuery] int? departmentId = null,
+        [FromQuery] string? bucket = null,
+        [FromQuery] bool onlyAtRisk = false,
+        [FromQuery] DateTime? dateFrom = null,
+        [FromQuery] DateTime? dateTo = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
+    {
+        var today = DateTime.UtcNow.Date;
+
+        var baseQuery = _context.ContractPaymentObligations
+            .Include(o => o.Contract)
+                .ThenInclude(c => c.Supplier)
+            .Include(o => o.Contract)
+                .ThenInclude(c => c.Company)
+            .Include(o => o.Contract)
+                .ThenInclude(c => c.Department)
+            .Include(o => o.Currency)
+            .Where(o =>
+                o.Contract.StatusCode == ContractConstants.Statuses.Active &&
+                o.StatusCode != ContractConstants.ObligationStatuses.Cancelled);
+
+        if (companyId.HasValue)
+            baseQuery = baseQuery.Where(o => o.Contract.CompanyId == companyId.Value);
+        if (plantId.HasValue)
+            baseQuery = baseQuery.Where(o => o.Contract.PlantId == plantId.Value);
+        if (departmentId.HasValue)
+            baseQuery = baseQuery.Where(o => o.Contract.DepartmentId == departmentId.Value);
+        if (dateFrom.HasValue)
+            baseQuery = baseQuery.Where(o => o.DueDateUtc >= dateFrom.Value);
+        if (dateTo.HasValue)
+            baseQuery = baseQuery.Where(o => o.DueDateUtc <= dateTo.Value);
+
+        var raw = await baseQuery
+            .OrderBy(o => o.DueDateUtc)
+            .Select(o => new
+            {
+                ObligationId = o.Id,
+                ContractId = o.ContractId,
+                ContractNumber = o.Contract.ContractNumber,
+                ContractTitle = o.Contract.Title,
+                SupplierName = o.Contract.Supplier != null ? o.Contract.Supplier.Name : o.Contract.CounterpartyName ?? "---",
+                CompanyName = o.Contract.Company.Name,
+                DepartmentName = o.Contract.Department != null ? o.Contract.Department.Name : (string?)null,
+                DepartmentId = (int?)o.Contract.DepartmentId,
+                ObligationLabel = o.Description,
+                Amount = o.ExpectedAmount,
+                CurrencyCode = o.Currency != null ? o.Currency.Code : o.Contract.Currency != null ? o.Contract.Currency.Code : "AOA",
+                DueDateUtc = (DateTime?)o.DueDateUtc,
+                GraceDateUtc = o.GraceDateUtc,
+                PenaltyStartDateUtc = o.PenaltyStartDateUtc,
+                ObligationStatusCode = o.StatusCode,
+                ContractHasLatePenalty = o.Contract.HasLatePenalty,
+                LinkedRequest = _context.Requests
+                    .Where(r => r.ContractPaymentObligationId == o.Id)
+                    .OrderByDescending(r => r.RequestedDateUtc)
+                    .Select(r => new { StatusCode = r.Status!.Code, r.RequestNumber })
+                    .FirstOrDefault()
+            })
+            .ToListAsync();
+
+        // Derive and filter in memory
+        var items = raw
+            .Select(o =>
+            {
+                var forecastBucket = DeriveContractForecastBucket(o.ObligationStatusCode, o.LinkedRequest?.StatusCode, o.DueDateUtc, today);
+                var riskLevel = DeriveContractRiskLevel(forecastBucket, o.DueDateUtc, o.GraceDateUtc, o.PenaltyStartDateUtc, o.ContractHasLatePenalty, today);
+                return new ContractProjectionItemDto
+                {
+                    ObligationId = o.ObligationId.ToString(),
+                    ContractId = o.ContractId.ToString(),
+                    ContractNumber = o.ContractNumber,
+                    ContractTitle = o.ContractTitle,
+                    SupplierName = o.SupplierName,
+                    CompanyName = o.CompanyName,
+                    DepartmentName = o.DepartmentName,
+                    DepartmentId = o.DepartmentId,
+                    ObligationLabel = o.ObligationLabel,
+                    Amount = o.Amount,
+                    CurrencyCode = o.CurrencyCode,
+                    DueDateUtc = o.DueDateUtc,
+                    GraceDateUtc = o.GraceDateUtc,
+                    PenaltyStartDateUtc = o.PenaltyStartDateUtc,
+                    ForecastBucket = forecastBucket,
+                    RiskLevelCode = riskLevel,
+                    LinkedRequestNumber = o.LinkedRequest?.RequestNumber,
+                    LinkedRequestStatus = o.LinkedRequest?.StatusCode
+                };
+            })
+            .Where(item => bucket == null || item.ForecastBucket == bucket)
+            .Where(item => !onlyAtRisk || item.RiskLevelCode is "HIGH" or "MEDIUM")
+            .ToList();
+
+        var totalCount = items.Count;
+        var paged = items
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        return Ok(new ContractProjectionPagedResultDto
+        {
+            Items = paged,
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize
+        });
+    }
+
+    // ─── Private helpers ─────────────────────────────────────────────────────────
+
+    private static string DeriveContractForecastBucket(
+        string obligationStatusCode,
+        string? linkedRequestStatusCode,
+        DateTime? dueDateUtc,
+        DateTime today)
+    {
+        if (obligationStatusCode == ContractConstants.ObligationStatuses.Paid)
+            return "REALIZED";
+
+        if (obligationStatusCode == ContractConstants.ObligationStatuses.RequestCreated && linkedRequestStatusCode != null)
+        {
+            // Terminal / cancelled request → revert to PROJECTED
+            if (linkedRequestStatusCode is RequestConstants.Statuses.Cancelled or RequestConstants.Statuses.Rejected or RequestConstants.Statuses.AreaAdjustment or RequestConstants.Statuses.FinalAdjustment)
+                return "PROJECTED";
+
+            // Realized
+            if (linkedRequestStatusCode is RequestConstants.Statuses.Paid or RequestConstants.Statuses.PaymentCompleted or RequestConstants.Statuses.InFollowup)
+                return "REALIZED";
+
+            // Confirmed
+            if (linkedRequestStatusCode is RequestConstants.Statuses.FinalApproved or RequestConstants.Statuses.PoIssued or RequestConstants.Statuses.PaymentRequestSent or RequestConstants.Statuses.PaymentScheduled)
+                return "CONFIRMED";
+
+            // Pipeline — all other in-flight statuses
+            return "PIPELINE";
+        }
+
+        // No request: PENDING obligation
+        if (dueDateUtc.HasValue && dueDateUtc.Value.Date < today)
+            return "OVERDUE_NO_REQUEST";
+
+        return "PROJECTED";
+    }
+
+    private static string DeriveContractRiskLevel(
+        string bucket,
+        DateTime? dueDateUtc,
+        DateTime? graceDateUtc,
+        DateTime? penaltyStartDateUtc,
+        bool hasLatePenalty,
+        DateTime today)
+    {
+        // Already paid or confirmed — no risk signal needed
+        if (bucket is "REALIZED" or "CONFIRMED" or "PIPELINE")
+            return "LOW";
+
+        // Penalty already accruing
+        if (hasLatePenalty && penaltyStartDateUtc.HasValue && penaltyStartDateUtc.Value.Date <= today)
+            return "HIGH";
+
+        // Overdue with no request
+        if (bucket == "OVERDUE_NO_REQUEST")
+            return "HIGH";
+
+        // In grace period (overdue but not yet penalizing)
+        if (graceDateUtc.HasValue && dueDateUtc.HasValue && dueDateUtc.Value.Date < today && today <= graceDateUtc.Value.Date)
+            return "MEDIUM";
+
+        // Close to due date (within 7 days)
+        if (dueDateUtc.HasValue && dueDateUtc.Value.Date > today && (dueDateUtc.Value.Date - today).TotalDays <= 7)
+            return "MEDIUM";
+
+        return "LOW";
+    }
 }

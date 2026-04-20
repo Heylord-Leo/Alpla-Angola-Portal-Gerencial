@@ -107,7 +107,7 @@ export default function HRTeamCalendar() {
 
             {loading ? (
                 <div style={{ padding: '60px', textAlign: 'center', backgroundColor: 'var(--color-bg-surface)', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
-                    <RefreshCw className="animate-spin" size={24} color="#94a3b8" style={{ marginBottom: '16px' }} />
+                    <RefreshCw size={24} color="#94a3b8" style={{ marginBottom: '16px', animation: 'spin 1s linear infinite' }} />
                     <div style={{ fontWeight: 600, color: '#64748b' }}>A construir escala...</div>
                 </div>
             ) : data && data.employees.length > 0 ? (

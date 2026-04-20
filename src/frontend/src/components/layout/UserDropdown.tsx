@@ -46,7 +46,8 @@ export function UserDropdown() {
                         transition: 'all 0.2s',
                         borderRadius: '4px'
                     }}
-                    className="hover:bg-primary-hover"
+                    onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)')}
+                    onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                 >
                     <div style={{
                         width: '36px',
@@ -139,7 +140,8 @@ export function UserDropdown() {
                                         color: item.danger ? 'var(--color-status-red)' : 'var(--color-text-main)',
                                         transition: 'all 0.1s'
                                     }}
-                                    className="hover:bg-slate-50"
+                                    onMouseOver={(e) => (e.currentTarget.style.backgroundColor = '#f8fafc')}
+                                    onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                                 >
                                     {item.icon}
                                     <span>{item.label}</span>

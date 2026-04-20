@@ -1,17 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import { Save, AlertTriangle, AlertCircle, CheckCircle } from 'lucide-react';
+import { Save, AlertTriangle, AlertCircle, CheckCircle, Settings2 } from 'lucide-react';
 
-interface Department {
-    id: number;
-    name: string;
-}
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Currency {
-    id: number;
-    code: string;
-}
-
+interface Department { id: number; name: string; }
+interface Currency { id: number; code: string; }
 interface BudgetConfig {
     departmentId: number;
     totalAmount: number;
@@ -19,33 +13,29 @@ interface BudgetConfig {
     year: number;
 }
 
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export default function FinanceBudgetConfig() {
     const [departments, setDepartments] = useState<Department[]>([]);
     const [currencies, setCurrencies] = useState<Currency[]>([]);
     const [configs, setConfigs] = useState<Record<number, BudgetConfig>>({});
-    
     const [year, setYear] = useState(new Date().getFullYear());
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+    const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+    useEffect(() => { loadBaseData(); }, []);
     useEffect(() => {
-        loadBaseData();
-    }, []);
-
-    useEffect(() => {
-        if (departments.length > 0 && currencies.length > 0) {
-            loadConfigs(year);
-        }
+        if (departments.length > 0 && currencies.length > 0) loadConfigs(year);
     }, [year, departments, currencies]);
 
     const loadBaseData = async () => {
         try {
             const [depsRes, curRes] = await Promise.all([
                 api.lookups.getDepartments(),
-                api.lookups.getCurrencies()
+                api.lookups.getCurrencies(),
             ]);
-            setDepartments(depsRes.filter(d => !d.locked)); // Use active or all depending on API, skipping inactive
+            setDepartments(depsRes.filter((d: any) => !d.locked));
             setCurrencies(curRes);
         } catch (err: any) {
             setMessage({ type: 'error', text: err.message || 'Erro ao carregar dados base.' });
@@ -56,30 +46,30 @@ export default function FinanceBudgetConfig() {
         setLoading(true);
         try {
             const data = await api.financeBudget.getConfig(targetYear);
-            const configsMap: Record<number, BudgetConfig> = {};
+            const map: Record<number, BudgetConfig> = {};
             data.forEach((item: any) => {
-                configsMap[item.departmentId] = {
+                map[item.departmentId] = {
                     departmentId: item.departmentId,
                     totalAmount: item.totalAmount,
                     currencyId: item.currencyId,
-                    year: targetYear
+                    year: targetYear,
                 };
             });
-            setConfigs(configsMap);
-            setLoading(false);
+            setConfigs(map);
         } catch (err: any) {
             setMessage({ type: 'error', text: err.message || 'Erro ao carregar configurações.' });
+        } finally {
             setLoading(false);
         }
     };
 
     const handleFormChange = (departmentId: number, field: 'totalAmount' | 'currencyId', value: any) => {
         setConfigs(prev => {
-            const existing = prev[departmentId] || { departmentId, year, totalAmount: 0, currencyId: currencies[0]?.id || 0 };
-            return {
-                ...prev,
-                [departmentId]: { ...existing, [field]: value }
+            const existing = prev[departmentId] || {
+                departmentId, year, totalAmount: 0,
+                currencyId: currencies[0]?.id || 0,
             };
+            return { ...prev, [departmentId]: { ...existing, [field]: value } };
         });
     };
 
@@ -87,12 +77,10 @@ export default function FinanceBudgetConfig() {
         setSaving(true);
         setMessage(null);
         try {
-            // Build the payload
             const payload = Object.values(configs).filter(c => c.totalAmount > 0);
-            
             await api.financeBudget.saveConfig(payload);
             setMessage({ type: 'success', text: 'Orçamentos anuais guardados com sucesso.' });
-            await loadConfigs(year); // Refresh to ensure backend normalization
+            await loadConfigs(year);
         } catch (err: any) {
             setMessage({ type: 'error', text: err.message || 'Erro ao salvar orçamentos.' });
         } finally {
@@ -100,109 +88,276 @@ export default function FinanceBudgetConfig() {
         }
     };
 
+    const configuredCount = departments.filter(d => (configs[d.id]?.totalAmount || 0) > 0).length;
+
+    // ── Styles ────────────────────────────────────────────────────────────────
+
+    const inputStyle: React.CSSProperties = {
+        width: '100%',
+        padding: '9px 12px',
+        border: '1px solid var(--color-border)',
+        borderRadius: '8px',
+        backgroundColor: 'var(--color-bg-page)',
+        color: 'var(--color-text)',
+        fontSize: '14px',
+        fontWeight: 500,
+        boxSizing: 'border-box',
+        outline: 'none',
+        transition: 'border-color 0.15s',
+    };
+
+    const selectStyle: React.CSSProperties = {
+        ...inputStyle,
+        cursor: 'pointer',
+        appearance: 'auto',
+    };
+
     return (
-        <div className="max-w-4xl mx-auto p-4 md:p-8">
-            <div className="flex justify-between items-center mb-6">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-800">Finance Budget Config</h1>
-                    <p className="text-sm text-gray-500 mt-1">
-                        Defina o orçamento anual (Committed Spend limits) aprovado para cada departamento.
-                    </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+
+            {/* ── Page Header ───────────────────────────────────────────────── */}
+            <div style={{
+                display: 'flex', justifyContent: 'space-between',
+                alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px',
+            }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+                    <div style={{
+                        width: 44, height: 44, borderRadius: '10px',
+                        backgroundColor: '#0284c71A',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: '#0284c7', flexShrink: 0,
+                    }}>
+                        <Settings2 size={22} />
+                    </div>
+                    <div>
+                        <h2 style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--color-text)', margin: 0 }}>
+                            Configuração de Orçamento
+                        </h2>
+                        <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--color-text-muted)', fontWeight: 500 }}>
+                            Defina o orçamento anual (Committed Spend limits) aprovado para cada departamento.
+                        </p>
+                    </div>
                 </div>
-                <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2 bg-white rounded-lg shadow-sm border border-gray-200 p-2">
-                        <label className="text-sm font-medium text-gray-600 ml-1">Ano Fiscal:</label>
-                        <select 
+
+                {/* Controls */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    {/* Year selector */}
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: '8px',
+                        backgroundColor: 'var(--color-bg-surface)',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: '8px', padding: '6px 12px',
+                    }}>
+                        <label style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
+                            Ano Fiscal:
+                        </label>
+                        <select
                             value={year}
-                            onChange={(e) => setYear(parseInt(e.target.value))}
-                            className="text-sm border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500 bg-gray-50 p-1"
+                            onChange={e => setYear(parseInt(e.target.value))}
+                            style={{
+                                border: 'none', background: 'transparent',
+                                fontSize: '14px', fontWeight: 700,
+                                color: 'var(--color-text)', cursor: 'pointer',
+                                outline: 'none',
+                            }}
                         >
                             {[year - 1, year, year + 1, year + 2].map(y => (
                                 <option key={y} value={y}>{y}</option>
                             ))}
                         </select>
                     </div>
+
+                    {/* Save button */}
                     <button
                         onClick={handleSave}
                         disabled={saving || loading}
-                        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition flex items-center justify-center gap-2 disabled:bg-blue-400 disabled:cursor-not-allowed shadow-sm font-medium"
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: '8px',
+                            padding: '10px 20px',
+                            backgroundColor: saving || loading ? '#93c5fd' : '#0284c7',
+                            color: '#fff',
+                            border: 'none', borderRadius: '8px',
+                            fontWeight: 700, fontSize: '14px',
+                            cursor: saving || loading ? 'not-allowed' : 'pointer',
+                            transition: 'background-color 0.2s',
+                            boxShadow: '0 1px 3px rgba(2,132,199,0.3)',
+                        }}
+                        onMouseEnter={e => { if (!saving && !loading) e.currentTarget.style.backgroundColor = '#0369a1'; }}
+                        onMouseLeave={e => { if (!saving && !loading) e.currentTarget.style.backgroundColor = '#0284c7'; }}
                     >
-                        <Save size={18} />
+                        <Save size={16} />
                         {saving ? 'A Guardar...' : 'Guardar Alterações'}
                     </button>
                 </div>
             </div>
 
+            {/* ── Feedback Bar ──────────────────────────────────────────────── */}
             {message && (
-                <div className={`p-4 rounded-lg flex items-center gap-3 mb-6 ${message.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
-                    {message.type === 'error' ? <AlertCircle size={20} /> : <CheckCircle size={20} />}
-                    <span className="font-medium">{message.text}</span>
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '14px 18px', borderRadius: '10px',
+                    border: `1px solid ${message.type === 'error' ? '#fca5a5' : '#86efac'}`,
+                    backgroundColor: message.type === 'error' ? '#fef2f2' : '#f0fdf4',
+                    color: message.type === 'error' ? '#b91c1c' : '#15803d',
+                    fontWeight: 600, fontSize: '14px',
+                }}>
+                    {message.type === 'error'
+                        ? <AlertCircle size={18} />
+                        : <CheckCircle size={18} />
+                    }
+                    {message.text}
                 </div>
             )}
 
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
+            {/* ── Progress Summary ──────────────────────────────────────────── */}
+            {!loading && departments.length > 0 && (
+                <div style={{
+                    display: 'flex', gap: '12px',
+                    padding: '16px 20px',
+                    backgroundColor: 'var(--color-bg-surface)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '10px',
+                    alignItems: 'center',
+                }}>
+                    <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>
+                            Departamentos Configurados
+                        </div>
+                        <div style={{
+                            height: '6px', backgroundColor: '#e2e8f0',
+                            borderRadius: '3px', overflow: 'hidden',
+                        }}>
+                            <div style={{
+                                height: '100%',
+                                width: `${departments.length ? (configuredCount / departments.length) * 100 : 0}%`,
+                                backgroundColor: '#0284c7',
+                                transition: 'width 0.5s ease-out',
+                                borderRadius: '3px',
+                            }} />
+                        </div>
+                    </div>
+                    <div style={{ fontWeight: 900, fontSize: '1.2rem', color: '#0284c7', whiteSpace: 'nowrap' }}>
+                        {configuredCount} / {departments.length}
+                    </div>
+                </div>
+            )}
+
+            {/* ── Table ─────────────────────────────────────────────────────── */}
+            <div style={{
+                backgroundColor: 'var(--color-bg-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: '12px',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
+                overflow: 'hidden',
+            }}>
+                <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        {/* Head */}
                         <thead>
-                            <tr className="bg-gray-50 border-b border-gray-200">
-                                <th className="p-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Departamento</th>
-                                <th className="p-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Montante Anual</th>
-                                <th className="p-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Moeda (Base)</th>
-                                <th className="p-4 text-xs font-semibold text-gray-600 uppercase tracking-wider text-right">Ação / Status</th>
+                            <tr style={{
+                                backgroundColor: 'var(--color-bg-page)',
+                                borderBottom: '2px solid var(--color-border)',
+                            }}>
+                                {['Departamento', 'Montante Anual', 'Moeda (Base)', 'Estado'].map((h, i) => (
+                                    <th key={h} style={{
+                                        padding: '14px 20px',
+                                        fontSize: '11px', fontWeight: 800,
+                                        color: 'var(--color-text-muted)',
+                                        textTransform: 'uppercase', letterSpacing: '0.06em',
+                                        textAlign: i === 3 ? 'center' : 'left',
+                                        whiteSpace: 'nowrap',
+                                    }}>
+                                        {h}
+                                    </th>
+                                ))}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-200">
+
+                        {/* Body */}
+                        <tbody>
                             {loading ? (
                                 <tr>
-                                    <td colSpan={4} className="p-8 text-center text-gray-500">A carregar...</td>
+                                    <td colSpan={4} style={{ padding: '48px', textAlign: 'center', color: 'var(--color-text-muted)', fontWeight: 600 }}>
+                                        A carregar departamentos...
+                                    </td>
                                 </tr>
                             ) : departments.length === 0 ? (
                                 <tr>
-                                    <td colSpan={4} className="p-8 text-center text-gray-500">Nenhum departamento ativo encontrado.</td>
+                                    <td colSpan={4} style={{ padding: '48px', textAlign: 'center', color: 'var(--color-text-muted)', fontWeight: 600 }}>
+                                        Nenhum departamento ativo encontrado.
+                                    </td>
                                 </tr>
                             ) : (
-                                departments.map(dept => {
+                                departments.map((dept, idx) => {
                                     const conf = configs[dept.id];
                                     const hasData = conf && conf.totalAmount > 0;
-                                    
                                     return (
-                                        <tr key={dept.id} className="hover:bg-gray-50 transition-colors">
-                                            <td className="p-4">
-                                                <div className="font-medium text-gray-800">{dept.name}</div>
-                                                <div className="text-xs text-gray-500">ID: {dept.id}</div>
+                                        <tr
+                                            key={dept.id}
+                                            style={{
+                                                borderBottom: idx < departments.length - 1
+                                                    ? '1px solid var(--color-border)'
+                                                    : 'none',
+                                                transition: 'background-color 0.15s',
+                                            }}
+                                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-page)'}
+                                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                                        >
+                                            {/* Department */}
+                                            <td style={{ padding: '16px 20px' }}>
+                                                <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--color-text)' }}>
+                                                    {dept.name}
+                                                </div>
+                                                <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                                                    ID: {dept.id}
+                                                </div>
                                             </td>
-                                            <td className="p-4 w-48">
-                                                <input 
+
+                                            {/* Amount */}
+                                            <td style={{ padding: '12px 20px', width: '220px' }}>
+                                                <input
                                                     type="number"
                                                     min="0"
                                                     step="0.01"
                                                     value={conf?.totalAmount || ''}
                                                     onChange={e => handleFormChange(dept.id, 'totalAmount', parseFloat(e.target.value) || 0)}
-                                                    placeholder="Ex: 500000"
-                                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                                                    placeholder="Ex: 500 000"
+                                                    style={inputStyle}
+                                                    onFocus={e => e.target.style.borderColor = '#0284c7'}
+                                                    onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
                                                 />
                                             </td>
-                                            <td className="p-4 w-48">
-                                                <select 
+
+                                            {/* Currency */}
+                                            <td style={{ padding: '12px 20px', width: '160px' }}>
+                                                <select
                                                     value={conf?.currencyId || (currencies[0]?.id || '')}
                                                     onChange={e => handleFormChange(dept.id, 'currencyId', parseInt(e.target.value))}
-                                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
+                                                    style={selectStyle}
+                                                    onFocus={e => e.target.style.borderColor = '#0284c7'}
+                                                    onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
                                                 >
                                                     {currencies.map(c => (
                                                         <option key={c.id} value={c.id}>{c.code}</option>
                                                     ))}
                                                 </select>
                                             </td>
-                                            <td className="p-4 text-right">
-                                                {hasData ? (
-                                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                                        Configurado
-                                                    </span>
-                                                ) : (
-                                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                                                        Não Atribuído
-                                                    </span>
-                                                )}
+
+                                            {/* Status */}
+                                            <td style={{ padding: '12px 20px', textAlign: 'center' }}>
+                                                <span style={{
+                                                    display: 'inline-flex', alignItems: 'center', gap: '5px',
+                                                    padding: '4px 12px', borderRadius: '999px',
+                                                    fontSize: '12px', fontWeight: 700,
+                                                    backgroundColor: hasData ? '#e0f2fe' : '#f1f5f9',
+                                                    color: hasData ? '#0284c7' : '#64748b',
+                                                    border: `1px solid ${hasData ? '#bae6fd' : '#e2e8f0'}`,
+                                                }}>
+                                                    {hasData
+                                                        ? <><CheckCircle size={12} /> Configurado</>
+                                                        : 'Não Atribuído'
+                                                    }
+                                                </span>
                                             </td>
                                         </tr>
                                     );
@@ -211,13 +366,19 @@ export default function FinanceBudgetConfig() {
                         </tbody>
                     </table>
                 </div>
-                
-                <div className="bg-blue-50 p-4 border-t border-blue-100 text-sm text-blue-800 flex gap-2">
-                    <AlertTriangle size={18} className="text-blue-600 flex-shrink-0" />
-                    <p>
-                        A alteração da moeda num orçamento existente recalculará os indicadores do painel de administração 
-                        somente para pedidos com a nova moeda configurada (Agrupamento por Moeda Nativa). 
-                        Garanta que a moeda selecionada reflete o acordo real de budget anual do departamento.
+
+                {/* ── Footer Notice ─────────────────────────────────────────── */}
+                <div style={{
+                    display: 'flex', gap: '12px', alignItems: 'flex-start',
+                    padding: '16px 20px',
+                    borderTop: '1px solid var(--color-border)',
+                    backgroundColor: '#eff6ff',
+                }}>
+                    <AlertTriangle size={18} style={{ color: '#0284c7', flexShrink: 0, marginTop: '1px' }} />
+                    <p style={{ margin: 0, fontSize: '13px', color: '#1e40af', lineHeight: 1.55, fontWeight: 500 }}>
+                        A alteração da moeda num orçamento existente recalculará os indicadores do painel de administração
+                        somente para pedidos com a nova moeda configurada (Agrupamento por Moeda Nativa).
+                        Garanta que a moeda selecionada reflecte o acordo real de budget anual do departamento.
                     </p>
                 </div>
             </div>

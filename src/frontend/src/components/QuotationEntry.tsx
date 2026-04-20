@@ -17,10 +17,10 @@ interface QuotationEntryProps {
     highlighted?: boolean;
 }
 
-export function QuotationEntry({ 
-    requestId, 
-    ivaRates: initialIvaRates, 
-    units: initialUnits, 
+export function QuotationEntry({
+    requestId,
+    ivaRates: initialIvaRates,
+    units: initialUnits,
     currencies: initialCurrencies,
     onComplete,
     highlighted
@@ -29,14 +29,13 @@ export function QuotationEntry({
     const [isProcessing, setIsProcessing] = useState(false);
     const [feedback, setFeedback] = useState<{ type: FeedbackType; message: string } | null>(null);
     const [duplicateWarning, setDuplicateWarning] = useState<{ isOpen: boolean; requestNumber: string; uploadCallback: () => void; uploadedBy?: string; createdAtUtc?: string } | null>(null);
-    
-    // Use props but allow local state if needed (though props are preferred)
+
     const [ivaRates, setIvaRates] = useState<IvaRate[]>(initialIvaRates || []);
     const [units, setUnits] = useState<Unit[]>(initialUnits || []);
     const [currencies, setCurrencies] = useState<any[]>(initialCurrencies || []);
-    
+
     const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-    
+
     const [draft, setDraft] = useState<QuotationDraft>({
         supplierId: null,
         supplierNameSnapshot: '',
@@ -51,7 +50,6 @@ export function QuotationEntry({
     const [ocrResult, setOcrResult] = useState<any>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Sync local lookups if props change
     useEffect(() => {
         if (initialIvaRates?.length) setIvaRates(initialIvaRates);
         if (initialUnits?.length) setUnits(initialUnits);
@@ -106,7 +104,7 @@ export function QuotationEntry({
         try {
             const uploadRes = await api.attachments.upload(requestId, [file], 'PROFORMA');
             const fileId = Array.isArray(uploadRes) ? uploadRes[0]?.id : uploadRes.id;
-            
+
             const result = await api.requests.ocrExtract(requestId, fileId);
             setOcrResult(result);
 
@@ -137,11 +135,9 @@ export function QuotationEntry({
                 items: (result.integration?.lineItemSuggestions || []).map((item: any, index: number) => {
                     const extractedUnit = item.unit || '';
                     const matchedUnitId = resolveUnitAlias(extractedUnit);
-
                     const safeQty = item.quantity || 1;
                     const safePrice = item.unitPrice || 0;
                     const grossSubtotal = Math.round(safeQty * safePrice * 100) / 100;
-
                     const ivaUncertain = (item.taxRate === undefined || item.taxRate === null);
 
                     return {
@@ -164,20 +160,17 @@ export function QuotationEntry({
                 })
             };
 
-            // Detect header IVA presence
             const ocrGrandTotal = suggestions?.grandTotal?.value || suggestions?.totalAmount?.value || 0;
             const itemSubtotalGross = initialDraft.items.reduce((sum, item) => {
                 return sum + Math.max(0, (item.quantity || 0) * (item.unitPrice || 0));
             }, 0) - (initialDraft.discountAmount || 0);
 
-            // Determine if the document header implies IVA exists
             let headerImpliesIva = false;
             if (ocrGrandTotal > 0 && itemSubtotalGross > 0) {
                 const impliedIvaRatio = (ocrGrandTotal - itemSubtotalGross) / itemSubtotalGross;
                 headerImpliesIva = impliedIvaRatio > 0.01;
             }
 
-            // Pass 2: If header shows IVA but all items have taxRate=0, flag them as uncertain
             if (headerImpliesIva) {
                 const allItemsZeroOrUncertain = initialDraft.items.every(
                     item => item.ivaUncertain || item.taxRate === 0
@@ -194,7 +187,6 @@ export function QuotationEntry({
 
             const hasUncertainItems = initialDraft.items.some(item => item.ivaUncertain);
             initialDraft.headerHasIva = headerImpliesIva && hasUncertainItems;
-
             initialDraft.totalAmount = recalculateQuotationTotal(initialDraft);
             setDraft(initialDraft);
             setStep('EDIT');
@@ -208,11 +200,7 @@ export function QuotationEntry({
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-
-        // Reset the input value so the same file can be selected again
-        if (fileInputRef.current) {
-            fileInputRef.current.value = '';
-        }
+        if (fileInputRef.current) fileInputRef.current.value = '';
 
         setIsProcessing(true);
         setFeedback(null);
@@ -236,11 +224,9 @@ export function QuotationEntry({
                 return;
             }
         } catch (err) {
-            console.error("Duplicate check failed", err);
+            console.error('Duplicate check failed', err);
         } finally {
-            if (!hasDuplicateWarning) {
-                setIsProcessing(false);
-            }
+            if (!hasDuplicateWarning) setIsProcessing(false);
         }
 
         _processUpload(file);
@@ -258,14 +244,11 @@ export function QuotationEntry({
             const ivaPercent = selectedIva ? selectedIva.ratePercent : 0;
             ivaTotal += Math.round(itemNet * (ivaPercent / 100) * 100) / 100;
         });
-
         const discount = d.discountAmount || 0;
         const taxableBase = Math.max(0, gross - discount);
         const discountRatio = gross > 0 ? (taxableBase / gross) : 1;
         const adjustedIva = Math.round(ivaTotal * discountRatio * 100) / 100;
-        const total = Math.round((taxableBase + adjustedIva) * 100) / 100;
-
-        return Math.max(0, total);
+        return Math.max(0, Math.round((taxableBase + adjustedIva) * 100) / 100);
     };
 
     const updateHeader = (field: keyof QuotationDraft, value: any) => {
@@ -281,20 +264,16 @@ export function QuotationEntry({
         setDraft(prev => {
             const items = [...prev.items];
             const item = { ...items[index], [field]: value };
-            
             const safeQty = item.quantity || 0;
             const safePrice = item.unitPrice || 0;
             const grossSubtotal = Math.round(safeQty * safePrice * 100) / 100;
             const itemDiscount = item.discountAmount || 0;
             const netSubtotal = Math.max(0, grossSubtotal - itemDiscount);
-            
             const selectedIva = ivaRates.find(r => r.id === item.ivaRateId);
             const ivaPercent = selectedIva ? selectedIva.ratePercent : 0;
             const ivaAmount = Math.round(netSubtotal * (ivaPercent / 100) * 100) / 100;
-            
             item.totalPrice = Math.round((netSubtotal + ivaAmount) * 100) / 100;
             items[index] = item;
-            
             const next = { ...prev, items };
             next.totalAmount = recalculateQuotationTotal(next);
             return next;
@@ -314,8 +293,7 @@ export function QuotationEntry({
                 itemCatalogId: null,
                 itemCatalogCode: null
             };
-            const next = { ...prev, items: [...prev.items, newItem] };
-            return next;
+            return { ...prev, items: [...prev.items, newItem] };
         });
     };
 
@@ -370,75 +348,118 @@ export function QuotationEntry({
         }
     };
 
+    // ── Shared inline style atoms ─────────────────────────────────────────────
+    const labelStyle: React.CSSProperties = {
+        display: 'block', fontSize: '10px', fontWeight: 900,
+        textTransform: 'uppercase', letterSpacing: '0.05em',
+        color: '#64748b', marginBottom: '4px',
+    };
+    const inputBase: React.CSSProperties = {
+        width: '100%', padding: '8px 12px',
+        backgroundColor: '#f8fafc', border: '2px solid #e2e8f0',
+        fontWeight: 700, fontSize: '14px', color: '#0f172a',
+        outline: 'none', transition: 'all 0.15s', boxSizing: 'border-box',
+    };
+    const inputError: React.CSSProperties = { ...inputBase, borderColor: '#ef4444', color: '#dc2626' };
+    const inlineInputStyle: React.CSSProperties = {
+        width: '100%', background: 'transparent',
+        border: 'none', borderBottom: '1px solid transparent',
+        outline: 'none', padding: '4px 0', fontWeight: 700,
+        fontSize: '13px', color: '#0f172a', transition: 'border-color 0.15s',
+        boxSizing: 'border-box',
+    };
+
     return (
-        <div className="bg-white border-2 border-slate-900 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] p-6">
+        <div style={{
+            backgroundColor: '#fff',
+            border: '2px solid #0f172a',
+            boxShadow: '4px 4px 0px 0px rgba(15,23,42,1)',
+            padding: '24px',
+        }}>
             <AnimatePresence mode="wait">
                 {step === 'UPLOAD' ? (
-                    <motion.div 
+                    <motion.div
                         key="upload"
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
-                        className="text-center py-8"
+                        style={{ textAlign: 'center', padding: '32px 0' }}
                     >
-                        <Upload className="w-12 h-12 mx-auto text-slate-400 mb-4" />
-                        <h3 className="text-xl font-black text-slate-900 mb-2 uppercase tracking-tight">
+                        <Upload style={{ width: 48, height: 48, margin: '0 auto 16px', color: '#94a3b8', display: 'block' }} />
+                        <h3 style={{ fontSize: '1.25rem', fontWeight: 900, color: '#0f172a', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '-0.02em' }}>
                             Carregar Proforma / Orçamento
                         </h3>
-                        <p className="text-slate-500 mb-8 max-w-md mx-auto">
+                        <p style={{ color: '#64748b', marginBottom: '32px', maxWidth: '420px', margin: '0 auto 32px' }}>
                             O sistema utilizará Inteligência Artificial para extrair automaticamente fornecedor, itens e valores do PDF.
                         </p>
 
-                        <div className="flex flex-col gap-4 items-center">
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center' }}>
                             <button
                                 onClick={() => fileInputRef.current?.click()}
                                 disabled={isProcessing}
-                                className="group relative px-8 py-3 bg-red-600 text-white font-black uppercase text-sm tracking-widest hover:bg-slate-900 transition-all flex items-center gap-2"
+                                style={{
+                                    padding: '12px 32px', backgroundColor: isProcessing ? '#64748b' : '#dc2626',
+                                    color: '#fff', fontWeight: 900, textTransform: 'uppercase',
+                                    fontSize: '13px', letterSpacing: '0.1em',
+                                    border: 'none', cursor: isProcessing ? 'not-allowed' : 'pointer',
+                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                    transition: 'background-color 0.2s',
+                                }}
+                                onMouseEnter={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = '#0f172a'; }}
+                                onMouseLeave={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = '#dc2626'; }}
                             >
-                                {isProcessing ? (
-                                    <RefreshCcw className="w-5 h-5 animate-spin" />
-                                ) : (
-                                    <Upload className="w-5 h-5" />
-                                )}
+                                {isProcessing
+                                    ? <RefreshCcw style={{ width: 20, height: 20, animation: 'spin 1s linear infinite' }} />
+                                    : <Upload style={{ width: 20, height: 20 }} />
+                                }
                                 {isProcessing ? 'Processando OCR...' : 'Selecionar Documento (PDF)'}
                             </button>
 
                             <button
                                 onClick={() => setStep('EDIT')}
                                 disabled={isProcessing}
-                                className="text-slate-500 font-bold hover:text-slate-900 text-sm flex items-center gap-1"
+                                style={{
+                                    color: '#64748b', fontWeight: 700, fontSize: '13px',
+                                    background: 'none', border: 'none', cursor: 'pointer',
+                                    display: 'flex', alignItems: 'center', gap: '4px',
+                                    transition: 'color 0.15s',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.color = '#0f172a'}
+                                onMouseLeave={e => e.currentTarget.style.color = '#64748b'}
                             >
-                                <Plus className="w-4 h-4" />
+                                <Plus style={{ width: 16, height: 16 }} />
                                 Introduzir Dados Manualmente
                             </button>
                         </div>
-                        
-                        <input 
-                            type="file" 
-                            ref={fileInputRef} 
-                            onChange={handleFileUpload} 
-                            accept=".pdf,image/*" 
-                            className="hidden" 
+
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={handleFileUpload}
+                            accept=".pdf,image/*"
+                            style={{ display: 'none' }}
                         />
 
                         {feedback && (
-                            <div className="mt-6">
+                            <div style={{ marginTop: '24px' }}>
                                 <Feedback type={feedback.type} message={feedback.message} />
                             </div>
                         )}
                     </motion.div>
                 ) : (
-                    <motion.div 
+                    <motion.div
                         key="edit"
                         initial={{ opacity: 0, scale: 0.98 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        className="space-y-6"
+                        style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}
                     >
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <div className="md:col-span-2">
-                                <label className="block text-xs font-black uppercase text-slate-500 mb-1">Fornecedor</label>
-                                <div className="space-y-1">
-                                    <SupplierAutocomplete 
+                        {/* Header fields */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
+                            {/* Supplier — spans 2 cols on wider screens */}
+                            <div style={{ gridColumn: 'span 2' }}>
+                                <label style={labelStyle}>Fornecedor</label>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    <SupplierAutocomplete
                                         initialName={draft.supplierNameSnapshot}
                                         onChange={(id, name) => {
                                             updateHeader('supplierId', id);
@@ -448,54 +469,57 @@ export function QuotationEntry({
                                         hasError={!!formErrors.supplierId}
                                     />
                                     {ocrResult && !draft.supplierId && draft.supplierNameSnapshot && (
-                                        <div className="flex items-center gap-1 text-[10px] text-amber-600 font-bold">
-                                            <AlertCircle className="w-3 h-3" />
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#d97706', fontWeight: 700 }}>
+                                            <AlertCircle style={{ width: 12, height: 12 }} />
                                             <span>Sugerido pelo OCR: "{draft.supplierNameSnapshot}"</span>
                                         </div>
                                     )}
                                 </div>
                             </div>
 
+                            {/* Doc Number */}
                             <div>
-                                <label className="block text-xs font-black uppercase text-slate-500 mb-1">Nº Documento</label>
-                                <div className="relative">
-                                    <Hash className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-                                    <input 
+                                <label style={labelStyle}>Nº Documento</label>
+                                <div style={{ position: 'relative' }}>
+                                    <Hash style={{ position: 'absolute', left: 10, top: 10, width: 16, height: 16, color: '#94a3b8' }} />
+                                    <input
                                         type="text"
                                         value={draft.documentNumber}
                                         onChange={e => updateHeader('documentNumber', e.target.value)}
-                                        className={`w-full pl-9 pr-4 py-2 bg-slate-50 border-2 font-bold focus:bg-white focus:outline-none transition-colors ${formErrors.documentNumber ? 'border-red-500 text-red-600' : 'border-slate-200'}`}
+                                        style={{ ...(formErrors.documentNumber ? inputError : inputBase), paddingLeft: '34px' }}
                                         placeholder="Ex: 2024/001"
                                     />
                                 </div>
                             </div>
 
+                            {/* Doc Date */}
                             <div>
-                                <label className="block text-xs font-black uppercase text-slate-500 mb-1">Data Documento</label>
-                                <div className="relative">
-                                    <Calendar className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-                                    <input 
+                                <label style={labelStyle}>Data Documento</label>
+                                <div style={{ position: 'relative' }}>
+                                    <Calendar style={{ position: 'absolute', left: 10, top: 10, width: 16, height: 16, color: '#94a3b8' }} />
+                                    <input
                                         type="date"
                                         value={draft.documentDate}
                                         onChange={e => updateHeader('documentDate', e.target.value)}
-                                        className={`w-full pl-9 pr-4 py-2 bg-slate-50 border-2 font-bold focus:bg-white focus:outline-none transition-colors ${formErrors.documentDate ? 'border-red-500 text-red-600' : 'border-slate-200'}`}
+                                        style={{ ...(formErrors.documentDate ? inputError : inputBase), paddingLeft: '34px' }}
                                     />
                                 </div>
                             </div>
 
+                            {/* Currency */}
                             <div>
-                                <label className="block text-xs font-black uppercase text-slate-500 mb-1">Moeda</label>
-                                <select 
+                                <label style={labelStyle}>Moeda</label>
+                                <select
                                     value={draft.currency}
                                     onChange={e => updateHeader('currency', e.target.value)}
-                                    className={`w-full px-4 py-2 bg-slate-50 border-2 font-bold focus:bg-white focus:outline-none transition-colors ${formErrors.currency ? 'border-red-500 text-red-600 text-sm' : 'border-slate-200'}`}
+                                    style={formErrors.currency ? inputError : inputBase}
                                 >
                                     <option value="">Selecione...</option>
                                     {currencies.map(c => <option key={c.code} value={c.code}>{c.code} - {c.name}</option>)}
                                 </select>
                                 {draft.extractedCurrency && !draft.currency && (
-                                    <div className="mt-1 flex items-center gap-1 text-[10px] text-amber-600 font-bold">
-                                        <AlertCircle className="w-3 h-3" />
+                                    <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#d97706', fontWeight: 700 }}>
+                                        <AlertCircle style={{ width: 12, height: 12 }} />
                                         <span>Sugestão OCR: {draft.extractedCurrency}</span>
                                     </div>
                                 )}
@@ -503,25 +527,39 @@ export function QuotationEntry({
                         </div>
 
                         {/* Items Table */}
-                        <div className="overflow-x-auto border-2 border-slate-200">
-                            <table className="w-full text-sm">
-                                <thead className="bg-slate-50 border-b-2 border-slate-200">
+                        <div style={{ overflowX: 'auto', border: '2px solid #e2e8f0' }}>
+                            <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+                                <thead style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
                                     <tr>
-                                        <th className="px-4 py-2 text-left font-black uppercase text-[10px] text-slate-500 w-12 text-center">#</th>
-                                        <th className="px-4 py-2 text-left font-black uppercase text-[10px] text-slate-500 MIN-W-[300PX]">Descrição do Item</th>
-                                        <th className="px-4 py-2 text-left font-black uppercase text-[10px] text-slate-500 w-24">Qtd</th>
-                                        <th className="px-4 py-2 text-left font-black uppercase text-[10px] text-slate-500 w-32">Unidade</th>
-                                        <th className="px-4 py-2 text-left font-black uppercase text-[10px] text-slate-500 w-40 text-right">Preço Unit</th>
-                                        <th className="px-4 py-2 text-left font-black uppercase text-[10px] text-slate-500 w-40">Taxa IVA</th>
-                                        <th className="px-4 py-2 text-left font-black uppercase text-[10px] text-slate-500 w-40 text-right">Total c/ IVA</th>
-                                        <th className="px-4 py-2 w-12"></th>
+                                        {[
+                                            { label: '#', w: 48, align: 'center' as const },
+                                            { label: 'Descrição do Item', w: 300, align: 'left' as const },
+                                            { label: 'Qtd', w: 80, align: 'left' as const },
+                                            { label: 'Unidade', w: 100, align: 'left' as const },
+                                            { label: 'Preço Unit', w: 120, align: 'right' as const },
+                                            { label: 'Taxa IVA', w: 130, align: 'left' as const },
+                                            { label: 'Total c/ IVA', w: 130, align: 'right' as const },
+                                            { label: '', w: 40, align: 'left' as const },
+                                        ].map(col => (
+                                            <th key={col.label} style={{
+                                                padding: '8px 16px', fontSize: '10px', fontWeight: 900,
+                                                textTransform: 'uppercase', letterSpacing: '0.05em',
+                                                color: '#64748b', width: col.w, textAlign: col.align,
+                                            }}>
+                                                {col.label}
+                                            </th>
+                                        ))}
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {draft.items.map((item, idx) => (
-                                        <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50/50">
-                                            <td className="px-4 py-3 text-center font-bold text-slate-400">{item.lineNumber}</td>
-                                            <td className="px-4 py-3" style={{ minWidth: '300px' }}>
+                                        <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}
+                                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(248,250,252,0.5)'}
+                                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                                        >
+                                            <td style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 700, color: '#94a3b8' }}>{item.lineNumber}</td>
+
+                                            <td style={{ padding: '12px 16px', minWidth: '300px' }}>
                                                 <CatalogItemAutocomplete
                                                     value={item.itemCatalogCode ? `[${item.itemCatalogCode}] ${item.description}` : item.description}
                                                     itemCatalogId={item.itemCatalogId ?? null}
@@ -532,12 +570,9 @@ export function QuotationEntry({
                                                             current.description = description;
                                                             current.itemCatalogId = catalogId;
                                                             current.itemCatalogCode = catalogCode;
-                                                            // Auto-fill unit from catalog when selecting a catalog item
                                                             if (catalogId && defaultUnitId) {
                                                                 const matchingUnit = units.find(u => u.id === defaultUnitId);
-                                                                if (matchingUnit) {
-                                                                    current.unitId = matchingUnit.id;
-                                                                }
+                                                                if (matchingUnit) current.unitId = matchingUnit.id;
                                                             }
                                                             items[idx] = current;
                                                             const next = { ...prev, items };
@@ -547,95 +582,141 @@ export function QuotationEntry({
                                                     }}
                                                     placeholder="Pesquisar catálogo ou digitar descrição..."
                                                     style={{
-                                                        border: 'none',
-                                                        borderBottom: '1px solid transparent',
-                                                        borderRadius: 0,
-                                                        padding: '4px 0',
-                                                        fontSize: '0.875rem',
-                                                        backgroundColor: 'transparent',
-                                                        fontWeight: 500
+                                                        border: 'none', borderBottom: '1px solid transparent',
+                                                        borderRadius: 0, padding: '4px 0',
+                                                        fontSize: '0.875rem', backgroundColor: 'transparent', fontWeight: 500
                                                     }}
                                                 />
                                                 {item.itemCatalogCode && (
-                                                    <div className="text-[9px] text-indigo-600 font-bold mt-0.5 flex items-center gap-1">
+                                                    <div style={{ fontSize: '9px', color: '#4f46e5', fontWeight: 700, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                         📦 {item.itemCatalogCode}
                                                     </div>
                                                 )}
                                             </td>
-                                            <td className="px-4 py-3">
-                                                <input 
+
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <input
                                                     type="number"
                                                     value={item.quantity}
                                                     onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)}
-                                                    className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-red-500 focus:outline-none py-1 font-bold text-center transition-colors"
+                                                    style={{ ...inlineInputStyle, textAlign: 'center' }}
+                                                    onMouseEnter={e => e.currentTarget.style.borderBottomColor = '#cbd5e1'}
+                                                    onMouseLeave={e => e.currentTarget.style.borderBottomColor = 'transparent'}
+                                                    onFocus={e => e.currentTarget.style.borderBottomColor = '#dc2626'}
+                                                    onBlur={e => e.currentTarget.style.borderBottomColor = 'transparent'}
                                                 />
                                             </td>
-                                            <td className="px-4 py-3">
+
+                                            <td style={{ padding: '12px 16px', position: 'relative' }}>
                                                 <select
                                                     value={item.unitId || ''}
                                                     onChange={e => updateItem(idx, 'unitId', parseInt(e.target.value) || null)}
-                                                    className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-red-500 focus:outline-none py-1 text-xs font-bold transition-colors"
+                                                    style={{ ...inlineInputStyle, fontSize: '12px' }}
+                                                    onMouseEnter={e => e.currentTarget.style.borderBottomColor = '#cbd5e1'}
+                                                    onMouseLeave={e => e.currentTarget.style.borderBottomColor = 'transparent'}
+                                                    onFocus={e => e.currentTarget.style.borderBottomColor = '#dc2626'}
+                                                    onBlur={e => e.currentTarget.style.borderBottomColor = 'transparent'}
                                                 >
                                                     <option value="">Unid...</option>
-                                                    {units.filter(u => u.isActive !== false || u.id === item.unitId).map(u => <option key={u.id} value={u.id}>{u.code}</option>)}
+                                                    {units.filter(u => u.isActive !== false || u.id === item.unitId).map(u => (
+                                                        <option key={u.id} value={u.id}>{u.code}</option>
+                                                    ))}
                                                 </select>
                                                 {item.unit && !item.unitId && (
-                                                    <div className="absolute top-full z-10 text-[9px] text-amber-600 bg-amber-50 px-1 border border-amber-200">Sug: {item.unit}</div>
+                                                    <div style={{ position: 'absolute', top: '100%', zIndex: 10, fontSize: '9px', color: '#d97706', backgroundColor: '#fffbeb', padding: '2px 4px', border: '1px solid #fcd34d' }}>
+                                                        Sug: {item.unit}
+                                                    </div>
                                                 )}
                                             </td>
-                                            <td className="px-4 py-3">
-                                                <input 
+
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <input
                                                     type="number"
                                                     value={item.unitPrice}
                                                     onChange={e => updateItem(idx, 'unitPrice', parseFloat(e.target.value) || 0)}
-                                                    className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-red-500 focus:outline-none py-1 font-bold text-right transition-colors"
+                                                    style={{ ...inlineInputStyle, textAlign: 'right' }}
+                                                    onMouseEnter={e => e.currentTarget.style.borderBottomColor = '#cbd5e1'}
+                                                    onMouseLeave={e => e.currentTarget.style.borderBottomColor = 'transparent'}
+                                                    onFocus={e => e.currentTarget.style.borderBottomColor = '#dc2626'}
+                                                    onBlur={e => e.currentTarget.style.borderBottomColor = 'transparent'}
                                                 />
                                             </td>
-                                            <td className="px-4 py-3">
-                                                <div className="flex flex-col gap-1">
+
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                                     <select
                                                         value={item.ivaRateId || ''}
                                                         onChange={e => updateItem(idx, 'ivaRateId', parseInt(e.target.value) || null)}
-                                                        className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-red-500 focus:outline-none py-1 text-xs font-bold transition-colors"
-                                                        style={item.ivaUncertain ? { borderColor: '#ef4444', borderBottomWidth: '2px', backgroundColor: 'rgba(239,68,68,0.04)' } : undefined}
+                                                        style={{
+                                                            ...inlineInputStyle, fontSize: '12px',
+                                                            ...(item.ivaUncertain ? { borderBottomColor: '#ef4444', borderBottomWidth: '2px', backgroundColor: 'rgba(239,68,68,0.04)' } : {})
+                                                        }}
                                                         title={item.ivaUncertain ? 'IVA não identificado pelo OCR. Verifique manualmente.' : undefined}
+                                                        onMouseEnter={e => { if (!item.ivaUncertain) e.currentTarget.style.borderBottomColor = '#cbd5e1'; }}
+                                                        onMouseLeave={e => { if (!item.ivaUncertain) e.currentTarget.style.borderBottomColor = 'transparent'; }}
+                                                        onFocus={e => e.currentTarget.style.borderBottomColor = '#dc2626'}
+                                                        onBlur={e => { if (!item.ivaUncertain) e.currentTarget.style.borderBottomColor = 'transparent'; }}
                                                     >
                                                         <option value="">IVA...</option>
-                                                        {ivaRates.filter(r => r.isActive).map(r => <option key={r.id} value={r.id}>{r.name} ({r.ratePercent}%)</option>)}
+                                                        {ivaRates.filter(r => r.isActive).map(r => (
+                                                            <option key={r.id} value={r.id}>{r.name} ({r.ratePercent}%)</option>
+                                                        ))}
                                                     </select>
                                                     {item.ivaUncertain && (
-                                                        <span className="text-[9px] text-red-500 font-bold flex items-center gap-1" title="O OCR não conseguiu identificar o IVA para este item.">
-                                                            <AlertCircle className="w-2.5 h-2.5 flex-shrink-0" />
+                                                        <span style={{ fontSize: '9px', color: '#ef4444', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}
+                                                            title="O OCR não conseguiu identificar o IVA para este item.">
+                                                            <AlertCircle style={{ width: 10, height: 10, flexShrink: 0 }} />
                                                             IVA não identificado
                                                         </span>
                                                     )}
                                                 </div>
                                             </td>
-                                            <td className="px-4 py-3 text-right font-black text-slate-900">
+
+                                            <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 900, color: '#0f172a' }}>
                                                 {formatCurrencyAO(item.totalPrice)} {draft.currency || 'AOA'}
                                             </td>
-                                            <td className="px-4 py-3">
-                                                <button onClick={() => removeItem(idx)} className="text-slate-300 hover:text-red-600 transition-colors">
-                                                    <Trash2 className="w-4 h-4" />
+
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <button
+                                                    onClick={() => removeItem(idx)}
+                                                    style={{ color: '#cbd5e1', background: 'none', border: 'none', cursor: 'pointer', transition: 'color 0.15s', display: 'flex' }}
+                                                    onMouseEnter={e => e.currentTarget.style.color = '#dc2626'}
+                                                    onMouseLeave={e => e.currentTarget.style.color = '#cbd5e1'}
+                                                >
+                                                    <Trash2 style={{ width: 16, height: 16 }} />
                                                 </button>
                                             </td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
-                            <button 
+                            <button
                                 onClick={addItem}
-                                className="w-full py-3 bg-slate-50 hover:bg-slate-100 text-slate-500 font-black uppercase text-[10px] tracking-tight flex items-center justify-center gap-2 transition-colors"
+                                style={{
+                                    width: '100%', padding: '12px', backgroundColor: '#f8fafc',
+                                    color: '#64748b', fontWeight: 900, textTransform: 'uppercase',
+                                    fontSize: '10px', letterSpacing: '0.03em',
+                                    border: 'none', cursor: 'pointer',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                                    transition: 'background-color 0.15s',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = '#f8fafc'}
                             >
-                                <Plus className="w-4 h-4" />
+                                <Plus style={{ width: 16, height: 16 }} />
                                 Adicionar Novo Item
                             </button>
                         </div>
 
-                        {/* IVA Uncertainty Contextual Banner */}
+                        {/* IVA Uncertainty Banner */}
                         {draft.headerHasIva && draft.items.some(i => i.ivaUncertain) && (
-                            <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-xs font-semibold">
-                                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                            <div style={{
+                                display: 'flex', alignItems: 'center', gap: '8px',
+                                padding: '12px', backgroundColor: '#fef2f2',
+                                border: '1px solid #fca5a5', borderRadius: '4px',
+                                color: '#b91c1c', fontSize: '12px', fontWeight: 600,
+                            }}>
+                                <AlertTriangle style={{ width: 16, height: 16, flexShrink: 0 }} />
                                 <span>
                                     <strong>Atenção:</strong> O documento contém IVA nos totais, mas o IVA por item não foi identificado pelo OCR.
                                     Verifique e corrija manualmente o campo IVA de cada item antes de salvar.
@@ -643,58 +724,56 @@ export function QuotationEntry({
                             </div>
                         )}
 
-                        {/* Footer Summary */}
-                        <div className="flex flex-col md:flex-row justify-between items-end gap-6 pt-6">
-                            <div className="w-full md:w-64">
-                                <label className="block text-xs font-black uppercase text-slate-500 mb-1">Desconto Comercial</label>
-                                <div className="relative">
-                                    <input 
-                                        type="number"
-                                        value={draft.discountAmount}
-                                        onChange={e => updateHeader('discountAmount', parseFloat(e.target.value) || 0)}
-                                        className="w-full px-4 py-2 bg-slate-50 border-2 border-slate-200 font-bold focus:bg-white focus:outline-none transition-colors text-right"
-                                    />
-                                </div>
+                        {/* Footer: Discount + Total */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '24px', paddingTop: '24px', flexWrap: 'wrap' }}>
+                            <div style={{ width: '220px' }}>
+                                <label style={labelStyle}>Desconto Comercial</label>
+                                <input
+                                    type="number"
+                                    value={draft.discountAmount}
+                                    onChange={e => updateHeader('discountAmount', parseFloat(e.target.value) || 0)}
+                                    style={{ ...inputBase, textAlign: 'right' }}
+                                />
                             </div>
 
-                            <div className="bg-slate-900 text-white p-6 min-w-[300px] relative overflow-hidden">
-                                <div className="absolute top-0 right-0 w-24 h-24 bg-red-600/10 rounded-full -mr-8 -mt-8" />
-                                <div className="space-y-2 relative">
-                                    <div className="flex justify-between text-slate-400 font-bold text-xs uppercase tracking-widest">
+                            {/* Total panel */}
+                            <div style={{
+                                backgroundColor: '#0f172a', color: '#fff',
+                                padding: '24px', minWidth: '300px', position: 'relative', overflow: 'hidden',
+                            }}>
+                                <div style={{ position: 'absolute', top: 0, right: 0, width: 96, height: 96, backgroundColor: 'rgba(220,38,38,0.1)', borderRadius: '50%', marginRight: '-32px', marginTop: '-32px' }} />
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', position: 'relative' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
                                         <span>Total s/ IVA</span>
                                         {(() => {
                                             const gross = draft.items.reduce((sum, item) => {
-                                                const g = Math.round(((item.quantity||0) * (item.unitPrice||0)) * 100) / 100;
+                                                const g = Math.round(((item.quantity || 0) * (item.unitPrice || 0)) * 100) / 100;
                                                 return sum + Math.max(0, g - (item.discountAmount || 0));
                                             }, 0);
-                                            const discount = draft.discountAmount || 0;
-                                            const taxableBase = Math.max(0, gross - discount);
+                                            const taxableBase = Math.max(0, gross - (draft.discountAmount || 0));
                                             return <span>{formatCurrencyAO(taxableBase)} {draft.currency || 'AOA'}</span>;
                                         })()}
                                     </div>
-                                    <div className="flex justify-between text-slate-400 font-bold text-xs uppercase tracking-widest pb-2 border-b border-white/10">
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.1em', paddingBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                                         <span>Total IVA</span>
                                         {(() => {
                                             const gross = draft.items.reduce((sum, item) => {
-                                                const g = Math.round(((item.quantity||0) * (item.unitPrice||0)) * 100) / 100;
+                                                const g = Math.round(((item.quantity || 0) * (item.unitPrice || 0)) * 100) / 100;
                                                 return sum + Math.max(0, g - (item.discountAmount || 0));
                                             }, 0);
                                             const iva = draft.items.reduce((sum, item) => {
-                                                const g = Math.round(((item.quantity||0) * (item.unitPrice||0)) * 100) / 100;
+                                                const g = Math.round(((item.quantity || 0) * (item.unitPrice || 0)) * 100) / 100;
                                                 const itemNet = Math.max(0, g - (item.discountAmount || 0));
                                                 const selectedIva = ivaRates.find(r => r.id === item.ivaRateId);
-                                                const ivaPercent = selectedIva ? selectedIva.ratePercent : 0;
-                                                return sum + Math.round(itemNet * (ivaPercent / 100) * 100) / 100;
+                                                return sum + Math.round(itemNet * ((selectedIva?.ratePercent || 0) / 100) * 100) / 100;
                                             }, 0);
-                                            const discount = draft.discountAmount || 0;
-                                            const taxableBase = Math.max(0, gross - discount);
-                                            const ratio = gross > 0 ? (taxableBase / gross) : 1;
-                                            return <span>{formatCurrencyAO(Math.round(iva * ratio * 100) / 100)} {draft.currency || 'AOA'}</span>;
+                                            const discountRatio = gross > 0 ? (Math.max(0, gross - (draft.discountAmount || 0)) / gross) : 1;
+                                            return <span>{formatCurrencyAO(Math.round(iva * discountRatio * 100) / 100)} {draft.currency || 'AOA'}</span>;
                                         })()}
                                     </div>
-                                    <div className="flex justify-between items-center pt-2">
-                                        <span className="font-black uppercase text-xs tracking-tighter">Valor Líquido</span>
-                                        <span className="text-2xl font-black text-red-500">
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px' }}>
+                                        <span style={{ fontWeight: 900, textTransform: 'uppercase', fontSize: '12px', letterSpacing: '-0.02em' }}>Valor Líquido</span>
+                                        <span style={{ fontSize: '1.5rem', fontWeight: 900, color: '#f87171' }}>
                                             {formatCurrencyAO(draft.totalAmount)} {draft.currency || 'AOA'}
                                         </span>
                                     </div>
@@ -703,37 +782,61 @@ export function QuotationEntry({
                         </div>
 
                         {/* Actions */}
-                        <div className="flex justify-between items-center pt-6 border-t-2 border-slate-900">
-                            <button 
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '24px', borderTop: '2px solid #0f172a' }}>
+                            <button
                                 onClick={onComplete}
-                                className="px-6 py-2 text-slate-500 font-black uppercase text-xs tracking-widest hover:text-slate-900 transition-colors"
+                                style={{ padding: '8px 24px', color: '#64748b', fontWeight: 900, textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.1em', background: 'none', border: 'none', cursor: 'pointer', transition: 'color 0.15s' }}
+                                onMouseEnter={e => e.currentTarget.style.color = '#0f172a'}
+                                onMouseLeave={e => e.currentTarget.style.color = '#64748b'}
                             >
                                 Cancelar
                             </button>
-                            <div className="flex gap-4">
+                            <div style={{ display: 'flex', gap: '16px' }}>
                                 {ocrResult && (
-                                    <button 
+                                    <button
                                         onClick={() => setStep('UPLOAD')}
-                                        className="px-6 py-2 bg-slate-100 text-slate-900 font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-colors flex items-center gap-2"
+                                        style={{
+                                            padding: '8px 24px', backgroundColor: '#f1f5f9',
+                                            color: '#0f172a', fontWeight: 900, textTransform: 'uppercase',
+                                            fontSize: '11px', letterSpacing: '0.1em',
+                                            border: 'none', cursor: 'pointer',
+                                            display: 'flex', alignItems: 'center', gap: '8px',
+                                            transition: 'background-color 0.15s',
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.backgroundColor = '#e2e8f0'}
+                                        onMouseLeave={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
                                     >
-                                        <RefreshCcw className="w-4 h-4" />
+                                        <RefreshCcw style={{ width: 16, height: 16 }} />
                                         Refazer OCR
                                     </button>
                                 )}
-                                <button 
+                                <button
                                     onClick={handleSave}
                                     disabled={isProcessing}
-                                    className="px-8 py-3 bg-slate-900 text-white font-black uppercase text-sm tracking-widest hover:bg-red-600 transition-all flex items-center gap-2 shadow-[4px_4px_0px_0px_rgba(239,68,68,1)]"
+                                    style={{
+                                        padding: '12px 32px', backgroundColor: '#0f172a', color: '#fff',
+                                        fontWeight: 900, textTransform: 'uppercase', fontSize: '13px',
+                                        letterSpacing: '0.1em', border: 'none',
+                                        cursor: isProcessing ? 'not-allowed' : 'pointer',
+                                        display: 'flex', alignItems: 'center', gap: '8px',
+                                        boxShadow: '4px 4px 0px 0px rgba(239,68,68,1)',
+                                        transition: 'background-color 0.15s',
+                                    }}
+                                    onMouseEnter={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = '#dc2626'; }}
+                                    onMouseLeave={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = '#0f172a'; }}
                                 >
-                                    {isProcessing ? <RefreshCcw className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
+                                    {isProcessing
+                                        ? <RefreshCcw style={{ width: 20, height: 20, animation: 'spin 1s linear infinite' }} />
+                                        : <CheckCircle2 style={{ width: 20, height: 20 }} />
+                                    }
                                     Confirmar Detalhes
                                 </button>
                             </div>
                         </div>
 
                         {feedback && feedback.type === 'error' && (
-                            <div className="flex items-center gap-2 text-red-600 justify-end font-bold text-sm">
-                                <AlertCircle className="w-4 h-4" />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#dc2626', justifyContent: 'flex-end', fontWeight: 700, fontSize: '14px' }}>
+                                <AlertCircle style={{ width: 16, height: 16 }} />
                                 <span>{feedback.message}</span>
                             </div>
                         )}
@@ -741,48 +844,45 @@ export function QuotationEntry({
                 )}
             </AnimatePresence>
 
+            {/* Duplicate Warning Modal */}
             <AnimatePresence>
                 {duplicateWarning?.isOpen && (
-                    <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', backgroundColor: 'rgba(17, 24, 39, 0.5)', backdropFilter: 'blur(4px)' }}>
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', backgroundColor: 'rgba(17,24,39,0.5)', backdropFilter: 'blur(4px)' }}>
                         <motion.div
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.95 }}
-                            style={{ backgroundColor: 'white', borderRadius: '12px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', width: '100%', maxWidth: '448px', overflow: 'hidden', position: 'relative', border: '1px solid #e5e7eb' }}
+                            style={{ backgroundColor: '#fff', borderRadius: '12px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', width: '100%', maxWidth: '448px', overflow: 'hidden', border: '1px solid #e5e7eb' }}
                         >
                             <div style={{ padding: '24px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '48px', height: '48px', margin: '0 auto 16px', backgroundColor: '#fef3c7', borderRadius: '9999px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '48px', height: '48px', margin: '0 auto 16px', backgroundColor: '#fef3c7', borderRadius: '50%' }}>
                                     <AlertTriangle size={24} color="#d97706" />
                                 </div>
                                 <h3 style={{ fontSize: '1.125rem', fontWeight: 600, textAlign: 'center', color: '#111827', marginBottom: '8px' }}>
                                     Documento Já Existente
-                               </h3>
+                                </h3>
                                 <p style={{ fontSize: '0.875rem', color: '#4b5563', textAlign: 'center', marginBottom: '16px' }}>
                                     Aviso de duplicidade: Este orçamento/proforma já foi carregado no sistema anteriormente.
                                 </p>
-                                
+
                                 <div style={{ backgroundColor: 'var(--color-bg-page)', padding: '16px', borderRadius: '8px', fontSize: '0.875rem', color: '#4b5563', marginBottom: '24px' }}>
                                     <p style={{ marginBottom: '8px' }}><span style={{ fontWeight: 600, color: '#374151' }}>Pedido Vinculado:</span> {duplicateWarning.requestNumber}</p>
                                     <p style={{ marginBottom: '8px' }}><span style={{ fontWeight: 600, color: '#374151' }}>Enviado por:</span> {duplicateWarning.uploadedBy || 'Desconhecido'}</p>
                                     <p><span style={{ fontWeight: 600, color: '#374151' }}>Enviado em:</span> {duplicateWarning.createdAtUtc ? formatDateTime(duplicateWarning.createdAtUtc) : '-'}</p>
                                 </div>
 
-                                <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+                                <div style={{ display: 'flex', gap: '12px' }}>
                                     <button
                                         type="button"
                                         onClick={() => setDuplicateWarning(null)}
-                                        style={{ flex: 1, padding: '8px 16px', fontSize: '0.875rem', fontWeight: 500, color: '#374151', backgroundColor: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer' }}
+                                        style={{ flex: 1, padding: '8px 16px', fontSize: '0.875rem', fontWeight: 500, color: '#374151', backgroundColor: '#fff', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer' }}
                                     >
                                         Cancelar Envio
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={() => {
-                                            if (duplicateWarning?.uploadCallback) {
-                                                duplicateWarning.uploadCallback();
-                                            }
-                                        }}
-                                        style={{ flex: 1, padding: '8px 16px', fontSize: '0.875rem', fontWeight: 500, color: 'white', backgroundColor: '#d97706', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
+                                        onClick={() => duplicateWarning?.uploadCallback?.()}
+                                        style={{ flex: 1, padding: '8px 16px', fontSize: '0.875rem', fontWeight: 500, color: '#fff', backgroundColor: '#d97706', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
                                     >
                                         Estou Ciente, Prosseguir
                                     </button>

@@ -745,7 +745,7 @@ export function ApprovalCenter() {
                                             <span style={{ fontWeight: 700, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)', letterSpacing: '0.1em' }}>A Carregar Detalhes...</span>
                                         </div>
                                     ) : detailData ? (
-                                        <div className="p-0">
+                                        <div style={{ padding: 0 }}>
                                             <ApprovalDetailPanel
                                                 key={detailData.id}
                                                 data={detailData}

@@ -217,7 +217,7 @@ export function HRActionModal({
                                     gap: '8px'
                                 }}
                             >
-                                {processing && <RefreshCw size={16} className="animate-spin" />}
+                                {processing && <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} />}
                                 {processing ? 'PROCESSANDO...' : 'CONFIRMAR'}
                             </button>
                         </div>

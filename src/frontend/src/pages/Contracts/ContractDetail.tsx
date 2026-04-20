@@ -9,8 +9,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModal';
+import { CurrencyInput } from '../../components/CurrencyInput';
 import { DateInput } from '../../components/DateInput';
 import { KebabMenu } from '../../components/ui/KebabMenu';
+import { ModernTooltip } from '../../components/ui/ModernTooltip';
 import { api } from '../../lib/api';
 import {
     fetchContractDetail, transitionContractStatus, createObligation, generatePaymentRequest,
@@ -337,7 +339,7 @@ export default function ContractDetailPage() {
     const allowsOverride = contract?.allowsManualDueDateOverride ?? false;
 
     // Is manual due date field required?
-    const dueDateRequired = !contract?.paymentTermTypeCode || ruleIsManual || allowsOverride;
+    const dueDateRequired = !contract?.paymentTermTypeCode || ruleIsManual;
 
     const handleConfirmModal = async () => {
         if (!modalType) return;
@@ -833,7 +835,7 @@ export default function ContractDetailPage() {
                                         </div>
                                         <div>
                                             <label style={smallLabelStyle}>Valor *</label>
-                                            <input type="number" step="0.01" style={fieldStyle} value={oblAmount} onChange={e => setOblAmount(e.target.value)} placeholder="0.00" required />
+                                            <CurrencyInput style={fieldStyle} value={oblAmount} onChange={setOblAmount} placeholder="0,00" required />
                                         </div>
 
                                         {/* Invoice date — when rule requires it */}
@@ -855,15 +857,19 @@ export default function ContractDetailPage() {
                                         {/* Due date: required when manual/no-rule, optional for auto+override */}
                                         {(ruleIsManual || !contract.paymentTermTypeCode || allowsOverride) && (
                                             <div>
-                                                <label style={smallLabelStyle}>
-                                                    Vencimento {ruleIsManual || !contract.paymentTermTypeCode ? '*' : '(ajuste manual)'}
-                                                </label>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                                                    <label style={{ ...smallLabelStyle, marginBottom: 0 }}>
+                                                        Vencimento {ruleIsManual || !contract.paymentTermTypeCode ? '*' : '(ajuste manual)'}
+                                                    </label>
+                                                    {ruleIsAutoCalc && allowsOverride && (
+                                                        <ModernTooltip content="Deixe em branco para usar o vencimento calculado automaticamente.">
+                                                            <div style={{ color: '#d97706', display: 'flex', alignItems: 'center', cursor: 'help' }}>
+                                                                <Info size={14} />
+                                                            </div>
+                                                        </ModernTooltip>
+                                                    )}
+                                                </div>
                                                 <DateInput style={fieldStyle} value={oblDueDate} onChange={setOblDueDate} />
-                                                {ruleIsAutoCalc && allowsOverride && (
-                                                    <p style={{ marginTop: '2px', fontSize: '0.65rem', color: '#d97706' }}>
-                                                        Deixe em branco para usar o vencimento calculado automaticamente.
-                                                    </p>
-                                                )}
                                             </div>
                                         )}
 
@@ -938,7 +944,7 @@ export default function ContractDetailPage() {
                                                         </td>
                                                         <td style={{ padding: '12px 14px', fontWeight: 700, fontFamily: 'var(--font-family-display)', whiteSpace: 'nowrap' }}>
                                                             {isEditing ? (
-                                                                <input type="number" step="0.01" style={{ ...smallFieldStyle, width: '110px' }} value={editOblAmount} onChange={e => setEditOblAmount(e.target.value)} required />
+                                                                <CurrencyInput style={{ ...smallFieldStyle, width: '110px' }} value={editOblAmount} onChange={setEditOblAmount} required />
                                                             ) : formatCurrency(obl.expectedAmount, obl.currencyCode || contract.currencyCode)}
                                                         </td>
                                                         <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>

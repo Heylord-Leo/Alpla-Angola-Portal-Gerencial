@@ -288,7 +288,7 @@ export default function UserManagement() {
                 onTabChange={(id) => setStatusFilter(id as any)}
                 actions={
                     <button onClick={loadData} style={{ background: 'var(--color-bg-page)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', padding: '8px 12px', borderRadius: 'var(--radius-md)' }}>
-                        <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
+                        <RefreshCw size={18} style={isLoading ? { animation: 'spin 1s linear infinite' } : undefined} />
                     </button>
                 }
             />
@@ -395,7 +395,7 @@ export default function UserManagement() {
             {isDrawerOpen && (
                 <DropdownPortal>
                     <div style={s.drawerOverlay} onClick={e => e.target === e.currentTarget && setIsDrawerOpen(false)}>
-                        <div style={s.drawer} className="animate-in slide-in-from-right duration-300">
+                        <div style={{ ...s.drawer, animation: 'slideInFromRight 0.3s ease forwards' }}>
                             <div style={s.drawerHeader}>
                                 <h2 style={{ fontSize: '1.25rem', fontWeight: 900, textTransform: 'uppercase', margin: 0, color: 'var(--color-primary)' }}>
                                     {editingUser ? 'Editar Utilizador' : 'Novo Utilizador'}

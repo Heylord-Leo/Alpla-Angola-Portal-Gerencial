@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { api } from '../../lib/api';
 import { FinanceSummaryDto } from '../../types';
 import { AlertCircle, CheckCircle, Clock, DollarSign, TrendingUp, Presentation, AlertTriangle, BookOpen, X } from 'lucide-react';
+const ContractProjectionSection = lazy(() => import('./ContractProjectionSection'));
 import { useNavigate } from 'react-router-dom';
 import { 
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, 
@@ -21,14 +22,6 @@ export default function FinanceOverview() {
     
     const [companies, setCompanies] = useState<any[]>([]);
     const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null);
-    
-    // Budget Tracking State
-    const [budgetYear, setBudgetYear] = useState<number>(new Date().getFullYear());
-    const [budgetData, setBudgetData] = useState<any>(null);
-    const [budgetLoading, setBudgetLoading] = useState(false);
-    const [selectedDeptId, setSelectedDeptId] = useState<number | null>(null);
-    const [deptDetails, setDeptDetails] = useState<any[]>([]);
-    const [deptDetailsLoading, setDeptDetailsLoading] = useState(false);
     
     const navigate = useNavigate();
 
@@ -60,32 +53,6 @@ export default function FinanceOverview() {
         });
     }, [selectedCompanyId, projectionInterval]);
 
-    // Budget Tracking Details
-    useEffect(() => {
-        setBudgetLoading(true);
-        api.financeBudget.getOverview(budgetYear).then(data => {
-            setBudgetData(data);
-            setBudgetLoading(false);
-        }).catch(err => {
-            console.error(err);
-            setBudgetLoading(false);
-        });
-    }, [budgetYear]);
-
-    useEffect(() => {
-        if (selectedDeptId) {
-            setDeptDetailsLoading(true);
-            api.financeBudget.getDepartmentDetails(selectedDeptId, budgetYear).then(data => {
-                setDeptDetails(data);
-                setDeptDetailsLoading(false);
-            }).catch(err => {
-                console.error(err);
-                setDeptDetailsLoading(false);
-            });
-        } else {
-            setDeptDetails([]);
-        }
-    }, [selectedDeptId, budgetYear]);
 
     if (loading) return <div style={{ padding: '60px', textAlign: 'center', fontWeight: 'bold' }}>Carregando Dashboard Financeiro...</div>;
     if (!summary) return <div style={{ padding: '60px', textAlign: 'center', color: 'red' }}>Erro ao carregar dados.</div>;
@@ -129,24 +96,6 @@ export default function FinanceOverview() {
         { name: '+5 Dias', items: summary.agingAnalysis.moreThanFiveDays, color: '#ef4444' }
     ] : [];
 
-    // Process Budget Data
-    const budgetGlobalKPIs = (budgetData?.departments || []).reduce((acc: any, d: any) => {
-        if (!acc[d.currencyCode]) {
-            acc[d.currencyCode] = { budget: 0, committed: 0, paid: 0 };
-        }
-        acc[d.currencyCode].budget += d.totalBudget;
-        acc[d.currencyCode].committed += d.committedSpend;
-        acc[d.currencyCode].paid += d.paidSpend;
-        return acc;
-    }, {});
-
-    const sortedDepts = [...(budgetData?.departments || [])]
-        .filter((d: any) => d.totalBudget > 0)
-        .sort((a, b) => {
-            const pctA = a.committedSpend / a.totalBudget;
-            const pctB = b.committedSpend / b.totalBudget;
-            return pctB - pctA; 
-        });
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
@@ -451,158 +400,60 @@ export default function FinanceOverview() {
 
             </div>
 
-            {/* Analytics Row 3: Budget Tracking MVP phase 1 */}
-            <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-                    <h2 style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--color-text)', margin: 0 }}>
-                        Acompanhamento Orçamental (Budget)
-                    </h2>
-                    <div style={{ display: 'flex', gap: '16px' }}>
-                        <select 
-                            value={budgetYear} 
-                            onChange={e => {
-                                setBudgetYear(Number(e.target.value));
-                                setSelectedDeptId(null);
-                            }}
-                            style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-surface)', fontWeight: 600, color: 'var(--color-text)', cursor: 'pointer' }}
-                        >
-                            {[new Date().getFullYear()-1, new Date().getFullYear(), new Date().getFullYear()+1].map(y => (
-                                <option key={y} value={y}>{y}</option>
-                            ))}
-                        </select>
-                        <button
-                            onClick={() => navigate('/finance/budget-config')}
-                            style={{ padding: '8px 16px', backgroundColor: '#0f172a', color: '#fff', borderRadius: '8px', fontWeight: 600, border: 'none', cursor: 'pointer' }}
-                        >
-                            Configurar Orçamento
-                        </button>
+            {/* Contractual Cash-Flow Projection Section */}
+            <Suspense fallback={<div style={{ padding: '32px', textAlign: 'center', color: '#64748b', fontWeight: 600 }}>Carregando projeção contratual...</div>}>
+                <ContractProjectionSection selectedCompanyId={selectedCompanyId} />
+            </Suspense>
+
+            {/* Budget Summary Strip → links to /finance/budget */}
+            <div style={{
+                backgroundColor: 'var(--color-bg-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: '12px',
+                padding: '20px 24px',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '16px',
+                flexWrap: 'wrap',
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{
+                        width: 40, height: 40, borderRadius: '8px',
+                        backgroundColor: '#7c3aed1A',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: '#7c3aed',
+                    }}>
+                        <TrendingUp size={20} />
+                    </div>
+                    <div>
+                        <div style={{ fontWeight: 800, fontSize: '15px', color: 'var(--color-text)' }}>
+                            Acompanhamento Orçamental
+                        </div>
+                        <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                            Análise de consumo vs. orçamento aprovado por departamento e centro de custo.
+                        </div>
                     </div>
                 </div>
-
-                {budgetLoading ? (
-                    <div style={{ padding: '40px', textAlign: 'center', backgroundColor: 'var(--color-bg-surface)', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
-                        <span style={{ fontWeight: 600, color: '#64748b' }}>Carregando dados de orçamento...</span>
-                    </div>
-                ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.5fr) minmax(0, 1fr)', gap: '24px' }}>
-                        
-                        {/* Macro KPI & Top 5 Departments */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                            {/* Global KPI grouped by currency */}
-                            <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-                                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '16px' }}>Síntese Global {budgetYear}</h3>
-                                {Object.keys(budgetGlobalKPIs).length === 0 ? (
-                                    <div style={{ color: '#64748b', fontSize: '14px', border: '2px dashed #cbd5e1', padding: '16px', borderRadius: '8px', textAlign: 'center' }}>Nenhum orçamento definido para este ano.</div>
-                                ) : (
-                                    Object.entries(budgetGlobalKPIs).map(([curr, data]: [string, any], idx) => {
-                                        const bal = data.budget - data.committed;
-                                        const pct = data.budget > 0 ? (data.committed / data.budget) * 100 : 0;
-                                        return (
-                                            <div key={curr} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '16px', borderTop: idx > 0 ? '1px solid #e2e8f0' : 'none', paddingTop: idx > 0 ? '16px' : '0', marginTop: idx > 0 ? '16px' : '0' }}>
-                                                <div>
-                                                    <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Orçamento ({curr})</div>
-                                                    <div style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a' }}>{formatCurrency(data.budget, curr)}</div>
-                                                </div>
-                                                <div>
-                                                    <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Consumido</div>
-                                                    <div style={{ fontSize: '18px', fontWeight: 900, color: '#b91c1c' }}>{formatCurrency(data.committed, curr)}</div>
-                                                </div>
-                                                <div>
-                                                    <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Saldo</div>
-                                                    <div style={{ fontSize: '18px', fontWeight: 900, color: bal < 0 ? '#ef4444' : '#22c55e' }}>{formatCurrency(bal, curr)}</div>
-                                                </div>
-                                                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                                                    <div style={{ height: '8px', width: '100%', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
-                                                        <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, backgroundColor: pct >= 100 ? '#ef4444' : pct > 80 ? '#f59e0b' : '#3b82f6' }}></div>
-                                                    </div>
-                                                    <div style={{ fontSize: '12px', fontWeight: 700, textAlign: 'right', marginTop: '4px', color: pct >= 100 ? '#ef4444' : '#64748b' }}>{pct.toFixed(1)}% utilizado</div>
-                                                </div>
-                                            </div>
-                                        )
-                                    })
-                                )}
-                            </div>
-
-                            {/* Top Departments at Risk */}
-                            <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-                                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '16px' }}>Top 5 Departamentos em Risco</h3>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                    {sortedDepts.length === 0 ? (
-                                        <div style={{ color: '#64748b', fontSize: '14px', border: '2px dashed #cbd5e1', padding: '16px', borderRadius: '8px', textAlign: 'center' }}>Sem orçamentos ativos ou despesas alocadas.</div>
-                                    ) : (
-                                        sortedDepts.slice(0, 5).map((d: any) => {
-                                            const pct = (d.committedSpend / d.totalBudget) * 100;
-                                            const isOver = pct >= 100;
-                                            const isWarning = pct >= 80 && !isOver;
-                                            return (
-                                                <div 
-                                                    key={d.departmentId} 
-                                                    onClick={() => setSelectedDeptId(d.departmentId)}
-                                                    style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', border: `1px solid ${selectedDeptId === d.departmentId ? 'var(--color-primary)' : '#e2e8f0'}`, borderRadius: '8px', cursor: 'pointer', backgroundColor: selectedDeptId === d.departmentId ? '#f0f9ff' : 'transparent', transition: 'all 0.2s' }}
-                                                >
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                        <span style={{ fontWeight: 800, fontSize: '14px', color: '#0f172a' }}>{d.departmentName}</span>
-                                                        <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 800, backgroundColor: isOver ? '#fef2f2' : isWarning ? '#fff7ed' : '#f0fdf4', color: isOver ? '#ef4444' : isWarning ? '#f97316' : '#22c55e', border: `1px solid ${isOver ? '#fca5a5' : isWarning ? '#fdba74' : '#86efac'}` }}>
-                                                            {isOver ? 'OVER BUDGET' : isWarning ? 'WARNING' : 'SAFE'}
-                                                        </span>
-                                                    </div>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                        <div style={{ flex: 1, height: '6px', backgroundColor: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
-                                                            <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, backgroundColor: isOver ? '#ef4444' : isWarning ? '#f59e0b' : '#3b82f6', transition: 'width 0.5s ease-out' }}></div>
-                                                        </div>
-                                                        <span style={{ fontSize: '12px', fontWeight: 800, color: isOver ? '#ef4444' : '#475569', minWidth: '45px', textAlign: 'right' }}>{pct.toFixed(1)}%</span>
-                                                    </div>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#64748b' }}>
-                                                        <span><strong>Consumido:</strong> {formatCurrency(d.committedSpend, d.currencyCode)}</span>
-                                                        <span><strong>Saldo:</strong> {formatCurrency(d.totalBudget - d.committedSpend, d.currencyCode)}</span>
-                                                    </div>
-                                                </div>
-                                            )
-                                        })
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Drill Down - Cost Centers */}
-                        <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column' }}>
-                            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '16px' }}>
-                                Centro de Custos {selectedDeptId && `- ${sortedDepts.find(d => d.departmentId === selectedDeptId)?.departmentName || ''}`}
-                            </h3>
-                            
-                            {!selectedDeptId ? (
-                                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '14px', border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '24px', textAlign: 'center' }}>
-                                    <BookOpen size={32} color="#94a3b8" style={{ marginBottom: '12px' }} />
-                                    Selecione um departamento ao lado para visualizar a distribuição de despesas comprometidas.
-                                </div>
-                            ) : deptDetailsLoading ? (
-                                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 600 }}>Carregando detalhes...</div>
-                            ) : deptDetails.length === 0 ? (
-                                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '14px', border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '24px' }}>Nenhuma despesa para este departamento no período selecionado.</div>
-                            ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}>
-                                    {deptDetails.map((cc, idx) => (
-                                        <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingBottom: '12px', borderBottom: '1px solid #e2e8f0' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
-                                                <span style={{ fontWeight: 800, fontSize: '13px', color: '#334155', maxWidth: '250px' }}>{cc.costCenterName}</span>
-                                            </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <span style={{ fontSize: '12px', color: '#64748b' }}>Comprometido</span>
-                                                <span style={{ fontWeight: 800, fontSize: '13px', color: '#b91c1c' }}>{formatCurrency(cc.committedSpend, cc.currencyCode)}</span>
-                                            </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <span style={{ fontSize: '12px', color: '#64748b' }}>Já Pago (Incluído no Comprometido)</span>
-                                                <span style={{ fontWeight: 700, fontSize: '13px', color: '#22c55e' }}>{formatCurrency(cc.paidSpend, cc.currencyCode)}</span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-
-                        </div>
-
-                    </div>
-                )}
+                <button
+                    onClick={() => navigate('/finance/budget')}
+                    style={{
+                        display: 'flex', alignItems: 'center', gap: '8px',
+                        padding: '10px 20px',
+                        backgroundColor: '#7c3aed',
+                        color: '#fff',
+                        borderRadius: '8px', fontWeight: 700,
+                        border: 'none', cursor: 'pointer',
+                        fontSize: '14px',
+                        transition: 'all 0.2s',
+                        whiteSpace: 'nowrap',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#6d28d9'}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = '#7c3aed'}
+                >
+                    Ver Orçamento →
+                </button>
             </div>
 
             {/* HELP OVERLAY (MODAL) */}

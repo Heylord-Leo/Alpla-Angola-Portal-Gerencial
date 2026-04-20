@@ -118,7 +118,7 @@ export function UserProfileDrawer({ isOpen, onClose }: UserProfileDrawerProps) {
                                         transition: 'all 0.2s',
                                         borderRadius: '2px'
                                     }}
-                                    className="hover:bg-accent-hover"
+
                                 >
                                     <X size={20} />
                                 </button>
@@ -188,7 +188,7 @@ export function UserProfileDrawer({ isOpen, onClose }: UserProfileDrawerProps) {
                                 {loading ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                         {[1, 2, 3].map(i => (
-                                            <div key={i} style={{ height: '80px', backgroundColor: 'var(--color-bg-surface)', opacity: 0.5 }} className="animate-pulse" />
+                                            <div key={i} style={{ height: '80px', backgroundColor: 'var(--color-bg-surface)', opacity: 0.5, animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }} />
                                         ))}
                                     </div>
                                 ) : error ? (
@@ -427,7 +427,8 @@ export function UserProfileDrawer({ isOpen, onClose }: UserProfileDrawerProps) {
                                                         transition: 'all 0.1s',
                                                         textAlign: 'left'
                                                     }}
-                                                    className="hover:translate-x-1"
+                                                    onMouseOver={(e) => ((e.currentTarget as HTMLElement).style.transform = 'translateX(4px)')}
+                                                    onMouseOut={(e) => ((e.currentTarget as HTMLElement).style.transform = '')}
                                                 >
                                                     <Key size={18} /> Alterar Palavra-passe
                                                 </button>
@@ -449,7 +450,8 @@ export function UserProfileDrawer({ isOpen, onClose }: UserProfileDrawerProps) {
                                                         transition: 'all 0.1s',
                                                         textDecoration: 'none'
                                                     }}
-                                                    className="hover:translate-x-1"
+                                                    onMouseOver={(e) => ((e.currentTarget as HTMLElement).style.transform = 'translateX(4px)')}
+                                                    onMouseOut={(e) => ((e.currentTarget as HTMLElement).style.transform = '')}
                                                 >
                                                     <Mail size={18} /> Contactar Suporte TI
                                                 </a>
@@ -480,7 +482,8 @@ export function UserProfileDrawer({ isOpen, onClose }: UserProfileDrawerProps) {
                                         cursor: 'pointer',
                                         boxShadow: '4px 4px 0 var(--color-accent)'
                                     }}
-                                    className="hover:bg-primary-hover active:translate-y-1 active:shadow-none"
+                                    onMouseOver={(e) => (e.currentTarget.style.opacity = '0.88')}
+                                    onMouseOut={(e) => (e.currentTarget.style.opacity = '1')}
                                 >
                                     Fechar Perfil
                                 </button>

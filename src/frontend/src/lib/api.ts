@@ -1302,6 +1302,35 @@ export const api = {
                 body: JSON.stringify({ notes })
             });
             if (!response.ok) return handleApiError(response, 'Falha ao devolver pedido.');
+        },
+        getContractProjectionSummary: async (companyId?: number, plantId?: number, departmentId?: number): Promise<any> => {
+            const params = new URLSearchParams();
+            if (companyId) params.append('companyId', companyId.toString());
+            if (plantId) params.append('plantId', plantId.toString());
+            if (departmentId) params.append('departmentId', departmentId.toString());
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/contract-projections/summary?${params.toString()}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar projeção contratual.');
+            return response.json();
+        },
+        getContractProjections: async (params?: {
+            companyId?: number; plantId?: number; departmentId?: number;
+            bucket?: string; onlyAtRisk?: boolean;
+            dateFrom?: string; dateTo?: string;
+            page?: number; pageSize?: number;
+        }): Promise<any> => {
+            const qs = new URLSearchParams();
+            if (params?.companyId) qs.append('companyId', params.companyId.toString());
+            if (params?.plantId) qs.append('plantId', params.plantId.toString());
+            if (params?.departmentId) qs.append('departmentId', params.departmentId.toString());
+            if (params?.bucket) qs.append('bucket', params.bucket);
+            if (params?.onlyAtRisk) qs.append('onlyAtRisk', 'true');
+            if (params?.dateFrom) qs.append('dateFrom', params.dateFrom);
+            if (params?.dateTo) qs.append('dateTo', params.dateTo);
+            qs.append('page', (params?.page ?? 1).toString());
+            qs.append('pageSize', (params?.pageSize ?? 20).toString());
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/contract-projections?${qs.toString()}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar itens de projeção contratual.');
+            return response.json();
         }
     },
     financeBudget: {

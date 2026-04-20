@@ -336,7 +336,7 @@ export default function HREmployeeDirectory() {
                             {loading ? (
                                 <tr>
                                     <td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>
-                                        <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 12px' }} />
+                                        <RefreshCw size={24} style={{ margin: '0 auto 12px', display: 'block', animation: 'spin 1s linear infinite' }} />
                                         A carregar diretório...
                                     </td>
                                 </tr>
@@ -457,7 +457,7 @@ export default function HREmployeeDirectory() {
                                                             disabled={saving}
                                                             style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', backgroundColor: '#0ea5e9', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}
                                                         >
-                                                            {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+                                                            {saving ? <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={14} />}
                                                             Salvar
                                                         </button>
                                                     </div>
@@ -630,7 +630,7 @@ export default function HREmployeeDirectory() {
                                     disabled={bulkSaving}
                                     style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#0284c7', color: '#fff', cursor: bulkSaving ? 'not-allowed' : 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
                                 >
-                                    {bulkSaving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
+                                    {bulkSaving ? <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={16} />}
                                     Aplicar
                                 </button>
                             )}

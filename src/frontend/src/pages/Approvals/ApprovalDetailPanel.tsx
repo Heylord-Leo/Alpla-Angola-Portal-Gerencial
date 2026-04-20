@@ -380,7 +380,7 @@ export function ApprovalDetailPanel({
         },
         { 
             label: 'Grau Necessidade', 
-            value: <span className="text-[#0a2540]">{data.needLevelName}</span> 
+            value: <span style={{ color: '#0a2540' }}>{data.needLevelName}</span> 
         }
     ];
 
@@ -512,15 +512,15 @@ export function ApprovalDetailPanel({
                 )}
 
                 {/* 2. RESUMO PARA DECISÃO (Always Open Grid Context) */}
-                <div className="mb-8">
+                <div style={{ marginBottom: '32px' }}>
                     <DecisionSummaryGrid items={summaryItems} />
                 </div>
 
                 {/* 2.5. CONTEXTO FINANCEIRO (Gráfico de Tendência) */}
-                <div className="mb-8">
+                <div style={{ marginBottom: '32px' }}>
                     <DecisionSection 
                         title="Contexto Financeiro Visual" 
-                        icon={<TrendingUp size={16} className="text-black" />}
+                        icon={<TrendingUp size={16} style={{ color: 'black' }} />}
                         isCollapsible={true}
                         defaultOpen={true}
                     >
@@ -533,7 +533,7 @@ export function ApprovalDetailPanel({
                 {/* 3. INTELIGÊNCIA PARA DECISÃO (Phase 4 - Horizontal Navigation) */}
                 <DecisionSection 
                     title="Inteligência para Decisão" 
-                    icon={<TrendingUp size={16} className="text-black" />}
+                    icon={<TrendingUp size={16} style={{ color: 'black' }} />}
                     isCollapsible={false}
                 >
                     {loadingIntelligence ? (

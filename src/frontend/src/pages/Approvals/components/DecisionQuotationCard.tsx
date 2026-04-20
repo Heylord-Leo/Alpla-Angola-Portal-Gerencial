@@ -122,10 +122,10 @@ export function DecisionQuotationCard({
                             letterSpacing: '0.05em'
                         }}>
                              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <Hash size={13} strokeWidth={3} className="text-gray-500" /> {q.documentNumber || 'S/N'}
+                                <Hash size={13} strokeWidth={3} style={{ color: '#6b7280' }} /> {q.documentNumber || 'S/N'}
                              </span>
                              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <Calendar size={13} strokeWidth={3} className="text-gray-500" /> {q.documentDate ? formatDate(q.documentDate) : '---'}
+                                <Calendar size={13} strokeWidth={3} style={{ color: '#6b7280' }} /> {q.documentDate ? formatDate(q.documentDate) : '---'}
                              </span>
                         </div>
                     </div>
@@ -177,7 +177,8 @@ export function DecisionQuotationCard({
                             color: 'var(--color-text-main)',
                             letterSpacing: '0.05em'
                         }}
-                        className="hover:bg-gray-50 hover:shadow-md"
+                        onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#f9fafb'; e.currentTarget.style.boxShadow = 'var(--shadow-md)'; }}
+                        onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
                     >
                          <CheckCircle2 size={16} strokeWidth={3} />
                          {isProcessing ? 'Selecionando...' : 'Selecionar Vencedora'}
@@ -199,7 +200,7 @@ export function DecisionQuotationCard({
                     textTransform: 'uppercase',
                     letterSpacing: '0.1em'
                 }}>
-                    <CheckCircle2 size={16} strokeWidth={3} className="text-white" /> Cotação selecionada para aprovação
+                    <CheckCircle2 size={16} strokeWidth={3} style={{ color: 'white' }} /> Cotação selecionada para aprovação
                 </div>
             )}
         </div>

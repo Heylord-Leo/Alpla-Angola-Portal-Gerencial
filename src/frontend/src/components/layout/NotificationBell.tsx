@@ -116,7 +116,8 @@ export function NotificationBell() {
                     borderRadius: '4px',
                     position: 'relative'
                 }}
-                className="hover:bg-primary-hover"
+                onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)')}
+                onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)')}
             >
                 <Bell size={20} strokeWidth={2.5} />
                 {unreadCount > 0 && (
@@ -242,7 +243,7 @@ export function NotificationBell() {
                         <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
                             {loading && notifications.length === 0 ? (
                                 <div style={{ padding: '32px', textAlign: 'center' }}>
-                                    <div className="animate-spin" style={{ margin: '0 auto 12px', width: '24px', height: '24px', border: '3px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%' }} />
+                                    <div style={{ margin: '0 auto 12px', width: '24px', height: '24px', border: '3px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
                                     <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>Sincronizando...</div>
                                 </div>
                             ) : notifications.length > 0 ? (

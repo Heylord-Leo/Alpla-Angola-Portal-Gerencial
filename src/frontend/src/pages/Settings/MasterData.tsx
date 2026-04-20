@@ -311,11 +311,11 @@ export function MasterData() {
         }
     };
 
-    if (loading && units.length === 0) return <div className="p-4">A carregar...</div>;
+    if (loading && units.length === 0) return <div style={{ padding: '16px' }}>A carregar...</div>;
 
     return (
         <PageContainer>
-            <div className="sticky top-0 z-50 mb-4 bg-white/80 backdrop-blur-sm -mx-6 px-6 pt-2" style={{ marginTop: '-1rem' }}>
+            <div style={{ position: 'sticky', top: 0, zIndex: 50, marginBottom: '16px', backgroundColor: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(8px)', marginLeft: '-24px', marginRight: '-24px', paddingLeft: '24px', paddingRight: '24px', paddingTop: '8px', marginTop: '-1rem' }}>
                 {feedback && (
                     <Feedback
                         message={feedback.message}
@@ -352,7 +352,9 @@ export function MasterData() {
                 ].map((tab) => (
                     <button
                         key={tab.id}
-                        className={activeTab === tab.id ? '' : 'hover:text-primary'}
+                        className={undefined}
+                        onMouseOver={e => { if (activeTab !== tab.id) (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-primary)'; }}
+                        onMouseOut={e => { if (activeTab !== tab.id) (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-muted)'; }}
                         style={{
                             padding: '12px 20px',
                             backgroundColor: 'transparent',

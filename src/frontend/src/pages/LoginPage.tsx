@@ -134,7 +134,7 @@ const LoginPage: React.FC = () => {
                             boxShadow: 'var(--shadow-md)'
                         }}
                     >
-                        {isLoading ? <Loader2 className="animate-spin" size={20} /> : (isRecoveryMode ? "Pedir Link de Acesso" : "Entrar no Portal")}
+                        {isLoading ? <Loader2 style={{ animation: 'spin 1s linear infinite' }} size={20} /> : (isRecoveryMode ? "Pedir Link de Acesso" : "Entrar no Portal")}
                     </button>
 
                     <button 

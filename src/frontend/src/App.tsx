@@ -52,6 +52,9 @@ const FinanceHistory = React.lazy(() =>
 const FinanceBudgetConfig = React.lazy(() =>
     import('./pages/Finance/FinanceBudgetConfig')
 );
+const FinanceBudget = React.lazy(() =>
+    import('./pages/Finance/FinanceBudget')
+);
 
 // Contracts pages
 const ContractsLandingPage = React.lazy(() =>
@@ -190,6 +193,7 @@ function AppContent() {
                     <Route path="payments" element={<Suspense fallback={<LoadingSkeleton />}><FinancePaymentsList /></Suspense>} />
                     <Route path="history" element={<Suspense fallback={<LoadingSkeleton />}><FinanceHistory /></Suspense>} />
                     <Route path="budget-config" element={<Suspense fallback={<LoadingSkeleton />}><FinanceBudgetConfig /></Suspense>} />
+                    <Route path="budget" element={<Suspense fallback={<LoadingSkeleton />}><FinanceBudget /></Suspense>} />
                 </Route>
 
                 {/* Contracts Workspace */}

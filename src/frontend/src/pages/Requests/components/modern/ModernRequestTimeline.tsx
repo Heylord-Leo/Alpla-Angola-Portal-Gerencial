@@ -50,7 +50,7 @@ export function ModernRequestTimeline({ requestId }: ModernRequestTimelineProps)
     if (loading) {
         return (
             <div style={{ padding: '32px 0', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px' }}>
-                <Loader2 size={20} className="animate-spin" style={{ color: 'var(--color-primary)' }} />
+                <Loader2 size={20} style={{ animation: 'spin 1s linear infinite', color: 'var(--color-primary)' }} />
                 <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>Carregando histórico...</span>
             </div>
         );

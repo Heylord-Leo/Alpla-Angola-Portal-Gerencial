@@ -411,6 +411,12 @@ tr:hover td {
     to { transform: rotate(360deg); }
 }
 
+@keyframes slideInFromRight {
+    from { transform: translateX(100%); opacity: 0; }
+    to   { transform: translateX(0);    opacity: 1; }
+}
+
+
 /* Section Highlighting */
 .pulse-highlight {
     animation: section-pulse 2s ease-in-out;

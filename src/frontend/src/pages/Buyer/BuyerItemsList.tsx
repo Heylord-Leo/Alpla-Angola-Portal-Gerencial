@@ -2282,7 +2282,7 @@ export function BuyerItemsList() {
 
                                                                 {!quotationDrafts[group.requestId] && isProcessingOcr[group.requestId] ? (
                                                                     <div style={{ padding: '40px', textAlign: 'center' }}>
-                                                                        <div className="animate-spin" style={{ width: '32px', height: '32px', border: '4px solid #f1f5f9', borderTopColor: 'var(--color-primary)', borderRadius: '50%', margin: '0 auto 16px' }}></div>
+                                                                        <div style={{ animation: 'spin 1s linear infinite', width: '32px', height: '32px', border: '4px solid #f1f5f9', borderTopColor: 'var(--color-primary)', borderRadius: '50%', margin: '0 auto 16px' }}></div>
                                                                         <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>Extraindo dados do documento...</span>
                                                                     </div>
                                                                 ) : quotationDrafts[group.requestId] ? (
@@ -3106,7 +3106,7 @@ export function BuyerItemsList() {
                                         color: 'var(--color-text-muted)'
                                     }}
                                 >
-                                    <X className="w-6 h-6" />
+                                    <X size={24} />
                                 </button>
 
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
@@ -3176,7 +3176,7 @@ export function BuyerItemsList() {
                                     >
                                         {isSaving ? (
                                             <>
-                                                <RefreshCcw className="w-4 h-4 animate-spin" />
+                                                <RefreshCcw size={16} style={{ animation: 'spin 1s linear infinite' }} />
                                                 SUBSTITUINDO...
                                             </>
                                         ) : (

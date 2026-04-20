@@ -328,7 +328,7 @@ export function SystemLogs() {
             <Download size={15} /> Exportar
           </button>
           <button type="button" style={{ ...s.btnSecondary }} onClick={() => fetchLogs(page)}>
-            <RefreshCw size={13} className={loading && !autoRefresh ? "animate-spin" : ""} />
+            <RefreshCw size={13} style={loading && !autoRefresh ? { animation: 'spin 1s linear infinite' } : undefined} />
           </button>
         </div>
       </form>
@@ -436,7 +436,7 @@ export function SystemLogs() {
 
               {detailLoading && (
                 <div style={{ padding: '40px 0', textAlign: 'center', color: '#9ca3af', fontSize: 13, fontWeight: 600 }}>
-                  <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 12px', display: 'block' }} />
+                  <RefreshCw size={24} style={{ margin: '0 auto 12px', display: 'block', animation: 'spin 1s linear infinite' }} />
                   Carregando detalhes...
                 </div>
               )}
