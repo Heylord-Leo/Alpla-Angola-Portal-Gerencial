@@ -854,6 +854,7 @@ public class ContractsController : BaseController
             ItemPriority = "MEDIUM",
             Description = $"Pagamento contratual - {contract.Title} - {obligation.Description}",
             Quantity = 1.0m,
+            UnitId = null,
             UnitPrice = obligation.ExpectedAmount,
             TotalAmount = obligation.ExpectedAmount,
             CurrencyId = obligation.CurrencyId ?? contract.CurrencyId,

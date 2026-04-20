@@ -2,6 +2,11 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.81.1] - 2026-04-20 - Fix: Payment Request Generation Units
+### Fixed
+- **Contract Payment Generation**: Resolved an issue where payment requests generated from contract obligations were inappropriately adopting an inactive "EA" default unit by ensuring the `UnitId` drops to `null`.
+- **Request Draft Default Unit Fallback**: Eliminated the legacy hardcoded "EA" UI fallback from `RequestsController` to allow items with undefined units to be properly surfaced without forced defaults.
+
 ## [v2.81.0] - 2026-04-19 - Feature: Contracts Management Module (First Vertical Slice)
 ### Added
 - **Contract Domain Model**: Introduced 6 new entities — `Contract` (aggregate root), `ContractType`, `ContractDocument`, `ContractHistory`, `ContractAlert`, and `ContractPaymentObligation` — forming a complete contract lifecycle domain.

@@ -699,7 +699,7 @@ public class RequestsController : BaseController
                     ItemPriority = li.ItemPriority,
                     Description = li.Description,
                     Quantity = li.Quantity,
-                    Unit = li.Unit != null ? li.Unit.Code : "EA", 
+                    Unit = li.Unit != null ? li.Unit.Code : null, 
                     UnitPrice = li.UnitPrice,
                     DiscountPercent = li.DiscountPercent,
                     DiscountAmount = li.DiscountAmount,
@@ -1123,7 +1123,7 @@ public class RequestsController : BaseController
                     ItemPriority = itemDto.ItemPriority,
                     Description = itemDto.Description,
                     Quantity = itemDto.Quantity,
-                    UnitId = unit?.Id ?? units.FirstOrDefault(u => u.Code == "EA")?.Id ?? 1, // Fallback to EA
+                    UnitId = unit?.Id,
                     UnitPrice = itemDto.UnitPrice,
                     DiscountPercent = itemDto.DiscountPercent,
                     DiscountAmount = itemDto.DiscountAmount,
