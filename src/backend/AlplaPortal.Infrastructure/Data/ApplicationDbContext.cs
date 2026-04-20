@@ -325,6 +325,8 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(c => c.ExpirationDateUtc);
 
             entity.Property(c => c.TotalContractValue).HasColumnType("decimal(18,2)");
+            entity.Property(c => c.LatePenaltyValue).HasColumnType("decimal(18,4)");
+            entity.Property(c => c.LateInterestValue).HasColumnType("decimal(18,4)");
 
             entity.HasOne(c => c.ContractType)
                 .WithMany()
@@ -360,6 +362,19 @@ public class ApplicationDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(c => c.CreatedByUserId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // Two-step approval participants (DEC-118)
+            // NoAction: SQL Server cannot have multiple cascade paths to the same table (Users).
+            // Application layer ensures FKs are cleared before any user deletion.
+            entity.HasOne(c => c.TechnicalApprover)
+                .WithMany()
+                .HasForeignKey(c => c.TechnicalApproverId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            entity.HasOne(c => c.FinalApprover)
+                .WithMany()
+                .HasForeignKey(c => c.FinalApproverId)
+                .OnDelete(DeleteBehavior.NoAction);
 
             entity.HasMany(c => c.Documents)
                 .WithOne(d => d.Contract)

@@ -4,16 +4,19 @@ using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace AlplaPortal.Infrastructure.Migrations
+namespace AlplaPortal.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260420084823_AddContractPaymentRules")]
+    partial class AddContractPaymentRules
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -385,9 +388,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                     b.Property<DateTime>("ExpirationDateUtc")
                         .HasColumnType("datetime2");
 
-                    b.Property<Guid?>("FinalApproverId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<string>("FinancialNotes")
                         .HasColumnType("nvarchar(max)");
 
@@ -458,9 +458,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                     b.Property<int?>("SupplierId")
                         .HasColumnType("int");
 
-                    b.Property<Guid?>("TechnicalApproverId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<DateTime?>("TerminatedAtUtc")
                         .HasColumnType("datetime2");
 
@@ -497,15 +494,11 @@ namespace AlplaPortal.Infrastructure.Migrations
 
                     b.HasIndex("ExpirationDateUtc");
 
-                    b.HasIndex("FinalApproverId");
-
                     b.HasIndex("PlantId");
 
                     b.HasIndex("StatusCode");
 
                     b.HasIndex("SupplierId");
-
-                    b.HasIndex("TechnicalApproverId");
 
                     b.ToTable("Contracts");
                 });
@@ -3638,11 +3631,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("AlplaPortal.Domain.Entities.User", "FinalApprover")
-                        .WithMany()
-                        .HasForeignKey("FinalApproverId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
                     b.HasOne("AlplaPortal.Domain.Entities.Plant", "Plant")
                         .WithMany()
                         .HasForeignKey("PlantId")
@@ -3652,11 +3640,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("SupplierId")
                         .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("AlplaPortal.Domain.Entities.User", "TechnicalApprover")
-                        .WithMany()
-                        .HasForeignKey("TechnicalApproverId")
-                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.Navigation("Company");
 
@@ -3668,13 +3651,9 @@ namespace AlplaPortal.Infrastructure.Migrations
 
                     b.Navigation("Department");
 
-                    b.Navigation("FinalApprover");
-
                     b.Navigation("Plant");
 
                     b.Navigation("Supplier");
-
-                    b.Navigation("TechnicalApprover");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.ContractAlert", b =>

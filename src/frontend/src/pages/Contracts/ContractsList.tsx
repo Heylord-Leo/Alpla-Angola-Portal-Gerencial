@@ -1,23 +1,48 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, ChevronLeft, ChevronRight, FileText, AlertTriangle, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, Search, ChevronLeft, ChevronRight, FileText, AlertTriangle, Clock, CheckCircle, XCircle, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchContracts, ContractListItem, ContractSummary, CONTRACT_STATUS_MAP } from '../../lib/contractsApi';
+import { Tooltip } from '../../components/ui/Tooltip';
 
-function StatusBadge({ statusCode }: { statusCode: string }) {
+function StatusBadge({ statusCode, wasReturnedFromApproval }: { statusCode: string; wasReturnedFromApproval?: boolean }) {
     const cfg = CONTRACT_STATUS_MAP[statusCode] || { label: statusCode, color: '#6b7280', bg: '#f3f4f6' };
     return (
-        <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: '4px',
-            padding: '4px 12px', borderRadius: 'var(--radius-full)',
-            fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.02em',
-            color: cfg.color, backgroundColor: cfg.bg
-        }}>
-            {statusCode === 'ACTIVE' && <CheckCircle size={12} />}
-            {statusCode === 'DRAFT' && <FileText size={12} />}
-            {statusCode === 'SUSPENDED' && <XCircle size={12} />}
-            {statusCode === 'UNDER_REVIEW' && <Clock size={12} />}
-            {cfg.label}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                padding: '4px 12px', borderRadius: 'var(--radius-full)',
+                fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.02em',
+                color: cfg.color, backgroundColor: cfg.bg
+            }}>
+                {statusCode === 'ACTIVE' && <CheckCircle size={12} />}
+                {statusCode === 'DRAFT' && <FileText size={12} />}
+                {statusCode === 'SUSPENDED' && <XCircle size={12} />}
+                {(statusCode === 'UNDER_REVIEW' || statusCode === 'UNDER_TECHNICAL_REVIEW' || statusCode === 'UNDER_FINAL_REVIEW') && <Clock size={12} />}
+                {cfg.label}
+            </span>
+            {statusCode === 'DRAFT' && wasReturnedFromApproval && (
+                <Tooltip
+                    variant="dark"
+                    side="top"
+                    content={
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>
+                            Este contrato foi enviado para aprovação mas foi devolvido por um aprovador com pedido de correção.
+                        </span>
+                    }
+                >
+                    <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                        padding: '3px 10px', borderRadius: 'var(--radius-full)',
+                        fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.02em',
+                        color: '#92400e', backgroundColor: '#fef3c7',
+                        border: '1px solid #fcd34d', cursor: 'help'
+                    }}>
+                        <RotateCcw size={11} />
+                        Devolvido p/ revisão
+                    </span>
+                </Tooltip>
+            )}
         </span>
     );
 }
@@ -132,7 +157,9 @@ export default function ContractsList() {
                 >
                     <option value="">Todos os Status</option>
                     <option value="DRAFT">Rascunho</option>
-                    <option value="UNDER_REVIEW">Em Revisão</option>
+                    <option value="UNDER_REVIEW">Em Revisão (Legacy)</option>
+                    <option value="UNDER_TECHNICAL_REVIEW">Revisão Técnica</option>
+                    <option value="UNDER_FINAL_REVIEW">Aprovação Final</option>
                     <option value="ACTIVE">Ativo</option>
                     <option value="SUSPENDED">Suspenso</option>
                     <option value="EXPIRED">Expirado</option>
@@ -186,10 +213,13 @@ export default function ContractsList() {
                                         onClick={() => navigate(`/contracts/${c.id}`)}
                                         style={{
                                             cursor: 'pointer', borderBottom: '1px solid var(--color-border)',
-                                            transition: 'background-color 0.15s'
+                                            transition: 'background-color 0.15s',
+                                            backgroundColor: (c.statusCode === 'DRAFT' && c.wasReturnedFromApproval)
+                                                ? '#fffbeb'
+                                                : 'transparent'
                                         }}
-                                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(var(--color-primary-rgb), 0.04)')}
-                                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = (c.statusCode === 'DRAFT' && c.wasReturnedFromApproval) ? '#fef3c7' : 'rgba(var(--color-primary-rgb), 0.04)')}
+                                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = (c.statusCode === 'DRAFT' && c.wasReturnedFromApproval) ? '#fffbeb' : 'transparent')}
                                     >
                                         <td style={{ padding: '12px 16px', fontWeight: 700, fontFamily: 'var(--font-family-display)', color: 'var(--color-primary)', whiteSpace: 'nowrap' }}>
                                             {c.contractNumber}
@@ -199,7 +229,7 @@ export default function ContractsList() {
                                         </td>
                                         <td style={{ padding: '12px 16px', color: 'var(--color-text-muted)' }}>{c.contractTypeName}</td>
                                         <td style={{ padding: '12px 16px' }}>{c.supplierName || c.counterpartyName || '—'}</td>
-                                        <td style={{ padding: '12px 16px' }}><StatusBadge statusCode={c.statusCode} /></td>
+                                        <td style={{ padding: '12px 16px' }}><StatusBadge statusCode={c.statusCode} wasReturnedFromApproval={c.wasReturnedFromApproval} /></td>
                                         <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>{formatDate(c.effectiveDateUtc)}</td>
                                         <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>{formatDate(c.expirationDateUtc)}</td>
                                         <td style={{ padding: '12px 16px', fontWeight: 700, fontFamily: 'var(--font-family-display)', whiteSpace: 'nowrap' }}>

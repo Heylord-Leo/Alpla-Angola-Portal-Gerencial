@@ -9,15 +9,25 @@ import { StatusBadge } from '../../components/ui/StatusBadge';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { ApprovalDetailPanel } from './ApprovalDetailPanel';
 import { DetailedHistoryPanel } from './components/DetailedHistoryPanel';
-import { AlertCircle, Building2, User, Landmark, ShieldCheck, Inbox, ChevronRight, History, Clock, TrendingUp } from 'lucide-react';
+import { AlertCircle, Building2, User, Landmark, ShieldCheck, Inbox, ChevronRight, FileText as FileContract, Info } from 'lucide-react';
 import { formatDate, formatCurrencyAO, getUrgencyStyle } from '../../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DropdownPortal } from '../../components/ui/DropdownPortal';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { StandardTable } from '../../components/ui/StandardTable';
 import { QueueSummary } from './components/QueueSummary';
+import { SearchFilterBar } from '../../components/ui/SearchFilterBar';
 import { Tooltip } from '../../components/ui/Tooltip';
+import {
+    ContractApprovalItem,
+    PendingContractApprovalsResponse,
+    fetchPendingContractApprovals,
+    contractTechnicalApprove,
+    contractTechnicalReturn,
+    contractFinalApprove,
+    contractFinalReturn
+} from '../../lib/contractsApi';
+import { ContractApprovalPanel } from './components/ContractApprovalPanel';
 
 // --- Types ---
 
@@ -50,12 +60,18 @@ export function ApprovalCenter() {
     // Queue state
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<PendingApprovalsResponseDto | null>(null);
+    const [contractApprovals, setContractApprovals] = useState<PendingContractApprovalsResponse | null>(null);
 
     // Selection state
     const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
     const [selectedApprovalStage, setSelectedApprovalStage] = useState<ApprovalStage | null>(null);
     const [isPanelOpen, setIsPanelOpen] = useState(false);
     const [selectedDetailedItem, setSelectedDetailedItem] = useState<ItemIntelligenceDto | null>(null);
+
+    // Contract selection state (DEC-118)
+    const [selectedContractId, setSelectedContractId] = useState<string | null>(null);
+    const [selectedContractStage, setSelectedContractStage] = useState<'TECHNICAL' | 'FINAL' | null>(null);
+    const [isContractPanelOpen, setIsContractPanelOpen] = useState(false);
 
     // Detail state
     const [detailLoading, setDetailLoading] = useState(false);
@@ -65,11 +81,7 @@ export function ApprovalCenter() {
     const [sortMode, setSortMode] = useState<SortMode>('default');
     const [activeFilters, setActiveFilters] = useState<string[]>([]);
 
-    const toggleFilter = (filter: string) => {
-        setActiveFilters(prev => 
-            prev.includes(filter) ? prev.filter(f => f !== filter) : [...prev, filter]
-        );
-    };
+
 
     // --- Filtered & Sorted Data ---
     const filteredAndSortedData = React.useMemo(() => {
@@ -227,8 +239,12 @@ export function ApprovalCenter() {
 
     const loadQueue = useCallback(async () => {
         try {
-            const response = await api.requests.getPendingApprovals();
-            setData(response);
+            const [requestsResponse, contractsResponse] = await Promise.all([
+                api.requests.getPendingApprovals(),
+                fetchPendingContractApprovals().catch(() => null)
+            ]);
+            setData(requestsResponse);
+            setContractApprovals(contractsResponse);
         } catch (error) {
             console.error('Failed to load pending approvals:', error);
         } finally {
@@ -290,6 +306,31 @@ export function ApprovalCenter() {
         setSelectedApprovalStage(null);
         setDetailData(null);
         setSelectedDetailedItem(null);
+        // Also close contract panel if open
+        setIsContractPanelOpen(false);
+        setSelectedContractId(null);
+        setSelectedContractStage(null);
+    };
+
+    const handleContractRowSelect = (id: string, stage: 'TECHNICAL' | 'FINAL') => {
+        // Close request panel first
+        setIsPanelOpen(false);
+        setSelectedRequestId(null);
+        setSelectedContractId(id);
+        setSelectedContractStage(stage);
+        setIsContractPanelOpen(true);
+    };
+
+    const handleCloseContractPanel = () => {
+        setIsContractPanelOpen(false);
+        setSelectedContractId(null);
+        setSelectedContractStage(null);
+    };
+
+    const handleContractActionCompleted = async (successMessage: string) => {
+        setFeedback({ type: 'success', message: successMessage });
+        handleCloseContractPanel();
+        loadQueue();
     };
 
     const handleActionCompleted = async (successMessage: string) => {
@@ -426,120 +467,55 @@ export function ApprovalCenter() {
                 </div>
             )}
 
-            {/* Page Header */}
             <PageHeader
                 title="Centro de Aprovações"
                 subtitle="Workspace centralizado para decisões e aprovações de Procurement."
-                actions={
-                    totalPending > 0 ? (
-                        <span style={{ backgroundColor: 'var(--color-primary)', color: 'white', padding: '6px 16px', fontWeight: 800, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderRadius: '4px' }}>
-                            {totalPending} PENDENTE{totalPending > 1 ? 'S' : ''}
-                        </span>
-                    ) : undefined
-                }
             />
 
             {/* Queue Summary — KPI Cards (Phase 4) */}
-            <QueueSummary areaApprovals={data?.areaApprovals || []} finalApprovals={data?.finalApprovals || []} />
+            <QueueSummary
+                areaApprovals={data?.areaApprovals || []}
+                finalApprovals={data?.finalApprovals || []}
+                pendingContracts={
+                    contractApprovals
+                        ? (contractApprovals.technicalApprovals.length + contractApprovals.finalApprovals.length)
+                        : undefined
+                }
+            />
 
-            {/* Triage Controls — Filter Hub */}
-            <div style={{
-                backgroundColor: 'var(--color-bg-surface)',
-                padding: '16px',
-                boxShadow: 'var(--shadow-brutal)',
-                border: '2px solid var(--color-primary)',
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '16px',
-                alignItems: 'center'
-            }}>
-                {/* Sort controls */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', letterSpacing: '0.05em' }}>Ordenar:</span>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                        {[
-                            { id: 'default', label: 'Urgência', icon: <Clock size={12} /> },
-                            { id: 'oldest', label: 'Mais Antigo', icon: <History size={12} /> },
-                            { id: 'value_desc', label: 'Maior Valor', icon: <TrendingUp size={12} /> }
-                        ].map(btn => (
-                            <button
-                                key={btn.id}
-                                onClick={() => setSortMode(btn.id as SortMode)}
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '6px',
-                                    padding: '4px 12px',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 700,
-                                    textTransform: 'uppercase',
-                                    border: `2px solid ${sortMode === btn.id ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                                    backgroundColor: sortMode === btn.id ? 'var(--color-primary)' : 'var(--color-bg-page)',
-                                    color: sortMode === btn.id ? 'var(--color-bg-surface)' : 'var(--color-text-main)',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.1s'
-                                }}
-                            >
-                                {btn.icon} {btn.label}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                <div style={{ width: '1px', height: '28px', backgroundColor: 'var(--color-border)' }} />
-
-                {/* Filter chips */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', letterSpacing: '0.05em' }}>Filtrar:</span>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                        {[
-                            { id: 'urgent', label: 'Urgentes' },
-                            { id: 'high_value', label: 'Alto Valor' },
-                            { id: 'has_alert', label: 'Com Alerta' },
-                            { id: 'area_only', label: 'Apenas Área' },
-                            { id: 'final_only', label: 'Apenas Final' }
-                        ].map(filter => {
-                            const active = activeFilters.includes(filter.id);
-                            return (
-                                <button
-                                    key={filter.id}
-                                    onClick={() => toggleFilter(filter.id)}
-                                    style={{
-                                        padding: '4px 12px',
-                                        fontSize: '0.75rem',
-                                        fontWeight: 700,
-                                        textTransform: 'uppercase',
-                                        border: `2px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                                        backgroundColor: active ? 'var(--color-primary)' : 'var(--color-bg-page)',
-                                        color: active ? 'var(--color-bg-surface)' : 'var(--color-text-main)',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.1s'
-                                    }}
-                                >
-                                    {filter.label}
-                                </button>
-                            );
-                        })}
-                        {activeFilters.length > 0 && (
-                            <button
-                                onClick={() => setActiveFilters([])}
-                                style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    color: 'var(--color-text-muted)',
-                                    cursor: 'pointer',
-                                    fontWeight: 700,
-                                    textTransform: 'uppercase',
-                                    fontSize: '0.75rem',
-                                    whiteSpace: 'nowrap'
-                                }}
-                            >
-                                Limpar Filtros
-                            </button>
-                        )}
-                    </div>
-                </div>
-            </div>
+            {/* Triage Controls — Finance-style tab bar */}
+            <SearchFilterBar
+                searchValue=""
+                onSearchChange={() => {}}
+                tabs={[
+                    { id: 'sort_default', label: '⏰ Urgência' },
+                    { id: 'sort_oldest',  label: '🕐 Mais Antigo' },
+                    { id: 'sort_value',   label: '📈 Maior Valor' },
+                    { id: 'filter_urgent',     label: 'Urgentes' },
+                    { id: 'filter_high_value', label: 'Alto Valor' },
+                    { id: 'filter_has_alert',  label: 'Com Alerta' },
+                    { id: 'filter_area_only',  label: 'Apenas Área' },
+                    { id: 'filter_final_only', label: 'Apenas Final' },
+                ]}
+                activeTabId={
+                    activeFilters.length === 1 ? `filter_${activeFilters[0]}`
+                    : sortMode !== 'default'   ? `sort_${sortMode === 'oldest' ? 'oldest' : 'value'}`
+                    : 'sort_default'
+                }
+                onTabChange={(id) => {
+                    if (id.startsWith('sort_')) {
+                        setActiveFilters([]);
+                        const modeMap: Record<string, SortMode> = { sort_default: 'default', sort_oldest: 'oldest', sort_value: 'value_desc' };
+                        setSortMode(modeMap[id] ?? 'default');
+                    } else {
+                        const filterId = id.replace('filter_', '');
+                        setSortMode('default');
+                        setActiveFilters(prev =>
+                            prev.includes(filterId) ? prev.filter(f => f !== filterId) : [filterId]
+                        );
+                    }
+                }}
+            />
 
             {/* DEV TOOLS — visually subordinate in dev only */}
             {import.meta.env.DEV && (
@@ -551,29 +527,108 @@ export function ApprovalCenter() {
             )}
 
             {/* QUEUE SECTIONS (Master) */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
                 {isAreaApprover && (
-                    <ApprovalQueueSection
-                        title="Aguardando minha aprovação de área"
-                        icon={<Building2 size={20} />}
-                        requests={areaApprovals}
-                        showCostCenter={true}
-                        selectedId={selectedRequestId}
-                        flashedId={flashedRequestId}
-                        onRowSelect={(id) => handleRowSelect(id, 'AREA')}
-                    />
+                    <div style={{
+                        backgroundColor: '#eff6ff',
+                        border: '1px solid #bfdbfe',
+                        borderRadius: '12px',
+                        padding: '24px',
+                    }}>
+                        <ApprovalQueueSection
+                            title="Aguardando minha aprovação de área"
+                            icon={<Building2 size={20} />}
+                            tooltip="Pedidos que aguardam a sua validação de área. Clique num cartão para abrir o painel de detalhe e escolher Aprovar ou Devolver. A aprovação de área é a primeira etapa do fluxo e confirma que o pedido está alinhado com a necessidade do departamento."
+                            requests={areaApprovals}
+                            showCostCenter={true}
+                            selectedId={selectedRequestId}
+                            flashedId={flashedRequestId}
+                            onRowSelect={(id) => handleRowSelect(id, 'AREA')}
+                        />
+                    </div>
                 )}
 
                 {isFinalApprover && (
-                    <ApprovalQueueSection
-                        title="Aguardando minha aprovação final"
-                        icon={<ShieldCheck size={20} />}
-                        requests={finalApprovals}
-                        selectedId={selectedRequestId}
-                        flashedId={flashedRequestId}
-                        onRowSelect={(id) => handleRowSelect(id, 'FINAL')}
-                    />
+                    <div style={{
+                        backgroundColor: '#f0fdf4',
+                        border: '1px solid #bbf7d0',
+                        borderRadius: '12px',
+                        padding: '24px',
+                    }}>
+                        <ApprovalQueueSection
+                            title="Aguardando minha aprovação final"
+                            icon={<ShieldCheck size={20} />}
+                            tooltip="Pedidos que já passaram pela aprovação de área e aguardam a sua decisão final. Esta é a última etapa antes do pedido ser encaminhado para Procurement. Clique num cartão para analisar os detalhes e aprovar ou devolver para revisão."
+                            requests={finalApprovals}
+                            selectedId={selectedRequestId}
+                            flashedId={flashedRequestId}
+                            onRowSelect={(id) => handleRowSelect(id, 'FINAL')}
+                        />
+                    </div>
                 )}
+
+                {/* ── Contracts Section (DEC-118) ── */}
+                {(isAreaApprover || isFinalApprover) && contractApprovals &&
+                    (contractApprovals.technicalApprovals.length > 0 || contractApprovals.finalApprovals.length > 0) && (
+                        <div style={{
+                            backgroundColor: '#faf5ff',
+                            border: '1px solid #ddd6fe',
+                            borderRadius: '12px',
+                            padding: '24px',
+                        }}>
+                            <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                {/* Section header — same pattern as request sections */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderLeft: '4px solid #7c3aed', paddingLeft: '16px' }}>
+                                    <span style={{ color: '#7c3aed' }}><FileContract size={20} /></span>
+                                    <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-main)', letterSpacing: '-0.02em' }}>
+                                        Contratos Pendentes
+                                    </h2>
+                                    <Tooltip
+                                        variant="light"
+                                        side="bottom"
+                                        align="start"
+                                        content={
+                                            <div style={{ fontSize: '0.82rem', lineHeight: 1.6 }}>
+                                                <strong style={{ display: 'block', marginBottom: 6, color: '#7c3aed' }}>Aprovação de Contratos</strong>
+                                                Contratos que aguardam a sua validação no fluxo de dois passos:
+                                                <ul style={{ margin: '8px 0 0', paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                    <li><strong>Revisão Técnica</strong> — Validar conceção, cláusulas e conformidade do contrato.</li>
+                                                    <li><strong>Aprovação Final</strong> — Autorizar a entrada em vigor do contrato na empresa.</li>
+                                                </ul>
+                                                <span style={{ display: 'block', marginTop: 8, color: '#64748b', fontStyle: 'italic' }}>Clique num cartão para abrir o painel de decisão.</span>
+                                            </div>
+                                        }
+                                    >
+                                        <Info size={16} style={{ color: '#7c3aed', cursor: 'help', flexShrink: 0 }} />
+                                    </Tooltip>
+                                    <span style={{ marginLeft: 'auto', backgroundColor: '#7c3aed', color: 'white', padding: '2px 10px', fontWeight: 800, fontSize: '0.75rem' }}>
+                                        {contractApprovals.technicalApprovals.length + contractApprovals.finalApprovals.length}
+                                    </span>
+                                </div>
+
+                                {contractApprovals.technicalApprovals.length > 0 && (
+                                    <ContractQueueTable
+                                        title="Revisão Técnica"
+                                        stageColor="#0369a1"
+                                        contracts={contractApprovals.technicalApprovals}
+                                        selectedId={selectedContractId}
+                                        onRowSelect={(id) => handleContractRowSelect(id, 'TECHNICAL')}
+                                    />
+                                )}
+
+                                {contractApprovals.finalApprovals.length > 0 && (
+                                    <ContractQueueTable
+                                        title="Aprovação Final"
+                                        stageColor="#7c3aed"
+                                        contracts={contractApprovals.finalApprovals}
+                                        selectedId={selectedContractId}
+                                        onRowSelect={(id) => handleContractRowSelect(id, 'FINAL')}
+                                    />
+                                )}
+                            </section>
+                        </div>
+                    )
+                }
             </div>
 
             {/* No permissions message */}
@@ -746,17 +801,181 @@ export function ApprovalCenter() {
                     </DropdownPortal>
                 )}
             </AnimatePresence>
+
+            {/* ============================== */}
+            {/* CONTRACT PANEL (DEC-118)       */}
+            {/* ============================== */}
+            <AnimatePresence>
+                {isContractPanelOpen && selectedContractId && selectedContractStage && (() => {
+                    const allContracts = [
+                        ...(contractApprovals?.technicalApprovals ?? []),
+                        ...(contractApprovals?.finalApprovals ?? [])
+                    ];
+                    const contract = allContracts.find(c => c.id === selectedContractId);
+                    if (!contract) return null;
+                    return (
+                        <DropdownPortal>
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={handleCloseContractPanel}
+                                style={{
+                                    position: 'fixed', inset: 0,
+                                    background: 'rgba(0, 0, 0, 0.4)',
+                                    backdropFilter: 'blur(4px)',
+                                    zIndex: 1000, cursor: 'pointer'
+                                }}
+                            />
+                            <motion.div
+                                initial={{ x: '100%' }}
+                                animate={{ x: 0 }}
+                                exit={{ x: '100%' }}
+                                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                                style={{
+                                    position: 'fixed', top: 0, right: 0, bottom: 0,
+                                    width: '100%', maxWidth: '100%',
+                                    ...(window.innerWidth > 768 ? { width: '560px', maxWidth: '90vw' } : {}),
+                                    backgroundColor: 'white',
+                                    borderLeft: `6px solid ${selectedContractStage === 'TECHNICAL' ? '#0369a1' : '#7c3aed'}`,
+                                    boxShadow: '-8px 0 32px rgba(0,0,0,0.2)',
+                                    zIndex: Z_INDEX.DRAWER as any,
+                                    display: 'flex', flexDirection: 'column'
+                                }}
+                            >
+                                <ContractApprovalPanel
+                                    contract={contract}
+                                    stage={selectedContractStage}
+                                    onApprove={async (comment) => {
+                                        if (selectedContractStage === 'TECHNICAL') {
+                                            await contractTechnicalApprove(contract.id, comment);
+                                        } else {
+                                            await contractFinalApprove(contract.id, comment);
+                                        }
+                                        await handleContractActionCompleted(
+                                            selectedContractStage === 'TECHNICAL'
+                                                ? `Aprovação técnica do contrato ${contract.contractNumber} concluída.`
+                                                : `Contrato ${contract.contractNumber} aprovado e ativado com sucesso.`
+                                        );
+                                    }}
+                                    onReturn={async (comment) => {
+                                        if (selectedContractStage === 'TECHNICAL') {
+                                            await contractTechnicalReturn(contract.id, comment);
+                                        } else {
+                                            await contractFinalReturn(contract.id, comment);
+                                        }
+                                        await handleContractActionCompleted(
+                                            `Contrato ${contract.contractNumber} devolvido ao rascunho.`
+                                        );
+                                    }}
+                                    onClose={handleCloseContractPanel}
+                                />
+                            </motion.div>
+                        </DropdownPortal>
+                    );
+                })()}
+            </AnimatePresence>
         </PageContainer>
     );
 }
 
 // ====================================
-// QUEUE SECTION SUB-COMPONENT
+// CONTRACT QUEUE CARDS (DEC-118)
 // ====================================
+
+interface ContractQueueTableProps {
+    title: string;
+    stageColor: string;
+    contracts: ContractApprovalItem[];
+    selectedId: string | null;
+    onRowSelect: (id: string) => void;
+}
+
+function ContractQueueTable({ title, stageColor, contracts, selectedId, onRowSelect }: ContractQueueTableProps) {
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {/* Sub-group label */}
+            <div style={{
+                fontSize: 10, fontWeight: 800, textTransform: 'uppercase',
+                letterSpacing: '0.08em', color: stageColor,
+                paddingLeft: 4, marginBottom: 2,
+                display: 'flex', alignItems: 'center', gap: 6
+            }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: stageColor, display: 'inline-block', flexShrink: 0 }} />
+                {title}
+            </div>
+
+            {contracts.map((c, i) => {
+                const isSelected = selectedId === c.id;
+                const counterparty = c.supplierName ?? c.counterpartyName ?? '—';
+                return (
+                    <motion.div
+                        key={c.id}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.04, duration: 0.2 }}
+                        onClick={() => onRowSelect(c.id)}
+                        style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 1fr auto',
+                            gap: '12px',
+                            alignItems: 'center',
+                            padding: '14px 18px',
+                            borderRadius: 'var(--radius-lg, 8px)',
+                            backgroundColor: isSelected ? `${stageColor}10` : 'var(--color-bg-surface)',
+                            border: `1px solid ${isSelected ? stageColor : 'var(--color-border)'}`,
+                            borderLeft: `5px solid ${stageColor}`,
+                            cursor: 'pointer',
+                            boxShadow: isSelected ? `0 0 0 1px ${stageColor}40, var(--shadow-sm)` : 'var(--shadow-sm)',
+                            transition: 'all 0.15s ease',
+                            userSelect: 'none',
+                        }}
+                        whileHover={{ y: -1, boxShadow: `0 4px 12px ${stageColor}25, var(--shadow-sm)` } as any}
+                    >
+                        {/* Left: contract ref + title */}
+                        <div style={{ minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                <span style={{ fontWeight: 800, fontSize: '0.9rem', color: stageColor }}>{c.contractNumber}</span>
+                                <span style={{
+                                    fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase',
+                                    padding: '1px 7px', borderRadius: 4,
+                                    background: `${stageColor}18`, color: stageColor,
+                                    letterSpacing: '0.04em', whiteSpace: 'nowrap'
+                                }}>{title}</span>
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 280 }}>
+                                {c.title}
+                            </div>
+                        </div>
+
+                        {/* Mid: counterparty + dept */}
+                        <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {counterparty}
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
+                                {c.departmentName}{c.companyName ? ` · ${c.companyName}` : ''}
+                            </div>
+                        </div>
+
+                        {/* Right: value */}
+                        <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>{c.currencyCode || 'AOA'}</div>
+                            <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--color-text-main)' }}>
+                                {c.totalContractValue != null ? formatCurrencyAO(c.totalContractValue, c.currencyCode) : '—'}
+                            </div>
+                        </div>
+                    </motion.div>
+                );
+            })}
+        </div>
+    );
+}
 
 interface ApprovalQueueSectionProps {
     title: string;
     icon: React.ReactNode;
+    tooltip?: string;
     requests: RequestListItemDto[];
     showCostCenter?: boolean;
     selectedId: string | null;
@@ -764,15 +983,22 @@ interface ApprovalQueueSectionProps {
     onRowSelect: (id: string) => void;
 }
 
-function ApprovalQueueSection({ title, icon, requests, showCostCenter, selectedId, flashedId, onRowSelect }: ApprovalQueueSectionProps) {
+function ApprovalQueueSection({ title, icon, tooltip, requests, showCostCenter, selectedId, flashedId, onRowSelect }: ApprovalQueueSectionProps) {
     if (requests.length === 0) {
         return (
             <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderLeft: '4px solid var(--color-border)', paddingLeft: '16px' }}>
                     <span style={{ color: 'var(--color-text-muted)' }}>{icon}</span>
                     <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', letterSpacing: '-0.02em' }}>{title}</h2>
+                    {tooltip && (
+                        <Tooltip variant="light" side="bottom" align="start" content={
+                            <span style={{ fontSize: '0.82rem', lineHeight: 1.6 }}>{tooltip}</span>
+                        }>
+                            <Info size={15} style={{ color: 'var(--color-text-muted)', cursor: 'help', flexShrink: 0 }} />
+                        </Tooltip>
+                    )}
                 </div>
-                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--color-text-muted)', border: '2px dashed var(--color-border)', backgroundColor: 'var(--color-bg-surface)' }}>
+                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--color-text-muted)', border: '2px dashed var(--color-border)', backgroundColor: 'var(--color-bg-surface)', borderRadius: 'var(--radius-lg, 8px)' }}>
                     <p style={{ fontWeight: 700, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Nenhum pedido pendente nesta fila.</p>
                 </div>
             </section>
@@ -780,111 +1006,105 @@ function ApprovalQueueSection({ title, icon, requests, showCostCenter, selectedI
     }
 
     return (
-        <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {/* Section title aligned with Pedidos pattern */}
+        <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {/* Section header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderLeft: '4px solid var(--color-primary)', paddingLeft: '16px' }}>
                 <span style={{ color: 'var(--color-primary)' }}>{icon}</span>
                 <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-main)', letterSpacing: '-0.02em' }}>{title}</h2>
-                <span style={{
-                    marginLeft: 'auto',
-                    backgroundColor: 'var(--color-primary)',
-                    color: 'white',
-                    padding: '2px 10px',
-                    fontWeight: 800,
-                    fontSize: '0.75rem'
-                }}>
+                {tooltip && (
+                    <Tooltip variant="light" side="bottom" align="start" content={
+                        <span style={{ fontSize: '0.82rem', lineHeight: 1.6 }}>{tooltip}</span>
+                    }>
+                        <Info size={15} style={{ color: 'var(--color-primary)', cursor: 'help', flexShrink: 0, opacity: 0.7 }} />
+                    </Tooltip>
+                )}
+                <span style={{ marginLeft: 'auto', backgroundColor: 'var(--color-primary)', color: 'white', padding: '2px 10px', fontWeight: 800, fontSize: '0.75rem' }}>
                     {requests.length}
                 </span>
             </div>
 
-            {/* Table — matches Pedidos border/shadow pattern */}
-            <StandardTable isEmpty={requests.length === 0}>
-                <thead>
-                        <tr>
-                            <th>Pedido</th>
-                            <th>Solicitante / Depto</th>
-                            {showCostCenter && <th>Centro de Custo</th>}
-                            <th style={{ textAlign: 'center' }}>Tipo</th>
-                            <th style={{ textAlign: 'right' }}>Valor</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {requests.map((req) => {
-                            const isSelected = selectedId === req.id;
+            {/* Card list */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {requests.map((req, i) => {
+                    const isSelected = selectedId === req.id;
+                    const isFlashed = flashedId === req.id;
+                    const hasQuotationAlert = req.requestTypeCode === 'QUOTATION' && !req.selectedQuotationId;
 
-                            return (
-                                <tr
-                                    key={req.id}
-                                    className={`hoverable-row ${flashedId === req.id ? 'flash-red-row' : ''}`}
-                                    onClick={() => onRowSelect(req.id)}
-                                    style={{
-                                        cursor: 'pointer',
-                                        borderLeft: isSelected ? '6px solid var(--color-primary)' : 'none',
-                                        backgroundColor: isSelected ? 'rgba(var(--color-primary-rgb), 0.03)' : undefined
-                                    }}
-                                >
-                                    <td style={{ fontWeight: 800, color: 'var(--color-primary)' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                            {isSelected && <ChevronRight size={16} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />}
-                                            <div>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                    {req.requestNumber}
-                                                    {req.requestTypeCode === 'QUOTATION' && !req.selectedQuotationId && (
-                                                        <Tooltip
-                                                            variant="dark"
-                                                            content={
-                                                                <span style={{ fontWeight: 700, fontSize: '0.75rem' }}>Requer atenção na análise</span>
-                                                            }
-                                                        >
-                                                            <AlertCircle size={14} strokeWidth={2.5} style={{ color: '#f43f5e', flexShrink: 0, cursor: 'default' }} />
-                                                        </Tooltip>
-                                                    )}
-                                                </div>
-                                                <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 600, marginTop: '2px' }}>{formatDate(req.createdAtUtc)}</div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                            <span style={{ fontWeight: 700, color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <User size={13} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />
-                                                {req.requesterName}
-                                            </span>
-                                            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>{req.departmentName || '---'}</span>
-                                        </div>
-                                    </td>
-                                    {showCostCenter && (
-                                        <td>
-                                            {req.costCenterCode ? (
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                    <Landmark size={13} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
-                                                    <span style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--color-text-main)' }}>{req.costCenterCode}</span>
-                                                </div>
-                                            ) : (
-                                                <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem', fontStyle: 'italic' }}>---</span>
-                                            )}
-                                        </td>
+                    return (
+                        <motion.div
+                            key={req.id}
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.04, duration: 0.2 }}
+                            onClick={() => onRowSelect(req.id)}
+                            className={isFlashed ? 'flash-red-row' : ''}
+                            style={{
+                                display: 'grid',
+                                gridTemplateColumns: '200px 1fr auto',
+                                gap: '16px',
+                                alignItems: 'center',
+                                padding: '14px 20px',
+                                borderRadius: 'var(--radius-lg, 8px)',
+                                backgroundColor: isSelected ? 'rgba(var(--color-primary-rgb), 0.04)' : 'var(--color-bg-surface)',
+                                border: `1px solid ${isSelected ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                                borderLeft: `5px solid ${isSelected ? 'var(--color-primary)' : 'transparent'}`,
+                                cursor: 'pointer',
+                                boxShadow: isSelected ? '0 0 0 1px var(--color-primary), var(--shadow-sm)' : 'var(--shadow-sm)',
+                                transition: 'all 0.15s ease',
+                                userSelect: 'none',
+                                position: 'relative',
+                            }}
+                            whileHover={{ y: -1, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' } as any}
+                        >
+                            {/* Left: request number + date */}
+                            <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    {isSelected && <ChevronRight size={14} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />}
+                                    <span style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--color-primary)' }}>{req.requestNumber}</span>
+                                    {hasQuotationAlert && (
+                                        <Tooltip variant="dark" content={<span style={{ fontWeight: 700, fontSize: '0.75rem' }}>Requer atenção na análise</span>}>
+                                            <AlertCircle size={13} strokeWidth={2.5} style={{ color: '#f43f5e', flexShrink: 0 }} />
+                                        </Tooltip>
                                     )}
-                                    <td style={{ textAlign: 'center' }}>
-                                        <span style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', padding: '2px 8px', display: 'inline-block' }}>
-                                            {req.requestTypeCode}
-                                        </span>
-                                    </td>
-                                    <td style={{ textAlign: 'right', fontWeight: 800 }}>
-                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-                                            <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>{req.currencyCode || 'AOA'}</span>
-                                            <span>{formatCurrencyAO(req.estimatedTotalAmount)}</span>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <StatusBadge code={req.statusCode} name={req.statusName} color={req.statusBadgeColor} />
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-            </StandardTable>
+                                </div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 600, marginTop: 3 }}>{formatDate(req.createdAtUtc)}</div>
+                                {/* Type badge */}
+                                <span style={{ display: 'inline-block', marginTop: 6, fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '2px 8px', borderRadius: 4, border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>
+                                    {req.requestTypeCode}
+                                </span>
+                            </div>
+
+                            {/* Mid: requester + dept + cost center */}
+                            <div style={{ minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: '0.88rem', color: 'var(--color-text-main)' }}>
+                                    <User size={13} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{req.requesterName}</span>
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', marginTop: 2 }}>
+                                    {req.departmentName || '---'}
+                                </div>
+                                {showCostCenter && req.costCenterCode && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4 }}>
+                                        <Landmark size={11} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
+                                        <span style={{ fontWeight: 700, fontSize: '0.75rem', color: 'var(--color-text-main)' }}>{req.costCenterCode}</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Right: value + status */}
+                            <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+                                <div>
+                                    <div style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>{req.currencyCode || 'AOA'}</div>
+                                    <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>
+                                        {formatCurrencyAO(req.estimatedTotalAmount)}
+                                    </div>
+                                </div>
+                                <StatusBadge code={req.statusCode} name={req.statusName} color={req.statusBadgeColor} />
+                            </div>
+                        </motion.div>
+                    );
+                })}
+            </div>
         </section>
     );
 }

@@ -2,7 +2,30 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-117 — Structured Payment Deadline Rules for Contracts
+
+- **Date:** 2026-04-20
+- **Status:** Accepted
+- **Context:** Contract payment due dates were previously tracked only via a free-text `PaymentTerms` field with no calculation logic. This caused manual due date entry per obligation and no systematic tracking of grace periods, penalty start dates, or calculation audit trails. The goal was to model real-world contract payment rules accurately while maintaining backward compatibility.
+- **Decision:** Add structured payment rule fields to `Contract` and calculated tracking fields to `ContractPaymentObligation`, backed by a domain-level calculation service (`ContractDueDateCalculator`).
+    1. **Structured rule at contract level**: `PaymentTermTypeCode` (7 types), `ReferenceEventTypeCode` (6 events), `PaymentTermDays`, `PaymentFixedDay`, `AllowsManualDueDateOverride`, `GracePeriodDays`, `HasLatePenalty`, `LatePenaltyValue/TypeCode`, `HasLateInterest`, `LateInterestValue/TypeCode`, `PaymentRuleSummary`, `FinancialNotes`, `PenaltyNotes`.
+    2. **Calculated fields at obligation level**: `CalculatedDueDateUtc` (always computed), `DueDateSourceCode` (`AUTO_FROM_CONTRACT` | `MANUAL_OVERRIDE`), `ReferenceDateUtc`, `GraceDateUtc`, `PenaltyStartDateUtc`.
+    3. **Calculation service**: `ContractDueDateCalculator` is a static domain service. It resolves reference dates from `ReferenceEventTypeCode`, calculates due dates per rule, and computes grace/penalty dates. It **fails fast** (`BadRequest`) when required user-supplied reference data is missing — it never defaults silently.
+    4. **No monetary calculation**: `LatePenaltyValue` and `LateInterestValue` are stored for contract terms only. No penalty calculation engine is implemented in this phase.
+    5. **Backward compatibility preserved**: The existing `PaymentTerms` free-text field is kept. Contracts without a `PaymentTermTypeCode` operate normally with manual due dates per obligation.
+    6. **Manual override control**: `AllowsManualDueDateOverride` gates per-obligation due date overrides at the contract level. Without it, auto-calculated rules reject manual override attempts.
+    7. **Auto-open in UI**: The "Regras de Pagamento" section auto-opens in the contract edit form when a rule is already configured.
+    8. **Obligation context note**: The obligation add/edit form displays a context-aware note explaining what the selected rule requires from the user (invoice date, manual ref date, or nothing).
+    9. **Due date source badge**: Each obligation in the detail view shows a `🔄 Auto` or `✏️ Manual` badge with an expandable deadline metadata panel (reference date, calculated date, grace date, penalty start date).
+- **Alternatives considered:**
+    1. Keeping free-text only (rejected: no calculation support, no grace/penalty tracking).
+    2. Putting calculation logic in the controller (rejected: domain rules belong in the domain layer).
+    3. Defaulting to `DateTime.UtcNow` when reference date is missing (rejected: silent defaults cause wrong due dates in production data — fail-fast is safer).
+    4. Auto-creating grace dates even for contracts without a grace period rule (rejected: only computed when `GracePeriodDays > 0` or when a rule is active).
+- **Consequences:** Obligations now carry full due-date provenance. `Request.NeedByDateUtc` is sourced from the final (auto or overridden) obligation `DueDateUtc`. The urgency heuristic (`NeedLevelCode`) applies correctly for contract-sourced requests. Monetary penalty calculation remains deferred until a future dedicated engine phase. All new lookup endpoints (`/payment-term-types`, `/reference-event-types`) are documented in `CONTRACTS_WORKFLOW.md §11`. EF Core decimal precision follows the convention established in DEC-108.
+
 ## DEC-111 — Contracts Management Module Architecture
+
 
 - **Date:** 2026-04-19
 - **Status:** Accepted

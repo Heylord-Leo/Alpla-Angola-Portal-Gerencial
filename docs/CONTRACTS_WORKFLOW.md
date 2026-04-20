@@ -183,6 +183,8 @@ erDiagram
 | GET | `/api/v1/contracts/alerts` | List active alerts |
 | POST | `/api/v1/contracts/alerts/{alertId}/dismiss` | Dismiss alert |
 | GET | `/api/v1/contracts/types` | List contract types |
+| GET | `/api/v1/contracts/payment-term-types` | **[DEC-117]** Lookup: payment term types |
+| GET | `/api/v1/contracts/reference-event-types` | **[DEC-117]** Lookup: reference event types |
 
 ---
 
@@ -220,3 +222,79 @@ erDiagram
 - [ ] Bulk obligation schedule generation assistant
 - [ ] Contract renewal workflow
 - [ ] Budget consumption tracking per contract
+- [ ] Monetary penalty/interest **calculation** (tracking fields done in DEC-117; calculation engine deferred)
+
+---
+
+## 11. Payment Deadline Rules (DEC-117)
+
+Added in v2.27.0. Contracts now support structured payment deadline rules that automate due date calculation for obligations.
+
+### 11.1 Payment Term Types
+
+| Code | Label | Auto-Calculates? |
+|------|-------|------------------|
+| `FIXED_DAYS_AFTER_REFERENCE` | Dias após evento | ✅ Yes |
+| `FIXED_DAY_OF_MONTH` | Dia fixo do mês | ✅ Yes |
+| `NEXT_MONTH_FIXED_DAY` | Dia fixo do mês seguinte | ✅ Yes |
+| `ON_RECEIPT` | No recebimento | ✅ Yes |
+| `ADVANCE_PAYMENT` | Pagamento antecipado | ❌ Manual per obligation |
+| `MANUAL` | Manual | ❌ Manual per obligation |
+| `CUSTOM_TEXT` | Texto livre | ❌ User-authored summary only |
+
+`FIXED_DAY_OF_MONTH`: if `ReferenceDate.Day ≤ FixedDay` → same month; otherwise → next month. Day capped at 28.
+
+### 11.2 Reference Event Types
+
+| Code | Label | Requires User Input |
+|------|-------|---------------------|
+| `CONTRACT_SIGN_DATE` | Data de assinatura | No — from `Contract.SignedAtUtc` |
+| `OBLIGATION_CREATION_DATE` | Data de criação da parcela | No — system-generated |
+| `INVOICE_RECEIVED_DATE` | Data de recepção da fatura | ✅ Yes |
+| `MANUAL_REFERENCE_DATE` | Data de referência manual | ✅ Yes |
+| `SERVICE_ACCEPTANCE_DATE` | Data de aceite do serviço | ✅ Yes |
+| `DELIVERY_DATE` | Data de entrega | ✅ Yes |
+
+### 11.3 Due Date Calculation Logic
+
+`ContractDueDateCalculator` (Domain service):
+1. **Resolve Reference Date** — picks source from `ReferenceEventTypeCode`. Returns `null` → `400 BadRequest` when required user data is missing. **Never silently defaults.**
+2. **Calculate Due Date** — applies `PaymentTermTypeCode` rule. Returns `null` for manual/custom types.
+3. **Populate Obligation fields:**
+   - `CalculatedDueDateUtc` — what was computed (audit)
+   - `DueDateUtc` — final date (auto or overridden)
+   - `DueDateSourceCode` — `AUTO_FROM_CONTRACT` | `MANUAL_OVERRIDE`
+   - `ReferenceDateUtc` — resolved reference date
+
+### 11.4 Grace Period & Penalty Start
+
+```
+GraceDateUtc        = DueDateUtc + GracePeriodDays
+PenaltyStartDateUtc = GraceDateUtc + 1 day
+```
+
+- `GracePeriodDays = 0` → `GraceDateUtc = DueDateUtc` (no tolerance)
+- `PenaltyStartDateUtc` stored for information and future calculation. **No monetary calculation in this phase.**
+
+### 11.5 Manual Override
+
+When `AllowsManualDueDateOverride = true` on contract:
+- User may supply `DueDateUtc` per obligation even for auto-calculated rules
+- `DueDateSourceCode` → `MANUAL_OVERRIDE`
+- `CalculatedDueDateUtc` still stored (audit)
+- `GraceDateUtc` and `PenaltyStartDateUtc` recalculate from the overridden `DueDateUtc`
+
+When `AllowsManualDueDateOverride = false`:
+- Supplying a manual `DueDateUtc` for an auto-calculated rule returns `400 Bad Request`
+
+### 11.6 Request Generation Impact
+
+- `Request.NeedByDateUtc` = `Obligation.DueDateUtc` (final, auto or overridden)
+- Urgency (`NeedLevelCode`) derived from remaining days until `NeedByDateUtc` (same heuristic as manual requests)
+- Description enriched with `PaymentRuleSummary` and penalty window when applicable
+
+### 11.7 Backward Compatibility
+
+- `PaymentTerms` free-text field preserved on all contracts
+- Structured rule fields are additive — contracts without `PaymentTermTypeCode` work normally
+- Obligations without deadline rule data support manually entered due dates

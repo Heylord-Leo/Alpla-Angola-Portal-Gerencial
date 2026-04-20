@@ -23,6 +23,8 @@ export interface ContractListItem {
     createdAtUtc: string;
     obligationCount: number;
     pendingObligationCount: number;
+    /** True when this DRAFT contract was previously returned by a technical or final approver. */
+    wasReturnedFromApproval: boolean;
 }
 
 export interface ContractSummary {
@@ -83,7 +85,18 @@ export interface Obligation {
     expectedAmount: number;
     currencyId?: number;
     currencyCode?: string;
+    // Due date tracking (DEC-117)
+    referenceDateUtc?: string;
+    calculatedDueDateUtc?: string;
     dueDateUtc: string;
+    dueDateSourceCode?: string;
+    graceDateUtc?: string;
+    penaltyStartDateUtc?: string;
+    // Operational
+    invoiceReceivedDateUtc?: string;
+    serviceAcceptanceDateUtc?: string;
+    billingReference?: string;
+    obligationNotes?: string;
     statusCode: string;
     createdAtUtc: string;
     linkedRequestId?: string;
@@ -119,9 +132,30 @@ export interface ContractDetail {
     currencyId?: number;
     currencyCode?: string;
     paymentTerms?: string;
+    // Payment Rule (DEC-117)
+    paymentTermTypeCode?: string;
+    referenceEventTypeCode?: string;
+    paymentTermDays?: number;
+    paymentFixedDay?: number;
+    allowsManualDueDateOverride: boolean;
+    gracePeriodDays?: number;
+    hasLatePenalty: boolean;
+    latePenaltyTypeCode?: string;
+    latePenaltyValue?: number;
+    hasLateInterest: boolean;
+    lateInterestTypeCode?: string;
+    lateInterestValue?: number;
+    paymentRuleSummary?: string;
+    financialNotes?: string;
+    penaltyNotes?: string;
     governingLaw?: string;
     terminationClauses?: string;
     ocrValidatedByUser: boolean;
+    // Two-step approval participants (DEC-118)
+    technicalApproverId?: string;
+    technicalApproverName?: string;
+    finalApproverId?: string;
+    finalApproverName?: string;
     createdAtUtc: string;
     createdByUserName: string;
     updatedAtUtc?: string;
@@ -131,7 +165,27 @@ export interface ContractDetail {
     alerts: ContractAlert[];
 }
 
-export interface CreateContractPayload {
+// Payment rule fields shared by CreateContractPayload and UpdateContractPayload (DEC-117)
+export interface PaymentRuleFields {
+    paymentTermTypeCode?: string;
+    referenceEventTypeCode?: string;
+    paymentTermDays?: number;
+    paymentFixedDay?: number;
+    allowsManualDueDateOverride?: boolean;
+    gracePeriodDays?: number;
+    hasLatePenalty?: boolean;
+    latePenaltyTypeCode?: string;
+    latePenaltyValue?: number;
+    hasLateInterest?: boolean;
+    lateInterestTypeCode?: string;
+    lateInterestValue?: number;
+    /** For CUSTOM_TEXT: user-authored. For structured types: leave blank (backend auto-generates). */
+    paymentRuleSummary?: string;
+    financialNotes?: string;
+    penaltyNotes?: string;
+}
+
+export interface CreateContractPayload extends PaymentRuleFields {
     title: string;
     description?: string;
     contractTypeId: number;
@@ -156,7 +210,15 @@ export interface CreateObligationPayload {
     description?: string;
     expectedAmount: number;
     currencyId?: number;
-    dueDateUtc: string;
+    /** Required for MANUAL / ADVANCE_PAYMENT / CUSTOM_TEXT rules. Optional for auto-calculated rules when AllowsManualDueDateOverride = true. */
+    dueDateUtc?: string;
+    /** Supply when ReferenceEventTypeCode = MANUAL_REFERENCE_DATE */
+    manualReferenceDateUtc?: string;
+    /** Supply when ReferenceEventTypeCode = INVOICE_RECEIVED_DATE */
+    invoiceReceivedDateUtc?: string;
+    serviceAcceptanceDateUtc?: string;
+    billingReference?: string;
+    obligationNotes?: string;
 }
 
 export interface ContractType {
@@ -169,6 +231,57 @@ export interface GenerateRequestResult {
     requestId: string;
     requestNumber: string;
     message: string;
+}
+
+/** Lookup: payment term type metadata returned by GET /api/v1/contracts/payment-term-types */
+export interface PaymentTermType {
+    code: string;
+    label: string;
+    description?: string;
+    isAutoCalculated: boolean;
+    requiresReferenceEvent: boolean;
+    requiresDays: boolean;
+    requiresFixedDay: boolean;
+}
+
+/** Lookup: reference event type metadata returned by GET /api/v1/contracts/reference-event-types */
+export interface ReferenceEventType {
+    code: string;
+    label: string;
+    description?: string;
+    requiresUserInput: boolean;
+}
+
+// ─── Approval Queue Types (DEC-118) ───
+
+export interface ContractApprovalItem {
+    id: string;
+    contractNumber: string;
+    title: string;
+    statusCode: string;
+    contractTypeName: string;
+    supplierName?: string;
+    supplierPortalCode?: string;
+    counterpartyName?: string;
+    departmentName: string;
+    companyName: string;
+    plantName?: string;
+    totalContractValue?: number;
+    currencyCode?: string;
+    effectiveDateUtc: string;
+    expirationDateUtc: string;
+    paymentRuleSummary?: string;
+    technicalApproverId?: string;
+    technicalApproverName?: string;
+    finalApproverId?: string;
+    finalApproverName?: string;
+    createdByUserName: string;
+    createdAtUtc: string;
+}
+
+export interface PendingContractApprovalsResponse {
+    technicalApprovals: ContractApprovalItem[];
+    finalApprovals: ContractApprovalItem[];
 }
 
 // ─── Helpers ───
@@ -263,6 +376,16 @@ export async function fetchContractTypes(): Promise<ContractType[]> {
     return handleResponse<ContractType[]>(res);
 }
 
+export async function fetchPaymentTermTypes(): Promise<PaymentTermType[]> {
+    const res = await apiFetch(`${BASE}/payment-term-types`);
+    return handleResponse<PaymentTermType[]>(res);
+}
+
+export async function fetchReferenceEventTypes(): Promise<ReferenceEventType[]> {
+    const res = await apiFetch(`${BASE}/reference-event-types`);
+    return handleResponse<ReferenceEventType[]>(res);
+}
+
 export async function fetchActiveAlerts(): Promise<ContractAlert[]> {
     const res = await apiFetch(`${BASE}/alerts`);
     return handleResponse<ContractAlert[]>(res);
@@ -274,6 +397,29 @@ export async function dismissAlert(alertId: string): Promise<void> {
         const text = await res.text();
         throw new ApiError(text || `HTTP ${res.status}`, res.status);
     }
+}
+
+// ─── Approval Workflow API (DEC-118) ───
+
+export async function fetchPendingContractApprovals(): Promise<PendingContractApprovalsResponse> {
+    const res = await apiFetch(`${BASE}/pending-approvals`);
+    return handleResponse<PendingContractApprovalsResponse>(res);
+}
+
+export async function contractTechnicalApprove(id: string, comment?: string): Promise<void> {
+    return transitionContractStatus(id, 'technical-approve', comment);
+}
+
+export async function contractTechnicalReturn(id: string, comment: string): Promise<void> {
+    return transitionContractStatus(id, 'technical-return', comment);
+}
+
+export async function contractFinalApprove(id: string, comment?: string): Promise<void> {
+    return transitionContractStatus(id, 'final-approve', comment);
+}
+
+export async function contractFinalReturn(id: string, comment: string): Promise<void> {
+    return transitionContractStatus(id, 'final-return', comment);
 }
 
 export async function uploadContractDocument(contractId: string, file: File, documentType?: string, description?: string): Promise<ContractDocument> {
@@ -297,7 +443,11 @@ export function getDocumentDownloadUrl(contractId: string, documentId: string): 
 
 export const CONTRACT_STATUS_MAP: Record<string, { label: string; color: string; bg: string }> = {
     DRAFT: { label: 'Rascunho', color: '#6b7280', bg: '#f3f4f6' },
-    UNDER_REVIEW: { label: 'Em Revisão', color: '#d97706', bg: '#fef3c7' },
+    // Legacy: pre-DEC-118 contracts submitted for review
+    UNDER_REVIEW: { label: 'Em Revisão (Legacy)', color: '#d97706', bg: '#fef3c7' },
+    // DEC-118 two-step statuses
+    UNDER_TECHNICAL_REVIEW: { label: 'Revisão Técnica', color: '#0369a1', bg: '#e0f2fe' },
+    UNDER_FINAL_REVIEW: { label: 'Aprovação Final', color: '#7c3aed', bg: '#ede9fe' },
     ACTIVE: { label: 'Ativo', color: '#059669', bg: '#d1fae5' },
     SUSPENDED: { label: 'Suspenso', color: '#dc2626', bg: '#fee2e2' },
     EXPIRED: { label: 'Expirado', color: '#9333ea', bg: '#f3e8ff' },

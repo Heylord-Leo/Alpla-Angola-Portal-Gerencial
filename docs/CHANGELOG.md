@@ -2,7 +2,25 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.82.0] - 2026-04-20 - Feature: Payment Deadline Rules — Frontend & Documentation (DEC-117)
+### Added
+- **"Regras de Pagamento" Section in Contract Create/Edit**: Collapsible form section with progressive disclosure. Hidden by default; auto-opens when editing a contract with an existing rule. Driven by two new lookup endpoints (`/payment-term-types`, `/reference-event-types`).
+- **Payment Term Type Selector**: Dropdown loads all supported rule types (`FIXED_DAYS_AFTER_REFERENCE`, `FIXED_DAY_OF_MONTH`, `NEXT_MONTH_FIXED_DAY`, `ON_RECEIPT`, `ADVANCE_PAYMENT`, `MANUAL`, `CUSTOM_TEXT`). Subsequent fields appear conditionally based on the selected type.
+- **Reference Event Type Selector**: Appears only for rule types that require a reference date. Drives `InvoiceReceivedDate` visibility in the obligation form via `requiresInvoiceDate` flag.
+- **Grace Period & Late Penalty/Interest Fields**: `GracePeriodDays`, `HasLatePenalty`, `LatePenaltyValue`, `LatePenaltyTypeCode`, `HasLateInterest`, `LateInterestValue`, `LateInterestTypeCode` — all wired to the save payload.
+- **Manual Override Toggle**: `AllowsManualDueDateOverride` checkbox controlling per-obligation due date override permission.
+- **Free-Text Rule Summary & Notes**: `PaymentRuleSummary`, `FinancialNotes`, `PenaltyNotes` — text areas available for any rule type.
+- **Due Date Source Badge**: Obligation rows in the detail view now show `🔄 Auto (Contrato)` or `✏️ Manual` badges, color-coded to distinguish automatic calculation from manual override.
+- **Obligation Deadline Metadata Panel**: Expandable sub-row under each obligation showing `ReferenceDateUtc`, `CalculatedDueDateUtc`, `GraceDateUtc`, `PenaltyStartDateUtc`. Visible when the contract has a payment rule and the obligation has a source badge.
+- **Active Payment Rule Summary Panel**: New panel in ContractDetail "Geral" tab showing the summarized rule, financial notes, and penalty notes when a structured rule is configured.
+- **Obligation Context Note**: Duration-aware guidance note in the obligation add/edit form. Prompts the user to supply `InvoiceReceivedDate` (or other required reference date) when the contract rule requires it.
+- **Context-Aware Obligation Form Fields**: `InvoiceReceivedDate` field appears in obligation add/edit only when `ReferenceEventTypeCode` = `INVOICE_RECEIVED_DATE` (or similar user-supplied types).
+### Documentation
+- **CONTRACTS_WORKFLOW.md §11**: Added complete Payment Deadline Rules reference section covering all payment term types, reference event types, calculation logic, grace period formulas, manual override behavior, request generation impact, backward compatibility, and the UI source badge system.
+- **DECISIONS.md DEC-117**: Added full decision record for structured payment deadline rules — context, all 9 sub-decisions, 4 alternatives considered, and consequences.
+
 ## [v2.81.1] - 2026-04-20 - Fix: Payment Request Generation Units
+
 ### Fixed
 - **Contract Payment Generation**: Resolved an issue where payment requests generated from contract obligations were inappropriately adopting an inactive "EA" default unit by ensuring the `UnitId` drops to `null`.
 - **Request Draft Default Unit Fallback**: Eliminated the legacy hardcoded "EA" UI fallback from `RequestsController` to allow items with undefined units to be properly surfaced without forced defaults.
