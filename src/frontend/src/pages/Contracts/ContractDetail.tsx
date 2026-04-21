@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     ArrowLeft, Play, Pause, XCircle, Send, FileText, Plus, Download,
     DollarSign, History, Bell, AlertTriangle, Edit, Trash2,
-    ChevronDown, ChevronUp, Info, Calendar, Shield
+    ChevronDown, ChevronUp, Info, Calendar, Shield, ScanSearch, Upload, CheckCircle2, XCircle as XCircleIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PageContainer } from '../../components/ui/PageContainer';
@@ -18,7 +18,8 @@ import {
     fetchContractDetail, transitionContractStatus, createObligation, generatePaymentRequest,
     updateObligation, cancelObligation,
     ContractDetail as ContractDetailType, Obligation, CONTRACT_STATUS_MAP, OBLIGATION_STATUS_MAP,
-    CreateObligationPayload, getDocumentDownloadUrl
+    CreateObligationPayload, getDocumentDownloadUrl,
+    uploadContractDocument, deleteContractDocument, triggerOcr
 } from '../../lib/contractsApi';
 
 // ─── StatusBadge ───
@@ -275,6 +276,334 @@ function ObligationContextNote({ contract }: { contract: ContractDetailType }) {
     }
 
     return null;
+}
+
+// ─── Documents Tab Component ───
+
+interface DocumentsTabProps {
+    contractId: string;
+    contractStatusCode: string;
+    documents: ContractDetailType['documents'];
+    onRefresh: () => void;
+}
+
+function DocumentsTab({ contractId, contractStatusCode: _contractStatusCode, documents, onRefresh }: DocumentsTabProps) {
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [showUpload, setShowUpload] = useState(false);
+    const [uploadDocType, setUploadDocType] = useState('ORIGINAL');
+    const [uploadDescription, setUploadDescription] = useState('');
+    const [uploading, setUploading] = useState(false);
+    const [uploadError, setUploadError] = useState<string | null>(null);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
+    const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
+    const [ocrTriggeringId, setOcrTriggeringId] = useState<string | null>(null);
+    const [ocrError, setOcrError] = useState<string | null>(null);
+    const [justUploadedId, setJustUploadedId] = useState<string | null>(null);
+
+    const documentTypeLabels: Record<string, string> = {
+        ORIGINAL: 'Original', AMENDMENT: 'Aditamento', ADDENDUM: 'Addendum',
+        ANNEX: 'Anexo', OTHER: 'Outro'
+    };
+
+    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setUploadError(null);
+        setUploading(true);
+        try {
+            const doc = await uploadContractDocument(contractId, file, uploadDocType, uploadDescription || undefined);
+            setJustUploadedId(doc.id);
+            setTimeout(() => setJustUploadedId(null), 4000);
+            setShowUpload(false);
+            setUploadDescription('');
+            setUploadDocType('ORIGINAL');
+            onRefresh();
+        } catch (err: unknown) {
+            setUploadError(err instanceof Error ? err.message : 'Erro ao carregar documento.');
+        } finally {
+            setUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    const handleDelete = async (docId: string) => {
+        setDeleteError(null);
+        setDeletingId(docId);
+        try {
+            await deleteContractDocument(contractId, docId);
+            setConfirmDeleteId(null);
+            onRefresh();
+        } catch (err: unknown) {
+            setDeleteError(err instanceof Error ? err.message : 'Erro ao eliminar documento.');
+        } finally {
+            setDeletingId(null);
+        }
+    };
+
+    const handleTriggerOcr = async (docId: string) => {
+        setOcrError(null);
+        setOcrTriggeringId(docId);
+        try {
+            await triggerOcr(contractId, docId);
+            onRefresh();
+        } catch (err: unknown) {
+            setOcrError(err instanceof Error ? err.message : 'Erro ao iniciar OCR.');
+        } finally {
+            setOcrTriggeringId(null);
+        }
+    };
+
+    const isPdf = (fileName: string) => fileName.toLowerCase().endsWith('.pdf');
+
+    const btnBase: React.CSSProperties = {
+        display: 'inline-flex', alignItems: 'center', gap: '4px',
+        padding: '5px 10px', borderRadius: 'var(--radius-md)',
+        border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-surface)',
+        cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, textDecoration: 'none'
+    };
+
+    return (
+        <motion.div key="documents" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            {/* ── Toolbar ─────────────────────────────────────────── */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                    {documents.length} documento{documents.length !== 1 ? 's' : ''}
+                </span>
+                <button
+                    id="btn-add-document"
+                    onClick={() => { setShowUpload(v => !v); setUploadError(null); }}
+                    style={{ ...btnBase, color: 'var(--color-primary)', borderColor: 'var(--color-primary)' }}
+                >
+                    <Plus size={14} /> Adicionar documento
+                </button>
+            </div>
+
+            {/* ── Inline Upload Zone ───────────────────────────────── */}
+            <AnimatePresence>
+                {showUpload && (
+                    <motion.div
+                        initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                        style={{ overflow: 'hidden', marginBottom: '1rem' }}
+                    >
+                        <div style={{
+                            padding: '1.25rem', borderRadius: 'var(--radius-md)',
+                            border: '2px dashed var(--color-primary)', backgroundColor: 'var(--color-bg-page)'
+                        }}>
+                            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                                <div style={{ flex: 1, minWidth: '160px' }}>
+                                    <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>
+                                        Tipo de documento
+                                    </label>
+                                    <select
+                                        value={uploadDocType}
+                                        onChange={e => setUploadDocType(e.target.value)}
+                                        style={{ width: '100%', padding: '6px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', fontSize: '0.85rem' }}
+                                    >
+                                        {Object.entries(documentTypeLabels).map(([k, v]) => (
+                                            <option key={k} value={k}>{v}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div style={{ flex: 2, minWidth: '200px' }}>
+                                    <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>
+                                        Descrição (opcional)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={uploadDescription}
+                                        onChange={e => setUploadDescription(e.target.value)}
+                                        placeholder="Ex: Versão assinada, Aditamento nº 2..."
+                                        style={{ width: '100%', padding: '6px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', fontSize: '0.85rem' }}
+                                    />
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept=".pdf"
+                                    style={{ display: 'none' }}
+                                    onChange={handleFileSelect}
+                                    id="doc-file-input"
+                                />
+                                <button
+                                    id="btn-choose-file"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    disabled={uploading}
+                                    style={{ ...btnBase, color: 'var(--color-primary)', opacity: uploading ? 0.6 : 1 }}
+                                >
+                                    <Upload size={14} /> {uploading ? 'A carregar...' : 'Escolher ficheiro PDF'}
+                                </button>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                                    Apenas ficheiros PDF. O OCR não é iniciado automaticamente.
+                                </span>
+                            </div>
+                            {uploadError && (
+                                <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#dc2626' }}>{uploadError}</div>
+                            )}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* ── Error banners ───────────────────────────────────── */}
+            {deleteError && (
+                <div style={{ marginBottom: '0.75rem', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', backgroundColor: '#fee2e2', border: '1px solid #fca5a5', fontSize: '0.85rem', color: '#991b1b' }}>
+                    {deleteError}
+                </div>
+            )}
+            {ocrError && (
+                <div style={{ marginBottom: '0.75rem', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', backgroundColor: '#fef3c7', border: '1px solid #fcd34d', fontSize: '0.85rem', color: '#92400e' }}>
+                    {ocrError}
+                </div>
+            )}
+
+            {/* ── Document list ───────────────────────────────────── */}
+            {documents.length === 0 ? (
+                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
+                    Nenhum documento anexado.
+                </div>
+            ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {documents.map(doc => {
+                        const isConfirmingDelete = confirmDeleteId === doc.id;
+                        const isDeleting = deletingId === doc.id;
+                        const isOcrRunning = ocrTriggeringId === doc.id;
+                        const isNew = justUploadedId === doc.id;
+
+                        let ocrBadge: React.ReactNode = null;
+                        if (doc.hasOcrRecord) {
+                            const s = doc.ocrStatus;
+                            const ocrBadgeStyle: React.CSSProperties = {
+                                display: 'inline-flex', alignItems: 'center', gap: '3px',
+                                padding: '2px 7px', borderRadius: 'var(--radius-full)',
+                                fontSize: '0.68rem', fontWeight: 700
+                            };
+                            if (s === 'COMPLETED') ocrBadge = <span style={{ ...ocrBadgeStyle, backgroundColor: '#d1fae5', color: '#059669' }}><CheckCircle2 size={11} /> OCR: Concluído</span>;
+                            else if (s === 'FAILED') ocrBadge = <span style={{ ...ocrBadgeStyle, backgroundColor: '#fee2e2', color: '#dc2626' }}><XCircleIcon size={11} /> OCR: Falhou</span>;
+                            else if (s === 'PROCESSING' || s === 'PENDING') ocrBadge = <span style={{ ...ocrBadgeStyle, backgroundColor: '#dbeafe', color: '#2563eb' }}><ScanSearch size={11} /> OCR: Em processamento</span>;
+                        }
+
+                        return (
+                            <div key={doc.id} style={{
+                                padding: '0.9rem 1rem', borderRadius: 'var(--radius-md)',
+                                border: isNew ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                backgroundColor: isNew ? 'rgba(var(--color-primary-rgb, 59,130,246),0.04)' : 'var(--color-bg-page)',
+                                transition: 'border-color 0.4s ease, background-color 0.4s ease'
+                            }}>
+                                {/* Row: info + badges */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', flex: 1, minWidth: 0 }}>
+                                        <FileText size={20} style={{ color: 'var(--color-primary)', marginTop: '2px', flexShrink: 0 }} />
+                                        <div style={{ minWidth: 0 }}>
+                                            <div style={{ fontWeight: 700, fontSize: '0.88rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {doc.fileName}
+                                            </div>
+                                            <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                                                {documentTypeLabels[doc.documentType] ?? doc.documentType}
+                                                {' • '}v{doc.versionNumber}
+                                                {' • '}{(doc.fileSizeBytes / 1024).toFixed(0)} KB
+                                                {' • '}{doc.uploadedByUserName}
+                                                {' • '}{new Date(doc.uploadedAtUtc).toLocaleDateString('pt-PT')}
+                                            </div>
+                                            {/* Badges row */}
+                                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
+                                                {doc.isPrimaryOcrSource && (
+                                                    <span style={{
+                                                        display: 'inline-flex', alignItems: 'center', gap: '3px',
+                                                        padding: '2px 7px', borderRadius: 'var(--radius-full)',
+                                                        fontSize: '0.68rem', fontWeight: 700,
+                                                        backgroundColor: 'rgba(59,130,246,0.1)', color: '#2563eb'
+                                                    }}>
+                                                        <ScanSearch size={11} /> Fonte OCR activa
+                                                    </span>
+                                                )}
+                                                {ocrBadge}
+                                                {isNew && (
+                                                    <span style={{
+                                                        display: 'inline-flex', alignItems: 'center', gap: '3px',
+                                                        padding: '2px 7px', borderRadius: 'var(--radius-full)',
+                                                        fontSize: '0.68rem', fontWeight: 700,
+                                                        backgroundColor: '#ede9fe', color: '#7c3aed'
+                                                    }}>
+                                                        Novo
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Actions */}
+                                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
+                                        {/* Download */}
+                                        <a
+                                            href={getDocumentDownloadUrl(contractId, doc.id)}
+                                            target="_blank" rel="noreferrer"
+                                            style={{ ...btnBase, color: 'var(--color-text)' }}
+                                            title="Transferir documento"
+                                        >
+                                            <Download size={13} /> Download
+                                        </a>
+
+                                        {/* OCR trigger — PDF only */}
+                                        {isPdf(doc.fileName) && (
+                                            <ModernTooltip content={doc.isPrimaryOcrSource ? 'Re-executar OCR neste documento' : 'Executar OCR neste documento'}>
+                                                <button
+                                                    id={`btn-ocr-${doc.id}`}
+                                                    onClick={() => handleTriggerOcr(doc.id)}
+                                                    disabled={isOcrRunning || doc.ocrStatus === 'PROCESSING'}
+                                                    style={{ ...btnBase, color: '#7c3aed', borderColor: 'rgba(124,58,237,0.3)', opacity: isOcrRunning ? 0.6 : 1 }}
+                                                >
+                                                    <ScanSearch size={13} /> {isOcrRunning ? 'A iniciar...' : 'OCR'}
+                                                </button>
+                                            </ModernTooltip>
+                                        )}
+
+                                        {/* Delete */}
+                                        {!isConfirmingDelete ? (
+                                            <ModernTooltip content={
+                                                doc.hasOcrRecord
+                                                    ? 'Eliminar documento (histórico OCR preservado)'
+                                                    : 'Eliminar documento'
+                                            }>
+                                                <button
+                                                    id={`btn-delete-${doc.id}`}
+                                                    onClick={() => { setConfirmDeleteId(doc.id); setDeleteError(null); }}
+                                                    style={{ ...btnBase, color: '#dc2626', borderColor: 'rgba(220,38,38,0.2)' }}
+                                                >
+                                                    <Trash2 size={13} />
+                                                </button>
+                                            </ModernTooltip>
+                                        ) : (
+                                            /* Inline confirm */
+                                            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Confirmar?</span>
+                                                <button
+                                                    id={`btn-confirm-delete-${doc.id}`}
+                                                    onClick={() => handleDelete(doc.id)}
+                                                    disabled={isDeleting}
+                                                    style={{ ...btnBase, color: '#fff', backgroundColor: '#dc2626', borderColor: '#dc2626', opacity: isDeleting ? 0.6 : 1 }}
+                                                >
+                                                    {isDeleting ? 'A eliminar...' : 'Eliminar'}
+                                                </button>
+                                                <button
+                                                    onClick={() => setConfirmDeleteId(null)}
+                                                    style={{ ...btnBase, color: 'var(--color-text-muted)' }}
+                                                >
+                                                    Cancelar
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </motion.div>
+    );
 }
 
 // ─── Main Component ───
@@ -683,6 +1012,71 @@ export default function ContractDetailPage() {
                 <InfoField label="Data Criação" value={formatDate(contract.createdAtUtc)} />
             </div>
 
+            {/* ── OCR Metadata Row ── */}
+            {contract.ocrStatus && (
+                <div style={{
+                    marginBottom: '1.5rem', padding: '0.875rem 1.25rem',
+                    backgroundColor: (() => {
+                        if (contract.ocrStatus === 'COMPLETED') return 'rgba(5,150,105,0.04)';
+                        if (contract.ocrStatus === 'FAILED')    return 'rgba(220,38,38,0.04)';
+                        return 'rgba(var(--color-primary-rgb),0.04)';
+                    })(),
+                    borderRadius: 'var(--radius-md)',
+                    border: `1px solid ${(() => {
+                        if (contract.ocrStatus === 'COMPLETED') return 'rgba(5,150,105,0.2)';
+                        if (contract.ocrStatus === 'FAILED')    return 'rgba(220,38,38,0.2)';
+                        return 'var(--color-border)';
+                    })()}`,
+                    display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '1rem',
+                }}>
+                    {/* Icon + label */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                        <span style={{ fontSize: '0.9rem' }}>
+                            {contract.ocrStatus === 'COMPLETED' ? '🤖' :
+                             contract.ocrStatus === 'FAILED'    ? '❌' :
+                             contract.ocrStatus === 'PROCESSING'? '⏳' : '🔄'}
+                        </span>
+                        <span style={{
+                            fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase',
+                            letterSpacing: '0.07em',
+                            color: contract.ocrStatus === 'COMPLETED' ? '#059669' :
+                                   contract.ocrStatus === 'FAILED'    ? '#dc2626' :
+                                   'var(--color-primary)',
+                        }}>
+                            OCR {
+                                contract.ocrStatus === 'COMPLETED'  ? 'Concluído' :
+                                contract.ocrStatus === 'FAILED'     ? 'Falhou'    :
+                                contract.ocrStatus === 'PROCESSING' ? 'Em curso'  : 'Pendente'
+                            }
+                        </span>
+                    </div>
+
+                    {/* Validation badge */}
+                    {contract.ocrStatus === 'COMPLETED' && (
+                        <span style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '4px',
+                            padding: '3px 10px', borderRadius: 'var(--radius-full)',
+                            fontSize: '0.72rem', fontWeight: 700,
+                            backgroundColor: contract.ocrValidatedByUser ? 'rgba(5,150,105,0.12)' : 'rgba(217,119,6,0.1)',
+                            color: contract.ocrValidatedByUser ? '#065f46' : '#92400e',
+                        }}>
+                            {contract.ocrValidatedByUser ? '✓ Validado pelo utilizador' : '⚠ Aguarda validação'}
+                        </span>
+                    )}
+
+                    {/* Spacer */}
+                    <div style={{ flex: 1 }} />
+
+                    {/* Hint for DRAFT contracts */}
+                    {contract.ocrStatus === 'COMPLETED' && !contract.ocrValidatedByUser &&
+                     (contract.statusCode === 'DRAFT' || contract.statusCode === 'UNDER_REVIEW') && (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                            Edite o contrato para confirmar os campos extraídos.
+                        </span>
+                    )}
+                </div>
+            )}
+
             {/* Payment Rule Summary Panel */}
             {(contract.paymentTermTypeCode || contract.paymentRuleSummary) && (
                 <div style={{
@@ -1068,46 +1462,12 @@ export default function ContractDetailPage() {
                 )}
 
                 {activeTab === 'documents' && (
-                    <motion.div key="documents" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                        {contract.documents.length === 0 ? (
-                            <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-                                Nenhum documento anexado.
-                            </div>
-                        ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                {contract.documents.map(doc => (
-                                    <div key={doc.id} style={{
-                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                        padding: '1rem', borderRadius: 'var(--radius-md)',
-                                        border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-page)'
-                                    }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                            <FileText size={20} style={{ color: 'var(--color-primary)' }} />
-                                            <div>
-                                                <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{doc.fileName}</div>
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                                                    {doc.documentType} • v{doc.versionNumber} • {(doc.fileSizeBytes / 1024).toFixed(0)} KB • {doc.uploadedByUserName} • {formatDate(doc.uploadedAtUtc)}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <a
-                                            href={getDocumentDownloadUrl(contract.id, doc.id)}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            style={{
-                                                display: 'flex', alignItems: 'center', gap: '4px',
-                                                padding: '6px 12px', borderRadius: 'var(--radius-md)',
-                                                border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-surface)',
-                                                color: 'var(--color-primary)', textDecoration: 'none', fontWeight: 600, fontSize: '0.8rem'
-                                            }}
-                                        >
-                                            <Download size={14} /> Download
-                                        </a>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </motion.div>
+                    <DocumentsTab
+                        contractId={contract.id}
+                        contractStatusCode={contract.statusCode}
+                        documents={contract.documents}
+                        onRefresh={() => fetchContractDetail(contract.id).then(d => setContract(d))}
+                    />
                 )}
 
                 {activeTab === 'history' && (

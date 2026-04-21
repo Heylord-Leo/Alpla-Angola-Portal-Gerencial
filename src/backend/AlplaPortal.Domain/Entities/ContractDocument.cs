@@ -28,4 +28,23 @@ public class ContractDocument
     public DateTime UploadedAtUtc { get; set; }
     public Guid UploadedByUserId { get; set; }
     public User UploadedByUser { get; set; } = null!;
+
+    /// <summary>
+    /// Set when this document has been processed by OCR.
+    /// References the ContractOcrExtractionRecord created from this file.
+    /// Null if OCR has never been run on this specific document version.
+    /// </summary>
+    public Guid? OcrExtractionRecordId { get; set; }
+    public ContractOcrExtractionRecord? OcrExtractionRecord { get; set; }
+
+    // ── Soft-delete (Phase 1) ─────────────────────────────────────────────────
+    /// <summary>
+    /// Soft-delete flag. When true the document is hidden from all normal queries.
+    /// Physical file is NOT removed here — a background cleanup job will handle that.
+    /// OCR records referencing this document are preserved intact (FK constraint honoured).
+    /// </summary>
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAtUtc { get; set; }
+    public Guid? DeletedByUserId { get; set; }
 }
+

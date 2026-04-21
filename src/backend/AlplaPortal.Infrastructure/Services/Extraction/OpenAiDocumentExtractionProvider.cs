@@ -77,24 +77,76 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
             safeMemoryStream.Position = 0;
 
             var extension = Path.GetExtension(fileName).ToLowerInvariant();
-            _logger.LogInformation("OpenAI Extraction: File extension identified as '{Extension}' for file '{FileName}'", extension, fileName);
+            _logger.LogInformation(
+                "[OCR] ExtractAsync started — File: '{FileName}', Extension: '{Extension}', SourceContext: '{SourceContext}', StreamLength: {Bytes} bytes",
+                fileName, extension, sourceContext ?? "(none)", safeMemoryStream.Length);
+
+            // ── Context-forced CONTRACT strategy ─────────────────────────────────────
+            // When the caller explicitly passes sourceContext="CONTRACT", we skip the
+            // keyword-based triage entirely. The triage is designed for invoice vs contract
+            // disambiguation in general upload flows; for the contract OCR trigger endpoint
+            // the document type is already known. Without this override, a contract PDF
+            // that happens to score < 2 contract keyword signals (short, multi-language,
+            // or scanned) will fall through to the invoice pipeline and produce
+            // extractionResult.Contract == null → background processor FAILED.
+            bool contextForcesContract = !string.IsNullOrWhiteSpace(sourceContext) &&
+                sourceContext.Equals("CONTRACT", StringComparison.OrdinalIgnoreCase);
 
             if (extension == ".pdf")
             {
-                using var triageStream = new MemoryStream(safeMemoryStream.ToArray());
-                var triageResult = TriageDocument(triageStream, fileName, sourceContext);
-                tryTextFirst = triageResult.isNative;
-                pagesText = triageResult.pagesText;
-                strategy = triageResult.strategy;
+                if (contextForcesContract)
+                {
+                    // Force contract strategy; still run triage to detect native text for text-first path
+                    _logger.LogInformation(
+                        "[OCR] sourceContext='CONTRACT' detected — forcing DocumentStrategy.Contract for '{FileName}'. Triage will run only to detect native text.",
+                        fileName);
+                    using var triageStream = new MemoryStream(safeMemoryStream.ToArray());
+                    var triageResult = TriageDocument(triageStream, fileName, sourceContext);
+                    tryTextFirst = triageResult.isNative;
+                    pagesText    = triageResult.pagesText;
+                    strategy     = DocumentStrategy.Contract; // Override regardless of keyword signals
+                    _logger.LogInformation(
+                        "[OCR] Triage result for forced-contract '{FileName}': IsNative={IsNative}, PageTextChunks={Chunks}. Strategy locked to Contract.",
+                        fileName, tryTextFirst, pagesText.Count);
+                }
+                else
+                {
+                    using var triageStream = new MemoryStream(safeMemoryStream.ToArray());
+                    var triageResult = TriageDocument(triageStream, fileName, sourceContext);
+                    tryTextFirst = triageResult.isNative;
+                    pagesText    = triageResult.pagesText;
+                    strategy     = triageResult.strategy;
+                    _logger.LogInformation(
+                        "[OCR] Triage completed for '{FileName}': Strategy={Strategy}, IsNative={IsNative}, PageTextChunks={Chunks}.",
+                        fileName, strategy, tryTextFirst, pagesText.Count);
+                }
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "[OCR] Non-PDF file '{FileName}' (extension='{Extension}'): skipping triage. Will use Vision path with invoice pipeline. SourceContext='{SourceContext}'.",
+                    fileName, extension, sourceContext ?? "(none)");
+                if (contextForcesContract)
+                {
+                    _logger.LogWarning(
+                        "[OCR] sourceContext='CONTRACT' but file '{FileName}' is not a PDF (extension='{Extension}'). " +
+                        "Non-PDF contract extraction is not fully supported: triage cannot run, contract keyword classification skipped. " +
+                        "Forcing Contract strategy anyway — quality may be degraded.",
+                        fileName, extension);
+                    strategy = DocumentStrategy.Contract;
+                }
             }
 
             safeMemoryStream.Position = 0; // Reset for downstream
 
             var model = string.IsNullOrWhiteSpace(settings.Model) ? DefaultModel : settings.Model;
+            _logger.LogInformation(
+                "[OCR] Final routing decision for '{FileName}': Strategy={Strategy}, Model={Model}, TryTextFirst={TryTextFirst}",
+                fileName, strategy, model, tryTextFirst);
 
             if (strategy == DocumentStrategy.Contract)
             {
-                _logger.LogInformation("Routing document '{FileName}' to Contract Pipeline.", fileName);
+                _logger.LogInformation("[OCR] Dispatching '{FileName}' to ProcessContractAsync.", fileName);
                 return await ProcessContractAsync(pagesText, safeMemoryStream, fileName, model, apiKey, tryTextFirst, extension, ct);
             }
 
@@ -324,7 +376,7 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
             bool isNative = triageText.Length > 100 && triageLines.Length >= 3;
 
             DocumentStrategy strategy = DocumentStrategy.Invoice;
-            
+
             // --- CONTEXT-AWARE OVERRIDE ---
             // If the request originates from quotation or payment request screens,
             // the user is definitely uploading an invoice/proforma, never a contract.
@@ -332,9 +384,24 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
                 (sourceContext.Equals("quotation", StringComparison.OrdinalIgnoreCase) ||
                  sourceContext.Equals("payment_request", StringComparison.OrdinalIgnoreCase));
 
+            // If the request is from the contract OCR trigger, the caller already knows
+            // the document type — return early so the caller can force Contract strategy.
+            bool contextForcesContract = !string.IsNullOrWhiteSpace(sourceContext) &&
+                sourceContext.Equals("CONTRACT", StringComparison.OrdinalIgnoreCase);
+
             if (contextForcesInvoice)
             {
-                _logger.LogInformation("Triage: sourceContext='{Context}' forces Invoice strategy for '{FileName}'. Skipping contract classification.", sourceContext, fileName);
+                _logger.LogInformation(
+                    "[OCR-Triage] sourceContext='{Context}' forces Invoice strategy for '{FileName}'. Skipping contract classification.",
+                    sourceContext, fileName);
+            }
+            else if (contextForcesContract)
+            {
+                // Do NOT classify here — the caller in ExtractAsync will override strategy.
+                // We only run triage to detect native text for the TextFirst path.
+                _logger.LogInformation(
+                    "[OCR-Triage] sourceContext='CONTRACT' for '{FileName}': running text detection only, skipping keyword classification. IsNative={IsNative}, ExtractedTextLength={Len}.",
+                    fileName, isNative, triageText.Length);
             }
             else if (isNative)
             {
@@ -662,7 +729,10 @@ Output ONLY JSON with this structure:
 
         if (tryTextFirst && pagesText.Count > 0)
         {
-            _logger.LogInformation("Starting TextFirst sequential chunking for contract: {FileName}", fileName);
+            _logger.LogInformation(
+                "[OCR-Contract] TextFirst path chosen for '{FileName}': {PageCount} page(s) of native text extracted. Building chunks.",
+                fileName, pagesText.Count);
+
             var chunks = new List<string>();
             StringBuilder currentChunk = new();
             foreach (var page in pagesText)
@@ -677,10 +747,16 @@ Output ONLY JSON with this structure:
             if (currentChunk.Length > 0) chunks.Add(currentChunk.ToString());
             chunkCount = chunks.Count;
 
-            _logger.LogInformation("Contract divided into {ChunkCount} chunks for {FileName}", chunkCount, fileName);
+            _logger.LogInformation(
+                "[OCR-Contract] '{FileName}' divided into {ChunkCount} chunk(s) for TextFirst extraction.",
+                fileName, chunkCount);
 
             for (int i = 0; i < chunks.Count; i++)
             {
+                _logger.LogInformation(
+                    "[OCR-Contract] Processing chunk {Current}/{Total} for '{FileName}' (~{Chars} chars).",
+                    i + 1, chunkCount, fileName, chunks[i].Length);
+
                 string currentContext = JsonSerializer.Serialize(result.Contract);
                 string userContent = $"This is chunk {i + 1} of {chunks.Count}. Update the context with any NEW findings. Do NOT overwrite existing data unless there is strong contradictory evidence. If unsure, leave as is. \n\nCurrent State: {currentContext}\n\nDocument Text:\n{chunks[i]}";
 
@@ -697,15 +773,34 @@ Output ONLY JSON with this structure:
                 };
 
                 var chunkResult = await ExecuteOpenAiRequestAsync(payload, apiKey, fileName, "ContractTextChunk", "n/a", model, ct);
-                
-                promptTokens += chunkResult.Metadata.PromptTokens;
-                completionTokens += chunkResult.Metadata.CompletionTokens;
+
+                promptTokens += chunkResult.Metadata?.PromptTokens ?? 0;
+                completionTokens += chunkResult.Metadata?.CompletionTokens ?? 0;
 
                 if (chunkResult.Success && chunkResult.Contract != null)
                 {
+                    _logger.LogInformation(
+                        "[OCR-Contract] Chunk {Current}/{Total} succeeded for '{FileName}'. Merging results.",
+                        i + 1, chunkCount, fileName);
                     MergeContractResults(result.Contract, chunkResult.Contract, ref conflictsDetected);
                 }
+                else
+                {
+                    _logger.LogWarning(
+                        "[OCR-Contract] Chunk {Current}/{Total} for '{FileName}' did not produce usable contract data. Success={Success}, ContractNull={IsNull}.",
+                        i + 1, chunkCount, fileName, chunkResult.Success, chunkResult.Contract == null);
+                }
             }
+
+            // Diagnostic: log what was actually extracted after all chunks
+            var c = result.Contract;
+            _logger.LogInformation(
+                "[OCR-Contract] TextFirst complete for '{FileName}'. Extracted — EffectiveDate={EffDate}, EndDate={EndDate}, Value={Value}, Currency={Cur}, Supplier={Sup}, Parties={Parties}. IsPartial={IsPartial}, ConflictsDetected={Conflicts}.",
+                fileName,
+                c?.EffectiveDate ?? "(null)", c?.EndDate ?? "(null)",
+                c?.TotalContractValue ?? "(null)", c?.CurrencyRaw ?? "(null)",
+                c?.SupplierName ?? "(null)", c?.Parties ?? "(null)",
+                IsContractPartial(c), conflictsDetected);
 
             result.Metadata = new ExtractionMetadataDto
             {
@@ -720,12 +815,14 @@ Output ONLY JSON with this structure:
                 ConflictsDetected = conflictsDetected,
                 IsPartial = IsContractPartial(result.Contract)
             };
-            
+
             result.QualityScore = 0.9m;
             return result;
         }
 
-        _logger.LogInformation("Falling back to Vision for Contract: {FileName}", fileName);
+        _logger.LogInformation(
+            "[OCR-Contract] Vision fallback path chosen for '{FileName}'. Reason: tryTextFirst={TryTextFirst}, pagesText.Count={PageCount}. This is expected for scanned/image-only PDFs.",
+            fileName, tryTextFirst, pagesText.Count);
         
         pdfStream.Position = 0;
         var renderProfile = DocumentRenderProfile.InvoiceProfile with { MaxPages = 5 }; // Narrow Vision Fallback
@@ -777,40 +874,165 @@ Output ONLY JSON with this structure:
 
     private void MergeContractResults(ExtractionContractDto target, ExtractionContractDto source, ref bool conflicts)
     {
-        if (!string.IsNullOrWhiteSpace(source.DocumentType) && string.IsNullOrWhiteSpace(target.DocumentType)) target.DocumentType = source.DocumentType;
-        else if (!string.IsNullOrWhiteSpace(source.DocumentType) && target.DocumentType != source.DocumentType && target.DocumentType != null && !target.DocumentType.Contains(source.DocumentType)) conflicts = true;
+        // Scalar string fields — inline merge (C# properties cannot be passed as ref)
+        static string? Ms(string? t, string? s, ref bool c) {
+            if (string.IsNullOrWhiteSpace(s)) return t;
+            if (string.IsNullOrWhiteSpace(t)) return s;
+            if (t != s) c = true;
+            return t;
+        }
 
-        if (!string.IsNullOrWhiteSpace(source.Parties) && string.IsNullOrWhiteSpace(target.Parties)) target.Parties = source.Parties;
-        else if (!string.IsNullOrWhiteSpace(source.Parties) && target.Parties != source.Parties && target.Parties != null && !target.Parties.Contains(source.Parties)) target.Parties += "; " + source.Parties;
+        target.DocumentType              = Ms(target.DocumentType, source.DocumentType, ref conflicts);
+        target.ExternalContractReference = Ms(target.ExternalContractReference, source.ExternalContractReference, ref conflicts);
+        target.SupplierName              = Ms(target.SupplierName, source.SupplierName, ref conflicts);
+        target.SupplierTaxId             = Ms(target.SupplierTaxId, source.SupplierTaxId, ref conflicts);
+        target.SignatoryNames             = Ms(target.SignatoryNames, source.SignatoryNames, ref conflicts);
 
-        if (!string.IsNullOrWhiteSpace(source.EffectiveDate) && string.IsNullOrWhiteSpace(target.EffectiveDate)) target.EffectiveDate = source.EffectiveDate;
-        if (!string.IsNullOrWhiteSpace(source.EndDate) && string.IsNullOrWhiteSpace(target.EndDate)) target.EndDate = source.EndDate;
-        if (!string.IsNullOrWhiteSpace(source.GoverningLaw) && string.IsNullOrWhiteSpace(target.GoverningLaw)) target.GoverningLaw = source.GoverningLaw;
-        if (!string.IsNullOrWhiteSpace(source.PaymentTerms) && string.IsNullOrWhiteSpace(target.PaymentTerms)) target.PaymentTerms = source.PaymentTerms;
-        if (!string.IsNullOrWhiteSpace(source.TerminationClauses) && string.IsNullOrWhiteSpace(target.TerminationClauses)) target.TerminationClauses = source.TerminationClauses;
+        // Helper: take higher-confidence value; flag conflict if both populated and differ
+        static void MergeConfidenceField(ref string? targetVal, ref decimal? targetConf,
+            string? sourceVal, decimal? sourceConf, ref bool conflictsFlag)
+        {
+            if (string.IsNullOrWhiteSpace(sourceVal)) return;
+            if (string.IsNullOrWhiteSpace(targetVal)) { targetVal = sourceVal; targetConf = sourceConf; return; }
+            if (targetVal != sourceVal)
+            {
+                conflictsFlag = true;
+                if ((sourceConf ?? 0) > (targetConf ?? 0)) { targetVal = sourceVal; targetConf = sourceConf; }
+            }
+        }
+
+        // Parties: accumulate rather than conflict (multiple chunks may name more parties)
+
+        if (!string.IsNullOrWhiteSpace(source.Parties))
+        {
+            if (string.IsNullOrWhiteSpace(target.Parties)) target.Parties = source.Parties;
+            else if (!target.Parties.Contains(source.Parties)) target.Parties += "; " + source.Parties;
+        }
+
+        string? ed = target.EffectiveDate; decimal? edc = target.EffectiveDateConfidence;
+        MergeConfidenceField(ref ed, ref edc, source.EffectiveDate, source.EffectiveDateConfidence, ref conflicts);
+        target.EffectiveDate = ed; target.EffectiveDateConfidence = edc;
+
+        string? end = target.EndDate; decimal? endc = target.EndDateConfidence;
+        MergeConfidenceField(ref end, ref endc, source.EndDate, source.EndDateConfidence, ref conflicts);
+        target.EndDate = end; target.EndDateConfidence = endc;
+
+        string? sd = target.SignatureDate; decimal? sdc = target.SignatureDateConfidence;
+        MergeConfidenceField(ref sd, ref sdc, source.SignatureDate, source.SignatureDateConfidence, ref conflicts);
+        target.SignatureDate = sd; target.SignatureDateConfidence = sdc;
+
+        string? tv = target.TotalContractValue; decimal? tvc = target.TotalContractValueConfidence;
+        MergeConfidenceField(ref tv, ref tvc, source.TotalContractValue, source.TotalContractValueConfidence, ref conflicts);
+        target.TotalContractValue = tv; target.TotalContractValueConfidence = tvc;
+
+        string? cr = target.CurrencyRaw; decimal? crc = target.CurrencyConfidence;
+        MergeConfidenceField(ref cr, ref crc, source.CurrencyRaw, source.CurrencyConfidence, ref conflicts);
+        target.CurrencyRaw = cr; target.CurrencyConfidence = crc;
+
+        string? gl = target.GoverningLaw; decimal? glc = target.GoverningLawConfidence;
+        MergeConfidenceField(ref gl, ref glc, source.GoverningLaw, source.GoverningLawConfidence, ref conflicts);
+        target.GoverningLaw = gl; target.GoverningLawConfidence = glc;
+
+        // Payment terms and termination: take first found (reference data, no conflict logic)
+        if (!string.IsNullOrWhiteSpace(source.PaymentTerms) && string.IsNullOrWhiteSpace(target.PaymentTerms))
+            target.PaymentTerms = source.PaymentTerms;
+        if (!string.IsNullOrWhiteSpace(source.TerminationClauses) && string.IsNullOrWhiteSpace(target.TerminationClauses))
+            target.TerminationClauses = source.TerminationClauses;
+
+        // Phase 1.1 — recurring amount: take higher-confidence value across chunks
+        string? rma = target.RecurringMonthlyAmount; decimal? rmac = target.RecurringMonthlyAmountConfidence;
+        MergeConfidenceField(ref rma, ref rmac, source.RecurringMonthlyAmount, source.RecurringMonthlyAmountConfidence, ref conflicts);
+        target.RecurringMonthlyAmount = rma; target.RecurringMonthlyAmountConfidence = rmac;
+
+        // Duration: take first found (a contract has one term)
+        if (target.ContractDurationMonths == null && source.ContractDurationMonths != null)
+        {
+            target.ContractDurationMonths = source.ContractDurationMonths;
+            target.ContractDurationMonthsConfidence = source.ContractDurationMonthsConfidence;
+        }
+
+        // Written amount: take first found
+        if (string.IsNullOrWhiteSpace(target.WrittenAmountText) && !string.IsNullOrWhiteSpace(source.WrittenAmountText))
+            target.WrittenAmountText = source.WrittenAmountText;
+
+        // Inconsistency: if ANY chunk flagged it, propagate
+        if (source.WrittenAmountInconsistencyDetected)
+            target.WrittenAmountInconsistencyDetected = true;
     }
 
     private bool IsContractPartial(ExtractionContractDto? c)
     {
         if (c == null) return true;
-        return string.IsNullOrWhiteSpace(c.DocumentType) || string.IsNullOrWhiteSpace(c.Parties);
+        // A contract result is considered partial if none of the key date/value fields were extracted
+        return string.IsNullOrWhiteSpace(c.EffectiveDate)
+            && string.IsNullOrWhiteSpace(c.EndDate)
+            && string.IsNullOrWhiteSpace(c.TotalContractValue);
     }
 
     private string GetContractSystemPrompt()
     {
-        return @"You are a specialized legal document extractor.
-Extract the core metadata from the provided contract text or image. 
-Return a JSON object with a single 'contract' object containing these fields:
-- documentType: Type of contract (e.g. NDA, Master Service Agreement, Lease, etc.)
-- parties: Names of the entities involved
-- effectiveDate: Start or signature date (YYYY-MM-DD if possible)
-- endDate: Expiration or termination date (YYYY-MM-DD)
-- governingLaw: State or country law governing the agreement
-- paymentTerms: Any extracted payment terms
-- terminationClauses: Brief summary of termination conditions
+        return @"You are a specialized legal contract metadata extractor for an Angolan enterprise portal.
+Your task: extract structured metadata from the provided contract document.
 
-If a field is not found in the current chunk, return null. Do not hallucinate.
-Only return the JSON object, no other text.";
+IMPORTANT INSTRUCTIONS:
+- Output ONLY a JSON object. No markdown. No commentary. No triple backticks.
+- If a field is not found in the current chunk, set it to null.
+- Do NOT hallucinate. Only extract what is explicitly present in the document.
+- For every extracted field value, provide a confidence score (0.0 to 1.0).
+- Dates must be output in ISO-8601 format (YYYY-MM-DD) when recognisable.
+  Common Portuguese date patterns: '10 de Janeiro de 2024', '10/01/2024', 'jan. 2024'.
+  If ambiguous (e.g. 05/06/2024 could be May 6 or June 5), choose most likely from context.
+- The contract is likely in Portuguese, English, or German.
+- AlplaPLASTICOS or AlplaSOPRO is almost always one of the parties — do not extract them as the supplier.
+
+Output this exact JSON structure:
+{
+  ""contract"": {
+    ""documentType"": ""string or null"",
+    ""externalContractReference"": ""external contract/order number from counterparty, or null"",
+    ""supplierName"": ""name of supplier/counterparty (not AlplaPLASTICOS/AlplaSOPRO), or null"",
+    ""supplierTaxId"": ""tax ID / NIF / CNPJ / VAT of the supplier, or null"",
+    ""parties"": ""all party names semicolon-separated, or null"",
+    ""signatoryNames"": ""names near signature blocks semicolon-separated, or null"",
+    ""effectiveDate"": ""YYYY-MM-DD or null"",
+    ""effectiveDateConfidence"": 0.0,
+    ""endDate"": ""YYYY-MM-DD or null"",
+    ""endDateConfidence"": 0.0,
+    ""signatureDate"": ""YYYY-MM-DD or null"",
+    ""signatureDateConfidence"": 0.0,
+    ""totalContractValue"": ""raw text including currency symbol if present, e.g. 'USD 150,000.00', or null"",
+    ""totalContractValueConfidence"": 0.0,
+    ""currencyRaw"": ""currency code or symbol as written in document, e.g. 'USD', 'Kwanza', '$', or null"",
+    ""currencyConfidence"": 0.0,
+    ""governingLaw"": ""governing law clause text (max 200 chars), or null"",
+    ""governingLawConfidence"": 0.0,
+    ""paymentTerms"": ""payment terms text, or null"",
+    ""terminationClauses"": ""brief summary of termination conditions (max 300 chars), or null"",
+    ""contractScope"": ""1–2 sentence operational summary of the contract object or scope-of-services clause. Focus on: what service or work is provided, by whom, and where if stated. Exclude payment amounts, termination conditions, liability clauses, and legal recitals. Max 300 characters. null if no clear object/scope clause is found."",
+
+
+    ""recurringMonthlyAmount"": ""raw text of per-month amount if the contract is priced monthly (e.g. '770,330.00 Kz'), or null if no monthly pricing clause exists"",
+    ""recurringMonthlyAmountConfidence"": 0.0,
+    ""contractDurationMonths"": null,
+    ""contractDurationMonthsConfidence"": 0.0,
+    ""writtenAmountText"": ""the financial amount written in words if it appears in the document, e.g. 'nine hundred and eighty thousand kwanzas', or null"",
+    ""writtenAmountInconsistencyDetected"": false
+  },
+  ""qualityScore"": 0.0
+}
+
+Additional extraction rules for financial fields:
+- recurringMonthlyAmount: only populate when the clause explicitly describes a MONTHLY or PERIODIC amount (keywords: 'monthly', 'per month', 'por mês', 'valor mensal', 'mensalmente', 'cada mês', 'cada mes'). Do NOT populate if the amount is the global contract total.
+- contractDurationMonths: populate when the document states a contract term in months (e.g. 'vigência de 12 meses', 'term of 12 months', 'válido por 12 meses'). Output as an integer, not a string.
+- writtenAmountText: populate only when a financial amount is explicitly spelled out in words in the same clause as a numeric amount.
+- writtenAmountInconsistencyDetected: set to true ONLY when BOTH a numeric amount AND a written-word amount are present in the same clause AND they clearly do not match. Do NOT infer — only flag explicit contradictions you can see in the document text.
+- contractScope: summarise the object clause or scope-of-services clause in 1–2 clear operational sentences. Focus on what service or work is provided, by whom, and where (if stated). Do NOT include payment amounts, termination conditions, liability clauses, or recitals. If you cannot find a clear object or scope clause, output null. Maximum 300 characters.
+
+Confidence guidance:
+  1.0 = exact explicit text in document
+  0.85 = high confidence, minor ambiguity
+  0.65 = moderate confidence, inferred from context
+  below 0.50 = low confidence, likely incomplete";
     }
 
     private ExtractionResultDto MapContractFromJson(string json)
@@ -820,30 +1042,121 @@ Only return the JSON object, no other text.";
             var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
             var rawResult = JsonSerializer.Deserialize<JsonElement>(json, options);
 
+            // Detect if LLM returned an invoice-shaped JSON instead of a contract JSON.
+            // This happens when the document was misclassified by triage and the invoice
+            // prompt was used — the JSON will contain 'header' and 'items' keys but NOT 'contract'.
+            bool hasContractKey  = rawResult.TryGetProperty("contract", out var co);
+            bool hasHeaderKey    = rawResult.TryGetProperty("header", out _);
+            bool hasItemsKey     = rawResult.TryGetProperty("items", out _);
+
+            if (!hasContractKey && hasHeaderKey)
+            {
+                _logger.LogError(
+                    "[OCR-Contract] MapContractFromJson received an INVOICE-shaped JSON (has 'header'/'items', no 'contract' key). " +
+                    "This indicates the document was routed through the invoice pipeline instead of the contract pipeline. " +
+                    "Likely cause: triage keyword classification failed — sourceContext='CONTRACT' override should have prevented this. " +
+                    "Returning Success=false. Raw JSON (first 500 chars): {JsonSnippet}",
+                    json.Length > 500 ? json[..500] : json);
+                return new ExtractionResultDto
+                {
+                    Success = false,
+                    ProviderName = Name,
+                    QualityScore = rawResult.TryGetProperty("qualityScore", out var qs2) ? (decimal)qs2.GetDouble() : 0m
+                };
+            }
+
             var result = new ExtractionResultDto
             {
                 Success = true,
                 ProviderName = Name,
-                QualityScore = rawResult.TryGetProperty("qualityScore", out var qs) ? (decimal)qs.GetDouble() : 0.9m,
+                QualityScore = rawResult.TryGetProperty("qualityScore", out var qs) ? (decimal)qs.GetDouble() : 0.5m,
                 Contract = new ExtractionContractDto()
             };
 
-            if (rawResult.TryGetProperty("contract", out var contractObj))
+            var contractObj = hasContractKey ? co : rawResult; // Fallback: flat object instead of nested
+
+            static string? S(JsonElement el, string key)
+                => el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+            static decimal? D(JsonElement el, string key)
+                => el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Number ? (decimal?)v.GetDouble() : null;
+
+            result.Contract.DocumentType              = S(contractObj, "documentType");
+            result.Contract.ExternalContractReference = S(contractObj, "externalContractReference");
+            result.Contract.SupplierName              = S(contractObj, "supplierName");
+            result.Contract.SupplierTaxId             = S(contractObj, "supplierTaxId");
+            result.Contract.Parties                   = S(contractObj, "parties");
+            result.Contract.SignatoryNames             = S(contractObj, "signatoryNames");
+
+            result.Contract.EffectiveDate             = S(contractObj, "effectiveDate");
+            result.Contract.EffectiveDateConfidence   = D(contractObj, "effectiveDateConfidence");
+
+            result.Contract.EndDate                   = S(contractObj, "endDate");
+            result.Contract.EndDateConfidence         = D(contractObj, "endDateConfidence");
+
+            result.Contract.SignatureDate             = S(contractObj, "signatureDate");
+            result.Contract.SignatureDateConfidence   = D(contractObj, "signatureDateConfidence");
+
+            result.Contract.TotalContractValue           = S(contractObj, "totalContractValue");
+            result.Contract.TotalContractValueConfidence = D(contractObj, "totalContractValueConfidence");
+
+            result.Contract.CurrencyRaw               = S(contractObj, "currencyRaw");
+            result.Contract.CurrencyConfidence        = D(contractObj, "currencyConfidence");
+
+            result.Contract.GoverningLaw              = S(contractObj, "governingLaw");
+            result.Contract.GoverningLawConfidence    = D(contractObj, "governingLawConfidence");
+
+            result.Contract.PaymentTerms              = S(contractObj, "paymentTerms");
+            result.Contract.TerminationClauses        = S(contractObj, "terminationClauses");
+            result.Contract.ContractScope             = S(contractObj, "contractScope");
+
+            // ── Phase 1.1 financial rule fields ──────────────────────────
+            result.Contract.RecurringMonthlyAmount           = S(contractObj, "recurringMonthlyAmount");
+            result.Contract.RecurringMonthlyAmountConfidence = D(contractObj, "recurringMonthlyAmountConfidence");
+            result.Contract.WrittenAmountText                = S(contractObj, "writtenAmountText");
+            result.Contract.WrittenAmountInconsistencyDetected =
+                contractObj.TryGetProperty("writtenAmountInconsistencyDetected", out var wai)
+                && wai.ValueKind == JsonValueKind.True;
+
+            // contractDurationMonths is an integer (not a string) in the prompt
+            if (contractObj.TryGetProperty("contractDurationMonths", out var cdm)
+                && cdm.ValueKind == JsonValueKind.Number
+                && cdm.TryGetInt32(out var cdmInt))
             {
-                result.Contract.DocumentType = contractObj.TryGetProperty("documentType", out var dt) ? dt.GetString() : null;
-                result.Contract.Parties = contractObj.TryGetProperty("parties", out var p) ? p.GetString() : null;
-                result.Contract.EffectiveDate = contractObj.TryGetProperty("effectiveDate", out var ed) ? ed.GetString() : null;
-                result.Contract.EndDate = contractObj.TryGetProperty("endDate", out var endd) ? endd.GetString() : null;
-                result.Contract.GoverningLaw = contractObj.TryGetProperty("governingLaw", out var gl) ? gl.GetString() : null;
-                result.Contract.PaymentTerms = contractObj.TryGetProperty("paymentTerms", out var pt) ? pt.GetString() : null;
-                result.Contract.TerminationClauses = contractObj.TryGetProperty("terminationClauses", out var tc) ? tc.GetString() : null;
+                result.Contract.ContractDurationMonths = cdmInt;
+            }
+            result.Contract.ContractDurationMonthsConfidence = D(contractObj, "contractDurationMonthsConfidence");
+
+            // Diagnostic: check how many fields were actually populated
+            var populatedFields = new[]
+            {
+                result.Contract.EffectiveDate, result.Contract.EndDate, result.Contract.SignatureDate,
+                result.Contract.TotalContractValue, result.Contract.CurrencyRaw,
+                result.Contract.SupplierName, result.Contract.Parties, result.Contract.GoverningLaw,
+                result.Contract.PaymentTerms, result.Contract.TerminationClauses
+            }.Count(f => !string.IsNullOrWhiteSpace(f));
+
+            _logger.LogInformation(
+                "[OCR-Contract] MapContractFromJson complete. {PopulatedCount}/10 key fields populated. " +
+                "QualityScore={Quality}. HasContractKey={HasKey}, FlatFallback={Flat}.",
+                populatedFields, result.QualityScore, hasContractKey, !hasContractKey);
+
+            if (populatedFields == 0)
+            {
+                _logger.LogWarning(
+                    "[OCR-Contract] MapContractFromJson produced zero populated fields for this chunk/call. " +
+                    "The LLM may have returned an empty or unexpected JSON structure. JSON snippet: {JsonSnippet}",
+                    json.Length > 300 ? json[..300] : json);
             }
 
             return result;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to map OpenAI Contract JSON response. JSON: {Json}", json);
+            _logger.LogError(ex,
+                "[OCR-Contract] MapContractFromJson threw an exception — JSON parsing or mapping failed. " +
+                "This means the LLM returned malformed JSON or an unexpected schema. JSON snippet: {JsonSnippet}",
+                json.Length > 500 ? json[..500] : json);
             return new ExtractionResultDto { Success = false, ProviderName = Name };
         }
     }

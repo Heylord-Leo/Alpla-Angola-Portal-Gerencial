@@ -45,6 +45,7 @@ public static class ContractConstants
         public const string Created = "CREATED";
         public const string StatusChanged = "STATUS_CHANGED";
         public const string DocumentUploaded = "DOCUMENT_UPLOADED";
+        public const string DocumentDeleted = "DOCUMENT_DELETED";
         public const string ObligationAdded = "OBLIGATION_ADDED";
         public const string OcrExtracted = "OCR_EXTRACTED";
         public const string FieldUpdated = "FIELD_UPDATED";
@@ -166,5 +167,41 @@ public static class ContractConstants
         /// <summary>Penalty expressed as a fixed monetary amount.</summary>
         public const string FixedAmount = "FIXED_AMOUNT";
     }
+
+    /// <summary>
+    /// Status codes for contract OCR extraction runs.
+    /// Mirrored on Contract.OcrStatus for quick filtering.
+    /// </summary>
+    public static class OcrStatuses
+    {
+        /// <summary>Extraction queued but not started.</summary>
+        public const string Pending = "PENDING";
+
+        /// <summary>LLM call(s) in flight.</summary>
+        public const string Processing = "PROCESSING";
+
+        /// <summary>Extraction finished. Field rows available. May be partial.</summary>
+        public const string Completed = "COMPLETED";
+
+        /// <summary>Provider error, timeout, or no parseable output.</summary>
+        public const string Failed = "FAILED";
+    }
+
+    /// <summary>
+    /// Controls how an OCR extracted field is presented in the frontend.
+    /// Stored on ContractOcrExtractedField.DisplayHint.
+    /// </summary>
+    public static class OcrDisplayHints
+    {
+        /// <summary>Field pre-populated with amber border. Requires explicit Confirmar before saving.</summary>
+        public const string AutoFill = "AUTO_FILL";
+
+        /// <summary>Chip shown below empty field. User clicks Aplicar to accept (one-step).</summary>
+        public const string Suggestion = "SUGGESTION";
+
+        /// <summary>Shown in summary panel only. Never applied to a form field.</summary>
+        public const string ReferenceOnly = "REFERENCE_ONLY";
+    }
 }
+
 

@@ -1,10 +1,12 @@
 namespace AlplaPortal.Api.Controllers;
 
 using AlplaPortal.Application.DTOs.Contracts;
+using AlplaPortal.Application.Interfaces.Contracts;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Domain.Services;
 using AlplaPortal.Infrastructure.Data;
+using AlplaPortal.Infrastructure.Services.Contracts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -15,10 +17,15 @@ using Microsoft.EntityFrameworkCore;
 public class ContractsController : BaseController
 {
     private readonly ILogger<ContractsController> _logger;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public ContractsController(ApplicationDbContext context, ILogger<ContractsController> logger) : base(context)
+    public ContractsController(
+        ApplicationDbContext context,
+        ILogger<ContractsController> logger,
+        IServiceScopeFactory scopeFactory) : base(context)
     {
-        _logger = logger;
+        _logger       = logger;
+        _scopeFactory = scopeFactory;
     }
 
     // ─── Helpers ───
@@ -259,6 +266,7 @@ public class ContractsController : BaseController
                 GoverningLaw = c.GoverningLaw,
                 TerminationClauses = c.TerminationClauses,
                 OcrValidatedByUser = c.OcrValidatedByUser,
+                OcrStatus = c.OcrStatus,
                 // Two-step approval participants (DEC-118)
                 TechnicalApproverId = c.TechnicalApproverId,
                 TechnicalApproverName = c.TechnicalApprover != null ? c.TechnicalApprover.FullName : null,
@@ -267,18 +275,34 @@ public class ContractsController : BaseController
                 CreatedAtUtc = c.CreatedAtUtc,
                 CreatedByUserName = c.CreatedByUser.FullName,
                 UpdatedAtUtc = c.UpdatedAtUtc,
-                Documents = c.Documents.Select(d => new ContractDocumentDto
-                {
-                    Id = d.Id,
-                    DocumentType = d.DocumentType,
-                    FileName = d.FileName,
-                    ContentType = d.ContentType,
-                    FileSizeBytes = d.FileSizeBytes,
-                    Description = d.Description,
-                    VersionNumber = d.VersionNumber,
-                    UploadedAtUtc = d.UploadedAtUtc,
-                    UploadedByUserName = d.UploadedByUser.FullName
-                }).ToList(),
+                Documents = c.Documents
+                    .Where(d => !d.IsDeleted)
+                    .OrderByDescending(d => d.UploadedAtUtc)
+                    .Select(d => new ContractDocumentDto
+                    {
+                        Id = d.Id,
+                        DocumentType = d.DocumentType,
+                        FileName = d.FileName,
+                        ContentType = d.ContentType,
+                        FileSizeBytes = d.FileSizeBytes,
+                        Description = d.Description,
+                        VersionNumber = d.VersionNumber,
+                        UploadedAtUtc = d.UploadedAtUtc,
+                        UploadedByUserName = d.UploadedByUser.FullName,
+                        HasOcrRecord = d.OcrExtractionRecordId != null,
+                        OcrStatus = d.OcrExtractionRecord != null ? d.OcrExtractionRecord.Status : null,
+                        // Primary = the document that the OCR auto-pick logic would choose:
+                        // first by DocumentType == ORIGINAL, then latest upload date.
+                        // We compute this by checking if this document has ORIGINAL type AND no other
+                        // non-deleted ORIGINAL document was uploaded later.
+                        IsPrimaryOcrSource =
+                            (d.DocumentType == "ORIGINAL") &&
+                            !c.Documents.Any(other =>
+                                !other.IsDeleted &&
+                                other.DocumentType == "ORIGINAL" &&
+                                other.UploadedAtUtc > d.UploadedAtUtc)
+                    }).ToList(),
+
                 Histories = c.Histories.OrderByDescending(h => h.OccurredAtUtc).Select(h => new ContractHistoryDto
                 {
                     Id = h.Id,
@@ -1575,6 +1599,73 @@ public class ContractsController : BaseController
         return File(stream, doc.ContentType ?? "application/octet-stream", doc.FileName);
     }
 
+    // ─── DELETE DOCUMENT ───
+
+    /// <summary>
+    /// Soft-deletes a contract document.
+    /// Physical file is NOT removed (deferred to a background cleanup job).
+    /// OCR records referencing this document are fully preserved.
+    ///
+    /// Guards:
+    ///   1. Write access required.
+    ///   2. Cannot delete the last active document on a non-DRAFT contract.
+    ///   3. Cannot delete a document whose OCR record is currently PROCESSING.
+    /// </summary>
+    [HttpDelete("{contractId:guid}/documents/{documentId:guid}")]
+    public async Task<ActionResult> DeleteDocument(Guid contractId, Guid documentId)
+    {
+        if (!HasWriteAccess()) return Forbid();
+
+        var doc = await _context.ContractDocuments
+            .FirstOrDefaultAsync(d => d.Id == documentId && d.ContractId == contractId && !d.IsDeleted);
+
+        if (doc == null) return NotFound("Documento não encontrado.");
+
+        // Guard 1: cannot delete last non-deleted document on a non-DRAFT contract.
+        var contract = await _context.Contracts.FindAsync(contractId);
+        if (contract == null) return NotFound("Contrato não encontrado.");
+
+        var activeDocCount = await _context.ContractDocuments
+            .CountAsync(d => d.ContractId == contractId && !d.IsDeleted);
+
+        if (activeDocCount <= 1 && contract.StatusCode != ContractConstants.Statuses.Draft)
+            return Conflict(new { message = "Não é possível remover o único documento de um contrato ativo. Carregue um documento substituto primeiro." });
+
+        // Guard 2: cannot delete a document being actively processed by OCR.
+        if (doc.OcrExtractionRecordId.HasValue)
+        {
+            var ocrStatus = await _context.ContractOcrExtractionRecords
+                .Where(r => r.Id == doc.OcrExtractionRecordId.Value)
+                .Select(r => r.Status)
+                .FirstOrDefaultAsync();
+
+            if (ocrStatus == ContractConstants.OcrStatuses.Processing)
+                return Conflict(new { message = "OCR em processamento para este documento. Aguarde a conclusão antes de eliminar." });
+        }
+
+        // Soft-delete
+        var now = DateTime.UtcNow;
+        doc.IsDeleted = true;
+        doc.DeletedAtUtc = now;
+        doc.DeletedByUserId = CurrentUserId;
+
+        _context.ContractHistories.Add(new ContractHistory
+        {
+            ContractId = contractId,
+            EventType = ContractConstants.HistoryEventTypes.DocumentDeleted,
+            Comment = $"Documento \"{doc.FileName}\" (v{doc.VersionNumber}) removido.",
+            OccurredAtUtc = now,
+            ActorUserId = CurrentUserId
+        });
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Document soft-deleted: ContractId={ContractId}, DocumentId={DocumentId}, UserId={UserId}",
+            contractId, documentId, CurrentUserId);
+
+        return NoContent();
+    }
+
     // ─── ALERTS ───
 
     [HttpGet("alerts")]
@@ -1637,4 +1728,340 @@ public class ContractsController : BaseController
 
         return Ok(types);
     }
+
+    // ─── OCR ───
+
+    /// <summary>
+    /// Triggers async OCR processing for a contract document.
+    /// When documentId is provided, that specific document is used as the OCR source.
+    /// When omitted, falls back to the auto-pick logic: ORIGINAL type preferred, most recently uploaded.
+    /// Returns 202 Accepted immediately; poll /ocr-status for completion.
+    /// Authorization: write access only (Contracts role or Admin).
+    /// </summary>
+    [HttpPost("{id:guid}/ocr-trigger")]
+    public async Task<ActionResult> TriggerOcr(Guid id, [FromQuery] Guid? documentId)
+    {
+        if (!HasWriteAccess()) return Forbid();
+
+        var contract = await _context.Contracts
+            .Include(c => c.Documents)
+            .FirstOrDefaultAsync(c => c.Id == id);
+
+        if (contract == null) return NotFound(new { message = "Contrato não encontrado." });
+        if (contract.OcrStatus == ContractConstants.OcrStatuses.Processing)
+            return Conflict(new { message = "OCR já está em processamento para este contrato." });
+
+        ContractDocument? document;
+
+        if (documentId.HasValue)
+        {
+            // Explicit document selection from the Documents tab
+            document = contract.Documents
+                .FirstOrDefault(d => d.Id == documentId.Value && !d.IsDeleted);
+
+            if (document == null)
+                return BadRequest(new { message = "Documento seleccionado não encontrado ou foi removido." });
+
+            // PDF-only restriction: OCR only supports PDF in Phase 1
+            var ext = Path.GetExtension(document.FileName).ToLowerInvariant();
+            if (ext != ".pdf")
+                return BadRequest(new { message = "OCR suporta apenas ficheiros PDF. Seleccione um documento PDF." });
+        }
+        else
+        {
+            // Auto-pick: ORIGINAL DocumentType preferred, then most recently uploaded, non-deleted
+            document = contract.Documents
+                .Where(d => !d.IsDeleted)
+                .OrderByDescending(d => d.DocumentType == "ORIGINAL")
+                .ThenByDescending(d => d.UploadedAtUtc)
+                .FirstOrDefault();
+
+            if (document == null)
+                return BadRequest(new { message = "Nenhum documento encontrado para processar OCR." });
+        }
+
+        var userId = CurrentUserId;
+        var contractId = contract.Id;
+        var selectedDocumentId = document.Id;
+
+        // Fire-and-forget with scoped DI (avoids DbContext lifetime conflicts)
+        _ = Task.Run(async () =>
+        {
+            await using var scope   = _scopeFactory.CreateAsyncScope();
+            var processor           = scope.ServiceProvider.GetRequiredService<ContractOcrBackgroundProcessor>();
+            await processor.ProcessAsync(contractId, selectedDocumentId, userId);
+        });
+
+        _logger.LogInformation("OCR triggered for ContractId={ContractId}, DocumentId={DocumentId}, UserId={UserId}",
+            contractId, selectedDocumentId, userId);
+
+        return Accepted(new
+        {
+            contractId = contractId,
+            documentId = selectedDocumentId,
+            status     = ContractConstants.OcrStatuses.Processing,
+            message    = "OCR iniciado. Consulte /ocr-status para acompanhar."
+        });
+    }
+
+    /// <summary>
+    /// Returns the current OCR status and latest record summary for a contract.
+    /// Used by the frontend to poll after triggering OCR.
+    /// </summary>
+    [HttpGet("{id:guid}/ocr-status")]
+    public async Task<ActionResult> GetOcrStatus(Guid id)
+    {
+        if (!HasContractAccess()) return Forbid();
+
+        var contract = await _context.Contracts
+            .AsNoTracking()
+            .Select(c => new { c.Id, c.OcrStatus })
+            .FirstOrDefaultAsync(c => c.Id == id);
+
+        if (contract == null) return NotFound();
+
+        var latestRecord = await _context.ContractOcrExtractionRecords
+            .AsNoTracking()
+            .Where(r => r.ContractId == id)
+            .OrderByDescending(r => r.TriggeredAtUtc)
+            .Select(r => new
+            {
+                r.Id,
+                r.Status,
+                r.QualityScore,
+                r.IsPartial,
+                r.ConflictsDetected,
+                r.NativeTextDetected,
+                r.RoutingStrategy,
+                r.ChunkCount,
+                r.TotalTokensUsed,
+                r.TriggeredAtUtc,
+                r.ProcessedAtUtc,
+                r.ErrorMessage,
+            })
+            .FirstOrDefaultAsync();
+
+        return Ok(new
+        {
+            contractId  = id,
+            ocrStatus   = contract.OcrStatus,
+            latestRecord,
+        });
+    }
+
+    /// <summary>
+    /// Returns the per-field extraction rows for the latest OCR record of a contract.
+    /// The frontend uses DisplayHint to decide which fields to pre-populate (AUTO_FILL)
+    /// versus present as chips (SUGGESTION) versus show in the summary panel (REFERENCE_ONLY).
+    /// </summary>
+    [HttpGet("{id:guid}/ocr-fields")]
+    public async Task<ActionResult> GetOcrFields(Guid id)
+    {
+        if (!HasContractAccess()) return Forbid();
+
+        // Resolve the latest completed extraction record
+        var latestRecord = await _context.ContractOcrExtractionRecords
+            .AsNoTracking()
+            .Where(r => r.ContractId == id && r.Status == ContractConstants.OcrStatuses.Completed)
+            .OrderByDescending(r => r.ProcessedAtUtc)
+            .FirstOrDefaultAsync();
+
+        if (latestRecord == null)
+            return NotFound(new { message = "Nenhum resultado de OCR disponível para este contrato." });
+
+        var fields = await _context.ContractOcrExtractedFields
+            .AsNoTracking()
+            .Where(f => f.ExtractionRecordId == latestRecord.Id)
+            .OrderBy(f => f.FieldName)
+            .Select(f => new
+            {
+                f.Id,
+                f.FieldName,
+                f.RawExtractedValue,
+                f.NormalisedValue,
+                f.ConfidenceScore,
+                f.DisplayHint,
+                f.ConfirmedByUser,
+                f.ConfirmedAtUtc,
+                f.WasOverridden,
+                f.FinalSavedValue,
+                f.DiscardedByUser,
+            })
+            .ToListAsync();
+
+        return Ok(new
+        {
+            extractionRecordId = latestRecord.Id,
+            qualityScore       = latestRecord.QualityScore,
+            isPartial          = latestRecord.IsPartial,
+            conflictsDetected  = latestRecord.ConflictsDetected,
+            processedAtUtc     = latestRecord.ProcessedAtUtc,
+            fields,
+        });
+    }
+
+    /// <summary>
+    /// Persists user field-level confirmation decisions from the OCR staging UI.
+    /// Targets the latest COMPLETED OCR record for this contract.
+    ///
+    /// Call this when the user:
+    ///   - clicks "Confirmar" on an AUTO_FILL field,
+    ///   - clicks "Confirmar todos" in the summary panel, or
+    ///   - discards one or more fields via "Limpar" / "Ignorar".
+    ///
+    /// This does NOT save field values to the contract — that remains the
+    /// responsibility of the standard PUT /contracts/{id} endpoint.
+    /// Authorization: write access required.
+    /// </summary>
+    [HttpPost("{id:guid}/ocr-confirm")]
+    public async Task<ActionResult> ConfirmOcrFields(Guid id, [FromBody] OcrConfirmRequestDto request)
+    {
+        if (!HasWriteAccess()) return Forbid();
+
+        if (request?.Fields == null || !request.Fields.Any())
+            return BadRequest(new { message = "Nenhum campo enviado para confirmação." });
+
+        // Resolve the latest completed extraction record for this contract
+        var latestRecord = await _context.ContractOcrExtractionRecords
+            .Where(r => r.ContractId == id && r.Status == ContractConstants.OcrStatuses.Completed)
+            .OrderByDescending(r => r.ProcessedAtUtc)
+            .FirstOrDefaultAsync();
+
+        if (latestRecord == null)
+            return NotFound(new { message = "Nenhum resultado de OCR concluído disponível para este contrato." });
+
+        // Load all field rows for this record in one query
+        var incomingIds = request.Fields
+            .Where(f => f.FieldId.HasValue)
+            .Select(f => f.FieldId!.Value)
+            .ToHashSet();
+
+        var incomingNames = request.Fields
+            .Where(f => !f.FieldId.HasValue && !string.IsNullOrWhiteSpace(f.FieldName))
+            .Select(f => f.FieldName!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var fieldRows = await _context.ContractOcrExtractedFields
+            .Where(f => f.ExtractionRecordId == latestRecord.Id
+                     && (incomingIds.Contains(f.Id) || incomingNames.Contains(f.FieldName)))
+            .ToListAsync();
+
+        if (!fieldRows.Any())
+            return NotFound(new { message = "Nenhum campo correspondente encontrado no registo de OCR." });
+
+        var now    = DateTime.UtcNow;
+        var userId = CurrentUserId;
+
+        int confirmedCount = 0;
+        int discardedCount = 0;
+
+        foreach (var incoming in request.Fields)
+        {
+            // Match by Id first, then by FieldName
+            var row = incoming.FieldId.HasValue
+                ? fieldRows.FirstOrDefault(f => f.Id == incoming.FieldId.Value)
+                : fieldRows.FirstOrDefault(f =>
+                    string.Equals(f.FieldName, incoming.FieldName, StringComparison.OrdinalIgnoreCase));
+
+            if (row == null) continue;
+
+            if (incoming.Discarded)
+            {
+                row.DiscardedByUser  = true;
+                row.ConfirmedByUser  = false;
+                discardedCount++;
+            }
+            else
+            {
+                row.ConfirmedByUser   = true;
+                row.ConfirmedAtUtc    = now;
+                row.ConfirmedByUserId = userId;
+                row.WasOverridden     = incoming.WasOverridden;
+
+                // FinalSavedValue: use the overridden value if provided, else the normalised value
+                row.FinalSavedValue = !string.IsNullOrWhiteSpace(incoming.AcceptedValue)
+                    ? incoming.AcceptedValue
+                    : row.NormalisedValue;
+
+                confirmedCount++;
+            }
+        }
+
+        // Write a single ContractHistory event summarising the user action
+        var comment = (confirmedCount, discardedCount) switch
+        {
+            (> 0, > 0) => $"Utilizador confirmou {confirmedCount} campo(s) e descartou {discardedCount} campo(s) extraídos por OCR.",
+            (> 0, 0)   => $"Utilizador confirmou {confirmedCount} campo(s) extraídos por OCR.",
+            (0, > 0)   => $"Utilizador descartou {discardedCount} campo(s) extraídos por OCR.",
+            _          => "Utilizador actualizou confirmações de campos OCR."
+        };
+
+        _context.ContractHistories.Add(new ContractHistory
+        {
+            ContractId    = id,
+            EventType     = ContractConstants.HistoryEventTypes.FieldUpdated,
+            Comment       = comment,
+            OccurredAtUtc = now,
+            ActorUserId   = userId
+        });
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "OCR field confirmation for ContractId={ContractId}: confirmed={Confirmed}, discarded={Discarded}, UserId={UserId}",
+            id, confirmedCount, discardedCount, userId);
+
+        return Ok(new
+        {
+            contractId         = id,
+            extractionRecordId = latestRecord.Id,
+            confirmedCount,
+            discardedCount,
+            processedAtUtc     = now,
+            message            = comment
+        });
+    }
+}
+
+// ─── OCR Confirm Request DTOs ──────────────────────────────────────────────
+
+/// <summary>
+/// Request body for POST {id}/ocr-confirm.
+/// Send one entry per field the user has reviewed (confirmed or discarded).
+/// Fields not included in the request are left unchanged.
+/// </summary>
+public sealed class OcrConfirmRequestDto
+{
+    public List<OcrFieldConfirmDto> Fields { get; set; } = new();
+}
+
+/// <summary>
+/// Represents the user's decision for a single extracted field.
+/// </summary>
+public sealed class OcrFieldConfirmDto
+{
+    /// <summary>The ContractOcrExtractedField primary key. Preferred over FieldName.</summary>
+    public Guid? FieldId { get; set; }
+
+    /// <summary>
+    /// Canonical field name (e.g. "EffectiveDateUtc"). Used as fallback when FieldId is absent.
+    /// Case-insensitive match.
+    /// </summary>
+    public string? FieldName { get; set; }
+
+    /// <summary>
+    /// True if the user dismissed/cleared this field suggestion.
+    /// When true, AcceptedValue and WasOverridden are ignored.
+    /// </summary>
+    public bool Discarded { get; set; }
+
+    /// <summary>
+    /// The value the user accepted. If the user edited the value before confirming,
+    /// this carries the edited value and WasOverridden must be true.
+    /// If null/empty, the persisted NormalisedValue is used as FinalSavedValue.
+    /// </summary>
+    public string? AcceptedValue { get; set; }
+
+    /// <summary>True if the user changed the OCR-suggested value before confirming.</summary>
+    public bool WasOverridden { get; set; }
 }

@@ -1,4 +1,11 @@
 import { apiFetch, API_BASE_URL, ApiError } from './api';
+import type {
+    OcrTriggerResponse,
+    OcrStatusResponse,
+    OcrFieldsResponse,
+    OcrConfirmRequest,
+    OcrConfirmResponse,
+} from '../types/contractOcr.types';
 
 const BASE = `${API_BASE_URL}/api/v1/contracts`;
 
@@ -53,6 +60,11 @@ export interface ContractDocument {
     versionNumber: number;
     uploadedAtUtc: string;
     uploadedByUserName: string;
+    // OCR relationship (Phase 1.2)
+    hasOcrRecord: boolean;
+    ocrStatus?: string | null;
+    /** True when this document would be auto-selected by the OCR trigger logic. */
+    isPrimaryOcrSource: boolean;
 }
 
 export interface ContractHistory {
@@ -151,6 +163,7 @@ export interface ContractDetail {
     governingLaw?: string;
     terminationClauses?: string;
     ocrValidatedByUser: boolean;
+    ocrStatus?: string | null;
     // Two-step approval participants (DEC-118)
     technicalApproverId?: string;
     technicalApproverName?: string;
@@ -439,6 +452,31 @@ export function getDocumentDownloadUrl(contractId: string, documentId: string): 
     return `${BASE}/${contractId}/documents/${documentId}/download`;
 }
 
+/** Soft-deletes a contract document. Returns 204 on success. */
+export async function deleteContractDocument(contractId: string, documentId: string): Promise<void> {
+    const res = await apiFetch(`${BASE}/${contractId}/documents/${documentId}`, { method: 'DELETE' });
+    if (!res.ok) {
+        const text = await res.text();
+        throw new ApiError(text || `HTTP ${res.status}`, res.status);
+    }
+}
+
+/**
+ * Triggers OCR on a specific document.
+ * When documentId is provided it is passed as a query parameter so the backend
+ * uses that document instead of the auto-pick logic.
+ */
+export async function triggerOcr(contractId: string, documentId?: string): Promise<void> {
+    const url = documentId
+        ? `${BASE}/${contractId}/ocr-trigger?documentId=${documentId}`
+        : `${BASE}/${contractId}/ocr-trigger`;
+    const res = await apiFetch(url, { method: 'POST' });
+    if (!res.ok) {
+        const text = await res.text();
+        throw new ApiError(text || `HTTP ${res.status}`, res.status);
+    }
+}
+
 // ─── Status Helpers ───
 
 export const CONTRACT_STATUS_MAP: Record<string, { label: string; color: string; bg: string }> = {
@@ -460,3 +498,74 @@ export const OBLIGATION_STATUS_MAP: Record<string, { label: string; color: strin
     PAID: { label: 'Pago', color: '#059669', bg: '#d1fae5' },
     CANCELLED: { label: 'Cancelado', color: '#6b7280', bg: '#f3f4f6' }
 };
+
+// ─── OCR API (Phase 1) ────────────────────────────────────────────────────────
+
+/**
+ * POST /api/v1/contracts/{id}/ocr-trigger
+ *
+ * Selects the primary document automatically (ORIGINAL type preferred, then
+ * most recent) and starts async OCR extraction.
+ *
+ * Returns 202 Accepted immediately. Poll getOcrStatus() to track progress.
+ * Throws ApiError(409) if OCR is already PROCESSING for this contract.
+ */
+export async function triggerContractOcr(contractId: string): Promise<OcrTriggerResponse> {
+    const res = await apiFetch(`${BASE}/${contractId}/ocr-trigger`, { method: 'POST' });
+    return handleResponse<OcrTriggerResponse>(res);
+}
+
+/**
+ * GET /api/v1/contracts/{id}/ocr-status
+ *
+ * Returns the current OCR status and latest extraction record summary.
+ * Call this while ocrStatus is PENDING or PROCESSING. Stop polling when
+ * ocrStatus is COMPLETED or FAILED.
+ *
+ * `latestRecord` is null when OCR has never been triggered for this contract.
+ */
+export async function getOcrStatus(contractId: string): Promise<OcrStatusResponse> {
+    const res = await apiFetch(`${BASE}/${contractId}/ocr-status`);
+    return handleResponse<OcrStatusResponse>(res);
+}
+
+/**
+ * GET /api/v1/contracts/{id}/ocr-fields
+ *
+ * Returns per-field extraction rows from the latest COMPLETED record.
+ * Call this once after getOcrStatus() returns COMPLETED.
+ *
+ * Throws ApiError(404) when no COMPLETED record exists yet.
+ */
+export async function getOcrFields(contractId: string): Promise<OcrFieldsResponse> {
+    const res = await apiFetch(`${BASE}/${contractId}/ocr-fields`);
+    return handleResponse<OcrFieldsResponse>(res);
+}
+
+/**
+ * POST /api/v1/contracts/{id}/ocr-confirm
+ *
+ * Persists user field-level confirmation decisions.
+ * Call this when the user:
+ *   - clicks "Confirmar" on an individual AUTO_FILL field,
+ *   - clicks "Confirmar todos" in the summary panel, or
+ *   - clicks "Limpar" / "Ignorar" to discard a field.
+ *
+ * Prefer `fieldId` (OcrExtractedField.id) over `fieldName` in each item.
+ * Fields NOT included in the request are left unchanged in the database.
+ *
+ * This does NOT save field values to the contract — that is done by
+ * createContract() / updateContract() using the form payload.
+ */
+export async function confirmOcrFields(
+    contractId: string,
+    request: OcrConfirmRequest,
+): Promise<OcrConfirmResponse> {
+    const res = await apiFetch(`${BASE}/${contractId}/ocr-confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+    });
+    return handleResponse<OcrConfirmResponse>(res);
+}
+

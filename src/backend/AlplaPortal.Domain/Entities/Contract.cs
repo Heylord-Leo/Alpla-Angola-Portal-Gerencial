@@ -123,8 +123,21 @@ public class Contract
 
 
     // OCR Tracking
+    /// <summary>
+    /// References ContractOcrExtractionRecord.Id (stored as string for backward compatibility).
+    /// Updated to the latest extraction record ID each time OCR runs.
+    /// </summary>
     public string? OcrExtractionBatchId { get; set; }
+
+    /// <summary>True once the user has confirmed all OCR-staged fields (via POST .../ocr/{id}/confirm).</summary>
     public bool OcrValidatedByUser { get; set; }
+
+    /// <summary>
+    /// Mirrors the latest ContractOcrExtractionRecord.Status for efficient filtering.
+    /// Valid values: null (no OCR run), "PENDING", "PROCESSING", "COMPLETED", "FAILED".
+    /// </summary>
+    public string? OcrStatus { get; set; }
+
 
     // ── Two-step approval participants (DEC-118) ─────────────────────────────────────
     // Auto-assigned when the contract is submitted for review via POST /{id}/submit-review.

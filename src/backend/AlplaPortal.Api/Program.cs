@@ -1,10 +1,12 @@
 using AlplaPortal.Application.Interfaces;
+using AlplaPortal.Application.Interfaces.Contracts;
 using AlplaPortal.Application.Interfaces.Extraction;
 using AlplaPortal.Application.Interfaces.Integration;
 using AlplaPortal.Application.Models.Configuration;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Logging;
 using AlplaPortal.Infrastructure.Services;
+using AlplaPortal.Infrastructure.Services.Contracts;
 using AlplaPortal.Infrastructure.Services.Extraction;
 using AlplaPortal.Infrastructure.Services.Integration;
 using AlplaPortal.Infrastructure.Services.Auth;
@@ -58,6 +60,10 @@ builder.Services.AddScoped<IWorkflowNotificationOrchestrator, WorkflowNotificati
 
 // Approval Intelligence
 builder.Services.AddScoped<IApprovalIntelligenceService, ApprovalIntelligenceService>();
+
+// Contract OCR Services
+builder.Services.AddScoped<IContractOcrNormalisationService, ContractOcrNormalisationService>();
+builder.Services.AddScoped<ContractOcrBackgroundProcessor>();
 
 // Auth Services
 builder.Services.Configure<SecurityOptions>(builder.Configuration.GetSection("Security"));

@@ -7,6 +7,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import {
     createContract, updateContract, fetchContractDetail,
     fetchPaymentTermTypes, fetchReferenceEventTypes,
+    uploadContractDocument,
     CreateContractPayload, ContractDetail,
     PaymentTermType, ReferenceEventType
 } from '../../lib/contractsApi';
@@ -15,6 +16,15 @@ import { SupplierAutocomplete } from '../../components/SupplierAutocomplete';
 import { DateInput } from '../../components/DateInput';
 import { CurrencyInput } from '../../components/CurrencyInput';
 import type { LookupDto } from '../../types';
+import { useContractOcr } from '../../hooks/useContractOcr';
+import { OCR_GATED_FIELDS } from '../../types/contractOcr.types';
+import {
+    ContractOcrUploadZone,
+    ContractOcrSummaryPanel,
+    ContractOcrCautionBanner,
+    OcrFieldWrapper,
+    OcrTerminationReferencePanel,
+} from './ocr';
 
 // ─── Types matching existing master data DTO shapes ───
 
@@ -295,6 +305,10 @@ export default function ContractCreate() {
     const navigate = useNavigate();
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
+    // OCR warn modal: true when user clicks Save with unconfirmed gated fields present
+    const [showOcrWarnModal, setShowOcrWarnModal] = useState(false);
+    // When true the next handleSubmit execution skips the modal check (user already acknowledged)
+    const [ocrWarnAcknowledged, setOcrWarnAcknowledged] = useState(false);
     const [loading, setLoading] = useState(!!id);
 
     // Lookup state
@@ -311,6 +325,12 @@ export default function ContractCreate() {
     // UI state
     const [paymentRulesOpen, setPaymentRulesOpen] = useState(false);
     const [paymentHelpField, setPaymentHelpField] = useState<string | null>(null);
+
+    // ─── OCR upload UI state ───
+    /** Name of the last successfully uploaded contract document (for display in the upload zone) */
+    const [primaryDocumentName, setPrimaryDocumentName] = useState<string | undefined>(undefined);
+    /** True while uploadContractDocument is in-flight for the OCR upload zone */
+    const [isUploadingOcrDocument, setIsUploadingOcrDocument] = useState(false);
 
     // ─── General form state ───
     const [title, setTitle] = useState('');
@@ -350,6 +370,103 @@ export default function ContractCreate() {
     const [financialNotes, setFinancialNotes] = useState('');
     const [penaltyNotes, setPenaltyNotes] = useState('');
 
+    // ─── OCR hook ───
+
+    const ocr = useContractOcr(id ?? null);
+
+    /**
+     * Tracks which SUGGESTION fieldNames have been applied from the panel.
+     * Used to show the "Aplicado ao formulário" state in SuggestionRow without
+     * calling ocr.applySuggestion() (which would mutate displayHint to AUTO_FILL
+     * and trigger gating logic — suggestions are never gated).
+     */
+    const [appliedSuggestions, setAppliedSuggestions] = useState<Set<string>>(new Set());
+
+    /**
+     * Handler for ContractOcrSummaryPanel's onApplySuggestion.
+     * Writes the suggested value into the real form setter for text fields.
+     * Supplier keeps the autocomplete-search exception: never sets supplierId directly.
+     */
+    const handleApplySuggestion = useCallback((fieldName: string, value: string) => {
+        switch (fieldName) {
+            case 'Title':           setTitle(value);           break;
+            case 'CounterpartyName': setCounterpartyName(value); break;
+            case 'GoverningLaw':    setGoverningLaw(value);    break;
+            case 'PaymentTerms':    setPaymentTerms(value);    break;
+            case 'Description':     setDescription(value);     break;
+            // Phase 1.1 — derived total: same form target as explicit TotalContractValue
+            case 'SuggestedTotalContractValue':
+                setTotalContractValue(value);
+                break;
+            case 'SupplierId':
+                // Special case: pre-fill the SupplierAutocomplete search text only.
+                // Never call setSupplierId — the user must still choose from the dropdown.
+                setSupplierInitialName(value);
+                break;
+            default:
+                break;
+        }
+        // Mark as applied so the panel row shows the confirmed state
+        setAppliedSuggestions(prev => new Set(prev).add(fieldName));
+    }, []);
+
+
+    /**
+     * When OCR completes, apply AUTO_FILL values to the form immediately.
+     * SUGGESTION fields are NOT auto-applied here any more — the user must click
+     * "Aplicar" in the summary panel or the inline OcrSuggestionChip.
+     *
+     * SupplierId suggestion: pre-populate search text only (never supplierId).
+     */
+    useEffect(() => {
+        if (ocr.status !== 'COMPLETED') return;
+        const fields = ocr.fields;
+
+        // Helper to get the best value for a field
+        const val = (name: string): string | null =>
+            fields[name]?.overriddenValue ?? fields[name]?.normalisedValue ?? null;
+
+        // AUTO_FILL: Dates
+        if (val('EffectiveDateUtc'))  setEffectiveDate(val('EffectiveDateUtc')!);
+        if (val('ExpirationDateUtc')) setExpirationDate(val('ExpirationDateUtc')!);
+        if (val('SignedAtUtc'))       setSignedAt(val('SignedAtUtc')!);
+
+        // AUTO_FILL: Financial
+        if (val('TotalContractValue')) setTotalContractValue(val('TotalContractValue')!);
+        if (val('CurrencyId')) {
+            const cid = parseInt(val('CurrencyId')!, 10);
+            if (!isNaN(cid)) setCurrencyId(cid);
+        }
+
+        // SUGGESTION: Supplier pre-fill (search text only — not supplierId)
+        const supplierRaw = fields['SupplierId']?.normalisedValue ?? fields['SupplierId']?.rawValue;
+        if (supplierRaw && !supplierInitialName) {
+            setSupplierInitialName(supplierRaw);
+            setAppliedSuggestions(prev => new Set(prev).add('SupplierId'));
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ocr.status]);
+
+    // ─── OCR upload handler ───
+
+    const handleOcrUpload = useCallback(async (file: File) => {
+        if (!id) {
+            // Contract not yet created — upload zone is informational only in new mode
+            // The user must first create the contract, then use OCR
+            return;
+        }
+        setIsUploadingOcrDocument(true);
+        try {
+            const doc = await uploadContractDocument(id, file, 'CONTRACT');
+            setPrimaryDocumentName(doc.fileName ?? file.name);
+        } catch {
+            // upload error shown inline via existing error state is sufficient
+        } finally {
+            setIsUploadingOcrDocument(false);
+        }
+    }, [id]);
+
+
     // ─── Derived helpers ───
 
     const selectedTermType = paymentTermTypes.find(t => t.code === paymentTermTypeCode);
@@ -358,6 +475,10 @@ export default function ContractCreate() {
     const requiresReference = selectedTermType?.requiresReferenceEvent ?? false;
     const requiresDays = selectedTermType?.requiresDays ?? false;
     const requiresFixedDay = selectedTermType?.requiresFixedDay ?? false;
+
+    // ─── OCR-derived flags for rendering ───
+    const ocrHasData        = ocr.status === 'COMPLETED' && Object.keys(ocr.fields).length > 0;
+    const unconfirmedGated  = ocr.getUnconfirmedGatedFields();
 
     // ─── Load lookups ───
 
@@ -488,12 +609,115 @@ export default function ContractCreate() {
         if (code !== 'CUSTOM_TEXT') setPaymentRuleSummary('');
     };
 
-    // ─── Submit ───
+    // ─── Submit ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Payload gating (Batch 8 — OCR, approved rule):
+     *  - Fields in OCR_GATED_FIELDS that still have an AUTO_FILL hint and have NOT been
+     *    confirmed by the user are excluded from the save payload.
+     *  - SUGGESTION fields are never gated — they are always sent as typed.
+     *  - Supplier is never auto-set; if the user picked one it is included normally.
+     *  - When unconfirmed gated fields exist, we show a warn-and-proceed modal first.
+     *    The user can acknowledge and save anyway (incomplete OCR data will be omitted).
+     *  - Save is NEVER blocked — it always proceeds after the warn if the user confirms.
+     */
+    const doSubmit = async () => {
+        setError('');
+        setSaving(true);
+
+        // Determine which gated fields are still unconfirmed AUTO_FILL
+        const droppedFields = new Set(
+            Array.from(OCR_GATED_FIELDS).filter(fieldName => {
+                const state = ocr.fields[fieldName];
+                return state?.displayHint === 'AUTO_FILL' && !state.confirmed;
+            })
+        );
+
+        // Helper: is this form-level field dropped because of an unconfirmed OCR gate?
+        const isDropped = (ocrFieldName: string) => droppedFields.has(ocrFieldName);
+
+        // Resolve OCR field names for each form slot
+        const effectiveDateField     = 'EffectiveDateUtc';
+        const expirationDateField    = 'ExpirationDateUtc';
+        const signedAtField          = 'SignedAtUtc';
+        const totalValueField        = 'TotalContractValue';
+        const currencyField          = 'CurrencyId';
+
+        const payload: CreateContractPayload = {
+            title,                                                      // SUGGESTION — never gated
+            description: description || undefined,
+            contractTypeId: contractTypeId as number,
+            companyId: companyId as number,
+            plantId: plantId ? plantId as number : undefined,
+            departmentId: departmentId as number,
+            supplierId: supplierId ? supplierId as number : undefined, // human-confirmed via autocomplete
+            counterpartyName: counterpartyName || undefined,           // SUGGESTION — never gated
+
+            // Gated date fields: drop if still unconfirmed AUTO_FILL
+            effectiveDateUtc: (!isDropped(effectiveDateField) && effectiveDate)
+                ? new Date(effectiveDate).toISOString()
+                : new Date().toISOString(), // required field — fallback to now if dropped; backend will store whatever is here
+            expirationDateUtc: (!isDropped(expirationDateField) && expirationDate)
+                ? new Date(expirationDate).toISOString()
+                : (expirationDate ? new Date(expirationDate).toISOString() : new Date().toISOString()),
+            signedAtUtc: (!isDropped(signedAtField) && signedAt)
+                ? new Date(signedAt).toISOString()
+                : undefined,
+
+            autoRenew,
+            renewalNoticeDays: renewalNoticeDays ? parseInt(renewalNoticeDays) : undefined,
+
+            // Gated financial fields
+            totalContractValue: (!isDropped(totalValueField) && totalContractValue)
+                ? parseFloat(totalContractValue)
+                : undefined,
+            currencyId: (!isDropped(currencyField) && currencyId)
+                ? currencyId as number
+                : undefined,
+
+            paymentTerms: paymentTerms || undefined,          // SUGGESTION — never gated
+            governingLaw: governingLaw || undefined,          // SUGGESTION — never gated
+            terminationClauses: terminationClauses || undefined,
+
+            // Payment Rule (DEC-117) — never OCR-gated
+            paymentTermTypeCode: paymentTermTypeCode || undefined,
+            referenceEventTypeCode: requiresReference ? (referenceEventTypeCode || undefined) : undefined,
+            paymentTermDays: requiresDays && paymentTermDays ? parseInt(paymentTermDays) : undefined,
+            paymentFixedDay: requiresFixedDay && paymentFixedDay ? parseInt(paymentFixedDay) : undefined,
+            allowsManualDueDateOverride,
+            gracePeriodDays: gracePeriodDays ? parseInt(gracePeriodDays) : undefined,
+            hasLatePenalty,
+            latePenaltyTypeCode: hasLatePenalty ? latePenaltyTypeCode || undefined : undefined,
+            latePenaltyValue: hasLatePenalty && latePenaltyValue ? parseFloat(latePenaltyValue) : undefined,
+            hasLateInterest,
+            lateInterestTypeCode: hasLateInterest ? lateInterestTypeCode || undefined : undefined,
+            lateInterestValue: hasLateInterest && lateInterestValue ? parseFloat(lateInterestValue) : undefined,
+            paymentRuleSummary: isCustomText ? (paymentRuleSummary || undefined) : undefined,
+            financialNotes: financialNotes || undefined,
+            penaltyNotes: penaltyNotes || undefined,
+        };
+
+        try {
+            let result: ContractDetail;
+            if (id) {
+                result = await updateContract(id, payload);
+            } else {
+                result = await createContract(payload);
+            }
+            navigate(`/contracts/${result.id}`);
+        } catch (err: any) {
+            setError(err.message || (id ? 'Erro ao atualizar contrato.' : 'Erro ao criar contrato.'));
+        } finally {
+            setSaving(false);
+            setOcrWarnAcknowledged(false);
+        }
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
 
+        // Standard required field validation
         if (!title || !contractTypeId || !companyId || !departmentId || !effectiveDate || !expirationDate) {
             setError('Preencha todos os campos obrigatórios.');
             return;
@@ -525,59 +749,15 @@ export default function ContractCreate() {
             return;
         }
 
-        const payload: CreateContractPayload = {
-            title,
-            description: description || undefined,
-            contractTypeId: contractTypeId as number,
-            companyId: companyId as number,
-            plantId: plantId ? plantId as number : undefined,
-            departmentId: departmentId as number,
-            supplierId: supplierId ? supplierId as number : undefined,
-            counterpartyName: counterpartyName || undefined,
-            effectiveDateUtc: new Date(effectiveDate).toISOString(),
-            expirationDateUtc: new Date(expirationDate).toISOString(),
-            signedAtUtc: signedAt ? new Date(signedAt).toISOString() : undefined,
-            autoRenew,
-            renewalNoticeDays: renewalNoticeDays ? parseInt(renewalNoticeDays) : undefined,
-            totalContractValue: totalContractValue ? parseFloat(totalContractValue) : undefined,
-            currencyId: currencyId ? currencyId as number : undefined,
-            paymentTerms: paymentTerms || undefined,
-            governingLaw: governingLaw || undefined,
-            terminationClauses: terminationClauses || undefined,
-
-            // Payment Rule (DEC-117)
-            paymentTermTypeCode: paymentTermTypeCode || undefined,
-            referenceEventTypeCode: requiresReference ? (referenceEventTypeCode || undefined) : undefined,
-            paymentTermDays: requiresDays && paymentTermDays ? parseInt(paymentTermDays) : undefined,
-            paymentFixedDay: requiresFixedDay && paymentFixedDay ? parseInt(paymentFixedDay) : undefined,
-            allowsManualDueDateOverride,
-            gracePeriodDays: gracePeriodDays ? parseInt(gracePeriodDays) : undefined,
-            hasLatePenalty,
-            latePenaltyTypeCode: hasLatePenalty ? latePenaltyTypeCode || undefined : undefined,
-            latePenaltyValue: hasLatePenalty && latePenaltyValue ? parseFloat(latePenaltyValue) : undefined,
-            hasLateInterest,
-            lateInterestTypeCode: hasLateInterest ? lateInterestTypeCode || undefined : undefined,
-            lateInterestValue: hasLateInterest && lateInterestValue ? parseFloat(lateInterestValue) : undefined,
-            // CUSTOM_TEXT: user-authored. Structured types: backend generates it.
-            paymentRuleSummary: isCustomText ? (paymentRuleSummary || undefined) : undefined,
-            financialNotes: financialNotes || undefined,
-            penaltyNotes: penaltyNotes || undefined,
-        };
-
-        setSaving(true);
-        try {
-            let result: ContractDetail;
-            if (id) {
-                result = await updateContract(id, payload);
-            } else {
-                result = await createContract(payload);
-            }
-            navigate(`/contracts/${result.id}`);
-        } catch (err: any) {
-            setError(err.message || (id ? 'Erro ao atualizar contrato.' : 'Erro ao criar contrato.'));
-        } finally {
-            setSaving(false);
+        // OCR warn gate: if there are unconfirmed AUTO_FILL gated fields,
+        // show the modal first (unless user already acknowledged it this session).
+        const hasUnconfirmedGated = unconfirmedGated.length > 0;
+        if (hasUnconfirmedGated && !ocrWarnAcknowledged) {
+            setShowOcrWarnModal(true);
+            return;
         }
+
+        await doSubmit();
     };
 
     // ─── Styles ───
@@ -679,6 +859,50 @@ export default function ContractCreate() {
                 </div>
             )}
 
+            {/* ── OCR Zone: upload + trigger + status (edit mode only) ── */}
+            {id && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                    <ContractOcrUploadZone
+                        contractHasDocument={!!primaryDocumentName || ocr.status !== null}
+                        primaryDocumentName={primaryDocumentName}
+                        ocrStatus={ocr.status}
+                        ocrQualityScore={ocr.qualityScore}
+                        isPolling={ocr.isPolling}
+                        ocrError={ocr.error}
+                        onUploadFile={handleOcrUpload}
+                        onTriggerOcr={ocr.triggerOcr}
+                        isUploading={isUploadingOcrDocument}
+                    />
+
+                    {/* Conflicts + partial banners — shown immediately after COMPLETED */}
+                    <ContractOcrCautionBanner
+                        variant="conflicts_detected"
+                        isVisible={ocrHasData && ocr.conflictsDetected}
+                    />
+                    <ContractOcrCautionBanner
+                        variant="partial_extraction"
+                        isVisible={ocrHasData && ocr.isPartial}
+                    />
+
+                    {/* Summary panel — collapsible, below the zone */}
+                    {ocrHasData && (
+                        <ContractOcrSummaryPanel
+                            ocrState={ocr.fields}
+                            referenceFields={ocr.referenceFields}
+                            qualityScore={ocr.qualityScore}
+                            isPartial={ocr.isPartial}
+                            conflictsDetected={ocr.conflictsDetected}
+                            onConfirmField={ocr.confirmField}
+                            onDiscardField={ocr.discardField}
+                            onConfirmAll={ocr.confirmAll}
+                            onApplySuggestion={handleApplySuggestion}
+                            appliedSuggestions={appliedSuggestions}
+                            isVisible={true}
+                        />
+                    )}
+                </div>
+            )}
+
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
                 {/* ── General Info ── */}
@@ -686,7 +910,15 @@ export default function ContractCreate() {
                     <div style={sectionTitleStyle}>Informações Gerais</div>
                     <div style={{ gridColumn: '1 / -1' }}>
                         <label style={labelStyle}>Título *</label>
-                        <input style={fieldStyle} value={title} onChange={e => setTitle(e.target.value)} placeholder="Título do contrato" required />
+                        <OcrFieldWrapper
+                            fieldName="Title"
+                            ocrState={ocr.fields}
+                            onConfirm={ocr.confirmField}
+                            onDiscard={ocr.discardField}
+                            currentValue={title}
+                        >
+                            <input style={fieldStyle} value={title} onChange={e => setTitle(e.target.value)} placeholder="Título do contrato" required />
+                        </OcrFieldWrapper>
                     </div>
                     <div style={{ gridColumn: '1 / -1' }}>
                         <label style={labelStyle}>Descrição</label>
@@ -704,16 +936,37 @@ export default function ContractCreate() {
                     </div>
                     <div>
                         <label style={labelStyle}>Fornecedor</label>
-                        <SupplierAutocomplete
-                            onChange={(sid) => setSupplierId(sid || '')}
-                            placeholder="Pesquisar fornecedor..."
-                            initialName={supplierInitialName}
-                        />
+                        {/*
+                         * SupplierId is a SUGGESTION field.
+                         * When the inline OCR chip fires onApply it calls handleApplySuggestion,
+                         * which pre-fills setSupplierInitialName only.
+                         * The user must still select the supplier from the dropdown.
+                         */}
+                        <OcrFieldWrapper
+                            fieldName="SupplierId"
+                            ocrState={ocr.fields}
+                            onConfirm={async (_fn, value) => handleApplySuggestion('SupplierId', value ?? '')}
+                            onDiscard={ocr.discardField}
+                        >
+                            <SupplierAutocomplete
+                                onChange={(sid) => setSupplierId(sid || '')}
+                                placeholder="Pesquisar fornecedor..."
+                                initialName={supplierInitialName}
+                            />
+                        </OcrFieldWrapper>
                         <p style={{ marginTop: '4px', fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>Deixe em branco se a contraparte for manual.</p>
                     </div>
                     <div>
                         <label style={labelStyle}>Contraparte (se não fornecedor)</label>
-                        <input style={fieldStyle} value={counterpartyName} onChange={e => setCounterpartyName(e.target.value)} placeholder="Nome da contraparte" />
+                        <OcrFieldWrapper
+                            fieldName="CounterpartyName"
+                            ocrState={ocr.fields}
+                            onConfirm={ocr.confirmField}
+                            onDiscard={ocr.discardField}
+                            currentValue={counterpartyName}
+                        >
+                            <input style={fieldStyle} value={counterpartyName} onChange={e => setCounterpartyName(e.target.value)} placeholder="Nome da contraparte" />
+                        </OcrFieldWrapper>
                     </div>
                 </div>
 
@@ -760,15 +1013,39 @@ export default function ContractCreate() {
                     <div style={sectionTitleStyle}>Vigência</div>
                     <div>
                         <label style={labelStyle}>Data de Início *</label>
-                        <DateInput style={fieldStyle} value={effectiveDate} onChange={setEffectiveDate} required />
+                        <OcrFieldWrapper
+                            fieldName="EffectiveDateUtc"
+                            ocrState={ocr.fields}
+                            onConfirm={ocr.confirmField}
+                            onDiscard={ocr.discardField}
+                            currentValue={effectiveDate}
+                        >
+                            <DateInput style={fieldStyle} value={effectiveDate} onChange={setEffectiveDate} required />
+                        </OcrFieldWrapper>
                     </div>
                     <div>
                         <label style={labelStyle}>Data de Expiração *</label>
-                        <DateInput style={fieldStyle} value={expirationDate} onChange={setExpirationDate} required />
+                        <OcrFieldWrapper
+                            fieldName="ExpirationDateUtc"
+                            ocrState={ocr.fields}
+                            onConfirm={ocr.confirmField}
+                            onDiscard={ocr.discardField}
+                            currentValue={expirationDate}
+                        >
+                            <DateInput style={fieldStyle} value={expirationDate} onChange={setExpirationDate} required />
+                        </OcrFieldWrapper>
                     </div>
                     <div>
                         <label style={labelStyle}>Data de Assinatura</label>
-                        <DateInput style={fieldStyle} value={signedAt} onChange={setSignedAt} />
+                        <OcrFieldWrapper
+                            fieldName="SignedAtUtc"
+                            ocrState={ocr.fields}
+                            onConfirm={ocr.confirmField}
+                            onDiscard={ocr.discardField}
+                            currentValue={signedAt}
+                        >
+                            <DateInput style={fieldStyle} value={signedAt} onChange={setSignedAt} />
+                        </OcrFieldWrapper>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <label style={checkLabel}>
@@ -789,30 +1066,54 @@ export default function ContractCreate() {
                     <div style={sectionTitleStyle}>Dados Financeiros</div>
                     <div>
                         <label style={labelStyle}>Valor Total do Contrato</label>
-                        <CurrencyInput style={fieldStyle} value={totalContractValue} onChange={setTotalContractValue} placeholder="0,00" />
+                        <OcrFieldWrapper
+                            fieldName="TotalContractValue"
+                            ocrState={ocr.fields}
+                            onConfirm={ocr.confirmField}
+                            onDiscard={ocr.discardField}
+                            currentValue={totalContractValue}
+                        >
+                            <CurrencyInput style={fieldStyle} value={totalContractValue} onChange={setTotalContractValue} placeholder="0,00" />
+                        </OcrFieldWrapper>
                     </div>
                     <div>
                         <label style={labelStyle}>Moeda</label>
-                        <select style={fieldStyle} value={currencyId} onChange={e => setCurrencyId(e.target.value ? parseInt(e.target.value) : '')}>
-                            <option value="">Selecionar...</option>
-                            {currencies.length > 0
-                                ? currencies.map(c => (
-                                    <option key={c.id} value={c.id}>
-                                        {c.code}{c.symbol ? ` (${c.symbol})` : ''}
-                                    </option>
-                                ))
-                                : !lookupsLoading && renderSelectEmpty('moeda')
-                            }
-                        </select>
+                        <OcrFieldWrapper
+                            fieldName="CurrencyId"
+                            ocrState={ocr.fields}
+                            onConfirm={ocr.confirmField}
+                            onDiscard={ocr.discardField}
+                            currentValue={currencyId !== '' ? String(currencyId) : undefined}
+                        >
+                            <select style={fieldStyle} value={currencyId} onChange={e => setCurrencyId(e.target.value ? parseInt(e.target.value) : '')}>
+                                <option value="">Selecionar...</option>
+                                {currencies.length > 0
+                                    ? currencies.map(c => (
+                                        <option key={c.id} value={c.id}>
+                                            {c.code}{c.symbol ? ` (${c.symbol})` : ''}
+                                        </option>
+                                    ))
+                                    : !lookupsLoading && renderSelectEmpty('moeda')
+                                }
+                            </select>
+                        </OcrFieldWrapper>
                     </div>
                     <div style={{ gridColumn: '1 / -1' }}>
                         <label style={labelStyle}>Condições de Pagamento (Texto Livre)</label>
-                        <textarea
-                            style={{ ...fieldStyle, minHeight: '60px', resize: 'vertical' }}
-                            value={paymentTerms}
-                            onChange={e => setPaymentTerms(e.target.value)}
-                            placeholder="Ex: 30 dias após fatura — campo livre para referência histórica"
-                        />
+                        <OcrFieldWrapper
+                            fieldName="PaymentTerms"
+                            ocrState={ocr.fields}
+                            onConfirm={ocr.confirmField}
+                            onDiscard={ocr.discardField}
+                            currentValue={paymentTerms}
+                        >
+                            <textarea
+                                style={{ ...fieldStyle, minHeight: '60px', resize: 'vertical' }}
+                                value={paymentTerms}
+                                onChange={e => setPaymentTerms(e.target.value)}
+                                placeholder="Ex: 30 dias após fatura — campo livre para referência histórica"
+                            />
+                        </OcrFieldWrapper>
                         <p style={{ marginTop: '4px', fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>
                             Campo de texto livre mantido para compatibilidade. Use a secção Regras de Pagamento abaixo para configurar a regra estruturada.
                         </p>
@@ -1116,9 +1417,25 @@ export default function ContractCreate() {
                 {/* ── Legal ── */}
                 <div style={sectionStyle}>
                     <div style={sectionTitleStyle}>Cláusulas Legais</div>
+
+                    {/* REFERENCE_ONLY legal text panel — shown when OCR extracted relevant legal content */}
+                    {ocrHasData && ocr.referenceFields.length > 0 && (
+                        <div style={{ gridColumn: '1 / -1', marginBottom: '8px' }}>
+                            <OcrTerminationReferencePanel referenceFields={ocr.referenceFields} />
+                        </div>
+                    )}
+
                     <div>
                         <label style={labelStyle}>Lei Aplicável</label>
-                        <input style={fieldStyle} value={governingLaw} onChange={e => setGoverningLaw(e.target.value)} placeholder="Ex: Lei Angolana" />
+                        <OcrFieldWrapper
+                            fieldName="GoverningLaw"
+                            ocrState={ocr.fields}
+                            onConfirm={ocr.confirmField}
+                            onDiscard={ocr.discardField}
+                            currentValue={governingLaw}
+                        >
+                            <input style={fieldStyle} value={governingLaw} onChange={e => setGoverningLaw(e.target.value)} placeholder="Ex: Lei Angolana" />
+                        </OcrFieldWrapper>
                     </div>
                     <div style={{ gridColumn: '1 / -1' }}>
                         <label style={labelStyle}>Cláusulas de Rescisão</label>
@@ -1127,6 +1444,12 @@ export default function ContractCreate() {
                 </div>
 
                 {/* ── Actions ── */}
+                {/* Unconfirmed-at-submit banner — only shown when there are gated unconfirmed fields */}
+                <ContractOcrCautionBanner
+                    variant="unconfirmed_at_submit"
+                    isVisible={unconfirmedGated.length > 0}
+                    unconfirmedFieldLabels={unconfirmedGated}
+                />
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', padding: '1rem 0' }}>
                     <button
                         type="button"
@@ -1162,6 +1485,111 @@ export default function ContractCreate() {
                 field={paymentHelpField as PaymentHelpKey | null}
                 onClose={() => setPaymentHelpField(null)}
             />
+
+            {/* ── OCR Warn-and-Proceed Modal ── */}
+            {showOcrWarnModal && (
+                <div
+                    id="ocr-warn-modal-overlay"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="ocr-warn-title"
+                    style={{
+                        position: 'fixed', inset: 0, zIndex: 9999,
+                        backgroundColor: 'rgba(0,0,0,0.45)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        padding: '1rem',
+                    }}
+                    onClick={(e) => { if (e.target === e.currentTarget) setShowOcrWarnModal(false); }}
+                >
+                    <div style={{
+                        backgroundColor: 'var(--color-bg-surface)',
+                        borderRadius: 'var(--radius-lg)',
+                        border: '1px solid #fbbf24',
+                        boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+                        maxWidth: '480px', width: '100%', padding: '1.75rem',
+                        fontFamily: 'var(--font-family-body)',
+                    }}>
+                        {/* Header */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1rem' }}>
+                            <span style={{ fontSize: '1.3rem' }}>⚠️</span>
+                            <h2 id="ocr-warn-title" style={{
+                                margin: 0, fontSize: '1rem', fontWeight: 800,
+                                color: '#92400e', fontFamily: 'var(--font-family-display)',
+                            }}>
+                                Campos OCR por confirmar
+                            </h2>
+                        </div>
+
+                        {/* Description */}
+                        <p style={{ margin: '0 0 1rem', fontSize: '0.875rem', color: 'var(--color-text-muted)', lineHeight: 1.6 }}>
+                            Os seguintes campos foram preenchidos automaticamente pelo OCR mas ainda não foram confirmados.
+                            Se guardar agora, estes valores <strong>não serão incluídos</strong> no registo do contrato:
+                        </p>
+
+                        {/* Field list */}
+                        <ul style={{
+                            margin: '0 0 1.25rem', paddingLeft: '1.25rem',
+                            display: 'flex', flexDirection: 'column', gap: '4px',
+                        }}>
+                            {unconfirmedGated.map(fieldName => {
+                                const LABEL: Record<string, string> = {
+                                    EffectiveDateUtc:   'Data de Início',
+                                    ExpirationDateUtc:  'Data de Validade',
+                                    SignedAtUtc:        'Data de Assinatura',
+                                    TotalContractValue: 'Valor Total',
+                                    CurrencyId:         'Moeda',
+                                };
+                                return (
+                                    <li key={fieldName} style={{ fontSize: '0.85rem', fontWeight: 700, color: '#92400e' }}>
+                                        {LABEL[fieldName] ?? fieldName}
+                                    </li>
+                                );
+                            })}
+                        </ul>
+
+                        <p style={{ margin: '0 0 1.5rem', fontSize: '0.8rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+                            Pode voltar e confirmar os campos no formulário, ou guardar na mesma (os dados OCR omitidos poderão ser inseridos manualmente depois).
+                        </p>
+
+                        {/* Actions */}
+                        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                            <button
+                                type="button"
+                                id="ocr-warn-back-btn"
+                                onClick={() => setShowOcrWarnModal(false)}
+                                style={{
+                                    padding: '10px 20px', borderRadius: 'var(--radius-md)',
+                                    border: '1px solid var(--color-border)',
+                                    backgroundColor: 'transparent', cursor: 'pointer',
+                                    fontWeight: 700, fontSize: '0.85rem', color: 'var(--color-text-muted)',
+                                }}
+                            >
+                                Voltar e Confirmar
+                            </button>
+                            <button
+                                type="button"
+                                id="ocr-warn-proceed-btn"
+                                disabled={saving}
+                                onClick={async () => {
+                                    setShowOcrWarnModal(false);
+                                    setOcrWarnAcknowledged(true);
+                                    await doSubmit();
+                                }}
+                                style={{
+                                    padding: '10px 20px', borderRadius: 'var(--radius-md)',
+                                    backgroundColor: '#d97706', color: 'white',
+                                    border: 'none', cursor: saving ? 'default' : 'pointer',
+                                    fontWeight: 700, fontSize: '0.85rem',
+                                    opacity: saving ? 0.6 : 1,
+                                }}
+                            >
+                                {saving ? 'Salvando...' : 'Guardar Mesmo Assim'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </PageContainer>
+
     );
 }

@@ -117,6 +117,8 @@ public class ContractDetailDto
     public string? TerminationClauses { get; set; }
 
     // OCR
+    /// <summary>Mirrors Contract.OcrStatus: null | PENDING | PROCESSING | COMPLETED | FAILED.</summary>
+    public string? OcrStatus { get; set; }
     public bool OcrValidatedByUser { get; set; }
 
     // ── Two-step approval participants (DEC-118) ─────────────────────────────────────
@@ -150,7 +152,19 @@ public class ContractDocumentDto
     public int VersionNumber { get; set; }
     public DateTime UploadedAtUtc { get; set; }
     public string UploadedByUserName { get; set; } = string.Empty;
+
+    // ── OCR relationship ────────────────────────────────────────────────────
+    /// <summary>True when at least one OCR extraction run exists for this document.</summary>
+    public bool HasOcrRecord { get; set; }
+    /// <summary>Status of the most recent OCR run on this document (COMPLETED / FAILED / PROCESSING / PENDING). Null if never processed.</summary>
+    public string? OcrStatus { get; set; }
+    /// <summary>
+    /// Computed: true when this document would be selected by the OCR auto-pick logic
+    /// (DocumentType == ORIGINAL, latest UploadedAtUtc). Drives the "Fonte OCR activa" badge.
+    /// </summary>
+    public bool IsPrimaryOcrSource { get; set; }
 }
+
 
 public class ContractHistoryDto
 {

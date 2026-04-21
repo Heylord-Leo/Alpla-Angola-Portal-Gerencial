@@ -73,6 +73,10 @@ public class ApplicationDbContext : DbContext
     public DbSet<ContractAlert> ContractAlerts => Set<ContractAlert>();
     public DbSet<ContractPaymentObligation> ContractPaymentObligations => Set<ContractPaymentObligation>();
 
+    // Contracts OCR (Phase 1)
+    public DbSet<ContractOcrExtractionRecord> ContractOcrExtractionRecords => Set<ContractOcrExtractionRecord>();
+    public DbSet<ContractOcrExtractedField> ContractOcrExtractedFields => Set<ContractOcrExtractedField>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -445,6 +449,65 @@ public class ApplicationDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(o => o.CurrencyId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ─── Contract OCR (Phase 1) ───────────────────────────────────────────
+
+        modelBuilder.Entity<ContractOcrExtractionRecord>(entity =>
+        {
+            // Quick status polling from frontend
+            entity.HasIndex(r => new { r.ContractId, r.Status });
+            entity.HasIndex(r => r.ContractDocumentId);
+
+            entity.Property(r => r.QualityScore).HasColumnType("decimal(9,4)");
+
+            // Record → Contract
+            // NoAction: avoids SQL Server multiple cascade path conflict.
+            // Contract → ContractDocuments already cascades; a second cascade path via
+            // OcrExtractionRecord → Contract → ContractDocuments triggers error 1785.
+            entity.HasOne(r => r.Contract)
+                .WithMany()
+                .HasForeignKey(r => r.ContractId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            // Record → ContractDocument (many-to-one)
+            // Restrict so the source document is always traceable from the record.
+            entity.HasOne(r => r.ContractDocument)
+                .WithMany()
+                .HasForeignKey(r => r.ContractDocumentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Record → TriggeredByUser
+            // NoAction: avoids SQL Server multiple cascade path conflict via Contract → User.
+            entity.HasOne(r => r.TriggeredByUser)
+                .WithMany()
+                .HasForeignKey(r => r.TriggeredByUserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            // Record → ExtractedFields (owned — cascade delete)
+            entity.HasMany(r => r.ExtractedFields)
+                .WithOne(f => f.ExtractionRecord)
+                .HasForeignKey(f => f.ExtractionRecordId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ContractOcrExtractedField>(entity =>
+        {
+            entity.HasIndex(f => f.ExtractionRecordId);
+            entity.HasIndex(f => new { f.ContractId, f.FieldName });
+
+            entity.Property(f => f.ConfidenceScore).HasColumnType("decimal(9,4)");
+        });
+
+        // ContractDocument → OcrExtractionRecord (nullable FK, reverse direction)
+        // NoAction: avoids SQL Server multiple cascade path error 1785.
+        // The document itself is never auto-deleted by OCR record deletion.
+        modelBuilder.Entity<ContractDocument>(entity =>
+        {
+            entity.HasOne(d => d.OcrExtractionRecord)
+                .WithMany()
+                .HasForeignKey(d => d.OcrExtractionRecordId)
+                .OnDelete(DeleteBehavior.NoAction);
         });
 
         // Request → ContractPaymentObligation FK (unidirectional, Restrict)
