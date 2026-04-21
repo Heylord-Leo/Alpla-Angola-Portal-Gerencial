@@ -2,6 +2,44 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.84.0] - 2026-04-22 - Feature: HR Team Calendar Modernization (Access Control + Week View)
+### Added
+- **Backend-Enforced Calendar Access Control**: `GetScopedEmployeesQuery()` now handles four distinct access tiers:
+  - **System Admin**: full visibility.
+  - **HR**: plant/department scope (OR logic — broad HR visibility).
+  - **Local Manager**: plant/department scope (AND intersection logic — restrictive team visibility).
+  - **Department Manager**: managed employees + managed department employees.
+  - **Self-Calendar**: any authenticated user with a matching `HREmployee` record (email-based identity matching) sees only their own row.
+- **`HasHRModuleAccess()` Broadened**: Now includes Local Manager role and self-calendar users. Safe because all HR endpoints also apply `GetScopedEmployeesQuery()` internally, limiting data to the user's scope.
+- **Scope Metadata**: `GetCalendarData()` API response now includes a `scopeType` field (`all` | `hr` | `department` | `self`) for frontend header/mode adaptation.
+- **Week View Mode**: ISO 8601 week-of-year visualization with week badge, 7-day horizontal navigation, and wider day columns.
+- **Frozen Employee Column**: Sticky left column with scroll-aware shadow indicator and right-edge gradient hint.
+- **Dedicated CSS**: `hr-team-calendar.css` using portal design tokens (`--color-*`, `--radius-*`, `--shadow-*`).
+- **Scope-Aware UI**: Header adapts between "Meu Calendário" (self) and "Calendário da Equipa" (team). Legend footer shows context-appropriate scope description.
+### Fixed
+- **Local Manager Over-Broad Calendar Scope**: Fixed a critical scoping bug where the Local Manager branch used `OR` logic for plant/department filters, causing managers scoped to department TI to see all employees from all departments in their plant (Compras, Manutenção, Produção, etc.). Changed to `AND` intersection logic when both plant and department scopes exist. Also hardened the no-scope fallback to fail-safe (empty result) instead of broad visibility.
+### Changed
+- **View Mode Toggle**: Calendar now offers a segmented control (Mês / Semana) for switching between month and week views.
+- **Navigation**: Replaced chevron arrows with standard ChevronLeft/ChevronRight icons and responsive prev/next labels.
+
+## [v2.83.3] - 2026-04-21 - Feature: HR Employee Workspace Session Persistence
+### Added
+- **Session State Persistence**: The Funcionários (Employee Registration) screen now preserves its working state in `sessionStorage` when the user navigates to other submenus (Layouts, Histórico de Impressão) and restores it automatically upon return.
+- **Persisted fields**: company, search query, search results, selected employee, unified profile, badge category, RFID card number, manual mode + manual fields, and selected layout.
+- **Innux Photo Re-Fetch**: If the restored session had an Innux photo, it is automatically re-fetched from the server on mount (blob URLs are not restorable).
+- **Local Upload Photo Handling**: Locally uploaded photos are explicitly NOT restored (blob URLs don't survive component unmount); the user simply re-uploads.
+### Changed
+- **Layout Restore**: The layout loading effect now checks for a previously-selected layout ID from the restored session and selects it instead of always defaulting to the first layout.
+- **Reset Integration**: `handleCompanyChange`, `handleToggleManualMode` now clear the persisted session state in addition to clearing component state.
+
+## [v2.83.2] - 2026-04-21 - Fix: HR Employee Search Reliability (Race Condition & State Management)
+### Fixed
+- **Race Condition in Employee Search**: Added `AbortController` to cancel in-flight search requests when a new search is triggered. A request sequence counter (`searchSeqRef`) ensures only the latest response updates the UI, preventing stale results from overwriting correct ones.
+- **Silent Error Swallowing**: Added `res.ok` verification before reading search results. HTTP 502/503 backend errors previously bypassed the `catch` block and silently produced empty results; they now route through proper error handling with user-visible messages.
+- **Stale State on Company Change**: Company dropdown (`onChange`) now invokes a dedicated `handleCompanyChange` handler that explicitly clears all search results, selected employee, loaded profile, photo, badge configuration, error state, and print results. Also cancels any in-flight search request to prevent cross-company data leakage.
+### Added
+- **Diagnostic Logging**: `HRController.SearchEmployees` now logs company, query, and result count at `Information` level for operational traceability.
+
 ## [v2.83.1] - 2026-04-20 - Refactor: UI Modernization — Legacy Brutalist → Modern Corporate (Final Pass)
 ### Changed
 - **Full Brutalist Remediation (31 files)**: Systematic elimination of all remaining "Industrial Brutalist" design patterns. Zero occurrences of `var(--shadow-brutal)`, `4px/6px offset shadows`, `translate(-2px,-2px)` hover effects, or `2px/4px solid border-heavy` borders remain in the codebase.

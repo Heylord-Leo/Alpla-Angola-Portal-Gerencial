@@ -62,8 +62,14 @@ public class HRLeaveController : ControllerBase
     /// Returns the set of HREmployee IDs visible to the current user, based on:
     /// - System Admin: all
     /// - HR role: filtered by user's plant/department scope
+    /// - Local Manager: filtered by user's plant/department scope (same model as HR)
     /// - Department Manager: employees with ManagerUserId = current user,
     ///   OR employees in PortalDepartmentId matching managed departments
+    /// - Any other user: self-calendar only (matched by email)
+    ///
+    /// Identity mapping note: There is no direct FK between Portal User and HREmployee.
+    /// Self-calendar uses case-insensitive email matching (User.Email ↔ HREmployee.Email)
+    /// as the most reliable existing identifier. If no match is found, an empty set is returned.
     /// </summary>
     private async Task<IQueryable<HREmployee>> GetScopedEmployeesQuery()
     {
@@ -102,6 +108,61 @@ public class HRLeaveController : ControllerBase
             return query;
         }
 
+        // Local Manager: filter by plant AND department scope (intersection).
+        // Department scope is the primary constraint — it defines which department(s)
+        // the manager oversees. Plant scope narrows further when present.
+        //
+        // Logic:
+        //   - Both plant + dept scopes → AND (employee must be in scoped plant AND scoped department)
+        //   - Only dept scope → filter by department only
+        //   - Only plant scope → filter by plant only
+        //   - No scopes configured → fail-safe: empty result (not broad visibility)
+        if (roles.Contains(RoleConstants.LocalManager))
+        {
+            var lmPlantIds = await _context.UserPlantScopes
+                .Where(s => s.UserId == userId)
+                .Select(s => s.PlantId)
+                .ToListAsync();
+
+            var lmDeptIds = await _context.UserDepartmentScopes
+                .Where(s => s.UserId == userId)
+                .Select(s => s.DepartmentId)
+                .ToListAsync();
+
+            var hasPlants = lmPlantIds.Any();
+            var hasDepts = lmDeptIds.Any();
+
+            if (hasPlants && hasDepts)
+            {
+                // Both scopes: AND — employee must match both plant and department
+                query = query.Where(e =>
+                    (e.PlantId.HasValue && lmPlantIds.Contains(e.PlantId.Value)) &&
+                    (e.PortalDepartmentId.HasValue && lmDeptIds.Contains(e.PortalDepartmentId.Value))
+                );
+            }
+            else if (hasDepts)
+            {
+                // Department scope only: primary constraint
+                query = query.Where(e =>
+                    e.PortalDepartmentId.HasValue && lmDeptIds.Contains(e.PortalDepartmentId.Value)
+                );
+            }
+            else if (hasPlants)
+            {
+                // Plant scope only
+                query = query.Where(e =>
+                    e.PlantId.HasValue && lmPlantIds.Contains(e.PlantId.Value)
+                );
+            }
+            else
+            {
+                // No scopes configured — fail-safe: no access
+                return query.Where(e => false);
+            }
+
+            return query;
+        }
+
         // Department Manager: sees employees they manage or in their managed departments
         var managedDeptIds = await _context.Departments
             .Where(d => d.ResponsibleUserId == userId)
@@ -119,18 +180,52 @@ public class HRLeaveController : ControllerBase
             return query;
         }
 
-        // Fallback: no access — return empty
+        // Fallback: self-calendar — any authenticated user sees their own HREmployee record.
+        // Matched by case-insensitive email since there is no direct User↔HREmployee FK.
+        var userEmail = User.FindFirstValue(ClaimTypes.Email);
+        if (!string.IsNullOrEmpty(userEmail))
+        {
+            var emailLower = userEmail.ToLower();
+            return query.Where(e => e.Email != null && e.Email.ToLower() == emailLower);
+        }
+
+        // No email available — fail safe with empty result
         return query.Where(e => false);
     }
 
-    /// <summary>Checks if current user has HR module access.</summary>
+    /// <summary>
+    /// Checks if current user has HR module access.
+    ///
+    /// Broadened to include Local Manager and self-calendar users.
+    /// Safety: ALL endpoints that use this gate also apply GetScopedEmployeesQuery()
+    /// internally, which limits data to the user's scope. A non-manager user
+    /// will only ever see their own HREmployee record. This does NOT grant
+    /// write access to HR-admin functions — those have separate IsAdminOrHR checks.
+    /// </summary>
     private async Task<bool> HasHRModuleAccess()
     {
         if (IsAdminOrHR) return true;
 
-        // Check if user is a department manager
         var userId = CurrentUserId;
-        return await _context.Departments.AnyAsync(d => d.ResponsibleUserId == userId);
+        var roles = CurrentUserRoles;
+
+        // Local Manager has HR module access (scoped by UserPlantScopes + UserDepartmentScopes)
+        if (roles.Contains(RoleConstants.LocalManager)) return true;
+
+        // Department Manager (ResponsibleUser of at least one department)
+        if (await _context.Departments.AnyAsync(d => d.ResponsibleUserId == userId))
+            return true;
+
+        // Self-calendar: any active user with a matching HREmployee record (by email)
+        var email = User.FindFirstValue(ClaimTypes.Email);
+        if (!string.IsNullOrEmpty(email))
+        {
+            var emailLower = email.ToLower();
+            return await _context.HREmployees.AnyAsync(
+                e => e.Email != null && e.Email.ToLower() == emailLower && e.IsActive);
+        }
+
+        return false;
     }
 
     // ─── Employees ───
@@ -845,7 +940,22 @@ public class HRLeaveController : ControllerBase
             .ThenBy(e => e.FullName)
             .ToListAsync();
 
-        return Ok(new { employees, records, from, to });
+        // Determine scope metadata for the frontend to adapt its header/mode.
+        // Minimal: only communicates the type of view, not internal IDs or role details.
+        var roles = CurrentUserRoles;
+        string scopeType;
+        if (roles.Contains(RoleConstants.SystemAdministrator))
+            scopeType = "all";
+        else if (roles.Contains(RoleConstants.HR))
+            scopeType = "hr";
+        else if (roles.Contains(RoleConstants.LocalManager))
+            scopeType = "department";
+        else if (await _context.Departments.AnyAsync(d => d.ResponsibleUserId == CurrentUserId))
+            scopeType = "department";
+        else
+            scopeType = "self";
+
+        return Ok(new { employees, records, from, to, scopeType });
     }
 
     // ─── Dashboard ───

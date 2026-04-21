@@ -1,0 +1,469 @@
+/* ── HR Team Calendar ── */
+
+/* Container */
+.cal-root {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ── Header ── */
+.cal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.cal-header__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--color-text-main);
+}
+
+.cal-header__subtitle {
+  margin: 4px 0 0 0;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+/* ── Controls bar (nav + view toggle) ── */
+.cal-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Navigation pill */
+.cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background-color: var(--color-bg-surface);
+  padding: 4px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.cal-nav__btn {
+  background: none;
+  border: none;
+  padding: 8px;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.cal-nav__btn:hover {
+  background-color: var(--color-bg-page);
+  color: var(--color-text-main);
+}
+
+.cal-nav__label {
+  font-weight: 800;
+  color: var(--color-text-main);
+  min-width: 150px;
+  text-align: center;
+  text-transform: capitalize;
+  font-size: 14px;
+  padding: 0 4px;
+}
+
+.cal-nav__today {
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-muted);
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+
+.cal-nav__today:hover {
+  background-color: var(--color-bg-page);
+  color: var(--color-text-main);
+  border-color: var(--color-primary);
+}
+
+/* ── View mode toggle (segmented control) ── */
+.cal-view-toggle {
+  display: flex;
+  background-color: var(--color-bg-page);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--color-border);
+}
+
+.cal-view-toggle__btn {
+  padding: 6px 16px;
+  border: none;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.cal-view-toggle__btn:hover:not(.cal-view-toggle__btn--active) {
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-main);
+}
+
+.cal-view-toggle__btn--active {
+  background-color: var(--color-bg-surface);
+  color: var(--color-primary);
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Week badge ── */
+.cal-week-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  background-color: rgba(var(--color-primary-rgb), 0.08);
+  color: var(--color-primary);
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+/* ── Grid container (scroll wrapper) ── */
+.cal-grid-wrapper {
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  position: relative;
+}
+
+.cal-grid-scroll {
+  overflow-x: auto;
+  overflow-y: visible;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.cal-grid-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.cal-grid-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cal-grid-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.cal-grid-scroll::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Scroll shadow on the frozen column edge */
+.cal-grid-scroll--scrolled .cal-frozen-col {
+  box-shadow: 4px 0 8px -2px rgba(0, 0, 0, 0.08);
+}
+
+/* ── Table ── */
+.cal-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+/* ── Frozen employee column (header + body cells) ── */
+.cal-frozen-col {
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  background-color: #f8fafc;
+  border-right: 1px solid #e2e8f0;
+  transition: box-shadow 0.2s;
+}
+
+/* Header frozen */
+.cal-table thead .cal-frozen-col {
+  padding: 16px;
+  text-align: left;
+  border-bottom: 2px solid #e2e8f0;
+  z-index: 12;
+}
+
+.cal-frozen-col__label {
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+/* Body frozen */
+.cal-table tbody .cal-frozen-col {
+  background-color: var(--color-bg-surface);
+  padding: 0 16px;
+  z-index: 8;
+}
+
+.cal-employee {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 52px;
+}
+
+.cal-employee__name {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--color-text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
+.cal-employee__dept {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+/* ── Day header cells ── */
+.cal-day-header {
+  padding: 8px 0;
+  text-align: center;
+  border-bottom: 2px solid #e2e8f0;
+  border-right: 1px solid #f1f5f9;
+  background-color: #f8fafc;
+}
+
+.cal-day-header--weekend {
+  background-color: #f1f5f9;
+}
+
+.cal-day-header--today {
+  background-color: #e0f2fe;
+}
+
+.cal-day-header__weekday {
+  display: block;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  line-height: 1.2;
+}
+
+.cal-day-header--weekend .cal-day-header__weekday {
+  color: #94a3b8;
+}
+
+.cal-day-header--today .cal-day-header__weekday {
+  color: #0284c7;
+}
+
+.cal-day-header__number {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-main);
+  line-height: 1.3;
+}
+
+.cal-day-header--today .cal-day-header__number {
+  font-weight: 800;
+  color: #0284c7;
+}
+
+/* ── Day body cells ── */
+.cal-day-cell {
+  padding: 0;
+  border-right: 1px solid #f1f5f9;
+  vertical-align: middle;
+  position: relative;
+  height: 52px;
+}
+
+.cal-day-cell--weekend {
+  background-color: #f8fafc;
+}
+
+.cal-day-cell--today {
+  background-color: #f0f9ff;
+}
+
+.cal-day-cell--today-border {
+  border-left: 2px solid #0ea5e9 !important;
+  border-right: 2px solid #0ea5e9 !important;
+}
+
+/* Today vertical indicator */
+.cal-today-indicator {
+  position: absolute;
+  left: -1px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background-color: #0ea5e9;
+  z-index: 6;
+}
+
+/* ── Table rows ── */
+.cal-table tbody tr {
+  border-bottom: 1px solid #e2e8f0;
+  transition: background-color 0.1s;
+}
+
+.cal-table tbody tr:hover .cal-day-cell:not(.cal-day-cell--weekend) {
+  background-color: #fafbfc;
+}
+
+/* ── Leave record blocks ── */
+.cal-leave-block {
+  height: 32px;
+  width: 100%;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 2px 0;
+}
+
+.cal-leave-block--approved {
+  background-color: #22c55e;
+}
+
+.cal-leave-block--pending {
+  background-color: rgba(249, 115, 22, 0.2);
+  border: 1px dashed #f97316;
+}
+
+.cal-leave-block--other {
+  background-color: #94a3b8;
+}
+
+/* ── Legend ── */
+.cal-legend {
+  padding: 16px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  background-color: #f8fafc;
+  align-items: center;
+}
+
+.cal-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cal-legend__swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.cal-legend__swatch--approved {
+  background-color: #22c55e;
+}
+
+.cal-legend__swatch--pending {
+  background-color: rgba(249, 115, 22, 0.2);
+  border: 1px dashed #f97316;
+}
+
+.cal-legend__swatch--today {
+  border: 2px dashed #0ea5e9;
+  border-radius: 2px;
+}
+
+.cal-legend__text {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.cal-legend__scope {
+  margin-left: auto;
+  font-size: 12px;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* ── Loading state ── */
+.cal-loading {
+  padding: 60px;
+  text-align: center;
+  background-color: var(--color-bg-surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+}
+
+.cal-loading__icon {
+  margin-bottom: 16px;
+  animation: cal-spin 1s linear infinite;
+}
+
+.cal-loading__text {
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+/* ── Empty state ── */
+.cal-empty {
+  padding: 60px;
+  text-align: center;
+  background-color: var(--color-bg-surface);
+  border-radius: var(--radius-lg);
+  border: 1px dashed #cbd5e1;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+/* ── Animations ── */
+@keyframes cal-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ── Scroll hint gradient (right edge) ── */
+.cal-scroll-hint {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 32px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, rgba(0, 0, 0, 0.04));
+  z-index: 5;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.cal-scroll-hint--visible {
+  opacity: 1;
+}

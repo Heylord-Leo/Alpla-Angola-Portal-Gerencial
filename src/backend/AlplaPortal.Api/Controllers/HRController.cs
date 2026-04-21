@@ -83,6 +83,10 @@ public class HRController : ControllerBase
 
         try
         {
+            _logger.LogInformation(
+                "HR Employee Search: Company={Company}, Query=\"{Query}\", Limit={Limit}",
+                parsedCompany, trimmedQuery, limit);
+
             var results = new List<EmployeeSearchResultDto>();
 
             // Strategy 1: Try exact code match first
@@ -122,6 +126,10 @@ public class HRController : ControllerBase
                     // Query too short for name search — ignore
                 }
             }
+
+            _logger.LogInformation(
+                "HR Employee Search completed: Company={Company}, Query=\"{Query}\", ResultCount={Count}",
+                parsedCompany, trimmedQuery, results.Count);
 
             return Ok(new { results, total = results.Count });
         }

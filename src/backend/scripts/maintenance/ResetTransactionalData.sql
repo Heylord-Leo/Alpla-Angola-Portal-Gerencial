@@ -38,7 +38,30 @@ BEGIN TRY
     DELETE FROM Requests;
     PRINT 'Cleaned Requests and their line items and attachments';
 
-    -- 5. Counters Reset
+    -- 5. Contracts (Children before Parent)
+    DELETE FROM ContractOcrExtractedFields;
+    DELETE FROM ContractOcrExtractionRecords;
+    DELETE FROM ContractAlerts;
+    DELETE FROM ContractPaymentObligations;
+    DELETE FROM ContractHistories;
+    DELETE FROM ContractDocuments;
+    DELETE FROM Contracts;
+    PRINT 'Cleaned Contracts and related records';
+
+    -- 6. Finance (OCR & Reconciliation)
+    DELETE FROM ReconciliationRecords;
+    DELETE FROM OcrExtractedItems;
+    PRINT 'Cleaned Finance OCR and Reconciliation records';
+
+    -- 7. HR & Badge Management
+    DELETE FROM LeaveStatusHistories;
+    DELETE FROM LeaveRecords;
+    DELETE FROM HRSyncLogs;
+    DELETE FROM BadgePrintEvents;
+    DELETE FROM BadgePrintHistories;
+    PRINT 'Cleaned HR and Badge records';
+
+    -- 8. Counters Reset
     -- Resetting the Pedido # sequence back to zero for the new validation run.
     IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SystemCounters')
     BEGIN

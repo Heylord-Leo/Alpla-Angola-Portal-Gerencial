@@ -2,7 +2,15 @@
 
 ## Current Version
 
-v2.83.1
+v2.84.0
+
+## [2.84.0] - 2026-04-22
+
+### Added
+- **HR Team Calendar Modernization**: Backend-enforced access control (System Admin / HR / Local Manager / Department Manager / Self-Calendar), Week-of-Year view mode with ISO week badge, frozen sticky employee column, scope-aware UI headers, and dedicated CSS with portal design tokens.
+
+### Fixed
+- **Local Manager Calendar Scope**: Corrected OR→AND intersection logic for plant/department filters. Local Managers scoped to a specific department now only see employees from that department, not all employees from the entire plant.
 
 ## [2.83.1] - 2026-04-20
 

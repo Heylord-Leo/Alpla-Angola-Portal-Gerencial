@@ -12,6 +12,44 @@ import { BadgePreview, BadgeData, LayoutConfigV3 as LayoutConfig } from './Badge
 import { apiFetch, API_BASE_URL } from '../../lib/api';
 import './employee-workspace.css';
 
+// ─── Session Persistence ───
+const STORAGE_KEY = 'hr_employee_workspace_state';
+
+interface PersistedState {
+    company: string;
+    searchQuery: string;
+    searchResults: EmployeeSearchResult[];
+    hasSearched: boolean;
+    selectedEmployee: EmployeeSearchResult | null;
+    profile: UnifiedProfile | null;
+    badgeCategory: string;
+    badgeCardNumber: string;
+    isManualMode: boolean;
+    manualFullName: string;
+    manualDepartment: string;
+    activeLayoutId: string | null;
+    photoSource: 'innux' | 'local' | null;
+}
+
+function saveWorkspaceState(state: PersistedState): void {
+    try {
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch { /* quota exceeded — non-critical */ }
+}
+
+function clearWorkspaceState(): void {
+    sessionStorage.removeItem(STORAGE_KEY);
+}
+
+function loadWorkspaceState(): PersistedState | null {
+    try {
+        const raw = sessionStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch {
+        return null;
+    }
+}
+
 // ─── Types ───
 
 interface EmployeeSearchResult {
@@ -77,30 +115,40 @@ const COMPANY_OPTIONS = [
  * 7. Badge preview with print
  */
 export default function EmployeeWorkspace() {
+    // ─── Session Restore (read once on mount) ───
+    const restoredRef = useRef<PersistedState | null>(null);
+    const didRestoreRef = useRef(false);
+    if (!didRestoreRef.current) {
+        restoredRef.current = loadWorkspaceState();
+        didRestoreRef.current = true;
+    }
+    const restored = restoredRef.current;
     const navigate = useNavigate();
 
     // ─── State ───
-    const [company, setCompany] = useState('ALPLAPLASTICO');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [searchResults, setSearchResults] = useState<EmployeeSearchResult[]>([]);
+    const [company, setCompany] = useState(restored?.company || 'ALPLAPLASTICO');
+    const [searchQuery, setSearchQuery] = useState(restored?.searchQuery || '');
+    const [searchResults, setSearchResults] = useState<EmployeeSearchResult[]>(restored?.searchResults || []);
     const [isSearching, setIsSearching] = useState(false);
     const [searchError, setSearchError] = useState<string | null>(null);
-    const [hasSearched, setHasSearched] = useState(false);
+    const [hasSearched, setHasSearched] = useState(restored?.hasSearched || false);
 
-    const [selectedEmployee, setSelectedEmployee] = useState<EmployeeSearchResult | null>(null);
-    const [profile, setProfile] = useState<UnifiedProfile | null>(null);
+    const [selectedEmployee, setSelectedEmployee] = useState<EmployeeSearchResult | null>(restored?.selectedEmployee || null);
+    const [profile, setProfile] = useState<UnifiedProfile | null>(restored?.profile || null);
     const [isLoadingProfile, setIsLoadingProfile] = useState(false);
 
     // Manual Entry State
-    const [isManualMode, setIsManualMode] = useState(false);
-    const [manualFullName, setManualFullName] = useState('');
-    const [manualDepartment, setManualDepartment] = useState('');
+    const [isManualMode, setIsManualMode] = useState(restored?.isManualMode || false);
+    const [manualFullName, setManualFullName] = useState(restored?.manualFullName || '');
+    const [manualDepartment, setManualDepartment] = useState(restored?.manualDepartment || '');
 
     // Badge Preparation State (Local/Temporal)
-    const [badgeCategory, setBadgeCategory] = useState('');
-    const [badgeCardNumber, setBadgeCardNumber] = useState('');
+    const [badgeCategory, setBadgeCategory] = useState(restored?.badgeCategory || '');
+    const [badgeCardNumber, setBadgeCardNumber] = useState(restored?.badgeCardNumber || '');
 
     // Photo state
+    // Photo state — photoSource is restored; photoUrl requires re-fetch for innux
+    // (blob URLs don't survive component unmount, so local uploads are not restorable)
     const [photoUrl, setPhotoUrl] = useState<string | null>(null);
     const [photoSource, setPhotoSource] = useState<'innux' | 'local' | null>(null);
     const [isLoadingPhoto, setIsLoadingPhoto] = useState(false);
@@ -108,6 +156,10 @@ export default function EmployeeWorkspace() {
 
     // Badge
     const badgePrintRef = useRef<HTMLDivElement>(null);
+
+    // Search request management — prevents race conditions and stale responses
+    const searchAbortRef = useRef<AbortController | null>(null);
+    const searchSeqRef = useRef(0);
 
     // Layout selection
     interface LayoutSummary { id: string; name: string; version: number; status: string; }
@@ -119,7 +171,7 @@ export default function EmployeeWorkspace() {
     const [isPrinting, setIsPrinting] = useState(false);
     const [printResult, setPrintResult] = useState<{ success: boolean; historyId?: string; message?: string } | null>(null);
 
-    // ─── Load Available Layouts on mount ───
+    // ─── Load Available Layouts on mount (respects restored layout selection) ───
     useEffect(() => {
         (async () => {
             setIsLoadingLayouts(true);
@@ -129,9 +181,13 @@ export default function EmployeeWorkspace() {
                 const layouts: LayoutSummary[] = Array.isArray(data) ? data : [];
                 setAvailableLayouts(layouts);
 
-                // Auto-select the first layout
-                if (layouts.length > 0) {
-                    await selectLayoutById(layouts[0].id, layouts[0].name, layouts[0].version);
+                // Restore previously-selected layout, or default to the first
+                const restoredLayoutId = restoredRef.current?.activeLayoutId;
+                const targetLayout = restoredLayoutId
+                    ? layouts.find(l => l.id === restoredLayoutId) || layouts[0]
+                    : layouts[0];
+                if (targetLayout) {
+                    await selectLayoutById(targetLayout.id, targetLayout.name, targetLayout.version);
                 }
             } catch (err) {
                 console.warn('Could not load active badge layouts, using defaults', err);
@@ -141,6 +197,44 @@ export default function EmployeeWorkspace() {
             }
         })();
     }, []);
+
+    // ─── Restore Innux photo on mount if session had a selected employee ───
+    useEffect(() => {
+        if (restored?.selectedEmployee && restored?.photoSource === 'innux' && restored?.profile?.innux?.hasPhoto) {
+            loadInnuxPhoto(restored.selectedEmployee.code);
+        }
+        // One-time on mount only
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // ─── Persist workspace state to sessionStorage on relevant changes ───
+    useEffect(() => {
+        // Skip the initial render before restoration has settled
+        if (!didRestoreRef.current) return;
+
+        const state: PersistedState = {
+            company,
+            searchQuery,
+            searchResults,
+            hasSearched,
+            selectedEmployee,
+            profile,
+            badgeCategory,
+            badgeCardNumber,
+            isManualMode,
+            manualFullName,
+            manualDepartment,
+            activeLayoutId: activeLayout?.id || null,
+            // Only persist innux — local blob URLs don't survive unmount
+            photoSource: photoSource === 'innux' ? 'innux' : null,
+        };
+        saveWorkspaceState(state);
+    }, [
+        company, searchQuery, searchResults, hasSearched,
+        selectedEmployee, profile, badgeCategory, badgeCardNumber,
+        isManualMode, manualFullName, manualDepartment,
+        activeLayout, photoSource
+    ]);
 
     // ─── Select a specific layout by ID ───
     const selectLayoutById = async (layoutId: string, name: string, version: number) => {
@@ -182,11 +276,39 @@ export default function EmployeeWorkspace() {
         setManualFullName('');
         setManualDepartment('');
         setPrintResult(null);
+        // Mode toggle resets context — clear persisted state (the persist effect will save the new empty state)
+        clearWorkspaceState();
     };
+
+    // ─── Company Change ───
+    const handleCompanyChange = useCallback((newCompany: string) => {
+        setCompany(newCompany);
+        // Cancel any in-flight search request for the previous company
+        searchAbortRef.current?.abort();
+        // Clear all search and employee state from the previous company context
+        setSearchResults([]);
+        setSelectedEmployee(null);
+        setProfile(null);
+        setPhotoUrl(null);
+        setPhotoSource(null);
+        setBadgeCategory('');
+        setBadgeCardNumber('');
+        setSearchError(null);
+        setHasSearched(false);
+        setPrintResult(null);
+        // Clear persisted state — company change invalidates all prior context
+        clearWorkspaceState();
+    }, []);
 
     // ─── Search ───
     const handleSearch = useCallback(async () => {
         if (!searchQuery.trim() || searchQuery.trim().length < 2) return;
+
+        // Cancel any in-flight search request
+        searchAbortRef.current?.abort();
+        const controller = new AbortController();
+        searchAbortRef.current = controller;
+        const requestSeq = ++searchSeqRef.current;
 
         setIsSearching(true);
         setSearchError(null);
@@ -206,19 +328,40 @@ export default function EmployeeWorkspace() {
                 company,
                 limit: '20'
             });
-            const res = await apiFetch(`${API_BASE_URL}/api/hr/employees/search?${params}`);
+            const res = await apiFetch(`${API_BASE_URL}/api/hr/employees/search?${params}`, {
+                signal: controller.signal
+            });
+
+            // Guard: ignore if this request was superseded by a newer one
+            if (requestSeq !== searchSeqRef.current) return;
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => null);
+                throw new Error(
+                    errData?.Error || errData?.Details || `Erro do servidor (HTTP ${res.status})`
+                );
+            }
+
             const data = await res.json();
             setSearchResults(data.results || []);
         } catch (err: any) {
+            // Aborted requests: do not update state or show errors
+            if (err?.name === 'AbortError') return;
+            // Stale request guard
+            if (requestSeq !== searchSeqRef.current) return;
+
             console.error('Search error:', err);
             setSearchError(
                 err?.message?.includes('503') || err?.message?.includes('502')
                     ? 'Serviço de integração indisponível. Tente novamente.'
-                    : 'Erro ao pesquisar funcionários. Verifique a conexão.'
+                    : err?.message || 'Erro ao pesquisar funcionários. Verifique a conexão.'
             );
             setSearchResults([]);
         } finally {
-            setIsSearching(false);
+            // Only clear loading state for the current (non-stale, non-aborted) request
+            if (requestSeq === searchSeqRef.current) {
+                setIsSearching(false);
+            }
         }
     }, [searchQuery, company]);
 
@@ -470,7 +613,7 @@ export default function EmployeeWorkspace() {
                                 <select
                                     id="hr-company-select"
                                     value={company}
-                                    onChange={(e) => setCompany(e.target.value)}
+                                    onChange={(e) => handleCompanyChange(e.target.value)}
                                 >
                                     {COMPANY_OPTIONS.map(c => (
                                         <option key={c.value} value={c.value}>{c.label}</option>
@@ -745,7 +888,7 @@ export default function EmployeeWorkspace() {
                                                 <label>Empresa Correspondente</label>
                                                 <select
                                                     value={company}
-                                                    onChange={(e) => setCompany(e.target.value)}
+                                                    onChange={(e) => handleCompanyChange(e.target.value)}
                                                 >
                                                     {COMPANY_OPTIONS.map(c => (
                                                         <option key={c.value} value={c.value}>{c.label}</option>
