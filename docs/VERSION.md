@@ -2,7 +2,12 @@
 
 ## Current Version
 
-v2.84.0
+v2.85.0
+
+## [2.85.0] - 2026-04-22
+
+### Added
+- **HR Attendance Calendar (Innux Integration)**: Full-stack delivery of the Innux-integrated attendance calendar with paginated grid (15/page), alphabetical sorting (pt-AO locale), multi-level filtering (Company, Plant, Department), scroll-contained layout architecture, cell-click detail drawer, and backend attendance API with scope-enforced data access.
 
 ## [2.84.0] - 2026-04-22
 

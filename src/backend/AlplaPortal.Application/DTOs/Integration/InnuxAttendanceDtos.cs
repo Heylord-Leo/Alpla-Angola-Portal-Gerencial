@@ -1,0 +1,157 @@
+namespace AlplaPortal.Application.DTOs.Integration;
+
+/// <summary>
+/// Daily attendance summary for one employee on one day — the calendar cell.
+///
+/// Maps from Innux dbo.Alteracoes with schedule enrichment via dbo.Horarios.
+/// All time values are pre-converted from Innux datetime-as-duration encoding
+/// to practical display/service forms (minutes or HH:mm strings).
+///
+/// AttendanceStatus is a Portal-computed classification derived from
+/// the combination of Innux fields, not a raw Innux column.
+/// </summary>
+public class AttendanceDaySummaryDto
+{
+    /// <summary>Innux IDFuncionario — join key, never displayed.</summary>
+    public int InnuxEmployeeId { get; set; }
+
+    /// <summary>Calendar date.</summary>
+    public DateTime Date { get; set; }
+
+    /// <summary>Schedule code (Horarios.Codigo), null if no schedule assigned.</summary>
+    public string? ScheduleCode { get; set; }
+
+    /// <summary>Schedule description (Horarios.Descricao).</summary>
+    public string? ScheduleDescription { get; set; }
+
+    /// <summary>Schedule short label (Horarios.Sigla), e.g. "TN", "TM", "DC".</summary>
+    public string? ScheduleSigla { get; set; }
+
+    /// <summary>Whether the applied schedule is a rest day (Horarios.DiaFolga).</summary>
+    public bool IsRestDay { get; set; }
+
+    /// <summary>
+    /// Whether the applied schedule crosses midnight into the next day.
+    /// Only true for real worked overnight shifts — rest days, vacation, and
+    /// optional-only periods are excluded even if they technically span midnight.
+    /// Derived from HorariosPeriodos.Fim date component crossing 1900-01-02.
+    /// </summary>
+    public bool IsOvernightShift { get; set; }
+
+    /// <summary>Schedule period start time as "HH:mm" (earliest mandatory period).</summary>
+    public string? ScheduleStartTime { get; set; }
+
+    /// <summary>Schedule period end time as "HH:mm" (latest period end, may be next-day).</summary>
+    public string? ScheduleEndTime { get; set; }
+
+    /// <summary>First entry time as "HH:mm", null if no entry recorded.</summary>
+    public string? FirstEntry { get; set; }
+
+    /// <summary>First exit time as "HH:mm", null if no exit recorded.</summary>
+    public string? FirstExit { get; set; }
+
+    /// <summary>Unjustified absence duration in minutes (Falta → DATEDIFF).</summary>
+    public int AbsenceMinutes { get; set; }
+
+    /// <summary>Justified absence duration in minutes (Ausencia → DATEDIFF).</summary>
+    public int JustifiedAbsenceMinutes { get; set; }
+
+    /// <summary>Expected working duration in minutes (Objectivo → DATEDIFF).</summary>
+    public int ExpectedMinutes { get; set; }
+
+    /// <summary>
+    /// Balance in minutes (Saldo → DATEDIFF).
+    /// Known limitation: negative balance encoding in Innux is unconfirmed.
+    /// Values may appear as 0 when the true balance is negative.
+    /// This field should be consumed defensively until validated.
+    /// </summary>
+    public int BalanceMinutes { get; set; }
+
+    /// <summary>Number of clock punches recorded (Marcacao).</summary>
+    public int PunchCount { get; set; }
+
+    /// <summary>Whether the day has been validated/approved in Innux.</summary>
+    public bool IsValidated { get; set; }
+
+    /// <summary>Whether mandatory schedule periods were missed.</summary>
+    public bool MissedMandatoryPeriods { get; set; }
+
+    /// <summary>Anomaly description from Innux, null if clean.</summary>
+    public string? AnomalyDescription { get; set; }
+
+    /// <summary>Justification text, null if none provided.</summary>
+    public string? Justification { get; set; }
+
+    /// <summary>
+    /// Portal-computed attendance classification.
+    /// Values: "Present", "Absent", "JustifiedAbsence", "DayOff", "Anomaly", "Unknown".
+    /// Derived from AbsenceMinutes, PunchCount, ExpectedMinutes, and AnomalyDescription.
+    /// </summary>
+    public string AttendanceStatus { get; set; } = "Unknown";
+}
+
+/// <summary>
+/// Drill-down detail for one employee on one day.
+/// Combines the processed summary (Alteracoes) with raw punches and period breakdown.
+/// </summary>
+public class AttendanceDayDetailDto
+{
+    public AttendanceDaySummaryDto Summary { get; set; } = null!;
+    public List<AttendancePunchDto> RawPunches { get; set; } = new();
+    public List<AttendancePeriodDto> Periods { get; set; } = new();
+    public string? WorkPlanCode { get; set; }
+    public string? WorkPlanDescription { get; set; }
+}
+
+/// <summary>
+/// One raw clock punch from TerminaisMarcacoes.
+/// Used for audit/drill-down only, not for calendar rendering.
+/// </summary>
+public class AttendancePunchDto
+{
+    public int InnuxEmployeeId { get; set; }
+    public DateTime Date { get; set; }
+
+    /// <summary>Punch time as "HH:mm:ss".</summary>
+    public string Time { get; set; } = "";
+
+    /// <summary>Raw Innux direction: "EN" (entry) or "SA" (exit).</summary>
+    public string Direction { get; set; } = "";
+
+    /// <summary>Human-readable direction: "Entry" or "Exit".</summary>
+    public string DirectionLabel { get; set; } = "";
+
+    /// <summary>Terminal/device name, null if not available.</summary>
+    public string? TerminalName { get; set; }
+
+    /// <summary>Whether the punch was auto-generated by the Innux engine.</summary>
+    public bool IsAutoGenerated { get; set; }
+}
+
+/// <summary>
+/// One work period within a day from AlteracoesPeriodos.
+/// Shows what happened in each scheduled time slot.
+/// </summary>
+public class AttendancePeriodDto
+{
+    /// <summary>Period start time as "HH:mm".</summary>
+    public string? StartTime { get; set; }
+
+    /// <summary>Period end time as "HH:mm".</summary>
+    public string? EndTime { get; set; }
+
+    /// <summary>Work code if the employee was working.</summary>
+    public string? WorkCode { get; set; }
+
+    /// <summary>Work code description.</summary>
+    public string? WorkDescription { get; set; }
+
+    /// <summary>Absence code if the employee was absent.</summary>
+    public string? AbsenceCode { get; set; }
+
+    /// <summary>Absence code description.</summary>
+    public string? AbsenceDescription { get; set; }
+
+    /// <summary>Whether the period was dispensed/excused.</summary>
+    public bool IsDispensed { get; set; }
+}

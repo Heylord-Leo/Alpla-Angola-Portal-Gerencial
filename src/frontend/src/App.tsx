@@ -86,6 +86,9 @@ const HRLeaveList = React.lazy(() =>
 const HRTeamCalendar = React.lazy(() =>
     import('./pages/HR/HRTeamCalendar')
 );
+const HRAttendanceCalendar = React.lazy(() =>
+    import('./pages/HR/HRAttendanceCalendar')
+);
 const EmployeeWorkspace = React.lazy(() =>
     import('./pages/HR/EmployeeWorkspace')
 );
@@ -212,6 +215,7 @@ function AppContent() {
                     <Route path="overview" element={<Suspense fallback={<LoadingSkeleton />}><HROverview /></Suspense>} />
                     <Route path="leave" element={<Suspense fallback={<LoadingSkeleton />}><HRLeaveList /></Suspense>} />
                     <Route path="calendar" element={<Suspense fallback={<LoadingSkeleton />}><HRTeamCalendar /></Suspense>} />
+                    <Route path="attendance" element={<Suspense fallback={<LoadingSkeleton />}><HRAttendanceCalendar /></Suspense>} />
                     <Route path="directory" element={<Suspense fallback={<LoadingSkeleton />}><HREmployeeDirectory /></Suspense>} />
                     
                     {/* Compatibility Redirects */}

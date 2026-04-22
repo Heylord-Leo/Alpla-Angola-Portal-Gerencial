@@ -38,7 +38,7 @@ export function AppShell({ children }: AppShellProps) {
                 margin: '0 auto',
                 width: '100%',
                 flex: 1,
-                alignItems: 'start',
+                alignItems: 'stretch',
                 transition: 'grid-template-columns 0.3s ease-in-out'
             }}>
                 {/* Full-height sidebar container with independent scroll support */}
@@ -67,9 +67,11 @@ export function AppShell({ children }: AppShellProps) {
                         boxShadow: 'var(--shadow-soft)',
                         borderRadius: 'var(--radius-lg)',
                         minHeight: '70vh',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        minWidth: 0,
                         padding: '1.5rem',
-                        position: 'relative',
-                        minWidth: 0 // Crucial for grid/flex child consistency
+                        position: 'relative'
                     }}
                 >
                     {children || <ErrorBoundary fallbackName="AppShell.Outlet"><Outlet /></ErrorBoundary>}

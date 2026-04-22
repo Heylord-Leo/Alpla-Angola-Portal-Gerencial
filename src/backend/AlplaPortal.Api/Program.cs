@@ -27,6 +27,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHttpClient();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddMemoryCache();
 
 builder.Services.AddHttpClient<IDocumentExtractionProvider, LocalOcrExtractionProvider>();
 builder.Services.AddHttpClient<IDocumentExtractionProvider, OpenAiDocumentExtractionProvider>();
@@ -51,6 +52,8 @@ builder.Services.AddScoped<IPrimaveraDepartmentSyncService, PrimaveraDepartmentS
 builder.Services.AddScoped<InnuxConnectionFactory>();
 builder.Services.AddScoped<IInnuxEmployeeService, InnuxEmployeeService>();
 builder.Services.AddScoped<IInnuxEmployeePhotoService, InnuxEmployeePhotoService>();
+builder.Services.AddScoped<IInnuxAttendanceService, InnuxAttendanceService>();
+builder.Services.AddScoped<IInnuxLookupService, InnuxLookupService>();
 builder.Services.AddScoped<IUnifiedEmployeeProfileService, UnifiedEmployeeProfileService>();
 builder.Services.AddScoped<IHREmployeeSyncService, HREmployeeSyncService>();
 

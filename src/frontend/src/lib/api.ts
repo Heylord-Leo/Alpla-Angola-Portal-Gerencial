@@ -666,6 +666,29 @@ export const api = {
             return response.json();
         }
     },
+    hrAttendance: {
+        getCalendar: async (params: { startDate: string; endDate: string }): Promise<any> => {
+            const qs = new URLSearchParams(params as any).toString();
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/attendance/calendar?${qs}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar calendário de presenças.');
+            return response.json();
+        },
+        getDayDetail: async (innuxEmployeeId: number, date: string): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/attendance/detail/${innuxEmployeeId}/${date}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar detalhe de presença.');
+            return response.json();
+        },
+        getAbsenceCodes: async (): Promise<any[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/attendance/lookup/absence-codes`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar códigos de ausência.');
+            return response.json();
+        },
+        getWorkCodes: async (): Promise<any[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/attendance/lookup/work-codes`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar códigos de trabalho.');
+            return response.json();
+        }
+    },
     approvals: {
         getIntelligence: async (id: string): Promise<ApprovalIntelligenceDto> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/approvals/${id}/intelligence`);

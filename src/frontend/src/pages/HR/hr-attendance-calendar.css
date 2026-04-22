@@ -1,0 +1,1145 @@
+/* ── HR Attendance Calendar ── */
+/* Prefix: att- (avoids collision with existing cal- prefix from HRTeamCalendar) */
+
+/* ── Container ── */
+.att-root {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  flex: 1;
+  min-height: 0; /* Critical for flex child shrink */
+}
+
+/* ── Header ── */
+.att-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  flex-shrink: 0; /* Keep header visible */
+}
+
+.att-header__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--color-text-main);
+}
+
+.att-header__subtitle {
+  margin: 4px 0 0 0;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+/* ── Controls bar ── */
+.att-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* ── View mode toggle (segmented control) ── */
+.att-view-toggle {
+  display: flex;
+  background-color: var(--color-bg-page);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--color-border);
+}
+
+.att-view-toggle__btn {
+  padding: 6px 16px;
+  border: none;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.att-view-toggle__btn:hover:not(.att-view-toggle__btn--active) {
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-main);
+}
+
+.att-view-toggle__btn--active {
+  background-color: var(--color-bg-surface);
+  color: var(--color-primary);
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Navigation pill ── */
+.att-nav {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background-color: var(--color-bg-surface);
+  padding: 4px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.att-nav__btn {
+  background: none;
+  border: none;
+  padding: 8px;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.att-nav__btn:hover {
+  background-color: var(--color-bg-page);
+  color: var(--color-text-main);
+}
+
+.att-nav__label {
+  font-weight: 800;
+  color: var(--color-text-main);
+  min-width: 150px;
+  text-align: center;
+  text-transform: capitalize;
+  font-size: 14px;
+  padding: 0 4px;
+}
+
+.att-nav__today {
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-muted);
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+
+.att-nav__today:hover {
+  background-color: var(--color-bg-page);
+  color: var(--color-text-main);
+  border-color: var(--color-primary);
+}
+
+/* ── Pagination ── */
+.att-pagination {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+  padding-left: 16px;
+  border-left: 1px solid #e2e8f0;
+}
+
+.att-pagination__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  border: 1px solid #e2e8f0;
+  background-color: white;
+  color: var(--color-text-main);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.att-pagination__btn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background-color: rgba(var(--color-primary-rgb), 0.04);
+}
+
+.att-pagination__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background-color: #f8fafc;
+}
+
+.att-pagination__info {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  min-width: 45px;
+  text-align: center;
+}
+
+/* ── Week badge ── */
+.att-week-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  background-color: rgba(var(--color-primary-rgb), 0.08);
+  color: var(--color-primary);
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+/* ── Filter bar ── */
+.att-filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 20px;
+  background-color: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.att-filters__icon {
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+}
+
+.att-filters__select {
+  padding: 5px 28px 5px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-md);
+  background-color: white;
+  color: var(--color-text-main);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%2394a3b8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  max-width: 200px;
+}
+
+.att-filters__select:hover {
+  border-color: #cbd5e1;
+}
+
+.att-filters__select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.1);
+}
+
+.att-filters__select:not([value=""]) {
+  border-color: var(--color-primary);
+  background-color: rgba(var(--color-primary-rgb), 0.03);
+}
+
+.att-filters__clear {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background-color: transparent;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.att-filters__clear:hover {
+  background-color: #fee2e2;
+  color: #dc2626;
+  border-color: #fecaca;
+}
+
+/* ── Grid shell (containment) ── */
+.att-grid-shell {
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0; /* Critical for scroll containment */
+}
+
+/* ── Scroll viewport ── */
+.att-scroll-viewport {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.att-scroll-viewport::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.att-scroll-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.att-scroll-viewport::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.att-scroll-viewport::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Scroll shadow on the frozen column edge */
+.att-scroll-viewport--scrolled .att-frozen-col {
+  box-shadow: 4px 0 8px -2px rgba(0, 0, 0, 0.08);
+}
+
+/* Scroll shadow on the sticky header when scrolled vertically */
+.att-scroll-viewport--scrolled-y .att-day-header,
+.att-scroll-viewport--scrolled-y thead .att-frozen-col {
+  box-shadow: 0 3px 6px -2px rgba(0, 0, 0, 0.08);
+}
+
+/* When scrolled both axes, corner cell needs combined shadow */
+.att-scroll-viewport--scrolled.att-scroll-viewport--scrolled-y thead .att-frozen-col {
+  box-shadow: 4px 3px 8px -2px rgba(0, 0, 0, 0.1);
+}
+
+/* ── Table ── */
+.att-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+
+/* ── Frozen employee column ── */
+.att-frozen-col {
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  background-color: #ffffff; /* Must be opaque */
+  border-right: 1px solid #e2e8f0;
+  transition: box-shadow 0.2s;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.att-table thead .att-frozen-col {
+  padding: 16px;
+  text-align: left;
+  border-bottom: 2px solid #e2e8f0;
+  z-index: 30; /* Higher than day headers */
+  top: 0;
+  background-color: #f8fafc;
+}
+
+.att-frozen-col__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.att-frozen-col__count {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+  opacity: 0.8;
+}
+
+.att-frozen-col__label {
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.att-table tbody .att-frozen-col {
+  background-color: #ffffff;
+  padding: 0 16px;
+}
+
+.att-employee {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 48px;
+}
+
+.att-employee__name {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--color-text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
+.att-employee__dept {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+/* ── Day header cells ── */
+.att-day-header {
+  padding: 8px 0;
+  text-align: center;
+  border-bottom: 2px solid #e2e8f0;
+  border-right: 1px solid #f1f5f9;
+  background-color: #f8fafc;
+  position: sticky;
+  top: 0;
+  z-index: 20; /* Lower than frozen col intersection but higher than content */
+  box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0);
+  transition: box-shadow 0.2s;
+}
+
+.att-day-header--weekend {
+  background-color: #f1f5f9;
+}
+
+.att-day-header--today {
+  background-color: #e0f2fe;
+}
+
+.att-day-header__weekday {
+  display: block;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  line-height: 1.2;
+}
+
+.att-day-header--weekend .att-day-header__weekday {
+  color: #94a3b8;
+}
+
+.att-day-header--today .att-day-header__weekday {
+  color: #0284c7;
+}
+
+.att-day-header__number {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-main);
+  line-height: 1.3;
+}
+
+.att-day-header--today .att-day-header__number {
+  font-weight: 800;
+  color: #0284c7;
+}
+
+/* ── Day body cells ── */
+.att-day-cell {
+  padding: 0;
+  border-right: 1px solid #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+  vertical-align: middle;
+  position: relative;
+  height: 48px;
+  cursor: pointer;
+  transition: background-color 0.1s;
+}
+
+.att-day-cell:hover {
+  background-color: #f0f4ff !important;
+}
+
+.att-day-cell--weekend {
+  background-color: #f8fafc;
+}
+
+.att-day-cell--today {
+  background-color: #f0f9ff;
+}
+
+.att-day-cell--today-border {
+  border-left: 2px solid #0ea5e9 !important;
+  border-right: 2px solid #0ea5e9 !important;
+}
+
+/* Today vertical indicator */
+.att-today-indicator {
+  position: absolute;
+  left: -1px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background-color: #0ea5e9;
+  z-index: 6;
+}
+
+/* ── Table rows ── */
+.att-table tbody tr {
+  /* border-bottom moved to individual cells for border-collapse: separate */
+  transition: background-color 0.1s;
+}
+
+.att-table tbody tr:hover .att-day-cell:not(.att-day-cell--weekend) {
+  background-color: #fafbfc;
+}
+
+/* ── Status cells ── */
+.att-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.att-status__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.att-status__icon {
+  font-size: 11px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Present — green filled dot */
+.att-status--present .att-status__dot {
+  background-color: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.15);
+}
+
+/* Absent — red ring */
+.att-status--absent .att-status__dot {
+  background-color: transparent;
+  border: 2.5px solid #dc2626;
+}
+
+/* JustifiedAbsence — amber triangle icon */
+.att-status--justified .att-status__icon {
+  color: #d97706;
+  background-color: rgba(217, 119, 6, 0.1);
+  font-size: 12px;
+}
+
+/* DayOff — light dash */
+.att-status--dayoff .att-status__icon {
+  color: #94a3b8;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+/* Anomaly — purple exclamation */
+.att-status--anomaly .att-status__icon {
+  color: #fff;
+  background-color: #9333ea;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+/* Unknown — slate question */
+.att-status--unknown .att-status__icon {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+
+/* ── Legend ── */
+.att-legend {
+  padding: 16px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  background-color: #f8fafc;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.att-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.att-legend__swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.att-legend__swatch--present {
+  background-color: #16a34a;
+}
+
+.att-legend__swatch--absent {
+  background-color: transparent;
+  border: 2.5px solid #dc2626;
+  box-sizing: border-box;
+}
+
+.att-legend__swatch--justified {
+  background-color: rgba(217, 119, 6, 0.15);
+  border: 1.5px solid #d97706;
+}
+
+.att-legend__swatch--dayoff {
+  background-color: #e5e7eb;
+}
+
+.att-legend__swatch--anomaly {
+  background-color: #9333ea;
+}
+
+.att-legend__swatch--unknown {
+  background-color: #cbd5e1;
+}
+
+.att-legend__text {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.att-legend__scope {
+  margin-left: auto;
+  font-size: 12px;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* ── Loading state ── */
+.att-loading {
+  padding: 60px;
+  text-align: center;
+  background-color: var(--color-bg-surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+}
+
+.att-loading__icon {
+  margin-bottom: 16px;
+  animation: att-spin 1s linear infinite;
+}
+
+.att-loading__text {
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+/* ── Empty state ── */
+.att-empty {
+  padding: 60px;
+  text-align: center;
+  background-color: var(--color-bg-surface);
+  border-radius: var(--radius-lg);
+  border: 1px dashed #cbd5e1;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+/* ── Error state ── */
+.att-error {
+  padding: 40px;
+  text-align: center;
+  background-color: #fef2f2;
+  border-radius: var(--radius-lg);
+  border: 1px solid #fecaca;
+}
+
+.att-error__text {
+  color: #dc2626;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.att-error__retry {
+  padding: 8px 20px;
+  border: 1px solid #fca5a5;
+  border-radius: var(--radius-md);
+  background-color: white;
+  color: #dc2626;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.att-error__retry:hover {
+  background-color: #fef2f2;
+  border-color: #dc2626;
+}
+
+/* ── Scroll hint ── */
+.att-scroll-hint {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 32px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, rgba(0, 0, 0, 0.04));
+  z-index: 5;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.att-scroll-hint--visible {
+  opacity: 1;
+}
+
+/* ── Detail Drawer ── */
+.att-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.3);
+  z-index: 1499;
+  animation: att-fadeIn 0.2s ease;
+}
+
+.att-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 480px;
+  max-width: 100vw;
+  background-color: var(--color-bg-surface);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+  z-index: 1500;
+  display: flex;
+  flex-direction: column;
+  animation: att-slideIn 0.25s ease;
+}
+
+.att-drawer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.att-drawer__title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--color-text-main);
+  margin: 0;
+}
+
+.att-drawer__subtitle {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  font-weight: 500;
+  margin: 2px 0 0 0;
+}
+
+.att-drawer__close {
+  background: none;
+  border: none;
+  padding: 8px;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  border-radius: var(--radius-md);
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.att-drawer__close:hover {
+  background-color: var(--color-bg-page);
+  color: var(--color-text-main);
+}
+
+.att-drawer__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.att-drawer__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: 12px;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.att-drawer__error {
+  padding: 24px;
+  text-align: center;
+  color: #dc2626;
+  font-weight: 600;
+}
+
+/* ── Drawer sections ── */
+.att-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.att-detail-section__title {
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 6px;
+}
+
+/* Summary grid */
+.att-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.att-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.att-summary-item__label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.att-summary-item__value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-main);
+}
+
+.att-summary-item__value--provisional {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* Status badge in drawer */
+.att-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 700;
+  width: fit-content;
+}
+
+.att-status-badge--present {
+  background-color: rgba(22, 163, 74, 0.1);
+  color: #16a34a;
+}
+
+.att-status-badge--absent {
+  background-color: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+.att-status-badge--justified {
+  background-color: rgba(217, 119, 6, 0.1);
+  color: #d97706;
+}
+
+.att-status-badge--dayoff {
+  background-color: rgba(148, 163, 184, 0.15);
+  color: #64748b;
+}
+
+.att-status-badge--anomaly {
+  background-color: rgba(147, 51, 234, 0.1);
+  color: #9333ea;
+}
+
+.att-status-badge--unknown {
+  background-color: rgba(148, 163, 184, 0.1);
+  color: #94a3b8;
+}
+
+/* Periods timeline */
+.att-period {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  background-color: #f8fafc;
+  border-radius: var(--radius-md);
+  border: 1px solid #e2e8f0;
+}
+
+.att-period__time {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-main);
+  white-space: nowrap;
+  min-width: 90px;
+}
+
+.att-period__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.att-period__code {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.att-period__desc {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.att-period--dispensed {
+  opacity: 0.6;
+  border-style: dashed;
+}
+
+/* Punches table */
+.att-punches-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.att-punches-table th {
+  text-align: left;
+  padding: 8px 10px;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+  background-color: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.att-punches-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  color: var(--color-text-main);
+}
+
+.att-punches-table tr:last-child td {
+  border-bottom: none;
+}
+
+.att-punch-auto {
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+  background-color: rgba(148, 163, 184, 0.1);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Detail empty state ── */
+.att-detail-empty {
+  padding: 24px;
+  text-align: center;
+  background-color: #f8fafc;
+  border-radius: var(--radius-md);
+  border: 1px dashed #cbd5e1;
+  color: var(--color-text-muted);
+  font-weight: 500;
+  font-size: 13px;
+}
+
+/* ── Overnight Shift Connector ── */
+
+/* Start cell: line from center to right edge */
+.att-day-cell--overnight-start::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 5px;
+  width: 50%;
+  height: 2px;
+  background-color: #6366f1;
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* Start dot */
+.att-day-cell--overnight-start::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #6366f1;
+  transform: translateX(-50%);
+  z-index: 6;
+  pointer-events: none;
+}
+
+/* End cell: line from left edge to center */
+.att-day-cell--overnight-end::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 5px;
+  width: 50%;
+  height: 2px;
+  background-color: #6366f1;
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* End dot */
+.att-day-cell--overnight-end::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #6366f1;
+  transform: translateX(-50%);
+  z-index: 6;
+  pointer-events: none;
+}
+
+/* When both start AND end apply (consecutive overnights):
+   draw the full-width connector line, keep start dot only */
+.att-day-cell--overnight-start.att-day-cell--overnight-end::after {
+  left: 0;
+  width: 100%;
+}
+
+/* ── Rest Day Styling ── */
+.att-day-cell--rest {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 4px,
+    rgba(148, 163, 184, 0.06) 4px,
+    rgba(148, 163, 184, 0.06) 5px
+  );
+}
+
+/* ── Schedule Sigla Micro-Label ── */
+.att-cell-sigla {
+  position: absolute;
+  bottom: 1px;
+  right: 2px;
+  font-size: 8px;
+  font-weight: 700;
+  color: #94a3b8;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  z-index: 4;
+}
+
+/* Hide sigla when overnight dots would overlap */
+.att-day-cell--overnight-start .att-cell-sigla,
+.att-day-cell--overnight-end .att-cell-sigla {
+  display: none;
+}
+
+/* ── Legend: Overnight Swatch ── */
+.att-legend__swatch--overnight {
+  background-color: #6366f1;
+  position: relative;
+}
+
+.att-legend__swatch--overnight::after {
+  content: '';
+  position: absolute;
+  right: -8px;
+  top: 50%;
+  width: 8px;
+  height: 2px;
+  background-color: #6366f1;
+  transform: translateY(-50%);
+}
+
+/* ── Drawer: Overnight Badge ── */
+.att-overnight-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background-color: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: var(--radius-md);
+  color: #6366f1;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.att-overnight-badge__time {
+  font-weight: 500;
+  font-size: 12px;
+  color: #818cf8;
+  margin-left: auto;
+}
+
+/* ── Animations ── */
+@keyframes att-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes att-fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes att-slideIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}

@@ -2,6 +2,22 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.85.0] - 2026-04-22 - Feature: HR Attendance Calendar (Innux Integration)
+### Added
+- **HR Attendance Calendar Page**: New `HRAttendanceCalendar.tsx` component rendering an Innux-integrated attendance grid with employees in rows and days in columns. Cell colors and icons indicate attendance status (present, absent, rest day, overnight shift, anomaly).
+- **Detail Drawer**: Clicking any attendance cell opens a slide-out drawer displaying full schedule details, punch times, balance minutes, justifications, and anomaly descriptions.
+- **Backend Attendance API**: `HRAttendanceController` with endpoints for calendar data retrieval (`GetCalendar`), leveraging `IInnuxAttendanceService` and `IInnuxLookupService` for read-only Innux data access. Scope enforcement via `GetScopedEmployeesQuery()` ensures role-based data visibility.
+- **Pagination**: 15 employees per page with navigation controls, displaying current page and total page count.
+- **Alphabetical Sorting**: Employee list sorted alphabetically using locale-aware comparison (`pt-AO`).
+- **Multi-Level Filters**: Dynamic dropdown filters for **Company**, **Plant**, and **Department** — derived from loaded data and applied client-side for instant responsiveness. Filters reset automatically on data refresh.
+- **Employee Count Badge**: The "Funcionário" column header displays the total filtered employee count.
+- **Month/Week View Toggle**: Segmented control for switching between full-month and ISO week-of-year calendar views.
+- **Scroll-Contained Layout**: Flexbox-driven grid shell with native horizontal/vertical scrolling, sticky day header, and sticky first column — single scrollbar architecture with no mirror scrollbar.
+### Backend
+- **New Services**: `InnuxAttendanceService`, `InnuxLookupService`, `InnuxTimeHelper` — read-only Innux attendance data retrieval with schedule/department/shift lookups.
+- **New DTOs**: `InnuxAttendanceDtos`, `InnuxLookupDtos` — typed contracts for attendance summary and lookup data.
+- **Backend Data Projection**: `GetCalendar` endpoint exposes `plantName` and `companyName` through navigation properties to support frontend filtering.
+
 ## [v2.84.0] - 2026-04-22 - Feature: HR Team Calendar Modernization (Access Control + Week View)
 ### Added
 - **Backend-Enforced Calendar Access Control**: `GetScopedEmployeesQuery()` now handles four distinct access tiers:

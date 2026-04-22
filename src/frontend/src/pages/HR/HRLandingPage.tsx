@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-    Activity, Calendar, CalendarDays, Users, CreditCard
+    Activity, Calendar, CalendarDays, Clock, Users, CreditCard
 } from 'lucide-react';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -11,6 +11,7 @@ const HR_TABS = [
     { id: 'overview', label: 'Visão Geral', path: '/hr/overview', icon: Activity },
     { id: 'leave', label: 'Férias e Ausências', path: '/hr/leave', icon: Calendar },
     { id: 'calendar', label: 'Calendário da Equipa', path: '/hr/calendar', icon: CalendarDays },
+    { id: 'attendance', label: 'Presenças', path: '/hr/attendance', icon: Clock },
     { id: 'directory', label: 'Directório & Mapeamento', path: '/hr/directory', icon: Users },
     { id: 'badges', label: 'Gestão de Crachás', path: '/hr/badges', icon: CreditCard },
 ];
