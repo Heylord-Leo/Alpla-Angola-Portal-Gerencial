@@ -2,6 +2,41 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.88.0] - 2026-04-23 - Feature: HR Monthly Changes First Frontend Slice
+### Added
+- **HR Monthly Changes UI**: First frontend slice for the Innux-to-Primavera workflow.
+  - Implemented `MonthlyChangesList` for viewing and creating processing runs.
+  - Implemented `MonthlyChangesRunDetail` with tabs for Review Items, Anomalies, and Processing Logs.
+  - Added support for filtering items by status and occurrence type.
+  - Added visual anomaly flags and badging aligned with project design conventions.
+
+## [v2.87.0] - 2026-04-23 - Hardening: HR Monthly Changes Detection Engine
+### Fixed
+- **Detection Overlap**: Resolved a potential overlapping logging defect in `OccurrenceDetectionEngine.cs` where both `UNJUSTIFIED_ABSENCE` and `LATENESS` could be generated for the exact same duration. Lateness is now evaluated first, and Unjustified Absence skips duplicated reporting.
+- **Partial Justified Absences**: Fixed a bug where a day with both `AbsenceMinutes` and `JustifiedAbsenceMinutes` > 0 would fail to log the unjustified portion due to a strict `JustifiedAbsenceMinutes == 0` constraint in Rule 1.
+- **Anomaly Escalation**: Improved the anomaly rule (Rule 4) to correctly upgrade all existing occurrences on a day to `NEEDS_REVIEW` with `IsAnomaly = true`, rather than only absence items.
+### Added
+- **Diagnostic Logging**: Added explicit occurrence type distribution counts and no-op snapshot counts to detection orchestrator logs to improve run quality tracking.
+- **Data Validation Insight**: Confirmed via SQL analysis that `dbo.Alteracoes` (the Innux source) already pre-filters for exceptional attendance records (Falta, Ausencia, Anomalia). Thus, the 1147 synced snapshot rows legitimately produced 1147 actual occurrences, proving the 1:1 mapping was an expected behavior of the source table, rather than a detection overproduction bug.
+
+## [v2.86.0] - 2026-04-23 - Foundation: HR Monthly Changes Middleware (Innux → Primavera)
+### Added
+- **HR Monthly Changes Middleware — Persistence Foundation**: 8 domain entities for the Innux-to-Primavera HR monthly export workflow:
+  - `MCProcessingRun` — aggregate root, one per entity+month, full lifecycle state machine (DRAFT → SYNCING → NEEDS_REVIEW → READY_FOR_EXPORT → EXPORTED → CLOSED)
+  - `MCAttendanceSnapshot` — immutable daily attendance data from Innux `Alteracoes` with unique constraint on (Run, Employee, Date)
+  - `MCMonthlyChangeItem` — detected occurrence with lifecycle states (AUTO_CODED → APPROVED/ADJUSTED/EXCLUDED → EXPORTED)
+  - `MCPrimaveraCodeMapping` — admin-configurable occurrence-to-Primavera-code rules with priority ranking
+  - `MCDetectionThreshold` — admin-configurable lateness/detection thresholds per schedule/entity
+  - `MCExportBatch` — export record with config audit snapshot (ConfigSnapshotJson + ConfigSnapshotHash per Amendment §5)
+  - `MCExportRow` — denormalized export row mirroring Excel structure with source traceability
+  - `MCProcessingLog` — pipeline diagnostic log entries for technical audit
+- **EF Core Configuration**: Dedicated `IEntityTypeConfiguration<T>` classes with 15+ indexes, filtered anomaly index, unique snapshot constraint, and strict FK cascade policies (NoAction for Users, Restrict for audit-critical paths, Cascade for parent-child).
+- **Migration**: `20260423143831_AddMonthlyChangesMiddleware` — creates all 8 tables. Stabilized ContractDocuments model snapshot drift from orphan migration.
+### Technical Notes
+- `CostCenter` is nullable across all entities (Amendment §4 — awaiting Primavera template confirmation)
+- `TerminaisMarcacoes` (raw punches) NOT persisted in V1 — drill-down uses live Innux query (Amendment §3)
+- `AUTO_CODED` items are NOT directly exportable — require explicit approval (Amendment §1)
+
 ## [v2.85.0] - 2026-04-22 - Feature: HR Attendance Calendar (Innux Integration)
 ### Added
 - **HR Attendance Calendar Page**: New `HRAttendanceCalendar.tsx` component rendering an Innux-integrated attendance grid with employees in rows and days in columns. Cell colors and icons indicate attendance status (present, absent, rest day, overnight shift, anomaly).

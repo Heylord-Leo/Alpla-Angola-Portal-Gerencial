@@ -689,6 +689,23 @@ export const api = {
             return response.json();
         }
     },
+    hrSchedules: {
+        getPlans: async (): Promise<any[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/schedules/plans`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar planos de trabalho.');
+            return response.json();
+        },
+        getSchedules: async (): Promise<any[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/schedules/schedules`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar horários.');
+            return response.json();
+        },
+        getPlanEmployees: async (planId: number): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/schedules/plans/${planId}/employees`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar funcionários do plano.');
+            return response.json();
+        }
+    },
     approvals: {
         getIntelligence: async (id: string): Promise<ApprovalIntelligenceDto> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/approvals/${id}/intelligence`);

@@ -89,6 +89,9 @@ const HRTeamCalendar = React.lazy(() =>
 const HRAttendanceCalendar = React.lazy(() =>
     import('./pages/HR/HRAttendanceCalendar')
 );
+const HRScheduleExplorer = React.lazy(() =>
+    import('./pages/HR/HRScheduleExplorer')
+);
 const EmployeeWorkspace = React.lazy(() =>
     import('./pages/HR/EmployeeWorkspace')
 );
@@ -100,6 +103,12 @@ const BadgeLayoutDesigner = React.lazy(() =>
 );
 const BadgePrintHistoryPage = React.lazy(() =>
     import('./pages/HR/BadgePrintHistoryPage')
+);
+const MonthlyChangesList = React.lazy(() =>
+    import('./pages/HR/MonthlyChanges/MonthlyChangesList')
+);
+const MonthlyChangesRunDetail = React.lazy(() =>
+    import('./pages/HR/MonthlyChanges/MonthlyChangesRunDetail')
 );
 
 // Admin pages (isolated, rarely visited)
@@ -216,6 +225,7 @@ function AppContent() {
                     <Route path="leave" element={<Suspense fallback={<LoadingSkeleton />}><HRLeaveList /></Suspense>} />
                     <Route path="calendar" element={<Suspense fallback={<LoadingSkeleton />}><HRTeamCalendar /></Suspense>} />
                     <Route path="attendance" element={<Suspense fallback={<LoadingSkeleton />}><HRAttendanceCalendar /></Suspense>} />
+                    <Route path="schedules" element={<Suspense fallback={<LoadingSkeleton />}><HRScheduleExplorer /></Suspense>} />
                     <Route path="directory" element={<Suspense fallback={<LoadingSkeleton />}><HREmployeeDirectory /></Suspense>} />
                     
                     {/* Compatibility Redirects */}
@@ -228,6 +238,10 @@ function AppContent() {
                         <Route path="layouts" element={<Suspense fallback={<LoadingSkeleton />}><BadgeLayoutDesigner /></Suspense>} />
                         <Route path="history" element={<Suspense fallback={<LoadingSkeleton />}><BadgePrintHistoryPage /></Suspense>} />
                     </Route>
+
+                    {/* Monthly Changes Middleware */}
+                    <Route path="monthly-changes" element={<Suspense fallback={<LoadingSkeleton />}><MonthlyChangesList /></Suspense>} />
+                    <Route path="monthly-changes/runs/:id" element={<Suspense fallback={<LoadingSkeleton />}><MonthlyChangesRunDetail /></Suspense>} />
                 </Route>
 
                 {/* Settings Routes */}

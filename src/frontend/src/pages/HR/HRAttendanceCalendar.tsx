@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { api } from '../../lib/api';
 import {
     RefreshCw, ChevronLeft, ChevronRight, Calendar, LayoutGrid, X,
-    Clock, AlertTriangle, Moon, Filter
+    Clock, AlertTriangle, Moon, Filter, Search
 } from 'lucide-react';
 import './hr-attendance-calendar.css';
 
@@ -172,6 +172,8 @@ export default function HRAttendanceCalendar() {
     const [filterPlant, setFilterPlant] = useState<string>('');
     const [filterDepartment, setFilterDepartment] = useState<string>('');
     const [filterCompany, setFilterCompany] = useState<string>('');
+    const [filterStatus, setFilterStatus] = useState<string>('');
+    const [searchQuery, setSearchQuery] = useState<string>('');
 
     // Detail drawer state
     const [drawerOpen, setDrawerOpen] = useState(false);
@@ -348,6 +350,19 @@ export default function HRAttendanceCalendar() {
         setDrawerDetail(null);
     };
 
+    const navigateDrawer = (direction: 'prev' | 'next') => {
+        if (!drawerEmployee || !drawerDate) return;
+        const currentIdx = days.findIndex(d => isSameDay(d, drawerDate));
+        if (currentIdx < 0) return;
+        const nextIdx = direction === 'prev' ? currentIdx - 1 : currentIdx + 1;
+        if (nextIdx < 0 || nextIdx >= days.length) return;
+        handleCellClick(drawerEmployee, days[nextIdx]);
+    };
+
+    const drawerDayIndex = drawerDate ? days.findIndex(d => isSameDay(d, drawerDate)) : -1;
+    const canDrawerPrev = drawerDayIndex > 0;
+    const canDrawerNext = drawerDayIndex >= 0 && drawerDayIndex < days.length - 1;
+
     // ─── Derived values ───
 
     const scope = getScopeHeader();
@@ -365,23 +380,55 @@ export default function HRAttendanceCalendar() {
             if (emp.department) departments.add(emp.department);
             if (emp.companyName) companies.add(emp.companyName);
         }
+        // Collect unique statuses from attendance data
+        const statuses = new Set<string>();
+        if (calendarData?.data) {
+            for (const row of calendarData.data) {
+                if (row.attendanceStatus) statuses.add(row.attendanceStatus);
+            }
+        }
+        // Sort statuses by their Portuguese labels
+        const sortedStatuses = [...statuses].sort((a, b) => {
+            const la = getStatusConfig(a).label;
+            const lb = getStatusConfig(b).label;
+            return la.localeCompare(lb, 'pt-AO');
+        });
         return {
             plants: [...plants].sort((a, b) => a.localeCompare(b, 'pt-AO')),
             departments: [...departments].sort((a, b) => a.localeCompare(b, 'pt-AO')),
             companies: [...companies].sort((a, b) => a.localeCompare(b, 'pt-AO')),
+            statuses: sortedStatuses,
         };
-    }, [allEmployees]);
+    }, [allEmployees, calendarData]);
 
-    const hasActiveFilters = !!(filterPlant || filterDepartment || filterCompany);
+    const hasActiveFilters = !!(filterPlant || filterDepartment || filterCompany || filterStatus || searchQuery.trim());
 
     // Filtered → sorted → paginated pipeline
+    // Build a set of employee IDs that have at least one cell matching the selected status
+    const employeesWithStatus = useMemo(() => {
+        if (!filterStatus || !calendarData?.data) return null;
+        const ids = new Set<number>();
+        for (const row of calendarData.data) {
+            if (row.attendanceStatus === filterStatus) ids.add(row.innuxEmployeeId);
+        }
+        return ids;
+    }, [filterStatus, calendarData]);
+
     const totalEmployees = useMemo(() => {
         let list = allEmployees;
         if (filterPlant) list = list.filter(e => e.plantName === filterPlant);
         if (filterDepartment) list = list.filter(e => e.department === filterDepartment);
         if (filterCompany) list = list.filter(e => e.companyName === filterCompany);
+        if (employeesWithStatus) list = list.filter(e => employeesWithStatus.has(e.innuxEmployeeId));
+        if (searchQuery.trim()) {
+            const q = searchQuery.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            list = list.filter(e => {
+                const name = e.fullName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                return name.includes(q);
+            });
+        }
         return [...list].sort((a, b) => a.fullName.localeCompare(b.fullName, 'pt-AO'));
-    }, [allEmployees, filterPlant, filterDepartment, filterCompany]);
+    }, [allEmployees, filterPlant, filterDepartment, filterCompany, employeesWithStatus, searchQuery]);
 
     const totalPages = Math.ceil(totalEmployees.length / pageSize);
     const employees = useMemo(() => {
@@ -393,6 +440,8 @@ export default function HRAttendanceCalendar() {
         setFilterPlant('');
         setFilterDepartment('');
         setFilterCompany('');
+        setFilterStatus('');
+        setSearchQuery('');
         setCurrentPage(1);
     };
 
@@ -462,9 +511,19 @@ export default function HRAttendanceCalendar() {
             </div>
 
             {/* Filters */}
-            {(filterOptions.plants.length > 1 || filterOptions.departments.length > 1 || filterOptions.companies.length > 1) && (
-                <div className="att-filters">
-                    <div className="att-filters__icon"><Filter size={14} /></div>
+            <div className="att-filters">
+                <div className="att-filters__icon"><Filter size={14} /></div>
+
+                <div className="att-filters__search">
+                    <Search size={14} className="att-filters__search-icon" />
+                    <input
+                        type="text"
+                        className="att-filters__search-input"
+                        placeholder="Pesquisar funcionário..."
+                        value={searchQuery}
+                        onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                    />
+                </div>
 
                     {filterOptions.companies.length > 1 && (
                         <select
@@ -499,13 +558,23 @@ export default function HRAttendanceCalendar() {
                         </select>
                     )}
 
+                    {filterOptions.statuses.length > 1 && (
+                        <select
+                            className="att-filters__select"
+                            value={filterStatus}
+                            onChange={e => { setFilterStatus(e.target.value); setCurrentPage(1); }}
+                        >
+                            <option value="">Todos Status</option>
+                            {filterOptions.statuses.map(s => <option key={s} value={s}>{getStatusConfig(s).label}</option>)}
+                        </select>
+                    )}
+
                     {hasActiveFilters && (
                         <button className="att-filters__clear" onClick={clearFilters} title="Limpar filtros">
                             <X size={14} /> Limpar
                         </button>
                     )}
                 </div>
-            )}
 
             {/* Grid */}
             {loading ? (
@@ -642,13 +711,31 @@ export default function HRAttendanceCalendar() {
                     <div className="att-drawer-overlay" onClick={closeDrawer} />
                     <div className="att-drawer">
                         <div className="att-drawer__header">
-                            <div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
                                 <h3 className="att-drawer__title">
                                     {drawerEmployee?.fullName || 'Detalhe'}
                                 </h3>
-                                <p className="att-drawer__subtitle">
-                                    {drawerDate?.toLocaleDateString('pt-AO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-                                </p>
+                                <div className="att-drawer__nav-row">
+                                    <button
+                                        className="att-drawer__nav-btn"
+                                        onClick={() => navigateDrawer('prev')}
+                                        disabled={!canDrawerPrev}
+                                        title="Dia anterior"
+                                    >
+                                        <ChevronLeft size={16} />
+                                    </button>
+                                    <p className="att-drawer__subtitle">
+                                        {drawerDate?.toLocaleDateString('pt-AO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                                    </p>
+                                    <button
+                                        className="att-drawer__nav-btn"
+                                        onClick={() => navigateDrawer('next')}
+                                        disabled={!canDrawerNext}
+                                        title="Dia seguinte"
+                                    >
+                                        <ChevronRight size={16} />
+                                    </button>
+                                </div>
                             </div>
                             <button className="att-drawer__close" onClick={closeDrawer}>
                                 <X size={20} />

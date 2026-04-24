@@ -279,8 +279,8 @@ public class RequestsController : BaseController
                 NeedByDateUtc = r.NeedByDateUtc,
                 CreatedAtUtc = r.CreatedAtUtc,
                 // Added for Area Approval context
-                CostCenterCode = r.LineItems.Where(l => !l.IsDeleted && l.CostCenter != null).Select(l => l.CostCenter.Code).FirstOrDefault(),
-                CostCenterName = r.LineItems.Where(l => !l.IsDeleted && l.CostCenter != null).Select(l => l.CostCenter.Name).FirstOrDefault(),
+                CostCenterCode = r.LineItems.Where(l => !l.IsDeleted && l.CostCenter != null).Select(l => l.CostCenter!.Code).FirstOrDefault(),
+                CostCenterName = r.LineItems.Where(l => !l.IsDeleted && l.CostCenter != null).Select(l => l.CostCenter!.Name).FirstOrDefault(),
                 CompletedAtUtc = (r.Status.Code == "COMPLETED" || r.Status.Code == "QUOTATION_COMPLETED" || r.Status.Code == "PAID" || r.Status.Code == "PAYMENT_COMPLETED")
                     ? r.StatusHistories.Where(sh => sh.NewStatus.Code == "COMPLETED" || sh.NewStatus.Code == "QUOTATION_COMPLETED" || sh.NewStatus.Code == "PAID" || sh.NewStatus.Code == "PAYMENT_COMPLETED")
                         .OrderByDescending(sh => sh.CreatedAtUtc)
@@ -443,6 +443,7 @@ public class RequestsController : BaseController
                 ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId).Select(q => q.Currency).FirstOrDefault() 
                 : (r.Currency != null ? r.Currency.Code : null))
             .Where(c => c != null)
+            .Select(c => c!)
             .Distinct()
             .ToListAsync();
 

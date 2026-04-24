@@ -2,7 +2,22 @@
 
 ## Current Version
 
-v2.85.0
+v2.88.0
+
+## [2.88.0] - 2026-04-23
+
+### Added
+- **HR Monthly Changes UI**: First frontend slice for the Innux-to-Primavera workflow. Implemented `MonthlyChangesList` for viewing and creating processing runs, and `MonthlyChangesRunDetail` with tabs for Review Items, Anomalies, and Processing Logs. Added support for filtering items by status and occurrence type.
+
+## [2.87.0] - 2026-04-23
+
+### Fixed
+- **HR Monthly Changes Detection Engine Hardening**: Resolved lateness/absence overlapping logging, fixed missing Unjustified Absence creation on days with partial Justified Absence, and improved anomaly escalation logic. Added diagnostic logging. Verified that the Innux source table `dbo.Alteracoes` pre-filters standard days, confirming that a 1:1 snapshot-to-occurrence mapping is the correct domain behavior.
+
+## [2.86.0] - 2026-04-23
+
+### Added
+- **HR Monthly Changes Middleware — Persistence Foundation**: 8 domain entities (MCProcessingRun, MCAttendanceSnapshot, MCMonthlyChangeItem, MCPrimaveraCodeMapping, MCDetectionThreshold, MCExportBatch, MCExportRow, MCProcessingLog), EF Core fluent configurations, and applied migration for the Innux → Portal → Primavera HR monthly export workflow. Backend-only, no UI.
 
 ## [2.85.0] - 2026-04-22
 

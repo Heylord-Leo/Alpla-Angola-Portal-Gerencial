@@ -77,6 +77,16 @@ public class ApplicationDbContext : DbContext
     public DbSet<ContractOcrExtractionRecord> ContractOcrExtractionRecords => Set<ContractOcrExtractionRecord>();
     public DbSet<ContractOcrExtractedField> ContractOcrExtractedFields => Set<ContractOcrExtractedField>();
 
+    // HR Monthly Changes Middleware (Innux → Portal → Primavera)
+    public DbSet<MCProcessingRun> MCProcessingRuns => Set<MCProcessingRun>();
+    public DbSet<MCAttendanceSnapshot> MCAttendanceSnapshots => Set<MCAttendanceSnapshot>();
+    public DbSet<MCMonthlyChangeItem> MCMonthlyChangeItems => Set<MCMonthlyChangeItem>();
+    public DbSet<MCPrimaveraCodeMapping> MCPrimaveraCodeMappings => Set<MCPrimaveraCodeMapping>();
+    public DbSet<MCDetectionThreshold> MCDetectionThresholds => Set<MCDetectionThreshold>();
+    public DbSet<MCExportBatch> MCExportBatches => Set<MCExportBatch>();
+    public DbSet<MCExportRow> MCExportRows => Set<MCExportRow>();
+    public DbSet<MCProcessingLog> MCProcessingLogs => Set<MCProcessingLog>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

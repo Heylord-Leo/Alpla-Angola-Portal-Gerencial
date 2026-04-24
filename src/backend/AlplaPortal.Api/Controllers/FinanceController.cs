@@ -182,8 +182,8 @@ public class FinanceController : BaseController
         var uncompletedRequests = processedStats.Where(s => !s.IsPaid).ToList();
         
         var projections = uncompletedRequests
-            .Where(s => (s.ScheduledDateUtc ?? s.NeedByDateUtc) >= today && (s.ScheduledDateUtc ?? s.NeedByDateUtc) <= maxProjectionDate)
-            .GroupBy(s => new { Date = (s.ScheduledDateUtc ?? s.NeedByDateUtc).Value.Date, Currency = s.CurrencyCode })
+            .Where(s => (s.ScheduledDateUtc ?? s.NeedByDateUtc).HasValue && (s.ScheduledDateUtc ?? s.NeedByDateUtc) >= today && (s.ScheduledDateUtc ?? s.NeedByDateUtc) <= maxProjectionDate)
+            .GroupBy(s => new { Date = (s.ScheduledDateUtc ?? s.NeedByDateUtc)!.Value.Date, Currency = s.CurrencyCode })
             .Select(g => new FinanceCashFlowProjectionDto {
                 Date = g.Key.Date.ToString("yyyy-MM-dd"),
                 CurrencyCode = g.Key.Currency,
@@ -475,7 +475,7 @@ public class FinanceController : BaseController
             {
                 Id = r.Id,
                 RequestNumber = r.RequestNumber,
-                Title = r.Title,
+                Title = r.Title ?? "---",
                 SupplierName = r.SelectedQuotationId.HasValue 
                     ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.SupplierNameSnapshot ?? "---"
                     : r.Supplier != null ? r.Supplier.Name : "---",
@@ -581,8 +581,8 @@ public class FinanceController : BaseController
                     : sh.Request.EstimatedTotalAmount,
                 CurrencyCode = sh.Request.SelectedQuotationId.HasValue 
                     ? sh.Request.Quotations.FirstOrDefault(q => q.Id == sh.Request.SelectedQuotationId.Value)!.Currency 
-                    : (sh.Request.Currency != null ? sh.Request.Currency.Code : null),
-                ActionTaken = sh.ActionTaken,
+                    : (sh.Request.Currency != null ? sh.Request.Currency.Code : "---"),
+                ActionTaken = sh.ActionTaken ?? "Unknown",
                 Comment = sh.Comment,
                 CreatedAtUtc = sh.CreatedAtUtc,
                 ActorName = sh.ActorUser!.FullName ?? "Unknown",
@@ -642,8 +642,8 @@ public class FinanceController : BaseController
                     : sh.Request.EstimatedTotalAmount,
                 CurrencyCode = sh.Request.SelectedQuotationId.HasValue 
                     ? sh.Request.Quotations.FirstOrDefault(q => q.Id == sh.Request.SelectedQuotationId.Value)!.Currency 
-                    : (sh.Request.Currency != null ? sh.Request.Currency.Code : null),
-                ActionTaken = sh.ActionTaken,
+                    : (sh.Request.Currency != null ? sh.Request.Currency.Code : "---"),
+                ActionTaken = sh.ActionTaken ?? "Unknown",
                 Comment = sh.Comment,
                 CreatedAtUtc = sh.CreatedAtUtc,
                 ActorName = sh.ActorUser!.FullName ?? "Unknown",

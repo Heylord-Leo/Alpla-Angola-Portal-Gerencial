@@ -11,6 +11,8 @@ using AlplaPortal.Infrastructure.Services.Extraction;
 using AlplaPortal.Infrastructure.Services.Integration;
 using AlplaPortal.Infrastructure.Services.Auth;
 using AlplaPortal.Infrastructure.Services.Approvals;
+using AlplaPortal.Application.Interfaces.MonthlyChanges;
+using AlplaPortal.Infrastructure.Services.MonthlyChanges;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -54,8 +56,14 @@ builder.Services.AddScoped<IInnuxEmployeeService, InnuxEmployeeService>();
 builder.Services.AddScoped<IInnuxEmployeePhotoService, InnuxEmployeePhotoService>();
 builder.Services.AddScoped<IInnuxAttendanceService, InnuxAttendanceService>();
 builder.Services.AddScoped<IInnuxLookupService, InnuxLookupService>();
+builder.Services.AddScoped<IInnuxScheduleService, InnuxScheduleService>();
 builder.Services.AddScoped<IUnifiedEmployeeProfileService, UnifiedEmployeeProfileService>();
 builder.Services.AddScoped<IHREmployeeSyncService, HREmployeeSyncService>();
+
+// Monthly Changes Middleware — Innux → Portal → Primavera pipeline
+builder.Services.AddScoped<IMonthlyChangesSyncService, MonthlyChangesSyncService>();
+builder.Services.AddScoped<IOccurrenceDetectionEngine, OccurrenceDetectionEngine>();
+builder.Services.AddScoped<IMonthlyChangesOrchestrator, MonthlyChangesOrchestrator>();
 
 // Notification Service
 builder.Services.AddScoped<INotificationService, NotificationService>();

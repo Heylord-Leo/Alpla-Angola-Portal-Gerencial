@@ -1,0 +1,129 @@
+﻿
+============================================
+=== Q1: All Tipo=17 TipoProcessado=EN records ===
+============================================
+IDFuncionario | EmployeeName | PunchDate | PunchTime | Terminal | RawTipo | TipoProcessado
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+1411 |  | 2024-06-17 | 17:21:00 | AOVIA1_ESCRITORIO | 17 | EN
+1519 | ANDRE JOSE FRANCISCO | 2024-07-09 | 08:00:00 | AOVIA1_ESCRITORIO | 17 | EN
+1570 | ABEL BEIRÃO DOMINGOS | 2024-07-01 | 08:04:00 | AOVIA1_ESCRITORIO | 17 | EN
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-06 | 07:43:00 | AOVIA1_ESCRITORIO | 17 | EN
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-08 | 07:53:00 | AOVIA1_ESCRITORIO | 17 | EN
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-13 | 08:09:00 | AOVIA1_ESCRITORIO | 17 | EN
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-14 | 08:08:00 | AOVIA1_ESCRITORIO | 17 | EN
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-15 | 07:54:00 | AOVIA2-ZEE | 17 | EN
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-16 | 08:14:00 | AOVIA1_ESCRITORIO | 17 | EN
+(Rows: 9)
+
+============================================
+=== Q2: Alteracoes + Schedule for 17->EN days ===
+============================================
+powershell : Exception calling "ExecuteReader" with "0" argument(s): "Invalid column name 'InicioHorario'.
+At line:1 char:1
++ powershell -ExecutionPolicy Bypass -File scripts\investigate_code17_E ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Exception calli...InicioHorario'.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Invalid column name 'FimHorario'.
+Invalid column name 'DiaDuplo'."
+At C:\dev\alpla-portal\scripts\investigate_code17_EN.ps1:13 char:5
++     $reader = $cmd.ExecuteReader()
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodInvocationException
+    + FullyQualifiedErrorId : SqlException
+ 
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+You cannot call a method on a null-valued expression.
+At C:\dev\alpla-portal\scripts\investigate_code17_EN.ps1:19 char:12
++     while ($reader.Read()) {
++            ~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+ 
+You cannot call a method on a null-valued expression.
+At C:\dev\alpla-portal\scripts\investigate_code17_EN.ps1:27 char:5
++     $reader.Close()
++     ~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+ 
+(Rows: 0)
+
+============================================
+=== Q3: All same-day punches for 17->EN employees ===
+============================================
+IDFuncionario | EmployeeName | PunchDate | PunchTime | RawTipo | TipoProcessado | Terminal
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+1411 |  | 2024-06-17 | 17:21:00 | 17 | EN | AOVIA1_ESCRITORIO
+1519 | ANDRE JOSE FRANCISCO | 2024-07-09 | 08:00:00 | 17 | EN | AOVIA1_ESCRITORIO
+1570 | ABEL BEIRÃO DOMINGOS | 2024-07-01 | 08:04:00 | 17 | EN | AOVIA1_ESCRITORIO
+1570 | ABEL BEIRÃO DOMINGOS | 2024-07-01 | 11:49:00 | 17 | 17 | AOVIA1_ESCRITORIO
+1570 | ABEL BEIRÃO DOMINGOS | 2024-07-01 | 17:38:00 | 17 | SA | AOVIA1_ESCRITORIO
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-06 | 07:43:00 | 17 | EN | AOVIA1_ESCRITORIO
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-06 | 17:41:00 | 17 | SA | AOVIA1_ESCRITORIO
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-08 | 07:53:00 | 17 | EN | AOVIA1_ESCRITORIO
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-08 | 17:36:00 | 17 | SA | AOVIA1_ESCRITORIO
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-13 | 08:09:00 | 17 | EN | AOVIA1_ESCRITORIO
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-13 | 17:32:00 |  | SA | 
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-14 | 08:08:00 | 17 | EN | AOVIA1_ESCRITORIO
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-14 | 17:56:00 | 17 | SA | AOVIA1_ESCRITORIO
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-15 | 07:54:00 | 17 | EN | AOVIA2-ZEE
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-15 | 18:02:00 |  | SA | 
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-16 | 08:14:00 | 17 | EN | AOVIA1_ESCRITORIO
+(Rows: 16)
+
+============================================
+=== Q4: Schedule period details for affected schedules ===
+============================================
+Exception calling "ExecuteReader" with "0" argument(s): "Invalid column name 'InicioHorario'.
+Invalid column name 'FimHorario'.
+Invalid column name 'DiaDuplo'.
+ORDER BY items must appear in the select list if SELECT DISTINCT is specified."
+At C:\dev\alpla-portal\scripts\investigate_code17_EN.ps1:13 char:5
++     $reader = $cmd.ExecuteReader()
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodInvocationException
+    + FullyQualifiedErrorId : SqlException
+ 
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+You cannot call a method on a null-valued expression.
+At C:\dev\alpla-portal\scripts\investigate_code17_EN.ps1:19 char:12
++     while ($reader.Read()) {
++            ~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+ 
+You cannot call a method on a null-valued expression.
+At C:\dev\alpla-portal\scripts\investigate_code17_EN.ps1:27 char:5
++     $reader.Close()
++     ~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+ 
+(Rows: 0)
+
+============================================
+=== Q5: Employee master data for 17->EN employees ===
+============================================
+IDFuncionario | Nome | EmpNumber | Department | WorkPlan | PlanType
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+1519 | ANDRE JOSE FRANCISCO | 21000008 | PRODUÇÃO | Administrativo | Padrão
+1570 | ABEL BEIRÃO DOMINGOS | 21000184 | INFORMÁTICA | Administrativo | Padrão
+(Rows: 2)
+
+============================================
+=== Q6: All Tipo=17 TipoProcessado=SA records (for cross-ref) ===
+============================================
+IDFuncionario | EmployeeName | PunchDate | PunchTime | RawTipo | TipoProcessado | Terminal
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+1570 | ABEL BEIRÃO DOMINGOS | 2024-07-01 | 17:38:00 | 17 | SA | AOVIA1_ESCRITORIO
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-02 | 18:07:00 | 17 | SA | AOVIA1_ESCRITORIO
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-06 | 17:41:00 | 17 | SA | AOVIA1_ESCRITORIO
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-08 | 17:36:00 | 17 | SA | AOVIA1_ESCRITORIO
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-14 | 17:56:00 | 17 | SA | AOVIA1_ESCRITORIO
+(Rows: 5)
+
+=== Complementary investigation complete ===

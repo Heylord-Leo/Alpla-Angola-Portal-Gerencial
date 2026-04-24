@@ -4,16 +4,19 @@ using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace AlplaPortal.Infrastructure.Migrations
+namespace AlplaPortal.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260423143831_AddMonthlyChangesMiddleware")]
+    partial class AddMonthlyChangesMiddleware
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2122,9 +2125,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<int>("EntityId")
-                        .HasColumnType("int");
-
                     b.Property<int>("ExpectedMinutes")
                         .HasColumnType("int");
 
@@ -2168,9 +2168,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                     b.Property<string>("ScheduleSigla")
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
-
-                    b.Property<string>("ScheduleStartTime")
-                        .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime>("SyncedAtUtc")
                         .HasColumnType("datetime2");
@@ -2317,11 +2314,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
-
-                    b.Property<string>("EmployeeName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
 
                     b.Property<Guid>("ExportBatchId")
                         .HasColumnType("uniqueidentifier");
