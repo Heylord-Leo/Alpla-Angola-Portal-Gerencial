@@ -1,13 +1,5 @@
 /* ─── Ficha de Fornecedor — Shared Styles ─── */
-
-/* CSS Variables fallbacks for status colors */
-:root {
-  --status-draft: #6b7280;
-  --status-pending: #f59e0b;
-  --status-active: #10b981;
-  --status-warning: #f97316;
-  --status-blocked: #ef4444;
-}
+/* All tokens inherited from tokens.css — no local :root overrides */
 
 /* ────────────────────────────────────────── */
 /*  LIST PAGE                                  */
@@ -29,13 +21,13 @@
 .ficha-list-header h1 {
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--text-primary, #111827);
+  color: var(--color-text-main, #111827);
   margin: 0;
 }
 
 .ficha-list-subtitle {
   font-size: 0.875rem;
-  color: var(--text-muted, #6b7280);
+  color: var(--color-text-muted, #6b7280);
   margin: 4px 0 0;
 }
 
@@ -54,43 +46,43 @@
   gap: 4px;
   padding: 16px 12px;
   border-radius: var(--radius-lg, 12px);
-  border: 1.5px solid var(--border-color, #e5e7eb);
-  background: var(--surface-primary, #fff);
+  border: 1.5px solid var(--color-border, #e5e7eb);
+  background: var(--color-bg-surface, #fff);
   cursor: pointer;
   transition: all 0.2s ease;
   font-family: inherit;
 }
 
 .ficha-kpi-card:hover {
-  border-color: var(--primary, #3b82f6);
-  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.1));
+  border-color: var(--color-primary, #004d90);
+  box-shadow: var(--shadow-sm);
 }
 
 .ficha-kpi-card--active {
-  border-color: var(--primary, #3b82f6);
-  background: var(--surface-hover, #f0f5ff);
-  box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
+  border-color: var(--color-primary, #004d90);
+  background: rgba(var(--color-primary-rgb, 0,77,144), 0.06);
+  box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb, 0,77,144), 0.15);
 }
 
 .ficha-kpi-value {
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--text-primary, #111827);
+  color: var(--color-text-main, #111827);
 }
 
 .ficha-kpi-label {
   font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--text-muted, #6b7280);
+  font-weight: 600;
+  color: var(--color-text-muted, #6b7280);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
-.ficha-kpi-card--draft .ficha-kpi-value { color: var(--status-draft); }
-.ficha-kpi-card--pending .ficha-kpi-value { color: var(--status-pending); }
-.ficha-kpi-card--active-status .ficha-kpi-value { color: var(--status-active); }
-.ficha-kpi-card--suspended .ficha-kpi-value { color: var(--status-warning); }
-.ficha-kpi-card--blocked .ficha-kpi-value { color: var(--status-blocked); }
+.ficha-kpi-card--draft .ficha-kpi-value { color: var(--color-status-gray, #6b7280); }
+.ficha-kpi-card--pending .ficha-kpi-value { color: var(--color-status-amber, #d97706); }
+.ficha-kpi-card--active-status .ficha-kpi-value { color: var(--color-status-emerald, #059669); }
+.ficha-kpi-card--suspended .ficha-kpi-value { color: var(--color-status-orange, #ea580c); }
+.ficha-kpi-card--blocked .ficha-kpi-value { color: var(--color-status-red, #dc2626); }
 
 /* Search Bar */
 .ficha-search-bar {
@@ -106,18 +98,18 @@
   flex: 1;
   gap: 8px;
   padding: 8px 14px;
-  border: 1.5px solid var(--border-color, #e5e7eb);
+  border: 1.5px solid var(--color-border, #e5e7eb);
   border-radius: var(--radius-md, 8px);
-  background: var(--surface-primary, #fff);
+  background: var(--color-bg-surface, #fff);
   transition: border-color 0.2s;
 }
 
 .ficha-search-input-wrapper:focus-within {
-  border-color: var(--primary, #3b82f6);
+  border-color: var(--color-primary, #004d90);
 }
 
 .ficha-search-input-wrapper svg {
-  color: var(--text-muted, #9ca3af);
+  color: var(--color-text-muted, #9ca3af);
   flex-shrink: 0;
 }
 
@@ -126,7 +118,7 @@
   outline: none;
   background: transparent;
   font-size: 0.875rem;
-  color: var(--text-primary, #111827);
+  color: var(--color-text-main, #111827);
   width: 100%;
 }
 
@@ -136,24 +128,24 @@
   gap: 6px;
   padding: 6px 12px;
   border-radius: var(--radius-md, 8px);
-  border: 1px solid var(--border-color, #e5e7eb);
-  background: var(--surface-secondary, #f3f4f6);
+  border: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-bg-page, #f3f4f6);
   font-size: 0.8rem;
-  color: var(--text-secondary, #4b5563);
+  color: var(--color-text-muted, #4b5563);
   cursor: pointer;
   white-space: nowrap;
 }
 
 .ficha-filter-clear span {
   font-weight: 600;
-  color: var(--text-muted, #9ca3af);
+  color: var(--color-text-muted, #9ca3af);
 }
 
 /* Table */
 .ficha-table-wrapper {
   border-radius: var(--radius-lg, 12px);
-  border: 1px solid var(--border-color, #e5e7eb);
-  background: var(--surface-primary, #fff);
+  border: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-bg-surface, #fff);
   overflow: hidden;
 }
 
@@ -169,9 +161,9 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-muted, #6b7280);
-  background: var(--surface-secondary, #f9fafb);
-  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  color: var(--color-text-muted, #6b7280);
+  background: var(--color-bg-page, #f9fafb);
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
   white-space: nowrap;
 }
 
@@ -181,23 +173,23 @@
 }
 
 .ficha-th-sortable:hover {
-  color: var(--primary, #3b82f6);
+  color: var(--color-primary, #004d90);
 }
 
 .ficha-table tbody tr {
-  border-bottom: 1px solid var(--border-color, #f3f4f6);
+  border-bottom: 1px solid var(--color-border, #f3f4f6);
   cursor: pointer;
   transition: background-color 0.15s;
 }
 
 .ficha-table tbody tr:hover {
-  background: var(--surface-hover, #f0f5ff);
+  background: rgba(var(--color-primary-rgb, 0,77,144), 0.04);
 }
 
 .ficha-table tbody td {
   padding: 12px 16px;
   font-size: 0.875rem;
-  color: var(--text-primary, #111827);
+  color: var(--color-text-main, #111827);
   vertical-align: middle;
 }
 
@@ -214,13 +206,13 @@
 
 .ficha-portal-code {
   font-size: 0.75rem;
-  color: var(--text-muted, #9ca3af);
+  color: var(--color-text-muted, #9ca3af);
 }
 
 .ficha-nif {
   font-family: monospace;
   font-size: 0.85rem;
-  color: var(--text-secondary, #4b5563);
+  color: var(--color-text-muted, #4b5563);
 }
 
 /* Status Badge */
@@ -253,31 +245,31 @@
 .ficha-doc-bar {
   width: 60px;
   height: 6px;
-  background: var(--border-color, #e5e7eb);
+  background: var(--color-border, #e5e7eb);
   border-radius: 3px;
   overflow: hidden;
 }
 
 .ficha-doc-bar-fill {
   height: 100%;
-  background: var(--status-active);
+  background: var(--color-status-emerald, #059669);
   border-radius: 3px;
   transition: width 0.3s ease;
 }
 
 .ficha-doc-count {
   font-size: 0.75rem;
-  color: var(--text-muted, #6b7280);
+  color: var(--color-text-muted, #6b7280);
 }
 
 .ficha-contact {
   font-size: 0.85rem;
-  color: var(--text-secondary, #4b5563);
+  color: var(--color-text-muted, #4b5563);
 }
 
 .ficha-date {
   font-size: 0.8rem;
-  color: var(--text-muted, #6b7280);
+  color: var(--color-text-muted, #6b7280);
 }
 
 /* Action Button */
@@ -285,16 +277,16 @@
   padding: 4px 12px;
   font-size: 0.75rem;
   font-weight: 600;
-  color: var(--primary, #3b82f6);
+  color: var(--color-primary, #004d90);
   background: transparent;
-  border: 1.5px solid var(--primary, #3b82f6);
+  border: 1.5px solid var(--color-primary, #004d90);
   border-radius: var(--radius-sm, 6px);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .ficha-action-btn:hover {
-  background: var(--primary, #3b82f6);
+  background: var(--color-primary, #004d90);
   color: #fff;
 }
 
@@ -311,11 +303,11 @@
 .ficha-page-btn {
   padding: 6px 14px;
   font-size: 0.8rem;
-  border: 1px solid var(--border-color, #e5e7eb);
-  background: var(--surface-primary, #fff);
+  border: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-bg-surface, #fff);
   border-radius: var(--radius-md, 8px);
   cursor: pointer;
-  color: var(--text-secondary, #4b5563);
+  color: var(--color-text-muted, #4b5563);
 }
 
 .ficha-page-btn:disabled {
@@ -325,7 +317,7 @@
 
 .ficha-page-info {
   font-size: 0.8rem;
-  color: var(--text-muted, #6b7280);
+  color: var(--color-text-muted, #6b7280);
 }
 
 /* Loading / Empty */
@@ -338,14 +330,14 @@
   justify-content: center;
   padding: 48px;
   gap: 12px;
-  color: var(--text-muted, #6b7280);
+  color: var(--color-text-muted, #6b7280);
 }
 
 .ficha-loading-spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid var(--border-color, #e5e7eb);
-  border-top-color: var(--primary, #3b82f6);
+  border: 3px solid var(--color-border, #e5e7eb);
+  border-top-color: var(--color-primary, #004d90);
   border-radius: 50%;
   animation: ficha-spin 0.8s linear infinite;
 }
@@ -381,9 +373,9 @@
 .ficha-back-btn {
   padding: 6px 12px;
   font-size: 0.85rem;
-  color: var(--text-secondary, #4b5563);
+  color: var(--color-text-muted, #4b5563);
   background: transparent;
-  border: 1px solid var(--border-color, #e5e7eb);
+  border: 1px solid var(--color-border, #e5e7eb);
   border-radius: var(--radius-md, 8px);
   cursor: pointer;
   white-space: nowrap;
@@ -391,7 +383,7 @@
 }
 
 .ficha-back-btn:hover {
-  background: var(--surface-secondary, #f3f4f6);
+  background: var(--color-bg-page, #f3f4f6);
 }
 
 .ficha-detail-header-info {
@@ -408,7 +400,7 @@
 .ficha-detail-title-row h1 {
   font-size: 1.35rem;
   font-weight: 700;
-  color: var(--text-primary, #111827);
+  color: var(--color-text-main, #111827);
   margin: 0;
 }
 
@@ -417,7 +409,7 @@
   gap: 16px;
   margin-top: 4px;
   font-size: 0.8rem;
-  color: var(--text-muted, #6b7280);
+  color: var(--color-text-muted, #6b7280);
 }
 
 .ficha-detail-header-actions {
@@ -432,8 +424,8 @@
   align-items: center;
   gap: 10px;
   padding: 12px 16px;
-  background: var(--surface-secondary, #f9fafb);
-  border: 1px solid var(--border-color, #e5e7eb);
+  background: var(--color-bg-page, #f9fafb);
+  border: 1px solid var(--color-border, #e5e7eb);
   border-radius: var(--radius-lg, 12px);
   margin-bottom: 20px;
 }
@@ -441,7 +433,7 @@
 .ficha-status-actions-label {
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--text-muted, #6b7280);
+  color: var(--color-text-muted, #6b7280);
   white-space: nowrap;
 }
 
@@ -458,15 +450,15 @@
 }
 
 .ficha-btn--primary {
-  background: var(--primary, #3b82f6);
+  background: var(--color-primary, #004d90);
   color: #fff;
 }
 .ficha-btn--primary:hover { background: #2563eb; }
 
 .ficha-btn--secondary {
-  background: var(--surface-secondary, #f3f4f6);
-  color: var(--text-secondary, #4b5563);
-  border: 1px solid var(--border-color, #e5e7eb);
+  background: var(--color-bg-page, #f3f4f6);
+  color: var(--color-text-muted, #4b5563);
+  border: 1px solid var(--color-border, #e5e7eb);
 }
 .ficha-btn--secondary:hover { background: #e5e7eb; }
 
@@ -501,8 +493,8 @@
 }
 
 .ficha-section {
-  background: var(--surface-primary, #fff);
-  border: 1px solid var(--border-color, #e5e7eb);
+  background: var(--color-bg-surface, #fff);
+  border: 1px solid var(--color-border, #e5e7eb);
   border-radius: var(--radius-lg, 12px);
   padding: 20px;
 }
@@ -517,14 +509,14 @@
   gap: 8px;
   font-size: 0.9rem;
   font-weight: 700;
-  color: var(--text-primary, #111827);
+  color: var(--color-text-main, #111827);
   margin: 0 0 16px;
   padding-bottom: 10px;
-  border-bottom: 1px solid var(--border-color, #f3f4f6);
+  border-bottom: 1px solid var(--color-border, #f3f4f6);
 }
 
 .ficha-section-title svg {
-  color: var(--primary, #3b82f6);
+  color: var(--color-primary, #004d90);
 }
 
 /* Field Row */
@@ -545,7 +537,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  color: var(--text-muted, #6b7280);
+  color: var(--color-text-muted, #6b7280);
 }
 
 .ficha-required {
@@ -556,22 +548,22 @@
 .ficha-field-input {
   padding: 8px 12px;
   font-size: 0.875rem;
-  border: 1.5px solid var(--border-color, #e5e7eb);
+  border: 1.5px solid var(--color-border, #e5e7eb);
   border-radius: var(--radius-sm, 6px);
-  background: var(--surface-primary, #fff);
-  color: var(--text-primary, #111827);
+  background: var(--color-bg-surface, #fff);
+  color: var(--color-text-main, #111827);
   transition: border-color 0.2s;
 }
 
 .ficha-field-input:focus {
   outline: none;
-  border-color: var(--primary, #3b82f6);
+  border-color: var(--color-primary, #004d90);
   box-shadow: 0 0 0 2px rgba(59,130,246,0.12);
 }
 
 .ficha-field-value {
   font-size: 0.875rem;
-  color: var(--text-primary, #111827);
+  color: var(--color-text-main, #111827);
   padding: 4px 0;
 }
 
@@ -580,22 +572,22 @@
   width: 100%;
   padding: 10px 14px;
   font-size: 0.875rem;
-  border: 1.5px solid var(--border-color, #e5e7eb);
+  border: 1.5px solid var(--color-border, #e5e7eb);
   border-radius: var(--radius-sm, 6px);
-  background: var(--surface-primary, #fff);
-  color: var(--text-primary, #111827);
+  background: var(--color-bg-surface, #fff);
+  color: var(--color-text-main, #111827);
   resize: vertical;
   font-family: inherit;
 }
 
 .ficha-textarea:focus {
   outline: none;
-  border-color: var(--primary, #3b82f6);
+  border-color: var(--color-primary, #004d90);
 }
 
 .ficha-notes-text {
   font-size: 0.875rem;
-  color: var(--text-secondary, #4b5563);
+  color: var(--color-text-muted, #4b5563);
   line-height: 1.6;
   margin: 0;
 }
@@ -605,7 +597,7 @@
   margin-left: auto;
   font-size: 0.75rem;
   font-weight: 500;
-  color: var(--text-muted, #9ca3af);
+  color: var(--color-text-muted, #9ca3af);
 }
 
 .ficha-doc-grid {
@@ -616,7 +608,7 @@
 
 .ficha-doc-card {
   border-radius: var(--radius-md, 8px);
-  border: 1.5px solid var(--border-color, #e5e7eb);
+  border: 1.5px solid var(--color-border, #e5e7eb);
   overflow: hidden;
   transition: all 0.2s;
 }
@@ -642,7 +634,7 @@
 .ficha-doc-type-label {
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--text-primary, #111827);
+  color: var(--color-text-main, #111827);
 }
 
 .ficha-doc-status--ok {
@@ -673,14 +665,14 @@
 .ficha-doc-filename {
   font-size: 0.8rem;
   font-weight: 500;
-  color: var(--text-primary, #111827);
+  color: var(--color-text-main, #111827);
   margin: 0 0 4px;
   word-break: break-all;
 }
 
 .ficha-doc-meta {
   font-size: 0.7rem;
-  color: var(--text-muted, #9ca3af);
+  color: var(--color-text-muted, #9ca3af);
   margin: 0 0 8px;
 }
 
@@ -727,10 +719,10 @@
   align-items: center;
   gap: 6px;
   padding: 12px;
-  border: 2px dashed var(--border-color, #d1d5db);
+  border: 2px dashed var(--color-border, #d1d5db);
   border-radius: var(--radius-md, 8px);
   background: transparent;
-  color: var(--text-muted, #9ca3af);
+  color: var(--color-text-muted, #9ca3af);
   cursor: pointer;
   font-size: 0.75rem;
   font-weight: 600;
@@ -739,8 +731,8 @@
 }
 
 .ficha-doc-upload-btn:hover {
-  border-color: var(--primary, #3b82f6);
-  color: var(--primary, #3b82f6);
+  border-color: var(--color-primary, #004d90);
+  color: var(--color-primary, #004d90);
   background: rgba(59,130,246,0.04);
 }
 
@@ -749,7 +741,7 @@
   align-items: center;
   gap: 8px;
   font-size: 0.8rem;
-  color: var(--text-muted, #9ca3af);
+  color: var(--color-text-muted, #9ca3af);
 }
 
 
@@ -759,9 +751,9 @@
   gap: 24px;
   margin-top: 24px;
   padding: 12px 0;
-  border-top: 1px solid var(--border-color, #f3f4f6);
+  border-top: 1px solid var(--color-border, #f3f4f6);
   font-size: 0.75rem;
-  color: var(--text-muted, #9ca3af);
+  color: var(--color-text-muted, #9ca3af);
 }
 
 /* ────────────────────────────────────────── */
@@ -798,8 +790,8 @@
 
 /* Completeness Panel */
 .ficha-completeness-panel {
-  background: var(--surface-primary, #fff);
-  border: 1px solid var(--border-color, #e5e7eb);
+  background: var(--color-bg-surface, #fff);
+  border: 1px solid var(--color-border, #e5e7eb);
   border-radius: var(--radius-lg, 12px);
   padding: 20px;
   margin-bottom: 16px;
@@ -815,7 +807,7 @@
 .ficha-completeness-header h3 {
   font-size: 0.9rem;
   font-weight: 700;
-  color: var(--text-primary, #111827);
+  color: var(--color-text-main, #111827);
   margin: 0;
   white-space: nowrap;
 }
@@ -823,14 +815,14 @@
 .ficha-completeness-bar-wrap {
   flex: 1;
   height: 8px;
-  background: var(--border-color, #e5e7eb);
+  background: var(--color-border, #e5e7eb);
   border-radius: 4px;
   overflow: hidden;
 }
 
 .ficha-completeness-bar {
   height: 100%;
-  background: linear-gradient(90deg, #3b82f6, #10b981);
+  background: linear-gradient(90deg, var(--color-primary, #004d90), var(--color-status-emerald, #059669));
   border-radius: 4px;
   transition: width 0.5s ease;
 }
@@ -838,7 +830,7 @@
 .ficha-completeness-pct {
   font-size: 0.85rem;
   font-weight: 700;
-  color: var(--primary, #3b82f6);
+  color: var(--color-primary, #004d90);
   white-space: nowrap;
 }
 
@@ -851,8 +843,8 @@
 .ficha-completeness-cat {
   padding: 10px 14px;
   border-radius: var(--radius-md, 8px);
-  background: var(--surface-secondary, #f9fafb);
-  border: 1px solid var(--border-color, #f3f4f6);
+  background: var(--color-bg-page, #f9fafb);
+  border: 1px solid var(--color-border, #f3f4f6);
 }
 
 .ficha-completeness-cat--ok {
@@ -891,13 +883,13 @@
   flex: 1;
   font-size: 0.825rem;
   font-weight: 600;
-  color: var(--text-primary, #111827);
+  color: var(--color-text-main, #111827);
 }
 
 .ficha-completeness-cat-count {
   font-size: 0.75rem;
   font-weight: 500;
-  color: var(--text-muted, #6b7280);
+  color: var(--color-text-muted, #6b7280);
 }
 
 .ficha-completeness-missing {
@@ -920,7 +912,7 @@
 .ficha-completeness-alvara-note {
   margin-top: 12px;
   font-size: 0.75rem;
-  color: var(--text-muted, #6b7280);
+  color: var(--color-text-muted, #6b7280);
   padding: 8px 12px;
   background: #eff6ff;
   border-radius: var(--radius-sm, 6px);
@@ -931,15 +923,15 @@
   margin-top: 16px;
   padding: 12px 20px;
   font-size: 0.875rem;
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  background: var(--color-primary, #004d90);
   color: #fff;
   border-radius: var(--radius-md, 8px);
   transition: all 0.2s;
 }
 
 .ficha-btn--approval:hover:not(:disabled) {
-  background: linear-gradient(135deg, #4f46e5, #4338ca);
-  box-shadow: 0 4px 12px rgba(99,102,241,0.3);
+  background: var(--color-primary-dark, #003a6e);
+  box-shadow: 0 4px 12px rgba(var(--color-primary-rgb, 0,77,144), 0.3);
 }
 
 .ficha-btn--sm {
@@ -949,8 +941,8 @@
 
 /* Approval Tracker */
 .ficha-approval-tracker {
-  background: var(--surface-primary, #fff);
-  border: 1.5px solid #c7d2fe;
+  background: var(--color-bg-surface, #fff);
+  border: 1.5px solid var(--color-border, #e5e7eb);
   border-radius: var(--radius-lg, 12px);
   padding: 20px;
   margin-bottom: 16px;
@@ -959,7 +951,7 @@
 .ficha-approval-tracker h3 {
   font-size: 0.9rem;
   font-weight: 700;
-  color: #4338ca;
+  color: var(--color-primary, #004d90);
   margin: 0 0 16px;
 }
 
@@ -975,7 +967,7 @@
   gap: 12px;
   padding: 14px 16px;
   border-radius: var(--radius-md, 8px);
-  background: var(--surface-secondary, #f9fafb);
+  background: var(--color-bg-page, #f9fafb);
 }
 
 .ficha-approval-step--done {
@@ -991,7 +983,7 @@
 .ficha-approval-step-info strong {
   display: block;
   font-size: 0.825rem;
-  color: var(--text-primary, #111827);
+  color: var(--color-text-main, #111827);
 }
 
 .ficha-approval-step-date {
@@ -1001,7 +993,7 @@
 
 .ficha-approval-step-pending {
   font-size: 0.75rem;
-  color: var(--text-muted, #6b7280);
+  color: var(--color-text-muted, #6b7280);
 }
 
 .ficha-approval-step-actions {
@@ -1012,7 +1004,7 @@
 .ficha-approval-step-divider {
   width: 2px;
   height: 16px;
-  background: var(--border-color, #e5e7eb);
+  background: var(--color-border, #e5e7eb);
   margin-left: 26px;
 }
 
@@ -1025,7 +1017,7 @@
   position: relative;
   padding-left: 24px;
   margin-bottom: 20px;
-  border-left: 2px solid var(--border-color, #e5e7eb);
+  border-left: 2px solid var(--color-border, #e5e7eb);
 }
 
 .ficha-history-entry {
@@ -1040,12 +1032,12 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--primary, #3b82f6);
-  border: 2px solid var(--surface-primary, #fff);
+  background: var(--color-primary, #004d90);
+  border: 2px solid var(--color-bg-surface, #fff);
 }
 
 .ficha-history-content {
-  background: var(--surface-secondary, #f9fafb);
+  background: var(--color-bg-page, #f9fafb);
   border-radius: var(--radius-md, 8px);
   padding: 10px 14px;
 }
@@ -1060,18 +1052,18 @@
 .ficha-history-event {
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--text-primary, #111827);
+  color: var(--color-text-main, #111827);
 }
 
 .ficha-history-date {
   font-size: 0.7rem;
-  color: var(--text-muted, #9ca3af);
+  color: var(--color-text-muted, #9ca3af);
 }
 
 .ficha-history-transition {
   display: inline-block;
   font-size: 0.72rem;
-  color: var(--text-secondary, #4b5563);
+  color: var(--color-text-muted, #4b5563);
   background: #eef2ff;
   padding: 2px 8px;
   border-radius: 100px;
@@ -1080,7 +1072,7 @@
 
 .ficha-history-comment {
   font-size: 0.78rem;
-  color: var(--text-secondary, #4b5563);
+  color: var(--color-text-muted, #4b5563);
   margin: 4px 0;
   line-height: 1.5;
   font-style: italic;
@@ -1088,7 +1080,7 @@
 
 .ficha-history-actor {
   font-size: 0.7rem;
-  color: var(--text-muted, #9ca3af);
+  color: var(--color-text-muted, #9ca3af);
 }
 
 /* Return Modal */
@@ -1099,12 +1091,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10000;
+  z-index: var(--z-modal, 1500);
   animation: ficha-fade-in 0.2s ease;
 }
 
 .ficha-modal {
-  background: var(--surface-primary, #fff);
+  background: var(--color-bg-surface, #fff);
   border-radius: var(--radius-lg, 12px);
   padding: 24px 28px;
   width: 100%;
@@ -1115,13 +1107,13 @@
 .ficha-modal h3 {
   font-size: 1rem;
   font-weight: 700;
-  color: var(--text-primary, #111827);
+  color: var(--color-text-main, #111827);
   margin: 0 0 8px;
 }
 
 .ficha-modal p {
   font-size: 0.85rem;
-  color: var(--text-secondary, #4b5563);
+  color: var(--color-text-muted, #4b5563);
   margin: 0 0 12px;
 }
 

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Pencil, Save, Download, Trash2, RefreshCw, Upload, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import './SupplierFicha.css';
@@ -386,8 +387,8 @@ const SupplierFichaDetail: React.FC = () => {
 
       {/* Header */}
       <div className="ficha-detail-header">
-        <button className="ficha-back-btn" onClick={() => navigate('/contracts/fichas')}>
-          ← Voltar
+        <button className="ficha-back-btn" onClick={() => navigate('/contracts/fichas')} aria-label="Voltar para lista de fichas">
+          <ArrowLeft size={16} style={{ marginRight: 6 }} /> Voltar
         </button>
         <div className="ficha-detail-header-info">
           <div className="ficha-detail-title-row">
@@ -407,16 +408,16 @@ const SupplierFichaDetail: React.FC = () => {
         </div>
         <div className="ficha-detail-header-actions">
           {!editMode ? (
-            <button className="ficha-btn ficha-btn--primary" onClick={() => setEditMode(true)}>
-              ✏️ Editar
+            <button className="ficha-btn ficha-btn--primary" onClick={() => setEditMode(true)} aria-label="Editar ficha">
+              <Pencil size={14} style={{ marginRight: 6 }} /> Editar
             </button>
           ) : (
             <>
               <button className="ficha-btn ficha-btn--secondary" onClick={() => { setEditMode(false); fetchFicha(); }}>
                 Cancelar
               </button>
-              <button className="ficha-btn ficha-btn--success" onClick={handleSave} disabled={saving}>
-                {saving ? 'Salvando...' : '💾 Salvar'}
+              <button className="ficha-btn ficha-btn--success" onClick={handleSave} disabled={saving} aria-label="Salvar ficha">
+                {saving ? 'Salvando...' : <><Save size={14} style={{ marginRight: 6 }} /> Salvar</>}
               </button>
             </>
           )}
@@ -442,7 +443,7 @@ const SupplierFichaDetail: React.FC = () => {
       {/* Adjustment Comment Alert */}
       {ficha.registrationStatus === 'ADJUSTMENT_REQUESTED' && ficha.adjustmentComment && (
         <div className="ficha-adjustment-alert">
-          <div className="ficha-adjustment-alert-icon">⚠️</div>
+          <div className="ficha-adjustment-alert-icon"><AlertTriangle size={20} color="#d97706" /></div>
           <div className="ficha-adjustment-alert-content">
             <strong>Reajuste Solicitado</strong>
             <p>{ficha.adjustmentComment}</p>
@@ -465,7 +466,7 @@ const SupplierFichaDetail: React.FC = () => {
               <div key={cat.category} className={`ficha-completeness-cat ${cat.isComplete ? 'ficha-completeness-cat--ok' : ''}`}>
                 <div className="ficha-completeness-cat-header">
                   <span className={`ficha-completeness-icon ${cat.isComplete ? 'ok' : 'pending'}`}>
-                    {cat.isComplete ? '✓' : '○'}
+                    {cat.isComplete ? <CheckCircle size={14} /> : <Clock size={14} />}
                   </span>
                   <span className="ficha-completeness-cat-label">{cat.label}</span>
                   <span className="ficha-completeness-cat-count">{cat.completedItems}/{cat.totalItems}</span>
@@ -489,7 +490,7 @@ const SupplierFichaDetail: React.FC = () => {
               disabled={submitting || !completeness.isComplete}
               title={!completeness.isComplete ? 'Preencha todos os campos obrigatórios antes de submeter.' : ''}
             >
-              {submitting ? 'Submetendo...' : '🚀 Submeter para Aprovação'}
+              {submitting ? 'Submetendo...' : 'Submeter para Aprovação'}
             </button>
           )}
         </div>
@@ -501,7 +502,7 @@ const SupplierFichaDetail: React.FC = () => {
           <h3>Aprovação em Curso</h3>
           <div className="ficha-approval-steps">
             <div className={`ficha-approval-step ${ficha.dgApprovedAtUtc ? 'ficha-approval-step--done' : 'ficha-approval-step--pending'}`}>
-              <div className="ficha-approval-step-icon">{ficha.dgApprovedAtUtc ? '✅' : '⏳'}</div>
+              <div className="ficha-approval-step-icon">{ficha.dgApprovedAtUtc ? <CheckCircle size={18} color="var(--color-status-emerald)" /> : <Clock size={18} color="var(--color-status-amber)" />}</div>
               <div className="ficha-approval-step-info">
                 <strong>Aprovador Final</strong>
                 {ficha.dgApprovedAtUtc
@@ -547,7 +548,7 @@ const SupplierFichaDetail: React.FC = () => {
 
       {/* Confirmation Modal */}
       {confirmModal && (
-        <div className="ficha-modal-overlay" onClick={() => setConfirmModal(null)}>
+        <div className="ficha-modal-overlay" onClick={() => setConfirmModal(null)} role="dialog" aria-modal="true" aria-label={confirmModal.title}>
           <div className="ficha-modal" onClick={e => e.stopPropagation()}>
             <h3>{confirmModal.title}</h3>
             <p>{confirmModal.body}</p>
@@ -681,17 +682,18 @@ const SupplierFichaDetail: React.FC = () => {
                         {formatFileSize(existingDoc.fileSizeBytes)} · {existingDoc.uploadedByUserName} · {new Date(existingDoc.uploadedAtUtc).toLocaleDateString('pt-PT')}
                       </p>
                       <div className="ficha-doc-actions">
-                        <button className="ficha-doc-btn ficha-doc-btn--download" onClick={() => handleFileDownload(existingDoc)}>
-                          ⬇ Download
+                        <button className="ficha-doc-btn ficha-doc-btn--download" onClick={() => handleFileDownload(existingDoc)} aria-label={`Download ${DOC_TYPE_LABELS[docType]}`}>
+                          <Download size={12} style={{ marginRight: 4 }} /> Download
                         </button>
-                        <button className="ficha-doc-btn ficha-doc-btn--delete" onClick={() => handleFileDelete(existingDoc.id, docType)}>
-                          🗑 Remover
+                        <button className="ficha-doc-btn ficha-doc-btn--delete" onClick={() => handleFileDelete(existingDoc.id, docType)} aria-label={`Remover ${DOC_TYPE_LABELS[docType]}`}>
+                          <Trash2 size={12} style={{ marginRight: 4 }} /> Remover
                         </button>
                         <button
                           className="ficha-doc-btn ficha-doc-btn--replace"
                           onClick={() => fileInputRefs.current[docType]?.click()}
+                          aria-label={`Substituir ${DOC_TYPE_LABELS[docType]}`}
                         >
-                          🔄 Substituir
+                          <RefreshCw size={12} style={{ marginRight: 4 }} /> Substituir
                         </button>
                       </div>
                     </div>
@@ -778,15 +780,15 @@ const FieldRow: React.FC<{
 
 function getStatusColor(status: string): string {
   const map: Record<string, string> = {
-    DRAFT: '#6b7280',
-    PENDING_COMPLETION: '#f59e0b',
-    PENDING_APPROVAL: '#6366f1',
-    ADJUSTMENT_REQUESTED: '#f97316',
-    ACTIVE: '#10b981',
-    SUSPENDED: '#f97316',
-    BLOCKED: '#ef4444',
+    DRAFT: 'var(--color-status-gray, #6b7280)',
+    PENDING_COMPLETION: 'var(--color-status-amber, #d97706)',
+    PENDING_APPROVAL: 'var(--color-primary, #004d90)',
+    ADJUSTMENT_REQUESTED: 'var(--color-status-orange, #ea580c)',
+    ACTIVE: 'var(--color-status-emerald, #059669)',
+    SUSPENDED: 'var(--color-status-orange, #ea580c)',
+    BLOCKED: 'var(--color-status-red, #dc2626)',
   };
-  return map[status] || '#6b7280';
+  return map[status] || 'var(--color-status-gray, #6b7280)';
 }
 
 export default SupplierFichaDetail;
