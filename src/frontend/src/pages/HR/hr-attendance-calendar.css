@@ -616,6 +616,16 @@
   font-weight: 700;
 }
 
+/* Vacation — teal palm tree icon */
+.att-status--vacation {
+  color: #0d9488;
+}
+
+/* Holiday — warm orange/red star icon */
+.att-status--holiday {
+  color: #ea580c;
+}
+
 
 /* ── Legend ── */
 .att-legend {
@@ -667,6 +677,14 @@
 
 .att-legend__swatch--unknown {
   background-color: #cbd5e1;
+}
+
+.att-legend__swatch--vacation {
+  background-color: #0d9488;
+}
+
+.att-legend__swatch--holiday {
+  background-color: #ea580c;
 }
 
 .att-legend__text {
@@ -976,6 +994,16 @@
 .att-status-badge--unknown {
   background-color: rgba(148, 163, 184, 0.1);
   color: #94a3b8;
+}
+
+.att-status-badge--vacation {
+  background-color: rgba(13, 148, 136, 0.1);
+  color: #0d9488;
+}
+
+.att-status-badge--holiday {
+  background-color: rgba(234, 88, 12, 0.1);
+  color: #ea580c;
 }
 
 /* Periods timeline */

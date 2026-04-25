@@ -83,9 +83,32 @@ public class AttendanceDaySummaryDto
     public string? Justification { get; set; }
 
     /// <summary>
+    /// Basic (normal) worked minutes for this day, aggregated from AlteracoesPeriodos
+    /// where CodigosTrabalho.Tipo = 'Normal'. 0 if no periods or all dispensed.
+    /// </summary>
+    public int BasicWorkedMinutes { get; set; }
+
+    /// <summary>
+    /// Overtime worked minutes for this day, aggregated from AlteracoesPeriodos
+    /// where CodigosTrabalho.Tipo = 'Extra' (includes Extra, Extra 2, etc.). 0 if none.
+    /// </summary>
+    public int OvertimeMinutes { get; set; }
+
+    /// <summary>
+    /// Total worked minutes = BasicWorkedMinutes + OvertimeMinutes.
+    /// </summary>
+    public int TotalWorkedMinutes { get; set; }
+
+    /// <summary>
     /// Portal-computed attendance classification.
-    /// Values: "Present", "Absent", "JustifiedAbsence", "DayOff", "Anomaly", "Unknown".
-    /// Derived from AbsenceMinutes, PunchCount, ExpectedMinutes, and AnomalyDescription.
+    /// Values: "Present", "Absent", "JustifiedAbsence", "Vacation", "Holiday",
+    ///         "DayOff", "Anomaly", "Unknown".
+    ///
+    /// "Vacation" — Justified absence where Justificacao contains "Gozo de Férias".
+    /// "Holiday"  — Day with Justificacao containing "Feriado" (may or may not have expected time).
+    ///
+    /// Derived from AbsenceMinutes, PunchCount, ExpectedMinutes, AnomalyDescription,
+    /// and Justification text.
     /// </summary>
     public string AttendanceStatus { get; set; } = "Unknown";
 }
@@ -154,4 +177,21 @@ public class AttendancePeriodDto
 
     /// <summary>Whether the period was dispensed/excused.</summary>
     public bool IsDispensed { get; set; }
+}
+
+/// <summary>
+/// Aggregated worked hours for one employee on one day.
+/// Computed from AlteracoesPeriodos grouped by CodigosTrabalho type.
+/// Used to merge into AttendanceDaySummaryDto during calendar assembly.
+/// </summary>
+public class WorkedHoursDto
+{
+    /// <summary>Normal/basic worked minutes (CodigosTrabalho.Tipo = 'Normal').</summary>
+    public int BasicMinutes { get; set; }
+
+    /// <summary>Overtime worked minutes (CodigosTrabalho.Tipo contains 'Extra').</summary>
+    public int OvertimeMinutes { get; set; }
+
+    /// <summary>Total = BasicMinutes + OvertimeMinutes.</summary>
+    public int TotalMinutes => BasicMinutes + OvertimeMinutes;
 }

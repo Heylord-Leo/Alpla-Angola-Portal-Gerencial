@@ -2,7 +2,17 @@
 
 ## Current Version
 
-v2.88.0
+v2.89.0
+
+## [2.89.0] - 2026-04-25
+
+### Fixed
+- **Calendar Timezone Bug**: Resolved -1 day rendering offset caused by UTC conversion in WAT timezone. Replaced `toISOString()` with local date formatting.
+
+### Added
+- **Vacation & Holiday Status Classification**: Extended `ClassifyAttendance` to sub-classify justified absences into Vacation (🌴) and Holiday (⭐) statuses via Innux justification text parsing.
+- **Worked Hours Metrics (Basic/Overtime)**: New `GetWorkedHoursAsync` engine aggregating non-dispensed periods from `dbo.AlteracoesPeriodos` with `CodigosTrabalho` type mapping. Graceful fallback on failure.
+- **Justification Table (Structural)**: `HRAttendanceJustifications` migration with FKs, indexes, and status lifecycle. Not yet applied — awaiting Phase 4 functional work.
 
 ## [2.88.0] - 2026-04-23
 

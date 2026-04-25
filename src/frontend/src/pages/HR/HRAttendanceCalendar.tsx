@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { api } from '../../lib/api';
 import {
     RefreshCw, ChevronLeft, ChevronRight, Calendar, LayoutGrid, X,
-    Clock, AlertTriangle, Moon, Filter, Search
+    Clock, AlertTriangle, Moon, Filter, Search, Palmtree, Star
 } from 'lucide-react';
 import './hr-attendance-calendar.css';
 
@@ -40,6 +40,9 @@ interface AttendanceDaySummary {
     anomalyDescription: string | null;
     justification: string | null;
     attendanceStatus: string;
+    basicWorkedMinutes: number;
+    overtimeMinutes: number;
+    totalWorkedMinutes: number;
 }
 
 interface CalendarResponse {
@@ -109,7 +112,10 @@ function isWeekendDay(date: Date): boolean {
 }
 
 function formatQueryDate(d: Date): string {
-    return d.toISOString().split('T')[0];
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
 }
 
 function formatMinutes(m: number): string {
@@ -127,6 +133,8 @@ const STATUS_CONFIG: Record<string, { label: string; cssClass: string }> = {
     Present: { label: 'Presente', cssClass: 'present' },
     Absent: { label: 'Ausente', cssClass: 'absent' },
     JustifiedAbsence: { label: 'Ausência Justificada', cssClass: 'justified' },
+    Vacation: { label: 'Férias', cssClass: 'vacation' },
+    Holiday: { label: 'Feriado', cssClass: 'holiday' },
     DayOff: { label: 'Folga', cssClass: 'dayoff' },
     Anomaly: { label: 'Anomalia', cssClass: 'anomaly' },
     Unknown: { label: 'Desconhecido', cssClass: 'unknown' },
@@ -145,6 +153,10 @@ function renderStatusCell(status: string) {
             return <div className={`att-status att-status--absent`}><div className="att-status__dot" /></div>;
         case 'justified':
             return <div className={`att-status att-status--justified`}><div className="att-status__icon">▲</div></div>;
+        case 'vacation':
+            return <div className={`att-status att-status--vacation`}><Palmtree size={14} /></div>;
+        case 'holiday':
+            return <div className={`att-status att-status--holiday`}><Star size={12} /></div>;
         case 'dayoff':
             return <div className={`att-status att-status--dayoff`}><div className="att-status__icon">—</div></div>;
         case 'anomaly':
@@ -597,7 +609,7 @@ export default function HRAttendanceCalendar() {
                             <colgroup>
                                 <col style={{ width: '280px' }} />
                                 {days.map(d => (
-                                    <col key={d.toISOString()} style={{ width: `${dayColWidth}px` }} />
+                                    <col key={formatQueryDate(d)} style={{ width: `${dayColWidth}px` }} />
                                 ))}
                             </colgroup>
                             <thead>
@@ -614,7 +626,7 @@ export default function HRAttendanceCalendar() {
                                         const todayClass = isSameDay(d, today) ? ' att-day-header--today' : '';
                                         const weekendClass = isWeekendDay(d) ? ' att-day-header--weekend' : '';
                                         return (
-                                            <th key={d.toISOString()} className={`att-day-header${weekendClass}${todayClass}`}>
+                                            <th key={formatQueryDate(d)} className={`att-day-header${weekendClass}${todayClass}`}>
                                                 <span className="att-day-header__weekday">
                                                     {d.toLocaleString('pt-AO', { weekday: 'narrow' })}
                                                 </span>
@@ -664,7 +676,7 @@ export default function HRAttendanceCalendar() {
 
                                             return (
                                                 <td
-                                                    key={d.toISOString()}
+                                                    key={formatQueryDate(d)}
                                                     className={cellClass}
                                                     onClick={() => handleCellClick(emp, d)}
                                                     title={cellTitle}
@@ -691,6 +703,8 @@ export default function HRAttendanceCalendar() {
                         <div className="att-legend__item"><div className="att-legend__swatch att-legend__swatch--present" /><span className="att-legend__text">Presente</span></div>
                         <div className="att-legend__item"><div className="att-legend__swatch att-legend__swatch--absent" /><span className="att-legend__text">Ausente</span></div>
                         <div className="att-legend__item"><div className="att-legend__swatch att-legend__swatch--justified" /><span className="att-legend__text">Justificada</span></div>
+                        <div className="att-legend__item"><div className="att-legend__swatch att-legend__swatch--vacation" /><span className="att-legend__text">Férias</span></div>
+                        <div className="att-legend__item"><div className="att-legend__swatch att-legend__swatch--holiday" /><span className="att-legend__text">Feriado</span></div>
                         <div className="att-legend__item"><div className="att-legend__swatch att-legend__swatch--dayoff" /><span className="att-legend__text">Folga</span></div>
                         <div className="att-legend__item"><div className="att-legend__swatch att-legend__swatch--anomaly" /><span className="att-legend__text">Anomalia</span></div>
                         <div className="att-legend__item"><div className="att-legend__swatch att-legend__swatch--overnight" /><span className="att-legend__text">Turno Noturno</span></div>
@@ -801,6 +815,13 @@ function DrawerContent({ detail }: { detail: DayDetail }) {
                     <SummaryItem label="Aus. Justificada" value={summary.justifiedAbsenceMinutes > 0 ? formatMinutes(summary.justifiedAbsenceMinutes) : '—'} />
                     <SummaryItem label="Saldo" value={formatMinutes(summary.balanceMinutes)} provisional />
                     <SummaryItem label="Marcações" value={String(summary.punchCount)} />
+                    {(summary.basicWorkedMinutes > 0 || summary.overtimeMinutes > 0) && (
+                        <>
+                            <SummaryItem label="Básico" value={formatMinutes(summary.basicWorkedMinutes)} />
+                            <SummaryItem label="Extra" value={summary.overtimeMinutes > 0 ? formatMinutes(summary.overtimeMinutes) : '—'} />
+                            <SummaryItem label="Total Trab." value={formatMinutes(summary.totalWorkedMinutes)} />
+                        </>
+                    )}
                     <SummaryItem label="Validado" value={summary.isValidated ? 'Sim' : 'Não'} />
                     {summary.scheduleDescription && (
                         <SummaryItem label="Horário" value={`${summary.scheduleDescription}${summary.scheduleSigla ? ` (${summary.scheduleSigla})` : ''}`} />

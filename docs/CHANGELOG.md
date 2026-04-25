@@ -2,6 +2,20 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.89.0] - 2026-04-25 - Feature: HR Attendance Calendar Modernization (Status, Metrics & Justifications)
+### Fixed
+- **Calendar Timezone Bug**: Resolved a -1 day rendering offset caused by `toISOString()` UTC conversion in the WAT (UTC+1) timezone. Replaced with local date component formatting (`YYYY-MM-DD`) across query parameters and React keys.
+
+### Added
+- **Vacation & Holiday Status Classification**: Extended the `ClassifyAttendance` engine to sub-classify justified absences into `Vacation` (🌴 "Gozo de Férias") and `Holiday` (⭐ "Feriado") statuses by parsing the Innux `Justificacao` text field. Added corresponding CSS styles, legend entries, and cell icons.
+- **Worked Hours Metrics (Basic/Overtime)**: Implemented `GetWorkedHoursAsync` calculation engine that aggregates non-dispensed periods from `dbo.AlteracoesPeriodos` joined with `dbo.CodigosTrabalho`. Maps `Tipo = 'Normal'` → Basic and `Tipo LIKE 'Extra%'` → Overtime. Results merged into the calendar API response with graceful fallback on failure.
+- **Drawer Metrics Display**: The employee day-detail drawer now shows "Básico", "Extra", and "Total Trab." metrics when worked hours data is available.
+- **Justification Table (Structural)**: Created `HRAttendanceJustifications` database migration with FKs to `HREmployees` (Cascade) and `Users` (Restrict), indexes on `(HREmployeeId, Date)` and `Status`. Table supports future manager/employee justification workflow.
+
+### Technical Notes
+- Worked hours merge is non-blocking — if the calculation query fails, the calendar renders normally with zero values.
+- Justification migration created but NOT yet applied. Entity class and DbSet registration pending Phase 4 functional work.
+
 ## [v2.88.0] - 2026-04-23 - Feature: HR Monthly Changes First Frontend Slice
 ### Added
 - **HR Monthly Changes UI**: First frontend slice for the Innux-to-Primavera workflow.

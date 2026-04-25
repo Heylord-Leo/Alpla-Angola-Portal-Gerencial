@@ -191,6 +191,91 @@ public class InnuxAttendanceService : IInnuxAttendanceService
 
     // ─── Private query methods ───
 
+    /// <inheritdoc />
+    public async Task<Dictionary<(int EmployeeId, DateTime Date), WorkedHoursDto>> GetWorkedHoursAsync(
+        IEnumerable<int> innuxEmployeeIds,
+        DateTime startDate,
+        DateTime endDate)
+    {
+        var idList = innuxEmployeeIds.ToList();
+        if (idList.Count == 0)
+            return new Dictionary<(int, DateTime), WorkedHoursDto>();
+
+        try
+        {
+            await using var connection = await _connectionFactory.CreateConnectionAsync();
+
+            var (inClause, parameters) = BuildInClause(idList, "empId");
+            parameters.Add(new SqlParameter("@StartDate", startDate.Date));
+            parameters.Add(new SqlParameter("@EndDate", endDate.Date));
+
+            // Aggregate non-dispensed periods by employee, date, and work type.
+            // CodigosTrabalho.Tipo values observed: 'Normal', 'Extra', 'Extra 2', etc.
+            // Duration = DATEDIFF(MINUTE, Inicio, Fim) using Innux's 1900-01-01 base encoding.
+            var query = $@"
+                SELECT
+                    a.IDFuncionario,
+                    a.Data,
+                    ct.Tipo AS WorkType,
+                    SUM(DATEDIFF(MINUTE, ap.Inicio, ap.Fim)) AS TotalMinutes
+                FROM dbo.AlteracoesPeriodos ap
+                INNER JOIN dbo.Alteracoes a ON ap.IDAlteracao = a.IDAlteracao
+                LEFT JOIN dbo.CodigosTrabalho ct ON ap.IDCodigoTrabalho = ct.IDCodigoTrabalho
+                WHERE a.IDFuncionario IN ({inClause})
+                  AND a.Data >= @StartDate
+                  AND a.Data <= @EndDate
+                  AND ISNULL(ap.Dispensa, 0) = 0
+                GROUP BY a.IDFuncionario, a.Data, ct.Tipo";
+
+            await using var command = new SqlCommand(query, connection);
+            command.Parameters.AddRange(parameters.ToArray());
+            command.CommandTimeout = 30;
+
+            var result = new Dictionary<(int, DateTime), WorkedHoursDto>();
+            await using var reader = await command.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                var empId = InnuxTimeHelper.SafeInt(reader["IDFuncionario"]);
+                var date = reader["Data"] is DateTime d ? d.Date : DateTime.MinValue;
+                var workType = (reader["WorkType"] as string)?.Trim() ?? "";
+                var minutes = InnuxTimeHelper.SafeInt(reader["TotalMinutes"]);
+
+                if (minutes <= 0) continue;
+
+                var key = (empId, date);
+                if (!result.TryGetValue(key, out var dto))
+                {
+                    dto = new WorkedHoursDto();
+                    result[key] = dto;
+                }
+
+                // Classify: "Normal" → Basic, anything containing "Extra" → Overtime
+                if (workType.Contains("Extra", StringComparison.OrdinalIgnoreCase))
+                    dto.OvertimeMinutes += minutes;
+                else
+                    dto.BasicMinutes += minutes;
+            }
+
+            _logger.LogDebug(
+                "InnuxAttendanceService: computed worked hours for {Count} employee-day pairs, {Start} to {End}",
+                result.Count, startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
+
+            return result;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to compute worked hours for {Count} employees between {Start} and {End}",
+                idList.Count, startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
+            throw;
+        }
+    }
+
     private async Task<AttendanceDaySummaryDto?> GetSingleSummaryAsync(
         SqlConnection connection, int innuxEmployeeId, DateTime date)
     {
@@ -375,7 +460,8 @@ public class InnuxAttendanceService : IInnuxAttendanceService
                 absenceMinutes, justifiedMinutes, expectedMinutes,
                 punchCount, anomaly, missedPeriods,
                 InnuxTimeHelper.ToTimeString(reader["Entrada"]),
-                InnuxTimeHelper.ToTimeString(reader["Saida"]))
+                InnuxTimeHelper.ToTimeString(reader["Saida"]),
+                reader["Justificacao"] as string)
         };
     }
 
@@ -383,15 +469,32 @@ public class InnuxAttendanceService : IInnuxAttendanceService
     /// Derives a Portal-friendly attendance classification from Innux fields.
     /// This is a best-effort classification — edge cases may require refinement
     /// as we learn more about Innux processing conventions.
+    ///
+    /// Status values:
+    ///   "Present"          — Employee was at work (has punches or entry/exit).
+    ///   "Absent"           — Full unjustified absence.
+    ///   "JustifiedAbsence" — Full justified absence (generic, e.g. sick leave).
+    ///   "Vacation"         — Justified absence with "Gozo de Férias" justification.
+    ///   "Holiday"          — Justified absence with "Feriado" justification.
+    ///   "DayOff"           — No expected time (rest day / schedule off).
+    ///   "Anomaly"          — Innux flagged a processing anomaly.
+    ///   "Unknown"          — Cannot determine status.
     /// </summary>
     private static string ClassifyAttendance(
         int absenceMinutes, int justifiedMinutes, int expectedMinutes,
         int punchCount, string? anomaly, bool missedPeriods,
-        string? firstEntry, string? firstExit)
+        string? firstEntry, string? firstExit, string? justification)
     {
+        var justNorm = justification?.Trim() ?? "";
+
         // Day off: no expected time
         if (expectedMinutes == 0)
+        {
+            // Even on a day-off, check if justification indicates Holiday
+            if (justNorm.Contains("Feriado", StringComparison.OrdinalIgnoreCase))
+                return "Holiday";
             return "DayOff";
+        }
 
         // Anomaly: if Innux flagged an issue
         if (!string.IsNullOrWhiteSpace(anomaly))
@@ -401,9 +504,18 @@ public class InnuxAttendanceService : IInnuxAttendanceService
         if (absenceMinutes > 0 && absenceMinutes >= expectedMinutes)
             return "Absent";
 
-        // Full justified absence (vacation, sick leave, etc.)
+        // Full justified absence — sub-classify by justification text
         if (justifiedMinutes > 0 && justifiedMinutes >= expectedMinutes)
+        {
+            if (justNorm.Contains("Gozo de Férias", StringComparison.OrdinalIgnoreCase)
+                || justNorm.Contains("Ferias", StringComparison.OrdinalIgnoreCase))
+                return "Vacation";
+
+            if (justNorm.Contains("Feriado", StringComparison.OrdinalIgnoreCase))
+                return "Holiday";
+
             return "JustifiedAbsence";
+        }
 
         // Has punches or valid entry/exit times: likely present (may have partial absence)
         if (punchCount > 0 || !string.IsNullOrWhiteSpace(firstEntry) || !string.IsNullOrWhiteSpace(firstExit))

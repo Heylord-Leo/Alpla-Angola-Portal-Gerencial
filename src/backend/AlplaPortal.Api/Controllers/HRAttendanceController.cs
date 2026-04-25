@@ -102,8 +102,31 @@ public class HRAttendanceController : ControllerBase
                     endDate = endDate.Date
                 });
 
-            var attendance = await _attendanceService.GetDailyAttendanceAsync(
-                innuxIds, startDate.Date, endDate.Date);
+            var attendance = (await _attendanceService.GetDailyAttendanceAsync(
+                innuxIds, startDate.Date, endDate.Date)).ToList();
+
+            // Merge worked hours (Basic/Overtime) from AlteracoesPeriodos
+            try
+            {
+                var workedHours = await _attendanceService.GetWorkedHoursAsync(
+                    innuxIds, startDate.Date, endDate.Date);
+
+                foreach (var record in attendance)
+                {
+                    var key = (record.InnuxEmployeeId, record.Date.Date);
+                    if (workedHours.TryGetValue(key, out var hours))
+                    {
+                        record.BasicWorkedMinutes = hours.BasicMinutes;
+                        record.OvertimeMinutes = hours.OvertimeMinutes;
+                        record.TotalWorkedMinutes = hours.TotalMinutes;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Non-critical: if worked hours fail, calendar still renders with 0 values
+                _logger.LogWarning(ex, "Failed to merge worked hours into calendar data — continuing without metrics");
+            }
 
             return Ok(new
             {

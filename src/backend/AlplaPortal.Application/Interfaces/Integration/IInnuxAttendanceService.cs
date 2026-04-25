@@ -38,4 +38,17 @@ public interface IInnuxAttendanceService
     /// <param name="innuxEmployeeId">Single Innux employee ID.</param>
     /// <param name="date">Target date.</param>
     Task<AttendanceDayDetailDto?> GetDayDetailAsync(int innuxEmployeeId, DateTime date);
+
+    /// <summary>
+    /// Computes basic and overtime worked minutes per employee per day from AlteracoesPeriodos.
+    /// Groups non-dispensed periods by CodigosTrabalho type (Normal → Basic, Extra → Overtime).
+    /// Returns a dictionary keyed by (InnuxEmployeeId, Date) for efficient calendar merging.
+    /// </summary>
+    /// <param name="innuxEmployeeIds">Pre-scoped Innux employee IDs.</param>
+    /// <param name="startDate">Inclusive start date.</param>
+    /// <param name="endDate">Inclusive end date.</param>
+    Task<Dictionary<(int EmployeeId, DateTime Date), WorkedHoursDto>> GetWorkedHoursAsync(
+        IEnumerable<int> innuxEmployeeIds,
+        DateTime startDate,
+        DateTime endDate);
 }
