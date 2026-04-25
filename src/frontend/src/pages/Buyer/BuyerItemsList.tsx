@@ -2287,7 +2287,7 @@ export function BuyerItemsList() {
                                                                     </div>
                                                                 ) : quotationDrafts[group.requestId] ? (
                                                                     <div className="quotation-form-body">
-                                                                        {/* STEP 1: Global Workflow Actions (Moved to Top) */}
+                                                                        {/* STEP 1: Draft Editor Status Bar */}
                                                                         <div style={{
                                                                             display: 'flex',
                                                                             justifyContent: 'space-between',
@@ -2309,50 +2309,13 @@ export function BuyerItemsList() {
                                                                                     fontWeight: 900,
                                                                                     textTransform: 'uppercase'
                                                                                 }}>
-                                                                                    FLUXO GLOBAL
+                                                                                    {editingQuotationId[group.requestId] ? 'EDITANDO' : 'RASCUNHO'}
                                                                                 </div>
                                                                                 <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-main)' }}>
-                                                                                    {group.requestStatusCode === 'WAITING_QUOTATION'
-                                                                                        ? 'Deseja finalizar a etapa de cotação para este pedido completo?'
-                                                                                        : 'Status do Pedido: ' + group.requestStatusName}
+                                                                                    {editingQuotationId[group.requestId]
+                                                                                        ? 'Editando cotação existente — salve ou cancele para prosseguir.'
+                                                                                        : 'Registrando nova cotação — salve ou cancele para prosseguir.'}
                                                                                 </span>
-                                                                            </div>
-                                                                            <div style={{ display: 'flex', gap: '12px' }}>
-                                                                                {group.requestStatusCode === 'WAITING_QUOTATION' && mode === 'BUYER' && isAssignedToMe && (
-                                                                                    <>
-                                                                                        <button
-                                                                                            onClick={() => {
-                                                                                                const anySupplierSet = !!group.requestSupplierId || group.items.every((item: any) => item.supplierId || item.supplierName);
-                                                                                                const qCount = group.quotations.length;
-                                                                                                const hasCompQ = group.quotations.some((q: SavedQuotationDto) =>
-                                                                                                    (q.itemCount > 0) && (!!q.proformaAttachmentId) && (!!q.supplierId)
-                                                                                                );
-                                                                                                const totalItemsCount = group.items.length + group.quotations.reduce((acc: number, q: SavedQuotationDto) => acc + q.itemCount, 0);
-                                                                                                handleCompleteQuotation(group.requestId, !!group.proformaId, anySupplierSet, totalItemsCount, qCount, hasCompQ);
-                                                                                            }}
-                                                                                            disabled={isSaving || !!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]}
-                                                                                            style={{
-                                                                                                display: 'flex',
-                                                                                                alignItems: 'center',
-                                                                                                gap: '8px',
-                                                                                                padding: '10px 24px',
-                                                                                                fontSize: '0.85rem',
-                                                                                                backgroundColor: !!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? '#e5e7eb' : '#059669',
-                                                                                                border: '1px solid #047857',
-                                                                                                color: !!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? '#9ca3af' : '#ffffff',
-                                                                                                borderRadius: '6px',
-                                                                                                fontWeight: 900,
-                                                                                                cursor: !!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? 'not-allowed' : 'pointer',
-                                                                                                boxShadow: (!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]) ? 'none' : '0 4px 0px #046c4e'
-                                                                                            }}
-                                                                                            title={!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? "Salve ou cancele a cotação em andamento antes de concluir o pedido" : "Finalizar etapa de cotação"}
-                                                                                        >
-                                                                                            <CheckCircle2 size={18} /> CONCLUIR COTAÇÃO
-                                                                                        </button>
-
-
-                                                                                    </>
-                                                                                )}
                                                                             </div>
                                                                         </div>
                                                                         {/* Phase 2: Reconciliation Panel */}
@@ -2900,6 +2863,89 @@ export function BuyerItemsList() {
                                                 )}
                                             </div>
                                         )}
+
+                                        {/* PERSISTENT REQUEST-LEVEL ACTION: CONCLUIR COTAÇÃO */}
+                                        {group.requestStatusCode === 'WAITING_QUOTATION' && mode === 'BUYER' && isAssignedToMe && group.quotations.length > 0 && (
+                                            <div style={{
+                                                padding: '20px 24px',
+                                                backgroundColor: (!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]) ? '#fffbeb' : '#f0fdf4',
+                                                border: `2px solid ${(!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]) ? '#fcd34d' : '#86efac'}`,
+                                                borderRadius: '8px',
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
+                                                boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                                                marginTop: '8px'
+                                            }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                    <div style={{
+                                                        backgroundColor: (!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]) ? '#f59e0b' : '#059669',
+                                                        color: '#fff',
+                                                        padding: '4px 10px',
+                                                        borderRadius: '4px',
+                                                        fontSize: '0.7rem',
+                                                        fontWeight: 900,
+                                                        textTransform: 'uppercase' as const
+                                                    }}>
+                                                        FLUXO GLOBAL
+                                                    </div>
+                                                    <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-main)' }}>
+                                                        {(!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId])
+                                                            ? 'Salve ou cancele a cotação em edição para concluir esta etapa.'
+                                                            : 'Deseja finalizar a etapa de cotação para este pedido completo?'}
+                                                    </span>
+                                                </div>
+                                                <div style={{ display: 'flex', gap: '12px' }}>
+                                                    {(!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]) ? (
+                                                        <div style={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '8px',
+                                                            padding: '10px 24px',
+                                                            fontSize: '0.8rem',
+                                                            backgroundColor: '#fef3c7',
+                                                            border: '1px solid #fcd34d',
+                                                            color: '#92400e',
+                                                            borderRadius: '6px',
+                                                            fontWeight: 700
+                                                        }}>
+                                                            <AlertCircle size={16} /> Edição em andamento
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => {
+                                                                const anySupplierSet = !!group.requestSupplierId || group.items.every((item: any) => item.supplierId || item.supplierName);
+                                                                const qCount = group.quotations.length;
+                                                                const hasCompQ = group.quotations.some((q: SavedQuotationDto) =>
+                                                                    (q.itemCount > 0) && (!!q.proformaAttachmentId) && (!!q.supplierId)
+                                                                );
+                                                                const totalItemsCount = group.items.length + group.quotations.reduce((acc: number, q: SavedQuotationDto) => acc + q.itemCount, 0);
+                                                                handleCompleteQuotation(group.requestId, !!group.proformaId, anySupplierSet, totalItemsCount, qCount, hasCompQ);
+                                                            }}
+                                                            disabled={isSaving}
+                                                            style={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: '8px',
+                                                                padding: '10px 24px',
+                                                                fontSize: '0.85rem',
+                                                                backgroundColor: isSaving ? '#e5e7eb' : '#059669',
+                                                                border: '1px solid #047857',
+                                                                color: isSaving ? '#9ca3af' : '#ffffff',
+                                                                borderRadius: '6px',
+                                                                fontWeight: 900,
+                                                                cursor: isSaving ? 'not-allowed' : 'pointer',
+                                                                boxShadow: isSaving ? 'none' : '0 4px 0px #046c4e'
+                                                            }}
+                                                            title="Finalizar etapa de cotação"
+                                                        >
+                                                            <CheckCircle2 size={18} /> CONCLUIR COTAÇÃO
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+
                                     </div>
                                 )}
                             </div>

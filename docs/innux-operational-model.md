@@ -432,6 +432,17 @@ ORDER BY f.Nome
 4. The Innux engine runs periodic processing that converts raw punches into `Alteracoes` records — there is a time lag between a punch and its reflection in the processed table
 5. `Funcionarios.IDFuncionario` in Innux maps to the employee code already synced via `HREmployeeSyncService`
 
+> [!NOTE]
+> **Portal Implementation — PunchCount Source (2026-04-25)**
+>
+> The Portal uses `Alteracoes.Marcacao` as the official processed punch count for **both** the calendar grid and the detail drawer. This is the Innux engine's canonical value.
+>
+> `TerminaisMarcacoes` (raw terminal punches) is queried **only** in the detail drill-down as supporting/debug evidence. The raw count is exposed separately as `RawPunchCount` and is never used to determine the attendance status classification.
+>
+> These two values may legitimately differ when: punches were purged after processing, days were manually validated by HR in Innux, or marks were imported from external systems.
+>
+> If `Alteracoes.Marcacao > 0` but `TerminaisMarcacoes` has zero rows, the Portal shows an informational banner in the drawer explaining the discrepancy.
+
 ### Open Questions
 
 > [!IMPORTANT]

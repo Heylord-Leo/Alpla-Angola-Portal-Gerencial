@@ -2,8 +2,11 @@ import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { api } from '../../lib/api';
 import {
     RefreshCw, ChevronLeft, ChevronRight, Calendar, LayoutGrid, X,
-    Clock, AlertTriangle, Moon, Filter, Search, Palmtree, Star
+    Clock, AlertTriangle, Moon, Filter, Search, Palmtree, Star, HelpCircle,
+    Info, CheckCircle2, UserCheck, AlertCircle, ChevronDown, ChevronUp, Database,
+    CircleCheck, CircleX, ShieldAlert, MinusCircle
 } from 'lucide-react';
+import { GuideModal, GuideModalSection } from '../../components/ui/GuideModal';
 import './hr-attendance-calendar.css';
 
 // ─── Types ───
@@ -35,6 +38,7 @@ interface AttendanceDaySummary {
     expectedMinutes: number;
     balanceMinutes: number;
     punchCount: number;
+    rawPunchCount: number;
     isValidated: boolean;
     missedMandatoryPeriods: boolean;
     anomalyDescription: string | null;
@@ -76,6 +80,13 @@ interface DayDetail {
     }>;
     workPlanCode: string | null;
     workPlanDescription: string | null;
+    // Debug metadata for HR/IT transparency
+    debugProcessedPunchCount: number;
+    debugRawTerminalPunchCount: number;
+    debugIsValidated: boolean;
+    debugScheduleCode: string | null;
+    debugScheduleDescription: string | null;
+    debugStatusSource: string | null;
 }
 
 // ─── Date utilities ───
@@ -140,31 +151,116 @@ const STATUS_CONFIG: Record<string, { label: string; cssClass: string }> = {
     Unknown: { label: 'Desconhecido', cssClass: 'unknown' },
 };
 
+/** Unified icon+label config — single source of truth for calendar, legend, and guide modal. */
+const STATUS_VISUAL_MAP: Record<string, {
+    label: string;
+    cssClass: string;
+    description: string;
+    renderIcon: (size: number) => React.ReactNode;
+}> = {
+    Present: {
+        label: 'Presente',
+        cssClass: 'present',
+        description: 'Presença confirmada por marcação de terminal.',
+        renderIcon: (size) => <CircleCheck size={size} />,
+    },
+    Absent: {
+        label: 'Ausente',
+        cssClass: 'absent',
+        description: 'Falta total no dia (sem marcações e sem justificativa).',
+        renderIcon: (size) => <CircleX size={size} />,
+    },
+    JustifiedAbsence: {
+        label: 'Justificada',
+        cssClass: 'justified',
+        description: 'Ausência coberta por justificativa (Ex: Doença, Óbito).',
+        renderIcon: (size) => <AlertTriangle size={size} />,
+    },
+    Vacation: {
+        label: 'Férias',
+        cssClass: 'vacation',
+        description: 'Dia marcado como férias no sistema Innux.',
+        renderIcon: (size) => <Palmtree size={size} />,
+    },
+    Holiday: {
+        label: 'Feriado',
+        cssClass: 'holiday',
+        description: 'Dia de feriado oficial com ou sem trabalho.',
+        renderIcon: (size) => <Star size={size} />,
+    },
+    DayOff: {
+        label: 'Folga',
+        cssClass: 'dayoff',
+        description: 'Dia sem previsão de trabalho (Ex: Domingo).',
+        renderIcon: (size) => <MinusCircle size={size} />,
+    },
+    Anomaly: {
+        label: 'Anomalia',
+        cssClass: 'anomaly',
+        description: 'Dia com inconsistência de dados — processamento ou marcações requerem revisão pelo R.H.',
+        renderIcon: (size) => <ShieldAlert size={size} />,
+    },
+    Unknown: {
+        label: 'Desconhecido',
+        cssClass: 'unknown',
+        description: 'Não foi possível determinar o estado de assiduidade.',
+        renderIcon: (size) => <HelpCircle size={size} />,
+    },
+};
+
 function getStatusConfig(status: string) {
     return STATUS_CONFIG[status] || STATUS_CONFIG.Unknown;
 }
 
-function renderStatusCell(status: string) {
-    const cfg = getStatusConfig(status);
-    switch (cfg.cssClass) {
-        case 'present':
-            return <div className={`att-status att-status--present`}><div className="att-status__dot" /></div>;
-        case 'absent':
-            return <div className={`att-status att-status--absent`}><div className="att-status__dot" /></div>;
-        case 'justified':
-            return <div className={`att-status att-status--justified`}><div className="att-status__icon">▲</div></div>;
-        case 'vacation':
-            return <div className={`att-status att-status--vacation`}><Palmtree size={14} /></div>;
-        case 'holiday':
-            return <div className={`att-status att-status--holiday`}><Star size={12} /></div>;
-        case 'dayoff':
-            return <div className={`att-status att-status--dayoff`}><div className="att-status__icon">—</div></div>;
-        case 'anomaly':
-            return <div className={`att-status att-status--anomaly`}><div className="att-status__icon">!</div></div>;
-        default:
-            return <div className={`att-status att-status--unknown`}><div className="att-status__icon">?</div></div>;
-    }
+function getStatusVisual(status: string) {
+    return STATUS_VISUAL_MAP[status] || STATUS_VISUAL_MAP.Unknown;
 }
+
+function renderStatusCell(status: string) {
+    const vis = getStatusVisual(status);
+    return (
+        <div className={`att-status att-status--${vis.cssClass}`}>
+            <div className="att-status__icon-wrap">
+                {vis.renderIcon(14)}
+            </div>
+        </div>
+    );
+}
+
+/** Renders a legend item with the same icon used in the calendar cell. */
+function renderLegendItem(statusKey: string) {
+    const vis = STATUS_VISUAL_MAP[statusKey];
+    if (!vis) return null;
+    return (
+        <div className="att-legend__item" key={statusKey}>
+            <div className={`att-legend__icon att-legend__icon--${vis.cssClass}`}>
+                {vis.renderIcon(12)}
+            </div>
+            <span className="att-legend__text">{vis.label}</span>
+        </div>
+    );
+}
+
+// ─── Cache types ───
+
+interface CachedEntry {
+    data: CalendarResponse;
+    fetchedAt: Date;
+}
+
+function buildCacheKey(viewMode: ViewMode, from: Date, to: Date): string {
+    return `${viewMode}_${formatQueryDate(from)}_${formatQueryDate(to)}`;
+}
+
+function formatTimestamp(d: Date): string {
+    return d.toLocaleString('pt-AO', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
+}
+
+// ─── Global Cache (survives route navigation) ───
+const globalCalendarCache = new Map<string, CachedEntry>();
 
 // ─── Component ───
 
@@ -179,6 +275,8 @@ export default function HRAttendanceCalendar() {
     const [showScrollHint, setShowScrollHint] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const pageSize = 15;
+    const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+    const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
 
     // Filter state
     const [filterPlant, setFilterPlant] = useState<string>('');
@@ -233,17 +331,33 @@ export default function HRAttendanceCalendar() {
         return map;
     }, [calendarData]);
 
-    // ─── Data loading ───
+    // ─── Data loading (with global in-memory cache) ───
 
-    const loadCalendar = useCallback(() => {
+    const loadCalendar = useCallback((forceRefresh = false) => {
+        const { from, to } = getDateRange();
+        const key = buildCacheKey(viewMode, from, to);
+
+        // Serve from cache if available and not forcing refresh
+        if (!forceRefresh && globalCalendarCache.has(key)) {
+            const cached = globalCalendarCache.get(key)!;
+            setCalendarData(cached.data);
+            setLastUpdatedAt(cached.fetchedAt);
+            setCurrentPage(1);
+            setLoading(false);
+            setError(null);
+            return;
+        }
+
         setLoading(true);
         setError(null);
-        const { from, to } = getDateRange();
         api.hrAttendance
             .getCalendar({ startDate: formatQueryDate(from), endDate: formatQueryDate(to) })
             .then((res: CalendarResponse) => {
+                const now = new Date();
+                globalCalendarCache.set(key, { data: res, fetchedAt: now });
                 setCalendarData(res);
-                setCurrentPage(1); // Reset to first page on new data
+                setLastUpdatedAt(now);
+                setCurrentPage(1);
                 setLoading(false);
             })
             .catch((err: any) => {
@@ -251,9 +365,13 @@ export default function HRAttendanceCalendar() {
                 setError(err?.message || 'Falha ao carregar dados de presença.');
                 setLoading(false);
             });
-    }, [getDateRange]);
+    }, [getDateRange, viewMode]);
 
     useEffect(() => { loadCalendar(); }, [loadCalendar]);
+
+    const handleForceRefresh = useCallback(() => {
+        loadCalendar(true);
+    }, [loadCalendar]);
 
     // ─── Scroll tracking ───
 
@@ -498,6 +616,23 @@ export default function HRAttendanceCalendar() {
                     </div>
                     <button className="att-nav__today" onClick={navToday}>Hoje</button>
 
+                    <div className="att-refresh-group">
+                        <button
+                            className="att-refresh-group__btn"
+                            onClick={handleForceRefresh}
+                            disabled={loading}
+                            title="Forçar actualização dos dados do Innux"
+                        >
+                            <RefreshCw size={14} className={loading ? 'att-loading__icon' : ''} />
+                            Atualizar
+                        </button>
+                        {lastUpdatedAt && (
+                            <span className="att-refresh-group__ts">
+                                {formatTimestamp(lastUpdatedAt)}
+                            </span>
+                        )}
+                    </div>
+
                     {totalPages > 1 && (
                         <div className="att-pagination">
                             <button 
@@ -519,6 +654,14 @@ export default function HRAttendanceCalendar() {
                             </button>
                         </div>
                     )}
+
+                    <button 
+                        className="att-help-btn"
+                        onClick={() => setIsHelpModalOpen(true)}
+                        title="Ajuda e Legenda"
+                    >
+                        <HelpCircle size={18} />
+                    </button>
                 </div>
             </div>
 
@@ -597,7 +740,7 @@ export default function HRAttendanceCalendar() {
             ) : error ? (
                 <div className="att-error">
                     <div className="att-error__text">{error}</div>
-                    <button className="att-error__retry" onClick={loadCalendar}>Tentar novamente</button>
+                    <button className="att-error__retry" onClick={() => loadCalendar()}>Tentar novamente</button>
                 </div>
             ) : employees.length > 0 ? (
                 <div className="att-grid-shell">
@@ -700,14 +843,19 @@ export default function HRAttendanceCalendar() {
 
                     {/* Legend */}
                     <div className="att-legend">
-                        <div className="att-legend__item"><div className="att-legend__swatch att-legend__swatch--present" /><span className="att-legend__text">Presente</span></div>
-                        <div className="att-legend__item"><div className="att-legend__swatch att-legend__swatch--absent" /><span className="att-legend__text">Ausente</span></div>
-                        <div className="att-legend__item"><div className="att-legend__swatch att-legend__swatch--justified" /><span className="att-legend__text">Justificada</span></div>
-                        <div className="att-legend__item"><div className="att-legend__swatch att-legend__swatch--vacation" /><span className="att-legend__text">Férias</span></div>
-                        <div className="att-legend__item"><div className="att-legend__swatch att-legend__swatch--holiday" /><span className="att-legend__text">Feriado</span></div>
-                        <div className="att-legend__item"><div className="att-legend__swatch att-legend__swatch--dayoff" /><span className="att-legend__text">Folga</span></div>
-                        <div className="att-legend__item"><div className="att-legend__swatch att-legend__swatch--anomaly" /><span className="att-legend__text">Anomalia</span></div>
-                        <div className="att-legend__item"><div className="att-legend__swatch att-legend__swatch--overnight" /><span className="att-legend__text">Turno Noturno</span></div>
+                        {renderLegendItem('Present')}
+                        {renderLegendItem('Absent')}
+                        {renderLegendItem('JustifiedAbsence')}
+                        {renderLegendItem('Vacation')}
+                        {renderLegendItem('Holiday')}
+                        {renderLegendItem('DayOff')}
+                        {renderLegendItem('Anomaly')}
+                        <div className="att-legend__item">
+                            <div className="att-legend__icon att-legend__icon--overnight">
+                                <Moon size={12} />
+                            </div>
+                            <span className="att-legend__text">Turno Noturno</span>
+                        </div>
                         <span className="att-legend__scope">{getScopeDescription()}</span>
                     </div>
                 </div>
@@ -718,6 +866,66 @@ export default function HRAttendanceCalendar() {
                         : 'Nenhum funcionário mapeado no seu escopo de hierarquia.'}
                 </div>
             )}
+
+            {/* Legend / Help Modal */}
+            <GuideModal
+                isOpen={isHelpModalOpen}
+                onClose={() => setIsHelpModalOpen(false)}
+                title="Guia de Assiduidade"
+                subtitle="Entenda como os dados do Innux são apresentados no Portal Gerencial."
+            >
+                <GuideModalSection
+                    title="Status e Legenda"
+                    icon={<Info size={20} />}
+                    iconBgColor="#eff6ff"
+                    iconColor="#2563eb"
+                >
+                    <div className="att-guide-list">
+                        {Object.entries(STATUS_VISUAL_MAP).map(([key, vis]) => (
+                            <div className="att-guide-item" key={key}>
+                                <div className={`att-guide-icon att-guide-icon--${vis.cssClass}`}>
+                                    {vis.renderIcon(14)}
+                                </div>
+                                <div><strong>{vis.label}:</strong> {vis.description}</div>
+                            </div>
+                        ))}
+                        <div className="att-guide-item">
+                            <div className="att-guide-icon att-guide-icon--overnight">
+                                <Moon size={14} />
+                            </div>
+                            <div><strong>Turno Noturno:</strong> Turno com período que atravessa a meia-noite.</div>
+                        </div>
+                    </div>
+                </GuideModalSection>
+
+                <GuideModalSection
+                    title="Métricas de Tempo"
+                    icon={<Clock size={20} />}
+                    iconBgColor="#fef2f2"
+                    iconColor="#dc2626"
+                >
+                    <div className="att-guide-text">
+                        <p><strong>Esperado:</strong> O tempo total planeado para o turno (Ex: 08:00 às 17:30 = 9h totais).</p>
+                        <p><strong>Ausência:</strong> Tempo que o funcionário deixou de trabalhar sem justificativa.</p>
+                        <p><strong>Saldo:</strong> Diferença entre o tempo trabalhado e o planeado. 
+                           <span style={{ color: '#dc2626', fontWeight: 600 }}> Vermelho</span> indica horas negativas em falta.</p>
+                        <p><strong>Marcações:</strong> Contagem total de vezes que o funcionário passou o cartão no terminal.</p>
+                    </div>
+                </GuideModalSection>
+
+                <GuideModalSection
+                    title="Marcações Brutas"
+                    icon={<UserCheck size={20} />}
+                    iconBgColor="#f0fdf4"
+                    iconColor="#16a34a"
+                >
+                    <p className="att-guide-text">
+                        As marcações brutas são os registos reais extraídos dos terminais. 
+                        Quando aparece a tag <span className="att-punch-auto" style={{ float: 'none', display: 'inline' }}>Auto</span>, 
+                        significa que o sistema Innux gerou essa marcação automaticamente para fechar um par de entrada/saída que ficou incompleto.
+                    </p>
+                </GuideModalSection>
+            </GuideModal>
 
             {/* Detail Drawer */}
             {drawerOpen && (
@@ -783,6 +991,16 @@ export default function HRAttendanceCalendar() {
 
 function DrawerContent({ detail }: { detail: DayDetail }) {
     const { summary, rawPunches, periods } = detail;
+    const [debugOpen, setDebugOpen] = useState(false);
+
+    // Detect processed-but-no-raw scenario
+    const hasProcessedButNoRaw = summary.punchCount > 0 && rawPunches.length === 0;
+    // Detect absence-with-raw-terminal-events contradiction
+    const hasAbsenceWithRawPunches = summary.attendanceStatus === 'Anomaly'
+        && summary.absenceMinutes > 0
+        && rawPunches.length > 0
+        && !summary.firstEntry && !summary.firstExit
+        && summary.punchCount === 0;
     const cfg = getStatusConfig(summary.attendanceStatus);
 
     // Build overnight schedule label
@@ -814,7 +1032,10 @@ function DrawerContent({ detail }: { detail: DayDetail }) {
                     <SummaryItem label="Ausência" value={summary.absenceMinutes > 0 ? formatMinutes(summary.absenceMinutes) : '—'} />
                     <SummaryItem label="Aus. Justificada" value={summary.justifiedAbsenceMinutes > 0 ? formatMinutes(summary.justifiedAbsenceMinutes) : '—'} />
                     <SummaryItem label="Saldo" value={formatMinutes(summary.balanceMinutes)} provisional />
-                    <SummaryItem label="Marcações" value={String(summary.punchCount)} />
+                    <SummaryItem label="Marcações (processado)" value={String(summary.punchCount)} />
+                    {rawPunches.length !== summary.punchCount && (
+                        <SummaryItem label="Marcações (terminal)" value={String(rawPunches.length)} />
+                    )}
                     {(summary.basicWorkedMinutes > 0 || summary.overtimeMinutes > 0) && (
                         <>
                             <SummaryItem label="Básico" value={formatMinutes(summary.basicWorkedMinutes)} />
@@ -866,11 +1087,35 @@ function DrawerContent({ detail }: { detail: DayDetail }) {
                 )}
             </div>
 
+            {/* Info banner: processed but no raw punches (anomaly explanation) */}
+            {hasProcessedButNoRaw && (
+                <div className="att-info-banner att-info-banner--anomaly">
+                    <ShieldAlert size={14} className="att-info-banner__icon" />
+                    <span>
+                        <strong>Anomalia:</strong> Dia processado pelo Innux sem marcações brutas de terminal
+                        disponíveis. Este registo pode ter sido gerado automaticamente por rotação de escala
+                        (Escala) ou validação manual no Innux. Recomenda-se revisão pelo R.H.
+                    </span>
+                </div>
+            )}
+
+            {/* Info banner: absence declared but raw terminal events exist (not recognised as Entry/Exit) */}
+            {hasAbsenceWithRawPunches && (
+                <div className="att-info-banner att-info-banner--anomaly">
+                    <ShieldAlert size={14} className="att-info-banner__icon" />
+                    <span>
+                        <strong>Anomalia:</strong> Existem marcações brutas no terminal, mas o Innux processou o período como
+                        Falta Injustificada. Verifique se as marcações foram feitas com código/direção não reconhecida
+                        ou se há necessidade de correção pelo R.H.
+                    </span>
+                </div>
+            )}
+
             {/* Raw Punches */}
             <div className="att-detail-section">
                 <div className="att-detail-section__title">
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Clock size={12} /> Marcações Brutas
+                        <Clock size={12} /> Marcações Brutas de Terminal
                     </span>
                 </div>
                 {rawPunches.length > 0 ? (
@@ -878,7 +1123,7 @@ function DrawerContent({ detail }: { detail: DayDetail }) {
                         <thead>
                             <tr>
                                 <th>Hora</th>
-                                <th>Direcção</th>
+                                <th>Direção / Código</th>
                                 <th>Terminal</th>
                                 <th></th>
                             </tr>
@@ -895,7 +1140,48 @@ function DrawerContent({ detail }: { detail: DayDetail }) {
                         </tbody>
                     </table>
                 ) : (
-                    <div className="att-detail-empty">Sem marcações brutas.</div>
+                    <div className="att-detail-empty">
+                        {hasProcessedButNoRaw
+                            ? 'Nenhum registo de terminal disponível — marcação consolidada pelo Innux.'
+                            : 'Sem marcações brutas.'}
+                    </div>
+                )}
+            </div>
+
+            {/* Debug / Technical Section */}
+            <div className="att-detail-section att-debug-section">
+                <button
+                    className="att-debug-toggle"
+                    onClick={() => setDebugOpen(prev => !prev)}
+                    type="button"
+                >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Database size={12} /> Dados Técnicos Innux
+                    </span>
+                    {debugOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
+                {debugOpen && (
+                    <div className="att-debug-content">
+                        <div className="att-debug-grid">
+                            <span className="att-debug-label">Alteracoes.Marcacao</span>
+                            <span className="att-debug-value">{detail.debugProcessedPunchCount}</span>
+
+                            <span className="att-debug-label">TerminaisMarcacoes (live)</span>
+                            <span className="att-debug-value">{detail.debugRawTerminalPunchCount}</span>
+
+                            <span className="att-debug-label">Validado</span>
+                            <span className="att-debug-value">{detail.debugIsValidated ? 'Sim' : 'Não'}</span>
+
+                            <span className="att-debug-label">Horário (Código)</span>
+                            <span className="att-debug-value">{detail.debugScheduleCode || '—'}</span>
+
+                            <span className="att-debug-label">Horário (Descrição)</span>
+                            <span className="att-debug-value">{detail.debugScheduleDescription || '—'}</span>
+
+                            <span className="att-debug-label">Fonte do Status</span>
+                            <span className="att-debug-value">{detail.debugStatusSource || '—'}</span>
+                        </div>
+                    </div>
                 )}
             </div>
         </>

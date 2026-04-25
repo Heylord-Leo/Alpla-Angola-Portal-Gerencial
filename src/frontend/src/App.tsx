@@ -72,6 +72,12 @@ const ContractCreate = React.lazy(() =>
 const ContractDetail = React.lazy(() =>
     import('./pages/Contracts/ContractDetail')
 );
+const SupplierFichaList = React.lazy(() =>
+    import('./pages/Contracts/SupplierFichaList')
+);
+const SupplierFichaDetail = React.lazy(() =>
+    import('./pages/Contracts/SupplierFichaDetail')
+);
 
 // HR pages
 const HRLandingPage = React.lazy(() =>
@@ -213,10 +219,12 @@ function AppContent() {
                     <Route index element={<Navigate to="list" replace />} />
                     <Route path="list" element={<Suspense fallback={<LoadingSkeleton />}><ContractsList /></Suspense>} />
                     <Route path="alerts" element={<Suspense fallback={<LoadingSkeleton />}><ContractsAlerts /></Suspense>} />
+                    <Route path="fichas" element={<Suspense fallback={<LoadingSkeleton />}><SupplierFichaList /></Suspense>} />
                 </Route>
                 <Route path="/contracts/new" element={<Suspense fallback={<LoadingSkeleton />}><ContractCreate /></Suspense>} />
                 <Route path="/contracts/:id/edit" element={<Suspense fallback={<LoadingSkeleton />}><ContractCreate /></Suspense>} />
                 <Route path="/contracts/:id" element={<Suspense fallback={<LoadingSkeleton />}><ContractDetail /></Suspense>} />
+                <Route path="/contracts/fichas/:id" element={<Suspense fallback={<LoadingSkeleton />}><SupplierFichaDetail /></Suspense>} />
 
                 {/* HR Workspace */}
                 <Route path="/hr" element={<HRRoute><Suspense fallback={<LoadingSkeleton />}><HRLandingPage /></Suspense></HRRoute>}>

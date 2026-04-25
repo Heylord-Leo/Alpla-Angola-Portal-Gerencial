@@ -2,6 +2,109 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.90.0] - 2026-04-25 - Feature: Supplier Ficha Module, Approval Center Integration & P.O. Emission Guards
+
+### Added
+- **Supplier Ficha Module (Phase 2A)**: Full-stack delivery of the Supplier Registration (Ficha de Fornecedor) workflow within the Contracts module.
+  - Backend: 11 new endpoints in `LookupsController` — CRUD, completeness engine, registration-check, submit-for-approval, DG-approve, DG-return, status history.
+  - Frontend: `SupplierFichaList.tsx` (master list with search/filter), `SupplierFichaDetail.tsx` (editable detail page with document upload, completeness tracker, history timeline).
+  - Status model: `DRAFT → PENDING_COMPLETION → PENDING_APPROVAL → ACTIVE / ADJUSTMENT_REQUESTED / SUSPENDED / BLOCKED`.
+  - Single Final Approver workflow visible to users (DAF auto-stamped at submission for backend compatibility — invisible in UI).
+  - Domain entities: Extended `Supplier` with 15+ registration fields, new `SupplierStatusHistory` audit entity, `SupplierConstants` status constants.
+  - Two EF Core migrations: `AddSupplierRegistrationFields`, `AddSupplierApprovalWorkflow`.
+- **Approval Center — Supplier Fichas Section (Phase 2B)**: Centralized supplier approval into the standard Approval Center drawer workflow.
+  - New `SupplierApprovalPanel.tsx` drawer-content component matching the `ContractApprovalPanel` pattern (InfoCard grid, SectionBlocks, sticky action footer).
+  - `ApprovalCenter.tsx` extended with supplier card queue (amber theme), click-to-open drawer, parallel data loading.
+  - Supplier approval actions (Approve/Return) exclusively in the Approval Center — removed from `SupplierFichaDetail`.
+  - Detail page approval tracker is now read-only: "Aguardando aprovação no Centro de Aprovações".
+- **P.O. Emission Supplier Registration Guard**: `RegisterPoModal` calls `GET /suppliers/{id}/registration-check` on open.
+  - ACTIVE: normal flow. PENDING_APPROVAL: amber warning banner. DRAFT/PENDING_COMPLETION/ADJUSTMENT_REQUESTED/SUSPENDED/BLOCKED: red blocking panel with disabled submit.
+  - Supplier ID resolved from winning quotation (QUOTATION flow) or `formData.supplierId` (PAYMENT flow).
+- **HR Attendance — Anomaly Detection Enhancement**: Days with raw terminal punches using unrecognised direction codes (e.g., code 17/18) while Innux reports "Falta Injustificada" are now classified as `Anomaly` instead of `Absent`. New `MapDirectionLabel` helper centralises direction code mapping.
+
+### Changed
+- **Approval Center Layout**: Supplier Fichas section uses compact card rows with selection highlighting, consistent with the contract approval queue visual pattern.
+- **SupplierFichaDetail**: Stripped of all manual approval buttons (Aprovar, Solicitar Reajuste) and return modal — approval decisions are drawer-only in the Approval Center.
+
+### Technical Notes
+- Backend build: 0 errors. Frontend TypeScript: 0 new errors (25 pre-existing TS6133 in unrelated files).
+- Architectural decision: All supplier approval actions centralized in Approval Center drawer (DEC-119).
+
+## [v2.89.5] - 2026-04-25 - Feature: P.O. Emission Supplier Registration Guard (Phase 2A Completion)
+
+### Added
+- **P.O. Modal Registration Guard**: The `RegisterPoModal` now calls `GET /api/v1/lookups/suppliers/{id}/registration-check?operation=po` when opened, evaluating the supplier's registration status before allowing P.O. emission.
+  - **ACTIVE**: No restrictions. Normal P.O. emission flow.
+  - **PENDING_APPROVAL**: Amber warning banner displayed ("Fornecedor em Aprovação"), but P.O. emission is allowed. Users are advised to wait for approval.
+  - **DRAFT / PENDING_COMPLETION / ADJUSTMENT_REQUESTED / SUSPENDED / BLOCKED**: Red blocking panel displayed ("Emissão de P.O Bloqueada") with supplier status badge. The "REGISTRAR P.O" button is disabled and grayed out.
+- **Supplier ID Propagation**: `RequestEdit.tsx` now resolves the active `supplierId` from the winning quotation (QUOTATION flow) or from the request's `formData.supplierId` (PAYMENT flow) and passes it to `RegisterPoModal`.
+- **Loading State**: A subtle spinner with "A verificar estado do fornecedor..." message appears while the registration check is in progress.
+
+### Technical Notes
+- Backend endpoint already existed from Phase 2A — this change is frontend-only.
+- Guard resets cleanly on modal close/reopen.
+- No impact on `CorrectPoModal` (PO correction flow uses same supplier, which has already been validated).
+
+## [v2.89.4] - 2026-04-25 - Enhancement: HR Attendance — Absence-with-Raw-Punches Anomaly Detection
+
+### Changed
+- **Absence-with-Raw-Punches → Anomaly**: Days where Innux processed the official period as "Falta Injustificada" (F03) but raw terminal events exist with unrecognised direction codes (e.g., code 17) are now classified as `Anomaly` instead of `Absent`. This surfaces the contradiction for HR review without converting the day to "Present". Clean absences (no raw punches) remain classified as `Absent`.
+- **Direction Label Mapping**: Raw punch direction codes now map to Portuguese labels (`EN` → "Entrada", `SA` → "Saída"). Numeric codes (e.g., "17") display as "Código 17" instead of the raw number, making it clear these are unrecognised terminal event types. Empty codes show "Sem direção".
+- **Anomaly Description Broadened**: The Anomaly status description now covers both sub-types: (1) processed-without-raw-terminal-records, and (2) absence-declared-with-unrecognised-terminal-events. Updated across legend, guide modal, and drawer.
+
+### Added
+- **Absence-with-Raw-Punches Warning Banner**: New explanatory banner in the detail drawer for this specific anomaly type: "Existem marcações brutas no terminal, mas o Innux processou o período como Falta Injustificada. Verifique se as marcações foram feitas com código/direção não reconhecida ou se há necessidade de correção pelo R.H."
+- **`MapDirectionLabel` Method**: New static helper in `InnuxAttendanceService` that centralises TipoProcessado → label mapping, replacing inline ternary logic.
+
+### Technical Notes
+- Classification rule 4b added to `ClassifyAttendance`: triggers when `absenceMinutes >= expectedMinutes AND rawPunchCount > 0 AND !hasEntry AND !hasExit AND punchCount == 0`.
+- Investigated employee: APAULANTE DA CONCEIÇÃO FRANCISCO PAULO — 2026-04-06 (F03 / Falta Injustificada with 2 raw terminal events using code 17).
+- Raw punch table column header changed from "Direcção" to "Direção / Código" for clarity.
+
+## [v2.89.3] - 2026-04-25 - Fix: HR Attendance — Night Shift Cross-Midnight & Classification Accuracy
+
+### Fixed
+- **Detail Drawer Classification Mismatch**: The detail drawer computed attendance status before the actual raw punch count was known (using `rawPunchCount=-1` fallback), causing validated days to show "Desconhecido" even when entry/exit and raw punches existed. The drawer now re-classifies status after loading real raw punch data from `GetPunchesAsync`, ensuring calendar grid and drawer always agree.
+- **Night Shift Cross-Midnight Punches**: `GetPunchesAsync` previously only fetched same-calendar-day punches (`tm.Data = @Date`), missing the exit punch for overnight shifts (e.g., 20:00–08:00+1). Now includes next-day early-morning punches (before 12:00) when `IsOvernightShift=true`.
+- **Calendar `RawTerminalCount` for Night Shifts**: The correlated subquery in the calendar SQL now counts cross-midnight punches for overnight schedules, preventing false anomaly classification on night shift start days.
+- **Validated Day with `Marcacao=0`**: For Escala-Intercalada patterns, Innux resets `Marcacao` to 0 after full validation. `ClassifyAttendance` now accepts `isValidated` and classifies validated days with entry/exit and raw punches as "Present" instead of "Unknown".
+
+### Technical Notes
+- `ClassifyAttendance` signature now includes `bool isValidated` — enables step 6c: validated + entry/exit + rawPunches > 0 = Present.
+- `GetPunchesAsync` signature now includes `bool isOvernightShift` — triggers cross-midnight SQL date expansion.
+- Anomaly preservation: processed days with zero raw terminal punches (e.g., Escala auto-processing without physical terminal records) remain classified as "Anomaly".
+- Investigated employee: ANDERSON CLÁUDIO DOS SANTOS AZEVEDO (IDFuncionario 1626), Escala-Intercalada rotation (TN/FG/TM/FG cycle).
+- Root cause confirmed as Portal query/classification issue, not Innux data inconsistency.
+
+
+## [v2.89.2] - 2026-04-25 - Enhancement: HR Attendance — Icon-First Status System & Anomaly Reclassification
+### Changed
+- **Icon-First Status System**: Replaced all colored-dot status indicators in the calendar grid, legend, and guide modal with semantic Lucide icons. Each status now uses a meaningful icon (e.g., `CircleCheck` for Present, `CircleX` for Absent, `Palmtree` for Vacation, `ShieldAlert` for Anomaly). Legend and guide modal now render the exact same icon as the calendar cell — eliminating the previous mismatch where the legend showed colored dots but the calendar showed icons.
+- **Anomaly Reclassification**: Days with processed Innux attendance (Alteracoes.Marcacao > 0) but zero raw terminal punches (TerminaisMarcacoes COUNT = 0) are now classified as `Anomaly` instead of `Present`. This surfaces Escala/rotation auto-processed days for HR review, since no physical terminal confirmation exists.
+- **Unified Visual Config**: Created `STATUS_VISUAL_MAP` — a single source of truth for icon, label, CSS class, and description — shared across calendar cells, footer legend, and guide modal. Eliminated duplicated status→visual mappings.
+
+### Added
+- **Raw Punch Count in Calendar Query**: The calendar SQL query now includes a `RawTerminalCount` subquery (correlated `COUNT(*)` on `TerminaisMarcacoes`), enabling anomaly detection at the calendar level, not just in the detail drawer.
+- **Anomaly Info Banner**: The detail drawer now shows a purple anomaly-themed banner (instead of the generic blue info banner) when a day has processed punches but no raw terminal records, with an explicit recommendation for HR review.
+
+### Technical Notes
+- The `ClassifyAttendance` method now accepts `rawPunchCount` as a parameter. "Present" status requires both `punchCount > 0` AND `rawPunchCount > 0`.
+- New Lucide icons imported: `CircleCheck`, `CircleX`, `ShieldAlert`, `MinusCircle`.
+- Old CSS classes (`att-status__dot`, `att-legend__swatch`) replaced with icon-based equivalents (`att-status__icon-wrap`, `att-legend__icon`).
+
+## [v2.89.1] - 2026-04-25 - Fix: HR Attendance Calendar — Unified PunchCount Source
+### Fixed
+- **Calendar/Drawer Status Inconsistency**: Resolved a data source conflict where the calendar grid used a live `COUNT(TerminaisMarcacoes)` (raw terminal punches) while the detail drawer used `Alteracoes.Marcacao` (Innux-processed count). This divergence caused the same employee/date to show conflicting statuses (e.g., "?" on calendar vs "Presente" in drawer).
+- **Unified PunchCount Source**: Both calendar grid and detail drawer now use `Alteracoes.Marcacao` as the canonical processed punch count for attendance status classification. The live `COUNT(TerminaisMarcacoes)` subquery has been removed from the calendar query.
+
+### Added
+- **Raw Punch Count Separation**: New `RawPunchCount` field on `AttendanceDaySummaryDto` exposing the live `COUNT(TerminaisMarcacoes)` as debug/audit data, separate from the official `PunchCount`.
+- **Debug Metadata (Detail Drawer)**: The detail drawer now includes a collapsible "Dados Técnicos Innux" section exposing: `debugProcessedPunchCount`, `debugRawPunchCount`, `debugIsValidated`, `debugScheduleCode`, and `debugStatusSource` for HR/IT troubleshooting.
+- **Informational Banner**: When `Alteracoes.Marcacao > 0` but zero raw terminal punches exist, the drawer displays a blue info banner explaining the discrepancy (manual validation, import, or purged records).
+
+### Documentation
+- **innux-operational-model.md**: Added formal implementation note under Assumptions §7 documenting the Portal's "processed-is-canonical" data source strategy.
+
 ## [v2.89.0] - 2026-04-25 - Feature: HR Attendance Calendar Modernization (Status, Metrics & Justifications)
 ### Fixed
 - **Calendar Timezone Bug**: Resolved a -1 day rendering offset caused by `toISOString()` UTC conversion in the WAT (UTC+1) timezone. Replaced with local date component formatting (`YYYY-MM-DD`) across query parameters and React keys.

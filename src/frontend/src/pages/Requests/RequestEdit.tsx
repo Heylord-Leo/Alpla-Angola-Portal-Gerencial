@@ -591,18 +591,21 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     let activeTotalAmount = Number(formData.estimatedTotalAmount) || 0;
                     let activeSupplierName = supplierName;
                     let activeCurrencyCode = currencies.find(c => c.id === Number(formData.currencyId))?.code || '';
+                    let activeSupplierId: number | null = formData.supplierId ? Number(formData.supplierId) : null;
 
                     if (requestTypeCode === 'QUOTATION' && quotations.some(q => q.isSelected)) {
                        const winner = quotations.find(q => q.isSelected)!;
                        activeTotalAmount = winner.totalAmount;
                        activeSupplierName = winner.supplierNameSnapshot;
                        activeCurrencyCode = winner.currency || activeCurrencyCode;
+                       if (winner.supplierId) activeSupplierId = winner.supplierId;
                     }
 
                     return (
                         <RegisterPoModal
                             show={showRegisterPoModal}
                             requestId={id}
+                            supplierId={activeSupplierId}
                             requestData={{
                                 totalAmount: activeTotalAmount,
                                 supplierName: activeSupplierName,

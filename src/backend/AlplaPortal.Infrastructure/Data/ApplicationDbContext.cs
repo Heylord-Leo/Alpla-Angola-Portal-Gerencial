@@ -87,6 +87,10 @@ public class ApplicationDbContext : DbContext
     public DbSet<MCExportRow> MCExportRows => Set<MCExportRow>();
     public DbSet<MCProcessingLog> MCProcessingLogs => Set<MCProcessingLog>();
 
+    // Supplier Registration (Ficha de Fornecedor)
+    public DbSet<SupplierDocument> SupplierDocuments => Set<SupplierDocument>();
+    public DbSet<SupplierStatusHistory> SupplierStatusHistories => Set<SupplierStatusHistory>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -546,6 +550,59 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Supplier>().HasIndex(s => s.PortalCode).IsUnique();
         modelBuilder.Entity<Supplier>().HasIndex(s => s.Name).IsUnique();
         modelBuilder.Entity<Supplier>().HasIndex(s => s.PrimaveraCode).IsUnique().HasFilter("[PrimaveraCode] IS NOT NULL AND [PrimaveraCode] <> ''");
+        modelBuilder.Entity<Supplier>().HasIndex(s => s.RegistrationStatus);
+
+        // ─── Supplier Document Configuration (Ficha de Fornecedor) ───
+        modelBuilder.Entity<SupplierDocument>(entity =>
+        {
+            entity.HasIndex(sd => sd.SupplierId);
+            entity.HasIndex(sd => new { sd.SupplierId, sd.DocumentType });
+            entity.HasIndex(sd => sd.FileHash).HasFilter("[FileHash] IS NOT NULL");
+
+            entity.HasOne(sd => sd.Supplier)
+                .WithMany(s => s.Documents)
+                .HasForeignKey(sd => sd.SupplierId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(sd => sd.UploadedByUser)
+                .WithMany()
+                .HasForeignKey(sd => sd.UploadedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ─── Supplier Approval Workflow (Phase 2 — DAF/DG) ───
+
+        // Supplier → DAF/DG Approver FKs (NoAction: avoids SQL Server multiple cascade path)
+        modelBuilder.Entity<Supplier>(entity =>
+        {
+            entity.HasOne(s => s.DafApprover)
+                .WithMany()
+                .HasForeignKey(s => s.DafApproverId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            entity.HasOne(s => s.DgApprover)
+                .WithMany()
+                .HasForeignKey(s => s.DgApproverId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            entity.HasMany(s => s.StatusHistories)
+                .WithOne(h => h.Supplier)
+                .HasForeignKey(h => h.SupplierId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // SupplierStatusHistory
+        modelBuilder.Entity<SupplierStatusHistory>(entity =>
+        {
+            entity.HasIndex(h => h.SupplierId);
+            entity.HasIndex(h => h.OccurredAtUtc);
+
+            entity.HasOne(h => h.ActorUser)
+                .WithMany()
+                .HasForeignKey(h => h.ActorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
         modelBuilder.Entity<CostCenter>().HasIndex(c => c.Code).IsUnique();
 
         // Item Catalog configuration
@@ -790,8 +847,8 @@ public class ApplicationDbContext : DbContext
         );
 
         modelBuilder.Entity<Supplier>().HasData(
-            new Supplier { Id = 1, Name = "Alpla Global Services", PortalCode = "SUP-000001", IsActive = true, Origin = "MANUAL" },
-            new Supplier { Id = 2, Name = "Standard Supplier 01", PortalCode = "SUP-000002", IsActive = true, Origin = "MANUAL" }
+            new Supplier { Id = 1, Name = "Alpla Global Services", PortalCode = "SUP-000001", IsActive = true, Origin = "MANUAL", RegistrationStatus = "ACTIVE", CreatedAtUtc = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new Supplier { Id = 2, Name = "Standard Supplier 01", PortalCode = "SUP-000002", IsActive = true, Origin = "MANUAL", RegistrationStatus = "ACTIVE", CreatedAtUtc = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) }
         );
 
         // Real operational Cost Centers — linked to Plants per allocation rules (DEC-078)

@@ -30,49 +30,6 @@ export function DecisionQuotationCard({
             boxShadow: q.isSelected ? 'var(--shadow-md)' : 'var(--shadow-sm)',
             overflow: 'hidden'
         }}>
-            {/* Winner/Best Price Badge Overlay */}
-            {(q.isSelected || isLowest) && (
-                <div style={{
-                    position: 'absolute',
-                    top: '-12px',
-                    right: '16px',
-                    display: 'flex',
-                    gap: '8px',
-                    zIndex: 10
-                }}>
-                    {q.isSelected && (
-                        <div style={{
-                            backgroundColor: 'var(--color-status-green)',
-                            color: 'white',
-                            fontSize: '9px',
-                            fontWeight: 950,
-                            padding: '4px 10px',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.1em',
-                            borderRadius: 'var(--radius-sm)',
-                            boxShadow: 'var(--shadow-sm)'
-                        }}>
-                            VENCEDORA
-                        </div>
-                    )}
-                    {isLowest && !q.isSelected && (
-                        <div style={{
-                            backgroundColor: 'var(--color-status-green)',
-                            color: 'white',
-                            fontSize: '9px',
-                            fontWeight: 950,
-                            padding: '4px 10px',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.1em',
-                            borderRadius: 'var(--radius-sm)',
-                            boxShadow: 'var(--shadow-sm)'
-                        }}>
-                            MELHOR PREÇO
-                        </div>
-                    )}
-                </div>
-            )}
-
             {/* --- Header Row --- */}
             <div style={{
                 padding: '20px',
@@ -109,6 +66,40 @@ export function DecisionQuotationCard({
                             }}>
                                 {q.supplierNameSnapshot}
                             </span>
+                            {q.isSelected && (
+                                <span style={{
+                                    backgroundColor: 'var(--color-status-green)',
+                                    color: 'white',
+                                    fontSize: '9px',
+                                    fontWeight: 950,
+                                    padding: '3px 8px',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.1em',
+                                    borderRadius: 'var(--radius-sm)',
+                                    boxShadow: 'var(--shadow-sm)',
+                                    whiteSpace: 'nowrap',
+                                    flexShrink: 0
+                                }}>
+                                    VENCEDORA
+                                </span>
+                            )}
+                            {isLowest && !q.isSelected && (
+                                <span style={{
+                                    backgroundColor: 'var(--color-status-green)',
+                                    color: 'white',
+                                    fontSize: '9px',
+                                    fontWeight: 950,
+                                    padding: '3px 8px',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.1em',
+                                    borderRadius: 'var(--radius-sm)',
+                                    boxShadow: 'var(--shadow-sm)',
+                                    whiteSpace: 'nowrap',
+                                    flexShrink: 0
+                                }}>
+                                    MELHOR PREÇO
+                                </span>
+                            )}
                         </div>
                         
                         <div style={{ 

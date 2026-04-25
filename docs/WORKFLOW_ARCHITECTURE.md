@@ -107,6 +107,25 @@ Deletion is restricted by document type and status to preserve audit integrity:
 - **PAYMENT_SCHEDULE**: Deletable in `PO_ISSUED` or `PAYMENT_SCHEDULED`.
 - **PAYMENT_PROOF**: Deletable in `PAYMENT_SCHEDULED`, `PAYMENT_COMPLETED`, or `WAITING_RECEIPT`.
 
+### Supplier Registration Guard (P.O. Emission)
+
+Before a P.O. can be emitted via `RegisterPoModal`, the system validates the supplier's registration status using `GET /api/v1/lookups/suppliers/{id}/registration-check?operation=po`. The guard is enforced at the **frontend modal level**; the backend endpoint provides the decision.
+
+| Supplier Status | P.O. Emission | UI Behavior |
+| :--- | :--- | :--- |
+| `ACTIVE` | ✅ Allowed | Normal flow, no banner |
+| `PENDING_APPROVAL` | ⚠️ Allowed with warning | Amber warning banner; user can proceed |
+| `DRAFT` | ❌ Blocked | Red blocking panel; button disabled |
+| `PENDING_COMPLETION` | ❌ Blocked | Red blocking panel; button disabled |
+| `ADJUSTMENT_REQUESTED` | ❌ Blocked | Red blocking panel; button disabled |
+| `SUSPENDED` | ❌ Blocked | Red blocking panel; button disabled |
+| `BLOCKED` | ❌ Blocked | Red blocking panel; button disabled |
+
+**Supplier ID resolution:**
+- **QUOTATION flow**: `supplierId` is sourced from the winning quotation's `supplierId`.
+- **PAYMENT flow**: `supplierId` is sourced from the request's `formData.supplierId`.
+- **No supplier**: If no supplier ID is available, the guard is skipped (graceful fallback).
+
 ---
 
 ## 5. Shared UI Behaviors

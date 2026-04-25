@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, FileText, X, AlertTriangle, Download, Trash2, Save, Search, CheckCircle } from 'lucide-react';
+import { Upload, FileText, X, AlertTriangle, Download, Trash2, Save, CheckCircle } from 'lucide-react';
 import { Feedback, FeedbackType } from './ui/Feedback';
 import { DropdownPortal } from './ui/DropdownPortal';
 import { Z_INDEX } from '../constants/ui';
@@ -322,7 +322,7 @@ export function CorrectPoModal({ show, requestId, onClose, onSuccess }: CorrectP
                                     transition={{ repeat: Infinity, ease: 'linear', duration: 1.5 }}
                                     style={{ display: 'inline-flex', marginBottom: '16px' }}
                                 >
-                                    <Search size={32} style={{ color: 'var(--color-primary)' }} />
+                                    <FileText size={32} style={{ color: 'var(--color-primary)' }} />
                                 </motion.div>
                                 <p style={{ fontWeight: 700, color: 'var(--color-text-muted)' }}>Carregando dados do pedido...</p>
                             </div>
@@ -482,24 +482,94 @@ export function CorrectPoModal({ show, requestId, onClose, onSuccess }: CorrectP
                                                     initial={{ opacity: 0 }}
                                                     animate={{ opacity: 1 }}
                                                     exit={{ opacity: 0 }}
-                                                    transition={{ duration: 0.2 }}
+                                                    transition={{ duration: 0.3 }}
                                                     style={{
-                                                        padding: '32px 24px', backgroundColor: '#f0f9ff',
-                                                        border: '2px solid var(--color-primary)', borderRadius: '8px',
-                                                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px'
+                                                        padding: '40px 24px', backgroundColor: '#f8fafc',
+                                                        border: '1.5px solid var(--color-border)', borderRadius: 'var(--radius-md)',
+                                                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px'
                                                     }}
                                                 >
-                                                    <motion.div animate={{ rotate: [0, 360] }} transition={{ repeat: Infinity, ease: 'linear', duration: 1.5 }} style={{ display: 'flex' }}>
-                                                        <Search size={32} style={{ color: 'var(--color-primary)' }} />
-                                                    </motion.div>
-                                                    <span style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--color-primary)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                                                        Validando com IA
-                                                    </span>
-                                                    <div style={{ width: '120px', height: '4px', backgroundColor: 'var(--color-border)', borderRadius: '2px', overflow: 'hidden' }}>
+                                                    {/* Document Verification Animation */}
+                                                    <div style={{ position: 'relative', width: '120px', height: '100px' }}>
+                                                        {/* Background document page */}
                                                         <motion.div
-                                                            animate={{ x: ['-100%', '200%'] }}
-                                                            transition={{ repeat: Infinity, ease: 'easeInOut', duration: 1.5 }}
-                                                            style={{ width: '50%', height: '100%', backgroundColor: 'var(--color-primary)' }}
+                                                            animate={{ y: [0, -3, 0] }}
+                                                            transition={{ repeat: Infinity, duration: 2.5, ease: 'easeInOut', delay: 0.3 }}
+                                                            style={{
+                                                                position: 'absolute', left: '8px', top: '12px',
+                                                                width: '56px', height: '72px',
+                                                                backgroundColor: '#e2e8f0', borderRadius: '4px',
+                                                                border: '1px solid #cbd5e1', transform: 'rotate(-4deg)',
+                                                            }}
+                                                        >
+                                                            <div style={{ padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                                                <div style={{ width: '80%', height: '3px', backgroundColor: '#cbd5e1', borderRadius: '2px' }} />
+                                                                <div style={{ width: '60%', height: '3px', backgroundColor: '#cbd5e1', borderRadius: '2px' }} />
+                                                                <div style={{ width: '90%', height: '3px', backgroundColor: '#cbd5e1', borderRadius: '2px' }} />
+                                                                <div style={{ width: '45%', height: '3px', backgroundColor: '#cbd5e1', borderRadius: '2px' }} />
+                                                            </div>
+                                                        </motion.div>
+                                                        {/* Front document page with scan line */}
+                                                        <motion.div
+                                                            animate={{ y: [0, -4, 0] }}
+                                                            transition={{ repeat: Infinity, duration: 2.5, ease: 'easeInOut' }}
+                                                            style={{
+                                                                position: 'absolute', left: '18px', top: '6px',
+                                                                width: '56px', height: '72px',
+                                                                backgroundColor: 'white', borderRadius: '4px',
+                                                                border: '1.5px solid #94a3b8', boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                                                                overflow: 'hidden',
+                                                            }}
+                                                        >
+                                                            <div style={{ padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                                                <div style={{ width: '70%', height: '3px', backgroundColor: '#cbd5e1', borderRadius: '2px' }} />
+                                                                <div style={{ width: '90%', height: '3px', backgroundColor: '#94a3b8', borderRadius: '2px' }} />
+                                                                <div style={{ width: '55%', height: '3px', backgroundColor: '#cbd5e1', borderRadius: '2px' }} />
+                                                                <div style={{ width: '75%', height: '3px', backgroundColor: '#cbd5e1', borderRadius: '2px' }} />
+                                                                <div style={{ width: '40%', height: '3px', backgroundColor: '#94a3b8', borderRadius: '2px' }} />
+                                                                <div style={{ width: '85%', height: '3px', backgroundColor: '#cbd5e1', borderRadius: '2px' }} />
+                                                            </div>
+                                                            <motion.div
+                                                                animate={{ top: ['-10%', '110%'] }}
+                                                                transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+                                                                style={{ position: 'absolute', left: 0, right: 0, height: '8px', background: 'linear-gradient(180deg, transparent, rgba(37, 99, 235, 0.25), transparent)' }}
+                                                            />
+                                                        </motion.div>
+                                                        {/* Magnifying glass */}
+                                                        <motion.div
+                                                            animate={{ x: [0, 12, 0, -8, 0], y: [0, 8, 16, 6, 0] }}
+                                                            transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
+                                                            style={{ position: 'absolute', right: '6px', top: '4px', zIndex: 2 }}
+                                                        >
+                                                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '3px solid #2563EB', backgroundColor: 'rgba(37, 99, 235, 0.06)', position: 'relative', boxShadow: '0 2px 12px rgba(37, 99, 235, 0.2)' }}>
+                                                                <div style={{ position: 'absolute', bottom: '-10px', right: '-8px', width: '4px', height: '16px', backgroundColor: '#2563EB', borderRadius: '2px', transform: 'rotate(-45deg)', transformOrigin: 'top center' }} />
+                                                            </div>
+                                                        </motion.div>
+                                                        {/* Check pulse */}
+                                                        <motion.div
+                                                            animate={{ opacity: [0, 0, 1, 1, 0], scale: [0.5, 0.5, 1, 1, 0.5] }}
+                                                            transition={{ repeat: Infinity, duration: 3, times: [0, 0.6, 0.7, 0.85, 1] }}
+                                                            style={{ position: 'absolute', right: '0px', bottom: '0px', width: '22px', height: '22px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 6px rgba(22, 163, 74, 0.4)', zIndex: 3 }}
+                                                        >
+                                                            <CheckCircle size={14} color="white" strokeWidth={3} />
+                                                        </motion.div>
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                                                        <span style={{ fontWeight: 900, fontSize: '0.8rem', color: '#1e293b', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+                                                            Validando Documento
+                                                        </span>
+                                                        <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600, display: 'flex', gap: '2px' }}>
+                                                            <span>A verificar documento com Inteligência Artificial</span>
+                                                            <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1.5, times: [0, 0.5, 1] }}>.</motion.span>
+                                                            <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1.5, times: [0, 0.75, 1], delay: 0.2 }}>.</motion.span>
+                                                            <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1.5, times: [0, 0.5, 1], delay: 0.4 }}>.</motion.span>
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ width: '160px', height: '3px', backgroundColor: '#e2e8f0', borderRadius: '2px', overflow: 'hidden' }}>
+                                                        <motion.div
+                                                            animate={{ x: ['-100%', '250%'] }}
+                                                            transition={{ repeat: Infinity, ease: 'easeInOut', duration: 1.8 }}
+                                                            style={{ width: '40%', height: '100%', backgroundColor: '#2563EB', borderRadius: '2px' }}
                                                         />
                                                     </div>
                                                 </motion.div>

@@ -111,7 +111,29 @@ public class InnuxAttendanceService : IInnuxAttendanceService
                     a.Validado,
                     a.FaltouPeriodosObrigatorios,
                     a.TipoAnomalia,
-                    a.Justificacao
+                    a.Justificacao,
+                    -- Live count of raw terminal punches (for anomaly detection).
+                    -- For overnight shifts, also count early-morning punches from the next
+                    -- calendar date (the exit punch is stored under Date+1 in Innux).
+                    (SELECT COUNT(*) FROM dbo.TerminaisMarcacoes tm
+                     WHERE tm.IDFuncionario = a.IDFuncionario
+                       AND (
+                           tm.Data = a.Data
+                           OR (
+                               -- Include next-day early-morning punches for overnight shifts
+                               ISNULL(h.DiaFolga, 0) = 0
+                               AND EXISTS (
+                                   SELECT 1 FROM dbo.HorariosPeriodos hp5
+                                   WHERE hp5.IDHorario = h.IDHorario
+                                     AND hp5.Tipo = 'Obrigatório'
+                                     AND hp5.Fim IS NOT NULL
+                                     AND CAST(hp5.Fim AS DATE) > '1900-01-01'
+                               )
+                               AND tm.Data = DATEADD(DAY, 1, a.Data)
+                               AND tm.Hora < '1900-01-01 12:00:00'
+                           )
+                       )
+                    ) AS RawTerminalCount
                 FROM dbo.Alteracoes a
                 LEFT JOIN dbo.Horarios h ON a.IDHorario = h.IDHorario
                 WHERE a.IDFuncionario IN ({inClause})
@@ -158,7 +180,7 @@ public class InnuxAttendanceService : IInnuxAttendanceService
         {
             await using var connection = await _connectionFactory.CreateConnectionAsync();
 
-            // 1. Get the summary row
+            // 1. Get the summary row (uses Alteracoes.Marcacao as official processed punch count)
             var summary = await GetSingleSummaryAsync(connection, innuxEmployeeId, date);
             if (summary == null)
                 return null;
@@ -166,14 +188,42 @@ public class InnuxAttendanceService : IInnuxAttendanceService
             // 2. Get period breakdown (AlteracoesPeriodos)
             var periods = await GetPeriodsAsync(connection, innuxEmployeeId, date);
 
-            // 3. Get raw punches (TerminaisMarcacoes)
-            var punches = await GetPunchesAsync(connection, innuxEmployeeId, date);
+            // 3. Get raw punches (TerminaisMarcacoes) — supporting/debug evidence
+            //    For overnight shifts, also fetch next-day early-morning punches.
+            var punches = await GetPunchesAsync(connection, innuxEmployeeId, date, summary.IsOvernightShift);
+
+            // 4. Set raw punch count on summary for transparency
+            //    This is the live terminal count, may differ from processed Alteracoes.Marcacao
+            summary.RawPunchCount = punches.Count;
+
+            // 5. Re-classify attendance status with the ACTUAL raw punch count.
+            //    MapToSummaryDto classified with rawPunchCount=-1 because GetSingleSummaryAsync
+            //    does not include the RawTerminalCount subquery. Now that we know the true
+            //    punch count from GetPunchesAsync, re-run classification for accuracy.
+            summary.AttendanceStatus = ClassifyAttendance(
+                summary.AbsenceMinutes, summary.JustifiedAbsenceMinutes, summary.ExpectedMinutes,
+                summary.PunchCount, punches.Count, summary.AnomalyDescription,
+                summary.MissedMandatoryPeriods, summary.IsValidated,
+                summary.FirstEntry, summary.FirstExit, summary.Justification);
+
+            // 6. Build debug metadata for HR/IT transparency
+            var debugSource = summary.PunchCount > 0 && punches.Count == 0
+                ? "Processado Innux (sem marcações brutas de terminal)"
+                : summary.PunchCount == punches.Count
+                    ? "Processado Innux (consistente com marcações brutas)"
+                    : $"Processado Innux (Marcação={summary.PunchCount}, Terminal={punches.Count})";
 
             return new AttendanceDayDetailDto
             {
                 Summary = summary,
                 RawPunches = punches,
-                Periods = periods
+                Periods = periods,
+                DebugProcessedPunchCount = summary.PunchCount,
+                DebugRawTerminalPunchCount = punches.Count,
+                DebugIsValidated = summary.IsValidated,
+                DebugScheduleCode = summary.ScheduleCode,
+                DebugScheduleDescription = summary.ScheduleDescription,
+                DebugStatusSource = debugSource
             };
         }
         catch (InvalidOperationException)
@@ -376,11 +426,23 @@ public class InnuxAttendanceService : IInnuxAttendanceService
         return periods;
     }
 
+    /// <summary>
+    /// Fetches raw terminal punches for an employee on a given date.
+    /// For overnight shifts, also fetches early-morning punches from the next calendar
+    /// date (before midday) — because Innux stores the cross-midnight exit punch under
+    /// the next date in TerminaisMarcacoes.
+    /// </summary>
     private async Task<List<AttendancePunchDto>> GetPunchesAsync(
-        SqlConnection connection, int innuxEmployeeId, DateTime date)
+        SqlConnection connection, int innuxEmployeeId, DateTime date,
+        bool isOvernightShift = false)
     {
         // TerminaisMarcacoes: Gerada (auto-generated), not Automatica.
         // Terminais: Nome (terminal name), not Descricao.
+        //
+        // Cross-midnight logic:
+        //   For overnight shifts (e.g. 20:00-08:00), the exit punch is stored
+        //   under Date+1 in Innux. We include next-day punches before 12:00
+        //   so the drawer shows the complete shift picture.
         var query = @"
             SELECT
                 tm.IDFuncionario,
@@ -392,12 +454,20 @@ public class InnuxAttendanceService : IInnuxAttendanceService
             FROM dbo.TerminaisMarcacoes tm
             LEFT JOIN dbo.Terminais t ON tm.IDTerminal = t.IDTerminal
             WHERE tm.IDFuncionario = @EmployeeId
-              AND tm.Data = @Date
-            ORDER BY tm.Hora";
+              AND (
+                  tm.Data = @Date
+                  OR (
+                      @IsOvernightShift = 1
+                      AND tm.Data = DATEADD(DAY, 1, @Date)
+                      AND tm.Hora < '1900-01-01 12:00:00'
+                  )
+              )
+            ORDER BY tm.Data, tm.Hora";
 
         await using var command = new SqlCommand(query, connection);
         command.Parameters.AddWithValue("@EmployeeId", innuxEmployeeId);
         command.Parameters.AddWithValue("@Date", date.Date);
+        command.Parameters.AddWithValue("@IsOvernightShift", isOvernightShift ? 1 : 0);
         command.CommandTimeout = 15;
 
         var punches = new List<AttendancePunchDto>();
@@ -412,9 +482,7 @@ public class InnuxAttendanceService : IInnuxAttendanceService
                 Date = reader["Data"] is DateTime d ? d : date,
                 Time = InnuxTimeHelper.ToTimeStringFull(reader["Hora"]),
                 Direction = direction,
-                DirectionLabel = direction.Equals("EN", StringComparison.OrdinalIgnoreCase) ? "Entry"
-                               : direction.Equals("SA", StringComparison.OrdinalIgnoreCase) ? "Exit"
-                               : direction,
+                DirectionLabel = MapDirectionLabel(direction),
                 TerminalName = reader["TerminalName"] as string,
                 IsAutoGenerated = InnuxTimeHelper.SafeBool(reader["Gerada"])
             });
@@ -434,6 +502,12 @@ public class InnuxAttendanceService : IInnuxAttendanceService
         var anomaly = reader["TipoAnomalia"] as string;
         var missedPeriods = InnuxTimeHelper.SafeBool(reader["FaltouPeriodosObrigatorios"]);
 
+        // Raw terminal count — populated from subquery in calendar query,
+        // or defaults to -1 (unavailable) for queries without the column.
+        int rawPunchCount = 0;
+        try { rawPunchCount = InnuxTimeHelper.SafeInt(reader["RawTerminalCount"]); }
+        catch (IndexOutOfRangeException) { rawPunchCount = -1; }
+
         return new AttendanceDaySummaryDto
         {
             InnuxEmployeeId = InnuxTimeHelper.SafeInt(reader["IDFuncionario"]),
@@ -452,13 +526,15 @@ public class InnuxAttendanceService : IInnuxAttendanceService
             ExpectedMinutes = expectedMinutes,
             BalanceMinutes = InnuxTimeHelper.ToMinutes(reader["Saldo"]),
             PunchCount = punchCount,
+            RawPunchCount = rawPunchCount >= 0 ? rawPunchCount : 0,
             IsValidated = InnuxTimeHelper.SafeBool(reader["Validado"]),
             MissedMandatoryPeriods = missedPeriods,
             AnomalyDescription = string.IsNullOrWhiteSpace(anomaly) ? null : anomaly,
             Justification = reader["Justificacao"] as string,
             AttendanceStatus = ClassifyAttendance(
                 absenceMinutes, justifiedMinutes, expectedMinutes,
-                punchCount, anomaly, missedPeriods,
+                punchCount, rawPunchCount, anomaly, missedPeriods,
+                InnuxTimeHelper.SafeBool(reader["Validado"]),
                 InnuxTimeHelper.ToTimeString(reader["Entrada"]),
                 InnuxTimeHelper.ToTimeString(reader["Saida"]),
                 reader["Justificacao"] as string)
@@ -471,58 +547,142 @@ public class InnuxAttendanceService : IInnuxAttendanceService
     /// as we learn more about Innux processing conventions.
     ///
     /// Status values:
-    ///   "Present"          — Employee was at work (has punches or entry/exit).
-    ///   "Absent"           — Full unjustified absence.
+    ///   "Present"          — Employee was at work (confirmed by raw terminal punches
+    ///                        or by validated entry/exit on Escala-Intercalada days).
+    ///   "Absent"           — Full unjustified absence (no raw terminal records).
     ///   "JustifiedAbsence" — Full justified absence (generic, e.g. sick leave).
     ///   "Vacation"         — Justified absence with "Gozo de Férias" justification.
     ///   "Holiday"          — Justified absence with "Feriado" justification.
     ///   "DayOff"           — No expected time (rest day / schedule off).
-    ///   "Anomaly"          — Innux flagged a processing anomaly.
+    ///   "Anomaly"          — Innux flagged a processing anomaly, OR processed punch
+    ///                        exists without raw terminal records (e.g. Escala auto-processing),
+    ///                        OR absence was declared but raw terminal events exist that were
+    ///                        not recognised as valid Entry/Exit punches.
     ///   "Unknown"          — Cannot determine status.
+    ///
+    /// Key Innux conventions:
+    ///   - Marcacao (punchCount) is a PENDING counter: Innux resets it to 0 after
+    ///     full validation for Escala-Intercalada patterns. Marcacao=0 + Validado=True
+    ///     does NOT mean "absent" — it means "fully processed".
+    ///   - For overnight shifts, raw terminal punches may be split across two
+    ///     calendar dates (entry on Day N, exit on Day N+1).
     /// </summary>
     private static string ClassifyAttendance(
         int absenceMinutes, int justifiedMinutes, int expectedMinutes,
-        int punchCount, string? anomaly, bool missedPeriods,
+        int punchCount, int rawPunchCount, string? anomaly, bool missedPeriods,
+        bool isValidated,
         string? firstEntry, string? firstExit, string? justification)
     {
         var justNorm = justification?.Trim() ?? "";
+        var hasEntry = !string.IsNullOrWhiteSpace(firstEntry);
+        var hasExit = !string.IsNullOrWhiteSpace(firstExit);
 
-        // Day off: no expected time
-        if (expectedMinutes == 0)
+        // 1. Explicitly check justification text first.
+        // Innux often marks vacations, holidays, and days off by writing text in the justification
+        // without necessarily updating expected or absence minutes correctly.
+        if (justNorm.Contains("Gozo de Férias", StringComparison.OrdinalIgnoreCase) || 
+            justNorm.Contains("Ferias", StringComparison.OrdinalIgnoreCase))
         {
-            // Even on a day-off, check if justification indicates Holiday
-            if (justNorm.Contains("Feriado", StringComparison.OrdinalIgnoreCase))
-                return "Holiday";
+            return "Vacation";
+        }
+
+        if (justNorm.Contains("Feriado", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Holiday";
+        }
+
+        if (justNorm.Contains("Folga", StringComparison.OrdinalIgnoreCase))
+        {
             return "DayOff";
         }
 
-        // Anomaly: if Innux flagged an issue
+        // 2. Day off based on expected time
+        if (expectedMinutes == 0)
+        {
+            return "DayOff";
+        }
+
+        // 3. Anomaly flagged by Innux
         if (!string.IsNullOrWhiteSpace(anomaly))
             return "Anomaly";
 
-        // Full unjustified absence
+        // 4. Full unjustified absence
         if (absenceMinutes > 0 && absenceMinutes >= expectedMinutes)
-            return "Absent";
-
-        // Full justified absence — sub-classify by justification text
-        if (justifiedMinutes > 0 && justifiedMinutes >= expectedMinutes)
         {
-            if (justNorm.Contains("Gozo de Férias", StringComparison.OrdinalIgnoreCase)
-                || justNorm.Contains("Ferias", StringComparison.OrdinalIgnoreCase))
-                return "Vacation";
+            // 4b. Absence-with-raw-terminal-events contradiction:
+            // Innux declared the day as absence (F03 / Falta Injustificada),
+            // but raw terminal punches exist that were NOT recognised as valid
+            // Entry/Exit. This typically happens when the terminal code/direction
+            // (e.g. code 17) is unknown to Innux processing. The employee was
+            // physically at a terminal — HR must review.
+            if (rawPunchCount > 0 && !hasEntry && !hasExit && punchCount == 0)
+                return "Anomaly";
 
-            if (justNorm.Contains("Feriado", StringComparison.OrdinalIgnoreCase))
-                return "Holiday";
-
-            return "JustifiedAbsence";
+            return "Absent";
         }
 
-        // Has punches or valid entry/exit times: likely present (may have partial absence)
-        if (punchCount > 0 || !string.IsNullOrWhiteSpace(firstEntry) || !string.IsNullOrWhiteSpace(firstExit))
+        // 5. Full justified absence
+        if (justifiedMinutes > 0 && justifiedMinutes >= expectedMinutes)
+            return "JustifiedAbsence";
+
+        // 6. Present — confirmed by raw terminal punches
+        if (punchCount > 0 && rawPunchCount > 0)
             return "Present";
 
-        // No punches, expected time, no absence recorded — anomalous
+        // 6b. Present confirmed by entry/exit times with raw punches
+        if (rawPunchCount > 0 && (hasEntry || hasExit))
+            return "Present";
+
+        // 6c. Validated day with entry/exit = Present.
+        //     Innux resets Marcacao to 0 after full validation for Escala-Intercalada
+        //     patterns. A validated day with confirmed entry/exit times is Present
+        //     even when Marcacao=0 — it means "fully processed", not "absent".
+        if (isValidated && (hasEntry || hasExit) && rawPunchCount > 0)
+            return "Present";
+
+        // 7. Anomaly: processed punch exists but NO raw terminal records.
+        // This typically occurs with Escala (rotation) auto-processing or manual HR
+        // validation in Innux that sets Marcacao without creating terminal records.
+        // Surfaced as Anomaly so HR can review and confirm.
+        if (punchCount > 0 && rawPunchCount == 0)
+            return "Anomaly";
+
+        // 8. If entry/exit exists but no raw punches, still surface for review.
+        //    This covers validated Escala days where Innux set entry/exit from rotation
+        //    logic but no physical terminal record exists.
+        if ((hasEntry || hasExit) && rawPunchCount == 0)
+            return "Anomaly";
+
+        // 9. If expected > 0 and no absence/justification, but no punches,
+        // it means either it was validated manually or hasn't been processed.
         return "Unknown";
+    }
+
+    // ─── Direction label mapping ───
+
+    /// <summary>
+    /// Maps Innux TerminaisMarcacoes.TipoProcessado values to human-readable labels.
+    /// Known values: "EN" = Entry, "SA" = Exit.
+    /// Numeric codes (e.g. "17") are terminal event types not recognised as valid
+    /// attendance punches — displayed as "Código XX" to avoid implying Entry/Exit.
+    /// </summary>
+    private static string MapDirectionLabel(string direction)
+    {
+        if (string.IsNullOrWhiteSpace(direction))
+            return "Sem direção";
+
+        if (direction.Equals("EN", StringComparison.OrdinalIgnoreCase))
+            return "Entrada";
+        if (direction.Equals("SA", StringComparison.OrdinalIgnoreCase))
+            return "Saída";
+
+        // Numeric codes are terminal event types not mapped to Entry/Exit.
+        // Show them clearly as raw codes so HR understands they are not attendance punches.
+        if (int.TryParse(direction, out _))
+            return $"Código {direction}";
+
+        // Unknown text — show as-is
+        return direction;
     }
 
     // ─── SQL IN clause builder ───

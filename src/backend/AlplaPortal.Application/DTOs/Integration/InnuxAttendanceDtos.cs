@@ -67,8 +67,16 @@ public class AttendanceDaySummaryDto
     /// </summary>
     public int BalanceMinutes { get; set; }
 
-    /// <summary>Number of clock punches recorded (Marcacao).</summary>
+    /// <summary>Number of clock punches recorded — official processed Innux value (Alteracoes.Marcacao).</summary>
     public int PunchCount { get; set; }
+
+    /// <summary>
+    /// Live count of raw terminal punches from TerminaisMarcacoes.
+    /// May differ from PunchCount (processed Alteracoes.Marcacao) if punches were
+    /// purged after processing, manually validated, or imported from external systems.
+    /// Only populated in detail/drill-down queries, defaults to 0 in calendar grid.
+    /// </summary>
+    public int RawPunchCount { get; set; }
 
     /// <summary>Whether the day has been validated/approved in Innux.</summary>
     public bool IsValidated { get; set; }
@@ -124,6 +132,26 @@ public class AttendanceDayDetailDto
     public List<AttendancePeriodDto> Periods { get; set; } = new();
     public string? WorkPlanCode { get; set; }
     public string? WorkPlanDescription { get; set; }
+
+    // ─── Debug metadata for HR/IT transparency ───
+
+    /// <summary>Official processed punch count from Alteracoes.Marcacao.</summary>
+    public int DebugProcessedPunchCount { get; set; }
+
+    /// <summary>Live count of rows in TerminaisMarcacoes for this employee/date.</summary>
+    public int DebugRawTerminalPunchCount { get; set; }
+
+    /// <summary>Whether the day was validated/approved in Innux (Alteracoes.Validado).</summary>
+    public bool DebugIsValidated { get; set; }
+
+    /// <summary>Schedule code from Horarios.Codigo, used by Innux for this day.</summary>
+    public string? DebugScheduleCode { get; set; }
+
+    /// <summary>Schedule description from Horarios.Descricao.</summary>
+    public string? DebugScheduleDescription { get; set; }
+
+    /// <summary>Human-readable description of the data source used for status classification.</summary>
+    public string? DebugStatusSource { get; set; }
 }
 
 /// <summary>

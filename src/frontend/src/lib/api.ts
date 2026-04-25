@@ -1052,6 +1052,138 @@ export const api = {
             if (!res.ok) return handleApiError(res, 'Falha ao verificar unicidade do fornecedor.');
             return res.json();
         },
+
+        // ─── Ficha de Fornecedor API ───
+        getSupplierFichas: async (params: {
+            search?: string;
+            status?: string;
+            origin?: string;
+            sortBy?: string;
+            sortDir?: string;
+            page?: number;
+            pageSize?: number;
+        } = {}): Promise<any> => {
+            const searchParams = new URLSearchParams();
+            if (params.search) searchParams.append('search', params.search);
+            if (params.status) searchParams.append('status', params.status);
+            if (params.origin) searchParams.append('origin', params.origin);
+            if (params.sortBy) searchParams.append('sortBy', params.sortBy);
+            if (params.sortDir) searchParams.append('sortDir', params.sortDir);
+            if (params.page) searchParams.append('page', String(params.page));
+            if (params.pageSize) searchParams.append('pageSize', String(params.pageSize));
+
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/fichas?${searchParams.toString()}`);
+            if (!res.ok) return handleApiError(res, 'Falha ao carregar fichas de fornecedor.');
+            return res.json();
+        },
+        getSupplierFicha: async (id: number): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/ficha`);
+            if (!res.ok) return handleApiError(res, 'Falha ao carregar ficha do fornecedor.');
+            return res.json();
+        },
+        updateSupplierFicha: async (id: number, data: any): Promise<void> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/ficha`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao atualizar ficha do fornecedor.');
+        },
+        updateSupplierStatus: async (id: number, newStatus: string): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/status`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ newStatus }),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao alterar estado do fornecedor.');
+            return res.json();
+        },
+        uploadSupplierDocument: async (supplierId: number, file: File, documentType: string): Promise<any> => {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('documentType', documentType);
+
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${supplierId}/documents`, {
+                method: 'POST',
+                body: formData,
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao enviar documento do fornecedor.');
+            return res.json();
+        },
+        downloadSupplierDocument: async (documentId: string): Promise<Blob> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/documents/${documentId}/download`);
+            if (!res.ok) throw new Error('Falha ao baixar documento.');
+            return res.blob();
+        },
+        deleteSupplierDocument: async (documentId: string): Promise<void> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/documents/${documentId}`, {
+                method: 'DELETE',
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao remover documento do fornecedor.');
+        },
+        // ─── Supplier Approval Workflow (Phase 2A) ───
+        getPendingSupplierApprovals: async (): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/pending-approval`);
+            if (!res.ok) return handleApiError(res, 'Falha ao carregar fichas pendentes.');
+            return res.json();
+        },
+        submitSupplierForApproval: async (id: number): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/submit-approval`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao submeter para aprovação.');
+            return res.json();
+        },
+        dafApproveSupplier: async (id: number): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/daf-approve`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            if (!res.ok) return handleApiError(res, 'Falha na aprovação DAF.');
+            return res.json();
+        },
+        dafReturnSupplier: async (id: number, comment: string): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/daf-return`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment }),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao devolver para reajuste (DAF).');
+            return res.json();
+        },
+        dgApproveSupplier: async (id: number): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/dg-approve`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            if (!res.ok) return handleApiError(res, 'Falha na aprovação DG.');
+            return res.json();
+        },
+        dgReturnSupplier: async (id: number, comment: string): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/dg-return`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment }),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao devolver para reajuste (DG).');
+            return res.json();
+        },
+        getSupplierCompleteness: async (id: number): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/completeness`);
+            if (!res.ok) return handleApiError(res, 'Falha ao carregar checklist.');
+            return res.json();
+        },
+        getSupplierHistory: async (id: number): Promise<any[]> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/history`);
+            if (!res.ok) return handleApiError(res, 'Falha ao carregar histórico.');
+            return res.json();
+        },
+        checkSupplierRegistration: async (id: number, operation: string = 'po'): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/registration-check?operation=${operation}`);
+            if (!res.ok) return handleApiError(res, 'Falha na verificação de registo.');
+            return res.json();
+        },
         getCostCenters: async (includeInactive = false, plantId?: number, companyId?: number): Promise<any[]> => {
             const params = new URLSearchParams({ includeInactive: String(includeInactive) });
             if (plantId) params.append('plantId', String(plantId));

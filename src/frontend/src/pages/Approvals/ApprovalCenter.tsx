@@ -28,6 +28,8 @@ import {
     contractFinalReturn
 } from '../../lib/contractsApi';
 import { ContractApprovalPanel } from './components/ContractApprovalPanel';
+import { SupplierApprovalPanel } from './components/SupplierApprovalPanel';
+import type { PendingFicha } from './components/SupplierApprovalPanel';
 
 // --- Types ---
 
@@ -72,6 +74,11 @@ export function ApprovalCenter() {
     const [selectedContractId, setSelectedContractId] = useState<string | null>(null);
     const [selectedContractStage, setSelectedContractStage] = useState<'TECHNICAL' | 'FINAL' | null>(null);
     const [isContractPanelOpen, setIsContractPanelOpen] = useState(false);
+
+    // Supplier ficha approval state
+    const [supplierPendingFichas, setSupplierPendingFichas] = useState<PendingFicha[]>([]);
+    const [selectedSupplierFicha, setSelectedSupplierFicha] = useState<PendingFicha | null>(null);
+    const [isSupplierPanelOpen, setIsSupplierPanelOpen] = useState(false);
 
     // Detail state
     const [detailLoading, setDetailLoading] = useState(false);
@@ -239,12 +246,14 @@ export function ApprovalCenter() {
 
     const loadQueue = useCallback(async () => {
         try {
-            const [requestsResponse, contractsResponse] = await Promise.all([
+            const [requestsResponse, contractsResponse, supplierResponse] = await Promise.all([
                 api.requests.getPendingApprovals(),
-                fetchPendingContractApprovals().catch(() => null)
+                fetchPendingContractApprovals().catch(() => null),
+                api.lookups.getPendingSupplierApprovals().catch(() => ({ pendingFichas: [] }))
             ]);
             setData(requestsResponse);
             setContractApprovals(contractsResponse);
+            setSupplierPendingFichas(supplierResponse?.pendingFichas || []);
         } catch (error) {
             console.error('Failed to load pending approvals:', error);
         } finally {
@@ -330,6 +339,30 @@ export function ApprovalCenter() {
     const handleContractActionCompleted = async (successMessage: string) => {
         setFeedback({ type: 'success', message: successMessage });
         handleCloseContractPanel();
+        loadQueue();
+    };
+
+    // --- Supplier Ficha Handlers ---
+
+    const handleSupplierRowSelect = (ficha: PendingFicha) => {
+        // Close other panels
+        setIsPanelOpen(false);
+        setSelectedRequestId(null);
+        setIsContractPanelOpen(false);
+        setSelectedContractId(null);
+        // Open supplier panel
+        setSelectedSupplierFicha(ficha);
+        setIsSupplierPanelOpen(true);
+    };
+
+    const handleCloseSupplierPanel = () => {
+        setIsSupplierPanelOpen(false);
+        setSelectedSupplierFicha(null);
+    };
+
+    const handleSupplierActionCompleted = async (successMessage: string) => {
+        setFeedback({ type: 'success', message: successMessage });
+        handleCloseSupplierPanel();
         loadQueue();
     };
 
@@ -629,6 +662,120 @@ export function ApprovalCenter() {
                         </div>
                     )
                 }
+
+                {/* ── Supplier Fichas Section ── */}
+                {isFinalApprover && supplierPendingFichas.length > 0 && (
+                    <div style={{
+                        backgroundColor: '#fffbeb',
+                        border: '1px solid #fde68a',
+                        borderRadius: '12px',
+                        padding: '24px',
+                    }}>
+                        <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            {/* Section header */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderLeft: '4px solid #d97706', paddingLeft: '16px' }}>
+                                <span style={{ color: '#d97706' }}><FileContract size={20} /></span>
+                                <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-main)', letterSpacing: '-0.02em' }}>
+                                    Fichas de Fornecedor
+                                </h2>
+                                <Tooltip
+                                    variant="light"
+                                    side="bottom"
+                                    align="start"
+                                    content={
+                                        <div style={{ fontSize: '0.82rem', lineHeight: 1.6 }}>
+                                            <strong style={{ display: 'block', marginBottom: 6, color: '#d97706' }}>Aprovação de Fichas</strong>
+                                            Fichas de fornecedor submetidas para aprovação final.
+                                            <span style={{ display: 'block', marginTop: 8, color: '#64748b', fontStyle: 'italic' }}>Clique num cartão para abrir o painel de decisão.</span>
+                                        </div>
+                                    }
+                                >
+                                    <Info size={16} style={{ color: '#d97706', cursor: 'help', flexShrink: 0 }} />
+                                </Tooltip>
+                                <span style={{ marginLeft: 'auto', backgroundColor: '#d97706', color: 'white', padding: '2px 10px', fontWeight: 800, fontSize: '0.75rem', borderRadius: '4px' }}>
+                                    {supplierPendingFichas.length}
+                                </span>
+                            </div>
+
+                            {/* Supplier cards */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                {supplierPendingFichas.map((f, i) => {
+                                    const isSelected = selectedSupplierFicha?.id === f.id;
+                                    return (
+                                        <motion.div
+                                            key={f.id}
+                                            initial={{ opacity: 0, y: 8 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ delay: i * 0.04, duration: 0.2 }}
+                                            onClick={() => handleSupplierRowSelect(f)}
+                                            style={{
+                                                display: 'grid',
+                                                gridTemplateColumns: '200px 1fr auto',
+                                                gap: '16px',
+                                                alignItems: 'center',
+                                                padding: '14px 20px',
+                                                borderRadius: 'var(--radius-lg, 8px)',
+                                                backgroundColor: isSelected ? 'rgba(217, 119, 6, 0.06)' : 'var(--color-bg-surface)',
+                                                border: `1px solid ${isSelected ? '#d97706' : 'var(--color-border)'}`,
+                                                borderLeft: `5px solid ${isSelected ? '#d97706' : 'transparent'}`,
+                                                cursor: 'pointer',
+                                                boxShadow: isSelected ? '0 0 0 1px #d97706, var(--shadow-sm)' : 'var(--shadow-sm)',
+                                                transition: 'all 0.15s ease',
+                                                userSelect: 'none',
+                                            }}
+                                            whileHover={{ y: -1, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' } as any}
+                                        >
+                                            {/* Left: code + date */}
+                                            <div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                    {isSelected && <ChevronRight size={14} style={{ color: '#d97706', flexShrink: 0 }} />}
+                                                    <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#d97706' }}>{f.portalCode}</span>
+                                                </div>
+                                                <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 600, marginTop: 3 }}>
+                                                    {new Date(f.submittedAtUtc).toLocaleDateString('pt-PT')}
+                                                </div>
+                                                <span style={{ display: 'inline-block', marginTop: 6, fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '2px 8px', borderRadius: 4, border: '1px solid #fde68a', color: '#92400e', background: '#fef3c7' }}>
+                                                    FICHA
+                                                </span>
+                                            </div>
+
+                                            {/* Mid: name + NIF + submitter */}
+                                            <div style={{ minWidth: 0 }}>
+                                                <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {f.name}
+                                                </div>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 600, marginTop: 2 }}>
+                                                    NIF: {f.taxId || '—'}
+                                                </div>
+                                                <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 500, marginTop: 2 }}>
+                                                    por {f.submittedByUserName}
+                                                </div>
+                                            </div>
+
+                                            {/* Right: completion + docs */}
+                                            <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+                                                <div>
+                                                    <div style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>Completude</div>
+                                                    <div style={{ fontWeight: 800, fontSize: '1rem', color: f.completionPercentage >= 100 ? '#059669' : '#d97706' }}>
+                                                        {f.completionPercentage}%
+                                                    </div>
+                                                </div>
+                                                <div style={{
+                                                    fontSize: '0.72rem', fontWeight: 600,
+                                                    padding: '2px 8px', borderRadius: 4,
+                                                    background: f.documentSummary.uploaded >= f.documentSummary.total ? '#d1fae5' : '#fef3c7',
+                                                    color: f.documentSummary.uploaded >= f.documentSummary.total ? '#059669' : '#92400e',
+                                                }}>
+                                                    Docs: {f.documentSummary.uploaded}/{f.documentSummary.total}
+                                                </div>
+                                            </div>
+                                        </motion.div>
+                                    );
+                                })}
+                            </div>
+                        </section>
+                    </div>
+                )}
             </div>
 
             {/* No permissions message */}
@@ -874,6 +1021,61 @@ export function ApprovalCenter() {
                         </DropdownPortal>
                     );
                 })()}
+            </AnimatePresence>
+
+            {/* ============================== */}
+            {/* SUPPLIER FICHA PANEL           */}
+            {/* ============================== */}
+            <AnimatePresence>
+                {isSupplierPanelOpen && selectedSupplierFicha && (
+                    <DropdownPortal>
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={handleCloseSupplierPanel}
+                            style={{
+                                position: 'fixed', inset: 0,
+                                background: 'rgba(0, 0, 0, 0.4)',
+                                backdropFilter: 'blur(4px)',
+                                zIndex: 1000, cursor: 'pointer'
+                            }}
+                        />
+                        <motion.div
+                            initial={{ x: '100%' }}
+                            animate={{ x: 0 }}
+                            exit={{ x: '100%' }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                            style={{
+                                position: 'fixed', top: 0, right: 0, bottom: 0,
+                                width: '100%', maxWidth: '100%',
+                                ...(window.innerWidth > 768 ? { width: '560px', maxWidth: '90vw' } : {}),
+                                backgroundColor: 'white',
+                                borderLeft: '6px solid #d97706',
+                                boxShadow: '-8px 0 32px rgba(0,0,0,0.2)',
+                                zIndex: Z_INDEX.DRAWER as any,
+                                display: 'flex', flexDirection: 'column'
+                            }}
+                        >
+                            <SupplierApprovalPanel
+                                ficha={selectedSupplierFicha}
+                                onApprove={async () => {
+                                    await api.lookups.dgApproveSupplier(selectedSupplierFicha.id);
+                                    await handleSupplierActionCompleted(
+                                        `Ficha de "${selectedSupplierFicha.name}" aprovada. Fornecedor ativado.`
+                                    );
+                                }}
+                                onReturn={async (comment) => {
+                                    await api.lookups.dgReturnSupplier(selectedSupplierFicha.id, comment);
+                                    await handleSupplierActionCompleted(
+                                        `Ficha de "${selectedSupplierFicha.name}" devolvida para reajuste.`
+                                    );
+                                }}
+                                onClose={handleCloseSupplierPanel}
+                            />
+                        </motion.div>
+                    </DropdownPortal>
+                )}
             </AnimatePresence>
         </PageContainer>
     );

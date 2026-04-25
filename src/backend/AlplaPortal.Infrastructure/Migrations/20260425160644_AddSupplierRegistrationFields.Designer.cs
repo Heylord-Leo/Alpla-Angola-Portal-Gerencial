@@ -4,6 +4,7 @@ using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AlplaPortal.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260425160644_AddSupplierRegistrationFields")]
+    partial class AddSupplierRegistrationFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -3896,9 +3899,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                     b.Property<string>("Address")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("AdjustmentComment")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<string>("BankAccountNumber")
                         .HasColumnType("nvarchar(max)");
 
@@ -3938,18 +3938,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                     b.Property<string>("CreatedByUserId")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<DateTime?>("DafApprovedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("DafApproverId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime?>("DgApprovedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("DgApproverId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
@@ -3986,12 +3974,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                     b.Property<string>("SourceCompany")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<DateTime?>("SubmittedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("SubmittedByUserId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<string>("TaxId")
                         .HasColumnType("nvarchar(max)");
 
@@ -4002,10 +3984,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("DafApproverId");
-
-                    b.HasIndex("DgApproverId");
 
                     b.HasIndex("Name")
                         .IsUnique();
@@ -4102,46 +4080,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                     b.HasIndex("SupplierId", "DocumentType");
 
                     b.ToTable("SupplierDocuments");
-                });
-
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.SupplierStatusHistory", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("ActorUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Comment")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("EventType")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("FromStatusCode")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("OccurredAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("SupplierId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("ToStatusCode")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ActorUserId");
-
-                    b.HasIndex("OccurredAtUtc");
-
-                    b.HasIndex("SupplierId");
-
-                    b.ToTable("SupplierStatusHistories");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.SystemCounter", b =>
@@ -5305,23 +5243,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                     b.Navigation("Request");
                 });
 
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.Supplier", b =>
-                {
-                    b.HasOne("AlplaPortal.Domain.Entities.User", "DafApprover")
-                        .WithMany()
-                        .HasForeignKey("DafApproverId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("AlplaPortal.Domain.Entities.User", "DgApprover")
-                        .WithMany()
-                        .HasForeignKey("DgApproverId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.Navigation("DafApprover");
-
-                    b.Navigation("DgApprover");
-                });
-
             modelBuilder.Entity("AlplaPortal.Domain.Entities.SupplierDocument", b =>
                 {
                     b.HasOne("AlplaPortal.Domain.Entities.Supplier", "Supplier")
@@ -5339,25 +5260,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                     b.Navigation("Supplier");
 
                     b.Navigation("UploadedByUser");
-                });
-
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.SupplierStatusHistory", b =>
-                {
-                    b.HasOne("AlplaPortal.Domain.Entities.User", "ActorUser")
-                        .WithMany()
-                        .HasForeignKey("ActorUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("AlplaPortal.Domain.Entities.Supplier", "Supplier")
-                        .WithMany("StatusHistories")
-                        .HasForeignKey("SupplierId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ActorUser");
-
-                    b.Navigation("Supplier");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.User", b =>
@@ -5508,8 +5410,6 @@ namespace AlplaPortal.Infrastructure.Migrations
             modelBuilder.Entity("AlplaPortal.Domain.Entities.Supplier", b =>
                 {
                     b.Navigation("Documents");
-
-                    b.Navigation("StatusHistories");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.User", b =>

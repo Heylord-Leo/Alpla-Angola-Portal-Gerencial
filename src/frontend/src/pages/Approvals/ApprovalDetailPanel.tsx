@@ -530,6 +530,48 @@ export function ApprovalDetailPanel({
                     </DecisionSection>
                 </div>
 
+                {/* 2.6. COTAÇÕES SALVAS (Moved after Contexto Financeiro Visual) */}
+                {isQuotation && (
+                    <motion.div
+                        id="cotacoes-salvas-section"
+                        animate={
+                            highlightQuotationSection
+                                ? {
+                                      boxShadow: ['0 0 0px 0px transparent', '0 0 15px 5px rgba(239, 68, 68, 0.4)', '0 0 0px 0px transparent'],
+                                      transition: { duration: 1, repeat: 4 }
+                                  }
+                                : { boxShadow: '0 0 0px 0px transparent' }
+                        }
+                        style={{ borderRadius: 'var(--radius-lg)' }}
+                    >
+                        <DecisionSection 
+                            title="Cotações Salvas" 
+                            icon={<DollarSign size={16} />}
+                            count={data.quotations?.length || 0}
+                            isCollapsible={false}
+                        >
+                            {(data.quotations?.length || 0) === 0 ? (
+                                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-muted)', fontWeight: 700 }}>
+                                    Nenhuma cotação registrada.
+                                </div>
+                            ) : (
+                                <div>
+                                    {data.quotations?.map(q => (
+                                        <DecisionQuotationCard 
+                                            key={q.id}
+                                            quotation={q}
+                                            isLowest={data.quotations.length > 1 && q.totalAmount === lowestByCurrency[q.currency]}
+                                            canSelectWinner={canSelectWinner}
+                                            onSelectWinner={handleSelectWinner}
+                                            isProcessing={quotationProcessingId === q.id}
+                                        />
+                                    ))}
+                                </div>
+                            )}
+                        </DecisionSection>
+                    </motion.div>
+                )}
+
                 {/* 3. INTELIGÊNCIA PARA DECISÃO (Phase 4 - Horizontal Navigation) */}
                 <DecisionSection 
                     title="Inteligência para Decisão" 
@@ -906,47 +948,6 @@ export function ApprovalDetailPanel({
                     </DecisionSection>
                 )}
 
-                {/* 6. COTAÇÕES SALVAS (Always Open for Quotation types) */}
-                {isQuotation && (
-                    <motion.div
-                        id="cotacoes-salvas-section"
-                        animate={
-                            highlightQuotationSection
-                                ? {
-                                      boxShadow: ['0 0 0px 0px transparent', '0 0 15px 5px rgba(239, 68, 68, 0.4)', '0 0 0px 0px transparent'],
-                                      transition: { duration: 1, repeat: 4 }
-                                  }
-                                : { boxShadow: '0 0 0px 0px transparent' }
-                        }
-                        style={{ borderRadius: 'var(--radius-lg)' }}
-                    >
-                        <DecisionSection 
-                            title="Cotações Salvas" 
-                            icon={<DollarSign size={16} />}
-                            count={data.quotations?.length || 0}
-                            isCollapsible={false}
-                        >
-                            {(data.quotations?.length || 0) === 0 ? (
-                                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-muted)', fontWeight: 700 }}>
-                                    Nenhuma cotação registrada.
-                                </div>
-                            ) : (
-                                <div>
-                                    {data.quotations?.map(q => (
-                                        <DecisionQuotationCard 
-                                            key={q.id}
-                                            quotation={q}
-                                            isLowest={data.quotations.length > 1 && q.totalAmount === lowestByCurrency[q.currency]}
-                                            canSelectWinner={canSelectWinner}
-                                            onSelectWinner={handleSelectWinner}
-                                            isProcessing={quotationProcessingId === q.id}
-                                        />
-                                    ))}
-                                </div>
-                            )}
-                        </DecisionSection>
-                    </motion.div>
-                )}
 
                 {/* 7. RESUMO FINANCEIRO (Collapsible) */}
                 <DecisionSection 
@@ -1053,22 +1054,52 @@ export function ApprovalDetailPanel({
             </div>
 
             {/* Sticky Action Footer */}
-            <div style={{ position: 'sticky', bottom: 0, zIndex: 50, backgroundColor: 'var(--color-bg-page)', borderTop: '1px solid var(--color-border)', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', boxShadow: '0 -4px 6px -1px rgba(0,0,0,0.05)', width: '100%' }}>
+            <div style={{ position: 'sticky', bottom: 0, zIndex: 50, backgroundColor: 'var(--color-bg-page)', borderTop: '1px solid var(--color-border)', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', boxShadow: '0 -4px 12px -2px rgba(0,0,0,0.08)', width: '100%' }}>
                 {showAdjustmentAction && (
                     <button
                         onClick={() => setShowApprovalModal({ show: true, type: 'REQUEST_ADJUSTMENT' })}
-                        style={{ padding: '12px 24px', backgroundColor: 'var(--color-bg-page)', color: 'var(--color-text-main)', fontWeight: 700, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.75rem', cursor: 'pointer', transition: 'background-color 0.2s' }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-page)'}
+                        style={{
+                            padding: '12px 24px',
+                            backgroundColor: 'rgba(217, 119, 6, 0.06)',
+                            color: '#92400E',
+                            fontWeight: 800,
+                            border: '1.5px solid rgba(217, 119, 6, 0.3)',
+                            borderRadius: 'var(--radius-lg)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            fontSize: '0.75rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(217, 119, 6, 0.12)'; e.currentTarget.style.borderColor = 'rgba(217, 119, 6, 0.5)'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(217, 119, 6, 0.15)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(217, 119, 6, 0.06)'; e.currentTarget.style.borderColor = 'rgba(217, 119, 6, 0.3)'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}
                     >
                         <ArrowRightLeft size={16} /> Reajuste
                     </button>
                 )}
                 <button
                     onClick={() => setShowApprovalModal({ show: true, type: 'REJECT' })}
-                    style={{ padding: '12px 24px', backgroundColor: 'var(--color-bg-page)', color: 'var(--color-status-red)', fontWeight: 700, border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.75rem', cursor: 'pointer', transition: 'background-color 0.2s' }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.05)'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-page)'}
+                    style={{
+                        padding: '12px 24px',
+                        backgroundColor: 'rgba(239, 68, 68, 0.06)',
+                        color: '#991B1B',
+                        fontWeight: 800,
+                        border: '1.5px solid rgba(239, 68, 68, 0.25)',
+                        borderRadius: 'var(--radius-lg)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        fontSize: '0.75rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.12)'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.45)'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(239, 68, 68, 0.15)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.06)'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.25)'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}
                 >
                     <AlertTriangle size={16} /> Rejeitar
                 </button>
@@ -1076,11 +1107,23 @@ export function ApprovalDetailPanel({
                     onClick={() => setShowApprovalModal({ show: true, type: 'APPROVE' })}
                     disabled={isApproveBlocked}
                     style={{
-                        padding: '12px 32px', borderRadius: 'var(--radius-lg)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.75rem', transition: 'colors 0.2s', border: 'none',
+                        padding: '12px 32px',
+                        borderRadius: 'var(--radius-lg)',
+                        fontWeight: 800,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        fontSize: '0.75rem',
+                        transition: 'all 0.2s ease',
+                        border: 'none',
                         ...(isApproveBlocked 
-                            ? { backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-muted)', cursor: 'not-allowed' } 
-                            : { backgroundColor: 'var(--color-text-main)', color: 'white', cursor: 'pointer' })
+                            ? { backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-muted)', cursor: 'not-allowed', boxShadow: 'none' } 
+                            : { backgroundColor: '#16A34A', color: 'white', cursor: 'pointer', boxShadow: '0 2px 8px rgba(22, 163, 74, 0.3)' })
                     }}
+                    onMouseEnter={(e) => { if (!isApproveBlocked) { e.currentTarget.style.backgroundColor = '#15803D'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(22, 163, 74, 0.4)'; }}}
+                    onMouseLeave={(e) => { if (!isApproveBlocked) { e.currentTarget.style.backgroundColor = '#16A34A'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(22, 163, 74, 0.3)'; }}}
                 >
                     <ShieldCheck size={16} /> Aprovar
                 </button>

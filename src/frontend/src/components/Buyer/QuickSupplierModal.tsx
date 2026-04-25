@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Building2, AlertCircle, RefreshCcw } from 'lucide-react';
+import { X, Save, Building2, AlertCircle, RefreshCcw, FileText, Info } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { Feedback, FeedbackType } from '../ui/Feedback';
 import { Z_INDEX } from '../../constants/ui';
@@ -20,6 +20,7 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
     const [isSaving, setIsSaving] = useState(false);
     const [feedback, setFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'error', message: null });
     const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
+    const [fichaToast, setFichaToast] = useState(false);
     
     // Sync name and taxId with initial props when modal opens or props change
     useEffect(() => {
@@ -28,6 +29,7 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
             setTaxId(initialTaxId);
             setFeedback({ type: 'error', message: null });
             setFieldErrors({});
+            setFichaToast(false);
         }
     }, [isOpen, initialName, initialTaxId]);
 
@@ -52,11 +54,26 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
                 taxId: taxId.trim() || undefined
             });
 
-            onSuccess({ id: newSupplier.id, name: newSupplier.name, portalCode: newSupplier.portalCode });
-            onClose();
+            // Show ficha toast notification before closing
+            setFichaToast(true);
+
+            // Allow the toast to be seen briefly, then proceed
+            setTimeout(() => {
+                onSuccess({ id: newSupplier.id, name: newSupplier.name, portalCode: newSupplier.portalCode });
+                onClose();
+            }, 300);
         } catch (err: any) {
-            if (err instanceof ApiError && err.fieldErrors) {
-                setFieldErrors(err.fieldErrors);
+            if (err instanceof ApiError) {
+                // Handle 409 Conflict — NIF duplicate
+                if (err.status === 409) {
+                    setFieldErrors({ TaxId: [err.message || 'NIF já registado no sistema.'] });
+                    setFeedback({ type: 'warning', message: err.message || 'Já existe um fornecedor com este NIF. Utilize o fornecedor existente.' });
+                    setIsSaving(false);
+                    return;
+                }
+                if (err.fieldErrors) {
+                    setFieldErrors(err.fieldErrors);
+                }
             }
             setFeedback({ type: 'error', message: err.message || 'Erro ao criar fornecedor.' });
         } finally {
@@ -169,10 +186,45 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
                             <input
                                 type="text"
                                 value={taxId}
-                                onChange={(e) => setTaxId(e.target.value)}
+                                onChange={(e) => {
+                                    setTaxId(e.target.value);
+                                    // Clear NIF duplicate error when user types
+                                    if (fieldErrors.TaxId) {
+                                        setFieldErrors(prev => {
+                                            const next = { ...prev };
+                                            delete next.TaxId;
+                                            return next;
+                                        });
+                                        setFeedback({ type: 'error', message: null });
+                                    }
+                                }}
                                 placeholder="Ex: 501234567"
-                                style={inputStyle}
+                                style={{
+                                    ...inputStyle,
+                                    borderColor: fieldErrors.TaxId ? '#F59E0B' : 'var(--color-border)'
+                                }}
                             />
+                            {fieldErrors.TaxId && (
+                                <motion.div
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    style={{
+                                        marginTop: '8px',
+                                        padding: '10px 12px',
+                                        backgroundColor: '#FFFBEB',
+                                        border: '1px solid #F59E0B',
+                                        borderRadius: 'var(--radius-sm)',
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                        gap: '8px'
+                                    }}
+                                >
+                                    <AlertCircle size={16} style={{ color: '#D97706', flexShrink: 0, marginTop: '1px' }} />
+                                    <p style={{ color: '#92400E', fontSize: '0.75rem', fontWeight: 600, margin: 0, lineHeight: '1.4' }}>
+                                        {fieldErrors.TaxId[0]}
+                                    </p>
+                                </motion.div>
+                            )}
                         </div>
 
                         <div style={{ 
@@ -184,6 +236,22 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
                             <p style={{ fontSize: '0.75rem', color: 'var(--color-text-main)', margin: 0, fontWeight: 600, lineHeight: 1.5 }}>
                                 <AlertCircle style={{ width: '14px', height: '14px', display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }} />
                                 O código do portal será gerado automaticamente. O código Primavera poderá ser preenchido posteriormente.
+                            </p>
+                        </div>
+
+                        {/* Ficha guidance info box */}
+                        <div style={{
+                            backgroundColor: '#EFF6FF',
+                            border: '1px solid #BFDBFE',
+                            borderRadius: 'var(--radius-sm)',
+                            padding: '12px 14px',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '10px'
+                        }}>
+                            <FileText size={16} style={{ color: '#2563EB', flexShrink: 0, marginTop: '1px' }} />
+                            <p style={{ fontSize: '0.72rem', color: '#1E40AF', margin: 0, fontWeight: 600, lineHeight: 1.5 }}>
+                                O fornecedor será criado como <strong>rascunho</strong>. Complete a ficha de registo em <strong>Contratos → Fichas de Fornecedor</strong>.
                             </p>
                         </div>
 
@@ -218,6 +286,37 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
                             </button>
                         </div>
                     </form>
+
+                    {/* Success toast overlay — shown briefly after creation */}
+                    <AnimatePresence>
+                        {fichaToast && (
+                            <motion.div
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                style={{
+                                    position: 'absolute',
+                                    bottom: '16px',
+                                    left: '16px',
+                                    right: '16px',
+                                    padding: '14px 16px',
+                                    backgroundColor: '#F0FDF4',
+                                    border: '1px solid #22C55E',
+                                    borderRadius: 'var(--radius-sm)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '10px',
+                                    boxShadow: 'var(--shadow-md)',
+                                    zIndex: 10
+                                }}
+                            >
+                                <Info size={18} style={{ color: '#15803D', flexShrink: 0 }} />
+                                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#15803D', lineHeight: 1.4 }}>
+                                    Fornecedor criado como rascunho. Complete a ficha de registo em Contratos → Fichas de Fornecedor.
+                                </span>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                     </motion.div>
                 </motion.div>
             </AnimatePresence>

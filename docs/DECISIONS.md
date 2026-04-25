@@ -1515,3 +1515,18 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
 - **Consequences:** Establishes the data foundation for full commercial change handling. `ActualPaidAmount` is mandatory when paying. Legacy requests with null snapshot fields skip divergence detection gracefully. Finance payments list shows divergence badge for affected requests. Full documentation in `WORKFLOW_ARCHITECTURE.md §6`.
 
 ---
+
+## DEC-119 — Centralized Supplier Approval (Drawer-Only Model)
+
+- **Date:** 2026-04-25
+- **Status:** Accepted
+- **Context:** The Supplier Ficha (Phase 2A) initially included inline approve/return buttons directly on the `SupplierFichaDetail` page. This created two parallel paths for the same approval action — one on the detail page and one (planned) in the Approval Center. The contract approval workflow had already been standardized on a drawer-only model in the Approval Center (DEC-083).
+- **Decision:** Centralize all supplier ficha approval decisions exclusively in the Approval Center drawer.
+    1. **Single Decision Point**: Approve and Return actions are only available via `SupplierApprovalPanel` rendered inside the Approval Center's quick-view drawer.
+    2. **Detail Page Read-Only**: `SupplierFichaDetail` retains only the "Submeter para Aprovação" action (for the ficha creator) and a read-only tracker showing "Aguardando aprovação no Centro de Aprovações".
+    3. **Visual Consistency**: The supplier drawer uses the same `AnimatePresence > DropdownPortal > overlay + sliding panel` pattern as the contract drawer, with an amber accent to differentiate it from the blue/purple contract stages.
+    4. **Data Loading**: Supplier pending fichas are loaded in parallel with requests and contracts during `loadQueue()`.
+- **Alternatives considered:** Keeping dual approval paths (detail page + Approval Center). Rejected: creates confusion, duplicates logic, and violates the single-responsibility principle for approval orchestration.
+- **Consequences:** All three approval types (Requests, Contracts, Suppliers) now follow the identical drawer-based workflow in the Approval Center. Approvers have a single, consistent workspace for all pending decisions. The detail page is strictly for data entry and review.
+
+---
