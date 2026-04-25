@@ -2,7 +2,26 @@
 
 ## Current Version
 
-v2.90.0
+v2.91.0
+
+## [2.92.0] - 2026-04-25
+
+### Changed
+- **Supplier Ficha UX/UI Standardization (Phases 1–4)**: Complete visual alignment of the "Ficha de Fornecedor" module with the Portal Gerencial "Modern Corporate" design system.
+  - **Phase 1 — Token Alignment**: Removed parallel `:root` CSS variables from `SupplierFicha.css`, migrated all hardcoded status/surface/text/border colors to canonical `tokens.css` design tokens, and unified modal `z-index` to `var(--z-modal)`.
+  - **Phase 2 — List Page Standardization**: Replaced custom CSS classes with Portal-compliant components. KPI cards redesigned with Lucide icons, hover transitions, `aria-pressed` states, and token-based coloring. Table standardized with framer-motion row stagger. Pagination arrows replaced with Lucide icons. Shimmer-based loading skeleton and Feedback error component integrated.
+  - **Phase 3 — Detail Page Polish**: Replaced all emojis with Lucide SVG icons. Aligned approval tracker accent from purple (#6366f1) to Portal primary (`var(--color-primary)`). Added `role="dialog"`, `aria-modal`, and `aria-label` to confirmation modals. Aligned `getStatusColor()` to design token variables with CSS custom property fallbacks.
+  - **Phase 4 — Loading/Error States**: Integrated standard loading skeleton and Feedback component for API errors on the list page.
+
+## [2.91.0] - 2026-04-25
+
+### Added
+- **Supplier Import Review Modal**: Added a pre-import review step when importing new suppliers from Primavera. Users can now review and edit supplier data (Name, NIF) before committing the import, preventing dirty data from entering the Portal. New `POST /api/v1/sync/suppliers/import-reviewed` endpoint preserves the existing import contract.
+
+## [2.90.0] - 2026-04-25
+
+### Added
+- **Supplier Ficha Approval Workflow (Phase 2B)**: Centralized supplier approval actions into the Approval Center quick-view drawer. Removed obsolete approval UI from the detail page to enforce submission-only model.
 
 ## [2.89.0] - 2026-04-25
 

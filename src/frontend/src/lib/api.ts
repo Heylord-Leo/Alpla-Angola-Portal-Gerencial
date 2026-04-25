@@ -1,4 +1,4 @@
-import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, DocumentExtractionSettingsDto, SmtpSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto } from '../types';
+import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, DocumentExtractionSettingsDto, SmtpSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto } from '../types';
 import { logger, FrontendComponentKey } from './logger';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
@@ -1639,6 +1639,15 @@ export const api = {
                     body: JSON.stringify(body),
                 });
                 if (!response.ok) return handleApiError(response, 'Falha ao importar fornecedores.', 'SyncApi');
+                return response.json();
+            },
+            importReviewed: async (companyId: number, body: SyncSupplierReviewedImportRequestDto): Promise<SyncImportResultDto> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/v1/sync/suppliers/import-reviewed?companyId=${companyId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao importar fornecedores (revisado).', 'SyncApi');
                 return response.json();
             }
         }

@@ -681,6 +681,135 @@ public class SyncController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Import reviewed suppliers into the Portal.
+    /// V2 endpoint: accepts user-edited data (Name, TaxId, Notes) from the review modal.
+    /// All suppliers are created as DRAFT with Origin = SYNCED_PRIMAVERA.
+    /// The existing /import endpoint remains unchanged for backward compatibility.
+    /// </summary>
+    [HttpPost("suppliers/import-reviewed")]
+    public async Task<ActionResult<SyncImportResultDto>> SuppliersImportReviewed(
+        [FromQuery] int companyId,
+        [FromBody] SyncSupplierReviewedImportRequestDto request)
+    {
+        var company = ResolveCompany(companyId);
+        if (company is null)
+            return BadRequest(new { error = "Empresa Primavera inválida." });
+
+        if (request.Suppliers is not { Count: > 0 })
+            return BadRequest(new { error = "Nenhum fornecedor enviado para importação." });
+
+        // Validate required fields
+        var invalidRows = request.Suppliers
+            .Where(s => string.IsNullOrWhiteSpace(s.PrimaveraCode) || string.IsNullOrWhiteSpace(s.Name))
+            .ToList();
+        if (invalidRows.Count > 0)
+            return BadRequest(new { error = $"{invalidRows.Count} fornecedor(es) sem código Primavera ou nome." });
+
+        var result = new SyncImportResultDto();
+
+        try
+        {
+            // Check existing Portal suppliers for duplicate detection
+            var existingByCodes = await _context.Set<Supplier>()
+                .Where(s => s.PrimaveraCode != null)
+                .Select(s => s.PrimaveraCode!)
+                .ToListAsync();
+            var existingCodeSet = new HashSet<string>(
+                existingByCodes.Select(c => c.Trim().ToUpperInvariant()));
+
+            var existingByTaxId = await _context.Set<Supplier>()
+                .Where(s => s.TaxId != null && s.TaxId != "")
+                .Select(s => s.TaxId!)
+                .ToListAsync();
+            var existingTaxIdSet = new HashSet<string>(
+                existingByTaxId.Select(t => t.Trim().ToUpperInvariant()));
+
+            // Generate next sequential PortalCode
+            var maxPortalCode = await _context.Set<Supplier>()
+                .Where(s => s.PortalCode != null && s.PortalCode.StartsWith("SUP-"))
+                .Select(s => s.PortalCode!)
+                .ToListAsync();
+            var nextSeq = maxPortalCode
+                .Select(c => int.TryParse(c.Replace("SUP-", ""), out var n) ? n : 0)
+                .DefaultIfEmpty(0)
+                .Max() + 1;
+
+            var now = DateTime.UtcNow;
+            var companyName = company.Value.ToString();
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+
+            foreach (var reviewed in request.Suppliers)
+            {
+                var codeKey = reviewed.PrimaveraCode.Trim().ToUpperInvariant();
+
+                // Skip if PrimaveraCode already exists in Portal
+                if (existingCodeSet.Contains(codeKey))
+                {
+                    result.Skipped++;
+                    result.Errors.Add($"Fornecedor '{reviewed.PrimaveraCode}' ignorado: código Primavera já existe no Portal.");
+                    continue;
+                }
+
+                // Skip if TaxId already exists (duplicate NIF)
+                var reviewedTaxId = reviewed.TaxId?.Trim();
+                if (!string.IsNullOrWhiteSpace(reviewedTaxId) &&
+                    existingTaxIdSet.Contains(reviewedTaxId.ToUpperInvariant()))
+                {
+                    result.Skipped++;
+                    result.Errors.Add($"Fornecedor '{reviewed.PrimaveraCode}' ignorado: NIF '{reviewedTaxId}' já existe no Portal.");
+                    continue;
+                }
+
+                var newSupplier = new Supplier
+                {
+                    Name = reviewed.Name.Trim(),
+                    PortalCode = $"SUP-{nextSeq:D4}",
+                    PrimaveraCode = reviewed.PrimaveraCode.Trim(),
+                    TaxId = string.IsNullOrWhiteSpace(reviewedTaxId) ? null : reviewedTaxId,
+                    Origin = "SYNCED_PRIMAVERA",
+                    SourceCompany = companyName,
+                    LastSyncedAtUtc = now,
+                    IsActive = true,
+                    RegistrationStatus = SupplierConstants.Statuses.Draft,
+                    Notes = string.IsNullOrWhiteSpace(reviewed.Notes) ? null : reviewed.Notes.Trim()
+                };
+
+                _context.Set<Supplier>().Add(newSupplier);
+                existingCodeSet.Add(codeKey);
+                if (!string.IsNullOrWhiteSpace(reviewedTaxId))
+                    existingTaxIdSet.Add(reviewedTaxId.ToUpperInvariant());
+                result.Created++;
+                nextSeq++;
+            }
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            // Audit log
+            await _adminLog.WriteAsync("Activity", "Sync", "SYNC_SUPPLIER_IMPORT_REVIEWED",
+                $"Fornecedores importados (revisados): {result.Created} criados, {result.Skipped} ignorados" +
+                $" de {request.Suppliers.Count} enviados. Empresa: {companyName}.",
+                payload: JsonSerializer.Serialize(new
+                {
+                    company = companyName,
+                    totalSent = request.Suppliers.Count,
+                    created = result.Created,
+                    skipped = result.Skipped,
+                    errors = result.Errors,
+                    codes = request.Suppliers.Select(s => s.PrimaveraCode).ToList()
+                }));
+
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during reviewed supplier sync import. Company: {Company}", company);
+            return StatusCode(500, new { error = "Erro interno durante a importação.", detail = ex.Message });
+        }
+    }
+
     // ─── HELPERS ────────────────────────────────────────────────────────────────
 
     /// <summary>

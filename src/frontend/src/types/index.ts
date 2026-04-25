@@ -657,6 +657,19 @@ export interface SyncImportResultDto {
     errors: string[];
 }
 
+// ── Reviewed Supplier Import (V2) ───────────────────────────────────────────
+
+export interface ReviewedSupplierItemDto {
+    primaveraCode: string;
+    name: string;
+    taxId: string | null;
+    notes: string | null;
+}
+
+export interface SyncSupplierReviewedImportRequestDto {
+    suppliers: ReviewedSupplierItemDto[];
+}
+
 export interface DepartmentMasterDto {
     id: number;
     departmentCode: string;

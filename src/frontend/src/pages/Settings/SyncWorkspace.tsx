@@ -9,6 +9,7 @@ import {
     SyncMatchStatus,
     SyncImportResultDto
 } from '../../types';
+import { SupplierImportReviewModal } from '../../components/Settings/SupplierImportReviewModal';
 import {
     ArrowLeft,
     RefreshCw,
@@ -183,6 +184,9 @@ export function SyncWorkspace() {
     // Import result state
     const [importResult, setImportResult] = useState<SyncImportResultDto | null>(null);
 
+    // Supplier review modal state
+    const [showReviewModal, setShowReviewModal] = useState(false);
+
     // ─── Column sort & filter state (persisted across pages) ────────────
     const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
     const [columnFilters, setColumnFilters] = useState<ColumnFilters>({});
@@ -330,14 +334,20 @@ export function SyncWorkspace() {
     // ─── Import handler ─────────────────────────────────────────────────
     const handleImport = async () => {
         if (selectedCodes.size === 0) return;
+
+        // For suppliers, open the review modal instead of importing directly
+        if (entity === 'suppliers') {
+            setShowReviewModal(true);
+            return;
+        }
+
+        // Catalog: direct import (unchanged)
         setImporting(true);
         setImportResult(null);
 
         try {
             const body = { selectedPrimaveraCodes: Array.from(selectedCodes) };
-            const result = entity === 'catalog'
-                ? await api.sync.catalog.import(companyId, body)
-                : await api.sync.suppliers.import(companyId, body);
+            const result = await api.sync.catalog.import(companyId, body);
 
             setImportResult(result);
             setSelectedCodes(new Set());
@@ -349,6 +359,20 @@ export function SyncWorkspace() {
             setImporting(false);
         }
     };
+
+    // ─── Reviewed import callback (suppliers only) ───────────────────────
+    const handleReviewedImportSuccess = useCallback((result: SyncImportResultDto, importedCodes: string[]) => {
+        setShowReviewModal(false);
+        setImportResult(result);
+        // Clear only successfully imported codes from selection
+        setSelectedCodes(prev => {
+            const next = new Set(prev);
+            importedCodes.forEach(c => next.delete(c));
+            return next;
+        });
+        // Reload to show updated statuses
+        loadPreview();
+    }, [loadPreview]);
 
     // ─── Computed ────────────────────────────────────────────────────────
     const preview = entity === 'catalog' ? catalogPreview : supplierPreview;
@@ -580,6 +604,21 @@ export function SyncWorkspace() {
                         Próxima <ChevronRight size={16} />
                     </button>
                 </div>
+            )}
+
+            {/* ── Supplier Import Review Modal ── */}
+            {entity === 'suppliers' && (
+                <SupplierImportReviewModal
+                    isOpen={showReviewModal}
+                    onClose={() => setShowReviewModal(false)}
+                    onImportSuccess={handleReviewedImportSuccess}
+                    selectedSuppliers={
+                        (supplierPreview?.items ?? []).filter(
+                            s => selectedCodes.has(s.primaveraCode) && s.status === 'New'
+                        )
+                    }
+                    companyId={companyId}
+                />
             )}
         </div>
     );

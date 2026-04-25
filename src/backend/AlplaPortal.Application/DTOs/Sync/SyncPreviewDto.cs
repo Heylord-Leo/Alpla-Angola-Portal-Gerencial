@@ -118,3 +118,35 @@ public class SyncImportResultDto
     public int Skipped { get; set; }
     public List<string> Errors { get; set; } = new();
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Reviewed Supplier Import (V2 — user-edited data before import)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// A single supplier row reviewed and potentially edited by the user
+/// in the import review modal before submission.
+/// </summary>
+public class ReviewedSupplierItemDto
+{
+    /// <summary>Primavera code — read-only identifier, not editable by the user.</summary>
+    public string PrimaveraCode { get; set; } = string.Empty;
+
+    /// <summary>Supplier name — editable by the user during review. Required.</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>NIF / Tax ID — editable by the user during review. Optional.</summary>
+    public string? TaxId { get; set; }
+
+    /// <summary>Free-text notes added by the user during review. Optional.</summary>
+    public string? Notes { get; set; }
+}
+
+/// <summary>
+/// Request body for the reviewed supplier import endpoint.
+/// Contains the list of suppliers with user-validated/edited data.
+/// </summary>
+public class SyncSupplierReviewedImportRequestDto
+{
+    public List<ReviewedSupplierItemDto> Suppliers { get; set; } = new();
+}
