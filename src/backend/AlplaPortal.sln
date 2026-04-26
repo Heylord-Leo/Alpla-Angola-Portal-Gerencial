@@ -1,4 +1,4 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
@@ -9,6 +9,10 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AlplaPortal.Domain", "AlplaPortal.Domain\AlplaPortal.Domain.csproj", "{74CB9F9B-AF49-4364-AB9F-53C7BDCB2A02}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AlplaPortal.Infrastructure", "AlplaPortal.Infrastructure\AlplaPortal.Infrastructure.csproj", "{FF9D1B99-1301-443B-9BFD-4DDA712EAF34}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{6FBB0D64-F37A-4896-BA13-906E76270A84}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DemoDataGenerator", "tools\DemoDataGenerator\DemoDataGenerator.csproj", "{5A750FD5-0C75-4ADF-BEBB-96287B46729E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -32,8 +36,15 @@ Global
 		{FF9D1B99-1301-443B-9BFD-4DDA712EAF34}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FF9D1B99-1301-443B-9BFD-4DDA712EAF34}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FF9D1B99-1301-443B-9BFD-4DDA712EAF34}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5A750FD5-0C75-4ADF-BEBB-96287B46729E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5A750FD5-0C75-4ADF-BEBB-96287B46729E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5A750FD5-0C75-4ADF-BEBB-96287B46729E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5A750FD5-0C75-4ADF-BEBB-96287B46729E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{5A750FD5-0C75-4ADF-BEBB-96287B46729E} = {6FBB0D64-F37A-4896-BA13-906E76270A84}
 	EndGlobalSection
 EndGlobal

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { FinanceListResponseDto } from '../../types';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useLocation } from 'react-router-dom';
 import { Check, Clock, AlertTriangle, FileText, MessageSquare, ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
 import { KebabMenu } from '../../components/ui/KebabMenu';
 import { ModernTooltip } from '../../components/ui/ModernTooltip';
@@ -15,6 +15,8 @@ import { RequestDrawerPresentation } from '../Requests/components/modern/Request
 export default function FinancePaymentsList() {
     const [data, setData] = useState<FinanceListResponseDto | null>(null);
     const [searchParams, setSearchParams] = useSearchParams();
+    const location = useLocation();
+    
     const filter = searchParams.get('filter') || undefined;
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
@@ -22,7 +24,7 @@ export default function FinancePaymentsList() {
     const currencyCode = searchParams.get('currencyCode') || undefined;
     const searchSupplier = searchParams.get('searchSupplier') || undefined;
     
-    const [highlightedRequestId, setHighlightedRequestId] = useState<string | null>(null);
+    const [flashedRequestId, setFlashedRequestId] = useState<string | null>(location.state?.flashRequestId || null);
     const [drawerRequestId, setDrawerRequestId] = useState<string | null>(null);
 
     const [actionModal, setActionModal] = useState<{ show: boolean; action: FinanceActionType; requestId: string | null }>({ show: false, action: null, requestId: null });
@@ -34,25 +36,19 @@ export default function FinancePaymentsList() {
     }, [filter, page, pageSize, statusCodes, currencyCode, searchSupplier]);
 
     useEffect(() => {
-        const focusId = searchParams.get('highlightRequestId');
-        if (focusId) {
-            setHighlightedRequestId(focusId);
+        if (flashedRequestId) {
+            window.history.replaceState({}, document.title);
             setTimeout(() => {
-                const el = document.getElementById(`payment-row-${focusId}`);
+                const el = document.getElementById(`payment-row-${flashedRequestId}`);
                 if (el) {
                     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
             }, 300);
 
-            // Remove highlight class after 5 seconds
-            setTimeout(() => setHighlightedRequestId(null), 5000);
-
-            // Clean up URL
-            const newParams = new URLSearchParams(searchParams);
-            newParams.delete('highlightRequestId');
-            window.history.replaceState({}, '', `${window.location.pathname}?${newParams.toString()}`);
+            const timer = setTimeout(() => setFlashedRequestId(null), 5000);
+            return () => clearTimeout(timer);
         }
-    }, [searchParams]);
+    }, [flashedRequestId]);
 
     const loadData = () => {
         api.finance.getPayments(filter, page, pageSize, undefined, statusCodes, currencyCode, searchSupplier).then(res => setData(res));
@@ -84,7 +80,7 @@ export default function FinancePaymentsList() {
         setFeedback({ type: 'success', message: null });
     };
 
-    const handleConfirmAction = async (action: FinanceActionType, payload: { date?: string; notes?: string; file?: File | null }) => {
+    const handleConfirmAction = async (action: FinanceActionType, payload: { date?: string; notes?: string; file?: File | null; amount?: string }) => {
         if (!actionModal.requestId) return;
         setProcessing(true);
         setFeedback({ type: 'success', message: null });
@@ -99,7 +95,8 @@ export default function FinancePaymentsList() {
                 if (payload.file) {
                     await api.attachments.upload(actionModal.requestId, [payload.file], 'PAYMENT_PROOF');
                 }
-                await api.finance.markAsPaid(actionModal.requestId, new Date().toISOString(), payload.notes || "Liquidado via portal");
+                const actualPaidAmount = payload.amount ? parseFloat(payload.amount) : undefined;
+                await api.finance.markAsPaid(actionModal.requestId, new Date().toISOString(), payload.notes || "Liquidado via portal", actualPaidAmount);
             } else if (action === 'RETURN' && payload.notes) {
                 await api.finance.returnForAdjustment(actionModal.requestId, payload.notes);
             } else if (action === 'NOTE' && payload.notes) {
@@ -152,21 +149,15 @@ export default function FinancePaymentsList() {
     return (
         <PageContainer>
             <style>{`
-                @keyframes highlightPulse {
-                    0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); border-color: #dc2626; }
-                    70% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); border-color: transparent; }
-                    100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); border-color: transparent; }
+                @keyframes flashRedAlert {
+                    0% { background-color: transparent; }
+                    10% { background-color: rgba(239, 68, 68, 0.2); }
+                    50% { background-color: rgba(239, 68, 68, 0.05); }
+                    90% { background-color: rgba(239, 68, 68, 0.2); }
+                    100% { background-color: transparent; }
                 }
-                .section-attention-highlight td {
-                    animation: highlightPulse 1.5s ease-out 3;
-                    border-top: 2px solid #dc2626 !important;
-                    border-bottom: 2px solid #dc2626 !important;
-                }
-                .section-attention-highlight td:first-child {
-                    border-left: 2px solid #dc2626 !important;
-                }
-                .section-attention-highlight td:last-child {
-                    border-right: 2px solid #dc2626 !important;
+                .flash-red-row {
+                    animation: flashRedAlert 5s ease-out forwards;
                 }
             `}</style>
             <PageHeader
@@ -261,7 +252,7 @@ export default function FinancePaymentsList() {
                 </thead>
                 <tbody>
                     {data.pagedResult.items.map((item, i) => (
-                        <tr key={item.id} id={`payment-row-${item.id}`} className={highlightedRequestId === item.id.toString() ? 'section-attention-highlight' : ''} style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: i % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                        <tr key={item.id} id={`payment-row-${item.id}`} className={flashedRequestId === item.id.toString() ? 'flash-red-row' : ''} style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: i % 2 === 0 ? '#fff' : '#f8fafc' }}>
                             <td style={{ padding: '16px' }}>
                                 <div style={{ fontWeight: 800, color: 'var(--color-primary)' }}>{item.requestNumber}</div>
                                 <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600 }}>{item.plantName}</div>

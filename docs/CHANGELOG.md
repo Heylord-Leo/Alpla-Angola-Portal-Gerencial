@@ -2,6 +2,90 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.93.4] - 2026-04-26 - UX: Budget Contextual Help for Comprometido/Pago
+
+### Added
+- **Budget Help Tooltips**: Added reusable contextual help icon (ℹ) to the Finance > Orçamento page explaining the difference between "Comprometido" and "Pago" for business users.
+  - Help appears in two key locations: **Síntese Global** header and **Centros de Custo** section title.
+  - Hover to reveal a rich tooltip with definitions, color-coded terms, and a practical example (508.906,26 Kz / 508.000,00 Kz).
+  - Uses existing `ModernTooltip` component for consistency with Portal UX.
+  - Reusable `BudgetHelpContent` and `BudgetHelpIcon` components for future use.
+
+### Files Changed
+- `frontend/src/pages/Finance/FinanceBudget.tsx` — Added `BudgetHelpContent`, `BudgetHelpIcon` components; placed help icons in KPI header and CC section title.
+
+## [v2.93.3] - 2026-04-26 - Feature: Monthly Budget Evolution Chart by Cost Center
+
+### Added
+- **Monthly Budget Evolution Chart**: New stacked bar chart on the Finance > Orçamento page showing the monthly distribution of committed and paid values by cost center for the selected department and year.
+  - Chart renders below the existing cost center summary in the right panel.
+  - Segmented toggle control with three modes: **Comprometido**, **Pago**, **Ambos**.
+  - In "Ambos" mode, uses grouped stacked bars (committed at full opacity, paid at 45% opacity) for clear visual separation.
+  - Top 5 cost centers are named with distinct colors; remaining CCs are grouped as "Outros".
+  - Empty state shows: "Sem movimentações orçamentais para os critérios selecionados."
+  - Chart reacts to department selection, year change, and mode toggle.
+
+### Technical Details
+- **New Backend Endpoint**: `GET /api/v1/finance/budget/department/{departmentId}/monthly/{year}` — returns 12 months (Jan–Dec) with per-cost-center committed/paid breakdown.
+- **Monthly Aggregation Logic**:
+  - Comprometido: grouped by `CreatedAtUtc.Month` (consistent with existing yearly filter).
+  - Pago: grouped by `ActualPaidAtUtc.Month` (fallback to `CreatedAtUtc.Month`).
+- **New DTOs**: `BudgetMonthlyDataDto`, `BudgetMonthlyCostCenterDto`.
+- **Frontend**: Uses existing `recharts` library (BarChart, stacked bars, responsive container).
+
+### Files Changed
+- `AlplaPortal.Application/DTOs/Finance/BudgetDTOs.cs` — 2 new DTO classes
+- `AlplaPortal.Api/Controllers/FinanceBudgetController.cs` — New endpoint
+- `frontend/src/lib/api.ts` — New API method `getMonthlyBreakdown`
+- `frontend/src/pages/Finance/FinanceBudget.tsx` — Chart state, effects, toggle, and chart rendering
+
+## [v2.93.2] - 2026-04-26 - Fix: Finance Workspace COMPLETED Status Visibility & Budget Status Include
+
+### Fixed
+- **Finance COMPLETED Status Visibility**: Requests reaching `COMPLETED` status (terminal state after all items received) were invisible in the Finance workspace — not appearing in Resumo Operacional, Pagamentos, or Orçamento. Root cause: `"COMPLETED"` was not defined in `RequestConstants.Statuses` and was absent from all Finance controller filter arrays.
+  - Added `RequestConstants.Statuses.Completed = "COMPLETED"`.
+  - Injected `Completed` into 3 `financeStatuses` arrays in `FinanceController` (summary, overview, payments).
+  - Injected `Completed` into 2 `IsPaid` checks and the `completedThisMonth` filter in `FinanceController`.
+  - Injected `Completed` into `CommittedStatuses` and 2 `IsPaid` checks in `FinanceBudgetController`.
+- **Budget Committed/Paid Calculation Always Zero (Pre-existing Bug)**: Both budget overview and cost center detail queries in `FinanceBudgetController` were missing `.Include(r => r.Status)`. Without this, `req.Status?.Code` was always `null`, causing `CommittedStatuses.Contains(null)` to always be false. All budget committed/paid values returned 0 regardless of request status.
+
+### Files Changed
+- `AlplaPortal.Domain/Constants/RequestConstants.cs` — New constant
+- `AlplaPortal.Api/Controllers/FinanceController.cs` — 6 filter locations updated
+- `AlplaPortal.Api/Controllers/FinanceBudgetController.cs` — 5 locations updated + 2 Include fixes
+
+### Verified
+- Finance Summary: `completedThisMonth: 2`, `paidThisMonth: AOA 688,092.64` ✅
+- Finance Budget: `committed: 688,998.90`, `paid: 688,998.90`, `usage: 3.44%` ✅
+- Finance Payments: 2 items visible with COMPLETED status ✅
+- Finance History: unchanged (11 entries) ✅
+
+## [v2.93.1] - 2026-04-26 - Change: Payment Divergence — Zero-Tolerance Detection (DEC-110 Update)
+
+### Changed
+- **Payment Divergence Detection**: Removed the 1% relative tolerance (with 1.00 absolute floor) that previously suppressed small divergence warnings. Any non-zero difference between `ActualPaidAmount` and `ApprovedTotalAmount` (after standard 2-decimal currency rounding via `Math.Round(value, 2)`) now creates a `PAYMENT_DIVERGENCE_DETECTED` audit entry.
+- **Directional Divergence Messages**: Audit entries now indicate whether the payment was "abaixo do valor aprovado" (below) or "acima do valor aprovado" (above), with absolute difference and percentage.
+- **HasPaymentDivergence DTO Flag**: Updated to use `Math.Round` equality check instead of tolerance-gated comparison.
+
+### Documentation
+- **WORKFLOW_ARCHITECTURE.md**: Updated §6 Divergence Detection with zero-tolerance rule and revised scenario matrix.
+- **DECISIONS.md**: Updated both DEC-110 instances to reflect the removal of the tolerance gate.
+- **MANUAL_TEST_GUIDE.md**: Updated payment validation references to reflect zero-tolerance policy.
+
+### Technical Notes
+- OCR Financial Integrity tolerance (`RequestConstants.FinancialIntegrity`) is unchanged — it is a separate concern for OCR-vs-quotation comparison.
+- No frontend changes required — divergence is computed server-side and recorded in audit history.
+
+## [v2.93.0] - 2026-04-25 - Performance: Optimized Portal Backend Performance (Requests & Receiving)
+
+### Changed
+- **Backend N+1 Query Refactoring**: Optimized `RequestsController.GetRequests` and `ProjectToListItem`. Replaced inefficient per-row subqueries (`Quotations`, `StatusHistories`, `LineItems`) with a projection pattern using anonymous objects. This collapses multiple database trips into a single optimized query execution, significantly improving throughput for large datasets.
+- **Database Indexing**: Identified and applied missing indexes required for high-frequency filtering operations in the `GetScopedRequestsQuery` logic. Added indexes to `Request` table for: `RequestTypeId`, `DepartmentId`, `PlantId`, `CompanyId`, `NeedLevelId`, and `SelectedQuotationId` via EF Core migration (`AddRequestPerformanceIndexes`).
+
+### Technical Notes
+- Applied EF Core migration to the LocalDB database to resolve index-related latency and timeouts observed with the seeded 50-request [DEMO] dataset.
+- Loading times for the Requests list and Receiving workspace improved from timing out to under 2-3 seconds.
+
 ## [v2.90.0] - 2026-04-25 - Feature: Supplier Ficha Module, Approval Center Integration & P.O. Emission Guards
 
 ### Added
@@ -278,7 +362,7 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 ### Added
 - **Financial Snapshot at Approval**: `ApprovedTotalAmount`, `ApprovedCurrencyCode`, and `ApprovedAtUtc` are now captured immutably on the `Request` entity at the moment of final approval. QUOTATION flow sources the winning quotation total; PAYMENT flow sources `EstimatedTotalAmount`.
 - **Mandatory Payment Amount Capture**: `ActualPaidAmount` and `ActualPaidAtUtc` are now required inputs when confirming payment via `MarkAsPaid`. The `FinanceActionModal` includes a new "Montante Efetivamente Pago" input field.
-- **Payment Divergence Detection**: Automated comparison of `ActualPaidAmount` vs `ApprovedTotalAmount` using a 1% relative tolerance (with 1.00 absolute floor). When divergence exceeds tolerance, a `PAYMENT_DIVERGENCE_DETECTED` audit entry is created in `RequestStatusHistory` with detailed variance data.
+- **Payment Divergence Detection**: *(Superseded by v2.93.1 — tolerance removed, now zero-tolerance.)* Originally implemented automated comparison of `ActualPaidAmount` vs `ApprovedTotalAmount` using a 1% relative tolerance (with 1.00 absolute floor). When divergence exceeded tolerance, a `PAYMENT_DIVERGENCE_DETECTED` audit entry was created in `RequestStatusHistory` with detailed variance data.
 - **Finance Status Guards**: `SchedulePayment` and `MarkAsPaid` endpoints now enforce explicit source-status validation. Actions from invalid workflow states return HTTP 400 with descriptive error messages listing allowed statuses.
 - **Finance List Enrichment**: `FinanceListItemDto` now exposes `ApprovedTotalAmount`, `ActualPaidAmount`, `ApprovedCurrencyCode`, `ApprovedAtUtc`, `ActualPaidAtUtc`, and a computed `HasPaymentDivergence` flag.
 ### Documentation

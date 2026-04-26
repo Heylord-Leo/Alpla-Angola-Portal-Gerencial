@@ -1516,6 +1516,11 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao carregar detalhes do orçamento do departamento.');
             return response.json();
         },
+        getMonthlyBreakdown: async (departmentId: number, year: number): Promise<any[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/budget/department/${departmentId}/monthly/${year}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar evolução mensal do orçamento.');
+            return response.json();
+        },
         getConfig: async (year: number): Promise<any[]> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/budget/config/${year}`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar configurações de orçamento.');

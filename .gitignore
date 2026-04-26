@@ -52,3 +52,5 @@ desktop.ini
 # Project-specific ignores
 build_*.txt
 data/attachments/
+scratch/
+backend.err

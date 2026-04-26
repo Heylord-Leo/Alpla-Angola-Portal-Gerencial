@@ -36,6 +36,7 @@ public class FinanceBudgetController : BaseController
         RequestConstants.Statuses.Paid,
         RequestConstants.Statuses.PaymentCompleted,
         RequestConstants.Statuses.InFollowup,
+        RequestConstants.Statuses.Completed,
         RequestConstants.Statuses.WaitingPoCorrection
     };
 
@@ -53,6 +54,7 @@ public class FinanceBudgetController : BaseController
 
         // Limita a busca das requests no mesmo ano
         var requestsYearly = await scopedRequestsQuery
+            .Include(r => r.Status)
             .Include(r => r.Currency)
             .Include(r => r.Quotations)
             .Include(r => r.Department)
@@ -93,6 +95,7 @@ public class FinanceBudgetController : BaseController
                     if (req.Status?.Code == RequestConstants.Statuses.Paid || 
                         req.Status?.Code == RequestConstants.Statuses.PaymentCompleted ||
                         req.Status?.Code == RequestConstants.Statuses.InFollowup ||
+                        req.Status?.Code == RequestConstants.Statuses.Completed ||
                         req.ActualPaidAtUtc.HasValue)
                     {
                         totalPaid += amount;
@@ -121,6 +124,7 @@ public class FinanceBudgetController : BaseController
         var scopedRequestsQuery = await GetScopedRequestsQuery();
 
         var requestsYearly = await scopedRequestsQuery
+            .Include(r => r.Status)
             .Include(r => r.LineItems)
                 .ThenInclude(li => li.CostCenter)
             .Include(r => r.Currency)
@@ -165,6 +169,7 @@ public class FinanceBudgetController : BaseController
                     if (req.Status?.Code == RequestConstants.Statuses.Paid || 
                         req.Status?.Code == RequestConstants.Statuses.PaymentCompleted ||
                         req.Status?.Code == RequestConstants.Statuses.InFollowup ||
+                        req.Status?.Code == RequestConstants.Statuses.Completed ||
                         req.ActualPaidAtUtc.HasValue)
                     {
                         ccPaid += amount;
@@ -183,6 +188,108 @@ public class FinanceBudgetController : BaseController
         }
 
         return Ok(details.OrderByDescending(d => d.CommittedSpend).ToList());
+    }
+
+    [HttpGet("department/{departmentId}/monthly/{year}")]
+    public async Task<ActionResult<List<BudgetMonthlyDataDto>>> GetMonthlyBreakdown(int departmentId, int year)
+    {
+        var scopedRequestsQuery = await GetScopedRequestsQuery();
+
+        var requestsYearly = await scopedRequestsQuery
+            .Include(r => r.Status)
+            .Include(r => r.LineItems)
+                .ThenInclude(li => li.CostCenter)
+            .Include(r => r.Currency)
+            .Include(r => r.Quotations)
+            .Where(r => r.CreatedAtUtc.Year == year && r.DepartmentId == departmentId && !r.IsCancelled)
+            .ToListAsync();
+
+        var monthLabels = new[] { "Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez" };
+        var result = new List<BudgetMonthlyDataDto>();
+
+        // Build a cost center name lookup from all requests
+        var ccNameLookup = new Dictionary<int, string>();
+        foreach (var req in requestsYearly)
+        {
+            var ccId = req.LineItems.FirstOrDefault(li => li.CostCenterId.HasValue)?.CostCenterId ?? 0;
+            if (!ccNameLookup.ContainsKey(ccId))
+            {
+                if (ccId == 0)
+                {
+                    ccNameLookup[ccId] = "Não Alocado";
+                }
+                else
+                {
+                    var ccEntity = req.LineItems.FirstOrDefault(li => li.CostCenterId == ccId)?.CostCenter;
+                    ccNameLookup[ccId] = ccEntity?.Name ?? $"CC {ccId}";
+                }
+            }
+        }
+
+        for (int month = 1; month <= 12; month++)
+        {
+            var monthEntry = new BudgetMonthlyDataDto
+            {
+                Month = month,
+                MonthLabel = monthLabels[month - 1],
+                CostCenters = new List<BudgetMonthlyCostCenterDto>()
+            };
+
+            // Group requests by cost center
+            var ccGroups = requestsYearly
+                .GroupBy(r => r.LineItems.FirstOrDefault(li => li.CostCenterId.HasValue)?.CostCenterId ?? 0);
+
+            foreach (var ccGroup in ccGroups)
+            {
+                var ccId = ccGroup.Key;
+                decimal committedForMonth = 0;
+                decimal paidForMonth = 0;
+
+                foreach (var req in ccGroup)
+                {
+                    var amount = req.SelectedQuotationId.HasValue
+                        ? req.Quotations.FirstOrDefault(q => q.Id == req.SelectedQuotationId.Value)?.TotalAmount ?? req.EstimatedTotalAmount
+                        : req.EstimatedTotalAmount;
+
+                    // Comprometido: grouped by CreatedAtUtc.Month
+                    if (CommittedStatuses.Contains(req.Status?.Code) && req.CreatedAtUtc.Month == month)
+                    {
+                        committedForMonth += amount;
+                    }
+
+                    // Pago: grouped by ActualPaidAtUtc.Month (fallback to CreatedAtUtc.Month)
+                    bool isPaid = req.Status?.Code == RequestConstants.Statuses.Paid
+                        || req.Status?.Code == RequestConstants.Statuses.PaymentCompleted
+                        || req.Status?.Code == RequestConstants.Statuses.InFollowup
+                        || req.Status?.Code == RequestConstants.Statuses.Completed
+                        || req.ActualPaidAtUtc.HasValue;
+
+                    if (isPaid && CommittedStatuses.Contains(req.Status?.Code))
+                    {
+                        int paidMonth = req.ActualPaidAtUtc?.Month ?? req.CreatedAtUtc.Month;
+                        if (paidMonth == month)
+                        {
+                            paidForMonth += amount;
+                        }
+                    }
+                }
+
+                if (committedForMonth > 0 || paidForMonth > 0)
+                {
+                    monthEntry.CostCenters.Add(new BudgetMonthlyCostCenterDto
+                    {
+                        CostCenterId = ccId,
+                        CostCenterName = ccNameLookup.GetValueOrDefault(ccId, "Não Alocado"),
+                        CommittedAmount = committedForMonth,
+                        PaidAmount = paidForMonth
+                    });
+                }
+            }
+
+            result.Add(monthEntry);
+        }
+
+        return Ok(result);
     }
 
     [HttpGet("config/{year}")]

@@ -285,7 +285,9 @@ export function RequestsTableWidget({
                                             </td>
                                             {/* Data Limite */}
                                             <td style={{ padding: '12px 20px', border: 'none' }}>
-                                                {['COMPLETED', 'QUOTATION_COMPLETED', 'PAID', 'PAYMENT_COMPLETED'].includes(req.statusCode) ? (
+                                                {['CANCELLED', 'REJECTED'].includes(req.statusCode) ? (
+                                                    <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>-----</span>
+                                                ) : ['COMPLETED', 'QUOTATION_COMPLETED', 'PAID', 'PAYMENT_COMPLETED'].includes(req.statusCode) ? (
                                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
                                                         <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-status-emerald)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                                                             {['PAID', 'PAYMENT_COMPLETED'].includes(req.statusCode) ? 'Pagamento Realizado em' : (isPayment ? 'Pagamento Realizado em' : 'Recebido em')}
@@ -326,15 +328,19 @@ export function RequestsTableWidget({
                                             </td>
                                             {/* Valor */}
                                             <td style={{ padding: '12px 20px', textAlign: 'right', border: 'none' }}>
-                                                <p style={{
-                                                    fontSize: '0.85rem',
-                                                    fontWeight: 800,
-                                                    color: 'var(--color-text-main)',
-                                                    margin: 0,
-                                                    whiteSpace: 'nowrap',
-                                                }}>
-                                                    {req.currencyCode || 'AOA'} {(req.estimatedTotalAmount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                                </p>
+                                                {['CANCELLED', 'REJECTED'].includes(req.statusCode) ? (
+                                                    <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>-----</span>
+                                                ) : (
+                                                    <p style={{
+                                                        fontSize: '0.85rem',
+                                                        fontWeight: 800,
+                                                        color: 'var(--color-text-main)',
+                                                        margin: 0,
+                                                        whiteSpace: 'nowrap',
+                                                    }}>
+                                                        {req.currencyCode || 'AOA'} {(req.estimatedTotalAmount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                    </p>
+                                                )}
                                             </td>
                                             {/* Ações */}
                                             <td style={{ padding: '12px 20px', textAlign: 'center', border: 'none' }} onClick={(e) => e.stopPropagation()}>

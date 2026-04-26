@@ -2,7 +2,43 @@
 
 ## Current Version
 
-v2.92.0
+v2.93.4
+
+## [2.93.4] - 2026-04-26
+
+### Added
+- **Budget Help Tooltips**: Contextual help icons on Finance > Orçamento explaining Comprometido vs Pago for business users.
+- **Reusable Components**: `BudgetHelpContent`, `BudgetHelpIcon` using existing `ModernTooltip`.
+
+## [2.93.3] - 2026-04-26
+
+### Added
+- **Monthly Budget Evolution Chart**: Stacked bar chart on Finance > Orçamento showing monthly committed/paid breakdown by cost center.
+- **New Endpoint**: `GET /api/v1/finance/budget/department/{departmentId}/monthly/{year}` — 12-month CC breakdown.
+- **New DTOs**: `BudgetMonthlyDataDto`, `BudgetMonthlyCostCenterDto`.
+- **Toggle Modes**: Comprometido, Pago, Ambos with grouped stacked bars.
+
+## [2.93.2] - 2026-04-26
+
+### Fixed
+- **Finance COMPLETED Status Visibility**: Requests with `COMPLETED` status were invisible in the Finance workspace (Resumo Operacional, Pagamentos, Orçamento) because the status was not defined in `RequestConstants.Statuses` and was excluded from all Finance controller filter arrays.
+  - Added `RequestConstants.Statuses.Completed = "COMPLETED"`.
+  - Injected `Completed` into 3 `financeStatuses` arrays, 2 `IsPaid` checks, and the `completedThisMonth` filter in `FinanceController`.
+  - Injected `Completed` into `CommittedStatuses` and 2 `IsPaid` checks in `FinanceBudgetController`.
+- **Budget Calculation Always Zero (Pre-existing Bug)**: Both budget overview and cost center detail queries in `FinanceBudgetController` were missing `.Include(r => r.Status)`, causing `req.Status?.Code` to always be `null`. Committed/Paid aggregation returned 0 for all departments regardless of status.
+
+## [2.93.1] - 2026-04-26
+
+### Changed
+- **Payment Divergence Detection**: Removed the 1% relative tolerance for payment divergence warnings. Any non-zero difference between `ActualPaidAmount` and `ApprovedTotalAmount` now creates a `PAYMENT_DIVERGENCE_DETECTED` audit entry.
+
+## [2.93.0] - 2026-04-25
+
+### Changed
+- **Backend Performance Optimization (Requests & Receiving)**: Eliminated N+1 query patterns in `/api/v1/requests` list and the Receiving workspace.
+  - Refactored `GetRequests` and `ProjectToListItem` in `RequestsController` to use explicit anonymous projections (`let`-like logic), fetching related Quotations, Cost Centers, and Status Histories in a single database operation before projecting into DTOs.
+  - Applied new performance indexes via EF Core Migration (`AddRequestPerformanceIndexes`) for critical high-frequency filtering fields (`RequestTypeId`, `DepartmentId`, `PlantId`, `CompanyId`, `NeedLevelId`, `SelectedQuotationId`).
+  - Request list load time significantly reduced (from timeout to 2-3s) for large datasets.
 
 ## [2.92.0] - 2026-04-25
 

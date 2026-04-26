@@ -1,8 +1,7 @@
-import { useEffect, useState, lazy, Suspense } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { FinanceSummaryDto } from '../../types';
 import { AlertCircle, CheckCircle, Clock, DollarSign, TrendingUp, Presentation, AlertTriangle, BookOpen, X } from 'lucide-react';
-const ContractProjectionSection = lazy(() => import('./ContractProjectionSection'));
 import { useNavigate } from 'react-router-dom';
 import { 
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, 
@@ -14,6 +13,7 @@ export default function FinanceOverview() {
     const [summary, setSummary] = useState<FinanceSummaryDto | null>(null);
     const [loading, setLoading] = useState(true);
     const [showHelp, setShowHelp] = useState(false);
+    const [isDetailedView, setIsDetailedView] = useState(false);
     
     // Independent state for cash flow projections to avoid heavy reloads
     const [projectionInterval, setProjectionInterval] = useState('15days');
@@ -145,7 +145,45 @@ export default function FinanceOverview() {
                     </div>
                 </div>
 
-                <button
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ display: 'flex', backgroundColor: '#f1f5f9', borderRadius: '8px', padding: '4px' }}>
+                        <button
+                            onClick={() => setIsDetailedView(false)}
+                            style={{
+                                border: 'none',
+                                backgroundColor: !isDetailedView ? '#fff' : 'transparent',
+                                color: !isDetailedView ? '#0f172a' : '#64748b',
+                                padding: '6px 16px',
+                                fontSize: '13px',
+                                fontWeight: !isDetailedView ? 700 : 600,
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                boxShadow: !isDetailedView ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            Visão Simples
+                        </button>
+                        <button
+                            onClick={() => setIsDetailedView(true)}
+                            style={{
+                                border: 'none',
+                                backgroundColor: isDetailedView ? '#fff' : 'transparent',
+                                color: isDetailedView ? '#0f172a' : '#64748b',
+                                padding: '6px 16px',
+                                fontSize: '13px',
+                                fontWeight: isDetailedView ? 700 : 600,
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                boxShadow: isDetailedView ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            Visão Detalhada
+                        </button>
+                    </div>
+
+                    <button
                     onClick={() => setShowHelp(true)}
                     style={{
                         display: 'flex',
@@ -169,6 +207,7 @@ export default function FinanceOverview() {
                     <BookOpen size={18} /> Guia Financeiro
                 </button>
             </div>
+            </div>
 
             {/* KPI Cards Row */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '24px' }}>
@@ -189,7 +228,7 @@ export default function FinanceOverview() {
                     onClick={() => navigate('/finance/payments?filter=scheduled')}
                 />
                 <KPICard
-                    title="Pagtos. Vencidos"
+                    title="Pagamentos Vencidos"
                     value={summary.overduePayments}
                     icon={<AlertCircle size={20} />}
                     color="#ef4444"
@@ -198,7 +237,7 @@ export default function FinanceOverview() {
                     onClick={() => navigate('/finance/payments?filter=overdue')}
                 />
                 <KPICard
-                    title="Pago no Mês"
+                    title="Pago no Mês Atual"
                     value={summary.completedThisMonth}
                     icon={<DollarSign size={20} />}
                     color="#16a34a"
@@ -278,85 +317,6 @@ export default function FinanceOverview() {
                     )}
                 </div>
 
-                {/* Exposição Cambial */}
-                <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Presentation size={20} color="#ea580c" /> Exposição Cambial
-                    </h3>
-                    <p style={{ margin: '0 0 24px 0', color: '#64748b', fontSize: '14px', fontWeight: 500 }}>Montantes pendentes fragmentados por moeda circulante.</p>
-                    
-                    {summary.currencyExposures && summary.currencyExposures.length > 0 ? (
-                        <div style={{ height: '250px', width: '100%' }}>
-                            <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                    <Pie data={summary.currencyExposures} dataKey="amount" nameKey="currencyCode" cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5}>
-                                        {summary.currencyExposures.map((_entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                                        ))}
-                                    </Pie>
-                                    <RechartsTooltip formatter={(value: any, name: any) => [formatCurrency(Number(value), String(name)), 'Montante']} />
-                                    <Legend verticalAlign="bottom" height={36} iconType="circle" />
-                                </PieChart>
-                            </ResponsiveContainer>
-                        </div>
-                    ) : (
-                        <div style={{ height: '250px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 600, border: '2px dashed #cbd5e1', padding: '24px', textAlign: 'center', backgroundColor: 'var(--color-bg-page)' }}>
-                            <Presentation size={36} color="#94a3b8" style={{ marginBottom: '16px' }} />
-                            <span style={{ fontSize: '15px', color: '#334155' }}>Nenhum valor em risco</span>
-                            <span style={{ marginTop: '8px', fontSize: '13px', maxWidth: '300px' }}>
-                                Tudo tranquilo. Quando entrarem faturas indexadas a Dólares (USD), Euros (EUR) ou outras moedas circulantes, segregaremos os volumes retidos em gráficos de fatias aqui.
-                            </span>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Analytics Row 2: Operational Data */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr)', gap: '24px' }}>
-                
-                {/* Aging */}
-                <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '24px' }}>Idade da Fila (Aging)</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        {agingData.map((d) => {
-                            const maxItems = Math.max(...agingData.map(x=>x.items), 1);
-                            return (
-                                <div key={d.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <span style={{ fontWeight: 700, fontSize: '14px', color: '#475569' }}>{d.name}</span>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                        <div style={{ height: '10px', width: `${Math.min((d.items / maxItems) * 100, 100)}px`, backgroundColor: d.color, borderRadius: '4px' }}></div>
-                                        <span style={{ fontWeight: 900, fontSize: '18px', color: d.color }}>{d.items}</span>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-
-                {/* Concentração de Pedidos (Top Fornecedores) */}
-                <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '24px' }}>Top 5 Fornecedores Pendentes</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {summary.topSuppliers && summary.topSuppliers.length > 0 ? summary.topSuppliers.map((supplier, idx) => (
-                            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8px', borderBottom: idx < summary.topSuppliers.length - 1 ? '1px dashed #e2e8f0' : 'none' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                    <span style={{ fontWeight: 800, fontSize: '13px', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '130px' }} title={supplier.supplierName}>{supplier.supplierName}</span>
-                                    <span style={{ fontWeight: 600, fontSize: '11px', color: '#94a3b8' }}>{supplier.requestCount} pedido(s)</span>
-                                </div>
-                                <span style={{ fontWeight: 800, fontSize: '14px', color: 'var(--color-primary)', textAlign: 'right' }}>
-                                    {formatCurrency(supplier.totalPendingAmount, supplier.currencyCode)}
-                                </span>
-                            </div>
-                        )) : (
-                            <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 600, textAlign: 'center', border: '2px dashed #cbd5e1', backgroundColor: 'var(--color-bg-page)', flex: 1 }}>
-                                <span style={{ fontSize: '13px' }}>
-                                    Sem dados nominais. O sistema elencará automaticamente as cinco entidades físicas perante as quais o grupo Alpla tem as mais pesadas dívidas a saldar no curto prazo.
-                                </span>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
                 {/* Atenção Imediata (Refactored to be narrower) */}
                 <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column' }}>
                     <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -397,13 +357,82 @@ export default function FinanceOverview() {
                         )}
                     </div>
                 </div>
-
             </div>
 
-            {/* Contractual Cash-Flow Projection Section */}
-            <Suspense fallback={<div style={{ padding: '32px', textAlign: 'center', color: '#64748b', fontWeight: 600 }}>Carregando projeção contratual...</div>}>
-                <ContractProjectionSection selectedCompanyId={selectedCompanyId} />
-            </Suspense>
+            {/* Analytics Row 2: Operational Data */}
+            {isDetailedView && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)', gap: '24px' }}>
+                    
+                    {/* Tempo em Aberto (Aging) */}
+                    <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+                        <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '24px' }}>Tempo em Aberto</h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            {agingData.map((d) => {
+                                const maxItems = Math.max(...agingData.map(x=>x.items), 1);
+                                return (
+                                    <div key={d.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <span style={{ fontWeight: 700, fontSize: '14px', color: '#475569' }}>{d.name}</span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                            <div style={{ height: '10px', width: `${Math.min((d.items / maxItems) * 100, 100)}px`, backgroundColor: d.color, borderRadius: '4px' }}></div>
+                                            <span style={{ fontWeight: 900, fontSize: '18px', color: d.color }}>{d.items}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Concentração de Pedidos (Top Fornecedores) */}
+                    <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+                        <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '24px' }}>Principais Fornecedores Pendentes</h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            {summary.topSuppliers && summary.topSuppliers.length > 0 ? summary.topSuppliers.map((supplier, idx) => (
+                                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8px', borderBottom: idx < summary.topSuppliers.length - 1 ? '1px dashed #e2e8f0' : 'none' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                        <span style={{ fontWeight: 800, fontSize: '13px', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '130px' }} title={supplier.supplierName}>{supplier.supplierName}</span>
+                                        <span style={{ fontWeight: 600, fontSize: '11px', color: '#94a3b8' }}>{supplier.requestCount} pedido(s)</span>
+                                    </div>
+                                    <span style={{ fontWeight: 800, fontSize: '14px', color: 'var(--color-primary)', textAlign: 'right' }}>
+                                        {formatCurrency(supplier.totalPendingAmount, supplier.currencyCode)}
+                                    </span>
+                                </div>
+                            )) : (
+                                <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 600, textAlign: 'center', border: '2px dashed #cbd5e1', backgroundColor: 'var(--color-bg-page)', flex: 1 }}>
+                                    <span style={{ fontSize: '13px' }}>Sem dados nominais.</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Risco Cambial */}
+                    <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+                        <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Presentation size={20} color="#ea580c" /> Risco Cambial
+                        </h3>
+                        
+                        {summary.currencyExposures && summary.currencyExposures.length > 0 ? (
+                            <div style={{ height: '220px', width: '100%', marginTop: '16px' }}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie data={summary.currencyExposures} dataKey="amount" nameKey="currencyCode" cx="50%" cy="50%" innerRadius={50} outerRadius={70} paddingAngle={5}>
+                                            {summary.currencyExposures.map((_entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                                            ))}
+                                        </Pie>
+                                        <RechartsTooltip formatter={(value: any, name: any) => [formatCurrency(Number(value), String(name)), 'Montante']} />
+                                        <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                        ) : (
+                            <div style={{ height: '220px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 600, border: '2px dashed #cbd5e1', padding: '24px', textAlign: 'center', backgroundColor: 'var(--color-bg-page)', marginTop: '16px' }}>
+                                <Presentation size={36} color="#94a3b8" style={{ marginBottom: '16px' }} />
+                                <span style={{ fontSize: '15px', color: '#334155' }}>Nenhum valor em risco</span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* Budget Summary Strip → links to /finance/budget */}
             <div style={{

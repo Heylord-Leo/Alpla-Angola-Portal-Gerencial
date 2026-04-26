@@ -30,6 +30,21 @@ public class BudgetCostCenterDetailDto
     public string CurrencyCode { get; set; } = string.Empty;
 }
 
+public class BudgetMonthlyDataDto
+{
+    public int Month { get; set; }
+    public string MonthLabel { get; set; } = string.Empty;
+    public List<BudgetMonthlyCostCenterDto> CostCenters { get; set; } = new();
+}
+
+public class BudgetMonthlyCostCenterDto
+{
+    public int CostCenterId { get; set; }
+    public string CostCenterName { get; set; } = string.Empty;
+    public decimal CommittedAmount { get; set; }
+    public decimal PaidAmount { get; set; }
+}
+
 public class AnnualBudgetConfigDto
 {
     public int Id { get; set; }

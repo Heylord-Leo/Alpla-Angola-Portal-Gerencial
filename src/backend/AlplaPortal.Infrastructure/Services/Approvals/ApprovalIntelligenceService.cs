@@ -60,11 +60,16 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
         var validStatuses = new[] 
         { 
             RequestConstants.Statuses.FinalApproved,
+            RequestConstants.Statuses.WaitingCostCenter,
+            RequestConstants.Statuses.QuotationCompleted,
             RequestConstants.Statuses.PoIssued,
             RequestConstants.Statuses.PaymentRequestSent,
             RequestConstants.Statuses.PaymentScheduled,
             RequestConstants.Statuses.Paid,
-            RequestConstants.Statuses.PaymentCompleted
+            RequestConstants.Statuses.PaymentCompleted,
+            RequestConstants.Statuses.InFollowup,
+            RequestConstants.Statuses.Completed,
+            RequestConstants.Statuses.WaitingPoCorrection
         };
 
         var deptApprovedRequests = await _context.Requests
@@ -106,11 +111,16 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
         var validStatuses = new[] 
         { 
             RequestConstants.Statuses.FinalApproved,
+            RequestConstants.Statuses.WaitingCostCenter,
+            RequestConstants.Statuses.QuotationCompleted,
             RequestConstants.Statuses.PoIssued,
             RequestConstants.Statuses.PaymentRequestSent,
             RequestConstants.Statuses.PaymentScheduled,
             RequestConstants.Statuses.Paid,
-            RequestConstants.Statuses.PaymentCompleted
+            RequestConstants.Statuses.PaymentCompleted,
+            RequestConstants.Statuses.InFollowup,
+            RequestConstants.Statuses.Completed,
+            RequestConstants.Statuses.WaitingPoCorrection
         };
 
         // Lookup historical items with the same normalized description, same currency, and from approved requests
@@ -221,11 +231,16 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
         var validStatuses = new[] 
         { 
             RequestConstants.Statuses.FinalApproved,
+            RequestConstants.Statuses.WaitingCostCenter,
+            RequestConstants.Statuses.QuotationCompleted,
             RequestConstants.Statuses.PoIssued,
             RequestConstants.Statuses.PaymentRequestSent,
             RequestConstants.Statuses.PaymentScheduled,
             RequestConstants.Statuses.Paid,
-            RequestConstants.Statuses.PaymentCompleted
+            RequestConstants.Statuses.PaymentCompleted,
+            RequestConstants.Statuses.InFollowup,
+            RequestConstants.Statuses.Completed,
+            RequestConstants.Statuses.WaitingPoCorrection
         };
 
         var historicalItems = await _context.RequestLineItems
@@ -296,6 +311,7 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
             RequestConstants.Statuses.AreaAdjustment,
             RequestConstants.Statuses.FinalAdjustment,
             RequestConstants.Statuses.InFollowup,
+            RequestConstants.Statuses.Completed,
             RequestConstants.Statuses.WaitingCostCenter,
             RequestConstants.Statuses.WaitingPoCorrection
         };
@@ -303,7 +319,8 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
         var paidStatuses = new[] 
         { 
             RequestConstants.Statuses.Paid,
-            RequestConstants.Statuses.PaymentCompleted
+            RequestConstants.Statuses.PaymentCompleted,
+            RequestConstants.Statuses.Completed
         };
 
         // Needs to have been approved

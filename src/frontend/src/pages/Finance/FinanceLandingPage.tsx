@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
-import { Activity, DollarSign, Archive, BarChart2 } from 'lucide-react';
+import { Activity, DollarSign, Archive, BarChart2, FileText } from 'lucide-react';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 
@@ -34,6 +34,9 @@ export default function FinanceLandingPage() {
                 </NavLink>
                 <NavLink to="/finance/budget" style={navStyle}>
                     <BarChart2 size={18} /> Orçamento
+                </NavLink>
+                <NavLink to="/finance/contracts" style={navStyle}>
+                    <FileText size={18} /> Contratos
                 </NavLink>
             </div>
 

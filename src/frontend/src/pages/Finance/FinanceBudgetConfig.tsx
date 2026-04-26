@@ -13,12 +13,73 @@ interface BudgetConfig {
     year: number;
 }
 
+// ─── Currency Formatting Helpers ──────────────────────────────────────────────
+
+/** Parse a formatted string like "1 500 000,75" into a number (1500000.75). */
+function parseFormattedNumber(str: string): number {
+    if (!str || str.trim() === '') return 0;
+    // Remove thousand separators (spaces and dots), convert decimal comma to dot
+    const cleaned = str.replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : num;
+}
+
+/** Format a number into display string with thousand separators and decimal comma.
+ *  Example: 1500000.75 → "1 500 000,75" */
+function formatNumberDisplay(value: number): string {
+    if (value === 0) return '';
+    const [intPart, decPart] = value.toFixed(2).split('.');
+    const withThousands = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    // Remove trailing ".00" for clean display
+    if (decPart === '00') return withThousands;
+    return `${withThousands},${decPart}`;
+}
+
+/** Format a raw input string by adding thousand separators while preserving cursor intent.
+ *  Allows digits, spaces, commas, and dots only. */
+function formatInputValue(raw: string): string {
+    if (!raw || raw.trim() === '') return '';
+    // Allow only digits, comma, dot, and spaces
+    let cleaned = raw.replace(/[^\d,.\s]/g, '');
+    // Find the decimal separator (last comma or last dot)
+    const lastComma = cleaned.lastIndexOf(',');
+    const lastDot = cleaned.lastIndexOf('.');
+    let intPart: string;
+    let decPart: string | null = null;
+
+    if (lastComma > lastDot) {
+        // Comma is the decimal separator
+        intPart = cleaned.substring(0, lastComma).replace(/[,.\s]/g, '');
+        decPart = cleaned.substring(lastComma + 1).replace(/\D/g, '');
+    } else if (lastDot > lastComma) {
+        // Dot might be decimal or thousand. If there are 1-2 digits after, treat as decimal.
+        const afterDot = cleaned.substring(lastDot + 1).replace(/\D/g, '');
+        if (afterDot.length <= 2) {
+            intPart = cleaned.substring(0, lastDot).replace(/[,.\s]/g, '');
+            decPart = afterDot;
+        } else {
+            // It's a thousand separator dot
+            intPart = cleaned.replace(/[,.\s]/g, '');
+        }
+    } else {
+        intPart = cleaned.replace(/[,.\s]/g, '');
+    }
+
+    if (!intPart && !decPart) return '';
+    // Add thousand separators (space)
+    const formatted = (intPart || '0').replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    if (decPart !== null) return `${formatted},${decPart}`;
+    return formatted;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function FinanceBudgetConfig() {
     const [departments, setDepartments] = useState<Department[]>([]);
     const [currencies, setCurrencies] = useState<Currency[]>([]);
     const [configs, setConfigs] = useState<Record<number, BudgetConfig>>({});
+    // Display values track the user-visible formatted string per department
+    const [displayAmounts, setDisplayAmounts] = useState<Record<number, string>>({});
     const [year, setYear] = useState(new Date().getFullYear());
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -47,6 +108,7 @@ export default function FinanceBudgetConfig() {
         try {
             const data = await api.financeBudget.getConfig(targetYear);
             const map: Record<number, BudgetConfig> = {};
+            const displayMap: Record<number, string> = {};
             data.forEach((item: any) => {
                 map[item.departmentId] = {
                     departmentId: item.departmentId,
@@ -54,8 +116,11 @@ export default function FinanceBudgetConfig() {
                     currencyId: item.currencyId,
                     year: targetYear,
                 };
+                // Initialize display value from saved numeric value
+                displayMap[item.departmentId] = formatNumberDisplay(item.totalAmount);
             });
             setConfigs(map);
+            setDisplayAmounts(displayMap);
         } catch (err: any) {
             setMessage({ type: 'error', text: err.message || 'Erro ao carregar configurações.' });
         } finally {
@@ -63,13 +128,39 @@ export default function FinanceBudgetConfig() {
         }
     };
 
-    const handleFormChange = (departmentId: number, field: 'totalAmount' | 'currencyId', value: any) => {
+    const handleAmountChange = (departmentId: number, rawValue: string) => {
+        // Update the display string (formatted with thousand separators)
+        const formatted = formatInputValue(rawValue);
+        setDisplayAmounts(prev => ({ ...prev, [departmentId]: formatted }));
+        // Parse into numeric for state/payload
+        const numericValue = parseFormattedNumber(rawValue);
         setConfigs(prev => {
             const existing = prev[departmentId] || {
                 departmentId, year, totalAmount: 0,
                 currencyId: currencies[0]?.id || 0,
             };
-            return { ...prev, [departmentId]: { ...existing, [field]: value } };
+            return { ...prev, [departmentId]: { ...existing, totalAmount: numericValue } };
+        });
+    };
+
+    const handleAmountBlur = (departmentId: number) => {
+        // On blur, re-format cleanly from the numeric value
+        const conf = configs[departmentId];
+        if (conf) {
+            setDisplayAmounts(prev => ({
+                ...prev,
+                [departmentId]: formatNumberDisplay(conf.totalAmount),
+            }));
+        }
+    };
+
+    const handleCurrencyChange = (departmentId: number, value: number) => {
+        setConfigs(prev => {
+            const existing = prev[departmentId] || {
+                departmentId, year, totalAmount: 0,
+                currencyId: currencies[0]?.id || 0,
+            };
+            return { ...prev, [departmentId]: { ...existing, currencyId: value } };
         });
     };
 
@@ -316,15 +407,14 @@ export default function FinanceBudgetConfig() {
                                             {/* Amount */}
                                             <td style={{ padding: '12px 20px', width: '220px' }}>
                                                 <input
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
-                                                    value={conf?.totalAmount || ''}
-                                                    onChange={e => handleFormChange(dept.id, 'totalAmount', parseFloat(e.target.value) || 0)}
-                                                    placeholder="Ex: 500 000"
+                                                    type="text"
+                                                    inputMode="decimal"
+                                                    value={displayAmounts[dept.id] ?? ''}
+                                                    onChange={e => handleAmountChange(dept.id, e.target.value)}
+                                                    onBlur={() => handleAmountBlur(dept.id)}
+                                                    placeholder="Ex: 1 500 000,00"
                                                     style={inputStyle}
                                                     onFocus={e => e.target.style.borderColor = '#0284c7'}
-                                                    onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
                                                 />
                                             </td>
 
@@ -332,7 +422,7 @@ export default function FinanceBudgetConfig() {
                                             <td style={{ padding: '12px 20px', width: '160px' }}>
                                                 <select
                                                     value={conf?.currencyId || (currencies[0]?.id || '')}
-                                                    onChange={e => handleFormChange(dept.id, 'currencyId', parseInt(e.target.value))}
+                                                    onChange={e => handleCurrencyChange(dept.id, parseInt(e.target.value))}
                                                     style={selectStyle}
                                                     onFocus={e => e.target.style.borderColor = '#0284c7'}
                                                     onBlur={e => e.target.style.borderColor = 'var(--color-border)'}

@@ -253,39 +253,43 @@ public class RequestsController : BaseController
             )
             .ThenByDescending(r => r.NeedLevelId ?? 0)
             .ThenByDescending(r => r.CreatedAtUtc)
-            .Select(r => new RequestListItemDto
+            .Select(r => new
             {
-                Id = r.Id,
-                RequestNumber = r.RequestNumber,
-                Title = r.Title,
-                StatusId = r.Status!.Id,
-                StatusName = r.Status.Name ?? string.Empty,
-                StatusCode = r.Status.Code ?? string.Empty,
-                StatusBadgeColor = r.Status.BadgeColor ?? string.Empty,
-                RequestTypeId = r.RequestType!.Id,
-                RequestTypeCode = r.RequestType.Code ?? string.Empty,
-                RequesterName = r.Requester.FullName ?? string.Empty,
-                DepartmentName = r.Department != null ? r.Department.Name : null,
-                PlantName = r.Plant != null ? r.Plant.Name : "---",
-                SupplierName = r.SelectedQuotationId.HasValue 
-                    ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => q.SupplierNameSnapshot).FirstOrDefault() 
-                    : (r.Supplier != null ? r.Supplier.Name : null),
-                EstimatedTotalAmount = r.SelectedQuotationId.HasValue 
-                    ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => (decimal?)q.TotalAmount).FirstOrDefault() ?? 0
-                    : r.EstimatedTotalAmount,
-                CurrencyCode = r.SelectedQuotationId.HasValue 
-                    ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => q.Currency).FirstOrDefault() 
-                    : (r.Currency != null ? r.Currency.Code : null),
-                NeedByDateUtc = r.NeedByDateUtc,
-                CreatedAtUtc = r.CreatedAtUtc,
+                r,
+                SelectedQ = r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId),
+                FirstCostCenter = r.LineItems.Where(l => !l.IsDeleted && l.CostCenter != null).Select(l => l.CostCenter).FirstOrDefault(),
+                CompletedStatusHistory = r.StatusHistories.Where(sh => sh.NewStatus.Code == "COMPLETED" || sh.NewStatus.Code == "QUOTATION_COMPLETED" || sh.NewStatus.Code == "PAID" || sh.NewStatus.Code == "PAYMENT_COMPLETED").OrderByDescending(sh => sh.CreatedAtUtc).FirstOrDefault()
+            })
+            .Select(x => new RequestListItemDto
+            {
+                Id = x.r.Id,
+                RequestNumber = x.r.RequestNumber,
+                Title = x.r.Title,
+                StatusId = x.r.Status!.Id,
+                StatusName = x.r.Status.Name ?? string.Empty,
+                StatusCode = x.r.Status.Code ?? string.Empty,
+                StatusBadgeColor = x.r.Status.BadgeColor ?? string.Empty,
+                RequestTypeId = x.r.RequestType!.Id,
+                RequestTypeCode = x.r.RequestType.Code ?? string.Empty,
+                RequesterName = x.r.Requester.FullName ?? string.Empty,
+                DepartmentName = x.r.Department != null ? x.r.Department.Name : null,
+                PlantName = x.r.Plant != null ? x.r.Plant.Name : "---",
+                SupplierName = x.r.SelectedQuotationId.HasValue 
+                    ? (x.SelectedQ != null ? x.SelectedQ.SupplierNameSnapshot : null)
+                    : (x.r.Supplier != null ? x.r.Supplier.Name : null),
+                EstimatedTotalAmount = x.r.SelectedQuotationId.HasValue 
+                    ? (x.SelectedQ != null ? (decimal?)x.SelectedQ.TotalAmount : 0) ?? 0
+                    : x.r.EstimatedTotalAmount,
+                CurrencyCode = x.r.SelectedQuotationId.HasValue 
+                    ? (x.SelectedQ != null ? x.SelectedQ.Currency : null)
+                    : (x.r.Currency != null ? x.r.Currency.Code : null),
+                NeedByDateUtc = x.r.NeedByDateUtc,
+                CreatedAtUtc = x.r.CreatedAtUtc,
                 // Added for Area Approval context
-                CostCenterCode = r.LineItems.Where(l => !l.IsDeleted && l.CostCenter != null).Select(l => l.CostCenter!.Code).FirstOrDefault(),
-                CostCenterName = r.LineItems.Where(l => !l.IsDeleted && l.CostCenter != null).Select(l => l.CostCenter!.Name).FirstOrDefault(),
-                CompletedAtUtc = (r.Status.Code == "COMPLETED" || r.Status.Code == "QUOTATION_COMPLETED" || r.Status.Code == "PAID" || r.Status.Code == "PAYMENT_COMPLETED")
-                    ? r.StatusHistories.Where(sh => sh.NewStatus.Code == "COMPLETED" || sh.NewStatus.Code == "QUOTATION_COMPLETED" || sh.NewStatus.Code == "PAID" || sh.NewStatus.Code == "PAYMENT_COMPLETED")
-                        .OrderByDescending(sh => sh.CreatedAtUtc)
-                        .Select(sh => (DateTime?)sh.CreatedAtUtc)
-                        .FirstOrDefault()
+                CostCenterCode = x.FirstCostCenter != null ? x.FirstCostCenter.Code : null,
+                CostCenterName = x.FirstCostCenter != null ? x.FirstCostCenter.Name : null,
+                CompletedAtUtc = (x.r.Status.Code == "COMPLETED" || x.r.Status.Code == "QUOTATION_COMPLETED" || x.r.Status.Code == "PAID" || x.r.Status.Code == "PAYMENT_COMPLETED")
+                    ? (x.CompletedStatusHistory != null ? (DateTime?)x.CompletedStatusHistory.CreatedAtUtc : null)
                     : null
             })
             .ToListAsync();
@@ -359,8 +363,8 @@ public class RequestsController : BaseController
         Expression<Func<AlplaPortal.Domain.Entities.Request, bool>> myTasksCriteria = r =>
             // Solicitante: Em rascunho, ajuste ou Aprovado (Pagamento - para acompanhamento/vencimento)
             (r.RequesterId == currentUserId && (r.Status!.Code == RequestConstants.Statuses.Draft || r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment))) ||
-            // Aprovador de Área
-            (isAreaApprover && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
+            // Aprovador de Área (Role ou explicitamente designado)
+            ((isAreaApprover || r.AreaApproverId == currentUserId) && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
             // Aprovador Final
             (isFinalApprover && r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval) ||
             // Comprador
@@ -402,11 +406,16 @@ public class RequestsController : BaseController
             .OrderBy(g => 1)
             .FirstOrDefaultAsync();
 
+        var pendingMyApprovalCount = await query
+            .Where(myTasksCriteria)
+            .CountAsync(r => r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval || r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval || r.Status!.Code == RequestConstants.Statuses.WaitingCostCenter);
+
         var summary = new DashboardSummaryDto
         {
             TotalRequests = counts?.Total ?? 0,
             WaitingQuotation = counts?.WaitingQuotation ?? 0,
             AwaitingApproval = counts?.AwaitingApproval ?? 0,
+            PendingMyApproval = pendingMyApprovalCount,
             AwaitingPo = counts?.AwaitingPo ?? 0,
             AwaitingPayment = counts?.AwaitingPayment ?? 0,
             CompletedRequests = counts?.Completed ?? 0
@@ -557,62 +566,65 @@ public class RequestsController : BaseController
         }
 
         var items = await query
-            .Select(r => new RequestListItemDto
+            .Select(r => new
             {
-                Id = r.Id,
-                RequestNumber = r.RequestNumber,
-                Title = r.Title,
-                StatusId = r.Status!.Id,
-                StatusName = r.Status.Name ?? string.Empty,
-                StatusCode = r.Status.Code ?? string.Empty,
-                StatusDisplayOrder = r.Status.DisplayOrder,
-                StatusBadgeColor = r.Status.BadgeColor ?? string.Empty,
-                RequestTypeId = r.RequestType!.Id,
-                RequestTypeName = r.RequestType.Name ?? string.Empty,
-                RequestTypeCode = r.RequestType.Code ?? string.Empty,
-                NeedLevelId = r.NeedLevelId,
-                NeedLevelName = r.NeedLevel != null ? r.NeedLevel.Name : null,
-                RequesterId = r.Requester!.Id,
-                RequesterName = r.Requester.FullName ?? string.Empty,
-                BuyerId = r.BuyerId,
-                BuyerName = r.Buyer != null ? r.Buyer.FullName : null,
-                AreaApproverId = r.AreaApproverId,
-                AreaApproverName = r.AreaApprover != null ? r.AreaApprover.FullName : null,
-                FinalApproverId = r.FinalApproverId,
-                FinalApproverName = r.FinalApprover != null ? r.FinalApprover.FullName : null,
-                DepartmentId = r.DepartmentId,
-                DepartmentName = r.Department != null ? r.Department.Name : null,
-                CompanyId = r.CompanyId,
-                CompanyName = r.Company != null ? r.Company.Name : string.Empty,
-                PlantId = r.PlantId,
-                PlantName = r.Plant != null ? r.Plant.Name : "---",
-                SupplierId = r.SelectedQuotationId.HasValue 
-                    ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => (int?)q.SupplierId).FirstOrDefault() 
-                    : r.SupplierId,
-                SupplierName = r.SelectedQuotationId.HasValue 
-                    ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => q.SupplierNameSnapshot).FirstOrDefault() 
-                    : (r.Supplier != null ? r.Supplier.Name : null),
-                SupplierPortalCode = r.SelectedQuotationId.HasValue 
+                r,
+                SelectedQ = r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId),
+                CompletedStatusHistory = r.StatusHistories.Where(sh => sh.NewStatus.Code == "COMPLETED" || sh.NewStatus.Code == "QUOTATION_COMPLETED" || sh.NewStatus.Code == "PAID" || sh.NewStatus.Code == "PAYMENT_COMPLETED").OrderByDescending(sh => sh.CreatedAtUtc).FirstOrDefault()
+            })
+            .Select(x => new RequestListItemDto
+            {
+                Id = x.r.Id,
+                RequestNumber = x.r.RequestNumber,
+                Title = x.r.Title,
+                StatusId = x.r.Status!.Id,
+                StatusName = x.r.Status.Name ?? string.Empty,
+                StatusCode = x.r.Status.Code ?? string.Empty,
+                StatusDisplayOrder = x.r.Status.DisplayOrder,
+                StatusBadgeColor = x.r.Status.BadgeColor ?? string.Empty,
+                RequestTypeId = x.r.RequestType!.Id,
+                RequestTypeName = x.r.RequestType.Name ?? string.Empty,
+                RequestTypeCode = x.r.RequestType.Code ?? string.Empty,
+                NeedLevelId = x.r.NeedLevelId,
+                NeedLevelName = x.r.NeedLevel != null ? x.r.NeedLevel.Name : null,
+                RequesterId = x.r.Requester!.Id,
+                RequesterName = x.r.Requester.FullName ?? string.Empty,
+                BuyerId = x.r.BuyerId,
+                BuyerName = x.r.Buyer != null ? x.r.Buyer.FullName : null,
+                AreaApproverId = x.r.AreaApproverId,
+                AreaApproverName = x.r.AreaApprover != null ? x.r.AreaApprover.FullName : null,
+                FinalApproverId = x.r.FinalApproverId,
+                FinalApproverName = x.r.FinalApprover != null ? x.r.FinalApprover.FullName : null,
+                DepartmentId = x.r.DepartmentId,
+                DepartmentName = x.r.Department != null ? x.r.Department.Name : null,
+                CompanyId = x.r.CompanyId,
+                CompanyName = x.r.Company != null ? x.r.Company.Name : string.Empty,
+                PlantId = x.r.PlantId,
+                PlantName = x.r.Plant != null ? x.r.Plant.Name : "---",
+                SupplierId = x.r.SelectedQuotationId.HasValue 
+                    ? (x.SelectedQ != null ? (int?)x.SelectedQ.SupplierId : null)
+                    : x.r.SupplierId,
+                SupplierName = x.r.SelectedQuotationId.HasValue 
+                    ? (x.SelectedQ != null ? x.SelectedQ.SupplierNameSnapshot : null)
+                    : (x.r.Supplier != null ? x.r.Supplier.Name : null),
+                SupplierPortalCode = x.r.SelectedQuotationId.HasValue 
                     ? null 
-                    : (r.Supplier != null ? r.Supplier.PortalCode : null),
-                EstimatedTotalAmount = r.SelectedQuotationId.HasValue 
-                    ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => (decimal?)q.TotalAmount).FirstOrDefault() ?? 0
-                    : r.EstimatedTotalAmount,
-                CurrencyId = r.CurrencyId,
-                CurrencyCode = r.SelectedQuotationId.HasValue 
-                    ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => q.Currency).FirstOrDefault() 
-                    : (r.Currency != null ? r.Currency.Code : null),
-                RequestedDateUtc = r.RequestedDateUtc,
-                NeedByDateUtc = r.NeedByDateUtc,
-                CreatedAtUtc = r.CreatedAtUtc,
-                IsCancelled = r.IsCancelled,
-                SelectedQuotationId = r.SelectedQuotationId,
-                CapexOpexClassificationId = r.CapexOpexClassificationId,
-                CompletedAtUtc = (r.Status.Code == "COMPLETED" || r.Status.Code == "QUOTATION_COMPLETED" || r.Status.Code == "PAID" || r.Status.Code == "PAYMENT_COMPLETED")
-                    ? r.StatusHistories.Where(sh => sh.NewStatus.Code == "COMPLETED" || sh.NewStatus.Code == "QUOTATION_COMPLETED" || sh.NewStatus.Code == "PAID" || sh.NewStatus.Code == "PAYMENT_COMPLETED")
-                        .OrderByDescending(sh => sh.CreatedAtUtc)
-                        .Select(sh => (DateTime?)sh.CreatedAtUtc)
-                        .FirstOrDefault()
+                    : (x.r.Supplier != null ? x.r.Supplier.PortalCode : null),
+                EstimatedTotalAmount = x.r.SelectedQuotationId.HasValue 
+                    ? (x.SelectedQ != null ? (decimal?)x.SelectedQ.TotalAmount : 0) ?? 0
+                    : x.r.EstimatedTotalAmount,
+                CurrencyId = x.r.CurrencyId,
+                CurrencyCode = x.r.SelectedQuotationId.HasValue 
+                    ? (x.SelectedQ != null ? x.SelectedQ.Currency : null)
+                    : (x.r.Currency != null ? x.r.Currency.Code : null),
+                RequestedDateUtc = x.r.RequestedDateUtc,
+                NeedByDateUtc = x.r.NeedByDateUtc,
+                CreatedAtUtc = x.r.CreatedAtUtc,
+                IsCancelled = x.r.IsCancelled,
+                SelectedQuotationId = x.r.SelectedQuotationId,
+                CapexOpexClassificationId = x.r.CapexOpexClassificationId,
+                CompletedAtUtc = (x.r.Status.Code == "COMPLETED" || x.r.Status.Code == "QUOTATION_COMPLETED" || x.r.Status.Code == "PAID" || x.r.Status.Code == "PAYMENT_COMPLETED")
+                    ? (x.CompletedStatusHistory != null ? (DateTime?)x.CompletedStatusHistory.CreatedAtUtc : null)
                     : null
             })
             .Skip((page - 1) * pageSize)

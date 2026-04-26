@@ -194,18 +194,28 @@ export function RequestStatusActionPanels({
                         )}
 
                         {/* Finance actions */}
-                        {isFinance && (
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                {status === 'PO_ISSUED' && (
+                        {status === 'PO_ISSUED' ? (
+                            isFinance ? (
+                                <div style={{ display: 'flex', gap: '8px' }}>
                                     <button 
-                                        onClick={() => setShowApprovalModal({ show: true, type: 'SCHEDULE_PAYMENT' })}
+                                        onClick={() => {
+                                            if (onDrawerClose) onDrawerClose();
+                                            navigate('/finance/payments', { state: { flashRequestId: requestId } });
+                                        }}
                                         className="btn-primary"
                                         style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
                                     >
-                                        <Clock size={14} /> AGENDAR PAGAMENTO
+                                        <ArrowRight size={14} /> IR PARA PAGAMENTOS
                                     </button>
-                                )}
-                                {(status === 'PO_ISSUED' || status === 'PAYMENT_SCHEDULED') && (
+                                </div>
+                            ) : (
+                                <span style={{ fontSize: '0.75rem', color: '#64748b', fontStyle: 'italic', display: 'flex', alignItems: 'center', height: '32px' }}>
+                                    A próxima ação deve ser realizada pelo Financeiro na tela de Pagamentos.
+                                </span>
+                            )
+                        ) : (
+                            isFinance && status === 'PAYMENT_SCHEDULED' && (
+                                <div style={{ display: 'flex', gap: '8px' }}>
                                     <button 
                                         onClick={() => setShowApprovalModal({ show: true, type: 'COMPLETE_PAYMENT' })}
                                         className="btn-primary"
@@ -213,8 +223,8 @@ export function RequestStatusActionPanels({
                                     >
                                         <Check size={14} /> CONFIRMAR PAGAMENTO
                                     </button>
-                                )}
-                            </div>
+                                </div>
+                            )
                         )}
                     </div>
                 </div>

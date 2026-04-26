@@ -762,10 +762,17 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
 
         if (!id) return;
 
-        if ((action === 'REJECT' || action === 'REQUEST_ADJUSTMENT') && !approvalComment.trim()) {
+        const actionRequiresComment = action === 'REJECT' || action === 'REQUEST_ADJUSTMENT' || action === 'CANCEL_REQUEST' || action === 'ITEM_STATUS_CHANGE';
+
+        if (actionRequiresComment && !approvalComment.trim()) {
+            let errorMsg = 'Motivo / Observações são obrigatórios.';
+            if (action === 'REJECT') errorMsg = 'Informe o motivo da rejeição.';
+            else if (action === 'REQUEST_ADJUSTMENT') errorMsg = 'Informe o motivo do reajuste.';
+            else if (action === 'CANCEL_REQUEST') errorMsg = 'Informe o motivo do cancelamento.';
+            
             setModalFeedback({
                 type: 'error',
-                message: action === 'REJECT' ? 'Informe o motivo da rejeição.' : 'Informe o motivo do reajuste.'
+                message: errorMsg
             });
             scrollToFirstError({ Comment: ['Requerido'] }, '.modal-content');
             return;

@@ -1,0 +1,11 @@
+ScenarioId;EdgeCase;Description;TestObjective
+"SCN-007";"Mixed Discounts";"Resumo do documento soma os descontos de linha com o desconto global de forma separada.";"Validar se o sistema reage corretamente à inconsistência: Resumo do documento soma os descontos de linha com o desconto global de forma separada."
+"SCN-019";"Tolerance Payment";"Pagamento com diferença de 0.50 AOA (dentro da tolerância)";"Validar se o sistema reage corretamente à inconsistência: Pagamento com diferença de 0.50 AOA (dentro da tolerância)"
+"SCN-020";"Divergence Payment";"Pagamento com diferença de 5000 AOA (fora da tolerância, gera divergência)";"Validar se o sistema reage corretamente à inconsistência: Pagamento com diferença de 5000 AOA (fora da tolerância, gera divergência)"
+"SCN-021";"Missing Doc Data";"NIF ausente no Recibo";"Validar se o sistema reage corretamente à inconsistência: NIF ausente no Recibo"
+"SCN-022";"NIF Inconsistency";"NIF com espaços na Proforma";"Validar se o sistema reage corretamente à inconsistência: NIF com espaços na Proforma"
+"SCN-025";"Price History";"Proforma price older than catalog price";"Validar se o sistema reage corretamente à inconsistência: Proforma price older than catalog price"
+"SCN-027";"Price History";"P.O price different from Proforma price; Payment proof aligned with P.O";"Validar se o sistema reage corretamente à inconsistência: P.O price different from Proforma price; Payment proof aligned with P.O"
+"SCN-028";"Price History";"Receipt total missing unit price";"Validar se o sistema reage corretamente à inconsistência: Receipt total missing unit price"
+"SCN-032";"Price History";"Same item cheaper from another supplier";"Validar se o sistema reage corretamente à inconsistência: Same item cheaper from another supplier"
+"SCN-033";"Price History";"Same item in different currency incorrectly compared as direct price variation";"Validar se o sistema reage corretamente à inconsistência: Same item in different currency incorrectly compared as direct price variation"

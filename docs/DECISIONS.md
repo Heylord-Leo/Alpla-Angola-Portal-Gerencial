@@ -50,8 +50,8 @@ Purpose: record important technical and process decisions so future work preserv
         - Add `ApprovedTotalAmount`, `ApprovedCurrencyCode`, `ApprovedAtUtc` to `Request` entity — immutable snapshot captured at final approval.
         - Add `ActualPaidAmount`, `ActualPaidAtUtc` to `Request` entity — mandatory input when confirming payment via `MarkAsPaid`.
         - Add status guards to `SchedulePayment` and `MarkAsPaid` in `FinanceController` — only allowed from valid source statuses.
-        - Implement divergence detection: if `|ActualPaidAmount - ApprovedTotalAmount| > max(1.00, ApprovedTotalAmount × 0.01)`, create a `PAYMENT_DIVERGENCE_DETECTED` audit entry.
-        - Phase 1 divergence is **informational** — payment proceeds, divergence is logged and visible.
+        - Implement divergence detection: if `Math.Round(ActualPaidAmount, 2) ≠ Math.Round(ApprovedTotalAmount, 2)`, create a `PAYMENT_DIVERGENCE_DETECTED` audit entry. No tolerance threshold — any difference is reported. *(Updated 2026-04-26: removed 1% tolerance gate per business decision.)*
+        - Phase 1 divergence is **informational** — payment proceeds, divergence is logged and visible. Message indicates direction (abaixo/acima do valor aprovado).
         - All new fields are nullable for backward compatibility with legacy requests.
     2. **Phase 2 (documented, not implemented):**
         - New exception workflow statuses: `COMMERCIAL_CHANGE_REVIEW`, `REAPPROVAL_REQUIRED`, `POST_PAYMENT_REGULARIZATION`.
@@ -1504,8 +1504,8 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
         - Add `ApprovedTotalAmount`, `ApprovedCurrencyCode`, `ApprovedAtUtc` to `Request` entity — immutable snapshot captured at final approval.
         - Add `ActualPaidAmount`, `ActualPaidAtUtc` to `Request` entity — mandatory input when confirming payment via `MarkAsPaid`.
         - Add status guards to `SchedulePayment` and `MarkAsPaid` in `FinanceController` — only allowed from valid source statuses.
-        - Implement divergence detection: if `|ActualPaidAmount - ApprovedTotalAmount| > max(1.00, ApprovedTotalAmount × 0.01)`, create a `PAYMENT_DIVERGENCE_DETECTED` audit entry.
-        - Phase 1 divergence is **informational** — payment proceeds, divergence is logged and visible.
+        - Implement divergence detection: if `Math.Round(ActualPaidAmount, 2) ≠ Math.Round(ApprovedTotalAmount, 2)`, create a `PAYMENT_DIVERGENCE_DETECTED` audit entry. No tolerance threshold — any difference is reported. *(Updated 2026-04-26: removed 1% tolerance gate per business decision.)*
+        - Phase 1 divergence is **informational** — payment proceeds, divergence is logged and visible. Message indicates direction (abaixo/acima do valor aprovado).
         - All new fields are nullable for backward compatibility with legacy requests.
     2. **Phase 2 (documented, not implemented):**
         - New exception workflow statuses: `COMMERCIAL_CHANGE_REVIEW`, `REAPPROVAL_REQUIRED`, `POST_PAYMENT_REGULARIZATION`.

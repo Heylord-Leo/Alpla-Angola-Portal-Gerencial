@@ -230,7 +230,7 @@ export function ActionCarouselWidget({ summary, onRowClick, onCorrectPoClick, on
                                         onDuplicate={() => navigate(`/requests/new?copyFrom=${order.id}`)}
                                         onQuotationClick={() => navigate(`/buyer/items?highlightRequestId=${order.id}`)}
                                         onReceivingClick={() => navigate(`/receiving/operation/${order.id}?highlightRequestId=${order.id}`)}
-                                        onPaymentClick={() => navigate(`/finance/payments?highlightRequestId=${order.id}`)}
+                                        onPaymentClick={() => navigate(`/finance/payments`, { state: { flashRequestId: order.id } })}
                                         onCorrectPoClick={onCorrectPoClick ? () => onCorrectPoClick(order.id.toString()) : undefined}
                                     />
                                 </div>

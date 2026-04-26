@@ -54,12 +54,12 @@ BEGIN TRY
     PRINT 'Cleaned Finance OCR and Reconciliation records';
 
     -- 7. HR & Badge Management
-    DELETE FROM LeaveStatusHistories;
-    DELETE FROM LeaveRecords;
-    DELETE FROM HRSyncLogs;
-    DELETE FROM BadgePrintEvents;
-    DELETE FROM BadgePrintHistories;
-    PRINT 'Cleaned HR and Badge records';
+    -- [PRESERVED PER REQUEST] DELETE FROM LeaveStatusHistories;
+    -- [PRESERVED PER REQUEST] DELETE FROM LeaveRecords;
+    -- [PRESERVED PER REQUEST] DELETE FROM HRSyncLogs;
+    -- [PRESERVED PER REQUEST] DELETE FROM BadgePrintEvents;
+    -- [PRESERVED PER REQUEST] DELETE FROM BadgePrintHistories;
+    PRINT 'Preserved HR and Badge records';
 
     -- 8. Counters Reset
     -- Resetting the Pedido # sequence back to zero for the new validation run.

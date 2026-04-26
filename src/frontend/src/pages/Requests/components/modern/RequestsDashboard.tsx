@@ -136,7 +136,9 @@ export function RequestsDashboard() {
         { id: 'PAYMENT', label: 'Pagamentos' },
     ];
 
-    const totalFilteredValue = requests.reduce((sum, req) => sum + (req.estimatedTotalAmount || 0), 0);
+    const totalFilteredValue = requests
+        .filter(req => !['CANCELLED', 'REJECTED'].includes(req.statusCode))
+        .reduce((sum, req) => sum + (req.estimatedTotalAmount || 0), 0);
 
     const statusGroups = useMemo(() => {
         if (!lookups || !lookups.statuses) return undefined;

@@ -3271,6 +3271,8 @@ namespace AlplaPortal.Infrastructure.Migrations
 
                     b.HasIndex("RequesterId");
 
+                    b.HasIndex("SelectedQuotationId");
+
                     b.HasIndex("StatusId");
 
                     b.HasIndex("SupplierId");

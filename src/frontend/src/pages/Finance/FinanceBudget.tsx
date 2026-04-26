@@ -1,7 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
-import { BookOpen, Settings, TrendingUp, AlertTriangle } from 'lucide-react';
+import { BookOpen, Settings, TrendingUp, AlertTriangle, BarChart3, HelpCircle } from 'lucide-react';
+import { ModernTooltip } from '../../components/ui/ModernTooltip';
+import {
+    BarChart, Bar, XAxis, YAxis, CartesianGrid,
+    Tooltip as RechartsTooltip, ResponsiveContainer, Legend
+} from 'recharts';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -10,6 +15,46 @@ function formatCurrency(val: number, currency: string = '') {
         style: 'currency',
         currency: currency || 'AOA',
     }).format(val);
+}
+
+// ── Budget Help Content (reusable) ─────────────────────────────────────────────────
+function BudgetHelpContent() {
+    return (
+        <div style={{ maxWidth: '340px', fontSize: '12px', lineHeight: '1.6', color: 'var(--color-text-main)' }}>
+            <div style={{ fontWeight: 800, fontSize: '13px', marginBottom: '10px', color: 'var(--color-text)' }}>
+                O que significa Comprometido e Pago?
+            </div>
+            <div style={{ marginBottom: '10px' }}>
+                <span style={{ fontWeight: 700, color: '#b91c1c' }}>● Comprometido</span>{' '}
+                — valor já assumido pelo departamento contra o orçamento, mesmo que ainda não tenha sido pago.
+                Representa pedidos que já entraram numa fase considerada real: P.O. emitida, pagamento solicitado,
+                agendado, realizado, em acompanhamento ou concluído.
+            </div>
+            <div style={{ marginBottom: '10px' }}>
+                <span style={{ fontWeight: 700, color: '#16a34a' }}>● Pago</span>{' '}
+                — valor já efetivamente liquidado pelo Financeiro. O montante que realmente já saíu.
+            </div>
+            <div style={{
+                backgroundColor: 'var(--color-bg-page)', borderRadius: '6px',
+                padding: '8px 10px', fontSize: '11px', border: '1px solid var(--color-border)',
+            }}>
+                <div style={{ fontWeight: 700, marginBottom: '4px' }}>Exemplo:</div>
+                Pedido de 508.906,26 Kz com P.O. emitida → Comprometido = 508.906,26 Kz<br />
+                Pagamento realizado de 508.000,00 Kz → Pago = 508.000,00 Kz
+            </div>
+        </div>
+    );
+}
+
+function BudgetHelpIcon({ side = 'bottom' as 'top' | 'bottom' | 'left' | 'right' }) {
+    return (
+        <ModernTooltip content={<BudgetHelpContent />} side={side} align="start">
+            <HelpCircle
+                size={15}
+                style={{ color: '#94a3b8', cursor: 'help', flexShrink: 0 }}
+            />
+        </ModernTooltip>
+    );
 }
 
 // ─── Budget KPI Card ──────────────────────────────────────────────────────────
@@ -56,6 +101,9 @@ export default function FinanceBudget() {
     const [selectedDeptId, setSelectedDeptId] = useState<number | null>(null);
     const [deptDetails, setDeptDetails] = useState<any[]>([]);
     const [deptDetailsLoading, setDeptDetailsLoading] = useState(false);
+    const [monthlyData, setMonthlyData] = useState<any[]>([]);
+    const [monthlyLoading, setMonthlyLoading] = useState(false);
+    const [chartMode, setChartMode] = useState<'comprometido' | 'pago' | 'ambos'>('comprometido');
 
     useEffect(() => {
         setBudgetLoading(true);
@@ -78,8 +126,18 @@ export default function FinanceBudget() {
                 console.error(err);
                 setDeptDetailsLoading(false);
             });
+
+            setMonthlyLoading(true);
+            api.financeBudget.getMonthlyBreakdown(selectedDeptId, budgetYear).then(data => {
+                setMonthlyData(data);
+                setMonthlyLoading(false);
+            }).catch(err => {
+                console.error(err);
+                setMonthlyLoading(false);
+            });
         } else {
             setDeptDetails([]);
+            setMonthlyData([]);
         }
     }, [selectedDeptId, budgetYear]);
 
@@ -93,6 +151,66 @@ export default function FinanceBudget() {
         acc[d.currencyCode].paid += d.paidSpend;
         return acc;
     }, {});
+
+    // ── Chart color palette ───────────────────────────────────────────────────
+    const CC_COLORS = [
+        '#0284c7', '#7c3aed', '#ea580c', '#16a34a', '#e11d48',
+        '#0891b2', '#ca8a04', '#6366f1', '#dc2626', '#059669',
+    ];
+
+    // ── Build recharts-compatible data from monthlyData ────────────────────────
+    const { chartData, costCenterKeys } = useMemo(() => {
+        if (!monthlyData || monthlyData.length === 0) return { chartData: [], costCenterKeys: [] as string[] };
+
+        // Collect all unique cost center names across all months, ordered by total committed desc
+        const ccTotals: Record<string, number> = {};
+        monthlyData.forEach((m: any) => {
+            (m.costCenters || []).forEach((cc: any) => {
+                ccTotals[cc.costCenterName] = (ccTotals[cc.costCenterName] || 0) + cc.committedAmount + cc.paidAmount;
+            });
+        });
+
+        const sortedCCs = Object.entries(ccTotals)
+            .sort(([, a], [, b]) => b - a)
+            .map(([name]) => name);
+
+        // Top 5 named, rest → "Outros"
+        const MAX_CC = 5;
+        const topCCs = sortedCCs.slice(0, MAX_CC);
+        const hasOthers = sortedCCs.length > MAX_CC;
+        const allKeys = hasOthers ? [...topCCs, 'Outros'] : topCCs;
+
+        const data = monthlyData.map((m: any) => {
+            const entry: any = { month: m.monthLabel };
+            const ccs = m.costCenters || [];
+
+            topCCs.forEach(ccName => {
+                const cc = ccs.find((c: any) => c.costCenterName === ccName);
+                entry[`c_${ccName}`] = cc ? cc.committedAmount : 0;
+                entry[`p_${ccName}`] = cc ? cc.paidAmount : 0;
+            });
+
+            if (hasOthers) {
+                let otherC = 0, otherP = 0;
+                ccs.forEach((cc: any) => {
+                    if (!topCCs.includes(cc.costCenterName)) {
+                        otherC += cc.committedAmount;
+                        otherP += cc.paidAmount;
+                    }
+                });
+                entry['c_Outros'] = otherC;
+                entry['p_Outros'] = otherP;
+            }
+
+            return entry;
+        });
+
+        return { chartData: data, costCenterKeys: allKeys };
+    }, [monthlyData]);
+
+    const hasChartData = chartData.some((row: any) =>
+        costCenterKeys.some(k => (row[`c_${k}`] || 0) > 0 || (row[`p_${k}`] || 0) > 0)
+    );
 
     const sortedDepts = [...(budgetData?.departments || [])]
         .filter((d: any) => d.totalBudget > 0)
@@ -194,6 +312,7 @@ export default function FinanceBudget() {
                                             <span style={{ fontWeight: 800, fontSize: '15px', color: 'var(--color-text)' }}>
                                                 Síntese Global {budgetYear} — {curr}
                                             </span>
+                                            <BudgetHelpIcon side="bottom" />
                                         </div>
                                         <span style={{
                                             padding: '3px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 800,
@@ -336,9 +455,11 @@ export default function FinanceBudget() {
                                 <h3 style={{
                                     fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-text)',
                                     textTransform: 'uppercase', marginBottom: '16px',
+                                    display: 'flex', alignItems: 'center', gap: '8px',
                                 }}>
                                     Centros de Custo
                                     {selectedDeptId && ` — ${sortedDepts.find(d => d.departmentId === selectedDeptId)?.departmentName || ''}`}
+                                    <BudgetHelpIcon side="bottom" />
                                 </h3>
 
                                 {!selectedDeptId ? (
@@ -365,6 +486,7 @@ export default function FinanceBudget() {
                                         Nenhuma despesa registada para este departamento em {budgetYear}.
                                     </div>
                                 ) : (
+                                    <>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}>
                                         {deptDetails.map((cc, idx) => (
                                             <div key={idx} style={{
@@ -390,6 +512,153 @@ export default function FinanceBudget() {
                                             </div>
                                         ))}
                                     </div>
+
+                                    {/* ── Monthly Evolution Chart ────────────────── */}
+                                    <div style={{
+                                        marginTop: '24px',
+                                        paddingTop: '20px',
+                                        borderTop: '1px solid var(--color-border)',
+                                    }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <BarChart3 size={16} color="#7c3aed" />
+                                                <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--color-text)', textTransform: 'uppercase' }}>
+                                                    Evolução Mensal por Centro de Custo
+                                                </span>
+                                            </div>
+                                            <div style={{ display: 'flex', backgroundColor: '#f1f5f9', borderRadius: '8px', padding: '3px' }}>
+                                                {(['comprometido', 'pago', 'ambos'] as const).map(mode => {
+                                                    const labels = { comprometido: 'Comprometido', pago: 'Pago', ambos: 'Ambos' };
+                                                    return (
+                                                        <button
+                                                            key={mode}
+                                                            onClick={() => setChartMode(mode)}
+                                                            style={{
+                                                                border: 'none',
+                                                                backgroundColor: chartMode === mode ? '#fff' : 'transparent',
+                                                                color: chartMode === mode ? '#0f172a' : '#64748b',
+                                                                padding: '5px 12px',
+                                                                fontSize: '12px',
+                                                                fontWeight: chartMode === mode ? 700 : 600,
+                                                                borderRadius: '6px',
+                                                                cursor: 'pointer',
+                                                                boxShadow: chartMode === mode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                                                                transition: 'all 0.2s',
+                                                            }}
+                                                        >
+                                                            {labels[mode]}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        {monthlyLoading ? (
+                                            <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 600 }}>
+                                                Carregando evolução mensal...
+                                            </div>
+                                        ) : !hasChartData ? (
+                                            <div style={{
+                                                height: '160px', display: 'flex', flexDirection: 'column',
+                                                alignItems: 'center', justifyContent: 'center',
+                                                color: '#64748b', fontSize: '13px', fontWeight: 600,
+                                                border: '2px dashed #cbd5e1', borderRadius: '8px',
+                                                padding: '24px', textAlign: 'center',
+                                                backgroundColor: 'var(--color-bg-page)',
+                                            }}>
+                                                <BarChart3 size={28} color="#94a3b8" style={{ marginBottom: '10px' }} />
+                                                Sem movimentações orçamentais para os critérios selecionados.
+                                            </div>
+                                        ) : (
+                                            <div style={{ height: '280px', width: '100%' }}>
+                                                <ResponsiveContainer width="100%" height="100%">
+                                                    <BarChart data={chartData} margin={{ top: 10, right: 5, left: 0, bottom: 0 }}>
+                                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                                        <XAxis
+                                                            dataKey="month"
+                                                            tick={{ fontSize: 11, fontWeight: 700 }}
+                                                            tickLine={false}
+                                                            axisLine={false}
+                                                        />
+                                                        <YAxis
+                                                            tickFormatter={(val: number) =>
+                                                                val >= 1_000_000 ? `${(val / 1_000_000).toFixed(1)}M`
+                                                                : val >= 1_000 ? `${(val / 1_000).toFixed(0)}K`
+                                                                : String(val)
+                                                            }
+                                                            tick={{ fontSize: 11, fontWeight: 700 }}
+                                                            axisLine={false}
+                                                            tickLine={false}
+                                                            width={55}
+                                                        />
+                                                        <RechartsTooltip
+                                                            cursor={{ fill: '#f1f5f9' }}
+                                                            contentStyle={{
+                                                                fontSize: '12px', fontWeight: 600,
+                                                                border: '1px solid #e2e8f0',
+                                                                borderRadius: '8px',
+                                                                backgroundColor: '#fff',
+                                                                boxShadow: '0 4px 6px rgba(0,0,0,0.08)',
+                                                            }}
+                                                            formatter={(value: any, name: string | number | undefined) => {
+                                                                const n = String(name ?? '');
+                                                                const ccName = n.replace(/^[cp]_/, '');
+                                                                const prefix = n.startsWith('c_') ? '● ' : '○ ';
+                                                                return [
+                                                                    formatCurrency(Number(value)),
+                                                                    `${prefix}${ccName}`
+                                                                ];
+                                                            }}
+                                                            labelStyle={{ fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}
+                                                        />
+                                                        <Legend
+                                                            verticalAlign="bottom"
+                                                            height={36}
+                                                            iconType="square"
+                                                            iconSize={10}
+                                                            formatter={(value: string) => {
+                                                                const ccName = value.replace(/^[cp]_/, '');
+                                                                if (chartMode === 'ambos') {
+                                                                    const isC = value.startsWith('c_');
+                                                                    return `${isC ? '■' : '□'} ${ccName}`;
+                                                                }
+                                                                return ccName;
+                                                            }}
+                                                            wrapperStyle={{ fontSize: '11px', fontWeight: 600 }}
+                                                        />
+
+                                                        {/* Comprometido bars */}
+                                                        {(chartMode === 'comprometido' || chartMode === 'ambos') &&
+                                                            costCenterKeys.map((ccName, idx) => (
+                                                                <Bar
+                                                                    key={`c_${ccName}`}
+                                                                    dataKey={`c_${ccName}`}
+                                                                    stackId={chartMode === 'ambos' ? 'committed' : 'main'}
+                                                                    fill={CC_COLORS[idx % CC_COLORS.length]}
+                                                                    radius={idx === costCenterKeys.length - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]}
+                                                                />
+                                                            ))
+                                                        }
+
+                                                        {/* Pago bars */}
+                                                        {(chartMode === 'pago' || chartMode === 'ambos') &&
+                                                            costCenterKeys.map((ccName, idx) => (
+                                                                <Bar
+                                                                    key={`p_${ccName}`}
+                                                                    dataKey={`p_${ccName}`}
+                                                                    stackId={chartMode === 'ambos' ? 'paid' : 'main'}
+                                                                    fill={CC_COLORS[idx % CC_COLORS.length]}
+                                                                    fillOpacity={chartMode === 'ambos' ? 0.45 : 1}
+                                                                    radius={idx === costCenterKeys.length - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]}
+                                                                />
+                                                            ))
+                                                        }
+                                                    </BarChart>
+                                                </ResponsiveContainer>
+                                            </div>
+                                        )}
+                                    </div>
+                                    </>
                                 )}
                             </div>
                         </div>

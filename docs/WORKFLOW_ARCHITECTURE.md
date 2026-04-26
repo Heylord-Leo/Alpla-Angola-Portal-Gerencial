@@ -264,33 +264,38 @@ The financial lifecycle tracks three critical monetary values across a request's
 
 ### Divergence Detection
 
-**Tolerance calculation:**
+**Zero-tolerance rule (updated 2026-04-26):**
 ```
-tolerance = max(1.00, ApprovedTotalAmount × 0.01)
-divergence_detected = |ActualPaidAmount - ApprovedTotalAmount| > tolerance
+roundedPaid    = Math.Round(ActualPaidAmount, 2)
+roundedApproved = Math.Round(ApprovedTotalAmount, 2)
+divergence_detected = roundedPaid ≠ roundedApproved
 ```
 
-**Scenario matrix (Phase 1):**
+Any non-zero difference between the actual paid amount and the approved amount (after standard 2-decimal currency rounding) triggers a `PAYMENT_DIVERGENCE_DETECTED` audit entry. There is no tolerance threshold — the system reports all payment differences for financial auditability.
 
-| Scenario | Trigger | Phase 1 Behavior |
+> **Note:** The OCR Financial Integrity tolerance (`RequestConstants.FinancialIntegrity`) is a separate concern used at quotation completion. It is NOT related to payment divergence detection.
+
+**Scenario matrix:**
+
+| Scenario | Trigger | Behavior |
 |:---|:---|:---|
-| **No divergence** | Paid == Approved (within tolerance) | Normal flow. No additional audit entry. |
-| **Divergence before payment** | Finance notices changed conditions | Use "Return for PO Correction" or proceed; divergence logged at payment. |
-| **Divergence after payment** | Paid ≠ Approved beyond tolerance | Payment proceeds. `PAYMENT_DIVERGENCE_DETECTED` audit entry created. |
-| **Complementary payment** | Partial payment, remainder due later | Record partial as `ActualPaidAmount`; add `NOTA_FINANCEIRA` for remainder. |
+| **No divergence** | Paid == Approved (after 2dp rounding) | Normal flow. No additional audit entry. |
+| **Divergence (below)** | Paid < Approved | Payment proceeds. `PAYMENT_DIVERGENCE_DETECTED` entry created. Message indicates "abaixo do valor aprovado". |
+| **Divergence (above)** | Paid > Approved | Payment proceeds. `PAYMENT_DIVERGENCE_DETECTED` entry created. Message indicates "acima do valor aprovado". |
+| **Complementary payment** | Partial payment, remainder due later | Record partial as `ActualPaidAmount`; add `NOTA_FINANCEIRA` for remainder. Divergence entry created for the difference. |
 
 **Audit action codes:**
 
 | Action Code | Trigger | Actor |
 |:---|:---|:---|
-| `PAYMENT_DIVERGENCE_DETECTED` | `MarkAsPaid` detects variance > tolerance | System (automatic) |
+| `PAYMENT_DIVERGENCE_DETECTED` | `MarkAsPaid` detects any difference after 2dp rounding | System (automatic) |
 | `PAYMENT_COMPLETED` | Payment confirmed (existing) | Finance user |
 
 **History entry format for divergence:**
 ```
-[SISTEMA] Divergência de pagamento detectada:
-Montante Aprovado=150,000.00, Montante Pago=165,000.00,
-Diferença=15,000.00 (10.00%)
+[SISTEMA] Pagamento realizado abaixo do valor aprovado.
+Montante Aprovado=508,906.26, Montante Pago=508,000.00,
+Diferença=906.26 (0.18%).
 ```
 
 ### Phase 2 Intent (Documented, Not Implemented)

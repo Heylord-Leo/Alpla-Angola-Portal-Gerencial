@@ -54,7 +54,14 @@ public class DocumentExtractionService : IDocumentExtractionService
 
         try 
         {
-            return await provider.ExtractAsync(fileStream, fileName, sourceContext, timeoutCts.Token);
+            var result = await provider.ExtractAsync(fileStream, fileName, sourceContext, timeoutCts.Token);
+            
+            if (result.Success && result.Contract == null)
+            {
+                ReconcileDiscounts(result);
+            }
+
+            return result;
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
         {
@@ -95,5 +102,58 @@ public class DocumentExtractionService : IDocumentExtractionService
         };
 
         return providerTimeout ?? (options.GlobalTimeoutSeconds > 0 ? options.GlobalTimeoutSeconds : 30);
+    }
+
+    private void ReconcileDiscounts(ExtractionResultDto result)
+    {
+        if (result.Header == null || !result.Header.DiscountAmount.HasValue || result.Header.DiscountAmount.Value == 0)
+            return;
+
+        if (result.Items == null || !result.Items.Any())
+            return;
+
+        var sumLineDiscount = result.Items.Sum(x => x.DiscountAmount ?? 0m);
+        var summaryDiscount = result.Header.DiscountAmount.Value;
+
+        // Tolerance based on currency, default to 1.0m for AOA, otherwise fallback to 1.0m
+        decimal tolerance = 1.0m;
+        if (!string.IsNullOrWhiteSpace(result.Header.Currency) && 
+            (result.Header.Currency.Equals("USD", StringComparison.OrdinalIgnoreCase) || 
+             result.Header.Currency.Equals("EUR", StringComparison.OrdinalIgnoreCase)))
+        {
+            tolerance = 0.05m;
+        }
+
+        if (Math.Abs(summaryDiscount - sumLineDiscount) <= tolerance)
+        {
+            _logger.LogInformation(
+                "OCR Reconciliation: Extracted document summary discount ({Summary}) matches sum of line discounts ({Sum}). " +
+                "Classifying as 'summary_of_line_discounts'. Setting global discount to 0 to prevent double discounting.",
+                summaryDiscount, sumLineDiscount);
+            
+            result.Header.DiscountAmount = 0m;
+        }
+        else if (summaryDiscount > sumLineDiscount)
+        {
+            var difference = summaryDiscount - sumLineDiscount;
+            if (difference > tolerance)
+            {
+                _logger.LogWarning(
+                    "OCR Reconciliation: Extracted summary discount ({Summary}) exceeds sum of line discounts ({Sum}). " +
+                    "Applying difference ({Diff}) as potential global discount.",
+                    summaryDiscount, sumLineDiscount, difference);
+                
+                result.Header.DiscountAmount = difference;
+            }
+        }
+        else
+        {
+            _logger.LogWarning(
+                "OCR Reconciliation: Extracted summary discount ({Summary}) is less than sum of line discounts ({Sum}). " +
+                "Setting global discount to 0. Please review the extraction manually.",
+                summaryDiscount, sumLineDiscount);
+                
+            result.Header.DiscountAmount = 0m;
+        }
     }
 }

@@ -60,7 +60,8 @@ public class FinanceController : BaseController
             RequestConstants.Statuses.PaymentScheduled, 
             RequestConstants.Statuses.Paid,
             RequestConstants.Statuses.PaymentCompleted,
-            RequestConstants.Statuses.InFollowup
+            RequestConstants.Statuses.InFollowup,
+            RequestConstants.Statuses.Completed
         };
 
         var query = scopedQuery.Where(r => 
@@ -113,6 +114,7 @@ public class FinanceController : BaseController
             IsPaid = s.StatusCode == RequestConstants.Statuses.Paid || 
                      s.StatusCode == RequestConstants.Statuses.PaymentCompleted || 
                      s.StatusCode == RequestConstants.Statuses.InFollowup ||
+                     s.StatusCode == RequestConstants.Statuses.Completed ||
                      s.ActualPaidAtUtc.HasValue ||
                      s.HistoryPaidAtUtc.HasValue,
             PaidAtUtc = s.ActualPaidAtUtc ?? s.HistoryPaidAtUtc,
@@ -257,7 +259,8 @@ public class FinanceController : BaseController
         { 
             RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentRequestSent, 
             RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.Paid,
-            RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup
+            RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup,
+            RequestConstants.Statuses.Completed
         };
 
         var query = scopedQuery.Where(r => 
@@ -356,7 +359,8 @@ public class FinanceController : BaseController
             RequestConstants.Statuses.PaymentScheduled, 
             RequestConstants.Statuses.Paid,
             RequestConstants.Statuses.PaymentCompleted,
-            RequestConstants.Statuses.InFollowup
+            RequestConstants.Statuses.InFollowup,
+            RequestConstants.Statuses.Completed
         };
 
         var query = scopedQuery.Where(r => 
@@ -408,7 +412,7 @@ public class FinanceController : BaseController
                 break;
             case "completedThisMonth":
                 var firstDayOfMonth = new DateTime(today.Year, today.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-                query = query.Where(r => new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(r.Status!.Code) && r.StatusHistories.Any(sh => (sh.NewStatus!.Code == RequestConstants.Statuses.Paid || sh.NewStatus!.Code == RequestConstants.Statuses.PaymentCompleted) && sh.CreatedAtUtc >= firstDayOfMonth));
+                query = query.Where(r => new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.Completed }.Contains(r.Status!.Code) && r.StatusHistories.Any(sh => (sh.NewStatus!.Code == RequestConstants.Statuses.Paid || sh.NewStatus!.Code == RequestConstants.Statuses.PaymentCompleted || sh.NewStatus!.Code == RequestConstants.Statuses.Completed) && sh.CreatedAtUtc >= firstDayOfMonth));
                 break;
             case "overdue":
                 query = query.Where(r => !new[] { RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup }.Contains(r.Status!.Code) && !r.ActualPaidAtUtc.HasValue && r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < today);
@@ -449,7 +453,7 @@ public class FinanceController : BaseController
         foreach (var item in items)
         {
             var r = item.Request;
-            var isPaid = r.Status!.Code == RequestConstants.Statuses.Paid || r.Status.Code == RequestConstants.Statuses.PaymentCompleted || r.Status.Code == RequestConstants.Statuses.InFollowup || r.ActualPaidAtUtc.HasValue || item.PaidHistory != null;
+            var isPaid = r.Status!.Code == RequestConstants.Statuses.Paid || r.Status.Code == RequestConstants.Statuses.PaymentCompleted || r.Status.Code == RequestConstants.Statuses.InFollowup || r.Status.Code == RequestConstants.Statuses.Completed || r.ActualPaidAtUtc.HasValue || item.PaidHistory != null;
             var isQuotation = r.RequestType!.Code == RequestConstants.Types.Quotation;
             
             var missingDocs = new List<string>();
@@ -505,8 +509,7 @@ public class FinanceController : BaseController
                 ActualPaidAmount = r.ActualPaidAmount,
                 ActualPaidAtUtc = r.ActualPaidAtUtc,
                 HasPaymentDivergence = r.ApprovedTotalAmount.HasValue && r.ActualPaidAmount.HasValue
-                    && Math.Abs(r.ActualPaidAmount.Value - r.ApprovedTotalAmount.Value)
-                       > Math.Max(1.00m, r.ApprovedTotalAmount.Value * 0.01m)
+                    && Math.Round(r.ActualPaidAmount.Value, 2) != Math.Round(r.ApprovedTotalAmount.Value, 2)
             });
         }
 
@@ -809,22 +812,25 @@ public class FinanceController : BaseController
         _context.RequestStatusHistories.Add(history);
         await _context.SaveChangesAsync();
 
-        // ── DEC-110: Divergence Detection (Phase 1 — informational audit) ────
+        // ── DEC-110: Divergence Detection (zero-tolerance — any difference triggers audit) ────
         if (r.ApprovedTotalAmount.HasValue)
         {
-            var diff = Math.Abs(r.ActualPaidAmount.Value - r.ApprovedTotalAmount.Value);
-            var tolerance = Math.Max(1.00m, r.ApprovedTotalAmount.Value * 0.01m);
+            var roundedPaid = Math.Round(r.ActualPaidAmount.Value, 2);
+            var roundedApproved = Math.Round(r.ApprovedTotalAmount.Value, 2);
+            var diff = roundedPaid - roundedApproved;
+            var absDiff = Math.Abs(diff);
 
-            if (diff > tolerance)
+            if (absDiff > 0)
             {
-                var pctDiff = r.ApprovedTotalAmount.Value != 0
-                    ? (diff / r.ApprovedTotalAmount.Value * 100).ToString("F2")
+                var pctDiff = roundedApproved != 0
+                    ? (absDiff / Math.Abs(roundedApproved) * 100).ToString("F2")
                     : "N/A";
 
-                var divergenceComment = $"[SISTEMA] Divergência de pagamento detectada: " +
+                var direction = diff < 0 ? "abaixo" : "acima";
+                var divergenceComment = $"[SISTEMA] Pagamento realizado {direction} do valor aprovado. " +
                     $"Montante Aprovado={r.ApprovedTotalAmount.Value:N2}, " +
                     $"Montante Pago={r.ActualPaidAmount.Value:N2}, " +
-                    $"Diferença={diff:N2} ({pctDiff}%)";
+                    $"Diferença={absDiff:N2} ({pctDiff}%).";
 
                 _context.RequestStatusHistories.Add(new RequestStatusHistory
                 {

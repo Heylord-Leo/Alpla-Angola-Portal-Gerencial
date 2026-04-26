@@ -631,6 +631,14 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Request>().HasIndex(r => r.CreatedAtUtc);
         modelBuilder.Entity<Request>().HasIndex(r => r.StatusId);
         modelBuilder.Entity<Request>().HasIndex(r => r.RequesterId);
+        
+        // Performance Indexes for List Filtering and Scoping
+        modelBuilder.Entity<Request>().HasIndex(r => r.RequestTypeId);
+        modelBuilder.Entity<Request>().HasIndex(r => r.DepartmentId);
+        modelBuilder.Entity<Request>().HasIndex(r => r.PlantId);
+        modelBuilder.Entity<Request>().HasIndex(r => r.CompanyId);
+        modelBuilder.Entity<Request>().HasIndex(r => r.NeedLevelId);
+        modelBuilder.Entity<Request>().HasIndex(r => r.SelectedQuotationId);
 
         modelBuilder.Entity<RequestLineItem>().HasIndex(r => r.RequestId);
         modelBuilder.Entity<RequestLineItem>().HasIndex(r => new { r.RequestId, r.IsDeleted });

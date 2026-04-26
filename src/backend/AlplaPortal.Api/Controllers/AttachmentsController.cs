@@ -24,8 +24,23 @@ public class AttachmentsController : BaseController
     public AttachmentsController(ApplicationDbContext context, IWebHostEnvironment env, IOptions<SecurityOptions> securityOptions) : base(context)
     {
         _securityOptions = securityOptions.Value;
+        
+        string rootDir = env.ContentRootPath;
+        var sep = Path.DirectorySeparatorChar.ToString();
+        var srcToken = $"{sep}src{sep}";
+        var srcIdx = rootDir.IndexOf(srcToken, StringComparison.OrdinalIgnoreCase);
+        if (srcIdx > 0)
+        {
+            rootDir = rootDir.Substring(0, srcIdx);
+        }
+        else
+        {
+            rootDir = Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "..", ".."));
+        }
+
         // Local storage path for V1: c:\dev\alpla-portal\data\attachments
-        _storagePath = Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "..", "..", "data", "attachments"));
+        _storagePath = Path.GetFullPath(Path.Combine(rootDir, "data", "attachments"));
+        
         if (!Directory.Exists(_storagePath))
         {
             Directory.CreateDirectory(_storagePath);
@@ -249,15 +264,25 @@ public class AttachmentsController : BaseController
     public async Task<IActionResult> Download(Guid id)
     {
         var attachment = await _context.RequestAttachments.FirstOrDefaultAsync(a => a.Id == id && !a.IsDeleted);
-        if (attachment == null) return NotFound();
+        if (attachment == null) 
+        {
+            return NotFound();
+        }
 
         // Optional Scoped Check for Download
         var scopedQuery = await GetScopedRequestsQuery();
         var hasAccess = await scopedQuery.AnyAsync(r => r.Id == attachment.RequestId);
-        if (!hasAccess) return Forbid("Sem permissão para baixar este anexo.");
+        if (!hasAccess) 
+        {
+            return Forbid("Sem permissão para baixar este anexo.");
+        }
 
         var filePath = Path.Combine(_storagePath, attachment.StorageReference);
-        if (!System.IO.File.Exists(filePath)) return NotFound("Arquivo físico não encontrado.");
+        
+        if (!System.IO.File.Exists(filePath)) 
+        {
+            return NotFound("Arquivo físico não encontrado.");
+        }
 
         var bytes = await System.IO.File.ReadAllBytesAsync(filePath);
         return File(bytes, "application/octet-stream", attachment.FileName);
