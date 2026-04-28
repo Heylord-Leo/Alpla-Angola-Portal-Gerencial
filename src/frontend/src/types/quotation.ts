@@ -28,6 +28,7 @@ export interface QuotationDraftItem {
     ivaUncertain?: boolean; // True when OCR could not confidently identify item-level IVA
     itemCatalogId?: number | null; // Linked catalog item (from autocomplete selection)
     itemCatalogCode?: string | null; // Catalog item code for display/traceability
+    autoMatchStatus?: 'AUTO_MATCHED' | 'NEEDS_REVIEW' | null; // Catalog auto-match result from OCR
 }
 
 export interface QuotationDraft {

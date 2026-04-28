@@ -172,7 +172,7 @@ export function RequestStatusActionPanels({
                         {/* Receiving actions */}
                         {isReceiving && (
                             <div style={{ display: 'flex', gap: '8px' }}>
-                                {(status === 'PAYMENT_COMPLETED' || status === 'WAITING_RECEIPT') && (
+                                {status === 'PAYMENT_COMPLETED' && (
                                     <div style={{ display: 'flex', gap: '8px' }}>
                                         <button 
                                             onClick={() => setShowApprovalModal({ show: true, type: 'MOVE_TO_RECEIPT' })}
@@ -180,13 +180,6 @@ export function RequestStatusActionPanels({
                                             style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
                                         >
                                             <ArrowRight size={14} /> MOVER PARA RECEBIMENTO
-                                        </button>
-                                        <button 
-                                            onClick={() => setShowApprovalModal({ show: true, type: 'FINALIZE' })}
-                                            className="btn-success"
-                                            style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
-                                        >
-                                            <CheckCircle size={14} /> FINALIZAR PEDIDO
                                         </button>
                                     </div>
                                 )}
@@ -214,7 +207,7 @@ export function RequestStatusActionPanels({
                                 </span>
                             )
                         ) : (
-                            isFinance && status === 'PAYMENT_SCHEDULED' && (
+                            isFinance && status === 'PAYMENT_SCHEDULED' ? (
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <button 
                                         onClick={() => setShowApprovalModal({ show: true, type: 'COMPLETE_PAYMENT' })}
@@ -224,6 +217,18 @@ export function RequestStatusActionPanels({
                                         <Check size={14} /> CONFIRMAR PAGAMENTO
                                     </button>
                                 </div>
+                            ) : (
+                                isFinance && status === 'WAITING_RECEIPT' && (
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        <button 
+                                            onClick={() => setShowApprovalModal({ show: true, type: 'FINALIZE' })}
+                                            className="btn-success"
+                                            style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                        >
+                                            <CheckCircle size={14} /> FINALIZAR PEDIDO
+                                        </button>
+                                    </div>
+                                )
                             )
                         )}
                     </div>

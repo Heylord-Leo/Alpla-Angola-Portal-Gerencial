@@ -2,6 +2,20 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-118 — Hierarchical Budget Configuration
+
+- **Date:** 2026-04-26
+- **Status:** Accepted
+- **Context:** The previous budget configuration was limited to a simple department-level association. However, budget control required a more granular allocation strategy that could reflect the actual organizational hierarchy, including Company, Plant, Department, and optionally, Cost Center.
+- **Decision:** Restructure the `AnnualBudget` entity and update related finance calculations to use a composite hierarchical structure.
+    1. **Granular Hierarchy:** Add `CompanyId`, `PlantId`, and `CostCenterId` to the budget domain model.
+    2. **Flexible Cost Center (General Budgets):** `CostCenterId` is optional. If null, it represents a "General Department" budget. If specified, it represents a specific cost center budget.
+    3. **Composite Unique Key:** Instead of a strict EF Core unique index (due to nullable `CostCenterId`), uniqueness is enforced via backend validation during the save operation based on `(FiscalYear, CompanyId, PlantId, DepartmentId, CostCenterId, CurrencyId)`.
+    4. **Active/Inactive State:** Add an `IsActive` flag to support disabling outdated configurations without deleting them, maintaining historical referential integrity.
+    5. **Granular Consumption Tracking:** Update `FinanceBudgetController` to allocate consumed values based on `RequestLineItem.CostCenterId`. If an item lacks a cost center, it falls back to the general department budget. Header-level Request values are proportionally distributed across line items.
+- **Alternatives considered:** Strict cost center requirement (rejected: general budgets are still needed). Single database-level unique index (rejected: EF Core handles multiple nulls differently across providers, making it brittle; explicit backend validation was preferred).
+- **Consequences:** Provides accurate, fine-grained financial tracking reflecting true operational structure. A breaking data migration was applied to clear old `AnnualBudget` records, requiring reconfiguration in the new UI.
+
 ## DEC-117 — Structured Payment Deadline Rules for Contracts
 
 - **Date:** 2026-04-20
@@ -1530,3 +1544,42 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
 - **Consequences:** All three approval types (Requests, Contracts, Suppliers) now follow the identical drawer-based workflow in the Approval Center. Approvers have a single, consistent workspace for all pending decisions. The detail page is strictly for data entry and review.
 
 ---
+
+## DEC-120 — Catalog Item Reconciliation Engine (Unified Cross-Flow)
+
+- **Date:** 2026-04-27
+- **Status:** Accepted
+- **Context:** Items entered across multiple flows (Payment Request OCR, Payment Request manual, Quotation Management) may not link to the master catalog. The Payment Request flow was using a plain `<input>` for item descriptions instead of the `CatalogItemAutocomplete` component, preventing catalog matching. There was no unified mechanism to detect and resolve unmatched items before submission.
+- **Decision:** Implement a shared Catalog Item Reconciliation Engine that works consistently across all item-entry flows.
+    1. **Phase 1 — Autocomplete Bug Fix**: Replace plain `<input>` in `RequestCreate.tsx` with `CatalogItemAutocomplete` (same as `QuotationEntry.tsx`).
+    2. **Shared Hook (`useCatalogItemReconciliation`)**: Classifies items as MATCHED, UNMATCHED, LOW_CONFIDENCE, CREATED_PENDING, LINKED_MANUALLY, or FREE_TEXT. Tracks resolutions in a `Map<number, ItemResolution>`.
+    3. **Backend Endpoint (`POST /api/v1/catalog-items/reconciliation-create`)**: Creates catalog items with `Origin = CREATED_PENDING_VALIDATION` and `IsActive = true`. Performs duplicate detection on normalized descriptions. Returns existing item if a match is found.
+    4. **Submission Guardrail (Warning-with-Override)**: When unresolved items exist, a `ReconciliationWarningDialog` intercepts submission. The user can: (a) open the batch reconciliation modal, (b) continue anyway (items recorded as free text), or (c) cancel.
+    5. **Batch Reconciliation Modal**: Shows ALL unresolved items in a single table. Per-row actions: link to existing catalog item, create new item (CREATED_PENDING_VALIDATION), or keep as free text with optional justification.
+    6. **Mandatory Coverage**: RequestCreate (Payment + Requester items) and QuotationEntry.
+- **Alternatives considered:** Blocking submission entirely for unmatched items. Rejected: too rigid for the current operational context. Per-item inline-only resolution. Rejected: does not allow batch review.
+- **Consequences:** All item-entry flows share the same reconciliation engine via `useCatalogItemReconciliation`. New catalog items created through this flow are flagged for admin validation. Free-text items are tracked with optional justification for audit purposes.
+
+---
+
+### DEC-121: Mandatory Receipt Upload for Finance
+- **Date:** 2026-04-27
+- **Context:** To ensure the portal aligns with the physical operational processes, a payment request cannot be fully considered 'Completed' until Finance has uploaded the official receipt document.
+- **Decision:** Added a mandatory guardrail in the operational completion flow. The FinalizeRequest backend endpoint explicitly blocks requests in the WAITING_RECEIPT status from finalizing if a TYPE_RECEIPT ('Recibo') document is not attached. 
+- **Implementation:** Added TYPE_RECEIPT attachment type. In the frontend, the UI action 'FINALIZAR PEDIDO' in WAITING_RECEIPT state is now exclusively visible to the Finance role. The receipt attachment component logic restricts this upload to Finance/System Admin users.
+- **Extended by:** DEC-122
+
+---
+
+### DEC-122: Decoupling Physical Item Receiving from Supplier Financial Receipt
+- **Date:** 2026-04-27
+- **Status:** Accepted
+- **Context:** A fundamental business process misunderstanding caused the Receiving workspace to act as both the physical goods receiving confirmation AND the financial receipt document closure. In reality, "Recebimento" (Receiving) is the physical/operational confirmation of goods/services arrival, while "Recibo" (Receipt) is the financial document issued by the supplier confirming they received payment. These are two distinct business concepts with different responsible roles.
+- **Decision:** Strictly decouple the two workflows:
+    1. **New Backend Endpoint**: `POST /api/v1/requests/{id}/operational/confirm-receiving` — exclusively for the Receiving role. Confirms physical item/service receipt. Transitions request to `WAITING_RECEIPT` (all received) or `IN_FOLLOWUP` (partial). Never transitions to `COMPLETED`.
+    2. **Refactored Finalization**: `FinalizeRequest` is now strictly a Finance-only terminal action (`WAITING_RECEIPT` → `COMPLETED`). Requires `TYPE_RECEIPT` attachment. Receiving role is explicitly blocked from triggering finalization.
+    3. **Receiving UI Update**: Renamed button from "FINALIZAR PEDIDO" to "CONFIRMAR RECEBIMENTO". Modal type changed from `FINALIZE` to `CONFIRM_RECEIVING`. API call changed from `finalize` to `confirmReceiving`.
+    4. **Guidance Labels**: Split `getRequestGuidance` for `PAYMENT_COMPLETED` (Recebimento: "Mover para fase de recebimento") vs `WAITING_RECEIPT` (Financeiro: "Anexar recibo do fornecedor e finalizar").
+    5. **Status Lifecycle Fix**: Removed `PAYMENT_COMPLETED` from `isFinalizedStatus` since it's an active operational status requiring Receiving action.
+- **Alternatives considered:** Keeping a single "finalize" action with different behavior per role. Rejected: creates semantic confusion and violates Separation of Duties.
+- **Consequences:** Clear role boundaries between Receiving (physical) and Finance (financial). Prevents premature request completion. Ensures every completed request has both physical receipt confirmation and supplier financial receipt document.

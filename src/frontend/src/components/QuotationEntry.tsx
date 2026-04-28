@@ -4,7 +4,11 @@ import { Plus, Upload, Trash2, RefreshCcw, Hash, Calendar, CheckCircle2, AlertCi
 import { api } from '../lib/api';
 import { SupplierAutocomplete } from './SupplierAutocomplete';
 import { CatalogItemAutocomplete } from './CatalogItemAutocomplete';
+import { useCatalogItemReconciliation } from '../hooks/useCatalogItemReconciliation';
+import { CatalogItemReconciliationModal } from './CatalogItemReconciliationModal';
+import { ReconciliationWarningDialog } from './ReconciliationWarningDialog';
 import { QuotationDraft, QuotationDraftItem, IvaRate, Unit } from '../types/quotation';
+import { ItemResolution } from '../types';
 import { formatCurrencyAO, computeFileHash, formatDateTime } from '../lib/utils';
 import { Feedback, FeedbackType } from './ui/Feedback';
 
@@ -49,6 +53,10 @@ export function QuotationEntry({
 
     const [ocrResult, setOcrResult] = useState<any>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Reconciliation Engine
+    const [showReconciliationWarning, setShowReconciliationWarning] = useState(false);
+    const reconciliation = useCatalogItemReconciliation(draft.items);
 
     useEffect(() => {
         if (initialIvaRates?.length) setIvaRates(initialIvaRates);
@@ -188,6 +196,39 @@ export function QuotationEntry({
             const hasUncertainItems = initialDraft.items.some(item => item.ivaUncertain);
             initialDraft.headerHasIva = headerImpliesIva && hasUncertainItems;
             initialDraft.totalAmount = recalculateQuotationTotal(initialDraft);
+
+            // ─── Catalog Item Auto-Match ─────────────────────────────────
+            // Same logic as useOcrProcessor: batch-match OCR descriptions against catalog.
+            // Only 100% normalized matches are accepted — no fuzzy/partial matches.
+            try {
+                const descriptions = initialDraft.items.map(item => item.description || '');
+                const nonEmptyDescriptions = descriptions.filter(d => d.trim().length > 0);
+
+                if (nonEmptyDescriptions.length > 0) {
+                    const matchResults = await api.catalogItems.batchMatch(descriptions);
+
+                    initialDraft.items.forEach((item, index) => {
+                        const match = matchResults[index];
+                        if (match && match.id) {
+                            item.itemCatalogId = match.id;
+                            item.itemCatalogCode = match.code || null;
+                            item.autoMatchStatus = 'AUTO_MATCHED';
+                            if (!item.unitId && match.defaultUnitId) {
+                                item.unitId = match.defaultUnitId;
+                            }
+                            console.log(
+                                `[Quotation OCR] Item ${index + 1} "${(item.description || '').substring(0, 40)}": ` +
+                                `✅ Correspondência automática → ${match.code} (ID: ${match.id})`
+                            );
+                        } else if (item.description && item.description.trim().length > 0) {
+                            item.autoMatchStatus = 'NEEDS_REVIEW';
+                        }
+                    });
+                }
+            } catch (e) {
+                console.warn('[Quotation OCR] Catalog auto-match failed (non-blocking):', e);
+            }
+
             setDraft(initialDraft);
             setStep('EDIT');
         } catch (err: any) {
@@ -318,6 +359,13 @@ export function QuotationEntry({
             setFormErrors(errors);
             return;
         }
+
+        // Reconciliation guardrail: check for unresolved catalog items before save
+        if (reconciliation.hasUnresolved && !showReconciliationWarning) {
+            setShowReconciliationWarning(true);
+            return;
+        }
+        setShowReconciliationWarning(false);
 
         setIsProcessing(true);
         try {
@@ -571,6 +619,8 @@ export function QuotationEntry({
                                                             current.description = description;
                                                             current.itemCatalogId = catalogId;
                                                             current.itemCatalogCode = catalogCode;
+                                                            // Clear AUTO_MATCHED when user manually selects or clears
+                                                            current.autoMatchStatus = catalogId ? null : 'NEEDS_REVIEW';
                                                             if (catalogId && defaultUnitId) {
                                                                 const matchingUnit = units.find(u => u.id === defaultUnitId);
                                                                 if (matchingUnit) current.unitId = matchingUnit.id;
@@ -591,6 +641,31 @@ export function QuotationEntry({
                                                 {item.itemCatalogCode && (
                                                     <div style={{ fontSize: '9px', color: '#4f46e5', fontWeight: 700, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                         📦 {item.itemCatalogCode}
+                                                    </div>
+                                                )}
+                                                {/* Auto-match status badge */}
+                                                {item.autoMatchStatus === 'AUTO_MATCHED' && (
+                                                    <div style={{
+                                                        display: 'flex', alignItems: 'center', gap: '4px',
+                                                        fontSize: '0.6rem', fontWeight: 600, color: '#059669',
+                                                        backgroundColor: '#ECFDF5', border: '1px solid #A7F3D0',
+                                                        borderRadius: '4px', padding: '1px 5px', marginTop: '2px',
+                                                        width: 'fit-content'
+                                                    }}>
+                                                        <CheckCircle2 size={10} />
+                                                        Correspondência automática{item.itemCatalogCode ? ` — ${item.itemCatalogCode}` : ''}
+                                                    </div>
+                                                )}
+                                                {item.autoMatchStatus === 'NEEDS_REVIEW' && !item.itemCatalogId && (
+                                                    <div style={{
+                                                        display: 'flex', alignItems: 'center', gap: '4px',
+                                                        fontSize: '0.6rem', fontWeight: 600, color: '#D97706',
+                                                        backgroundColor: '#FFFBEB', border: '1px solid #FDE68A',
+                                                        borderRadius: '4px', padding: '1px 5px', marginTop: '2px',
+                                                        width: 'fit-content'
+                                                    }}>
+                                                        <AlertCircle size={10} />
+                                                        Item não catalogado — verifique manualmente
                                                     </div>
                                                 )}
                                             </td>
@@ -893,6 +968,49 @@ export function QuotationEntry({
                     </div>
                 )}
             </AnimatePresence>
+
+            {/* Reconciliation Modal */}
+            <CatalogItemReconciliationModal
+                isOpen={reconciliation.isModalOpen}
+                onClose={reconciliation.closeModal}
+                classifiedItems={reconciliation.classifiedItems}
+                onResolveAll={(resolutions: ItemResolution[]) => {
+                    reconciliation.resolveAll(resolutions);
+                    // Apply resolutions back to draft items
+                    resolutions.forEach(r => {
+                        if (r.linkedCatalogId) {
+                            setDraft(prev => {
+                                const items = [...prev.items];
+                                if (items[r.itemIndex]) {
+                                    items[r.itemIndex] = {
+                                        ...items[r.itemIndex],
+                                        description: r.linkedDescription || items[r.itemIndex].description,
+                                        itemCatalogId: r.linkedCatalogId,
+                                        itemCatalogCode: r.linkedCatalogCode || null,
+                                        unitId: r.defaultUnitId || items[r.itemIndex].unitId,
+                                    };
+                                }
+                                const next = { ...prev, items };
+                                next.totalAmount = recalculateQuotationTotal(next);
+                                return next;
+                            });
+                        }
+                    });
+                }}
+            />
+
+            {/* Reconciliation Warning Dialog */}
+            <ReconciliationWarningDialog
+                isOpen={showReconciliationWarning}
+                unresolvedCount={reconciliation.unresolvedCount}
+                onReviewItems={() => {
+                    setShowReconciliationWarning(false);
+                    reconciliation.openModal();
+                }}
+                onCancel={() => {
+                    setShowReconciliationWarning(false);
+                }}
+            />
         </div>
     );
 }

@@ -693,3 +693,4 @@ The Finance Workspace (`FinanceLandingPage.tsx`) acts as the dedicated operation
     - *Comprovativo*: Flagged for requests marked as paid but lacking a physical receipt upload.
 2. **Action Handlers**: Permitted actions (Agendar, Pagar, Notas, Devolver) are accessible directly from the payment list via the portal standard `<KebabMenu />` component, optimizing bulk processing velocity. 
 3. **Contextual Modals**: All explicit UI actions trigger the strictly native `<FinanceActionModal />` (`DropdownPortal`). No `window.prompt` or `window.confirm` dialogues are ever used in the business system. "Mark as Paid" executes a full (not partial) payment workflow transition.
+4. **Payment Divergence Highlighting (v2.93.2)**: Any payment history entry marked with `PAYMENT_DIVERGENCE_DETECTED` must be visually highlighted to draw attention. This highlight uses a light-yellow background (`var(--color-status-yellow)` / `#fefce8`), an amber border (`#fde047`), and dark text.

@@ -13,6 +13,10 @@ import { scrollToFirstError } from '../../lib/validation';
 import { DateInput } from '../../components/DateInput';
 import { computeFileHash, formatDateTime } from '../../lib/utils';
 import { CatalogItemAutocomplete } from '../../components/CatalogItemAutocomplete';
+import { useCatalogItemReconciliation } from '../../hooks/useCatalogItemReconciliation';
+import { CatalogItemReconciliationModal } from '../../components/CatalogItemReconciliationModal';
+import { ReconciliationWarningDialog } from '../../components/ReconciliationWarningDialog';
+import { ReconcilableItem, ItemResolution } from '../../types';
 
 
 export function RequestCreate() {
@@ -70,6 +74,13 @@ export function RequestCreate() {
         areaApproverId: '',
         finalApproverId: ''
     });
+
+    // Reconciliation Engine — unified for both payment and requester items
+    const [showReconciliationWarning, setShowReconciliationWarning] = useState(false);
+    const activeItems: ReconcilableItem[] = Number(formData.requestTypeId) === 2 && paymentDraft
+        ? paymentDraft.items
+        : requesterItems;
+    const reconciliation = useCatalogItemReconciliation(activeItems);
 
     const initialFormDataRef = useRef(formData);
 
@@ -359,6 +370,14 @@ export function RequestCreate() {
             } else {
                 nextItems[index] = { ...nextItems[index], [field]: value };
             }
+
+            // If user manually edits the description, clear auto-match linkage
+            // to prevent showing "Correspondência automática" for a modified description
+            if (field === 'description') {
+                nextItems[index].autoMatchStatus = null;
+                nextItems[index].itemCatalogId = null;
+                nextItems[index].itemCatalogCode = null;
+            }
             
             // Reactive discount recalculation if percentage is locked in
             if ((field === 'quantity' || field === 'unitPrice') && nextItems[index].discountPercent !== undefined) {
@@ -375,6 +394,24 @@ export function RequestCreate() {
             
             const next = { ...prev, items: nextItems };
             next.totalAmount = calculateDraftTotal(next);
+            return next;
+        });
+    };
+
+    const handleCatalogSelectOcrItem = (index: number, description: string, catalogId: number | null, catalogCode: string | null, defaultUnitId: number | null) => {
+        setPaymentDraft(prev => {
+            if (!prev) return null;
+            const nextItems = [...prev.items];
+            nextItems[index] = {
+                ...nextItems[index],
+                description,
+                itemCatalogId: catalogId,
+                itemCatalogCode: catalogCode,
+                unitId: defaultUnitId || nextItems[index].unitId,
+                // Clear AUTO_MATCHED when user manually selects (it's now a manual selection)
+                autoMatchStatus: catalogId ? null : 'NEEDS_REVIEW',
+            };
+            const next = { ...prev, items: nextItems };
             return next;
         });
     };
@@ -506,6 +543,14 @@ export function RequestCreate() {
         setLoading(true);
         setFeedback({ type: 'error', message: null });
         setFieldErrors({});
+
+        // Reconciliation guardrail: check for unresolved catalog items before submission
+        if (reconciliation.hasUnresolved && !showReconciliationWarning) {
+            setShowReconciliationWarning(true);
+            setLoading(false);
+            return;
+        }
+        setShowReconciliationWarning(false);
 
         const safeCurrencyId = Number(formData.currencyId) || 1;
         const safePlantId = Number(formData.plantId) || 0;
@@ -1316,7 +1361,38 @@ export function RequestCreate() {
                                                                                 />
                                                                             </td>
                                                                             <td style={{ padding: '4px 8px' }}>
-                                                                                <input type="text" value={String(item.description || '')} onChange={(e) => handleUpdateOcrItem(idx, 'description', e.target.value)} style={{ ...inputStyle, padding: '6px 8px', marginTop: 0 }} />
+                                                                                <CatalogItemAutocomplete
+                                                                                    value={item.itemCatalogCode ? `[${item.itemCatalogCode}] ${item.description}` : (item.description || '')}
+                                                                                    itemCatalogId={item.itemCatalogId || null}
+                                                                                    onChange={(desc, catId, catCode, defaultUnitId) => handleCatalogSelectOcrItem(idx, desc, catId, catCode, defaultUnitId)}
+                                                                                    placeholder="Pesquisar item do catálogo ou digitar descrição..."
+                                                                                    style={{ padding: '6px 8px', marginTop: 0 }}
+                                                                                />
+                                                                                {/* Auto-match status badge */}
+                                                                                {item.autoMatchStatus === 'AUTO_MATCHED' && (
+                                                                                    <div style={{
+                                                                                        display: 'flex', alignItems: 'center', gap: '4px',
+                                                                                        fontSize: '0.65rem', fontWeight: 600, color: '#059669',
+                                                                                        backgroundColor: '#ECFDF5', border: '1px solid #A7F3D0',
+                                                                                        borderRadius: 'var(--radius-sm)', padding: '2px 6px', marginTop: '3px',
+                                                                                        width: 'fit-content'
+                                                                                    }}>
+                                                                                        <CheckCircle2 size={11} />
+                                                                                        Correspondência automática{item.itemCatalogCode ? ` — ${item.itemCatalogCode}` : ''}
+                                                                                    </div>
+                                                                                )}
+                                                                                {item.autoMatchStatus === 'NEEDS_REVIEW' && !item.itemCatalogId && (
+                                                                                    <div style={{
+                                                                                        display: 'flex', alignItems: 'center', gap: '4px',
+                                                                                        fontSize: '0.65rem', fontWeight: 600, color: '#D97706',
+                                                                                        backgroundColor: '#FFFBEB', border: '1px solid #FDE68A',
+                                                                                        borderRadius: 'var(--radius-sm)', padding: '2px 6px', marginTop: '3px',
+                                                                                        width: 'fit-content'
+                                                                                    }}>
+                                                                                        <AlertCircle size={11} />
+                                                                                        Item não catalogado — verifique manualmente
+                                                                                    </div>
+                                                                                )}
                                                                             </td>
                                                                          <td style={{ padding: '4px 8px' }}>
                                                                              <select 
@@ -1581,6 +1657,52 @@ export function RequestCreate() {
                     </div>
                 )}
             </AnimatePresence>
+
+            {/* Reconciliation Modal */}
+            <CatalogItemReconciliationModal
+                isOpen={reconciliation.isModalOpen}
+                onClose={reconciliation.closeModal}
+                classifiedItems={reconciliation.classifiedItems}
+                onResolveAll={(resolutions: ItemResolution[]) => {
+                    reconciliation.resolveAll(resolutions);
+                    // Apply resolutions back to source items
+                    resolutions.forEach(r => {
+                        if (r.linkedCatalogId) {
+                            if (Number(formData.requestTypeId) === 2 && paymentDraft) {
+                                handleCatalogSelectOcrItem(
+                                    r.itemIndex,
+                                    r.linkedDescription || paymentDraft.items[r.itemIndex]?.description || '',
+                                    r.linkedCatalogId,
+                                    r.linkedCatalogCode || null,
+                                    r.defaultUnitId || null
+                                );
+                            } else {
+                                handleCatalogSelectRequesterItem(
+                                    r.itemIndex,
+                                    r.linkedDescription || requesterItems[r.itemIndex]?.description || '',
+                                    r.linkedCatalogId,
+                                    r.linkedCatalogCode || null,
+                                    r.defaultUnitId || null
+                                );
+                            }
+                        }
+                    });
+                }}
+            />
+
+            {/* Reconciliation Warning Dialog */}
+            <ReconciliationWarningDialog
+                isOpen={showReconciliationWarning}
+                unresolvedCount={reconciliation.unresolvedCount}
+                onReviewItems={() => {
+                    setShowReconciliationWarning(false);
+                    reconciliation.openModal();
+                }}
+                onCancel={() => {
+                    setShowReconciliationWarning(false);
+                    setLoading(false);
+                }}
+            />
         </motion.div >
     );
 }

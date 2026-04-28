@@ -40,30 +40,84 @@ public class FinanceBudgetController : BaseController
         RequestConstants.Statuses.WaitingPoCorrection
     };
 
+    private void CalculateRequestLineConsumption(Request req, out Dictionary<int, decimal> ccCommitted, out Dictionary<int, decimal> ccPaid)
+    {
+        ccCommitted = new Dictionary<int, decimal>();
+        ccPaid = new Dictionary<int, decimal>();
+
+        if (!CommittedStatuses.Contains(req.Status?.Code)) return;
+
+        bool isPaid = req.Status?.Code == RequestConstants.Statuses.Paid || 
+                      req.Status?.Code == RequestConstants.Statuses.PaymentCompleted ||
+                      req.Status?.Code == RequestConstants.Statuses.InFollowup ||
+                      req.Status?.Code == RequestConstants.Statuses.Completed ||
+                      req.ActualPaidAtUtc.HasValue;
+
+        var selectedQuotation = req.SelectedQuotationId.HasValue 
+            ? req.Quotations.FirstOrDefault(q => q.Id == req.SelectedQuotationId.Value) 
+            : null;
+
+        decimal reqLineItemsTotal = req.LineItems.Sum(li => li.TotalAmount);
+
+        // Calculate amount per line item
+        foreach (var line in req.LineItems)
+        {
+            decimal amountToAttribute = line.TotalAmount;
+
+            if (selectedQuotation != null)
+            {
+                var qItem = selectedQuotation.Items.FirstOrDefault(qi => qi.LineNumber == line.LineNumber);
+                if (qItem != null)
+                {
+                    amountToAttribute = qItem.LineTotal;
+                }
+                else if (reqLineItemsTotal > 0)
+                {
+                    // Proportional fallback
+                    amountToAttribute = (line.TotalAmount / reqLineItemsTotal) * selectedQuotation.TotalAmount;
+                }
+                else
+                {
+                    // Edge case fallback
+                    amountToAttribute = selectedQuotation.TotalAmount / req.LineItems.Count;
+                }
+            }
+
+            int ccId = line.CostCenterId ?? 0;
+            
+            if (!ccCommitted.ContainsKey(ccId)) ccCommitted[ccId] = 0;
+            ccCommitted[ccId] += amountToAttribute;
+
+            if (isPaid)
+            {
+                if (!ccPaid.ContainsKey(ccId)) ccPaid[ccId] = 0;
+                ccPaid[ccId] += amountToAttribute;
+            }
+        }
+    }
+
     [HttpGet("overview/{year}")]
     public async Task<ActionResult<BudgetOverviewDto>> GetBudgetOverview(int year)
     {
         var scopedRequestsQuery = await GetScopedRequestsQuery();
         
-        // Obter orçamentos anuais e departamentos ativos
         var annualBudgets = await _context.AnnualBudgets
             .Include(ab => ab.Department)
             .Include(ab => ab.Currency)
-            .Where(ab => ab.Year == year && ab.Department!.IsActive)
+            .Where(ab => ab.Year == year && ab.IsActive && ab.Department!.IsActive)
             .ToListAsync();
 
-        // Limita a busca das requests no mesmo ano
         var requestsYearly = await scopedRequestsQuery
             .Include(r => r.Status)
             .Include(r => r.Currency)
+            .Include(r => r.LineItems)
             .Include(r => r.Quotations)
+                .ThenInclude(q => q.Items)
             .Include(r => r.Department)
             .Where(r => r.CreatedAtUtc.Year == year && !r.IsCancelled && r.Department!.IsActive)
             .ToListAsync();
 
         var overview = new BudgetOverviewDto { Year = year };
-
-        // Processa departamentos que possuem budget cadastrado
         var budgetGrouped = annualBudgets.GroupBy(b => new { b.DepartmentId, b.CurrencyId }).ToList();
 
         foreach (var depGroup in budgetGrouped)
@@ -78,29 +132,12 @@ public class FinanceBudgetController : BaseController
 
             foreach (var req in deptRequests)
             {
-                // Only aggregate if the request's native currency matches the budget line's currency, 
-                // OR if it's the fallback default to avoid double counting across multiple currency budgets
                 var reqCurrencyId = req.CurrencyId ?? budgetRecord.CurrencyId;
                 if (reqCurrencyId != budgetRecord.CurrencyId) continue;
 
-                var amount = req.SelectedQuotationId.HasValue 
-                    ? req.Quotations.FirstOrDefault(q => q.Id == req.SelectedQuotationId.Value)?.TotalAmount ?? req.EstimatedTotalAmount
-                    : req.EstimatedTotalAmount;
-
-                // Em MVP: soma tudo. Ideamente aqui teria mock conversão se a moeda da req != moeda do budget
-                if (CommittedStatuses.Contains(req.Status?.Code))
-                {
-                    totalCommitted += amount;
-
-                    if (req.Status?.Code == RequestConstants.Statuses.Paid || 
-                        req.Status?.Code == RequestConstants.Statuses.PaymentCompleted ||
-                        req.Status?.Code == RequestConstants.Statuses.InFollowup ||
-                        req.Status?.Code == RequestConstants.Statuses.Completed ||
-                        req.ActualPaidAtUtc.HasValue)
-                    {
-                        totalPaid += amount;
-                    }
-                }
+                CalculateRequestLineConsumption(req, out var ccCommitted, out var ccPaid);
+                totalCommitted += ccCommitted.Values.Sum();
+                totalPaid += ccPaid.Values.Sum();
             }
 
             overview.Departments.Add(new BudgetDepartmentOverviewDto
@@ -129,61 +166,52 @@ public class FinanceBudgetController : BaseController
                 .ThenInclude(li => li.CostCenter)
             .Include(r => r.Currency)
             .Include(r => r.Quotations)
+                .ThenInclude(q => q.Items)
             .Where(r => r.CreatedAtUtc.Year == year && r.DepartmentId == departmentId && !r.IsCancelled)
             .ToListAsync();
 
         var details = new List<BudgetCostCenterDetailDto>();
 
-        // Agrupa requests: se houver CC mapeado no primeiro item usa-o, caso contrário usa 0 ("Não Alocado")
-        var costCenters = requestsYearly
-            .GroupBy(r => r.LineItems.FirstOrDefault(li => li.CostCenterId.HasValue)?.CostCenterId ?? 0)
-            .ToList();
+        var ccCommittedTotals = new Dictionary<int, decimal>();
+        var ccPaidTotals = new Dictionary<int, decimal>();
+        var ccNameLookup = new Dictionary<int, string>();
+        string defaultCurrencyCode = "AOA";
 
-        foreach (var ccGroup in costCenters)
+        foreach (var req in requestsYearly)
         {
-            var ccId = ccGroup.Key;
-            string ccName = "Não Alocado / Múltiplos";
+            if (!string.IsNullOrEmpty(req.Currency?.Code)) defaultCurrencyCode = req.Currency.Code;
             
-            if (ccId != 0)
+            CalculateRequestLineConsumption(req, out var reqCommitted, out var reqPaid);
+            
+            foreach (var ccId in reqCommitted.Keys)
             {
-                var firstLineItemWithCc = ccGroup.First().LineItems.FirstOrDefault(li => li.CostCenterId == ccId);
-                if (firstLineItemWithCc != null && firstLineItemWithCc.CostCenter != null)
+                if (!ccCommittedTotals.ContainsKey(ccId)) ccCommittedTotals[ccId] = 0;
+                if (!ccPaidTotals.ContainsKey(ccId)) ccPaidTotals[ccId] = 0;
+
+                ccCommittedTotals[ccId] += reqCommitted[ccId];
+                ccPaidTotals[ccId] += reqPaid.GetValueOrDefault(ccId, 0);
+
+                if (!ccNameLookup.ContainsKey(ccId))
                 {
-                    ccName = firstLineItemWithCc.CostCenter.Name;
-                }
-            }
-
-            decimal ccCommitted = 0;
-            decimal ccPaid = 0;
-
-            foreach(var req in ccGroup)
-            {
-                var amount = req.SelectedQuotationId.HasValue 
-                    ? req.Quotations.FirstOrDefault(q => q.Id == req.SelectedQuotationId.Value)?.TotalAmount ?? req.EstimatedTotalAmount
-                    : req.EstimatedTotalAmount;
-
-                if (CommittedStatuses.Contains(req.Status?.Code))
-                {
-                    ccCommitted += amount;
-
-                    if (req.Status?.Code == RequestConstants.Statuses.Paid || 
-                        req.Status?.Code == RequestConstants.Statuses.PaymentCompleted ||
-                        req.Status?.Code == RequestConstants.Statuses.InFollowup ||
-                        req.Status?.Code == RequestConstants.Statuses.Completed ||
-                        req.ActualPaidAtUtc.HasValue)
+                    if (ccId == 0) ccNameLookup[ccId] = "Não Alocado / Departamento Geral";
+                    else
                     {
-                        ccPaid += amount;
+                        var ccEntity = req.LineItems.FirstOrDefault(li => li.CostCenterId == ccId)?.CostCenter;
+                        ccNameLookup[ccId] = ccEntity?.Name ?? $"CC {ccId}";
                     }
                 }
             }
+        }
 
+        foreach (var ccId in ccCommittedTotals.Keys)
+        {
             details.Add(new BudgetCostCenterDetailDto
             {
                 CostCenterId = ccId,
-                CostCenterName = ccName,
-                CommittedSpend = ccCommitted,
-                PaidSpend = ccPaid,
-                CurrencyCode = ccGroup.First().Currency?.Code ?? "AOA"
+                CostCenterName = ccNameLookup[ccId],
+                CommittedSpend = ccCommittedTotals[ccId],
+                PaidSpend = ccPaidTotals[ccId],
+                CurrencyCode = defaultCurrencyCode
             });
         }
 
@@ -201,27 +229,23 @@ public class FinanceBudgetController : BaseController
                 .ThenInclude(li => li.CostCenter)
             .Include(r => r.Currency)
             .Include(r => r.Quotations)
+                .ThenInclude(q => q.Items)
             .Where(r => r.CreatedAtUtc.Year == year && r.DepartmentId == departmentId && !r.IsCancelled)
             .ToListAsync();
 
         var monthLabels = new[] { "Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez" };
         var result = new List<BudgetMonthlyDataDto>();
 
-        // Build a cost center name lookup from all requests
         var ccNameLookup = new Dictionary<int, string>();
         foreach (var req in requestsYearly)
         {
-            var ccId = req.LineItems.FirstOrDefault(li => li.CostCenterId.HasValue)?.CostCenterId ?? 0;
-            if (!ccNameLookup.ContainsKey(ccId))
+            foreach (var li in req.LineItems)
             {
-                if (ccId == 0)
+                int ccId = li.CostCenterId ?? 0;
+                if (!ccNameLookup.ContainsKey(ccId))
                 {
-                    ccNameLookup[ccId] = "Não Alocado";
-                }
-                else
-                {
-                    var ccEntity = req.LineItems.FirstOrDefault(li => li.CostCenterId == ccId)?.CostCenter;
-                    ccNameLookup[ccId] = ccEntity?.Name ?? $"CC {ccId}";
+                    if (ccId == 0) ccNameLookup[ccId] = "Não Alocado / Departamento Geral";
+                    else ccNameLookup[ccId] = li.CostCenter?.Name ?? $"CC {ccId}";
                 }
             }
         }
@@ -235,44 +259,45 @@ public class FinanceBudgetController : BaseController
                 CostCenters = new List<BudgetMonthlyCostCenterDto>()
             };
 
-            // Group requests by cost center
-            var ccGroups = requestsYearly
-                .GroupBy(r => r.LineItems.FirstOrDefault(li => li.CostCenterId.HasValue)?.CostCenterId ?? 0);
+            var monthCcCommitted = new Dictionary<int, decimal>();
+            var monthCcPaid = new Dictionary<int, decimal>();
 
-            foreach (var ccGroup in ccGroups)
+            foreach (var req in requestsYearly)
             {
-                var ccId = ccGroup.Key;
-                decimal committedForMonth = 0;
-                decimal paidForMonth = 0;
+                bool reqCreatedInMonth = req.CreatedAtUtc.Month == month;
+                
+                int paidMonth = req.ActualPaidAtUtc?.Month ?? req.CreatedAtUtc.Month;
+                bool reqPaidInMonth = paidMonth == month;
 
-                foreach (var req in ccGroup)
+                if (!reqCreatedInMonth && !reqPaidInMonth) continue;
+
+                CalculateRequestLineConsumption(req, out var ccCommitted, out var ccPaid);
+
+                if (reqCreatedInMonth)
                 {
-                    var amount = req.SelectedQuotationId.HasValue
-                        ? req.Quotations.FirstOrDefault(q => q.Id == req.SelectedQuotationId.Value)?.TotalAmount ?? req.EstimatedTotalAmount
-                        : req.EstimatedTotalAmount;
-
-                    // Comprometido: grouped by CreatedAtUtc.Month
-                    if (CommittedStatuses.Contains(req.Status?.Code) && req.CreatedAtUtc.Month == month)
+                    foreach (var kvp in ccCommitted)
                     {
-                        committedForMonth += amount;
-                    }
-
-                    // Pago: grouped by ActualPaidAtUtc.Month (fallback to CreatedAtUtc.Month)
-                    bool isPaid = req.Status?.Code == RequestConstants.Statuses.Paid
-                        || req.Status?.Code == RequestConstants.Statuses.PaymentCompleted
-                        || req.Status?.Code == RequestConstants.Statuses.InFollowup
-                        || req.Status?.Code == RequestConstants.Statuses.Completed
-                        || req.ActualPaidAtUtc.HasValue;
-
-                    if (isPaid && CommittedStatuses.Contains(req.Status?.Code))
-                    {
-                        int paidMonth = req.ActualPaidAtUtc?.Month ?? req.CreatedAtUtc.Month;
-                        if (paidMonth == month)
-                        {
-                            paidForMonth += amount;
-                        }
+                        if (!monthCcCommitted.ContainsKey(kvp.Key)) monthCcCommitted[kvp.Key] = 0;
+                        monthCcCommitted[kvp.Key] += kvp.Value;
                     }
                 }
+
+                if (reqPaidInMonth)
+                {
+                    foreach (var kvp in ccPaid)
+                    {
+                        if (!monthCcPaid.ContainsKey(kvp.Key)) monthCcPaid[kvp.Key] = 0;
+                        monthCcPaid[kvp.Key] += kvp.Value;
+                    }
+                }
+            }
+
+            var allCcKeys = monthCcCommitted.Keys.Union(monthCcPaid.Keys).Distinct();
+
+            foreach (var ccId in allCcKeys)
+            {
+                decimal committedForMonth = monthCcCommitted.GetValueOrDefault(ccId, 0);
+                decimal paidForMonth = monthCcPaid.GetValueOrDefault(ccId, 0);
 
                 if (committedForMonth > 0 || paidForMonth > 0)
                 {
@@ -301,48 +326,34 @@ public class FinanceBudgetController : BaseController
             return Forbid();
         }
 
-        var departments = await _context.Departments.Where(d => d.IsActive).ToListAsync();
         var budgets = await _context.AnnualBudgets
+            .Include(b => b.Company)
+            .Include(b => b.Plant)
+            .Include(b => b.Department)
+            .Include(b => b.CostCenter)
             .Include(b => b.Currency)
             .Where(b => b.Year == year)
             .ToListAsync();
 
-        var configList = new List<AnnualBudgetConfigDto>();
-        // Default currency if none, pick first or id=1
-        var defaultCurrency = await _context.Currencies.FirstOrDefaultAsync();
-        
-        foreach (var dept in departments)
+        var configList = budgets.Select(budget => new AnnualBudgetConfigDto
         {
-            var budget = budgets.FirstOrDefault(b => b.DepartmentId == dept.Id);
-            if (budget != null)
-            {
-                configList.Add(new AnnualBudgetConfigDto
-                {
-                    Id = budget.Id,
-                    Year = budget.Year,
-                    DepartmentId = dept.Id,
-                    DepartmentName = dept.Name,
-                    CurrencyId = budget.CurrencyId,
-                    CurrencyCode = budget.Currency?.Code,
-                    TotalAmount = budget.TotalAmount
-                });
-            }
-            else
-            {
-                configList.Add(new AnnualBudgetConfigDto
-                {
-                    Id = 0,
-                    Year = year,
-                    DepartmentId = dept.Id,
-                    DepartmentName = dept.Name,
-                    CurrencyId = defaultCurrency?.Id ?? 1,
-                    CurrencyCode = defaultCurrency?.Code ?? "AOA",
-                    TotalAmount = 0
-                });
-            }
-        }
+            Id = budget.Id,
+            Year = budget.Year,
+            CompanyId = budget.CompanyId,
+            CompanyName = budget.Company?.Name,
+            PlantId = budget.PlantId,
+            PlantName = budget.Plant?.Name,
+            DepartmentId = budget.DepartmentId,
+            DepartmentName = budget.Department?.Name,
+            CostCenterId = budget.CostCenterId,
+            CostCenterName = budget.CostCenter?.Name,
+            CurrencyId = budget.CurrencyId,
+            CurrencyCode = budget.Currency?.Code,
+            TotalAmount = budget.TotalAmount,
+            IsActive = budget.IsActive
+        }).OrderBy(c => c.CompanyName).ThenBy(c => c.PlantName).ThenBy(c => c.DepartmentName).ToList();
 
-        return Ok(configList.OrderBy(c => c.DepartmentName).ToList());
+        return Ok(configList);
     }
 
     [HttpPost("config")]
@@ -356,21 +367,33 @@ public class FinanceBudgetController : BaseController
 
         foreach (var dto in configs)
         {
+            // Explicit duplicate validation based on logical unique key
             var existing = await _context.AnnualBudgets
-                .FirstOrDefaultAsync(b => b.Year == dto.Year && b.DepartmentId == dto.DepartmentId && b.CurrencyId == dto.CurrencyId);
+                .FirstOrDefaultAsync(b => 
+                    b.Year == dto.Year && 
+                    b.CompanyId == dto.CompanyId && 
+                    b.PlantId == dto.PlantId && 
+                    b.DepartmentId == dto.DepartmentId && 
+                    b.CostCenterId == dto.CostCenterId && 
+                    b.CurrencyId == dto.CurrencyId);
             
             if (existing != null)
             {
                 existing.TotalAmount = dto.TotalAmount;
+                existing.IsActive = dto.IsActive;
             }
-            else if (dto.TotalAmount > 0)
+            else
             {
                 _context.AnnualBudgets.Add(new AnnualBudget
                 {
                     Year = dto.Year,
+                    CompanyId = dto.CompanyId,
+                    PlantId = dto.PlantId,
                     DepartmentId = dto.DepartmentId,
+                    CostCenterId = dto.CostCenterId,
                     CurrencyId = dto.CurrencyId,
-                    TotalAmount = dto.TotalAmount
+                    TotalAmount = dto.TotalAmount,
+                    IsActive = dto.IsActive
                 });
             }
         }

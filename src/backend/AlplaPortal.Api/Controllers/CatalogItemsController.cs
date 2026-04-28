@@ -4,6 +4,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace AlplaPortal.Api.Controllers;
 
@@ -94,6 +97,66 @@ public class CatalogItemsController : ControllerBase
         public int Imported { get; set; }
         public int Skipped { get; set; }
         public List<string> Errors { get; set; } = new();
+    }
+
+    /// <summary>Request DTO for batch-matching OCR descriptions against catalog items.</summary>
+    public class BatchMatchRequestDto
+    {
+        /// <summary>List of OCR-extracted item descriptions to match.</summary>
+        public List<string> Descriptions { get; set; } = new();
+    }
+
+    /// <summary>Response DTO for batch-match results.</summary>
+    public class BatchMatchResultDto
+    {
+        /// <summary>Dictionary mapping input index → matched catalog item (null if no match).</summary>
+        public Dictionary<int, CatalogItemResponseDto?> Matches { get; set; } = new();
+    }
+
+    /// <summary>DTO for creating catalog items via the reconciliation flow.</summary>
+    public class ReconciliationCreateCatalogItemDto
+    {
+        [Required(ErrorMessage = "A descrição é obrigatória.")]
+        [MaxLength(500)]
+        public string Description { get; set; } = string.Empty;
+
+        public int? DefaultUnitId { get; set; }
+
+        [MaxLength(100)]
+        public string? SupplierCode { get; set; }
+
+        [MaxLength(200)]
+        public string? Category { get; set; }
+    }
+
+    // ─── Helpers ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Safe normalization applied identically to BOTH OCR input and DB records.
+    /// Steps: trim → lowercase → remove diacritics/accents → collapse whitespace → strip trailing punctuation.
+    /// This ensures exact comparison is reliable regardless of formatting differences.
+    /// </summary>
+    private static string NormalizeDescription(string desc)
+    {
+        if (string.IsNullOrWhiteSpace(desc)) return string.Empty;
+
+        // 1. Trim and lowercase
+        var normalized = desc.Trim().ToLowerInvariant();
+
+        // 2. Remove diacritics/accents (e.g., ç→c, ã→a, é→e)
+        normalized = new string(
+            normalized.Normalize(NormalizationForm.FormD)
+                .Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
+                .ToArray()
+        ).Normalize(NormalizationForm.FormC);
+
+        // 3. Collapse multiple whitespace into single space
+        normalized = Regex.Replace(normalized, @"\s+", " ");
+
+        // 4. Strip trailing punctuation (e.g., "item." → "item")
+        normalized = normalized.TrimEnd('.', ',', ';', ':', '!');
+
+        return normalized;
     }
 
     // ─── Endpoints ─────────────────────────────────────────────────────────
@@ -372,5 +435,191 @@ public class CatalogItemsController : ControllerBase
         }
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Create a catalog item from the reconciliation flow.
+    /// Sets Origin = CREATED_PENDING_VALIDATION and IsActive = true.
+    /// Items created this way are immediately usable but flagged for admin review.
+    /// </summary>
+    [HttpPost("reconciliation-create")]
+    public async Task<IActionResult> ReconciliationCreate([FromBody] ReconciliationCreateCatalogItemDto dto)
+    {
+        if (!ModelState.IsValid) return ValidationProblem();
+
+        // Duplicate check: prevent creating items with identical descriptions
+        var normalizedDesc = dto.Description.Trim().ToLower();
+        var existingItem = await _context.ItemCatalogItems
+            .AsNoTracking()
+            .FirstOrDefaultAsync(ic => ic.Description.ToLower() == normalizedDesc && ic.IsActive);
+
+        if (existingItem != null)
+        {
+            // Return the existing item instead of creating a duplicate
+            await _context.Entry(existingItem).Reference(i => i.DefaultUnit).LoadAsync();
+            return Ok(new CatalogItemResponseDto
+            {
+                Id = existingItem.Id,
+                Code = existingItem.Code,
+                Description = existingItem.Description,
+                PrimaveraCode = existingItem.PrimaveraCode,
+                SupplierCode = existingItem.SupplierCode,
+                DefaultUnitId = existingItem.DefaultUnitId,
+                DefaultUnitCode = existingItem.DefaultUnit?.Code,
+                DefaultUnitName = existingItem.DefaultUnit?.Name,
+                Category = existingItem.Category,
+                Origin = existingItem.Origin,
+                IsActive = existingItem.IsActive,
+                CreatedAtUtc = existingItem.CreatedAtUtc,
+                UpdatedAtUtc = existingItem.UpdatedAtUtc
+            });
+        }
+
+        var counter = await _context.SystemCounters.FirstOrDefaultAsync(c => c.Id == "ITEM_CATALOG_COUNTER");
+        if (counter == null)
+        {
+            counter = new SystemCounter { Id = "ITEM_CATALOG_COUNTER", CurrentValue = 1, LastUpdatedUtc = DateTime.UtcNow };
+            _context.SystemCounters.Add(counter);
+        }
+        else
+        {
+            counter.CurrentValue++;
+            counter.LastUpdatedUtc = DateTime.UtcNow;
+        }
+
+        var normalizedCode = $"ITM-{counter.CurrentValue:D5}";
+
+        // Validate DefaultUnitId if provided
+        if (dto.DefaultUnitId.HasValue)
+        {
+            var unit = await _context.Units.FindAsync(dto.DefaultUnitId.Value);
+            if (unit == null)
+                return BadRequest("Unidade padrão inválida.");
+        }
+
+        var item = new ItemCatalog
+        {
+            Code = normalizedCode,
+            Description = dto.Description.Trim(),
+            PrimaveraCode = null,
+            SupplierCode = dto.SupplierCode?.Trim(),
+            DefaultUnitId = dto.DefaultUnitId,
+            Category = dto.Category?.Trim(),
+            Origin = "CREATED_PENDING_VALIDATION",
+            IsActive = true,
+            CreatedAtUtc = DateTime.UtcNow
+        };
+
+        _context.ItemCatalogItems.Add(item);
+        await _context.SaveChangesAsync();
+
+        // Reload with navigation properties
+        await _context.Entry(item).Reference(i => i.DefaultUnit).LoadAsync();
+
+        return Ok(new CatalogItemResponseDto
+        {
+            Id = item.Id,
+            Code = item.Code,
+            Description = item.Description,
+            PrimaveraCode = item.PrimaveraCode,
+            SupplierCode = item.SupplierCode,
+            DefaultUnitId = item.DefaultUnitId,
+            DefaultUnitCode = item.DefaultUnit?.Code,
+            DefaultUnitName = item.DefaultUnit?.Name,
+            Category = item.Category,
+            Origin = item.Origin,
+            IsActive = item.IsActive,
+            CreatedAtUtc = item.CreatedAtUtc,
+            UpdatedAtUtc = item.UpdatedAtUtc
+        });
+    }
+
+    /// <summary>
+    /// Batch-match OCR-extracted item descriptions against the catalog.
+    /// Uses safe in-memory normalization on BOTH input descriptions and DB records
+    /// to ensure reliable exact matching regardless of accents, whitespace, or punctuation.
+    /// 
+    /// Returns a dictionary mapping each input index to its matched catalog item (or null).
+    /// Only returns active items. Only exact normalized matches are considered.
+    /// </summary>
+    [HttpPost("batch-match")]
+    public async Task<IActionResult> BatchMatch([FromBody] BatchMatchRequestDto dto)
+    {
+        if (dto.Descriptions == null || dto.Descriptions.Count == 0)
+            return Ok(new BatchMatchResultDto { Matches = new() });
+
+        // Cap at 100 descriptions per request to prevent abuse
+        var descriptions = dto.Descriptions.Take(100).ToList();
+
+        // 1. Normalize all incoming OCR descriptions
+        var normalizedInputs = descriptions
+            .Select((d, i) => new { Index = i, Original = d, Normalized = NormalizeDescription(d) })
+            .Where(x => !string.IsNullOrEmpty(x.Normalized))
+            .ToList();
+
+        if (normalizedInputs.Count == 0)
+            return Ok(new BatchMatchResultDto { Matches = new() });
+
+        // 2. Fetch ALL active catalog items (with their units) in a single DB query.
+        //    We normalize DB descriptions in memory (C#) to guarantee identical normalization
+        //    on both sides — SQL-level normalization would be unreliable for accent removal.
+        var allCatalogItems = await _context.ItemCatalogItems
+            .Include(ic => ic.DefaultUnit)
+            .Where(ic => ic.IsActive)
+            .AsNoTracking()
+            .Select(ic => new
+            {
+                ic.Id,
+                ic.Code,
+                ic.Description,
+                ic.PrimaveraCode,
+                ic.SupplierCode,
+                ic.DefaultUnitId,
+                DefaultUnitCode = ic.DefaultUnit != null ? ic.DefaultUnit.Code : null,
+                DefaultUnitName = ic.DefaultUnit != null ? ic.DefaultUnit.Name : null,
+                ic.Category,
+                ic.Origin,
+                ic.IsActive,
+                ic.CreatedAtUtc,
+                ic.UpdatedAtUtc
+            })
+            .ToListAsync();
+
+        // 3. Build a lookup dictionary: normalized DB description → catalog item
+        //    If multiple items share the same normalized description, take the first active one.
+        var catalogLookup = new Dictionary<string, CatalogItemResponseDto>();
+        foreach (var item in allCatalogItems)
+        {
+            var normalizedDbDesc = NormalizeDescription(item.Description);
+            if (!string.IsNullOrEmpty(normalizedDbDesc) && !catalogLookup.ContainsKey(normalizedDbDesc))
+            {
+                catalogLookup[normalizedDbDesc] = new CatalogItemResponseDto
+                {
+                    Id = item.Id,
+                    Code = item.Code,
+                    Description = item.Description,
+                    PrimaveraCode = item.PrimaveraCode,
+                    SupplierCode = item.SupplierCode,
+                    DefaultUnitId = item.DefaultUnitId,
+                    DefaultUnitCode = item.DefaultUnitCode,
+                    DefaultUnitName = item.DefaultUnitName,
+                    Category = item.Category,
+                    Origin = item.Origin,
+                    IsActive = item.IsActive,
+                    CreatedAtUtc = item.CreatedAtUtc,
+                    UpdatedAtUtc = item.UpdatedAtUtc
+                };
+            }
+        }
+
+        // 4. Match each input against the lookup
+        var matches = new Dictionary<int, CatalogItemResponseDto?>();
+        foreach (var input in normalizedInputs)
+        {
+            catalogLookup.TryGetValue(input.Normalized, out var matched);
+            matches[input.Index] = matched; // null if no match
+        }
+
+        return Ok(new BatchMatchResultDto { Matches = matches });
     }
 }

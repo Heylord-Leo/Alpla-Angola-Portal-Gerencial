@@ -2,7 +2,13 @@
 
 ## Current Version
 
-v2.93.4
+v2.96.1
+
+## [2.96.1] - 2026-04-28
+
+### Changed
+- **Approval Detail Panel — Price Analysis Banner**: Removed the misleading green "Preços Favoráveis" success banner.
+- **Warning-Only Policy**: The price analysis banner now follows a warning-only policy for items above average.
 
 ## [2.93.4] - 2026-04-26
 

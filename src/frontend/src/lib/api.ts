@@ -451,6 +451,17 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao mover para aguardando recibo.');
             return response.json();
         },
+        confirmReceiving: async (id: string, comment?: string): Promise<{ message: string; statusCode: string }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/operational/confirm-receiving`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ comment }),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao confirmar recebimento.');
+            return response.json();
+        },
         finalize: async (id: string, comment?: string): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/operational/finalize`, {
                 method: 'POST',
@@ -1302,6 +1313,28 @@ export const api = {
             });
             if (!res.ok) return handleApiError(res, 'Falha ao importar itens do catálogo.');
             return res.json();
+        },
+        reconciliationCreate: async (data: { description: string; defaultUnitId?: number | null; supplierCode?: string; category?: string }): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/catalog-items/reconciliation-create`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao criar item do catálogo via reconciliação.');
+            return res.json();
+        },
+        batchMatch: async (descriptions: string[]): Promise<Record<number, any | null>> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/catalog-items/batch-match`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ descriptions }),
+            });
+            if (!res.ok) {
+                console.warn('[API] Batch match failed, falling back to no matches.');
+                return {};
+            }
+            const json = await res.json();
+            return json.matches || {};
         }
     },
     lineItems: {

@@ -128,6 +128,16 @@ public class AttachmentsController : BaseController
                 isUploadable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup }.Contains(statusCode);
                 detail = "O Comprovante de Pagamento deve ser carregado nos estágios de emissão de P.O, agendamento, conclusão ou recebimento.";
                 break;
+            case AttachmentConstants.Types.Receipt:
+                isUploadable = new[] { "WAITING_RECEIPT" }.Contains(statusCode);
+                if (isUploadable && !CurrentUserRoles.Contains(RoleConstants.Finance) && !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
+                {
+                    isUploadable = false;
+                    detail = "Apenas usuários do Financeiro podem carregar o Recibo.";
+                    break;
+                }
+                detail = "O Recibo só pode ser carregado no estágio de Aguardando Recibo.";
+                break;
             default:
                 // For any other types, only allow upload in editable stages
                 isUploadable = new[] { RequestConstants.Statuses.Draft, RequestConstants.Statuses.AreaAdjustment, RequestConstants.Statuses.FinalAdjustment, RequestConstants.Statuses.WaitingQuotation }.Contains(statusCode);
@@ -202,6 +212,7 @@ public class AttachmentsController : BaseController
         else if (typeCode == AttachmentConstants.Types.PurchaseOrder) typeLabel = "P.O";
         else if (typeCode == AttachmentConstants.Types.PaymentSchedule) typeLabel = "Cronograma de Pagamento";
         else if (typeCode == AttachmentConstants.Types.PaymentProof) typeLabel = "Comprovante de Pagamento";
+        else if (typeCode == AttachmentConstants.Types.Receipt) typeLabel = "Recibo";
 
         string comment = filesToProcess.Count == 1 
             ? $"Documento \"{filesToProcess[0].FileName}\" ({typeLabel}) adicionado ao pedido por {user.FullName}."
@@ -324,6 +335,16 @@ public class AttachmentsController : BaseController
             case AttachmentConstants.Types.PaymentProof:
                 isDeletable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup }.Contains(attachment.Request.Status!.Code);
                 detail = "O Comprovante de Pagamento só pode ser removido antes da finalização do pedido.";
+                break;
+            case AttachmentConstants.Types.Receipt:
+                isDeletable = new[] { "WAITING_RECEIPT" }.Contains(attachment.Request.Status!.Code);
+                if (isDeletable && !CurrentUserRoles.Contains(RoleConstants.Finance) && !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
+                {
+                    isDeletable = false;
+                    detail = "Apenas usuários do Financeiro podem remover o Recibo.";
+                    break;
+                }
+                detail = "O Recibo só pode ser removido no estágio de Aguardando Recibo.";
                 break;
             default:
                 // For any other types, only allow deletion in editable stages

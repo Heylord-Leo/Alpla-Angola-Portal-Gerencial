@@ -19,9 +19,9 @@ The `PAYMENT` workflow is the primary lifecycle for direct purchasing and paymen
 | `PO_ISSUED` | P.O Emitida | Financeiro | Pagar, Agendar ou Devolver P.O |
 | `WAITING_PO_CORRECTION` | Aguardando Correção P.O | Comprador | Corrigir e re-registrar P.O |
 | `PAYMENT_SCHEDULED` | Pagamento Agendado | Financeiro | Finalizar Pagamento (Operational) |
-| `PAYMENT_COMPLETED` | Pagamento Realizado | Recebimento | Mover p/ Recibo (Operacional) |
-| `WAITING_RECEIPT` | Aguardando Recibo | Recebimento | Operação de Recebimento (Operacional) |
-| `IN_FOLLOWUP` | Em Acompanhamento | Recebimento | Finalizar Recebimento (Operacional) |
+| `PAYMENT_COMPLETED` | Pagamento Realizado | Recebimento | Mover p/ Recebimento e conferir itens |
+| `WAITING_RECEIPT` | Aguardando Recibo do Fornecedor | Financeiro | Anexar Recibo do Fornecedor e Finalizar |
+| `IN_FOLLOWUP` | Em Acompanhamento | Recebimento | Resolver itens pendentes e confirmar recebimento |
 | `COMPLETED` | Finalizado | - | - |
 | `REJECTED` | Rejeitado | - | - |
 | `CANCELLED` | Cancelado | - | - |
@@ -53,9 +53,9 @@ The `QUOTATION` workflow is a streamlined lifecycle for price research and quota
 | `PO_ISSUED` | P.O Emitida | Financeiro | Pagar, Agendar ou Devolver P.O |
 | `WAITING_PO_CORRECTION` | Aguardando Correção P.O | Comprador | Corrigir e re-registrar P.O |
 | `PAYMENT_SCHEDULED` | Pagamento Agendado | Financeiro | Finalizar Pagamento (Operational) |
-| `PAYMENT_COMPLETED` | Pagamento Realizado | Recebimento | Mover p/ Recibo (Operacional) |
-| `WAITING_RECEIPT` | Aguardando Recibo | Recebimento | Operação de Recebimento (Operacional) |
-| `IN_FOLLOWUP` | Em Acompanhamento | Recebimento | Finalizar Recebimento (Operacional) |
+| `PAYMENT_COMPLETED` | Pagamento Realizado | Recebimento | Mover p/ Recebimento e conferir itens |
+| `WAITING_RECEIPT` | Aguardando Recibo do Fornecedor | Financeiro | Anexar Recibo do Fornecedor e Finalizar |
+| `IN_FOLLOWUP` | Em Acompanhamento | Recebimento | Resolver itens pendentes e confirmar recebimento |
 | `COMPLETED` | Finalizado | - | - |
 
 ### Special Rules (QUOTATION)
@@ -94,9 +94,9 @@ Stages from `APPROVED` to `WAITING_RECEIPT` are classified as **Operational**. T
 | `WAITING_PO_CORRECTION` | Locked | Locked | **Editable (P.O)** | Corrigir P.O |
 | `PO_ISSUED` | Locked | Locked | **Editable (Schedule)** | Agendar / Pagar / Devolver |
 | `PAYMENT_SCHEDULED` | Locked | Locked | **Editable (Proof)** | Confirmar Pagamento / Devolver |
-| `PAYMENT_COMPLETED` | Locked | Locked | **Editable (Proof)** | Mover p/ Recibo |
-| `WAITING_RECEIPT` | Locked | **Conferência (Items)** | **Editable (Receipt)** | Registrar Recebimento |
-| `IN_FOLLOWUP` | Locked | **Conferência (Items)** | **Editable (Receipt)** | Finalizar Pedido |
+| `PAYMENT_COMPLETED` | Locked | Locked | **Editable (Proof)** | Mover p/ Recebimento (Recebimento) |
+| `WAITING_RECEIPT` | Locked | **Conferência (Items)** | **Editable (Receipt - Finance)** | Confirmar Recebimento (Recebimento) / Finalizar Pedido (Financeiro, Bloqueado s/ Recibo) |
+| `IN_FOLLOWUP` | Locked | **Conferência (Items)** | **Editable (Receipt - Finance)** | Confirmar Recebimento (Recebimento) → retorna a WAITING_RECEIPT |
 
 ### Attachment Deletion Rules
 
@@ -106,6 +106,7 @@ Deletion is restricted by document type and status to preserve audit integrity:
 - **PO**: Deletable in `APPROVED` or `WAITING_PO_CORRECTION`.
 - **PAYMENT_SCHEDULE**: Deletable in `PO_ISSUED` or `PAYMENT_SCHEDULED`.
 - **PAYMENT_PROOF**: Deletable in `PAYMENT_SCHEDULED`, `PAYMENT_COMPLETED`, or `WAITING_RECEIPT`.
+- **RECEIPT**: Uploadable/Deletable exclusively by Finance in `WAITING_RECEIPT`. Mandatory for finalization.
 
 ### Supplier Registration Guard (P.O. Emission)
 

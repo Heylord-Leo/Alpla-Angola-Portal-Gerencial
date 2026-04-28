@@ -49,9 +49,22 @@ public class AnnualBudgetConfigDto
 {
     public int Id { get; set; }
     public int Year { get; set; }
+
+    public int CompanyId { get; set; }
+    public string? CompanyName { get; set; }
+
+    public int PlantId { get; set; }
+    public string? PlantName { get; set; }
+
     public int DepartmentId { get; set; }
     public string? DepartmentName { get; set; }
+
+    public int? CostCenterId { get; set; }
+    public string? CostCenterName { get; set; }
+
     public int CurrencyId { get; set; }
     public string? CurrencyCode { get; set; }
+
     public decimal TotalAmount { get; set; }
+    public bool IsActive { get; set; }
 }

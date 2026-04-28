@@ -19,6 +19,7 @@ public class RequestAttachment
     public const string TYPE_PO = "PO";
     public const string TYPE_PAYMENT_PROOF = "PAYMENT_PROOF";
     public const string TYPE_PAYMENT_SCHEDULE = "PAYMENT_SCHEDULE";
+    public const string TYPE_RECEIPT = "RECEIPT";
 
     public string StorageReference { get; set; } = string.Empty; // Path pointer
 

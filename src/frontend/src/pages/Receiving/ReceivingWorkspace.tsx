@@ -215,7 +215,7 @@ export function ReceivingWorkspace() {
             {/* Sub-header info */}
             <div style={{ padding: '12px 20px', backgroundColor: 'rgba(var(--color-primary-rgb), 0.05)', border: '2px solid var(--color-primary)', color: 'var(--color-primary)', fontWeight: 700, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '4px 4px 0px rgba(var(--color-primary-rgb), 0.1)', borderRadius: 'var(--radius-md)' }}>
                 <span style={{ backgroundColor: 'var(--color-primary)', color: '#fff', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem' }}>NOTA</span>
-                Este workspace organiza os pedidos por estágio operacional após a conclusão do pagamento.
+                Este workspace organiza os pedidos por estágio operacional de recebimento de itens e serviços.
             </div>
 
             {/* Search */}

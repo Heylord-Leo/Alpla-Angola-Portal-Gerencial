@@ -15,6 +15,7 @@ export type ApprovalActionType =
     | 'SCHEDULE_PAYMENT' 
     | 'COMPLETE_PAYMENT' 
     | 'MOVE_TO_RECEIPT' 
+    | 'CONFIRM_RECEIVING' 
     | 'FINALIZE' 
     | 'COMPLETE_QUOTATION'
     | 'ITEM_STATUS_CHANGE'
@@ -74,6 +75,7 @@ export function ApprovalModal({
             case 'SCHEDULE_PAYMENT': return 'Agendar Pagamento';
             case 'COMPLETE_PAYMENT': return 'Confirmar Pagamento';
             case 'MOVE_TO_RECEIPT': return 'Mover para Recibo';
+            case 'CONFIRM_RECEIVING': return 'Confirmar Recebimento';
             case 'FINALIZE': return 'Finalizar Pedido';
             case 'COMPLETE_QUOTATION': return 'Concluir Cotação';
             case 'ITEM_STATUS_CHANGE': return 'Confirmar Alteração de Status';
@@ -106,10 +108,12 @@ export function ApprovalModal({
             case 'SCHEDULE_PAYMENT': return 'Deseja confirmar que o pagamento deste pedido foi agendado?';
             case 'COMPLETE_PAYMENT': return 'Deseja confirmar que o pagamento deste pedido foi realizado?';
             case 'MOVE_TO_RECEIPT': return 'Deseja mover este pedido para a fase de aguardando recibo?';
-            case 'FINALIZE': 
+            case 'CONFIRM_RECEIVING': 
                 return isPartial 
-                    ? 'Atenção: Existem itens pendentes. Ao finalizar, o pedido será movido para o estágio de "Acompanhamento" operacional.'
-                    : 'Deseja confirmar o recebimento e finalizar este pedido permanentemente?';
+                    ? 'Atenção: Existem itens pendentes. Ao confirmar, o pedido será movido para acompanhamento até que todos os itens sejam recebidos.'
+                    : 'Deseja confirmar o recebimento de todos os itens deste pedido? O pedido permanecerá aguardando o recibo do fornecedor.';
+            case 'FINALIZE': 
+                return 'Deseja finalizar este pedido? O recibo do fornecedor será registrado e o pedido será encerrado permanentemente.';
             case 'COMPLETE_QUOTATION': return 'Deseja confirmar que o processo de cotação foi concluído e enviar para aprovação?';
             case 'REQUEST_ADJUSTMENT': return 'Informe o que precisa ser ajustado no pedido pelo solicitante.';
             case 'ITEM_STATUS_CHANGE': 
@@ -131,7 +135,7 @@ export function ApprovalModal({
     const showCommentField = [
         'APPROVE', 'REJECT', 'REQUEST_ADJUSTMENT', 
         'SCHEDULE_PAYMENT', 'COMPLETE_PAYMENT', 'MOVE_TO_RECEIPT', 
-        'FINALIZE', 'COMPLETE_QUOTATION', 'ITEM_STATUS_CHANGE', 'CANCEL_REQUEST'
+        'CONFIRM_RECEIVING', 'FINALIZE', 'COMPLETE_QUOTATION', 'ITEM_STATUS_CHANGE', 'CANCEL_REQUEST'
     ].includes(type || '');
 
     const inputStyle = {

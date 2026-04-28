@@ -290,7 +290,8 @@ public class RequestsController : BaseController
                 CostCenterName = x.FirstCostCenter != null ? x.FirstCostCenter.Name : null,
                 CompletedAtUtc = (x.r.Status.Code == "COMPLETED" || x.r.Status.Code == "QUOTATION_COMPLETED" || x.r.Status.Code == "PAID" || x.r.Status.Code == "PAYMENT_COMPLETED")
                     ? (x.CompletedStatusHistory != null ? (DateTime?)x.CompletedStatusHistory.CreatedAtUtc : null)
-                    : null
+                    : null,
+                PaymentCompletedAtUtc = x.r.ActualPaidAtUtc
             })
             .ToListAsync();
     }
@@ -625,7 +626,8 @@ public class RequestsController : BaseController
                 CapexOpexClassificationId = x.r.CapexOpexClassificationId,
                 CompletedAtUtc = (x.r.Status.Code == "COMPLETED" || x.r.Status.Code == "QUOTATION_COMPLETED" || x.r.Status.Code == "PAID" || x.r.Status.Code == "PAYMENT_COMPLETED")
                     ? (x.CompletedStatusHistory != null ? (DateTime?)x.CompletedStatusHistory.CreatedAtUtc : null)
-                    : null
+                    : null,
+                PaymentCompletedAtUtc = x.r.ActualPaidAtUtc
             })
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -780,9 +782,13 @@ public class RequestsController : BaseController
                     Items = q.Items.Select(qi => new SavedQuotationItemDto
                     {
                         Id = qi.Id,
+                        LineNumber = qi.LineNumber,
                         Description = qi.Description,
                         Quantity = qi.Quantity,
                         UnitPrice = qi.UnitPrice,
+                        GrossSubtotal = qi.GrossSubtotal,
+                        TaxableBase = qi.GrossSubtotal, // In this domain, TaxableBase is usually the same as GrossSubtotal (after line discount)
+                        IvaAmount = qi.IvaAmount,
                         LineTotal = qi.LineTotal,
                         ItemCatalogId = qi.ItemCatalogId,
                         ItemCatalogCode = qi.ItemCatalog != null ? qi.ItemCatalog.Code : null,
@@ -3689,8 +3695,8 @@ public class RequestsController : BaseController
     return await ProcessTransition(id, "MOVE_TO_RECEIPT", "WAITING_RECEIPT", requiredStatuses, dto.Comment, "Pedido movido para aguardando recibo.", new[] { "PAYMENT", "QUOTATION" });
     }
 
-    [HttpPost("{id}/operational/finalize")]
-    public async Task<IActionResult> FinalizeRequest(Guid id, [FromBody] ApprovalActionDto dto)
+    [HttpPost("{id}/operational/confirm-receiving")]
+    public async Task<IActionResult> ConfirmReceiving(Guid id, [FromBody] ApprovalActionDto dto)
     {
         var actorId = CurrentUserId;
 
@@ -3710,26 +3716,21 @@ public class RequestsController : BaseController
 
             if (request == null) return NotFound();
 
-            // Idempotency check: If already completed, just return success without history/timestamp changes
-            if (request.Status!.Code == "COMPLETED")
-            {
-                return Ok(new { Message = "Pedido já finalizado.", StatusCode = "COMPLETED" });
-            }
-
-            // Status Rule: Must be in WAITING_RECEIPT or IN_FOLLOWUP to be finalized
+            // Status Rule: Must be in WAITING_RECEIPT or IN_FOLLOWUP to confirm receiving
             var allowedStatuses = new[] { "WAITING_RECEIPT", "IN_FOLLOWUP" };
             if (!allowedStatuses.Contains(request.Status!.Code))
             {
                 return BadRequest(new ProblemDetails
                 {
                     Title = "Ação Inválida",
-                    Detail = $"O pedido não está em um status válido para finalização. Status atual: {request.Status.Code}.",
+                    Detail = $"O pedido não está em um status válido para confirmação de recebimento. Status atual: {request.Status.Code}.",
                     Status = 400
                 });
             }
 
-            // 2. Authoritative Status Determination
-            string nextStatusCode = RequestWorkflowHelper.DeterminePostReceivingStatus(request);
+            // Determine next status: WAITING_RECEIPT (all received) or IN_FOLLOWUP (partial)
+            // Business rule: Receiving NEVER moves to COMPLETED
+            string nextStatusCode = RequestWorkflowHelper.DeterminePostConfirmReceivingStatus(request);
             var targetStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == nextStatusCode);
             if (targetStatus == null) return StatusCode(500, $"Status '{nextStatusCode}' não configurado.");
 
@@ -3738,7 +3739,119 @@ public class RequestsController : BaseController
             request.UpdatedAtUtc = DateTime.UtcNow;
             request.UpdatedByUserId = actorId;
 
-            // 3. Create Status History entry
+            // Create Status History entry
+            var history = new RequestStatusHistory
+            {
+                Id = Guid.NewGuid(),
+                RequestId = request.Id,
+                ActorUserId = actorId,
+                ActionTaken = "CONFIRM_RECEIVING",
+                PreviousStatusId = oldStatusId,
+                NewStatusId = targetStatus.Id,
+                Comment = dto.Comment ?? (nextStatusCode == "WAITING_RECEIPT"
+                    ? "Recebimento de itens confirmado com sucesso. Aguardando recibo do fornecedor."
+                    : "Recebimento parcial confirmado. Itens pendentes movidos para acompanhamento."),
+                CreatedAtUtc = DateTime.UtcNow
+            };
+            _context.RequestStatusHistories.Add(history);
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            // Notification dispatch
+            try
+            {
+                var actor = await _context.Users.FindAsync(actorId);
+                await _orchestrator.EmitAsync(new WorkflowEvent
+                {
+                    EventCode = WorkflowEventCodes.RequestFinalized, // Reuse existing event code for receiving confirmation
+                    RequestId = request.Id,
+                    RequestNumber = request.RequestNumber ?? "S/N",
+                    RequestTitle = request.Title ?? "",
+                    TargetStatusCode = nextStatusCode,
+                    ActionTaken = "CONFIRM_RECEIVING",
+                    ActorUserId = actorId,
+                    ActorName = actor?.FullName ?? "Sistema",
+                    CorrelationId = history.Id,
+                    RequesterId = request.RequesterId,
+                    BuyerId = request.BuyerId,
+                    AreaApproverId = request.AreaApproverId,
+                    FinalApproverId = request.FinalApproverId,
+                    PlantId = request.PlantId
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Non-critical: notification dispatch failed for ConfirmReceiving on Request {RequestId}", request.Id);
+            }
+
+            return Ok(new { Message = "Recebimento confirmado com sucesso.", StatusCode = nextStatusCode });
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            return StatusCode(500, new ProblemDetails
+            {
+                Title = "Erro na Confirmação de Recebimento",
+                Detail = ex.Message,
+                Status = 500
+            });
+        }
+    }
+
+    [HttpPost("{id}/operational/finalize")]
+    public async Task<IActionResult> FinalizeRequest(Guid id, [FromBody] ApprovalActionDto dto)
+    {
+        var actorId = CurrentUserId;
+
+        using var transaction = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            var request = await _context.Requests
+                .Include(r => r.RequestType)
+                .Include(r => r.Status)
+                .FirstOrDefaultAsync(r => r.Id == id);
+
+            if (request == null) return NotFound();
+
+            // Idempotency check: If already completed, just return success without history/timestamp changes
+            if (request.Status!.Code == "COMPLETED")
+            {
+                return Ok(new { Message = "Pedido já finalizado.", StatusCode = "COMPLETED" });
+            }
+
+            // Status Rule: Finance finalization ONLY from WAITING_RECEIPT
+            if (request.Status!.Code != "WAITING_RECEIPT")
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Ação Inválida",
+                    Detail = $"O pedido deve estar em 'Aguardando Recibo do Fornecedor' para ser finalizado. Status atual: {request.Status.Code}.",
+                    Status = 400
+                });
+            }
+
+            // Receipt validation: Supplier financial receipt is mandatory
+            if (!await HasAttachmentAsync(id, RequestAttachment.TYPE_RECEIPT))
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Ação Bloqueada",
+                    Detail = "É necessário anexar o Recibo do Fornecedor antes de finalizar o pedido.",
+                    Status = 400
+                });
+            }
+
+            // Target status is always COMPLETED — Finance finalization is the terminal action
+            var targetStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == "COMPLETED");
+            if (targetStatus == null) return StatusCode(500, "Status 'COMPLETED' não configurado.");
+
+            var oldStatusId = request.StatusId;
+            request.StatusId = targetStatus.Id;
+            request.UpdatedAtUtc = DateTime.UtcNow;
+            request.UpdatedByUserId = actorId;
+
+            // Create Status History entry
             var history = new RequestStatusHistory
             {
                 Id = Guid.NewGuid(),
@@ -3747,14 +3860,12 @@ public class RequestsController : BaseController
                 ActionTaken = "FINALIZE",
                 PreviousStatusId = oldStatusId,
                 NewStatusId = targetStatus.Id,
-                Comment = dto.Comment ?? (nextStatusCode == "COMPLETED" 
-                    ? "Recebimento finalizado com sucesso." 
-                    : "Recebimento finalizado com itens pendentes (Movido para Acompanhamento)."),
+                Comment = dto.Comment ?? "Pedido finalizado pelo Financeiro. Recibo do fornecedor anexado.",
                 CreatedAtUtc = DateTime.UtcNow
             };
             _context.RequestStatusHistories.Add(history);
 
-            // 4. Persistence
+            // Persistence
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
 
@@ -3770,7 +3881,7 @@ public class RequestsController : BaseController
                     RequestId = request.Id,
                     RequestNumber = request.RequestNumber ?? "S/N",
                     RequestTitle = request.Title ?? "",
-                    TargetStatusCode = nextStatusCode,
+                    TargetStatusCode = "COMPLETED",
                     ActionTaken = "FINALIZE",
                     ActorUserId = actorId,
                     ActorName = actor?.FullName ?? "Sistema",
@@ -3787,7 +3898,7 @@ public class RequestsController : BaseController
                 _logger.LogWarning(ex, "Non-critical: notification dispatch failed for FinalizeRequest on Request {RequestId}", request.Id);
             }
 
-            return Ok(new { Message = "Recebimento finalizado com sucesso.", StatusCode = nextStatusCode });
+            return Ok(new { Message = "Pedido finalizado com sucesso.", StatusCode = "COMPLETED" });
         }
         catch (Exception ex)
         {
@@ -4264,10 +4375,10 @@ public class RequestsController : BaseController
         var roles = CurrentUserRoles;
         if (action == "REGISTER_PO" && !roles.Contains(RoleConstants.Buyer))
             return StatusCode(403, "Apenas o Comprador pode registrar a P.O.");
-        if ((action == "SCHEDULE_PAYMENT" || action == "COMPLETE_PAYMENT") && !roles.Contains(RoleConstants.Finance))
-            return StatusCode(403, "Apenas o Financeiro pode gerir o fluxo de pagamento.");
-        if ((action == "MOVE_TO_RECEIPT" || action == "FINALIZE") && !roles.Contains(RoleConstants.Receiving))
-            return StatusCode(403, "Apenas o Almoxarifado/Recebimento pode finalizar o pedido.");
+        if ((action == "SCHEDULE_PAYMENT" || action == "COMPLETE_PAYMENT" || action == "FINALIZE") && !roles.Contains(RoleConstants.Finance))
+            return StatusCode(403, "Apenas o Financeiro pode gerir o fluxo de pagamento e finalização.");
+        if ((action == "MOVE_TO_RECEIPT" || action == "CONFIRM_RECEIVING") && !roles.Contains(RoleConstants.Receiving))
+            return StatusCode(403, "Apenas o Almoxarifado/Recebimento pode confirmar o recebimento.");
 
         var request = await _context.Requests
             .Include(r => r.RequestType)

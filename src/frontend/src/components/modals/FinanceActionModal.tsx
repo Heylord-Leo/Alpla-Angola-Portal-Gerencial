@@ -75,7 +75,7 @@ export function FinanceActionModal({
     // Determine button disabled state
     const isConfirmDisabled = processing || 
         (action === 'SCHEDULE' && !date) || 
-        (action === 'PAY' && (!file || !amount || parseFloat(amount) <= 0)) ||
+        (action === 'PAY' && (!file || !amount || parseFloat(amount) <= 0 || !date)) ||
         (isCommentRequired && !notes.trim());
 
     const inputStyle = {
@@ -201,6 +201,34 @@ export function FinanceActionModal({
                                         </button>
                                     </div>
                                 )}
+                            </div>
+                        )}
+
+                        {action === 'PAY' && (
+                            <div style={{ marginBottom: '24px' }}>
+                                <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
+                                    Data do Pagamento (obrigatório)
+                                </label>
+                                <div style={{ position: 'relative' }}>
+                                    <input
+                                        type="date"
+                                        value={date}
+                                        onChange={(e) => setDate(e.target.value)}
+                                        onClick={(e) => {
+                                            if ('showPicker' in HTMLInputElement.prototype) {
+                                                try { e.currentTarget.showPicker(); } catch (err) {}
+                                            }
+                                        }}
+                                        style={{ ...inputStyle, opacity: 0, position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 2, cursor: 'pointer', padding: 0 }}
+                                    />
+                                    <div style={{ ...inputStyle, position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: date ? 'var(--color-text-main)' : '#94a3b8' }}>
+                                        <span>{date ? formatDate(date) : 'DD/MM/YYYY'}</span>
+                                        <Calendar size={18} color="#94a3b8" />
+                                    </div>
+                                </div>
+                                <div style={{ marginTop: '6px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                                    Informe a data constante no comprovativo de pagamento.
+                                </div>
                             </div>
                         )}
 

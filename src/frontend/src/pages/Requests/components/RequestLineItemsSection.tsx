@@ -136,9 +136,11 @@ export function RequestLineItemsSection({
                                 <th style={{ textAlign: 'center' }}>Unid.</th>
                                 <th style={{ textAlign: 'right' }}>Qtd</th>
                                 {!selectedQuotationId && <th>Planta</th>}
-                                {!selectedQuotationId && <th>IVA</th>}
                                 <th style={{ textAlign: 'right' }}>Preço Unit.</th>
-                                <th style={{ textAlign: 'right' }}>Total</th>
+                                <th style={{ textAlign: 'right' }}>Subtotal s/ IVA</th>
+                                <th style={{ textAlign: 'center' }}>% IVA</th>
+                                <th style={{ textAlign: 'right' }}>Valor IVA</th>
+                                <th style={{ textAlign: 'right', color: 'var(--color-primary)', fontWeight: 800 }}>TOTAL C/ IVA</th>
                                 {!selectedQuotationId && <th style={{ textAlign: 'center' }}>Ações</th>}
                             </tr>
                         </thead>
@@ -152,40 +154,54 @@ export function RequestLineItemsSection({
                                         <td style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontWeight: 700 }}>{item.unitCode || '---'}</td>
                                         <td style={{ textAlign: 'right' }}>{item.quantity}</td>
                                         <td style={{ textAlign: 'right' }}>{formatCurrencyAO(item.unitPrice)}</td>
-                                        <td style={{ textAlign: 'right', fontWeight: 700 }}>{formatCurrencyAO(item.lineTotal)}</td>
+                                        <td style={{ textAlign: 'right', color: 'var(--color-text-main)' }}>{formatCurrencyAO(item.grossSubtotal || (item.unitPrice * item.quantity))}</td>
+                                        <td style={{ textAlign: 'center' }}>
+                                            <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{item.ivaRatePercent != null ? `${item.ivaRatePercent}%` : '---'}</span>
+                                        </td>
+                                        <td style={{ textAlign: 'right', color: 'var(--color-text-muted)' }}>{formatCurrencyAO(item.ivaAmount || 0)}</td>
+                                        <td style={{ textAlign: 'right', fontWeight: 800, color: 'var(--color-primary)' }}>{formatCurrencyAO(item.lineTotal)}</td>
                                     </tr>
                                 ))
                             ) : lineItems.length === 0 ? (
                                 <tr>
-                                    <td colSpan={9} style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)' }}>Nenhum item adicionado a este pedido.</td>
+                                    <td colSpan={11} style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)' }}>Nenhum item adicionado a este pedido.</td>
                                 </tr>
                             ) : (
-                                lineItems.map(item => (
-                                    <tr key={item.id}>
-                                        <td>{item.lineNumber}</td>
-                                        <td>{item.description}</td>
-                                        <td style={{ textAlign: 'center' }}>{item.unit || '---'}</td>
-                                        <td style={{ textAlign: 'right' }}>{item.quantity}</td>
-                                        <td>{item.plantName || '---'}</td>
-                                        <td>
-                                            <span style={{ fontSize: '0.75rem' }}>{item.ivaRatePercent != null ? `${item.ivaRatePercent}%` : '---'}</span>
-                                        </td>
-                                        <td style={{ textAlign: 'right' }}>{formatCurrencyAO(item.unitPrice)}</td>
-                                        <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatCurrencyAO(item.totalAmount)}</td>
-                                        <td style={{ padding: '8px', textAlign: 'center' }}>
-                                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                                                {canEditItems ? (
-                                                    <>
-                                                        <button onClick={() => setItemForm(item)} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer' }} title="Editar"><Edit2 size={16} /></button>
-                                                        <button onClick={() => handleDeleteItem(item.id)} style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer' }} title="Excluir"><Trash2 size={16} /></button>
-                                                    </>
-                                                ) : (
-                                                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Somente leitura</span>
-                                                )}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
+                                lineItems.map(item => {
+                                    // Local calculation for regular items to show the breakdown
+                                    const ivaRate = (item.ivaRatePercent || 0) / 100;
+                                    const subtotalNoIva = item.totalAmount / (1 + ivaRate);
+                                    const ivaValue = item.totalAmount - subtotalNoIva;
+
+                                    return (
+                                        <tr key={item.id}>
+                                            <td>{item.lineNumber}</td>
+                                            <td>{item.description}</td>
+                                            <td style={{ textAlign: 'center' }}>{item.unit || '---'}</td>
+                                            <td style={{ textAlign: 'right' }}>{item.quantity}</td>
+                                            <td>{item.plantName || '---'}</td>
+                                            <td style={{ textAlign: 'right' }}>{formatCurrencyAO(item.unitPrice)}</td>
+                                            <td style={{ textAlign: 'right' }}>{formatCurrencyAO(subtotalNoIva)}</td>
+                                            <td style={{ textAlign: 'center' }}>
+                                                <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{item.ivaRatePercent != null ? `${item.ivaRatePercent}%` : '---'}</span>
+                                            </td>
+                                            <td style={{ textAlign: 'right', color: 'var(--color-text-muted)' }}>{formatCurrencyAO(ivaValue)}</td>
+                                            <td style={{ textAlign: 'right', fontWeight: 800, color: 'var(--color-primary)' }}>{formatCurrencyAO(item.totalAmount)}</td>
+                                            <td style={{ padding: '8px', textAlign: 'center' }}>
+                                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                                    {canEditItems ? (
+                                                        <>
+                                                            <button onClick={() => setItemForm(item)} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer' }} title="Editar"><Edit2 size={16} /></button>
+                                                            <button onClick={() => handleDeleteItem(item.id)} style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer' }} title="Excluir"><Trash2 size={16} /></button>
+                                                        </>
+                                                    ) : (
+                                                        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Somente leitura</span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>

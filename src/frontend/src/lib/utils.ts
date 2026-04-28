@@ -71,15 +71,19 @@ export function getRequestGuidance(statusCode: string, requestTypeCode: string |
                 nextAction: 'Realizar o pagamento'
             };
         case 'PAYMENT_COMPLETED':
-        case 'WAITING_RECEIPT':
             return {
                 responsible: 'Recebimento',
-                nextAction: 'Confirmar recibo e finalizar pedido'
+                nextAction: 'Mover para fase de recebimento e conferir itens'
+            };
+        case 'WAITING_RECEIPT':
+            return {
+                responsible: 'Financeiro',
+                nextAction: 'Anexar recibo do fornecedor e finalizar pedido'
             };
         case 'IN_FOLLOWUP':
             return {
-                responsible: 'RECEBIMENTO',
-                nextAction: 'AGUARDAR FINALIZACAO DE RECEBIMENTO'
+                responsible: 'Recebimento',
+                nextAction: 'Resolver itens pendentes e confirmar recebimento'
             };
         case 'WAITING_QUOTATION':
             return {
@@ -127,7 +131,8 @@ export function isFinalizedStatus(statusCode: string | null | undefined): boolea
     const finalized = [
         'COMPLETED', 'REJECTED', 'CANCELLED', 
         'QUOTATION_COMPLETED', 'PO_ISSUED', 
-        'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED'
+        'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED',
+        'WAITING_RECEIPT'
     ];
     return finalized.includes(statusCode);
 }

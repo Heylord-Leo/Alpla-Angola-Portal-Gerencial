@@ -77,6 +77,7 @@ public class SavedQuotationItemDto
     public decimal? DiscountPercent { get; set; }
 
     public decimal GrossSubtotal { get; set; }
+    public decimal TaxableBase { get; set; }
     public decimal IvaAmount { get; set; }
     public decimal LineTotal { get; set; }
 

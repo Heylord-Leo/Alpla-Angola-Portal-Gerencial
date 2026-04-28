@@ -46,6 +46,7 @@ export interface RequestListItemDto {
     
     // Virtual
     completedAtUtc?: string;
+    paymentCompletedAtUtc?: string;
 }
 
 export interface PendingApprovalsResponseDto {
@@ -200,7 +201,9 @@ export interface OcrDraftItem {
     totalPrice: number; // Front-end calculated preview
     isChecked?: boolean; // UI tracking variable for visual checklist
     itemCatalogId?: number | null; // Optional catalog reference
+    itemCatalogCode?: string | null; // Optional catalog code for display/traceability
     ivaUncertain?: boolean; // True when OCR could not confidently identify item-level IVA
+    autoMatchStatus?: 'AUTO_MATCHED' | 'NEEDS_REVIEW' | null; // Catalog auto-match result from OCR
 }
 
 export interface OcrDraft {
@@ -676,4 +679,43 @@ export interface DepartmentMasterDto {
     departmentName: string;
     companyCode: string;
     displayName: string;
+}
+
+// ─── Catalog Item Reconciliation Types ────────────────────────────────────────
+
+/** Internal status codes for catalog item reconciliation (English constants). */
+export type ReconciliationItemStatus =
+    | 'MATCHED'
+    | 'UNMATCHED'
+    | 'LOW_CONFIDENCE'
+    | 'CREATED_PENDING'
+    | 'LINKED_MANUALLY'
+    | 'FREE_TEXT';
+
+/** Any item array fed to the reconciliation hook must satisfy this interface. */
+export interface ReconcilableItem {
+    description: string;
+    itemCatalogId?: number | null;
+    itemCatalogCode?: string | null;
+    reconciliationStatus?: ReconciliationItemStatus;
+    reconciliationJustification?: string;
+}
+
+/** Per-item resolution outcome produced by the reconciliation modal. */
+export interface ItemResolution {
+    itemIndex: number;
+    status: ReconciliationItemStatus;
+    linkedCatalogId?: number | null;
+    linkedCatalogCode?: string | null;
+    linkedDescription?: string;
+    defaultUnitId?: number | null;
+    justification?: string;
+}
+
+/** Classified item returned by the reconciliation hook (original + computed status). */
+export interface ClassifiedItem<T extends ReconcilableItem = ReconcilableItem> {
+    item: T;
+    index: number;
+    status: ReconciliationItemStatus;
+    justification?: string;
 }

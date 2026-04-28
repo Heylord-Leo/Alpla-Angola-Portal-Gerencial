@@ -405,6 +405,43 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
         const hasUncertainIvaItems = draft.items.some(item => item.ivaUncertain);
         draft.headerHasIva = headerImpliesIva && hasUncertainIvaItems;
 
+        // ─── Part C: Catalog Item Auto-Match ─────────────────────────────────
+        // After all item mapping is done, attempt to auto-link each item to an
+        // existing catalog entry using normalized exact matching (server-side).
+        // Only 100% normalized matches are accepted — no fuzzy/partial matches.
+        // Items with no match get NEEDS_REVIEW status for manual resolution.
+        try {
+            const descriptions = draft.items.map(item => item.description || '');
+            const nonEmptyDescriptions = descriptions.filter(d => d.trim().length > 0);
+
+            if (nonEmptyDescriptions.length > 0) {
+                const matchResults = await api.catalogItems.batchMatch(descriptions);
+
+                draft.items.forEach((item, index) => {
+                    const match = matchResults[index];
+                    if (match && match.id) {
+                        item.itemCatalogId = match.id;
+                        item.itemCatalogCode = match.code || null;
+                        item.autoMatchStatus = 'AUTO_MATCHED';
+                        // Use catalog default unit if current unitId is not set
+                        if (!item.unitId && match.defaultUnitId) {
+                            item.unitId = match.defaultUnitId;
+                        }
+                        console.log(
+                            `[OCR] Item ${index + 1} "${(item.description || '').substring(0, 40)}": ` +
+                            `✅ Correspondência automática → ${match.code} (ID: ${match.id})`
+                        );
+                    } else if (item.description && item.description.trim().length > 0) {
+                        item.autoMatchStatus = 'NEEDS_REVIEW';
+                    }
+                });
+            }
+        } catch (e) {
+            console.warn('[OCR] Catalog auto-match failed (non-blocking):', e);
+            // Non-blocking: if auto-match fails, items keep their default state
+            // and users can still manually link via autocomplete
+        }
+
         // --- Calculation Diagnostics (visible in browser DevTools > Console) ---
         console.group('[OCR] Extraction & Calculation Diagnostics');
         console.log('Header Total (grandTotal from OCR):', getSafeValue<number>(suggestions?.grandTotal, 0));
@@ -420,6 +457,8 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
             discount: item.discountAmount,
             totalPrice: item.totalPrice,
             ivaUncertain: item.ivaUncertain,
+            autoMatch: item.autoMatchStatus || '-',
+            catalogId: item.itemCatalogId || '-',
             gross: ((item.quantity || 0) * (item.unitPrice || 0)).toFixed(2),
             net: (((item.quantity || 0) * (item.unitPrice || 0)) - (item.discountAmount || 0)).toFixed(2)
         })));

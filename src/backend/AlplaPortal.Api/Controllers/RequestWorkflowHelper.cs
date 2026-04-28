@@ -7,26 +7,43 @@ namespace AlplaPortal.Api.Controllers;
 public static class RequestWorkflowHelper
 {
     /// <summary>
-    /// Governs the single authoritative rule for determining the next status after a receiving action.
+    /// Checks whether all items (line items or winning quotation items) have been physically received.
+    /// This is an item-level check only — it does NOT determine request lifecycle status.
     /// </summary>
-    public static string DeterminePostReceivingStatus(Request request)
+    public static bool AreAllItemsReceived(Request request)
     {
-        bool allReceived = false;
-
         if (request.RequestType!.Code == RequestConstants.Types.Quotation && request.SelectedQuotationId.HasValue)
         {
             var winningQuotation = request.Quotations.FirstOrDefault(q => q.Id == request.SelectedQuotationId.Value);
             if (winningQuotation != null)
             {
-                allReceived = winningQuotation.Items.All(qi => qi.LineItemStatus?.Code == "RECEIVED"); // RECEIVED status not yet in constants
+                return winningQuotation.Items.All(qi => qi.LineItemStatus?.Code == "RECEIVED");
             }
-        }
-        else
-        {
-            allReceived = request.LineItems.Where(li => !li.IsDeleted).All(li => li.LineItemStatus?.Code == "RECEIVED");
+            return false;
         }
 
-        return allReceived ? "COMPLETED" : "IN_FOLLOWUP";
+        return request.LineItems.Where(li => !li.IsDeleted).All(li => li.LineItemStatus?.Code == "RECEIVED");
+    }
+
+    /// <summary>
+    /// Determines the next status after a Receiving "confirm receiving" action.
+    /// Business rule: Receiving must NEVER move a request to COMPLETED.
+    /// - All items received → WAITING_RECEIPT (stays/returns for Finance to finalize)
+    /// - Partial items → IN_FOLLOWUP (needs attention before Finance can finalize)
+    /// </summary>
+    public static string DeterminePostConfirmReceivingStatus(Request request)
+    {
+        return AreAllItemsReceived(request) ? "WAITING_RECEIPT" : "IN_FOLLOWUP";
+    }
+
+    /// <summary>
+    /// [DEPRECATED] Preserved for backward compatibility. Use DeterminePostConfirmReceivingStatus instead.
+    /// This method previously returned "COMPLETED" which bypassed the financial receipt step.
+    /// Now delegates to DeterminePostConfirmReceivingStatus (never returns COMPLETED).
+    /// </summary>
+    public static string DeterminePostReceivingStatus(Request request)
+    {
+        return DeterminePostConfirmReceivingStatus(request);
     }
 
     /// <summary>

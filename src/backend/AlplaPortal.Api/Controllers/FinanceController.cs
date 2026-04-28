@@ -787,6 +787,17 @@ public class FinanceController : BaseController
             });
         }
 
+        // ── Mandatory ActionDateUtc (payment proof document date) ─────────────
+        if (!requestDto.ActionDateUtc.HasValue)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Data de Pagamento Obrigatória",
+                Detail = "A data de pagamento (ActionDateUtc) é obrigatória ao confirmar liquidação. Informe a data constante no comprovativo de pagamento.",
+                Status = 400
+            });
+        }
+
         var paidStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == RequestConstants.Statuses.PaymentCompleted || s.Code == RequestConstants.Statuses.Paid);
         if (paidStatus == null) return BadRequest("Status PAID não configurado.");
 
@@ -807,7 +818,7 @@ public class FinanceController : BaseController
 
         // ── DEC-110: Actual Payment Capture ──────────────────────────────────
         r.ActualPaidAmount = requestDto.ActualPaidAmount.Value;
-        r.ActualPaidAtUtc = DateTime.UtcNow;
+        r.ActualPaidAtUtc = requestDto.ActionDateUtc!.Value;
 
         _context.RequestStatusHistories.Add(history);
         await _context.SaveChangesAsync();

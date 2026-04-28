@@ -245,9 +245,9 @@ export function ApprovalDetailPanel({
 
     // Intelligence summary flags
     const intelItemsWithHistory = intelligence?.items?.filter(i => i.hasHistory) || [];
-    const hasHistoricalItems = intelItemsWithHistory.length > 0;
-    // Considered above if unit price is greater than historical average
-    const hasItemAboveAvg = intelItemsWithHistory.some(i => i.currentUnitPrice > (i.averageHistoricalPrice || 0));
+    // Show warning only when at least one item has price strictly above historical average
+    const itemsAboveAvg = intelItemsWithHistory.filter(i => i.currentUnitPrice > (i.averageHistoricalPrice || 0));
+    const hasItemAboveAvg = itemsAboveAvg.length > 0;
 
     // --- Handlers ---
 
@@ -444,27 +444,24 @@ export function ApprovalDetailPanel({
                 </div>
 
                 {/* --- INTELLIGENCE ALERTS --- */}
-                {hasHistoricalItems && (
+                {/* Price warning banner: shown ONLY when items are above historical average */}
+                {hasItemAboveAvg && (
                     <div style={{
                         marginBottom: '24px', width: '100%', 
-                        backgroundColor: hasItemAboveAvg ? '#FEF9C3' : '#F0FDF4', 
-                        border: `1px solid ${hasItemAboveAvg ? '#FEF08A' : '#BBF7D0'}`, 
+                        backgroundColor: '#FEF9C3', 
+                        border: '1px solid #FEF08A', 
                         borderRadius: 'var(--radius-lg)', padding: '16px',
                         display: 'flex', gap: '16px', boxShadow: 'var(--shadow-sm)', alignItems: 'flex-start'
                     }}>
-                        {hasItemAboveAvg ? (
-                            <AlertTriangle color="#A16207" style={{ marginTop: '2px', flexShrink: 0 }} size={20} />
-                        ) : (
-                            <ShieldCheck color="#166534" style={{ marginTop: '2px', flexShrink: 0 }} size={20} />
-                        )}
+                        <AlertTriangle color="#A16207" style={{ marginTop: '2px', flexShrink: 0 }} size={20} />
                         <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ color: hasItemAboveAvg ? '#854D0E' : '#14532D', fontWeight: 700, marginBottom: '4px' }}>
-                                {hasItemAboveAvg ? 'Atenção ao Histórico de Preços' : 'Preços Favoráveis'}
+                            <span style={{ color: '#854D0E', fontWeight: 700, marginBottom: '4px' }}>
+                                Atenção ao Histórico de Preços
                             </span>
-                            <span style={{ color: hasItemAboveAvg ? '#A16207' : '#166534', fontSize: '0.875rem', lineHeight: 1.2 }}>
-                                {hasItemAboveAvg 
-                                    ? 'Um ou mais itens deste pedido estão com preço acima da média histórica.' 
-                                    : 'Nenhum item com histórico no pedido encontra-se com preços acima da média.'}
+                            <span style={{ color: '#A16207', fontSize: '0.875rem', lineHeight: 1.2 }}>
+                                {itemsAboveAvg.length === 1
+                                    ? '1 item deste pedido está com preço acima da média histórica.'
+                                    : `${itemsAboveAvg.length} itens deste pedido estão com preço acima da média histórica.`}
                             </span>
                         </div>
                     </div>

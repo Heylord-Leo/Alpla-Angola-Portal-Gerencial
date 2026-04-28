@@ -153,7 +153,10 @@ export const RequestQuotations: React.FC<RequestQuotationsProps> = ({
                                             <th style={{ padding: '8px', textAlign: 'center', borderBottom: '1px solid var(--color-border)', width: '60px' }}>UNID.</th>
                                             <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid var(--color-border)', width: '60px' }}>QTD</th>
                                             <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid var(--color-border)', width: '100px' }}>UNITÁRIO</th>
-                                            <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid var(--color-border)', width: '120px' }}>TOTAL</th>
+                                            <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid var(--color-border)', width: '120px' }}>SUBTOTAL S/ IVA</th>
+                                            <th style={{ padding: '8px', textAlign: 'center', borderBottom: '1px solid var(--color-border)', width: '60px' }}>% IVA</th>
+                                            <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid var(--color-border)', width: '100px' }}>VALOR IVA</th>
+                                            <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid var(--color-border)', width: '130px', color: 'var(--color-primary)' }}>TOTAL C/ IVA</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -163,13 +166,16 @@ export const RequestQuotations: React.FC<RequestQuotationsProps> = ({
                                                 <td style={{ padding: '8px', textAlign: 'center', color: 'var(--color-text-muted)', fontWeight: 700 }}>{item.unitCode || '---'}</td>
                                                 <td style={{ padding: '8px', textAlign: 'right' }}>{item.quantity}</td>
                                                 <td style={{ padding: '8px', textAlign: 'right' }}>{formatCurrencyAO(item.unitPrice)}</td>
-                                                <td style={{ padding: '8px', textAlign: 'right', fontWeight: 700 }}>{formatCurrencyAO(item.lineTotal)}</td>
+                                                <td style={{ padding: '8px', textAlign: 'right' }}>{formatCurrencyAO(item.grossSubtotal || (item.unitPrice * item.quantity))}</td>
+                                                <td style={{ padding: '8px', textAlign: 'center', fontWeight: 600 }}>{item.ivaRatePercent}%</td>
+                                                <td style={{ padding: '8px', textAlign: 'right', color: 'var(--color-text-muted)' }}>{formatCurrencyAO(item.ivaAmount || 0)}</td>
+                                                <td style={{ padding: '8px', textAlign: 'right', fontWeight: 800, color: 'var(--color-primary)' }}>{formatCurrencyAO(item.lineTotal)}</td>
                                             </tr>
                                         ))}
                                     </tbody>
                                     <tfoot style={{ backgroundColor: 'var(--color-bg-page)', fontWeight: 800 }}>
                                         <tr>
-                                            <td colSpan={3} style={{ padding: '8px', textAlign: 'right' }}>TOTAL DA COTAÇÃO ({q.currency}):</td>
+                                            <td colSpan={7} style={{ padding: '8px', textAlign: 'right' }}>TOTAL DA COTAÇÃO ({q.currency}):</td>
                                             <td style={{ padding: '8px', textAlign: 'right', color: 'var(--color-primary)' }}>{formatCurrencyAO(q.totalAmount)}</td>
                                         </tr>
                                     </tfoot>

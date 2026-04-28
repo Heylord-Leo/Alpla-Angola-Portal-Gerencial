@@ -140,14 +140,34 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<UserDepartmentScope>().HasKey(uds => new { uds.UserId, uds.DepartmentId });
 
         // Annual Budget Constraints
+        // Note: Logical unique key is handled in application logic because CostCenterId can be NULL
+        // We will just create a non-unique covering index to speed up lookups
         modelBuilder.Entity<AnnualBudget>()
-            .HasIndex(a => new { a.Year, a.DepartmentId, a.CurrencyId })
-            .IsUnique();
+            .HasIndex(a => new { a.Year, a.CompanyId, a.PlantId, a.DepartmentId, a.CostCenterId, a.CurrencyId })
+            .HasDatabaseName("IX_AnnualBudget_Hierarchy");
+
+        modelBuilder.Entity<AnnualBudget>()
+            .HasOne(a => a.Company)
+            .WithMany()
+            .HasForeignKey(a => a.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<AnnualBudget>()
+            .HasOne(a => a.Plant)
+            .WithMany()
+            .HasForeignKey(a => a.PlantId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<AnnualBudget>()
             .HasOne(a => a.Department)
             .WithMany()
             .HasForeignKey(a => a.DepartmentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<AnnualBudget>()
+            .HasOne(a => a.CostCenter)
+            .WithMany()
+            .HasForeignKey(a => a.CostCenterId)
             .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<AnnualBudget>()

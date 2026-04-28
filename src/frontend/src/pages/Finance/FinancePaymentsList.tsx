@@ -96,7 +96,8 @@ export default function FinancePaymentsList() {
                     await api.attachments.upload(actionModal.requestId, [payload.file], 'PAYMENT_PROOF');
                 }
                 const actualPaidAmount = payload.amount ? parseFloat(payload.amount) : undefined;
-                await api.finance.markAsPaid(actionModal.requestId, new Date().toISOString(), payload.notes || "Liquidado via portal", actualPaidAmount);
+                const paymentDateUtc = payload.date ? new Date(payload.date).toISOString() : undefined;
+                await api.finance.markAsPaid(actionModal.requestId, paymentDateUtc, payload.notes || "Liquidado via portal", actualPaidAmount);
             } else if (action === 'RETURN' && payload.notes) {
                 await api.finance.returnForAdjustment(actionModal.requestId, payload.notes);
             } else if (action === 'NOTE' && payload.notes) {

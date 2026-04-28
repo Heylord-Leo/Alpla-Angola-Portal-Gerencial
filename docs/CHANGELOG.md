@@ -2,6 +2,123 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.96.1] - 2026-04-28 - Fix: Approval Price Analysis Banner — Remove Misleading "Preços Favoráveis"
+
+### Changed
+- **Approval Detail Panel — Price Analysis Banner**: Removed the misleading green "Preços Favoráveis" success banner that appeared when all items were within the historical average range. "Not above average" does not equal "favorable" — the previous presentation created a false sense of positive pricing when the system could only confirm prices were not above the mean.
+- **Warning-Only Policy**: The price analysis banner now follows a warning-only policy:
+  - **Items above average**: Amber warning banner with count of affected items (e.g., "2 itens deste pedido estão com preço acima da média histórica.").
+  - **Items within/below average**: No banner displayed. The detailed per-item intelligence panel (already present in the "Inteligência para Decisão" section) provides granular price analysis with variation percentages.
+- **Count Precision**: The warning banner now displays the exact count of items above average instead of a generic "um ou mais itens" message.
+
+### Files Changed
+- `frontend/src/pages/Approvals/ApprovalDetailPanel.tsx` — Replaced binary banner (warning vs. success) with conditional warning-only banner. Removed `hasHistoricalItems` guard; banner now gated exclusively on `hasItemAboveAvg`.
+
+---
+
+## [v2.96.0] - 2026-04-28 - Feature: OCR Catalog Item Auto-Match (DEC-123)
+
+### Added
+- **Backend Batch-Match Endpoint**: `POST /api/v1/catalog-items/batch-match` accepts an array of OCR-extracted item descriptions and returns index-keyed matches against the active item catalog. Uses in-memory normalized exact matching (trim, lowercase, diacritic removal, whitespace collapse, trailing punctuation strip) applied identically to both incoming descriptions and stored catalog records. Only 100% normalized exact matches are accepted — no fuzzy/partial matching.
+- **Frontend Auto-Match Integration (Request Flow)**: `useOcrProcessor.ts` now calls the batch-match endpoint after OCR item mapping. Matched items are automatically linked to their catalog entry (`itemCatalogId`, `itemCatalogCode`) with `autoMatchStatus = 'AUTO_MATCHED'`. Unmatched items receive `autoMatchStatus = 'NEEDS_REVIEW'`.
+- **Frontend Auto-Match Integration (Quotation Flow)**: `QuotationEntry.tsx` OCR processing includes the same batch-match step, ensuring consistent behavior across both Request and Quotation creation flows.
+- **UX Badges**: Green "Correspondência automática" badge (with catalog code) for auto-matched items. Amber "Item não catalogado — verifique manualmente" badge for unmatched items. Badges render in both Request and Quotation item tables.
+- **Manual Override Behavior**: When a user edits the item description or manually selects a catalog item via autocomplete, the `autoMatchStatus` is cleared to prevent misleading badge display. User intent always takes precedence over auto-match.
+- **API Client**: Added `api.catalogItems.batchMatch()` method to the frontend API client.
+- **Type Model**: Added `autoMatchStatus` field to both `OcrDraftItem` and `QuotationDraftItem` types.
+
+### Design Decisions
+- **Non-Blocking**: Auto-match failure (API error, timeout) does not block the OCR flow. Items remain in their default state and users can still manually link via the autocomplete.
+- **No Auto-Creation**: Items that do not match the catalog are never automatically created. They stay as free-text descriptions for manual reconciliation.
+- **Catalog Default Unit Inheritance**: When an auto-match is found and the OCR item has no resolved unit, the catalog item's default unit is automatically applied.
+
+### Files Changed
+- `backend/AlplaPortal.Api/Controllers/CatalogItemsController.cs` — New `BatchMatch` endpoint with `BatchMatchRequest`/`BatchMatchResponse` DTOs and `NormalizeDescription` helper.
+- `frontend/src/lib/api.ts` — Added `batchMatch` method to `catalogItems` namespace.
+- `frontend/src/types/index.ts` — Added `autoMatchStatus` to `OcrDraftItem`.
+- `frontend/src/types/quotation.ts` — Added `autoMatchStatus` to `QuotationDraftItem`.
+- `frontend/src/hooks/useOcrProcessor.ts` — Added catalog auto-match step (Part C) with diagnostic logging.
+- `frontend/src/pages/Requests/RequestCreate.tsx` — Manual override logic in `handleUpdateOcrItem` and `handleCatalogSelectOcrItem`; UX badges in payment items table.
+- `frontend/src/components/QuotationEntry.tsx` — Auto-match step in `_processUpload`; manual override in catalog select; UX badges in quotation items table.
+
+---
+
+## [v2.95.0] - 2026-04-27 - Workflow: Decouple Operational Receiving from Financial Receipt (DEC-122)
+
+### Changed
+- **Receiving Workspace — Semantic Decoupling**: The Receiving workspace no longer finalizes requests. The "FINALIZAR PEDIDO" button has been renamed to "CONFIRMAR RECEBIMENTO" and now calls a dedicated `confirmReceiving` API endpoint. This enforces the business distinction between physical item receiving (Receiving role) and financial receipt closure (Finance role).
+- **ApprovalModal — New Action Type**: Added `CONFIRM_RECEIVING` action type with dedicated labels and descriptions. The Receiving workspace modal now uses this type instead of `FINALIZE`.
+- **getRequestGuidance — Split Guidance**: `PAYMENT_COMPLETED` now shows "Mover para fase de recebimento operacional" (for Receiving role), while `WAITING_RECEIPT` shows "Anexar recibo do fornecedor e finalizar pedido" (for Finance role). Previously both shared the same generic guidance.
+- **isFinalizedStatus — Lifecycle Fix**: Removed `PAYMENT_COMPLETED` from the finalized status list, as it is an active operational status requiring Receiving action.
+
+### Added
+- **Backend Endpoint**: `POST /api/v1/requests/{id}/operational/confirm-receiving` — exclusively for the Receiving role. Confirms physical item/service receipt. Transitions to `WAITING_RECEIPT` (all received) or `IN_FOLLOWUP` (partial). Never transitions to `COMPLETED`.
+- **FinalizeRequest Guard**: Finance-only terminal action (`WAITING_RECEIPT` → `COMPLETED`). Requires `TYPE_RECEIPT` attachment. Receiving role is explicitly blocked.
+
+### Documentation
+- **WORKFLOW_ARCHITECTURE.md**: Updated status tables, state machine, and permission matrix to reflect the decoupled workflow.
+- **DECISIONS.md**: Added DEC-122 — Decoupling Physical Item Receiving from Supplier Financial Receipt.
+- **CHANGELOG.md**: This entry.
+
+### Files Changed
+- `backend/AlplaPortal.Api/Controllers/RequestsController.cs` — New `ConfirmReceiving` endpoint, refactored `FinalizeRequest` with Finance-only guard.
+- `backend/AlplaPortal.Application/Helpers/RequestWorkflowHelper.cs` — `AreAllItemsReceived` status check, auto-completion prevention.
+- `frontend/src/pages/Receiving/ReceivingOperation.tsx` — Button label, API call, modal type changes.
+- `frontend/src/components/ApprovalModal.tsx` — Added `CONFIRM_RECEIVING` action type.
+- `frontend/src/lib/utils.ts` — Split guidance, updated `isFinalizedStatus`.
+- `docs/WORKFLOW_ARCHITECTURE.md` — Updated status and permission documentation.
+- `docs/DECISIONS.md` — DEC-121 extended, DEC-122 added.
+
+---
+
+## [v2.94.0] - 2026-04-27 - Catalog Item Reconciliation Engine
+
+
+### Fixed
+- **Payment Request Autocomplete Bug**: Replaced plain `<input>` with `CatalogItemAutocomplete` in the Payment Request manual invoice flow. Items now searchable against the master catalog. (Phase 1)
+
+### Added
+- **Shared Reconciliation Hook (`useCatalogItemReconciliation`)**: Classifies items as MATCHED, UNMATCHED, CREATED_PENDING, LINKED_MANUALLY, or FREE_TEXT. Reusable across all item-entry flows.
+- **Reconciliation Types**: Added `ReconcilableItem`, `ItemResolution`, `ClassifiedItem`, and `ReconciliationItemStatus` to shared types.
+- **Backend Reconciliation-Create Endpoint**: `POST /api/v1/catalog-items/reconciliation-create` creates catalog items with `Origin = CREATED_PENDING_VALIDATION`. Includes duplicate detection.
+- **Batch Reconciliation Modal (`CatalogItemReconciliationModal`)**: Shows all unresolved items in a single table with per-row actions: link to catalog, create new, or keep as free text.
+- **Submission Warning Dialog (`ReconciliationWarningDialog`)**: Non-blocking guardrail shown before save/submit when unresolved catalog items exist. Offers review, override, or cancel.
+- **QuotationEntry Integration**: Same reconciliation engine wired into quotation management flow.
+
+### Files Changed
+- `frontend/src/types/index.ts` — Added reconciliation types and `itemCatalogCode` to `OcrDraftItem`.
+- `frontend/src/hooks/useCatalogItemReconciliation.ts` — New shared hook.
+- `frontend/src/components/CatalogItemReconciliationModal.tsx` — New batch modal.
+- `frontend/src/components/ReconciliationWarningDialog.tsx` — New warning dialog.
+- `frontend/src/pages/Requests/RequestCreate.tsx` — Autocomplete fix + reconciliation integration.
+- `frontend/src/components/QuotationEntry.tsx` — Reconciliation integration.
+- `frontend/src/lib/api.ts` — Added `reconciliationCreate` method.
+- `backend/AlplaPortal.Api/Controllers/CatalogItemsController.cs` — Added `ReconciliationCreate` endpoint and DTO.
+- `docs/DECISIONS.md` — Logged DEC-120.
+
+---
+
+## [v2.93.5] - 2026-04-26 - Backend & Frontend: Hierarchical Budget Configuration
+
+### Added
+- **Hierarchical Budget Model**: Replaced flat department-based budget configuration with a granular hierarchy: Company → Plant → Department → (Optional) Cost Center.
+- **Budget Matrix UI**: Created `FinanceBudgetConfig.tsx` to provide a filterable, editable matrix for managing hierarchical budgets, supporting real-time currency formatting and active/inactive toggles.
+- **Backend Uniqueness Validation**: Enforced composite key validation `(FiscalYear, CompanyId, PlantId, DepartmentId, CostCenterId, CurrencyId)` during budget upserts instead of a database-level index to safely handle optional Cost Centers.
+- **Granular Attribution**: Refactored `FinanceBudgetController` to calculate budget consumption at the line-item Cost Center level, gracefully falling back to general department budgets when no specific cost center is assigned.
+
+### Changed
+- **Database Schema**: Added `CompanyId`, `PlantId`, `CostCenterId`, and `IsActive` to the `AnnualBudget` entity. Dropped the unique index in favor of a covering index.
+- **Data Reset**: Executed migration `AddHierarchicalBudgetScope`, applying a deliberate destructive reset of existing `AnnualBudget` records to allow manual reconfiguration using the new hierarchy.
+
+### Files Changed
+- `backend/AlplaPortal.Domain/Entities/AnnualBudget.cs` — Added hierarchical fields.
+- `backend/AlplaPortal.Infrastructure/Data/ApplicationDbContext.cs` — Updated EF Core relationships and indexes.
+- `backend/AlplaPortal.Infrastructure/Migrations/*_AddHierarchicalBudgetScope.cs` — Added schema migration and `DELETE` operation.
+- `backend/AlplaPortal.Application/DTOs/Finance/BudgetDTOs.cs` — Updated DTOs.
+- `backend/AlplaPortal.Api/Controllers/FinanceBudgetController.cs` — Refactored configuration and consumption logic.
+- `frontend/src/pages/Finance/FinanceBudgetConfig.tsx` — Created new budget configuration UI.
+- `docs/DECISIONS.md` — Logged DEC-118 detailing the shift to hierarchical budgets.
+
 ## [v2.93.4] - 2026-04-26 - UX: Budget Contextual Help for Comprometido/Pago
 
 ### Added
@@ -1685,3 +1802,4 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 ### Notes
 
 - Initial baseline version for project documentation structure
+
