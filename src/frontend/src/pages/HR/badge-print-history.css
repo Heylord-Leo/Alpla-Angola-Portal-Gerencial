@@ -484,21 +484,47 @@
     background: var(--color-surface-hover, #e5e7eb);
 }
 
-/* ─── Print-specific styles ─── */
+/* ─── Print-specific styles — CR-80 Card (Zebra ZC300 Compatible) ─── */
+@page {
+    size: 85.6mm 53.98mm;   /* CR-80 landscape — Zebra ZC300 feed */
+    margin: 0;
+}
+
 @media print {
+    html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 85.6mm !important;
+        height: 53.98mm !important;
+        overflow: hidden !important;
+        background: #fff !important;
+    }
+
     .bph-container,
     .bph-modal-overlay {
         display: none !important;
     }
     .print-target {
         display: block !important;
-        position: fixed;
+        position: fixed !important;
         top: 0;
         left: 0;
+        width: 85.6mm !important;
+        height: 53.98mm !important;
         transform: none !important;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
         color-adjust: exact !important;
+    }
+
+    .print-target .badge-card-container {
+        width: 85.6mm !important;
+        height: 53.98mm !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        border: none !important;
+        border-radius: 0 !important;
     }
 }
 

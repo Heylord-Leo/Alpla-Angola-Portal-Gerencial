@@ -272,6 +272,7 @@ public class HRLeaveController : ControllerBase
                 e.Id,
                 e.EmployeeCode,
                 e.FullName,
+                e.InnuxEmployeeId,
                 e.InnuxDepartmentName,
                 e.JobTitle,
                 e.PlantId,

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using AlplaPortal.Application.DTOs.Integration;
 using AlplaPortal.Application.Interfaces.Integration;
+using AlplaPortal.Infrastructure.Services.Integration;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Infrastructure.Data;
@@ -38,17 +39,26 @@ public class HRAttendanceController : ControllerBase
     private readonly ApplicationDbContext _context;
     private readonly IInnuxAttendanceService _attendanceService;
     private readonly IInnuxLookupService _lookupService;
+    private readonly IPortalScheduleResolver _scheduleResolver;
+    private readonly IPortalPunchInterpreter _punchInterpreter;
+    private readonly IAttendanceComparisonService _comparisonService;
     private readonly ILogger<HRAttendanceController> _logger;
 
     public HRAttendanceController(
         ApplicationDbContext context,
         IInnuxAttendanceService attendanceService,
         IInnuxLookupService lookupService,
+        IPortalScheduleResolver scheduleResolver,
+        IPortalPunchInterpreter punchInterpreter,
+        IAttendanceComparisonService comparisonService,
         ILogger<HRAttendanceController> logger)
     {
         _context = context;
         _attendanceService = attendanceService;
         _lookupService = lookupService;
+        _scheduleResolver = scheduleResolver;
+        _punchInterpreter = punchInterpreter;
+        _comparisonService = comparisonService;
         _logger = logger;
     }
 
@@ -182,6 +192,21 @@ public class HRAttendanceController : ControllerBase
             _logger.LogError(ex, "Failed to load attendance detail for employee {EmployeeId} on {Date}",
                 innuxEmployeeId, date.ToString("yyyy-MM-dd"));
             return StatusCode(500, new { message = "An error occurred loading attendance detail." });
+        }
+    }
+
+    [AllowAnonymous]
+    [HttpGet("test-verify/{innuxEmployeeId:int}/{date:datetime}")]
+    public async Task<IActionResult> TestVerifyAffected(int innuxEmployeeId, DateTime date)
+    {
+        try
+        {
+            var detail = await _attendanceService.GetDayDetailAsync(innuxEmployeeId, date.Date);
+            return Ok(detail);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ex.ToString());
         }
     }
 
@@ -382,6 +407,227 @@ public class HRAttendanceController : ControllerBase
 
         // No identity match — fail safe
         return query.Where(e => false);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Portal-Side Attendance Interpretation — Diagnostic Endpoints
+    //
+    // These endpoints are investigative/diagnostic only.
+    // They expose the Portal-side schedule resolution and raw punch interpretation
+    // services for HR/IT analysis. They are NOT consumed by the production
+    // calendar UI and should NOT replace the current Innux-based calendar yet.
+    //
+    // Read-only: No writes to Innux or Primavera.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// [DIAGNOSTIC] Resolves the expected schedule for an employee on a specific date.
+    ///
+    /// Uses the Portal Schedule Day Resolver to compute which Innux schedule (Horario)
+    /// applies based on the employee's work plan cycle. Returns the resolved schedule
+    /// with periods, expected entry/exit times, expected minutes, and overnight flag.
+    ///
+    /// This endpoint is for diagnostic/investigative purposes only.
+    /// It is not consumed by the production calendar UI.
+    /// </summary>
+    /// <param name="innuxEmployeeId">Innux IDFuncionario.</param>
+    /// <param name="date">Target date (yyyy-MM-dd).</param>
+    [HttpGet("portal/resolve-schedule/{innuxEmployeeId:int}/{date}")]
+    public async Task<IActionResult> DiagnosticResolveSchedule(int innuxEmployeeId, DateTime date)
+    {
+        // Restrict to System Administrator and HR roles
+        var roles = CurrentUserRoles;
+        if (!roles.Contains(RoleConstants.SystemAdministrator) && !roles.Contains(RoleConstants.HR))
+        {
+            return Forbid();
+        }
+
+        try
+        {
+            var result = await _scheduleResolver.ResolveScheduleForDateAsync(innuxEmployeeId, date);
+
+            if (result == null)
+            {
+                return NotFound(new
+                {
+                    message = $"No work plan assigned for Innux employee {innuxEmployeeId}.",
+                    innuxEmployeeId,
+                    date = date.ToString("yyyy-MM-dd")
+                });
+            }
+
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(503, new { message = "Innux connection unavailable.", detail = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// [DIAGNOSTIC] Interprets raw terminal punches for an employee on a specific date.
+    ///
+    /// Uses the Portal Raw Punch Interpreter to read TerminaisMarcacoes directly,
+    /// infer Entry/Exit directions, flag duplicates (without removing them),
+    /// build punch pairs, calculate worked minutes, and assign confidence scores.
+    ///
+    /// This endpoint is for diagnostic/investigative purposes only.
+    /// It is not consumed by the production calendar UI.
+    /// The response includes ALL raw punches (including flagged duplicates) for audit transparency.
+    /// </summary>
+    /// <param name="innuxEmployeeId">Innux IDFuncionario.</param>
+    /// <param name="date">Target date (yyyy-MM-dd).</param>
+    [HttpGet("portal/interpret-punches/{innuxEmployeeId:int}/{date}")]
+    public async Task<IActionResult> DiagnosticInterpretPunches(int innuxEmployeeId, DateTime date)
+    {
+        // Restrict to System Administrator and HR roles
+        var roles = CurrentUserRoles;
+        if (!roles.Contains(RoleConstants.SystemAdministrator) && !roles.Contains(RoleConstants.HR))
+        {
+            return Forbid();
+        }
+
+        try
+        {
+            var result = await _punchInterpreter.InterpretPunchesAsync(innuxEmployeeId, date);
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(503, new { message = "Innux connection unavailable.", detail = ex.Message });
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Phase 3 — Attendance Comparison Engine — Diagnostic Endpoints
+    //
+    // Compares Innux processed attendance against Portal raw-punch interpretation.
+    // Diagnostic only — does NOT replace the production calendar.
+    // Read-only: No writes to Innux or Primavera.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// [DIAGNOSTIC] Compares Innux processed attendance vs Portal raw-punch
+    /// interpretation for one employee on one day.
+    ///
+    /// Returns a comparison result with discrepancy severity, type codes,
+    /// Portuguese messages, and a recommended review action.
+    ///
+    /// This endpoint is for diagnostic/investigative purposes only.
+    /// It is not consumed by the production calendar UI.
+    /// </summary>
+    /// <param name="innuxEmployeeId">Innux IDFuncionario.</param>
+    /// <param name="date">Target date (yyyy-MM-dd).</param>
+    [HttpGet("portal/compare/{innuxEmployeeId:int}/{date}")]
+    public async Task<IActionResult> DiagnosticCompareEmployeeDay(int innuxEmployeeId, DateTime date)
+    {
+        var roles = CurrentUserRoles;
+        if (!roles.Contains(RoleConstants.SystemAdministrator) && !roles.Contains(RoleConstants.HR))
+        {
+            return Forbid();
+        }
+
+        try
+        {
+            var result = await _comparisonService.CompareEmployeeDayAsync(innuxEmployeeId, date);
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(503, new { message = "Innux connection unavailable.", detail = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// [DIAGNOSTIC] Compares Innux vs Portal attendance across a date range.
+    ///
+    /// Supports optional filtering by innuxEmployeeId, departmentId, and
+    /// onlyDiscrepancies flag. Maximum date range: 31 days.
+    ///
+    /// Returns a batch comparison result with summary statistics and
+    /// individual employee-day comparison results.
+    ///
+    /// This endpoint is for diagnostic/investigative purposes only.
+    /// </summary>
+    [HttpGet("portal/compare-range")]
+    public async Task<IActionResult> DiagnosticCompareRange(
+        [FromQuery] DateTime startDate,
+        [FromQuery] DateTime endDate,
+        [FromQuery] int? innuxEmployeeId = null,
+        [FromQuery] int? departmentId = null,
+        [FromQuery] bool onlyDiscrepancies = false)
+    {
+        var roles = CurrentUserRoles;
+        if (!roles.Contains(RoleConstants.SystemAdministrator) && !roles.Contains(RoleConstants.HR))
+        {
+            return Forbid();
+        }
+
+        if (startDate == default || endDate == default)
+            return BadRequest(new { message = "startDate e endDate são obrigatórios." });
+
+        if (startDate > endDate)
+            return BadRequest(new { message = "startDate deve ser anterior a endDate." });
+
+        if ((endDate - startDate).TotalDays > 31)
+            return BadRequest(new { message = "O intervalo de datas não pode exceder 31 dias." });
+
+        try
+        {
+            // If a specific employee is requested, delegate directly
+            if (innuxEmployeeId.HasValue)
+            {
+                var result = await _comparisonService.CompareDateRangeAsync(
+                    startDate, endDate, innuxEmployeeId, departmentId, onlyDiscrepancies);
+                return Ok(result);
+            }
+
+            // If departmentId is specified, resolve employees from that department
+            if (departmentId.HasValue)
+            {
+                var empIds = await _context.Set<Domain.Entities.HREmployee>()
+                    .Where(e => e.PortalDepartmentId == departmentId.Value && e.InnuxEmployeeId > 0)
+                    .Select(e => e.InnuxEmployeeId)
+                    .ToListAsync();
+
+                if (empIds.Count == 0)
+                    return Ok(new DateRangeComparisonResultDto
+                    {
+                        StartDate = startDate.Date,
+                        EndDate = endDate.Date
+                    });
+
+                var batchResult = await ((AttendanceComparisonService)_comparisonService)
+                    .CompareDateRangeBatchAsync(empIds, startDate, endDate, onlyDiscrepancies);
+                return Ok(batchResult);
+            }
+
+            // No filter — use all scoped employees
+            var scopedQuery = await GetScopedEmployeesQuery();
+            var allIds = await scopedQuery
+                .Where(e => e.InnuxEmployeeId > 0)
+                .Select(e => e.InnuxEmployeeId)
+                .ToListAsync();
+
+            if (allIds.Count == 0)
+                return Ok(new DateRangeComparisonResultDto
+                {
+                    StartDate = startDate.Date,
+                    EndDate = endDate.Date
+                });
+
+            var allResult = await ((AttendanceComparisonService)_comparisonService)
+                .CompareDateRangeBatchAsync(allIds, startDate, endDate, onlyDiscrepancies);
+            return Ok(allResult);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(503, new { message = "Innux connection unavailable.", detail = ex.Message });
+        }
     }
 
     /// <summary>

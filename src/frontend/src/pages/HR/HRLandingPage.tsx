@@ -1,10 +1,12 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-    Activity, Calendar, CalendarDays, Clock, Users, CreditCard, CalendarRange
+    Activity, Calendar, CalendarDays, Clock, Users, CreditCard, CalendarRange, ShieldCheck
 } from 'lucide-react';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
+import { useAuth } from '../../features/auth/AuthContext';
+import { ROLES } from '../../constants/roles';
 import './hr-landing.css';
 
 const HR_TABS = [
@@ -23,6 +25,17 @@ const HR_TABS = [
  */
 export default function HRLandingPage() {
     const location = useLocation();
+    const { user } = useAuth();
+
+    // Diagnostic tab is restricted to System Administrator and HR roles only (not Department Managers)
+    const hasDiagnosticAccess = user?.roles.some(r =>
+        r === ROLES.SYSTEM_ADMINISTRATOR || r === ROLES.HR
+    ) ?? false;
+
+    // Build visible tabs: base tabs + conditional diagnostic tab
+    const visibleTabs = hasDiagnosticAccess
+        ? [...HR_TABS, { id: 'attendance-review', label: 'Revisão de Presenças', path: '/hr/attendance-review', icon: ShieldCheck }]
+        : HR_TABS;
 
     return (
         <PageContainer>
@@ -34,7 +47,7 @@ export default function HRLandingPage() {
 
             {/* Sub-navigation tabs */}
             <nav className="hr-tab-nav">
-                {HR_TABS.map(tab => {
+                {visibleTabs.map(tab => {
                     const Icon = tab.icon;
                     const isActive = location.pathname.startsWith(tab.path);
                     return (
@@ -64,3 +77,4 @@ export default function HRLandingPage() {
         </PageContainer>
     );
 }
+

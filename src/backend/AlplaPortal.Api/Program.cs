@@ -60,6 +60,13 @@ builder.Services.AddScoped<IInnuxScheduleService, InnuxScheduleService>();
 builder.Services.AddScoped<IUnifiedEmployeeProfileService, UnifiedEmployeeProfileService>();
 builder.Services.AddScoped<IHREmployeeSyncService, HREmployeeSyncService>();
 
+// Portal-Side Attendance Interpretation — Phase 1 & 2 (diagnostic, read-only)
+builder.Services.AddScoped<IPortalScheduleResolver, PortalScheduleResolver>();
+builder.Services.AddScoped<IPortalPunchInterpreter, PortalPunchInterpreter>();
+
+// Portal-Side Attendance Interpretation — Phase 3 (diagnostic comparison, read-only)
+builder.Services.AddScoped<IAttendanceComparisonService, AttendanceComparisonService>();
+
 // Monthly Changes Middleware — Innux → Portal → Primavera pipeline
 builder.Services.AddScoped<IMonthlyChangesSyncService, MonthlyChangesSyncService>();
 builder.Services.AddScoped<IOccurrenceDetectionEngine, OccurrenceDetectionEngine>();

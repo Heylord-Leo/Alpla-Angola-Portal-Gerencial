@@ -717,6 +717,24 @@ export const api = {
             return response.json();
         }
     },
+    hrAttendanceDiagnostics: {
+        compareRange: async (params: { startDate: string; endDate: string; innuxEmployeeId?: number; departmentId?: number; onlyDiscrepancies?: boolean }): Promise<any> => {
+            const qs = new URLSearchParams();
+            qs.append('startDate', params.startDate);
+            qs.append('endDate', params.endDate);
+            if (params.innuxEmployeeId) qs.append('innuxEmployeeId', String(params.innuxEmployeeId));
+            if (params.departmentId) qs.append('departmentId', String(params.departmentId));
+            if (params.onlyDiscrepancies !== undefined) qs.append('onlyDiscrepancies', String(params.onlyDiscrepancies));
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/attendance/portal/compare-range?${qs.toString()}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar comparação diagnóstica.');
+            return response.json();
+        },
+        interpretPunches: async (innuxEmployeeId: number, date: string): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/attendance/portal/interpret-punches/${innuxEmployeeId}/${date}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar interpretação de picagens.');
+            return response.json();
+        }
+    },
     approvals: {
         getIntelligence: async (id: string): Promise<ApprovalIntelligenceDto> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/approvals/${id}/intelligence`);

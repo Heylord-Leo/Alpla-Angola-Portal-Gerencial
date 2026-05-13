@@ -77,6 +77,8 @@ interface DayDetail {
         absenceCode: string | null;
         absenceDescription: string | null;
         isDispensed: boolean;
+        hasPortalConflict: boolean;
+        portalConflictMessage: string | null;
     }>;
     workPlanCode: string | null;
     workPlanDescription: string | null;
@@ -142,6 +144,7 @@ function formatMinutes(m: number): string {
 
 const STATUS_CONFIG: Record<string, { label: string; cssClass: string }> = {
     Present: { label: 'Presente', cssClass: 'present' },
+    PortalInterpreted: { label: 'Presença Interpretada', cssClass: 'present' },
     Absent: { label: 'Ausente', cssClass: 'absent' },
     JustifiedAbsence: { label: 'Ausência Justificada', cssClass: 'justified' },
     Vacation: { label: 'Férias', cssClass: 'vacation' },
@@ -163,6 +166,12 @@ const STATUS_VISUAL_MAP: Record<string, {
         cssClass: 'present',
         description: 'Presença confirmada por marcação de terminal.',
         renderIcon: (size) => <CircleCheck size={size} />,
+    },
+    PortalInterpreted: {
+        label: 'Presença Interpretada',
+        cssClass: 'present',
+        description: 'Presença confirmada através de interpretação do Portal Gerencial sobre marcações brutas.',
+        renderIcon: (size) => <CheckCircle2 size={size} />,
     },
     Absent: {
         label: 'Ausente',
@@ -844,6 +853,7 @@ export default function HRAttendanceCalendar() {
                     {/* Legend */}
                     <div className="att-legend">
                         {renderLegendItem('Present')}
+                        {renderLegendItem('PortalInterpreted')}
                         {renderLegendItem('Absent')}
                         {renderLegendItem('JustifiedAbsence')}
                         {renderLegendItem('Vacation')}
@@ -1080,6 +1090,12 @@ function DrawerContent({ detail }: { detail: DayDetail }) {
                                 {p.absenceDescription && <span className="att-period__desc">{p.absenceDescription}</span>}
                                 {p.isDispensed && <span className="att-period__desc" style={{ fontStyle: 'italic' }}>Dispensado</span>}
                             </div>
+                            {p.hasPortalConflict && p.portalConflictMessage && (
+                                <div className="att-period__conflict" style={{ marginTop: 6, padding: 6, backgroundColor: '#fffbeb', borderLeft: '3px solid #f59e0b', fontSize: '11px', color: '#b45309' }}>
+                                    <AlertTriangle size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: 'text-bottom' }} />
+                                    {p.portalConflictMessage}
+                                </div>
+                            )}
                         </div>
                     ))
                 ) : (

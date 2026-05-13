@@ -2,6 +2,162 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.99.2] - 2026-05-12 - Diagnostic Review — Onboarding & Help UX
+
+### Added
+- **Help Drawer**: "Como usar esta tela?" button in the diagnostic banner opens a full guide drawer with page purpose, step-by-step instructions, field glossary, and severity level explanations. All in Portuguese. Follows existing `PurchasingHelpDrawer` pattern.
+- **Severity Legend**: Inline legend strip above results table (Alta/Média/Baixa/Nenhuma with descriptions).
+- **Column Tooltips**: Info icons on 6 key table headers with `ModernTooltip` explanations on hover.
+- **Initial Guidance**: Improved empty-state before first search with structured guidance and hint to help button.
+- **Scope**: Purely visual/UX. No backend or comparison logic changes. Page remains diagnostic/read-only.
+
+## [v2.99.1] - 2026-05-12 - Diagnostic Review — Employee Search Autocomplete
+
+### Changed
+- **Employee Search Filter**: Replaced the technical "ID Funcionário (Innux)" number input with a name-based autocomplete in the `/hr/attendance-review` filter bar.
+  - Debounced search (300ms) via `GET /api/hr/leave/employees?search=`. Dropdown shows employee name, department, and Innux ID.
+  - Selected employee displayed as `Name (#InnuxID)` with clear button to revert to unfiltered view.
+  - Keyboard navigation (↑/↓/Enter/Escape) and outside-click dismiss fully supported.
+  - Backend: Added `InnuxEmployeeId` to `GetEmployees` projection (additive, backwards-compatible).
+
+### Files Changed
+- `backend/AlplaPortal.Api/Controllers/HRLeaveController.cs` — Added `InnuxEmployeeId` to employees projection.
+- `frontend/src/pages/HR/HRAttendanceDiagnostics.tsx` — New `EmployeeAutocomplete` sub-component replacing numeric input.
+- `frontend/src/pages/HR/hr-attendance-diagnostics.css` — Added autocomplete dropdown styles.
+- `docs/VERSION.md` — Bumped to v2.99.1.
+- `docs/CHANGELOG.md` — This entry.
+
+---
+
+## [v2.99.0] - 2026-05-12 - Portal Attendance Engine — Phase 4: Diagnostic Review UI
+
+### Added
+- **Attendance Diagnostic Review UI**: New read-only diagnostic page at `/hr/attendance-review` for HR/Admin users to visually inspect attendance discrepancies between Innux processed data and Portal raw-punch interpretation.
+  - Filter bar with date range, employee ID, severity filter, and "Apenas divergências" toggle. Client-side 31-day validation.
+  - Summary KPI cards: total days, severity breakdown (None/Low/Medium/High), execution time.
+  - 13-column results table with severity badges, confidence indicators, and clickable rows.
+  - Detail drawer with Innux vs Portal side-by-side comparison, discrepancy messages, warnings, recommended action, raw punches timeline, and punch pairs (on-demand from `interpret-punches`).
+  - Diagnostic banner: "Esta tela é apenas diagnóstica. Nenhuma informação é gravada no Innux ou Primavera."
+  - Access restricted to System Administrator and HR roles. Department Managers blocked by both tab visibility and page-level role guard.
+  - Severity visual style: High=red, Medium=orange, Low=blue/informational, None=neutral gray.
+
+### Files Changed
+- `frontend/src/lib/api.ts` — Added `hrAttendanceDiagnostics` namespace with `compareRange` and `interpretPunches`.
+- `frontend/src/pages/HR/HRAttendanceDiagnostics.tsx` — New diagnostic page component.
+- `frontend/src/pages/HR/hr-attendance-diagnostics.css` — Scoped CSS for diagnostic UI.
+- `frontend/src/pages/HR/HRLandingPage.tsx` — Added conditional "Revisão de Presenças" tab.
+- `frontend/src/App.tsx` — Added lazy-loaded route with AdminRoute guard.
+- `docs/VERSION.md` — Bumped to v2.99.0.
+- `docs/CHANGELOG.md` — This entry.
+- `docs/innux-operational-model.md` — Added Phase 4 documentation.
+
+---
+
+## [v2.98.1] - 2026-05-12 - Comparison Engine Hardening: Worked-Minutes Enrichment
+
+### Fixed
+- **Innux Worked-Minutes Enrichment**: Comparison engine now enriches `InnuxWorkedMinutes` from `AlteracoesPeriodos` (via `GetWorkedHoursAsync`) when the calendar summary returns 0 for a present employee. Eliminates false Medium discrepancies.
+  - Triggered only when `InnuxWorkedMinutes == 0` and `InnuxStatus ∈ {Present, PortalInterpreted, Anomaly}`.
+  - New DTO fields: `InnuxWorkedMinutesSource` (`CalendarSummary` | `DayDetail` | `NotAvailable`), `InnuxWorkedMinutesEnriched` (bool).
+  - If enrichment yields `NotAvailable`, severity drops from Medium→Low with a clear Portuguese message.
+  - `PortalInterpreted` status now included in the present-family check for worked-minutes comparison.
+
+### Files Changed
+- `backend/AlplaPortal.Application/DTOs/Integration/PortalAttendanceEngineDtos.cs` — Added `InnuxWorkedMinutesSource`, `InnuxWorkedMinutesEnriched` fields.
+- `backend/AlplaPortal.Infrastructure/Services/Integration/AttendanceComparisonService.cs` — Enrichment step (1b), updated M2/L1 rules for `PortalInterpreted` + `NotAvailable` handling.
+- `docs/VERSION.md` — Bumped to v2.98.1.
+- `docs/CHANGELOG.md` — This entry.
+- `docs/innux-operational-model.md` — Updated enrichment documentation.
+
+---
+
+## [v2.98.0] - 2026-05-12 - Portal Attendance Engine — Phase 3: Comparison Engine
+
+### Added
+- **Attendance Comparison Engine**: Backend-only diagnostic service that contrasts Innux processed attendance against Portal raw-punch interpretation. Does not replace the current HR Attendance Calendar behavior.
+  - **AttendanceComparisonService**: Orchestrates `IInnuxAttendanceService`, `IPortalPunchInterpreter`, and `IPortalScheduleResolver` without new SQL queries. Compares presence status, entry/exit times, and worked minutes.
+  - **Portal Status Derivation**: Derives attendance status from raw punches: `Present` (complete pairs, worked > 0), `NoPunches`, `Incomplete`, `DayOff` (rest day, no punches), `PresentOnRestDay`.
+  - **Discrepancy Rules** (explicit, no ambiguous logic):
+    - **HIGH**: Innux Absent/DayOff/Vacation/Holiday/JustifiedAbsence + Portal Present. Innux Present + Portal NoPunches.
+    - **MEDIUM**: Both present but worked diff > 30min. Entry/exit time drift > 30min. Innux Present + Portal Incomplete. Duplicates detected.
+    - **LOW**: Worked diff 1-30min. Schedule fallback via Alteracoes.IDHorario. Low Portal confidence.
+  - **Portuguese Messages**: All `DiscrepancyMessages` and `RecommendedReviewAction` in Portuguese for HR users.
+  - **Diagnostic Endpoints** (SystemAdministrator + HR roles):
+    - `GET /api/hr/attendance/portal/compare/{innuxEmployeeId}/{date}` — single-day comparison.
+    - `GET /api/hr/attendance/portal/compare-range?startDate=&endDate=&innuxEmployeeId=&departmentId=&onlyDiscrepancies=true` — range comparison (max 31 days).
+  - **Range Safeguards**: 31-day maximum, clear 400 validation error, execution time logging.
+  - **DTOs**: `AttendanceComparisonResultDto`, `DateRangeComparisonResultDto`. Replaces unused `AttendanceComparisonReadyDto` placeholder.
+  - **Design Decision**: Schedule fallback (Alteracoes.IDHorario) is context only, NOT proof of attendance. Portal attendance evidence comes exclusively from raw punches.
+
+### Files Changed
+- `backend/AlplaPortal.Application/DTOs/Integration/PortalAttendanceEngineDtos.cs` — Phase 3 DTOs.
+- `backend/AlplaPortal.Application/Interfaces/Integration/IAttendanceComparisonService.cs` — New interface.
+- `backend/AlplaPortal.Infrastructure/Services/Integration/AttendanceComparisonService.cs` — Phase 3 implementation.
+- `backend/AlplaPortal.Api/Controllers/HRAttendanceController.cs` — 2 new diagnostic comparison endpoints.
+- `backend/AlplaPortal.Api/Program.cs` — DI registration for `IAttendanceComparisonService`.
+- `docs/VERSION.md` — Bumped to v2.98.0.
+- `docs/CHANGELOG.md` — This entry.
+
+---
+
+## [v2.97.0] - 2026-05-12 - Foundation: Portal-Side Attendance Interpretation Engine (Phases 1 & 2)
+
+### Added
+- **Portal-Side Attendance Interpretation Engine**: Backend-only, read-only foundation for an independent Portal-side attendance engine. This lays the groundwork for comparing Portal-computed attendance against Innux-processed results in a future Phase 3 (Comparison Engine).
+  - **Phase 1 — Schedule Day Resolver (`PortalScheduleResolver`)**: Resolves the expected schedule for an employee on any date by computing cycle day offsets from `PlanosTrabalho`, mapping to `PlanosTrabalhoHorarios`, then hydrating from `HorariosPeriodos`. Handles overnight shift detection (entry > exit), expected entry/exit calculation, expected working minutes, and rest day identification.
+  - **Phase 2 — Raw Punch Interpreter (`PortalPunchInterpreter`)**: Reads raw `TerminaisMarcacoes` records and performs full interpretation. Supports three direction inference strategies: standard EN/SA, alternate codes 17→Entry/18→Exit, and position-based inference for empty directions. Flags duplicate punches (`IsDuplicateCandidate`) without removing them. Builds Entry/Exit pairs, calculates worked minutes per pair and total, and assigns confidence scores (`High`/`Medium`/`Low`/`None`). Handles overnight shifts with schedule-bounded cutoffs for next-day punch collection.
+  - **Diagnostic Endpoints**: Two new investigative-only endpoints in `HRAttendanceController`, restricted to `SystemAdministrator` and `HR` roles:
+    - `GET /api/hr/attendance/portal/resolve-schedule/{innuxEmployeeId}/{date}` — Returns the resolved schedule with periods, expected times, and overnight flag.
+    - `GET /api/hr/attendance/portal/interpret-punches/{innuxEmployeeId}/{date}` — Returns interpreted punches with direction, confidence, pairs, worked minutes, and warnings.
+  - **DTOs**: `PortalAttendanceEngineDtos.cs` — `ResolvedScheduleDayDto`, `SchedulePeriodDto`, `PunchInterpretationResultDto`, `InterpretedPunchDto`, `PunchPairDto`.
+  - **Interfaces**: `IPortalScheduleResolver`, `IPortalPunchInterpreter` — clean abstractions for testability.
+
+### Architecture Notes
+- All services use strictly read-only parameterized SQL queries (`SELECT` only). Zero writes to Innux or Primavera.
+- Every interpretation decision is captured via `InterpretationReason` and `InterpretationRule` fields for full audit transparency.
+- Duplicate punches are preserved and flagged, not deleted — HR can inspect them in the diagnostic output.
+- Existing production HR Attendance Calendar remains unchanged. These endpoints are for diagnostic/investigative use only.
+
+### Files Changed
+- `backend/AlplaPortal.Application/DTOs/Integration/PortalAttendanceEngineDtos.cs` — New DTOs.
+- `backend/AlplaPortal.Application/Interfaces/Integration/IPortalScheduleResolver.cs` — New interface.
+- `backend/AlplaPortal.Application/Interfaces/Integration/IPortalPunchInterpreter.cs` — New interface.
+- `backend/AlplaPortal.Infrastructure/Services/Integration/PortalScheduleResolver.cs` — Phase 1 implementation.
+- `backend/AlplaPortal.Infrastructure/Services/Integration/PortalPunchInterpreter.cs` — Phase 2 implementation.
+- `backend/AlplaPortal.Api/Controllers/HRAttendanceController.cs` — 2 new diagnostic endpoints.
+- `backend/AlplaPortal.Api/Program.cs` — DI registrations for `IPortalScheduleResolver` and `IPortalPunchInterpreter`.
+
+---
+
+## [v2.96.3] - 2026-04-28 - Fix: HR Attendance — False Absences (F03) due to Code 17 Anomalies
+
+### Fixed
+- **Global Portal Override**: When the Portal detects a valid presence (e.g., multiple "Code 17" terminal punches spanning > 60 minutes) but Innux incorrectly classifies the day as a "Falta Injustificada" (F03), the Portal now overrides this display. It zeroes out the `absenceMinutes` and flags the period with a "PORTAL" work description.
+- **Data Integrity**: This interpretation is strictly presentation-level within the Portal. No actual modification is made to the source Innux or Primavera databases.
+
+### Files Changed
+- `backend/AlplaPortal.Infrastructure/Services/Integration/InnuxAttendanceService.cs`
+- `backend/AlplaPortal.Application/DTOs/Integration/InnuxAttendanceDtos.cs`
+- `frontend/src/features/hr/components/HRAttendanceCalendar.tsx`
+
+## [v2.96.2] - 2026-04-28 - Fix: HR Attendance — Innux Direction Codes 17/18 Mapping
+
+### Fixed
+- **Innux Direction Code 17 → Entrada**: Terminal punch records with direction code `17` are now correctly interpreted as entry punches instead of being labelled as "Código 17" (unknown).
+- **Innux Direction Code 18 → Saída**: Terminal punch records with direction code `18` are now correctly interpreted as exit punches instead of being labelled as "Código 18" (unknown).
+- **Anomaly False Positives**: Attendance days where employees punched using terminals emitting codes 17/18 are no longer incorrectly classified as anomalies solely due to the direction code being unrecognised. True anomalies (missing pair, shift conflict, duplicate punch, impossible sequence) continue to be flagged normally.
+
+### Technical Details
+- Centralised fix in `MapDirectionLabel()` — the single source of truth for Innux direction-code interpretation.
+- DTO documentation updated to reflect the expanded set of known direction codes.
+- No data was written to Innux or Primavera — this is a display/interpretation-only change.
+
+### Files Changed
+- `backend/AlplaPortal.Infrastructure/Services/Integration/InnuxAttendanceService.cs` — Added code 17/18 mappings to `MapDirectionLabel()`; updated anomaly comment.
+- `backend/AlplaPortal.Application/DTOs/Integration/InnuxAttendanceDtos.cs` — Updated `Direction` and `DirectionLabel` xmldoc comments.
+
+---
+
 ## [v2.96.1] - 2026-04-28 - Fix: Approval Price Analysis Banner — Remove Misleading "Preços Favoráveis"
 
 ### Changed

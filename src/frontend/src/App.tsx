@@ -119,6 +119,9 @@ const MonthlyChangesList = React.lazy(() =>
 const MonthlyChangesRunDetail = React.lazy(() =>
     import('./pages/HR/MonthlyChanges/MonthlyChangesRunDetail')
 );
+const HRAttendanceDiagnostics = React.lazy(() =>
+    import('./pages/HR/HRAttendanceDiagnostics')
+);
 
 // Admin pages (isolated, rarely visited)
 const MasterData = React.lazy(() =>
@@ -250,6 +253,9 @@ function AppContent() {
                         <Route path="layouts" element={<Suspense fallback={<LoadingSkeleton />}><BadgeLayoutDesigner /></Suspense>} />
                         <Route path="history" element={<Suspense fallback={<LoadingSkeleton />}><BadgePrintHistoryPage /></Suspense>} />
                     </Route>
+
+                    {/* Diagnostic Attendance Review — restricted to System Administrator and HR only */}
+                    <Route path="attendance-review" element={<AdminRoute allowedRoles={[ROLES.HR]}><Suspense fallback={<LoadingSkeleton />}><HRAttendanceDiagnostics /></Suspense></AdminRoute>} />
 
                     {/* Monthly Changes Middleware */}
                     <Route path="monthly-changes" element={<Suspense fallback={<LoadingSkeleton />}><MonthlyChangesList /></Suspense>} />

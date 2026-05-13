@@ -488,3 +488,227 @@ Innux Database (read-only queries)
 5. **Date-range queries only** — always filter transactional tables by `Data BETWEEN @start AND @end`; never do full-table scans
 6. **Defensive joins** — use `LEFT JOIN` everywhere due to absent FK constraints
 7. **Time conversion at the service layer** — convert Innux `datetime-as-duration` to proper `TimeSpan` / minutes at the C# level, not in SQL
+
+---
+
+## 10. Portal-Side Attendance Interpretation Engine (v2.97.0)
+
+> **Date**: 2026-05-12
+> **Status**: Foundation Deployed (Phases 1 & 2)
+> **Decision**: DEC-120
+
+### Purpose
+
+The Portal-Side Attendance Interpretation Engine is a **read-only, diagnostic "shadow" engine** that interprets raw attendance data independently of Innux's processed `Alteracoes` output. It was created because:
+
+1. Innux `Alteracoes` exhibits persistent issues: duplicated entries, false absence classifications (F03), contradictory vacation/shift data, and opaque interpretation of terminal direction codes.
+2. The Portal cannot write to or modify Innux or Primavera databases.
+3. A transparent, auditable interpretation layer was needed to diagnose discrepancies and build confidence before any production transition.
+
+### Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                   HRAttendanceController                      │
+│  ┌─────────────────────────┐  ┌────────────────────────────┐ │
+│  │ /portal/resolve-schedule │  │ /portal/interpret-punches  │ │
+│  └────────────┬────────────┘  └─────────────┬──────────────┘ │
+│               │                              │                │
+│  ┌────────────▼────────────┐  ┌─────────────▼──────────────┐ │
+│  │  IPortalScheduleResolver│  │  IPortalPunchInterpreter   │ │
+│  │  (Phase 1)              │  │  (Phase 2)                 │ │
+│  └────────────┬────────────┘  └─────────────┬──────────────┘ │
+│               │                              │                │
+│  ┌────────────▼──────────────────────────────▼──────────────┐ │
+│  │              Innux Database (READ-ONLY)                   │ │
+│  │  PlanosTrabalho, PlanosTrabalhoHorarios, HorariosPeriodos │ │
+│  │  TerminaisMarcacoes, Funcionarios                         │ │
+│  └───────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Phase 1 — Schedule Day Resolver (`PortalScheduleResolver`)
+
+**Input**: `innuxEmployeeId` + `date`
+**Output**: `ResolvedScheduleDayDto`
+
+**Logic**:
+1. Query `PlanosTrabalho` to get the employee's assigned work plan (`CicloInicio`, `NumeroDias`).
+2. Compute cycle day offset: `(targetDate - CicloInicio).TotalDays % NumeroDias + 1`.
+3. Map to `PlanosTrabalhoHorarios` to find the `IDHorario` for that cycle day.
+4. Hydrate from `HorariosPeriodos` to get entry/exit times and expected working minutes.
+5. Detect overnight shifts where entry time > exit time (e.g., 22:00–06:00).
+6. Identify rest days (no periods or all periods with 0 expected minutes).
+
+**Tables Accessed**: `PlanosTrabalho`, `PlanosTrabalhoHorarios`, `HorariosPeriodos`, `Funcionarios`
+
+### Phase 2 — Raw Punch Interpreter (`PortalPunchInterpreter`)
+
+**Input**: `innuxEmployeeId` + `date` (+ resolved schedule from Phase 1)
+**Output**: `PunchInterpretationResultDto`
+
+**Logic**:
+1. Query `TerminaisMarcacoes` for all punches on the target date (plus next-day punches for overnight shifts).
+2. **Direction Inference** (3 strategies in priority order):
+   - **Standard**: `TipoProcessado` = `EN` → Entry, `SA` → Exit.
+   - **Alternate Codes**: `TipoProcessado` = `17` → Entry, `18` → Exit.
+   - **Position-Based**: Empty/unknown `TipoProcessado` → alternating Entry/Exit starting from Entry.
+3. **Duplicate Detection**: Punches within 2-minute window with same direction are flagged as `IsDuplicateCandidate` but **never removed** (transparency principle).
+4. **Pair Building**: Match Entry→Exit pairs in chronological order.
+5. **Worked Minutes**: Calculate per pair and total.
+6. **Confidence Score**:
+   - `High`: Standard EN/SA codes.
+   - `Medium`: Alternate 17/18 codes.
+   - `Low`: Position-based inference.
+   - `None`: Unable to interpret.
+
+**Tables Accessed**: `TerminaisMarcacoes`
+
+### Diagnostic Endpoints
+
+| Endpoint | Purpose | Auth |
+|---|---|---|
+| `GET /api/hr/attendance/portal/resolve-schedule/{innuxEmployeeId}/{date}` | Resolve expected schedule | SystemAdmin, HR |
+| `GET /api/hr/attendance/portal/interpret-punches/{innuxEmployeeId}/{date}` | Interpret raw punches | SystemAdmin, HR |
+
+**Important**: These endpoints are **diagnostic only**. They are NOT consumed by the production HR Attendance Calendar UI.
+
+### Safety Constraints
+
+- ✅ All SQL queries are `SELECT`-only with parameterized inputs.
+- ✅ Zero writes to Innux.
+- ✅ Zero writes to Primavera.
+- ✅ No changes to the existing `InnuxAttendanceService` or calendar behavior.
+- ✅ No changes to existing API responses consumed by the HR Calendar.
+
+### Phase 3 — Comparison Engine (v2.98.0, hardened v2.98.1)
+
+Phase 3 implements `AttendanceComparisonService`, a diagnostic comparison engine that contrasts Innux processed attendance against Portal raw-punch interpretation. Implemented in v2.98.0 (2026-05-12), hardened in v2.98.1.
+
+#### Architecture
+
+The service is a pure orchestrator — no new SQL queries. It calls:
+1. `IInnuxAttendanceService.GetDailyAttendanceAsync()` — Innux processed result from `Alteracoes`.
+2. `IInnuxAttendanceService.GetWorkedHoursAsync()` — Innux worked-minutes enrichment from `AlteracoesPeriodos` (v2.98.1).
+3. `IPortalPunchInterpreter.InterpretPunchesAsync()` — Portal raw-punch interpretation from `TerminaisMarcacoes`.
+4. `IPortalScheduleResolver.ResolveScheduleForDateAsync()` — Schedule context from `PlanosTrabalho`/`HorariosPeriodos` (or `Alteracoes.IDHorario` fallback for Escala plans).
+
+**Important:** The `Alteracoes.IDHorario` fallback provides schedule context ONLY. It is NOT treated as proof of attendance. Portal attendance evidence comes exclusively from raw punches interpreted by `PortalPunchInterpreter`.
+
+#### Innux Worked-Minutes Enrichment (v2.98.1)
+
+`GetDailyAttendanceAsync` (calendar grid query) does not merge `AlteracoesPeriodos`, so `TotalWorkedMinutes` is always 0. When `InnuxStatus ∈ {Present, PortalInterpreted, Anomaly}` and `InnuxWorkedMinutes == 0`, the engine enriches from `GetWorkedHoursAsync`:
+
+| Enrichment Result | `InnuxWorkedMinutesSource` | `InnuxWorkedMinutesEnriched` | Comparison Behavior |
+|---|---|---|---|
+| `AlteracoesPeriodos` has data | `DayDetail` | `true` | Uses enriched value for drift comparison |
+| `AlteracoesPeriodos` empty | `NotAvailable` | `false` | Severity = Low (informational), no false Medium |
+| Enrichment error | `NotAvailable` | `false` | Same as empty — graceful degradation |
+| No enrichment needed (status not present) | `CalendarSummary` | `false` | Original value used (0 is expected) |
+
+**Note:** In the current Innux deployment for Alpla Angola, `AlteracoesPeriodos` is consistently empty across all employees and dates tested. This means enrichment always yields `NotAvailable`. If Innux configuration changes in the future and populates `AlteracoesPeriodos`, the enrichment will automatically start providing `DayDetail` values.
+
+#### Portal Status Derivation
+
+| Condition | PortalStatus |
+|---|---|
+| No raw punches found, schedule is rest day | `DayOff` |
+| No raw punches found, schedule is work day | `NoPunches` |
+| Schedule is rest day, punches exist | `PresentOnRestDay` |
+| Complete punch pairs found, worked > 0 | `Present` |
+| Punches exist but no complete pair | `Incomplete` |
+
+#### Discrepancy Rules (Explicit Mappings)
+
+| Severity | Condition | Example Message |
+|---|---|---|
+| **HIGH** | Innux Absent/DayOff/Vacation/Holiday/JustifiedAbsence + Portal Present | "Revisar: o Innux indica Ausência, mas o Portal encontrou picagens válidas com entrada e saída." |
+| **HIGH** | Innux Present + Portal NoPunches | "Revisar: o Innux indica presença, mas o Portal não encontrou picagens brutas no terminal." |
+| **MEDIUM** | Both Present, worked diff > 30min | "Revisar: diferença superior a 30 minutos entre Innux (Xmin) e Portal (Ymin)." |
+| **MEDIUM** | Both Present, entry/exit drift > 30min | "Revisar: hora de entrada difere mais de 30 minutos." |
+| **MEDIUM** | Innux Present + Portal Incomplete | "Revisar manualmente: o Innux indica presença, mas o Portal encontrou picagem incompleta." |
+| **MEDIUM** | Duplicates detected | "Apenas informativo: N picagem(ns) duplicada(s) detectada(s) pelo Portal." |
+| **LOW** | Worked diff 1-30min | "Apenas informativo: diferença de X minutos." |
+| **LOW** | Schedule resolved via Alteracoes fallback | "Apenas informativo: turno resolvido via fallback Alteracoes.IDHorario." |
+| **LOW** | Portal confidence = Low | "Apenas informativo: confiança do Portal é baixa para esta interpretação." |
+| **NONE** | All dimensions aligned | "Sem divergência relevante." |
+
+#### Diagnostic Endpoints
+
+Restricted to `SystemAdministrator` and `HR` roles.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/hr/attendance/portal/compare/{innuxEmployeeId}/{date}` | Single employee-day comparison |
+| `GET` | `/api/hr/attendance/portal/compare-range?startDate=&endDate=&innuxEmployeeId=&departmentId=&onlyDiscrepancies=true` | Range comparison (max 31 days) |
+
+#### Range Safeguards
+
+- Maximum date range: **31 days**. Exceeding returns HTTP 400.
+- Execution time and employee-day count are logged at `Information` level.
+- Batch processing is sequential (per employee, per day) — no parallel SQL. If performance becomes a concern in future multi-department scans, optimization can be considered separately.
+
+#### Safety Constraints (Unchanged)
+
+- ✅ All SQL queries are `SELECT`-only with parameterized inputs.
+- ✅ Zero writes to Innux.
+- ✅ Zero writes to Primavera.
+- ✅ No changes to the existing `InnuxAttendanceService` or calendar behavior.
+- ✅ No changes to existing API responses consumed by the HR Calendar.
+- ✅ Comparison engine is diagnostic only — does not replace the production calendar source.
+
+---
+
+### Phase 4 — Diagnostic Review UI (v2.99.0)
+
+Frontend-only diagnostic page that visualizes the comparison engine output for HR/Admin users.
+
+#### Route & Access
+
+| Property | Value |
+|---|---|
+| Route | `/hr/attendance-review` |
+| Tab Label | Revisão de Presenças |
+| Tab Icon | `ShieldCheck` (lucide-react) |
+| Tab Visibility | System Administrator, HR only |
+| Page-Level Guard | `AdminRoute` + component-level role check |
+| Department Manager Access | **Blocked** (both tab and direct URL) |
+
+#### UI Components
+
+1. **Diagnostic Banner** — Persistent informational bar: "Esta tela é apenas diagnóstica. Nenhuma informação é gravada no Innux ou Primavera."
+2. **Filter Bar** — Start date, End date, Innux Employee ID, Severity dropdown, "Apenas divergências" toggle, Search button. Client-side 31-day validation.
+3. **Summary KPI Cards** — Total days, No discrepancy (gray), Low (blue), Medium (orange), High (red), Execution time.
+4. **Results Table** — 13 columns: Data, Funcionário, Status Innux, Status Portal, Severidade, Ent. Innux, Ent. Portal, Saída Innux, Saída Portal, Min. Innux, Min. Portal, Confiança, Ação.
+5. **Detail Drawer** — Slide-in right panel showing:
+   - Innux processed data (status, entry, exit, worked/expected minutes, source, enrichment)
+   - Portal interpreted data (status, entry, exit, worked/expected minutes, schedule source)
+   - Discrepancy messages with severity-colored styling
+   - Portal warnings
+   - Recommended review action
+   - Raw punches timeline (on-demand from `interpret-punches`)
+   - Punch pairs with worked minutes
+
+#### Severity Visual Mapping
+
+| Severity | Color | Meaning |
+|---|---|---|
+| High | Red (#dc2626) | Requires HR review — status contradiction |
+| Medium | Orange (#ea580c) | Relevant discrepancy — time/minutes drift |
+| Low | Blue (#2563eb) | Informational — minor issue or limited data |
+| None | Gray (#6b7280) | Aligned — no discrepancy |
+
+#### API Consumption
+
+Consumes existing Phase 3 diagnostic endpoints (no new backend endpoints):
+
+- `GET /api/hr/attendance/portal/compare-range` — Filter bar search
+- `GET /api/hr/attendance/portal/interpret-punches/{id}/{date}` — Drawer punch detail (on-demand)
+
+#### Safety Constraints (Unchanged)
+
+- ✅ Strictly read-only — no write actions anywhere on the page.
+- ✅ No approve, reject, correct, or synchronize buttons.
+- ✅ Does not change the official HR Attendance Calendar calculation.
+- ✅ Does not make Portal interpretation the default attendance source.
+- ✅ Zero writes to Innux or Primavera.

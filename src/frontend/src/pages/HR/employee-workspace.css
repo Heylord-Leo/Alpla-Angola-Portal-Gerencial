@@ -407,33 +407,62 @@
     gap: 16px;
 }
 
-/* ── Print Styles ── */
+/* ── Print Styles — CR-80 Card (Zebra ZC300 Compatible) ── */
+@page {
+    size: 85.6mm 53.98mm;   /* CR-80: Width × Height — landscape (Zebra ZC300 feed) */
+    margin: 0;               /* Edge-to-edge — no browser margins */
+}
+
 @media print {
-    /* Hide everything except the badge */
+    /* 1. Reset page geometry */
+    html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 85.6mm !important;
+        height: 53.98mm !important;
+        overflow: hidden !important;
+        background: #fff !important;
+    }
+
+    /* 2. Hide ALL page chrome */
     body * {
         visibility: hidden !important;
     }
 
+    /* 3. Show ONLY the badge print area */
     .hr-badge-print-area,
     .hr-badge-print-area * {
         visibility: visible !important;
     }
 
     .hr-badge-print-area {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100%;
+        position: fixed !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 85.6mm !important;
+        height: 53.98mm !important;
+        margin: 0 !important;
+        padding: 0 !important;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
         color-adjust: exact !important;
     }
 
+    /* 4. Badge card fills the page exactly */
     .hr-badge-print-area .badge-card-container {
+        width: 85.6mm !important;
+        height: 53.98mm !important;
         margin: 0 !important;
+        padding: 0 !important;
         box-shadow: none !important;
         border: none !important;
+        border-radius: 0 !important;     /* Card printers handle physical radius */
         page-break-inside: avoid;
+    }
+
+    /* 5. Hide non-print UI elements */
+    .bph-no-print {
+        display: none !important;
     }
 }
 

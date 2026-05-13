@@ -2,6 +2,45 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-121 — Portal Attendance Engine: Phase 3 Comparison Engine
+
+- **Date:** 2026-05-12
+- **Status:** Accepted
+- **Context:** With Phases 1 (Schedule Resolver) and 2 (Punch Interpreter) validated, a comparison engine was needed to systematically contrast Innux processed attendance against Portal raw-punch interpretation. The goal is diagnostic: identify discrepancies so HR can review cases where Innux and Portal disagree, without replacing the current production calendar.
+- **Decision:** Implement `AttendanceComparisonService` as a pure orchestrator — no new SQL queries. The service calls existing `IInnuxAttendanceService`, `IPortalPunchInterpreter`, and `IPortalScheduleResolver`, then applies explicit discrepancy rules:
+    1. **Portal Status Derivation:** Derived deterministically from punch interpretation: `Present` (complete pairs, worked > 0), `NoPunches`, `Incomplete`, `DayOff` (rest day, no punches), `PresentOnRestDay`.
+    2. **Discrepancy Severity Rules (explicit mappings):** HIGH = Innux absent-family + Portal Present, or Innux Present + Portal NoPunches. MEDIUM = both present but worked diff > 30min, time drift > 30min, incomplete pairs, duplicates. LOW = minor drift, Alteracoes fallback, low confidence.
+    3. **Schedule Fallback Clarification:** Alteracoes.IDHorario is used strictly as schedule context for Escala plans. It is NOT treated as proof of attendance.
+    4. **Range Safeguards:** Maximum 31 days, execution time logging, batch processing for department scans.
+    5. **Portuguese Messages:** All `DiscrepancyMessages` and `RecommendedReviewAction` in Portuguese for HR consumption.
+- **Alternatives considered:** (1) Running the comparison at query time inside the existing calendar endpoint (rejected: mixes diagnostic/production concerns). (2) Building the comparison with new SQL joins (rejected: unnecessary complexity, existing services already have the data). (3) Making the comparison the default calendar source (rejected: premature — needs validation first).
+- **Consequences:** HR and IT now have a systematic tool to audit Innux reliability per employee-day. The comparison results can inform a future decision to promote Portal interpretation as the primary attendance source. The architecture remains decoupled — comparison logic depends only on service interfaces, not SQL schemas.
+
+## DEC-120 — Portal-Side Attendance Interpretation Engine (Phases 1 & 2)
+
+- **Date:** 2026-05-12
+- **Status:** Accepted
+- **Context:** The existing HR Attendance Calendar relies entirely on Innux-processed `Alteracoes` data, which has exhibited persistent issues: duplicated entries, false absence classifications, contradictory vacation/shift data, and opaque interpretation logic. The Portal cannot correct or write to Innux or Primavera databases. A separate, read-only "shadow" interpretation engine was needed to diagnose these issues transparently and lay the foundation for a future Portal-managed attendance model.
+- **Decision:** Implement a backend-only, diagnostic-purpose interpretation engine in two phases:
+    1. **Phase 1 — Schedule Day Resolver (`PortalScheduleResolver`):** Reads `PlanosTrabalho`, `PlanosTrabalhoHorarios`, and `HorariosPeriodos` to resolve the expected schedule for any employee on any date. Computes cycle day indices, detects overnight shifts (entry time > exit time), calculates expected working minutes, and identifies rest days. Uses strictly parameterized, SELECT-only SQL queries.
+    2. **Phase 2 — Raw Punch Interpreter (`PortalPunchInterpreter`):** Reads raw `TerminaisMarcacoes` records and interprets them independently of Innux's `TipoProcessado` output. Supports three direction inference strategies: standard EN/SA, alternate codes 17→Entry/18→Exit, and position-based inference for empty directions. **Transparency principle:** duplicate punches are flagged (`IsDuplicateCandidate`) but never removed — all raw data is preserved for audit. Builds Entry/Exit pairs, calculates worked minutes, and assigns confidence scores (`High`/`Medium`/`Low`/`None`). Every interpretation decision is captured via `InterpretationReason` and `InterpretationRule` fields.
+    3. **Diagnostic Endpoints:** Two new diagnostic-only endpoints in `HRAttendanceController`, restricted to `SystemAdministrator` and `HR` roles. These endpoints are NOT consumed by the production calendar UI.
+    4. **Strict Constraints:** No writes to Innux. No writes to Primavera. No changes to the existing HR Attendance Calendar behavior. No changes to existing API responses used by the current calendar.
+- **Alternatives considered:** (1) Fixing Innux directly (rejected: external system, no write permissions). (2) Adding interpretation logic into the existing `InnuxAttendanceService` (rejected: mixes concerns, risks regression in production calendar). (3) Building a full replacement engine immediately (rejected: premature — need diagnostic validation first).
+- **Consequences:** Provides a reliable, transparent diagnostic tool for HR/IT to analyze attendance discrepancies. The engine operates as a parallel "shadow" system with zero impact on production workflows. Future Phase 3 (Comparison Engine) can leverage these services to automatically detect and flag discrepancies between Innux-processed and Portal-interpreted results. The architecture supports a gradual transition from Innux-dependent to Portal-managed attendance interpretation once confidence is established.
+
+## DEC-119 — HR Attendance: Portal-Side Override for False Absences (F03)
+
+- **Date:** 2026-04-28
+- **Status:** Accepted
+- **Context:** Due to anomalies in Innux terminal processing (specifically involving "Code 17" events), the Innux database was correctly capturing punches but incorrectly concluding the day as a "Falta Injustificada" (F03) with `Marcacao = 0`. This caused the Portal to display employees as absent despite having valid entry and exit punches on record. Modifying the Innux database or Primavera integration directly was out of scope due to external constraints.
+- **Decision:** Implement a global "Portal-Side Override" presentation rule.
+    1. **Interpretation:** If the Portal detects valid presence (multiple Code 17 punches spanning > 60 minutes) but the day is flagged as an unjustified absence (F03), the Portal intercepts this state.
+    2. **Correction:** The `absenceMinutes` for the day are reset to 0, preventing the absence from bubbling up to summary aggregations.
+    3. **Presentation:** The `Falta Injustificada` label is cleared, and the period is assigned a `PORTAL` work description.
+- **Alternatives considered:** Writing correction scripts directly into the Innux database (rejected due to safety and vendor compliance). Suppressing the period entirely (rejected as it would hide the processed record).
+- **Consequences:** The UI correctly reflects actual employee presence. Crucially, the underlying Innux data and Primavera exports remain untouched, confining the fix entirely to the presentation layer until the root cause in the Innux processing engine is resolved.
+
 ## DEC-118 — Hierarchical Budget Configuration
 
 - **Date:** 2026-04-26
