@@ -2,6 +2,155 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.111.0] - 2026-05-14 - HR Team Calendar Scope Fix (Local Manager)
+
+### Problem
+Local Manager "Andre Vale" could not see any employees in the HR Team Calendar (`/hr/calendar`), despite having 10+ employees explicitly mapped to him via `ManagerUserId` (Responsável/Chefe). The calendar displayed "Nenhum funcionário mapeado no seu escopo de hierarquia."
+
+### Root Cause
+`GetScopedEmployeesQuery()` in `HRLeaveController.cs` — the Local Manager branch filtered employees using `PortalDepartmentId IN (user's dept scope)`. All employees assigned to Andre Vale had `PortalDepartmentId = NULL` (unmapped), causing the filter to return zero results. The `ManagerUserId` relationship was only checked in the Department Manager path, not in the Local Manager path.
+
+### Solution
+
+| Scope Case | Before (v2.110.0) | After (v2.111.0) |
+|---|---|---|
+| Plants + Depts | `PlantId AND PortalDeptId` | `ManagerUserId OR (PlantId AND PortalDeptId)` |
+| Depts only | `PortalDeptId` | `ManagerUserId OR PortalDeptId` |
+| Plants only | `PlantId` | `ManagerUserId OR PlantId` |
+| No scopes | `WHERE false` (empty) | `ManagerUserId == userId` (manager-only) |
+
+### Frontend UX
+- Added info banner: "Não existem férias ou ausências registadas para a equipa neste período" when employees exist but no leave records match the selected period.
+- Improved empty-state text with actionable guidance when no employees are in scope.
+
+### Files Changed
+- `backend/AlplaPortal.Api/Controllers/HRLeaveController.cs` — Added `e.ManagerUserId == userId` as OR condition in all Local Manager scope branches of `GetScopedEmployeesQuery()`.
+- `frontend/src/pages/HR/HRTeamCalendar.tsx` — Added `cal-info-banner` component for the "no records" case; refined empty-state messaging.
+- `frontend/src/pages/HR/hr-team-calendar.css` — Added `.cal-info-banner` styles.
+- `docs/VERSION.md` — Bumped to v2.111.0.
+
+### Security
+No broadening of access. `ManagerUserId` is an admin-assigned FK — only HR/Admin can set it via the mapping endpoints. The change makes the Local Manager scope consistent with the existing Department Manager scope (line 183), which already uses `ManagerUserId`.
+
+---
+
+## [v2.110.0] - 2026-05-14 - HR Navigation UX Refinement
+
+### Problem
+After the v2.109.0 security fix, user "Andre Vale" (Local Manager) no longer sees HR administration screens. However, the sidebar still showed the group labeled "R.H." — misleadingly suggesting full HR module access. The page header inside `/hr/calendar` also showed "Recursos Humanos", reinforcing the confusion. Additionally, the tab bar inside the HR landing page still displayed admin-only tabs (Presenças, Escalas, Directório, Gestão de Crachás) to Local Managers even though route guards blocked access.
+
+### Solution: Two Distinct Navigation Groups
+
+| User Profile | Sidebar Group | Group Label | Visible Children |
+|---|---|---|---|
+| HR / System Administrator | `rh` | **R.H.** | Visão Geral, Calendário, Férias, Funcionários, Layouts, Histórico |
+| Local Manager / Dept Manager / Viewer | `equipa` | **Gestão da Equipa** | Calendário da Equipa, Férias e Ausências |
+| Requester only | *none* | — | — |
+
+### HR Landing Page (Dynamic)
+
+| Context | Page Title | Subtitle | Visible Tabs |
+|---|---|---|---|
+| HR / System Administrator | Recursos Humanos | Gestão de funcionários, férias, ausências e calendário da equipa | All tabs |
+| Non-admin team user | Gestão da Equipa | Calendário da equipa, férias e ausências | Visão Geral, Férias, Calendário |
+
+### Files Changed
+- `constants/navigation.tsx` — Split `rh` group into two: `rh` (isHrAdmin) and `equipa` (isTeamModule). Added `CalendarCheck` icon. Updated `getNavigationConfig` signature to accept `hasHRAdminAccess`. Added `isHrAdmin` and `isTeamModule` to `NavItem` interface.
+- `components/layout/Sidebar.tsx` — Passes `hasHRAdminAccess` to `getNavigationConfig`.
+- `components/layout/GlobalSearch.tsx` — Passes `hasHRAdminAccess` to `getNavigationConfig`.
+- `pages/HR/HRLandingPage.tsx` — Dynamic title/subtitle/icon based on `hasHRAdminAccess`. Tab filtering now uses `hasHRAdminAccess` instead of the previous `isViewerManagement`-only check, ensuring Local Managers see only team-level tabs.
+
+## [v2.109.0] - 2026-05-14 - HR Module Access Control Fix
+
+### Security Fix
+- **HR Module Access Control**: User "Andre Vale" (Local Manager, Area Approver, Requester — no HR role) could see and access the full R.H. module in the sidebar, including employee badge administration at `/hr/badges/employees`. Root cause: `hasHRModuleAccess` in `AuthContext.tsx` included `isLocalManager`, granting all Local Managers access to the full HR module, including administration screens. The old `HRAdvancedRoute` guard only blocked `Viewer/Management` users — Local Managers passed through.
+
+### Access Model (After Fix)
+| HR Feature Category | Allowed Roles |
+|---|---|
+| **Administration** (badges, layouts, history, attendance, schedules, directory, monthly-changes) | `HR`, `System Administrator` |
+| **Team-level** (overview, calendar, leave) | `HR`, `System Administrator`, `Local Manager`, `Department Manager`, `Viewer/Management` |
+| **Backend write operations** (mapping, sync, bulk-update) | `HR`, `System Administrator` (unchanged — already enforced via `IsAdminOrHR`) |
+| **Backend badge API** | `HR`, `System Administrator` (unchanged — `[Authorize(Roles = "System Administrator,HR")]`) |
+
+### Files Changed
+- `frontend/src/features/auth/AuthContext.tsx` — Added `hasHRAdminAccess` (HR + Admin only) alongside existing `hasHRModuleAccess` (team-level).
+- `frontend/src/App.tsx` — Replaced `HRAdvancedRoute` with `HRAdminRoute` using `hasHRAdminAccess`; redirects unauthorized users to `/hr/calendar`.
+- `frontend/src/constants/navigation.tsx` — Removed `LOCAL_MANAGER` from admin children (`rh-badges-employees`, `rh-badges-layouts`, `rh-badges-history`).
+
+## [v2.108.0] - 2026-05-14 - Request Number Sort Fix & Column Sort Completeness
+
+### Fixed
+- **Request Number Column Sort (Backend)**: The "Número" column (`sortBy=requestNumber`) was sorted as a plain string via `ORDER BY RequestNumber`. Since the format is `REQ-DD/MM/YYYY-NNN`, lexicographic ordering compared the day portion first (`28` vs `14`), completely breaking chronological order. Now sorts by `CreatedAtUtc.Date` (primary) + `RequestNumber` (tiebreaker), producing correct date-then-sequence ordering.
+
+### Added
+- **Missing Backend Sort Cases**: The following frontend column keys were not handled in the backend sort switch and silently fell through to the `createdAtUtc` default:
+  - `statusCode` → now sorts by `Status.DisplayOrder` (workflow-meaningful order, not alphabetical)
+  - `requestTypeCode` → now sorts by `RequestType.Name`
+  - `companyName` → now sorts by `Company.Name`
+  - `needByDateUtc` → now sorts by `NeedByDateUtc`
+  - `estimatedTotalAmount` → now sorts by the effective amount (selected quotation total or estimated amount)
+
+### Files Changed
+- `backend/AlplaPortal.Api/Controllers/RequestsController.cs` — Fixed `requestnumber` sort case; added 5 new sort cases.
+
+## [v2.107.0] - 2026-05-14 - Persistent Table Preferences
+
+### Added
+- **`useTablePreferences` Hook** (`src/frontend/src/hooks/useTablePreferences.ts`): New reusable React hook that persists table filter, sort, and view state to `localStorage`, scoped by user ID and screen key. Features schema versioning, debounced writes (300ms), corrupt JSON resilience, and automatic empty-value cleanup.
+  - Key format: `portal:prefs:{userId}:{screenKey}`
+  - API: `preferences`, `setPreference`, `setPreferences`, `resetPreferences`, `isHydrated`
+- **RequestsDashboard Persistence**: Search, filter type, status/company/plant/department filters, sort, page size, and advanced filter visibility now persist across navigation and refresh. "Limpar Filtros" resets UI + localStorage.
+- **ApprovalCenter Persistence**: Sort mode and active triage filters now persist. New "Restaurar Padrão" button when non-default triage is active.
+- **FinancePaymentsList Persistence** (URL-sync): Status codes, currency, and supplier search persist to localStorage and hydrate URL on mount. Deep-linking preserved. "Limpar" clears localStorage.
+- **BuyerItemsList Persistence** (URL-sync): Search, item status, request status, and owner persist and URL-hydrate. Clear buttons also clear localStorage.
+
+### Design Decisions
+- URL-driven screens retain `useSearchParams` for deep-linking; localStorage hydrates URL only on mount when no URL params exist.
+- `page` is never persisted (always starts at page 1).
+- Unrelated localStorage keys (`approvalDrawerWidth`, `floatingMode.enabled`) are NOT migrated.
+
+### Files Changed
+- `frontend/src/hooks/useTablePreferences.ts` — [NEW] Core persistence hook.
+- `frontend/src/pages/Requests/components/modern/RequestsDashboard.tsx` — Integrated preference persistence.
+- `frontend/src/pages/Approvals/ApprovalCenter.tsx` — Integrated preference persistence + "Restaurar Padrão" button.
+- `frontend/src/pages/Finance/FinancePaymentsList.tsx` — Integrated URL-sync preference persistence.
+- `frontend/src/pages/Buyer/BuyerItemsList.tsx` — Integrated URL-sync preference persistence.
+
+## [v2.106.0] - 2026-05-14 - Purchase Request Notification Priority Fixes
+
+### Fixed
+- **Finance Events — Missing DepartmentId**: `PAYMENT_SCHEDULED` and `PAYMENT_COMPLETED` events emitted from `FinanceController` were missing the `DepartmentId` field in the `WorkflowEvent` payload. This caused `HandlePaymentFanningOverridesAsync` (which resolves area approvers by department) to silently skip fan-out, resulting in area approvers never receiving payment lifecycle notifications for their departments.
+  - **Fix**: Added `DepartmentId = r.DepartmentId` to both `WorkflowEvent` initializations in `SchedulePayment` and `MarkAsPaid` actions.
+- **Quotation Completed — Missing DepartmentId**: `QUOTATION_COMPLETED` event in `RequestsController.CompleteQuotation` was missing `DepartmentId`, preventing correct department-scoped area approver resolution during the `HandlePendingAreaApprovalFanningAsync` fan-out.
+  - **Fix**: Added `DepartmentId = r.DepartmentId` to the `WorkflowEvent` initialization.
+- **FINAL_APPROVED Recipients Incomplete**: The `FINAL_APPROVED` event only notified the actor (Final Approver). The Requester and assigned Buyer — who need to know the request is ready for P.O. generation — were excluded from the notification.
+  - **Fix**: Updated `ResolveRecipientsAsync` in `WorkflowNotificationOrchestrator` to resolve and include the Requester (`evt.RequesterId`) and the assigned Buyer (`Request.BuyerUserId`) as additional recipients.
+- **RESUBMIT Routing to Wrong Approver**: When a request was resubmitted from `WAITING_FINAL_APPROVAL` status (after the Final Approver requested adjustments), `ResolveEventCode` incorrectly mapped the transition to `REQUEST_SUBMITTED`, which triggers area approver notification. The correct mapping is `AREA_APPROVED`, which triggers final approver notification.
+  - **Fix**: Changed the `Resubmit` + `WaitingFinalApproval` case in `ResolveEventCode` from `WorkflowEventCodes.RequestSubmitted` to `WorkflowEventCodes.AreaApproved`.
+
+### Documentation
+- **`docs/PURCHASE_REQUEST_NOTIFICATIONS_AUDIT.md`**: Updated all 4 priority issues to "✅ FIXED in v2.106.0" status. Updated the notification matrix to reflect the corrected recipient lists.
+
+### Files Changed
+- `backend/AlplaPortal.Api/Controllers/FinanceController.cs` — Added `DepartmentId` to 2 `WorkflowEvent` initializations.
+- `backend/AlplaPortal.Api/Controllers/RequestsController.cs` — Added `DepartmentId` to `QUOTATION_COMPLETED` event; fixed `ResolveEventCode` mapping for RESUBMIT.
+- `backend/AlplaPortal.Infrastructure/Services/WorkflowNotificationOrchestrator.cs` — Added Requester + Buyer to `FINAL_APPROVED` recipients.
+- `docs/PURCHASE_REQUEST_NOTIFICATIONS_AUDIT.md` — Marked fixes as applied.
+
+## [v2.104.0] - 2026-05-14 - Buyer Requested Items Section
+
+### Added
+- **Buyer Requested Items Section ("Itens Solicitados no Pedido")**: Added a new read-only section within the Buyer Quotation Management expanded request view (`/buyer/items`). This section displays all items originally requested in the purchase request, giving buyers essential context before processing supplier quotations.
+  - **Placement**: Appears between the request metadata (Plant, Department, Title, Description) and SEÇÃO A (Documentos e Cotações Registradas).
+  - **Table Columns**: Line number (#), Description, Quantity, Unit, Estimated Unit Price, Estimated Total, Priority (Alta/Média/Baixa badges), and Type badge (✓ Catálogo / ✎ Manual).
+  - **Catalog vs Manual Detection**: Items linked to the Portal item catalog (`ItemCatalogId`) display a green "Catálogo" badge. Free-text/manually entered items display an amber "Manual" badge.
+  - **Cost Center Sub-detail**: When a cost center is assigned to an item, it is displayed as a secondary line below the description.
+  - **Item Count Badge**: Header shows the total item count (e.g., "3 itens").
+  - **Empty State**: Requests without detailed line items show an informational message: "Este pedido não possui itens detalhados."
+  - **Backend**: Added `ItemCatalogId` to `LineItemDetailsDto` and `LineItemsController` query projection for catalog linkage detection.
+  - **No disruption**: Section is purely informational. No edit/delete actions. Existing OCR import, manual quotation insertion, and quotation workflows remain unaffected.
+
 ## [v2.103.0] - 2026-05-14 - Requests Floating Mode Persistence
 
 ### Fixed

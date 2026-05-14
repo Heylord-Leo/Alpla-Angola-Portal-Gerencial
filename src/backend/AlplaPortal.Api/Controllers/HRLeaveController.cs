@@ -116,15 +116,16 @@ public class HRLeaveController : ControllerBase
             return query;
         }
 
-        // Local Manager: filter by plant AND department scope (intersection).
-        // Department scope is the primary constraint — it defines which department(s)
-        // the manager oversees. Plant scope narrows further when present.
+        // Local Manager: filter by plant AND department scope (intersection),
+        // with ManagerUserId as a universal OR — directly mapped employees
+        // (Responsável/Chefe) are always visible regardless of PortalDepartmentId.
         //
         // Logic:
-        //   - Both plant + dept scopes → AND (employee must be in scoped plant AND scoped department)
-        //   - Only dept scope → filter by department only
-        //   - Only plant scope → filter by plant only
-        //   - No scopes configured → fail-safe: empty result (not broad visibility)
+        //   - ManagerUserId == userId always wins (direct manager assignment)
+        //   - Both plant + dept scopes → OR manager, OR (plant AND department match)
+        //   - Only dept scope → OR manager, OR department match
+        //   - Only plant scope → OR manager, OR plant match
+        //   - No scopes configured → manager-only (no broad visibility)
         if (roles.Contains(RoleConstants.LocalManager))
         {
             var lmPlantIds = await _context.UserPlantScopes
@@ -142,30 +143,35 @@ public class HRLeaveController : ControllerBase
 
             if (hasPlants && hasDepts)
             {
-                // Both scopes: AND — employee must match both plant and department
+                // Both scopes: direct manager mapping OR (plant AND department match)
                 query = query.Where(e =>
-                    (e.PlantId.HasValue && lmPlantIds.Contains(e.PlantId.Value)) &&
-                    (e.PortalDepartmentId.HasValue && lmDeptIds.Contains(e.PortalDepartmentId.Value))
+                    e.ManagerUserId == userId ||
+                    (
+                        (e.PlantId.HasValue && lmPlantIds.Contains(e.PlantId.Value)) &&
+                        (e.PortalDepartmentId.HasValue && lmDeptIds.Contains(e.PortalDepartmentId.Value))
+                    )
                 );
             }
             else if (hasDepts)
             {
-                // Department scope only: primary constraint
+                // Department scope only: direct manager mapping OR department match
                 query = query.Where(e =>
-                    e.PortalDepartmentId.HasValue && lmDeptIds.Contains(e.PortalDepartmentId.Value)
+                    e.ManagerUserId == userId ||
+                    (e.PortalDepartmentId.HasValue && lmDeptIds.Contains(e.PortalDepartmentId.Value))
                 );
             }
             else if (hasPlants)
             {
-                // Plant scope only
+                // Plant scope only: direct manager mapping OR plant match
                 query = query.Where(e =>
-                    e.PlantId.HasValue && lmPlantIds.Contains(e.PlantId.Value)
+                    e.ManagerUserId == userId ||
+                    (e.PlantId.HasValue && lmPlantIds.Contains(e.PlantId.Value))
                 );
             }
             else
             {
-                // No scopes configured — fail-safe: no access
-                return query.Where(e => false);
+                // No scopes configured — manager-only (no broad visibility)
+                query = query.Where(e => e.ManagerUserId == userId);
             }
 
             return query;

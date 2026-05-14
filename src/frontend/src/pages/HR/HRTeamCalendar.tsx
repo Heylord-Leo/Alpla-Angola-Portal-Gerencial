@@ -415,6 +415,14 @@ export default function HRTeamCalendar() {
                     {/* Scroll hint */}
                     <div className={`cal-scroll-hint ${showScrollHint ? 'cal-scroll-hint--visible' : ''}`} />
 
+                    {/* Info banner: employees exist but no leave records in period */}
+                    {data && data.employees.length > 0 && data.records.length === 0 && (
+                        <div className="cal-info-banner">
+                            <CheckCircle size={16} />
+                            <span>Não existem férias ou ausências registadas para a equipa neste período.</span>
+                        </div>
+                    )}
+
                     {/* Legend */}
                     <div className="cal-legend">
                         <div className="cal-legend__item">
@@ -436,7 +444,7 @@ export default function HRTeamCalendar() {
                 <div className="cal-empty">
                     {data?.scopeType === 'self'
                         ? 'Não foi encontrado um funcionário vinculado ao seu usuário. Se você precisa usar o Portal para solicitar férias ou ausências, solicite ao RH o vínculo do seu usuário ao cadastro de funcionário.'
-                        : 'Nenhum funcionário mapeado no seu escopo de hierarquia.'}
+                        : 'Nenhum funcionário mapeado no seu escopo de hierarquia. Contacte o departamento de R.H. para verificar as atribuições.'}
                 </div>
             )}
         </div>

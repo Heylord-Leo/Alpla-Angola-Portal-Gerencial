@@ -2,7 +2,63 @@
 
 ## Current Version
 
-v2.102.0
+v2.111.0
+
+## [2.111.0] - 2026-05-14
+
+### Bug Fix — HR Team Calendar Scope for Local Manager
+- **Root Cause**: `GetScopedEmployeesQuery()` Local Manager branch filtered by `PortalDepartmentId` (which was NULL for all mapped employees), ignoring the `ManagerUserId` relationship. This caused zero employees to appear in the Team Calendar, Dashboard, and Leave views.
+- **Fix**: Added `e.ManagerUserId == userId` as an OR condition in all Local Manager scope branches — consistent with the existing Department Manager scope pattern. Directly assigned employees (Responsável/Chefe) are now always visible regardless of `PortalDepartmentId` status.
+- **Frontend UX**: Added info banner distinguishing "no employees in scope" from "no leave records for the team this period." Improved empty-state messaging with actionable guidance.
+- **Security**: No broadening of access. `ManagerUserId` is an admin-assigned field; only HR Admins can set it. Write operations use the same scope, maintaining intended access boundaries.
+
+## [2.110.0] - 2026-05-14
+
+### UX Refinement
+- **HR Navigation Split**: Non-HR users (Local Manager, Department Manager, Viewer/Management) no longer see the sidebar group labeled "R.H." — they now see "Gestão da Equipa" with only team-level children (Calendário da Equipa, Férias e Ausências). The full "R.H." group with all children (including admin screens) is visible only to HR and System Administrator roles.
+- **HR Page Title**: When a non-HR user accesses `/hr/calendar` or `/hr/leave`, the page header now shows "Gestão da Equipa" instead of "Recursos Humanos", with a team-appropriate subtitle and icon.
+- **HR Tab Filtering**: Non-admin users inside the HR landing page now only see 3 tabs (Visão Geral, Férias e Ausências, Calendário da Equipa). Previously, Local Managers saw all tabs including Presenças, Escalas, Directório, and Gestão de Crachás even though route guards blocked access.
+
+### Changed
+- **Navigation Config**: `getNavigationConfig()` now accepts `hasHRAdminAccess` as a 3rd parameter. Added `isHrAdmin` and `isTeamModule` flags to `NavItem` interface.
+- **GlobalSearch**: Passes `hasHRAdminAccess` to navigation config — team-level users only find team features in global search results.
+
+## [2.109.0] - 2026-05-14
+
+### Security Fix
+- **HR Module Access Control**: Local Manager and Area Approver roles no longer grant access to HR administration screens (Funcionários/badges, Layouts, Histórico de Impressão, Attendance, Schedules, Directory, Monthly Changes). Only `HR` and `System Administrator` roles can access admin screens. Team-level features (Visão Geral, Calendário da Equipa, Férias e Ausências) remain accessible to Local Managers, Department Managers, and Viewer/Management.
+
+### Changed
+- **AuthContext**: Split `hasHRModuleAccess` into two tiers: `hasHRModuleAccess` (team features) and `hasHRAdminAccess` (administration — HR/Admin only).
+- **Route Guard**: Replaced `HRAdvancedRoute` (which only blocked Viewer/Management) with `HRAdminRoute` using `hasHRAdminAccess`.
+- **Sidebar Navigation**: Admin HR children (`rh-badges-employees`, `rh-badges-layouts`, `rh-badges-history`) now require `[HR, System Administrator]` roles — removed `LOCAL_MANAGER` from allowed roles.
+
+## [2.108.0] - 2026-05-14
+
+### Fixed
+- **Request Number Column Sort**: Sorting by "Número" column now uses chronological date order (`CreatedAtUtc.Date`) with request number as tiebreaker, instead of treating `REQ-DD/MM/YYYY-NNN` as a plain string (which sorted `DD` lexicographically, breaking date chronology).
+
+### Added
+- **Missing Column Sort Cases**: Backend now handles all frontend column sort keys (`statusCode`, `requestTypeCode`, `companyName`, `needByDateUtc`, `estimatedTotalAmount`) — previously these silently fell through to `createdAtUtc` default.
+
+## [2.107.0] - 2026-05-14
+
+### Added
+- **Persistent Table Preferences**: Reusable `useTablePreferences` hook persists filter, sort, and view state to `localStorage` scoped by user ID. Integrated into RequestsDashboard, ApprovalCenter, FinancePaymentsList, and BuyerItemsList. URL-driven screens use URL-sync pattern preserving deep-linking.
+
+## [2.106.0] - 2026-05-14
+
+### Fixed
+- **Purchase Request Notification Priority Fixes**: Remediated 4 high-confidence notification routing issues identified in the Purchase Request notifications audit (`docs/PURCHASE_REQUEST_NOTIFICATIONS_AUDIT.md`).
+  - **Finance Events — Missing DepartmentId**: `PAYMENT_SCHEDULED` and `PAYMENT_COMPLETED` events in `FinanceController` now correctly populate `DepartmentId` from the request entity, enabling area approver fan-out via `HandlePaymentFanningOverridesAsync`.
+  - **Quotation Events — Missing DepartmentId**: `QUOTATION_COMPLETED` event in `RequestsController` now includes `DepartmentId`, ensuring correct department-scoped area approver resolution.
+  - **FINAL_APPROVED Recipients**: Updated `ResolveRecipientsAsync` in `WorkflowNotificationOrchestrator` to include the Requester and the assigned Buyer in `FINAL_APPROVED` notifications, ensuring all operational stakeholders are notified when a request is ready for P.O. generation.
+  - **RESUBMIT Routing Fix**: Corrected `ResolveEventCode` mapping for `RESUBMIT` from `WAITING_FINAL_APPROVAL` — was incorrectly mapped to `REQUEST_SUBMITTED` (triggering area approver notifications), now correctly maps to `AREA_APPROVED` (triggering final approver notification).
+
+## [2.104.0] - 2026-05-14
+
+### Added
+- **Buyer Requested Items Section ("Itens Solicitados no Pedido")**: New read-only section in the Buyer Quotation Management expanded view displaying all items from the original purchase request. Includes table with line number, description, quantity, unit, estimated prices, priority badges, and catalog/manual type detection via `ItemCatalogId`. Backend: added `ItemCatalogId` to `LineItemDetailsDto` and `LineItemsController` projection.
 
 ## [2.102.0] - 2026-05-14
 
@@ -771,6 +827,8 @@ v2.102.0
 - **2.14.0**: Global UI Layering & Z-Index Standardization. Unified z-index hierarchy across the portal, eliminated stacking context traps in AppShell, and standardized all overlays (Drawers, Modals, Popovers, Tooltips) using centralized Z_INDEX constants and DropdownPortal.
 - **2.13.4**: Corrected a validation bug in the `Resubmeter Pedido` flow. High-level resubmission for requests in adjustment phases now correctly accounts for items contained within saved quotations, preventing false-positive "zero items" errors.
 - **2.12.2**: Role-Aware Decision Intelligence (DEC-084). Adapted DecisionInsightsPanel to provide contextually different emphasis for Area Approvers (Checklist de Legitimidade) and Final Approvers (Visão Financeira Comparativa). Role-based section reordering. No backend changes.
+- **2.106.0**: Purchase Request Notification Priority Fixes. Fixed missing DepartmentId in Finance/Quotation events, added Requester+Buyer to FINAL_APPROVED recipients, corrected RESUBMIT routing from REQUEST_SUBMITTED to AREA_APPROVED.
+- **2.104.0**: Buyer Requested Items Section. Added "Itens Solicitados no Pedido" read-only section to the Buyer Quotation Management view with catalog/manual type badges, priority indicators, and item count.
 - **2.103.0**: Requests Floating Mode Persistence. The "Flutuante Ativo / Inativo" UI toggle on the Requests dashboard now correctly saves its state to `localStorage`.
 - **2.12.1**: Resizable Approval Center Drawer. Implemented horizontal resizing with localStorage persistence and desktop-optimized reflow for decision insights.
 - **2.12.0**: Approval Center UX Refinement. Replaced stacked layout with a high-efficiency right-side drawer/panel workspace. Implemented auto-selection of next pending items and distinct queue-linked selection visual cues.
