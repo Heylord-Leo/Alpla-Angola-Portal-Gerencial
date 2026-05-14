@@ -18,6 +18,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { QueueSummary } from './components/QueueSummary';
 import { SearchFilterBar } from '../../components/ui/SearchFilterBar';
 import { Tooltip } from '../../components/ui/Tooltip';
+import { useTablePreferences } from '../../hooks/useTablePreferences';
 import {
     ContractApprovalItem,
     PendingContractApprovalsResponse,
@@ -84,9 +85,24 @@ export function ApprovalCenter() {
     const [detailLoading, setDetailLoading] = useState(false);
     const [detailData, setDetailData] = useState<RequestDetailsDto | null>(null);
 
+    // --- Persistent Preferences ---
+    const { preferences: savedPrefs, setPreferences: persistPrefs, resetPreferences } = useTablePreferences('approval-center', {
+        filters: { sortMode: 'default', activeFilters: [] },
+    });
+
     // --- Triage State (Phase 4) ---
-    const [sortMode, setSortMode] = useState<SortMode>('default');
-    const [activeFilters, setActiveFilters] = useState<string[]>([]);
+    const [sortMode, setSortMode] = useState<SortMode>((savedPrefs.filters?.sortMode as SortMode) || 'default');
+    const [activeFilters, setActiveFilters] = useState<string[]>(savedPrefs.filters?.activeFilters || []);
+
+    // Sync triage changes to persistent storage
+    useEffect(() => {
+        persistPrefs({
+            filters: {
+                sortMode: sortMode !== 'default' ? sortMode : undefined,
+                activeFilters: activeFilters.length > 0 ? activeFilters : undefined,
+            },
+        });
+    }, [sortMode, activeFilters]);
 
 
 
@@ -549,6 +565,18 @@ export function ApprovalCenter() {
                     }
                 }}
             />
+
+            {/* Reset triage controls when non-default */}
+            {(sortMode !== 'default' || activeFilters.length > 0) && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-8px', marginBottom: '-8px' }}>
+                    <button
+                        onClick={() => { setSortMode('default'); setActiveFilters([]); resetPreferences(); }}
+                        style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontWeight: 800, textTransform: 'uppercase', fontSize: '0.7rem', padding: '4px 12px' }}
+                    >
+                        Restaurar Padrão
+                    </button>
+                </div>
+            )}
 
             {/* DEV TOOLS — visually subordinate in dev only */}
             {import.meta.env.DEV && (

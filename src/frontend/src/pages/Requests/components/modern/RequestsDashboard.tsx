@@ -9,6 +9,7 @@ import { RequestsTableWidget } from './RequestsTableWidget';
 import { RequestDrawerPresentation } from './RequestDrawerPresentation';
 import { FilterDropdown } from '../../../../components/ui/FilterDropdown';
 import { CorrectPoModal } from '../../../../components/CorrectPoModal';
+import { useTablePreferences } from '../../../../hooks/useTablePreferences';
 import { GuideModal, GuideModalSection } from '../../../../components/ui/GuideModal';
 import { PlayCircle, Compass, MoreVertical, Info } from 'lucide-react';
 
@@ -51,20 +52,47 @@ export function RequestsDashboard() {
     // Help Modal state
     const [currentHelpSection, setCurrentHelpSection] = useState<'action' | 'explorer' | 'main' | null>(null);
 
-    // Filters and Pagination
-    const [searchTerm, setSearchTerm] = useState('');
-    const [debouncedSearch, setDebouncedSearch] = useState('');
-    const [filterType, setFilterType] = useState<string>('all');
-    const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+    // Persistent preferences
+    const { preferences: savedPrefs, setPreferences: persistPrefs, resetPreferences } = useTablePreferences('requests-dashboard', {
+        pageSize: 20,
+        filters: { filterType: 'all', showAdvancedFilters: false, statusIds: [], plantIds: [], companyIds: [], departmentIds: [] },
+        sort: { key: '', direction: 'asc' as const },
+    });
+
+    // Filters and Pagination — hydrated from preferences
+    const [searchTerm, setSearchTerm] = useState(savedPrefs.search || '');
+    const [debouncedSearch, setDebouncedSearch] = useState(savedPrefs.search || '');
+    const [filterType, setFilterType] = useState<string>(savedPrefs.filters?.filterType || 'all');
+    const [showAdvancedFilters, setShowAdvancedFilters] = useState(savedPrefs.filters?.showAdvancedFilters ?? false);
     const [lookups, setLookups] = useState<{ statuses: any[], requestTypes: any[], plants: any[], companies: any[], departments: any[] } | null>(null);
-    const [statusIds, setStatusIds] = useState<string[]>([]);
-    const [plantIds, setPlantIds] = useState<string[]>([]);
-    const [companyIds, setCompanyIds] = useState<string[]>([]);
-    const [departmentIds, setDepartmentIds] = useState<string[]>([]);
+    const [statusIds, setStatusIds] = useState<string[]>(savedPrefs.filters?.statusIds || []);
+    const [plantIds, setPlantIds] = useState<string[]>(savedPrefs.filters?.plantIds || []);
+    const [companyIds, setCompanyIds] = useState<string[]>(savedPrefs.filters?.companyIds || []);
+    const [departmentIds, setDepartmentIds] = useState<string[]>(savedPrefs.filters?.departmentIds || []);
 
     const [page, setPage] = useState(1);
-    const [pageSize, setPageSize] = useState(20);
-    const [sortConfig, setSortConfig] = useState<{ key: string | null; direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
+    const [pageSize, setPageSize] = useState(savedPrefs.pageSize || 20);
+    const [sortConfig, setSortConfig] = useState<{ key: string | null; direction: 'asc' | 'desc' }>({
+        key: savedPrefs.sort?.key || null,
+        direction: (savedPrefs.sort?.direction as 'asc' | 'desc') || 'asc',
+    });
+
+    // Sync filter/sort/pageSize changes to persistent storage
+    useEffect(() => {
+        persistPrefs({
+            search: searchTerm || undefined,
+            pageSize,
+            sort: sortConfig.key ? { key: sortConfig.key, direction: sortConfig.direction } : undefined,
+            filters: {
+                filterType: filterType !== 'all' ? filterType : undefined,
+                showAdvancedFilters: showAdvancedFilters || undefined,
+                statusIds: statusIds.length > 0 ? statusIds : undefined,
+                plantIds: plantIds.length > 0 ? plantIds : undefined,
+                companyIds: companyIds.length > 0 ? companyIds : undefined,
+                departmentIds: departmentIds.length > 0 ? departmentIds : undefined,
+            },
+        });
+    }, [searchTerm, filterType, showAdvancedFilters, statusIds, plantIds, companyIds, departmentIds, pageSize, sortConfig]);
 
     // Debounce search
     useEffect(() => {
@@ -487,8 +515,8 @@ export function RequestsDashboard() {
                         <FilterDropdown label="Empresa" options={lookups.companies.map(c => ({ id: c.id, name: c.name }))} selectedIds={companyIds} onChange={setCompanyIds} />
                         <FilterDropdown label="Planta" options={lookups.plants.map(p => ({ id: p.id, name: p.name }))} selectedIds={plantIds} onChange={setPlantIds} />
                         <FilterDropdown label="Departamento" options={lookups.departments.map(d => ({ id: d.id, name: d.name }))} selectedIds={departmentIds} onChange={setDepartmentIds} />
-                        {(statusIds.length > 0 || companyIds.length > 0 || plantIds.length > 0 || departmentIds.length > 0) && (
-                            <button onClick={() => { setStatusIds([]); setCompanyIds([]); setPlantIds([]); setDepartmentIds([]); }} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontWeight: 800, textTransform: 'uppercase', fontSize: '0.75rem', padding: '0 12px' }}>
+                        {(statusIds.length > 0 || companyIds.length > 0 || plantIds.length > 0 || departmentIds.length > 0 || filterType !== 'all' || searchTerm) && (
+                            <button onClick={() => { setStatusIds([]); setCompanyIds([]); setPlantIds([]); setDepartmentIds([]); setFilterType('all'); setSearchTerm(''); setDebouncedSearch(''); setPage(1); resetPreferences(); }} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontWeight: 800, textTransform: 'uppercase', fontSize: '0.75rem', padding: '0 12px' }}>
                                 Limpar Filtros
                             </button>
                         )}

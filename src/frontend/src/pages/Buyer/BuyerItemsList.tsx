@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { Link, useLocation, useSearchParams, useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, Search, Filter, FileText, CheckCircle2, X, Pencil, Trash2, ArrowLeft, AlertCircle, RefreshCcw, Hash, Calendar, UserPlus, AlertTriangle, BookOpen, MoreVertical } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, Search, Filter, FileText, CheckCircle2, X, Pencil, Trash2, ArrowLeft, AlertCircle, RefreshCcw, Hash, Calendar, UserPlus, AlertTriangle, BookOpen, MoreVertical, Package } from 'lucide-react';
 import { useAuth } from '../../features/auth/AuthContext';
 import { api } from '../../lib/api';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
@@ -23,6 +23,7 @@ import { SavedQuotationDto, IvaRate, Unit, OcrDraft, OcrDraftItem, Reconciliatio
 import { useOcrProcessor } from '../../hooks/useOcrProcessor';
 import { ReconciliationPanel } from '../../components/Buyer/ReconciliationPanel';
 import { RequestDrawerPresentation } from '../Requests/components/modern/RequestDrawerPresentation';
+import { useTablePreferences } from '../../hooks/useTablePreferences';
 
 
 const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
@@ -262,6 +263,39 @@ export function BuyerItemsList() {
     const [currencies, setCurrencies] = useState<any[]>([]);
     const [plants, setPlants] = useState<any[]>([]);
 
+    // --- Persistent Preferences (URL-sync pattern) ---
+    const { preferences: savedPrefs, setPreferences: persistPrefs, resetPreferences } = useTablePreferences('buyer-items', {
+        pageSize: 20,
+    });
+
+    // On mount: if URL has no filter params but we have saved preferences, hydrate URL
+    const hasHydratedUrl = useRef(false);
+    useEffect(() => {
+        if (hasHydratedUrl.current) return;
+        hasHydratedUrl.current = true;
+
+        const hasExistingUrlFilters =
+            searchParams.has('search') ||
+            searchParams.has('itemStatus') ||
+            searchParams.has('requestStatus') ||
+            searchParams.has('owner') ||
+            searchParams.has('pageSize');
+
+        if (!hasExistingUrlFilters && savedPrefs.filters) {
+            const p = new URLSearchParams(searchParams);
+            let anySet = false;
+            if (savedPrefs.search) { p.set('search', savedPrefs.search); anySet = true; }
+            if (savedPrefs.filters.itemStatus) { p.set('itemStatus', savedPrefs.filters.itemStatus); anySet = true; }
+            if (savedPrefs.filters.requestStatus) { p.set('requestStatus', savedPrefs.filters.requestStatus); anySet = true; }
+            if (savedPrefs.filters.owner && savedPrefs.filters.owner !== 'todos') { p.set('owner', savedPrefs.filters.owner); anySet = true; }
+            if (savedPrefs.pageSize && savedPrefs.pageSize !== 20) { p.set('pageSize', savedPrefs.pageSize.toString()); anySet = true; }
+            if (anySet) {
+                p.set('page', '1');
+                setSearchParams(p, { replace: true });
+            }
+        }
+    }, []); // Only on mount
+
     // Bind state to URL parameters
     const searchTerm = searchParams.get('search') || '';
     const itemStatus = searchParams.get('itemStatus') || '';
@@ -313,8 +347,22 @@ export function BuyerItemsList() {
                     next.set(key, String(value));
                 }
             });
+            // Sync to localStorage
+            syncParamsToPrefs(next);
             return next;
         }, { replace: true });
+    };
+
+    const syncParamsToPrefs = (params: URLSearchParams) => {
+        persistPrefs({
+            search: params.get('search') || undefined,
+            pageSize: Number(params.get('pageSize')) || 20,
+            filters: {
+                itemStatus: params.get('itemStatus') || undefined,
+                requestStatus: params.get('requestStatus') || undefined,
+                owner: (params.get('owner') && params.get('owner') !== 'todos') ? params.get('owner')! : undefined,
+            },
+        });
     };
 
     // Debounce search input and update URL
@@ -1443,12 +1491,12 @@ export function BuyerItemsList() {
                                 <p style={{ color: 'var(--color-text-secondary)', marginBottom: '24px' }}>Tente limpar seus filtros para ver mais resultados.</p>
                                 <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
                                     {searchInput && (
-                                        <button className="btn btn-secondary" onClick={() => { setSearchInput(''); updateParams({ search: null, page: 1 }); }}>
+                                        <button className="btn btn-secondary" onClick={() => { setSearchInput(''); updateParams({ search: null, page: 1 }); resetPreferences(); }}>
                                             LIMPAR BUSCA
                                         </button>
                                     )}
                                     {(requestStatus || itemStatus || owner !== 'todos') && (
-                                        <button className="btn btn-secondary" onClick={() => updateParams({ requestStatus: null, itemStatus: null, owner: null, page: 1 })}>
+                                        <button className="btn btn-secondary" onClick={() => { updateParams({ requestStatus: null, itemStatus: null, owner: null, page: 1 }); resetPreferences(); }}>
                                             LIMPAR FILTROS
                                         </button>
                                     )}
@@ -1797,6 +1845,142 @@ export function BuyerItemsList() {
                                                             </div>
                                                         </div>
                                                     )}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* REQUESTED ITEMS SECTION */}
+                                        <div style={{
+                                            padding: '24px',
+                                            backgroundColor: 'var(--color-bg-page)',
+                                            border: '1px solid var(--color-border)',
+                                            borderRadius: 'var(--radius-sm)',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '16px'
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#7c3aed', fontWeight: 800, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                    <Package size={18} /> ITENS SOLICITADOS NO PEDIDO
+                                                </div>
+                                                {group.items.length > 0 && (
+                                                    <span style={{
+                                                        backgroundColor: '#ede9fe',
+                                                        color: '#6d28d9',
+                                                        fontSize: '0.7rem',
+                                                        fontWeight: 800,
+                                                        padding: '3px 10px',
+                                                        borderRadius: '12px',
+                                                        letterSpacing: '0.03em'
+                                                    }}>
+                                                        {group.items.length} {group.items.length === 1 ? 'item' : 'itens'}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {group.items.length > 0 ? (
+                                                <div style={{ border: '1px solid var(--color-border)', borderRadius: '6px', overflow: 'hidden', backgroundColor: 'var(--color-bg-surface)' }}>
+                                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                                                        <thead>
+                                                            <tr style={{ backgroundColor: '#f5f3ff', borderBottom: '2px solid #e9d5ff' }}>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9', width: '40px' }}>#</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9' }}>Descrição</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9', width: '60px' }}>Qtd</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9', width: '60px' }}>Unid.</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9', width: '100px' }}>P. Unit. Est.</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9', width: '100px' }}>Total Est.</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9', width: '80px' }}>Prioridade</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9', width: '110px' }}>Tipo</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {group.items.map((item: any, idx: number) => {
+                                                                const isCatalog = !!item.itemCatalogId;
+                                                                const priorityColors: Record<string, { bg: string; text: string; label: string }> = {
+                                                                    'HIGH': { bg: '#fef2f2', text: '#dc2626', label: 'Alta' },
+                                                                    'MEDIUM': { bg: '#fffbeb', text: '#d97706', label: 'Média' },
+                                                                    'LOW': { bg: '#f0fdf4', text: '#16a34a', label: 'Baixa' }
+                                                                };
+                                                                const prio = priorityColors[item.itemPriority] || priorityColors['MEDIUM'];
+
+                                                                return (
+                                                                    <tr key={item.lineItemId || idx} style={{
+                                                                        borderBottom: idx < group.items.length - 1 ? '1px solid #f1f5f9' : 'none',
+                                                                        backgroundColor: idx % 2 === 0 ? 'var(--color-bg-surface)' : 'var(--color-bg-page)'
+                                                                    }}>
+                                                                        <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 800, color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>
+                                                                            {item.lineNumber}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--color-text-main)' }}>
+                                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                                                <span>{item.itemDescription || '---'}</span>
+                                                                                {item.costCenterName && (
+                                                                                    <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 500 }}>
+                                                                                        CC: {item.costCenterCode ? `${item.costCenterCode} — ` : ''}{item.costCenterName}
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700 }}>
+                                                                            {item.quantity}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700, color: 'var(--color-text-muted)' }}>
+                                                                            {item.unitCode || '---'}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700 }}>
+                                                                            {item.unitPrice > 0 ? formatCurrencyAO(item.unitPrice) : '---'}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: 'var(--color-text-main)' }}>
+                                                                            {item.total > 0 ? formatCurrencyAO(item.total) : '---'}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                                                            <span style={{
+                                                                                display: 'inline-block',
+                                                                                backgroundColor: prio.bg,
+                                                                                color: prio.text,
+                                                                                fontSize: '0.65rem',
+                                                                                fontWeight: 800,
+                                                                                padding: '2px 8px',
+                                                                                borderRadius: '4px',
+                                                                                textTransform: 'uppercase'
+                                                                            }}>
+                                                                                {prio.label}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                                                            <span style={{
+                                                                                display: 'inline-flex',
+                                                                                alignItems: 'center',
+                                                                                gap: '4px',
+                                                                                backgroundColor: isCatalog ? '#ecfdf5' : '#fffbeb',
+                                                                                color: isCatalog ? '#059669' : '#d97706',
+                                                                                fontSize: '0.65rem',
+                                                                                fontWeight: 800,
+                                                                                padding: '2px 8px',
+                                                                                borderRadius: '4px',
+                                                                                textTransform: 'uppercase',
+                                                                                border: isCatalog ? '1px solid #a7f3d0' : '1px solid #fde68a'
+                                                                            }}>
+                                                                                {isCatalog ? '✓ Catálogo' : '✎ Manual'}
+                                                                            </span>
+                                                                        </td>
+                                                                    </tr>
+                                                                );
+                                                            })}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            ) : (
+                                                <div style={{
+                                                    padding: '24px',
+                                                    textAlign: 'center',
+                                                    border: '2px dashed var(--color-border)',
+                                                    borderRadius: '8px',
+                                                    backgroundColor: 'var(--color-bg-surface)'
+                                                }}>
+                                                    <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '0.85rem', fontWeight: 600 }}>
+                                                        Este pedido não possui itens detalhados (apenas dados de cabeçalho).
+                                                    </p>
                                                 </div>
                                             )}
                                         </div>

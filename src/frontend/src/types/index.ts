@@ -480,6 +480,39 @@ export interface ApprovalIntelligenceDto {
     items: ItemIntelligenceDto[];
     departmentContext: DepartmentIntelligenceDto;
     overallAlerts: DecisionAlertDto[];
+    budgetAvailability?: BudgetAvailabilityDto;
+}
+
+export interface BudgetAvailabilityDto {
+    hasBudgetConfig: boolean;
+    matchLevel: string;
+    annualBudget: number;
+    committedAmount: number;
+    availableBefore: number;
+    currentRequestAmount: number;
+    availableAfter: number;
+    currencyCode: string;
+    departmentName?: string;
+    costCenterName?: string;
+    plantName?: string;
+    companyName?: string;
+    fiscalYear: number;
+    status: string;
+    utilizationPercent: number;
+    infoMessage?: string;
+    costCenterBreakdown?: BudgetCostCenterBreakdownDto[];
+}
+
+export interface BudgetCostCenterBreakdownDto {
+    costCenterId?: number;
+    costCenterName: string;
+    hasBudgetLine: boolean;
+    annualBudget: number;
+    committedAmount: number;
+    requestAmountInCC: number;
+    availableAfter: number;
+    status: string;
+    utilizationPercent: number;
 }
 
 export interface HistoricalPurchaseRecordDto {

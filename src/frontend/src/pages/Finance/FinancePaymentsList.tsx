@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { api } from '../../lib/api';
 import { FinanceListResponseDto } from '../../types';
 import { useSearchParams, useLocation } from 'react-router-dom';
@@ -11,12 +11,44 @@ import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { StandardTable } from '../../components/ui/StandardTable';
 import { RequestDrawerPresentation } from '../Requests/components/modern/RequestDrawerPresentation';
+import { useTablePreferences } from '../../hooks/useTablePreferences';
 
 export default function FinancePaymentsList() {
     const [data, setData] = useState<FinanceListResponseDto | null>(null);
     const [searchParams, setSearchParams] = useSearchParams();
     const location = useLocation();
-    
+
+    // --- Persistent Preferences (URL-sync pattern) ---
+    const { preferences: savedPrefs, setPreferences: persistPrefs, resetPreferences } = useTablePreferences('finance-payments', {
+        pageSize: 20,
+    });
+
+    // On mount: if URL has no filter params but we have saved preferences, hydrate URL
+    const hasHydratedUrl = useRef(false);
+    useEffect(() => {
+        if (hasHydratedUrl.current) return;
+        hasHydratedUrl.current = true;
+
+        const hasExistingUrlFilters =
+            searchParams.has('statusCodes') ||
+            searchParams.has('currencyCode') ||
+            searchParams.has('searchSupplier') ||
+            searchParams.has('pageSize');
+
+        if (!hasExistingUrlFilters && savedPrefs.filters) {
+            const p = new URLSearchParams(searchParams);
+            let anySet = false;
+            if (savedPrefs.filters.statusCodes) { p.set('statusCodes', savedPrefs.filters.statusCodes); anySet = true; }
+            if (savedPrefs.filters.currencyCode) { p.set('currencyCode', savedPrefs.filters.currencyCode); anySet = true; }
+            if (savedPrefs.filters.searchSupplier) { p.set('searchSupplier', savedPrefs.filters.searchSupplier); anySet = true; }
+            if (savedPrefs.pageSize && savedPrefs.pageSize !== 20) { p.set('pageSize', savedPrefs.pageSize.toString()); anySet = true; }
+            if (anySet) {
+                p.set('page', '1');
+                setSearchParams(p, { replace: true });
+            }
+        }
+    }, []); // Only on mount
+
     const filter = searchParams.get('filter') || undefined;
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
@@ -60,6 +92,19 @@ export default function FinancePaymentsList() {
         else newParams.delete(key);
         newParams.set('page', '1');
         setSearchParams(newParams);
+        // Sync to localStorage
+        syncParamsToPrefs(newParams);
+    };
+
+    const syncParamsToPrefs = (params: URLSearchParams) => {
+        persistPrefs({
+            pageSize: parseInt(params.get('pageSize') || '20'),
+            filters: {
+                statusCodes: params.get('statusCodes') || undefined,
+                currencyCode: params.get('currencyCode') || undefined,
+                searchSupplier: params.get('searchSupplier') || undefined,
+            },
+        });
     };
 
     const handlePageChange = (newPage: number) => {
@@ -73,6 +118,7 @@ export default function FinancePaymentsList() {
         newParams.set('pageSize', newPageSize.toString());
         newParams.set('page', '1');
         setSearchParams(newParams);
+        syncParamsToPrefs(newParams);
     };
 
     const handleActionClick = (requestId: string, action: FinanceActionType) => {
@@ -233,6 +279,7 @@ export default function FinancePaymentsList() {
                             const p = new URLSearchParams(searchParams);
                             p.delete('statusCodes'); p.delete('currencyCode'); p.delete('searchSupplier'); p.set('page', '1');
                             setSearchParams(p);
+                            resetPreferences();
                         }}
                         style={{ padding: '8px 16px', background: 'transparent', border: 'none', color: '#dc2626', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', textTransform: 'uppercase' }}
                     >
