@@ -7,7 +7,6 @@ import {
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { useAuth } from '../../features/auth/AuthContext';
-import { ROLES } from '../../constants/roles';
 import './hr-landing.css';
 
 /* ─── Tab Definitions ─── */
@@ -63,23 +62,21 @@ const VIEWER_ONLY_TAB_IDS = ['overview', 'calendar', 'leave'];
  */
 export default function HRLandingPage() {
     const location = useLocation();
-    const { user, isViewerManagement } = useAuth();
+    const { user, isViewerManagement, hasHRAdminAccess } = useAuth();
     const [moreOpen, setMoreOpen] = useState(false);
     const moreRef = useRef<HTMLDivElement>(null);
 
     // ─── Role checks ───
-    const hasDiagnosticAccess = user?.roles.some(r =>
-        r === ROLES.SYSTEM_ADMINISTRATOR || r === ROLES.HR
-    ) ?? false;
-
-    const isRestrictedViewer = isViewerManagement && !hasDiagnosticAccess;
+    // hasHRAdminAccess: HR or System Administrator → sees full module
+    // Otherwise: team-level user → sees only overview, calendar, leave
+    const isTeamOnlyUser = !hasHRAdminAccess;
 
     // ─── Build visible tabs ───
     const visibleTabs = ALL_HR_TABS.filter(tab => {
         // Diagnostic tab: admin/HR only
-        if (tab.diagnosticOnly && !hasDiagnosticAccess) return false;
-        // Viewer/Management: restricted set
-        if (isRestrictedViewer && !VIEWER_ONLY_TAB_IDS.includes(tab.id)) return false;
+        if (tab.diagnosticOnly && !hasHRAdminAccess) return false;
+        // Team-only users: restricted to overview, calendar, leave
+        if (isTeamOnlyUser && !VIEWER_ONLY_TAB_IDS.includes(tab.id)) return false;
         return true;
     });
 
@@ -136,12 +133,21 @@ export default function HRLandingPage() {
         whiteSpace: 'nowrap',
     };
 
+    // ─── Role-aware titles ───
+    const pageTitle = hasHRAdminAccess ? 'Recursos Humanos' : 'Gestão da Equipa';
+    const pageSubtitle = hasHRAdminAccess
+        ? 'Gestão de funcionários, férias, ausências e calendário da equipa'
+        : 'Calendário da equipa, férias e ausências';
+    const pageIcon = hasHRAdminAccess
+        ? <Users size={24} strokeWidth={2.5} />
+        : <CalendarDays size={24} strokeWidth={2.5} />;
+
     return (
         <PageContainer>
             <PageHeader
-                title="Recursos Humanos"
-                subtitle="Gestão de funcionários, férias, ausências e calendário da equipa"
-                icon={<Users size={24} strokeWidth={2.5} />}
+                title={pageTitle}
+                subtitle={pageSubtitle}
+                icon={pageIcon}
             />
 
             {/* Tab navigation — Finance-style bottom-border pattern */}

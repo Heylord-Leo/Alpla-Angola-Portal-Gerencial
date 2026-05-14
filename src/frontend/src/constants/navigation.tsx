@@ -3,7 +3,7 @@ import {
     FileText, Home, Settings, List, ShoppingCart, 
     Package, Activity, Network, Shield, CheckCircle,
     CreditCard, DollarSign, Archive, Users, UserCheck, Calendar, CalendarDays,
-    Layers, History, FileSignature, Bell
+    Layers, History, FileSignature, Bell, CalendarCheck
 } from 'lucide-react';
 import { ROLES } from './roles';
 
@@ -20,6 +20,8 @@ export interface NavItem {
     keywords?: string[];
     roles?: string[];      // New: explicit allowed roles
     isHrModule?: boolean;  // New: explicit HR module flag
+    isHrAdmin?: boolean;   // Full R.H. group — visible only to HR/Admin
+    isTeamModule?: boolean; // Gestão da Equipa group — visible only to non-admin team users
     isAdminOnly?: boolean;  // Legacy
     isManagerOnly?: boolean; // Legacy
 }
@@ -29,7 +31,7 @@ export interface NavItem {
  * All new modules must be registered here to automatically appear
  * in both the Sidebar and the Global Search.
  */
-export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: boolean = false): NavItem[] => {
+export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: boolean = false, hasHRAdminAccess: boolean = false): NavItem[] => {
     const isAdmin = userRoles.includes(ROLES.SYSTEM_ADMINISTRATOR);
     const isLocalManager = userRoles.includes(ROLES.LOCAL_MANAGER);
 
@@ -208,13 +210,16 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                 }
             ]
         },
+        // ── R.H. (Full Administration) — visible only to HR and System Administrator ──
+        // When user has hasHRAdminAccess, this group shows with ALL children.
+        // Non-admin users instead see the "Gestão da Equipa" group below.
         {
             id: 'rh',
             type: 'group',
             label: 'R.H.',
             to: '/hr/overview',
             icon: <Users size={18} strokeWidth={2.5} />,
-            isHrModule: true,
+            isHrAdmin: true,
             keywords: ['rh', 'recursos humanos', 'funcionários', 'colaboradores', 'pessoal', 'férias', 'ausências'],
             children: [
                 {
@@ -223,8 +228,6 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                     label: 'Visão Geral',
                     icon: <Activity size={18} strokeWidth={2.5} />,
                     to: '/hr/overview',
-                    isHrModule: true,
-                    roles: [ROLES.HR, ROLES.SYSTEM_ADMINISTRATOR, ROLES.LOCAL_MANAGER],
                     keywords: ['rh', 'dashboard', 'resumo', 'kpi']
                 },
                 {
@@ -233,7 +236,6 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                     label: 'Calendário da Equipa',
                     icon: <CalendarDays size={18} strokeWidth={2.5} />,
                     to: '/hr/calendar',
-                    isHrModule: true,
                     keywords: ['rh', 'calendário', 'equipa', 'meu calendário', 'agenda', 'férias', 'ausências']
                 },
                 {
@@ -242,10 +244,6 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                     label: 'Férias e Ausências',
                     icon: <Calendar size={18} strokeWidth={2.5} />,
                     to: '/hr/leave',
-                    isHrModule: true,
-                    // No roles restriction — visible to all HR-accessing roles including
-                    // Viewer / Management (self-service). Backend GetScopedEmployeesQuery()
-                    // enforces data scope; self-service users see only their own records.
                     keywords: ['férias', 'ausência', 'falta', 'baixa', 'licença', 'aprovação']
                 },
                 {
@@ -254,8 +252,6 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                     label: 'Funcionários',
                     icon: <UserCheck size={18} strokeWidth={2.5} />,
                     to: '/hr/badges/employees',
-                    isHrModule: true,
-                    roles: [ROLES.HR, ROLES.SYSTEM_ADMINISTRATOR, ROLES.LOCAL_MANAGER],
                     keywords: ['rh', 'funcionários', 'cadastro', 'crachá', 'badge', 'foto', 'consulta', 'pessoal', 'impressão']
                 },
                 {
@@ -264,8 +260,6 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                     label: 'Layouts',
                     icon: <Layers size={18} strokeWidth={2.5} />,
                     to: '/hr/badges/layouts',
-                    isHrModule: true,
-                    roles: [ROLES.HR, ROLES.SYSTEM_ADMINISTRATOR, ROLES.LOCAL_MANAGER],
                     keywords: ['rh', 'crachá', 'layout', 'template', 'design', 'modelo']
                 },
                 {
@@ -274,9 +268,37 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                     label: 'Histórico de Impressão',
                     icon: <History size={18} strokeWidth={2.5} />,
                     to: '/hr/badges/history',
-                    isHrModule: true,
-                    roles: [ROLES.HR, ROLES.SYSTEM_ADMINISTRATOR, ROLES.LOCAL_MANAGER],
                     keywords: ['rh', 'crachá', 'impressão', 'histórico', 'reimpressão', 'auditoria']
+                }
+            ]
+        },
+        // ── Gestão da Equipa (Team-level) — visible only to NON-admin HR-module users ──
+        // Shows for Local Manager, Department Manager, Viewer/Management when they
+        // do NOT also have HR/Admin roles. Contains only team-level features.
+        {
+            id: 'equipa',
+            type: 'group',
+            label: 'Gestão da Equipa',
+            to: '/hr/calendar',
+            icon: <CalendarCheck size={18} strokeWidth={2.5} />,
+            isTeamModule: true,
+            keywords: ['equipa', 'calendário', 'férias', 'ausências', 'gestão', 'team'],
+            children: [
+                {
+                    id: 'equipa-calendar',
+                    type: 'link',
+                    label: 'Calendário da Equipa',
+                    icon: <CalendarDays size={18} strokeWidth={2.5} />,
+                    to: '/hr/calendar',
+                    keywords: ['calendário', 'equipa', 'meu calendário', 'agenda', 'férias', 'ausências']
+                },
+                {
+                    id: 'equipa-leave',
+                    type: 'link',
+                    label: 'Férias e Ausências',
+                    icon: <Calendar size={18} strokeWidth={2.5} />,
+                    to: '/hr/leave',
+                    keywords: ['férias', 'ausência', 'falta', 'baixa', 'licença', 'aprovação']
                 }
             ]
         },
@@ -315,7 +337,14 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                 return false;
             }
 
-            // Priority 2: Legacy Booleans (Fallback)
+            // Priority 2: HR module gates
+            // isHrAdmin: Full R.H. group — only for HR/Admin users
+            if (item.isHrAdmin && !hasHRAdminAccess) return false;
+            // isTeamModule: "Gestão da Equipa" group — only for team-level users WITHOUT admin access
+            // (prevents duplication: admin users already see team features inside the full R.H. group)
+            if (item.isTeamModule && (!hasHRModuleAccess || hasHRAdminAccess)) return false;
+
+            // Priority 3: Legacy Booleans (Fallback)
             if (item.isAdminOnly && !isAdmin) return false;
             if (item.isManagerOnly && !isLocalManager) return false;
             if (item.isHrModule && !hasHRModuleAccess) return false;

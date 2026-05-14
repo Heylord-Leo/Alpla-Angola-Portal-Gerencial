@@ -25,11 +25,17 @@ interface AuthContextType {
   isViewerManagement: boolean;
   hasHRAccess: boolean;
   /**
-   * True if user can access the HR module.
-   * Aligned with backend HasHRModuleAccess(): HR role, admin, Local Manager,
-   * Department Manager, or Viewer/Management (self-calendar).
+   * True if user can access the HR module (at least team-level features).
+   * Includes HR role, admin, Local Manager, Department Manager, or Viewer/Management.
+   * Backend remains the source of truth for data scope (GetScopedEmployeesQuery).
    */
   hasHRModuleAccess: boolean;
+  /**
+   * True if user can access HR administration screens (badges, layouts, history,
+   * attendance, schedules, directory, monthly-changes).
+   * Restricted to HR role and System Administrator only.
+   */
+  hasHRAdminAccess: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -76,9 +82,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isDepartmentManager = (user?.managedDepartmentIds?.length ?? 0) > 0;
   const isViewerManagement = user?.roles.includes(ROLES.VIEWER_MANAGEMENT) || false;
   const hasHRAccess = user?.roles.includes(ROLES.HR) || isAdmin;
-  // HR Module access: aligned with backend HasHRModuleAccess().
-  // Includes HR role, admin, Local Manager, Department Manager, and Viewer/Management (self-calendar).
-  // Backend remains the source of truth for data scope (GetScopedEmployeesQuery).
+  // HR Admin access: only HR role or System Administrator.
+  // Gates administration screens (badges, layouts, history, attendance, schedules, directory, monthly-changes).
+  const hasHRAdminAccess = hasHRAccess;
+  // HR Module access (team-level features: overview, calendar, leave).
+  // Broader access: HR, admin, Local Manager, Department Manager, Viewer/Management.
+  // Backend GetScopedEmployeesQuery() remains the source of truth for data scope.
   const hasHRModuleAccess = hasHRAccess || isDepartmentManager || isLocalManager || isViewerManagement;
 
   if (isLoading) {
@@ -97,7 +106,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isDepartmentManager,
       isViewerManagement,
       hasHRAccess,
-      hasHRModuleAccess
+      hasHRModuleAccess,
+      hasHRAdminAccess
     }}>
       {children}
     </AuthContext.Provider>

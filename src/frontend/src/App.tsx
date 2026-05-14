@@ -199,15 +199,13 @@ function HRIndexRedirect() {
     return <Navigate to="overview" replace />;
 }
 
-/** Restricts HR advanced routes from Viewer/Management users, unless they have diagnostic access. */
-function HRAdvancedRoute({ children }: { children: React.ReactNode }) {
-    const { isAuthenticated, user, isViewerManagement } = useAuth();
+/** Restricts HR administration routes to HR role and System Administrator only.
+ *  Local Manager, Department Manager, and Viewer/Management are redirected to /hr/calendar (team-level).
+ */
+function HRAdminRoute({ children }: { children: React.ReactNode }) {
+    const { isAuthenticated, hasHRAdminAccess } = useAuth();
     if (!isAuthenticated) return <Navigate to="/login" replace />;
-    
-    const hasDiagnosticAccess = user?.roles.some(r => r === ROLES.SYSTEM_ADMINISTRATOR || r === ROLES.HR) ?? false;
-    const isRestrictedViewer = isViewerManagement && !hasDiagnosticAccess;
-    
-    if (isRestrictedViewer) return <Navigate to="/hr/overview" replace />;
+    if (!hasHRAdminAccess) return <Navigate to="/hr/calendar" replace />;
     return <>{children}</>;
 }
 
@@ -266,15 +264,15 @@ function AppContent() {
                     <Route path="overview" element={<Suspense fallback={<LoadingSkeleton />}><HROverview /></Suspense>} />
                     <Route path="leave" element={<Suspense fallback={<LoadingSkeleton />}><HRLeaveList /></Suspense>} />
                     <Route path="calendar" element={<Suspense fallback={<LoadingSkeleton />}><HRTeamCalendar /></Suspense>} />
-                    <Route path="attendance" element={<HRAdvancedRoute><Suspense fallback={<LoadingSkeleton />}><HRAttendanceCalendar /></Suspense></HRAdvancedRoute>} />
-                    <Route path="schedules" element={<HRAdvancedRoute><Suspense fallback={<LoadingSkeleton />}><HRScheduleExplorer /></Suspense></HRAdvancedRoute>} />
-                    <Route path="directory" element={<HRAdvancedRoute><Suspense fallback={<LoadingSkeleton />}><HREmployeeDirectory /></Suspense></HRAdvancedRoute>} />
+                    <Route path="attendance" element={<HRAdminRoute><Suspense fallback={<LoadingSkeleton />}><HRAttendanceCalendar /></Suspense></HRAdminRoute>} />
+                    <Route path="schedules" element={<HRAdminRoute><Suspense fallback={<LoadingSkeleton />}><HRScheduleExplorer /></Suspense></HRAdminRoute>} />
+                    <Route path="directory" element={<HRAdminRoute><Suspense fallback={<LoadingSkeleton />}><HREmployeeDirectory /></Suspense></HRAdminRoute>} />
                     
                     {/* Compatibility Redirects */}
                     <Route path="employees" element={<Navigate to="badges/employees" replace />} />
                     <Route path="team-calendar" element={<Navigate to="calendar" replace />} />
 
-                    <Route path="badges" element={<HRAdvancedRoute><Suspense fallback={<LoadingSkeleton />}><HRBadgesLandingPage /></Suspense></HRAdvancedRoute>}>
+                    <Route path="badges" element={<HRAdminRoute><Suspense fallback={<LoadingSkeleton />}><HRBadgesLandingPage /></Suspense></HRAdminRoute>}>
                         <Route index element={<Navigate to="employees" replace />} />
                         <Route path="employees" element={<Suspense fallback={<LoadingSkeleton />}><EmployeeWorkspace /></Suspense>} />
                         <Route path="layouts" element={<Suspense fallback={<LoadingSkeleton />}><BadgeLayoutDesigner /></Suspense>} />
@@ -285,8 +283,8 @@ function AppContent() {
                     <Route path="attendance-review" element={<AdminRoute allowedRoles={[ROLES.HR]}><Suspense fallback={<LoadingSkeleton />}><HRAttendanceDiagnostics /></Suspense></AdminRoute>} />
 
                     {/* Monthly Changes Middleware */}
-                    <Route path="monthly-changes" element={<HRAdvancedRoute><Suspense fallback={<LoadingSkeleton />}><MonthlyChangesList /></Suspense></HRAdvancedRoute>} />
-                    <Route path="monthly-changes/runs/:id" element={<HRAdvancedRoute><Suspense fallback={<LoadingSkeleton />}><MonthlyChangesRunDetail /></Suspense></HRAdvancedRoute>} />
+                    <Route path="monthly-changes" element={<HRAdminRoute><Suspense fallback={<LoadingSkeleton />}><MonthlyChangesList /></Suspense></HRAdminRoute>} />
+                    <Route path="monthly-changes/runs/:id" element={<HRAdminRoute><Suspense fallback={<LoadingSkeleton />}><MonthlyChangesRunDetail /></Suspense></HRAdminRoute>} />
                 </Route>
 
                 {/* Settings Routes */}
