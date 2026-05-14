@@ -1,5 +1,6 @@
-import { AlertCircle, AlertTriangle, Info, Package, TrendingUp, TrendingDown, Minus, CheckCircle2, AlertOctagon, Eye, BarChart3, HelpCircle } from 'lucide-react';
-import { ApprovalIntelligenceDto, ItemIntelligenceDto } from '../../../types';
+import { useState } from 'react';
+import { AlertCircle, AlertTriangle, Info, Package, TrendingUp, TrendingDown, Minus, CheckCircle2, AlertOctagon, Eye, BarChart3, HelpCircle, Wallet, ChevronDown, ChevronRight } from 'lucide-react';
+import { ApprovalIntelligenceDto, ItemIntelligenceDto, BudgetAvailabilityDto } from '../../../types';
 import { Tooltip } from '../../../components/ui/Tooltip';
 
 // --- Interfaces ---
@@ -107,11 +108,16 @@ export function DecisionInsightsPanel({
         </div>
     ) : null;
 
+    const budgetBlock = intelligence.budgetAvailability ? (
+        <BudgetAvailabilityBlock budget={intelligence.budgetAvailability} />
+    ) : null;
+
     // --- Role-aware section ordering ---
+    // Budget availability placed after dept context and before alerts
 
     const orderedSections = isArea
-        ? [alertsBlock, itemsBlock, departmentBlock]       // Area: alerts → items → dept
-        : [departmentBlock, alertsBlock, itemsBlock];      // Final: dept → alerts → items
+        ? [alertsBlock, budgetBlock, itemsBlock, departmentBlock]       // Area: alerts → budget → items → dept
+        : [departmentBlock, budgetBlock, alertsBlock, itemsBlock];      // Final: dept → budget → alerts → items
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
@@ -356,6 +362,222 @@ function FinalEmphasisBlock({ intelligence }: { intelligence: ApprovalIntelligen
                         )}
                     </div>
                 )}
+            </div>
+        </div>
+    );
+}
+
+// ====================================
+// Budget Availability Block
+// ====================================
+
+function BudgetAvailabilityBlock({ budget }: { budget: BudgetAvailabilityDto }) {
+    const [showCCDetail, setShowCCDetail] = useState(false);
+
+    const statusColors: Record<string, string> = {
+        OK: 'var(--color-success, #22c55e)',
+        WARNING: 'var(--color-status-orange, #f59e0b)',
+        CRITICAL: 'var(--color-status-red, #ef4444)',
+        EXCEEDED: 'var(--color-status-red, #dc2626)'
+    };
+
+    const statusColor = statusColors[budget.status] || statusColors.OK;
+
+    const fmtCurrency = (v: number) => v.toLocaleString('pt-AO', { style: 'currency', currency: budget.currencyCode || 'AOA' });
+
+    // Fallback: no budget configured or info-only message
+    if (!budget.hasBudgetConfig || budget.matchLevel === 'NONE') {
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <SectionLabel>Disponibilidade Orçamental</SectionLabel>
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: '14px',
+                    padding: '14px 18px',
+                    backgroundColor: 'var(--color-bg-surface)',
+                    border: '1px dashed var(--color-border)',
+                    borderRadius: 'var(--radius-md)',
+                    borderLeft: budget.status === 'WARNING' ? '4px solid var(--color-status-orange)' : '4px solid var(--color-border)'
+                }}>
+                    <Info size={16} style={{ color: budget.status === 'WARNING' ? 'var(--color-status-orange)' : 'var(--color-text-muted)', flexShrink: 0 }} />
+                    <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--color-text-main)' }}>
+                        {budget.infoMessage || 'Orçamento não configurado para esta combinação.'}
+                    </span>
+                </div>
+            </div>
+        );
+    }
+
+    const utilBarWidth = Math.min(budget.utilizationPercent, 100);
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <SectionLabel>Disponibilidade Orçamental</SectionLabel>
+
+            {/* Utilization Bar */}
+            <div style={{
+                padding: '16px 18px',
+                border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-lg)',
+                backgroundColor: 'var(--color-bg-surface)',
+                boxShadow: 'var(--shadow-sm)'
+            }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Wallet size={14} style={{ color: statusColor }} />
+                        <span style={{ fontSize: '0.65rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-text-muted)' }}>
+                            {budget.costCenterName || 'Orçamento Geral'}
+                        </span>
+                    </div>
+                    <span style={{
+                        fontSize: '0.7rem', fontWeight: 950,
+                        color: statusColor,
+                        textTransform: 'uppercase', letterSpacing: '0.05em'
+                    }}>
+                        {budget.utilizationPercent.toFixed(1)}% utilizado
+                    </span>
+                </div>
+
+                {/* Progress bar */}
+                <div style={{
+                    width: '100%', height: '8px',
+                    backgroundColor: 'var(--color-bg-page)',
+                    borderRadius: '4px', overflow: 'hidden'
+                }}>
+                    <div style={{
+                        width: `${utilBarWidth}%`, height: '100%',
+                        backgroundColor: statusColor,
+                        borderRadius: '4px',
+                        transition: 'width 0.6s ease',
+                        animation: budget.status === 'EXCEEDED' ? 'budgetPulse 1.5s ease-in-out infinite' : undefined
+                    }} />
+                </div>
+
+                {/* Context line */}
+                <div style={{
+                    display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px',
+                    fontSize: '0.6rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em'
+                }}>
+                    {budget.departmentName && <span>Depto: {budget.departmentName}</span>}
+                    {budget.departmentName && budget.plantName && <span>·</span>}
+                    {budget.plantName && <span>Planta: {budget.plantName}</span>}
+                    <span>·</span>
+                    <span>Ano: {budget.fiscalYear}</span>
+                </div>
+            </div>
+
+            {/* KPI Grid: 3x2 */}
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '10px'
+            }}>
+                <BudgetKpi label="Orçamento Anual" value={fmtCurrency(budget.annualBudget)} />
+                <BudgetKpi label="Comprometido" value={fmtCurrency(budget.committedAmount)} />
+                <BudgetKpi label="Disponível Antes" value={fmtCurrency(budget.availableBefore)} />
+                <BudgetKpi label="Valor do Pedido" value={fmtCurrency(budget.currentRequestAmount)} highlight />
+                <BudgetKpi
+                    label="Disponível Após"
+                    value={fmtCurrency(budget.availableAfter)}
+                    status={budget.status}
+                />
+                <BudgetKpi
+                    label="Status"
+                    value={budget.status === 'OK' ? 'Dentro do Orçamento'
+                         : budget.status === 'WARNING' ? 'Atenção'
+                         : budget.status === 'CRITICAL' ? 'Crítico'
+                         : 'Excedido'}
+                    status={budget.status}
+                />
+            </div>
+
+            {/* Multi-CC breakdown toggle */}
+            {budget.matchLevel === 'MULTI_CC' && budget.costCenterBreakdown && budget.costCenterBreakdown.length > 0 && (
+                <div>
+                    <button
+                        onClick={() => setShowCCDetail(!showCCDetail)}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: '6px',
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            fontSize: '0.65rem', fontWeight: 950, textTransform: 'uppercase',
+                            color: 'var(--color-primary)', letterSpacing: '0.05em', padding: '4px 0'
+                        }}
+                    >
+                        {showCCDetail ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        {showCCDetail ? 'Ocultar Detalhe por CC' : 'Ver Detalhe por CC'}
+                    </button>
+                    {showCCDetail && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
+                            {budget.costCenterBreakdown.map((cc, idx) => (
+                                <div key={idx} style={{
+                                    padding: '10px 14px',
+                                    border: '1px solid var(--color-border)',
+                                    borderRadius: 'var(--radius-md)',
+                                    backgroundColor: 'var(--color-bg-surface)',
+                                    borderLeft: `3px solid ${statusColors[cc.status] || statusColors.OK}`
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                        <span style={{ fontSize: '0.7rem', fontWeight: 950, color: 'var(--color-text-main)' }}>
+                                            {cc.costCenterName}
+                                        </span>
+                                        <span style={{
+                                            fontSize: '0.6rem', fontWeight: 950, textTransform: 'uppercase',
+                                            color: statusColors[cc.status] || statusColors.OK
+                                        }}>
+                                            {cc.hasBudgetLine ? `${cc.utilizationPercent.toFixed(1)}%` : 'Sem Orçamento'}
+                                        </span>
+                                    </div>
+                                    {cc.hasBudgetLine && (
+                                        <div style={{ display: 'flex', gap: '16px', fontSize: '0.65rem', color: 'var(--color-text-muted)', fontWeight: 800 }}>
+                                            <span>Orçamento: {fmtCurrency(cc.annualBudget)}</span>
+                                            <span>Pedido: {fmtCurrency(cc.requestAmountInCC)}</span>
+                                            <span style={{ color: statusColors[cc.status] || statusColors.OK, fontWeight: 950 }}>Após: {fmtCurrency(cc.availableAfter)}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Pulse animation for EXCEEDED */}
+            {budget.status === 'EXCEEDED' && (
+                <style>{`
+                    @keyframes budgetPulse {
+                        0%, 100% { opacity: 1; }
+                        50% { opacity: 0.6; }
+                    }
+                `}</style>
+            )}
+        </div>
+    );
+}
+
+function BudgetKpi({ label, value, status, highlight }: {
+    label: string; value: string; status?: string; highlight?: boolean;
+}) {
+    const statusColors: Record<string, string> = {
+        WARNING: 'var(--color-status-orange)',
+        CRITICAL: 'var(--color-status-red)',
+        EXCEEDED: 'var(--color-status-red)'
+    };
+    const valueColor = status && statusColors[status]
+        ? statusColors[status]
+        : highlight ? 'var(--color-primary)' : 'var(--color-text-main)';
+
+    return (
+        <div style={{
+            padding: '12px 14px',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-md)',
+            backgroundColor: 'var(--color-bg-surface)',
+            boxShadow: 'var(--shadow-sm)'
+        }}>
+            <div style={{ fontSize: '0.55rem', textTransform: 'uppercase', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+                {label}
+            </div>
+            <div style={{ fontSize: '0.85rem', fontWeight: 950, color: valueColor, fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>
+                {value}
             </div>
         </div>
     );

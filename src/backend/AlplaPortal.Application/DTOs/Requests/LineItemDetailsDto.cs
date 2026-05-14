@@ -11,6 +11,8 @@ public class LineItemDetailsDto
     public decimal UnitPrice { get; set; }
     public decimal Total { get; set; }
     public string? Notes { get; set; }
+    public int? ItemCatalogId { get; set; }
+    
     public DateTime? DueDate { get; set; }
     public DateTime? UpdatedAtUtc { get; set; }
 

@@ -86,6 +86,7 @@ export function ApprovalDetailPanel({
     const [highlightSection, setHighlightSection] = useState(false);
     const [highlightFields, setHighlightFields] = useState(false);
     const [highlightQuotationSection, setHighlightQuotationSection] = useState(false);
+    const [expandedQuotationId, setExpandedQuotationId] = useState<string | null>(null);
 
     // Phase 3A: Intelligence
     const [intelligence, setIntelligence] = useState<ApprovalIntelligenceDto | null>(null);
@@ -561,6 +562,8 @@ export function ApprovalDetailPanel({
                                             canSelectWinner={canSelectWinner}
                                             onSelectWinner={handleSelectWinner}
                                             isProcessing={quotationProcessingId === q.id}
+                                            isExpanded={expandedQuotationId === q.id}
+                                            onToggleExpand={(id) => setExpandedQuotationId(prev => prev === id ? null : id)}
                                         />
                                     ))}
                                 </div>

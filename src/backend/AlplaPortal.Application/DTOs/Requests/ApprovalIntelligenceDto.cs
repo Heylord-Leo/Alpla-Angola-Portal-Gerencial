@@ -9,6 +9,7 @@ public class ApprovalIntelligenceDto
     public List<ItemIntelligenceDto> Items { get; set; } = new();
     public DepartmentIntelligenceDto DepartmentContext { get; set; } = new();
     public List<DecisionAlertDto> OverallAlerts { get; set; } = new();
+    public BudgetAvailabilityDto? BudgetAvailability { get; set; }
 }
 
 public class ItemIntelligenceDto

@@ -1,4 +1,4 @@
-import { FileText, CheckCircle2, Trophy, Hash, Calendar } from 'lucide-react';
+import { FileText, CheckCircle2, Trophy, Hash, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
 import { SavedQuotationDto } from '../../../types';
 import { formatCurrencyAO, formatDate } from '../../../lib/utils';
 
@@ -8,15 +8,33 @@ interface DecisionQuotationCardProps {
     canSelectWinner: boolean;
     onSelectWinner: (id: string) => void;
     isProcessing: boolean;
+    isExpanded: boolean;
+    onToggleExpand: (id: string) => void;
 }
+
+const MAX_VISIBLE_ITEMS = 5;
 
 export function DecisionQuotationCard({
     quotation: q,
     isLowest,
     canSelectWinner,
     onSelectWinner,
-    isProcessing
+    isProcessing,
+    isExpanded,
+    onToggleExpand
 }: DecisionQuotationCardProps) {
+    const items = q.items || [];
+    const hasItems = items.length > 0;
+    const visibleItems = isExpanded ? items.slice(0, MAX_VISIBLE_ITEMS) : [];
+    const hiddenCount = items.length - MAX_VISIBLE_ITEMS;
+    const showScrollArea = isExpanded && items.length > MAX_VISIBLE_ITEMS;
+
+    const handleCardBodyClick = () => {
+        if (hasItems) {
+            onToggleExpand(q.id);
+        }
+    };
+
     return (
         <div style={{
             backgroundColor: 'var(--color-bg-surface)',
@@ -30,15 +48,22 @@ export function DecisionQuotationCard({
             boxShadow: q.isSelected ? 'var(--shadow-md)' : 'var(--shadow-sm)',
             overflow: 'hidden'
         }}>
-            {/* --- Header Row --- */}
-            <div style={{
-                padding: '20px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                gap: '16px',
-                backgroundColor: q.isSelected ? 'rgba(22, 163, 74, 0.04)' : 'transparent'
-            }}>
+            {/* --- Header Row (clickable to expand) --- */}
+            <div 
+                onClick={handleCardBodyClick}
+                style={{
+                    padding: '20px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    gap: '16px',
+                    backgroundColor: q.isSelected ? 'rgba(22, 163, 74, 0.04)' : 'transparent',
+                    cursor: hasItems ? 'pointer' : 'default',
+                    transition: 'background-color 0.15s ease'
+                }}
+                onMouseOver={(e) => { if (hasItems) e.currentTarget.style.backgroundColor = q.isSelected ? 'rgba(22, 163, 74, 0.06)' : 'rgba(0,0,0,0.015)'; }}
+                onMouseOut={(e) => { e.currentTarget.style.backgroundColor = q.isSelected ? 'rgba(22, 163, 74, 0.04)' : 'transparent'; }}
+            >
                 <div style={{ display: 'flex', gap: '16px', flex: 1 }}>
                     <div style={{ 
                         width: '44px',
@@ -118,6 +143,25 @@ export function DecisionQuotationCard({
                              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <Calendar size={13} strokeWidth={3} style={{ color: '#6b7280' }} /> {q.documentDate ? formatDate(q.documentDate) : '---'}
                              </span>
+                             {/* Expand hint */}
+                             {hasItems && (
+                                <span style={{ 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    gap: '4px', 
+                                    marginLeft: 'auto',
+                                    color: 'var(--color-primary, #2563eb)',
+                                    fontSize: '0.6rem',
+                                    fontWeight: 900,
+                                    opacity: 0.8
+                                }}>
+                                    {isExpanded ? (
+                                        <>Ocultar itens <ChevronUp size={13} strokeWidth={3} /></>
+                                    ) : (
+                                        <>Ver itens <ChevronDown size={13} strokeWidth={3} /></>
+                                    )}
+                                </span>
+                             )}
                         </div>
                     </div>
                 </div>
@@ -139,6 +183,158 @@ export function DecisionQuotationCard({
                 </div>
             </div>
 
+            {/* --- Expanded Items Area --- */}
+            {isExpanded && (
+                <div style={{
+                    borderTop: '1px solid var(--color-border)',
+                    backgroundColor: 'var(--color-bg-page)',
+                    padding: '0',
+                    overflow: 'hidden',
+                    animation: 'fadeIn 0.2s ease'
+                }}>
+                    {/* Items header */}
+                    <div style={{
+                        padding: '12px 20px 8px 20px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                    }}>
+                        <span style={{
+                            fontSize: '0.625rem',
+                            fontWeight: 950,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.08em',
+                            color: 'var(--color-text-muted)'
+                        }}>
+                            Itens cotados
+                        </span>
+                        <span style={{
+                            fontSize: '0.6rem',
+                            fontWeight: 800,
+                            color: 'var(--color-text-muted)',
+                            backgroundColor: 'var(--color-bg-surface)',
+                            border: '1px solid var(--color-border)',
+                            borderRadius: 'var(--radius-sm)',
+                            padding: '2px 8px'
+                        }}>
+                            {items.length} {items.length === 1 ? 'item' : 'itens'}
+                        </span>
+                    </div>
+
+                    {!hasItems ? (
+                        <div style={{
+                            padding: '16px 20px',
+                            fontSize: '0.8rem',
+                            fontWeight: 600,
+                            color: 'var(--color-text-muted)',
+                            fontStyle: 'italic',
+                            textAlign: 'center'
+                        }}>
+                            Itens não disponíveis para esta cotação.
+                        </div>
+                    ) : (
+                        <div style={{
+                            maxHeight: showScrollArea ? '280px' : 'none',
+                            overflowY: showScrollArea ? 'auto' : 'visible',
+                            padding: '0 20px'
+                        }}>
+                            {(showScrollArea ? items : visibleItems).map((item, idx) => (
+                                <div 
+                                    key={item.id || idx}
+                                    style={{
+                                        padding: '10px 0',
+                                        borderBottom: idx < (showScrollArea ? items.length : visibleItems.length) - 1 
+                                            ? '1px solid var(--color-border)' 
+                                            : 'none',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'flex-start',
+                                        gap: '12px'
+                                    }}
+                                >
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{
+                                            fontSize: '0.8rem',
+                                            fontWeight: 700,
+                                            color: 'var(--color-text-main)',
+                                            lineHeight: 1.3,
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis'
+                                        }}>
+                                            {item.description}
+                                        </div>
+                                        <div style={{
+                                            fontSize: '0.7rem',
+                                            fontWeight: 600,
+                                            color: 'var(--color-text-muted)',
+                                            marginTop: '2px'
+                                        }}>
+                                            {item.quantity} {item.unitCode || item.unitName || 'UN'} × {formatCurrencyAO(item.unitPrice)}
+                                        </div>
+                                    </div>
+                                    <div style={{
+                                        fontSize: '0.8rem',
+                                        fontWeight: 900,
+                                        color: 'var(--color-text-main)',
+                                        whiteSpace: 'nowrap',
+                                        fontVariantNumeric: 'tabular-nums',
+                                        flexShrink: 0
+                                    }}>
+                                        {formatCurrencyAO(item.lineTotal)}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Hidden items note (only for non-scrollable mode) */}
+                    {!showScrollArea && hiddenCount > 0 && (
+                        <div style={{
+                            padding: '8px 20px',
+                            fontSize: '0.7rem',
+                            fontWeight: 700,
+                            color: 'var(--color-text-muted)',
+                            textAlign: 'center',
+                            fontStyle: 'italic'
+                        }}>
+                            +{hiddenCount} {hiddenCount === 1 ? 'item adicional' : 'itens adicionais'}
+                        </div>
+                    )}
+
+                    {/* Footer total */}
+                    {hasItems && (
+                        <div style={{
+                            padding: '10px 20px 14px 20px',
+                            borderTop: '1px solid var(--color-border)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            backgroundColor: 'var(--color-bg-surface)'
+                        }}>
+                            <span style={{
+                                fontSize: '0.7rem',
+                                fontWeight: 900,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                color: 'var(--color-text-muted)'
+                            }}>
+                                Total da cotação
+                            </span>
+                            <span style={{
+                                fontSize: '1rem',
+                                fontWeight: 950,
+                                color: 'var(--color-text-main)',
+                                fontVariantNumeric: 'tabular-nums',
+                                letterSpacing: '-0.02em'
+                            }}>
+                                {formatCurrencyAO(q.totalAmount)} <span style={{ fontSize: '0.7rem', opacity: 0.5, fontWeight: 800 }}>{q.currency}</span>
+                            </span>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* --- Action Row (if processing or selectable) --- */}
             {canSelectWinner && !q.isSelected && (
                 <div style={{ 
@@ -149,7 +345,7 @@ export function DecisionQuotationCard({
                     justifyContent: 'flex-end'
                 }}>
                     <button 
-                        onClick={() => onSelectWinner(q.id)}
+                        onClick={(e) => { e.stopPropagation(); onSelectWinner(q.id); }}
                         disabled={isProcessing}
                         style={{
                             display: 'flex',
