@@ -169,7 +169,8 @@ public class LineItemsController : BaseController
                 ItemSupplierCode = x.LineItem != null && x.LineItem.Supplier != null ? x.LineItem.Supplier.PortalCode : null,
                 ItemPrimaveraCode = x.LineItem != null && x.LineItem.Supplier != null ? x.LineItem.Supplier.PrimaveraCode : null,
                 ItemCostCenterName = x.LineItem != null && x.LineItem.CostCenter != null ? x.LineItem.CostCenter.Name : null,
-                ItemCostCenterCode = x.LineItem != null && x.LineItem.CostCenter != null ? x.LineItem.CostCenter.Code : null
+                ItemCostCenterCode = x.LineItem != null && x.LineItem.CostCenter != null ? x.LineItem.CostCenter.Code : null,
+                ItemCatalogId = x.LineItem != null ? x.LineItem.ItemCatalogId : null
             })
             .ToListAsync();
         swPage.Stop();
@@ -329,6 +330,7 @@ public class LineItemsController : BaseController
                 CostCenterCode = x.ItemCostCenterCode,
                 
                 Notes = x.LineItem != null ? x.LineItem.Notes : null,
+                ItemCatalogId = x.ItemCatalogId,
                 UpdatedAtUtc = x.LineItem != null ? (x.LineItem.UpdatedAtUtc ?? x.LineItem.CreatedAtUtc) : x.RequestUpdatedAtUtc ?? x.RequestCreatedAtUtc,
                 
                 LatestAdjustmentMessage = latestAdj?.Comment,

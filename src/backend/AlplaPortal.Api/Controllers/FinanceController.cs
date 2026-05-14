@@ -742,6 +742,7 @@ public class FinanceController : BaseController
                 BuyerId = r.BuyerId,
                 AreaApproverId = r.AreaApproverId,
                 FinalApproverId = r.FinalApproverId,
+                DepartmentId = r.DepartmentId,
                 PlantId = r.PlantId
             });
         }
@@ -878,6 +879,7 @@ public class FinanceController : BaseController
                 BuyerId = r.BuyerId,
                 AreaApproverId = r.AreaApproverId,
                 FinalApproverId = r.FinalApproverId,
+                DepartmentId = r.DepartmentId,
                 PlantId = r.PlantId
             });
         }

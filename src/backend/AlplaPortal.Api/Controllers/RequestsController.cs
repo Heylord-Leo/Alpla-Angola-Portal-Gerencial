@@ -527,7 +527,13 @@ public class RequestsController : BaseController
             switch (sortBy.ToLower())
             {
                 case "requestnumber":
-                    query = isDescending ? query.OrderByDescending(r => r.RequestNumber) : query.OrderBy(r => r.RequestNumber);
+                    // RequestNumber format is REQ-DD/MM/YYYY-NNN.
+                    // Lexicographic string sort is incorrect (DD in position 4 breaks chronological order).
+                    // Sort by CreatedAtUtc.Date for chronological order, then by RequestNumber
+                    // as tiebreaker (the zero-padded sequence suffix sorts correctly within same date).
+                    query = isDescending
+                        ? query.OrderByDescending(r => r.CreatedAtUtc.Date).ThenByDescending(r => r.RequestNumber)
+                        : query.OrderBy(r => r.CreatedAtUtc.Date).ThenBy(r => r.RequestNumber);
                     break;
                 case "title":
                     query = isDescending ? query.OrderByDescending(r => r.Title) : query.OrderBy(r => r.Title);
@@ -540,6 +546,27 @@ public class RequestsController : BaseController
                     break;
                 case "departmentname":
                     query = isDescending ? query.OrderByDescending(r => r.Department!.Name) : query.OrderBy(r => r.Department!.Name);
+                    break;
+                case "statuscode":
+                    query = isDescending ? query.OrderByDescending(r => r.Status!.DisplayOrder) : query.OrderBy(r => r.Status!.DisplayOrder);
+                    break;
+                case "requesttypecode":
+                    query = isDescending ? query.OrderByDescending(r => r.RequestType!.Name) : query.OrderBy(r => r.RequestType!.Name);
+                    break;
+                case "companyname":
+                    query = isDescending ? query.OrderByDescending(r => r.Company!.Name) : query.OrderBy(r => r.Company!.Name);
+                    break;
+                case "needbydateutc":
+                    query = isDescending ? query.OrderByDescending(r => r.NeedByDateUtc) : query.OrderBy(r => r.NeedByDateUtc);
+                    break;
+                case "estimatedtotalamount":
+                    query = isDescending
+                        ? query.OrderByDescending(r => r.SelectedQuotationId.HasValue
+                            ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId).Select(q => (decimal?)q.TotalAmount).FirstOrDefault()
+                            : (decimal?)r.EstimatedTotalAmount)
+                        : query.OrderBy(r => r.SelectedQuotationId.HasValue
+                            ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId).Select(q => (decimal?)q.TotalAmount).FirstOrDefault()
+                            : (decimal?)r.EstimatedTotalAmount);
                     break;
                 case "createdatutc":
                     query = isDescending ? query.OrderByDescending(r => r.CreatedAtUtc) : query.OrderBy(r => r.CreatedAtUtc);
@@ -4215,6 +4242,7 @@ public class RequestsController : BaseController
                     BuyerId = request.BuyerId,
                     AreaApproverId = request.AreaApproverId,
                     FinalApproverId = request.FinalApproverId,
+                    DepartmentId = request.DepartmentId,
                     PlantId = request.PlantId
                 });
             }
@@ -4582,7 +4610,7 @@ public class RequestsController : BaseController
         {
             ("SUBMIT", "WAITING_AREA_APPROVAL") => WorkflowEventCodes.RequestSubmitted,
             ("RESUBMIT", "WAITING_AREA_APPROVAL") => WorkflowEventCodes.RequestSubmitted,
-            ("RESUBMIT", "WAITING_FINAL_APPROVAL") => WorkflowEventCodes.RequestSubmitted,
+            ("RESUBMIT", "WAITING_FINAL_APPROVAL") => WorkflowEventCodes.AreaApproved,
             ("APPROVE", "WAITING_FINAL_APPROVAL") => WorkflowEventCodes.AreaApproved,
             ("APPROVE", "APPROVED") => WorkflowEventCodes.FinalApproved,
             ("REGISTER_PO", "PO_ISSUED") => WorkflowEventCodes.PoRegistered,

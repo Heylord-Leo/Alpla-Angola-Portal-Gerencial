@@ -111,6 +111,9 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
 
             case WorkflowEventCodes.FinalApproved:
                 await AddUserRecipientAsync(recipients, evt.FinalApproverId);
+                await AddUserRecipientAsync(recipients, evt.RequesterId);
+                if (evt.BuyerId.HasValue)
+                    await AddUserRecipientAsync(recipients, evt.BuyerId);
                 break;
 
             case WorkflowEventCodes.QuotationCompleted:

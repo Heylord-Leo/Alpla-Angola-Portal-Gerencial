@@ -1922,9 +1922,14 @@ public class LookupsController : ControllerBase
 
     // Cost Centers
     [HttpGet("cost-centers")]
-    public async Task<IActionResult> GetCostCenters([FromQuery] int? plantId, [FromQuery] bool includeInactive = false)
+    public async Task<IActionResult> GetCostCenters([FromQuery] int? plantId, [FromQuery] int? companyId, [FromQuery] bool includeInactive = false)
     {
         var query = _context.CostCenters.AsQueryable();
+
+        if (companyId.HasValue)
+        {
+            query = query.Where(c => c.Plant.CompanyId == companyId.Value);
+        }
 
         if (plantId.HasValue)
         {
@@ -1938,7 +1943,7 @@ public class LookupsController : ControllerBase
 
         var items = await query
             .OrderBy(c => c.Name)
-            .Select(c => new { c.Id, c.Code, c.Name, c.IsActive, c.PlantId, PlantName = c.Plant.Name })
+            .Select(c => new { c.Id, c.Code, c.Name, c.IsActive, c.PlantId, PlantName = c.Plant.Name, CompanyId = c.Plant.CompanyId })
             .ToListAsync();
 
         return Ok(items);
