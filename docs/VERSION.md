@@ -2,7 +2,21 @@
 
 ## Current Version
 
-v2.113.0
+v2.114.0
+
+## [2.114.0] - 2026-05-14
+
+### Feature — Approvals & Budget Insights
+- **Budget Health Analytics**: Integrated budget utilization metrics into the approval flow using `ApprovalIntelligenceService`.
+- **Decision Support UI**: Added `DecisionInsightsPanel` and `DecisionQuotationCard` to provide comprehensive budget context during purchase request approvals.
+
+### Bug Fix — Backend Routing & Notifications
+- **Missing Department Context**: Fixed `FinanceController` and `RequestsController` missing `DepartmentId` in status emits, enabling correct fan-out routing to department roles.
+- **Resubmit Event Mapping**: Fixed `RESUBMIT` event mapping in `RequestsController` to properly route to the Final Approver.
+- **Workflow Orchestration**: Expanded `FinalApproved` logic to include both Requester and Buyer.
+
+### Chore — Code Quality & Linting
+- **TypeScript Cleanup**: Resolved remaining `TS6133` unused variable and import warnings across the frontend codebase, ensuring a clean `npm run build`.
 
 ## [2.113.0] - 2026-05-14
 

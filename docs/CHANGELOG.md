@@ -2,9 +2,23 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
-## [v2.113.0] - 2026-05-14 - Dark Mode Contrast Fix
+## [v2.114.0] - 2026-05-14 - Approvals Intelligence & Notification Fixes
+
+### Added
+- **Approvals & Budget Insights**: Integrated budget health analytics into the approval flow.
+  - Added `ApprovalIntelligenceService` to calculate utilization metrics (OK, WARNING, CRITICAL, EXCEEDED).
+  - Added `DecisionInsightsPanel` and `DecisionQuotationCard` to `ApprovalDetailPanel`.
 
 ### Fixed
+- **Backend Routing & Notification Remediation**: Remediated purchase request notification failures (as per `PURCHASE_REQUEST_NOTIFICATIONS_AUDIT.md`).
+  - `FinanceController`: Propagated `DepartmentId` to `PAYMENT_SCHEDULED` and `PAYMENT_COMPLETED` events for correct fan-out.
+  - `RequestsController`: Added `DepartmentId` to `QUOTATION_COMPLETED` and fixed `RESUBMIT` event mapping to route correctly to the Final Approver.
+  - `WorkflowNotificationOrchestrator`: Updated `FinalApproved` logic to include Requester and Buyer.
+- **TypeScript Linting Cleanup**: Addressed multiple `TS6133` (unused variables/imports) warnings across the codebase to ensure a clean `npm run build`. Affected components include `BuyerItemsList`, `ContractsAlerts`, `ActionCarouselWidget`, `FinanceHistory`, `GuideModal`, `HRLandingPage`, and `ModernRequestTimeline`.
+
+---
+
+## [v2.113.0] - 2026-05-14 - Dark Mode Contrast Fix### Fixed
 - **Dark Mode Visibility**: Improved contrast for text and status indicators in `UserDropdown` and `NotificationBell` components when dark mode is active.
 - **Semantic Tokens**: Introduced `--color-status-red-surface` in `tokens.css` to provide accessible, theme-aware tinted backgrounds for status elements.
 
