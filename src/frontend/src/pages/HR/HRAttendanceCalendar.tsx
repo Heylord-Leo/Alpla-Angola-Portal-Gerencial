@@ -3,7 +3,7 @@ import { api } from '../../lib/api';
 import {
     RefreshCw, ChevronLeft, ChevronRight, Calendar, LayoutGrid, X,
     Clock, AlertTriangle, Moon, Filter, Search, Palmtree, Star, HelpCircle,
-    Info, CheckCircle2, UserCheck, AlertCircle, ChevronDown, ChevronUp, Database,
+    Info, CheckCircle2, UserCheck, ChevronDown, ChevronUp, Database,
     CircleCheck, CircleX, ShieldAlert, MinusCircle
 } from 'lucide-react';
 import { GuideModal, GuideModalSection } from '../../components/ui/GuideModal';

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, FileText, Activity, Network, ChevronRight, Users } from 'lucide-react';
+import { FileText, Activity, Network, ChevronRight, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';

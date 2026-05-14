@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, BookOpen } from 'lucide-react';
+import { X } from 'lucide-react';
 
 export interface GuideModalProps {
     isOpen: boolean;

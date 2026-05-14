@@ -10,7 +10,7 @@ import { AttentionList } from './components/AttentionList';
 import { WorkflowInteractive } from './components/WorkflowInteractive';
 import { WorkflowStageDetails } from './components/WorkflowStageDetails';
 import { WORKFLOW_STAGES } from './components/workflowData';
-import { LayoutDashboard, ShoppingCart, Users, CheckCircle, RotateCcw, AlertTriangle } from 'lucide-react';
+import { ShoppingCart, Users, CheckCircle, RotateCcw, AlertTriangle } from 'lucide-react';
 
 export function Dashboard() {
     const navigate = useNavigate();

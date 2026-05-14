@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Activity, ArrowLeft, CheckCircle2, XCircle, AlertCircle, Settings } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Activity, CheckCircle2, XCircle, AlertCircle, Settings } from 'lucide-react';
 import { api } from '../../lib/api';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';

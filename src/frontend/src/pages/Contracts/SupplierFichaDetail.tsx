@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Pencil, Save, Download, Trash2, RefreshCw, Upload, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { ArrowLeft, Pencil, Save, Download, Trash2, RefreshCw, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import './SupplierFicha.css';

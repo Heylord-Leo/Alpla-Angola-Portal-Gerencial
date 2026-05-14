@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, FileText, Clock, CheckCircle, AlertTriangle, XCircle, Ban, ChevronLeft, ChevronRight, ClipboardList } from 'lucide-react';
+import { Search, FileText, Clock, CheckCircle, AlertTriangle, Ban, ChevronLeft, ChevronRight, ClipboardList } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Feedback } from '../../components/ui/Feedback';
 import './SupplierFicha.css';

@@ -62,7 +62,7 @@ const VIEWER_ONLY_TAB_IDS = ['overview', 'calendar', 'leave'];
  */
 export default function HRLandingPage() {
     const location = useLocation();
-    const { user, isViewerManagement, hasHRAdminAccess } = useAuth();
+    const { hasHRAdminAccess } = useAuth();
     const [moreOpen, setMoreOpen] = useState(false);
     const moreRef = useRef<HTMLDivElement>(null);
 

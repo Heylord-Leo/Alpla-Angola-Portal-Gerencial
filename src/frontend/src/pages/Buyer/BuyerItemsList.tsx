@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-import { Link, useLocation, useSearchParams, useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, Search, Filter, FileText, CheckCircle2, X, Pencil, Trash2, ArrowLeft, AlertCircle, RefreshCcw, Hash, Calendar, UserPlus, AlertTriangle, BookOpen, MoreVertical, Package } from 'lucide-react';
+import { useLocation, useSearchParams } from 'react-router-dom';
+import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, FileText, CheckCircle2, X, Pencil, Trash2, ArrowLeft, AlertCircle, RefreshCcw, Hash, Calendar, UserPlus, AlertTriangle, BookOpen, MoreVertical, Package } from 'lucide-react';
 import { useAuth } from '../../features/auth/AuthContext';
 import { api } from '../../lib/api';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
@@ -158,7 +158,7 @@ const RequestGroupSkeleton: React.FC = () => {
 
 export function BuyerItemsList() {
     const [searchParams, setSearchParams] = useSearchParams();
-    const navigate = useNavigate();
+
 
     const [items, setItems] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -2782,7 +2782,7 @@ export function BuyerItemsList() {
                                                                                                 <CatalogItemAutocomplete
                                                                                                     value={item.description}
                                                                                                     itemCatalogId={item.itemCatalogId || null}
-                                                                                                    onChange={(description, catalogId, catalogCode, defaultUnitId) => handleUpdateQuotationItem(group.requestId, idx, {
+                                                                                                    onChange={(description, catalogId, _catalogCode, defaultUnitId) => handleUpdateQuotationItem(group.requestId, idx, {
                                                                                                         description: description,
                                                                                                         itemCatalogId: catalogId || undefined,
                                                                                                         unitId: defaultUnitId || item.unitId

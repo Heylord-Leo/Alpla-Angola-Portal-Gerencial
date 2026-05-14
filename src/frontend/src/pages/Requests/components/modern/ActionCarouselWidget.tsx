@@ -226,7 +226,6 @@ export function ActionCarouselWidget({ summary, onRowClick, onCorrectPoClick, on
                                     <CarouselCard 
                                         order={order} 
                                         onView={() => onRowClick && onRowClick(order.id.toString())}
-                                        onOpenFull={() => navigate(`/requests/${order.id}`)}
                                         onDuplicate={() => navigate(`/requests/new?copyFrom=${order.id}`)}
                                         onQuotationClick={() => navigate(`/buyer/items?highlightRequestId=${order.id}`)}
                                         onReceivingClick={() => navigate(`/receiving/operation/${order.id}?highlightRequestId=${order.id}`)}
@@ -270,7 +269,7 @@ function NavButton({ onClick, disabled, children }: { onClick: () => void; disab
     );
 }
 
-function CarouselCard({ order, onView, onOpenFull, onDuplicate, onQuotationClick, onReceivingClick, onPaymentClick, onCorrectPoClick }: { order: RequestListItemDto; onView: () => void; onOpenFull: () => void; onDuplicate: () => void; onQuotationClick?: () => void; onReceivingClick?: () => void; onPaymentClick?: () => void; onCorrectPoClick?: () => void; }) {
+function CarouselCard({ order, onView, onDuplicate, onQuotationClick, onReceivingClick, onPaymentClick, onCorrectPoClick }: { order: RequestListItemDto; onView: () => void; onDuplicate: () => void; onQuotationClick?: () => void; onReceivingClick?: () => void; onPaymentClick?: () => void; onCorrectPoClick?: () => void; }) {
     const isPayment = order.requestTypeCode === 'PAYMENT';
 
     return (

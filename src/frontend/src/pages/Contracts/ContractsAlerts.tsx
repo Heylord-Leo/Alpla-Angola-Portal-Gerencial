@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, AlertTriangle, Clock, X } from 'lucide-react';
+import { Bell, AlertTriangle, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { fetchActiveAlerts, dismissAlert, ContractAlert, CONTRACT_STATUS_MAP } from '../../lib/contractsApi';
+import { fetchActiveAlerts, dismissAlert, ContractAlert } from '../../lib/contractsApi';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 
 export default function ContractsAlerts() {

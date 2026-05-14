@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { X, AlertTriangle, CheckCircle2, Download, Edit3, FileText, Loader2, Info, ShieldAlert } from 'lucide-react';
+import { X, AlertTriangle, CheckCircle2, Download, Edit3, Loader2, Info, ShieldAlert } from 'lucide-react';
 import { DropdownPortal } from '../ui/DropdownPortal';
 import { Z_INDEX } from '../../constants/ui';
 import { SupplierSyncPreviewItemDto, ReviewedSupplierItemDto, SyncImportResultDto } from '../../types';

@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, Variants } from 'framer-motion';
-import { Check, Loader2, X, Flag } from 'lucide-react';
+import { Check, Loader2, X } from 'lucide-react';
 import { api } from '../../../../lib/api';
 import { RequestTimelineDto } from '../../../../types';
 import { formatDate, formatTime } from '../../../../lib/utils';

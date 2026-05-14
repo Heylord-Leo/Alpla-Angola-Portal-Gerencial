@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { CheckCircle2, AlertTriangle, HelpCircle, XCircle, ArrowRight, GitCompareArrows, ChevronDown, ChevronUp, Send, Package } from 'lucide-react';
 import { Tooltip } from '../ui/Tooltip';
-import { ReconciliationBatchDto, ReconciliationRecordDto, ReconciliationReviewItemDto } from '../../types';
+import { ReconciliationBatchDto, ReconciliationReviewItemDto } from '../../types';
 import { formatCurrencyAO } from '../../lib/utils';
 import { api } from '../../lib/api';
 

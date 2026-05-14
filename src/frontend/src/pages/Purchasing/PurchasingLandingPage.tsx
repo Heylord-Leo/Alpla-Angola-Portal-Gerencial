@@ -6,7 +6,7 @@ import { QuickActions } from './components/QuickActions';
 import { PurchasingHelpDrawer } from './components/PurchasingHelpDrawer';
 import { PurchasingSummaryDto } from '../../types';
 import { Feedback } from '../../components/ui/Feedback';
-import { LayoutGrid, PlayCircle } from 'lucide-react';
+import { PlayCircle } from 'lucide-react';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 

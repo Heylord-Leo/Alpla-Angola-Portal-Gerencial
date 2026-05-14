@@ -54,3 +54,5 @@ build_*.txt
 data/attachments/
 scratch/
 backend.err
+
+tsconfig.tsbuildinfo
