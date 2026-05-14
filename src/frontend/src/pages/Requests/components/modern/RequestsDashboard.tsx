@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Filter, FolderKanban, Pin, PinOff, ArrowUpRight } from 'lucide-react';
+import { Plus, Search, Filter, Pin, PinOff, ArrowUpRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../../../lib/api';
 import { RequestListItemDto, DashboardSummaryDto } from '../../../../types';
@@ -22,7 +22,25 @@ export function RequestsDashboard() {
     const [totalCount, setTotalCount] = useState(0);
 
     // Feature Toggles
-    const [isFloating, setIsFloating] = useState(true);
+    const [isFloating, setIsFloating] = useState(() => {
+        try {
+            const saved = localStorage.getItem('alpla-portal.requests.floatingMode.enabled');
+            if (saved !== null) {
+                return saved === 'true';
+            }
+        } catch (e) {
+            console.error('Failed to access localStorage for floatingMode', e);
+        }
+        return true; // Default behavior
+    });
+
+    useEffect(() => {
+        try {
+            localStorage.setItem('alpla-portal.requests.floatingMode.enabled', isFloating.toString());
+        } catch (e) {
+            console.error('Failed to save floatingMode to localStorage', e);
+        }
+    }, [isFloating]);
 
     // Navigation state (Drawer)
     const [drawerRequestId, setDrawerRequestId] = useState<string | null>(null);
@@ -563,7 +581,7 @@ export function RequestsDashboard() {
                 show={!!correctPoRequestId}
                 requestId={correctPoRequestId || ''}
                 onClose={() => setCorrectPoRequestId(null)}
-                onSuccess={(msg) => {
+                onSuccess={() => {
                     setCorrectPoRequestId(null);
                     loadData();
                 }}

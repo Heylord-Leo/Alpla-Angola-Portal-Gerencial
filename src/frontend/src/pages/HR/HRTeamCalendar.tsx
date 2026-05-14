@@ -196,6 +196,12 @@ export default function HRTeamCalendar() {
                 subtitle: 'A sua disponibilidade pessoal.'
             };
         }
+        if (scope === 'team') {
+            return {
+                title: 'Calendário da Equipa',
+                subtitle: 'Disponibilidade da sua equipa/departamento.'
+            };
+        }
         return {
             title: 'Calendário da Equipa',
             subtitle: 'Visão de bloqueio operacional por departamento.'
@@ -208,6 +214,7 @@ export default function HRTeamCalendar() {
             case 'all': return 'Visão completa — todos os funcionários.';
             case 'hr': return 'Escopo R.H. — funcionários mapeados ao seu departamento/planta.';
             case 'department': return 'Escopo departamental — funcionários do seu departamento.';
+            case 'team': return 'Escopo de equipa — funcionários do seu departamento. Esta visualização é apenas informativa.';
             case 'self': return 'Visão pessoal — o seu calendário individual.';
             default: return '';
         }
@@ -428,7 +435,7 @@ export default function HRTeamCalendar() {
             ) : (
                 <div className="cal-empty">
                     {data?.scopeType === 'self'
-                        ? 'Nenhum registo de calendário encontrado para a sua conta.'
+                        ? 'Não foi encontrado um funcionário vinculado ao seu usuário. Se você precisa usar o Portal para solicitar férias ou ausências, solicite ao RH o vínculo do seu usuário ao cadastro de funcionário.'
                         : 'Nenhum funcionário mapeado no seu escopo de hierarquia.'}
                 </div>
             )}

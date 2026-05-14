@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppShell } from './layouts/AppShell';
 import { LoadingSkeleton } from './components/ui/LoadingSkeleton';
@@ -182,11 +182,32 @@ function AdminRoute({ children, allowedRoles }: { children: React.ReactNode, all
     return <>{children}</>;
 }
 
-/** HR Module route guard — allows HR role, System Administrator, or Department Managers. */
+/** HR Module route guard — allows HR, System Administrator, Local Manager, Department Manager, Viewer/Management. */
 function HRRoute({ children }: { children: React.ReactNode }) {
     const { isAuthenticated, hasHRModuleAccess } = useAuth();
     if (!isAuthenticated) return <Navigate to="/login" replace />;
     if (!hasHRModuleAccess) return <Navigate to="/dashboard" replace />;
+    return <>{children}</>;
+}
+
+/** Viewer/Management without HR role → /hr/calendar; all other HR roles → /hr/overview. */
+function HRIndexRedirect() {
+    const { isViewerManagement, hasHRAccess } = useAuth();
+    if (isViewerManagement && !hasHRAccess) {
+        return <Navigate to="calendar" replace />;
+    }
+    return <Navigate to="overview" replace />;
+}
+
+/** Restricts HR advanced routes from Viewer/Management users, unless they have diagnostic access. */
+function HRAdvancedRoute({ children }: { children: React.ReactNode }) {
+    const { isAuthenticated, user, isViewerManagement } = useAuth();
+    if (!isAuthenticated) return <Navigate to="/login" replace />;
+    
+    const hasDiagnosticAccess = user?.roles.some(r => r === ROLES.SYSTEM_ADMINISTRATOR || r === ROLES.HR) ?? false;
+    const isRestrictedViewer = isViewerManagement && !hasDiagnosticAccess;
+    
+    if (isRestrictedViewer) return <Navigate to="/hr/overview" replace />;
     return <>{children}</>;
 }
 
@@ -200,18 +221,24 @@ function AppContent() {
                 <Route path="/change-password" element={<ChangePasswordPage />} />
                 <Route path="/" element={<Navigate to="/requests" replace />} />
                 <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/approvals" element={<Suspense fallback={<LoadingSkeleton />}><ApprovalCenter /></Suspense>} />
-                <Route path="/purchasing" element={<Suspense fallback={<LoadingSkeleton />}><PurchasingLandingPage /></Suspense>} />
+                <Route path="/approvals" element={<AdminRoute allowedRoles={[ROLES.AREA_APPROVER, ROLES.FINAL_APPROVER]}><Suspense fallback={<LoadingSkeleton />}><ApprovalCenter /></Suspense></AdminRoute>} />
+                <Route path="/purchasing" element={<AdminRoute allowedRoles={[ROLES.BUYER, ROLES.IMPORT]}><Suspense fallback={<LoadingSkeleton />}><PurchasingLandingPage /></Suspense></AdminRoute>} />
                 <Route path="/requests" element={<Suspense fallback={<LoadingSkeleton />}><RequestsDashboard /></Suspense>} />
                 <Route path="/requests/new" element={<Suspense fallback={<LoadingSkeleton />}><ErrorBoundary fallbackName="RequestCreate"><RequestCreate /></ErrorBoundary></Suspense>} />
                 <Route path="/requests/:id" element={<Suspense fallback={<LoadingSkeleton />}><ErrorBoundary fallbackName="RequestEdit"><RequestEdit /></ErrorBoundary></Suspense>} />
                 <Route path="/requests/:id/edit" element={<Suspense fallback={<LoadingSkeleton />}><ErrorBoundary fallbackName="RequestEdit"><RequestEdit /></ErrorBoundary></Suspense>} />
-                <Route path="/receiving/workspace" element={<Suspense fallback={<LoadingSkeleton />}><ReceivingWorkspace /></Suspense>} />
-                <Route path="/receiving/operation/:id" element={<Suspense fallback={<LoadingSkeleton />}><ReceivingOperation /></Suspense>} />
-                <Route path="/buyer/items" element={<Suspense fallback={<LoadingSkeleton />}><BuyerItemsList /></Suspense>} />
+                
+                {/* Receiving Workspace */}
+                <Route path="/receiving" element={<AdminRoute allowedRoles={[ROLES.RECEIVING, ROLES.LOCAL_MANAGER]}><Outlet /></AdminRoute>}>
+                    <Route index element={<Navigate to="workspace" replace />} />
+                    <Route path="workspace" element={<Suspense fallback={<LoadingSkeleton />}><ReceivingWorkspace /></Suspense>} />
+                    <Route path="operation/:id" element={<Suspense fallback={<LoadingSkeleton />}><ReceivingOperation /></Suspense>} />
+                </Route>
+                
+                <Route path="/buyer/items" element={<AdminRoute allowedRoles={[ROLES.BUYER]}><Suspense fallback={<LoadingSkeleton />}><BuyerItemsList /></Suspense></AdminRoute>} />
 
                 {/* Finance Workspace */}
-                <Route path="/finance" element={<Suspense fallback={<LoadingSkeleton />}><FinanceLandingPage /></Suspense>}>
+                <Route path="/finance" element={<AdminRoute allowedRoles={[ROLES.FINANCE]}><Suspense fallback={<LoadingSkeleton />}><FinanceLandingPage /></Suspense></AdminRoute>}>
                     <Route index element={<Navigate to="overview" replace />} />
                     <Route path="overview" element={<Suspense fallback={<LoadingSkeleton />}><FinanceOverview /></Suspense>} />
                     <Route path="payments" element={<Suspense fallback={<LoadingSkeleton />}><FinancePaymentsList /></Suspense>} />
@@ -222,32 +249,32 @@ function AppContent() {
                 </Route>
 
                 {/* Contracts Workspace */}
-                <Route path="/contracts" element={<Suspense fallback={<LoadingSkeleton />}><ContractsLandingPage /></Suspense>}>
+                <Route path="/contracts" element={<AdminRoute allowedRoles={[ROLES.CONTRACTS]}><Suspense fallback={<LoadingSkeleton />}><ContractsLandingPage /></Suspense></AdminRoute>}>
                     <Route index element={<Navigate to="list" replace />} />
                     <Route path="list" element={<Suspense fallback={<LoadingSkeleton />}><ContractsList /></Suspense>} />
                     <Route path="alerts" element={<Suspense fallback={<LoadingSkeleton />}><ContractsAlerts /></Suspense>} />
                     <Route path="fichas" element={<Suspense fallback={<LoadingSkeleton />}><SupplierFichaList /></Suspense>} />
                 </Route>
-                <Route path="/contracts/new" element={<Suspense fallback={<LoadingSkeleton />}><ContractCreate /></Suspense>} />
-                <Route path="/contracts/:id/edit" element={<Suspense fallback={<LoadingSkeleton />}><ContractCreate /></Suspense>} />
-                <Route path="/contracts/:id" element={<Suspense fallback={<LoadingSkeleton />}><ContractDetail /></Suspense>} />
-                <Route path="/contracts/fichas/:id" element={<Suspense fallback={<LoadingSkeleton />}><SupplierFichaDetail /></Suspense>} />
+                <Route path="/contracts/new" element={<AdminRoute allowedRoles={[ROLES.CONTRACTS]}><Suspense fallback={<LoadingSkeleton />}><ContractCreate /></Suspense></AdminRoute>} />
+                <Route path="/contracts/:id/edit" element={<AdminRoute allowedRoles={[ROLES.CONTRACTS]}><Suspense fallback={<LoadingSkeleton />}><ContractCreate /></Suspense></AdminRoute>} />
+                <Route path="/contracts/:id" element={<AdminRoute allowedRoles={[ROLES.CONTRACTS]}><Suspense fallback={<LoadingSkeleton />}><ContractDetail /></Suspense></AdminRoute>} />
+                <Route path="/contracts/fichas/:id" element={<AdminRoute allowedRoles={[ROLES.CONTRACTS]}><Suspense fallback={<LoadingSkeleton />}><SupplierFichaDetail /></Suspense></AdminRoute>} />
 
                 {/* HR Workspace */}
                 <Route path="/hr" element={<HRRoute><Suspense fallback={<LoadingSkeleton />}><HRLandingPage /></Suspense></HRRoute>}>
-                    <Route index element={<Navigate to="overview" replace />} />
+                    <Route index element={<HRIndexRedirect />} />
                     <Route path="overview" element={<Suspense fallback={<LoadingSkeleton />}><HROverview /></Suspense>} />
                     <Route path="leave" element={<Suspense fallback={<LoadingSkeleton />}><HRLeaveList /></Suspense>} />
                     <Route path="calendar" element={<Suspense fallback={<LoadingSkeleton />}><HRTeamCalendar /></Suspense>} />
-                    <Route path="attendance" element={<Suspense fallback={<LoadingSkeleton />}><HRAttendanceCalendar /></Suspense>} />
-                    <Route path="schedules" element={<Suspense fallback={<LoadingSkeleton />}><HRScheduleExplorer /></Suspense>} />
-                    <Route path="directory" element={<Suspense fallback={<LoadingSkeleton />}><HREmployeeDirectory /></Suspense>} />
+                    <Route path="attendance" element={<HRAdvancedRoute><Suspense fallback={<LoadingSkeleton />}><HRAttendanceCalendar /></Suspense></HRAdvancedRoute>} />
+                    <Route path="schedules" element={<HRAdvancedRoute><Suspense fallback={<LoadingSkeleton />}><HRScheduleExplorer /></Suspense></HRAdvancedRoute>} />
+                    <Route path="directory" element={<HRAdvancedRoute><Suspense fallback={<LoadingSkeleton />}><HREmployeeDirectory /></Suspense></HRAdvancedRoute>} />
                     
                     {/* Compatibility Redirects */}
                     <Route path="employees" element={<Navigate to="badges/employees" replace />} />
                     <Route path="team-calendar" element={<Navigate to="calendar" replace />} />
 
-                    <Route path="badges" element={<Suspense fallback={<LoadingSkeleton />}><HRBadgesLandingPage /></Suspense>}>
+                    <Route path="badges" element={<HRAdvancedRoute><Suspense fallback={<LoadingSkeleton />}><HRBadgesLandingPage /></Suspense></HRAdvancedRoute>}>
                         <Route index element={<Navigate to="employees" replace />} />
                         <Route path="employees" element={<Suspense fallback={<LoadingSkeleton />}><EmployeeWorkspace /></Suspense>} />
                         <Route path="layouts" element={<Suspense fallback={<LoadingSkeleton />}><BadgeLayoutDesigner /></Suspense>} />
@@ -258,8 +285,8 @@ function AppContent() {
                     <Route path="attendance-review" element={<AdminRoute allowedRoles={[ROLES.HR]}><Suspense fallback={<LoadingSkeleton />}><HRAttendanceDiagnostics /></Suspense></AdminRoute>} />
 
                     {/* Monthly Changes Middleware */}
-                    <Route path="monthly-changes" element={<Suspense fallback={<LoadingSkeleton />}><MonthlyChangesList /></Suspense>} />
-                    <Route path="monthly-changes/runs/:id" element={<Suspense fallback={<LoadingSkeleton />}><MonthlyChangesRunDetail /></Suspense>} />
+                    <Route path="monthly-changes" element={<HRAdvancedRoute><Suspense fallback={<LoadingSkeleton />}><MonthlyChangesList /></Suspense></HRAdvancedRoute>} />
+                    <Route path="monthly-changes/runs/:id" element={<HRAdvancedRoute><Suspense fallback={<LoadingSkeleton />}><MonthlyChangesRunDetail /></Suspense></HRAdvancedRoute>} />
                 </Route>
 
                 {/* Settings Routes */}

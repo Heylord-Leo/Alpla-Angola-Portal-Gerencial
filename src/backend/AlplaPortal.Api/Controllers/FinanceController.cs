@@ -16,7 +16,7 @@ using System.Linq;
 using System;
 using System.Threading.Tasks;
 
-[Authorize]
+[Authorize(Roles = RoleConstants.SystemAdministrator + "," + RoleConstants.Finance)]
 [ApiController]
 [Route("api/v1/finance")]
 public class FinanceController : BaseController

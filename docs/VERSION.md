@@ -2,7 +2,113 @@
 
 ## Current Version
 
-v2.99.2
+v2.102.0
+
+## [2.102.0] - 2026-05-14
+
+### Security
+- **Route-Level Access Control Hardening**: System-wide access-control audit conducted to eliminate gaps where UI-hidden resources remained accessible via direct URL manipulation.
+  - Implemented `HRAdvancedRoute` to restrict HR diagnostic endpoints (attendance, schedules, directory, badges, monthly changes) strictly to users with `SYSTEM_ADMINISTRATOR` or `HR` roles, blocking `VIEWER/MANAGEMENT`.
+  - Added `AdminRoute` guards to `/approvals` (AREA_APPROVER, FINAL_APPROVER), `/purchasing` and `/buyer/items` (BUYER), `/receiving` (RECEIVING, LOCAL_MANAGER), `/finance` (FINANCE), and `/contracts` (CONTRACTS, FINANCE).
+- **Access Control Documentation**: Created `docs/ACCESS_CONTROL_AUDIT.md` mapping the security matrix and documenting required backend verification steps.
+
+## [2.100.0] - 2026-05-13
+
+### Changed
+- **HR Command Center — Scope-Enforced KPI Cards**: Dashboard KPI cards (Ausentes Hoje, Em Férias, Aguardando Análise, Efetivo Ativo Mapeado) now respect the logged-in user's role and scope.
+  - **System Administrator**: Broad/global data with full action section and sync badge.
+  - **HR**: Data scoped by plant/department assignments. Full action section.
+  - **Local Manager / Department Manager**: Data scoped to managed employees. Action section hidden.
+  - **Viewer / Management (linked with department)**: Data scoped to the user's own department/team. Informational only — no admin actions.
+  - **Viewer / Management (no linked employee)**: Safe empty values with clear "not linked" message.
+
+### Added
+- **`GetTeamScopedEmployeesQuery()`**: Shared team-scope method (refactored from `GetCalendarScopedEmployeesQuery`). Used by both calendar and dashboard endpoints. Privileged roles delegate to `GetScopedEmployeesQuery()`; Viewer/Management resolves to department-level via linked HREmployee.
+- **Dashboard scope metadata**: `scopeType` and `scopeDescription` added to the dashboard API response. Frontend displays contextual Portuguese scope description.
+- **Overview tab for Viewer/Management**: `VIEWER_ONLY_TABS` now includes `overview`, `calendar`, and `leave`.
+- **Role-aware KPI click targets**: Viewer/Management clicking "Efetivo Ativo Mapeado" navigates to `/hr/calendar` instead of restricted `/hr/badges/employees`.
+
+### Security
+- `GetScopedEmployeesQuery()` unchanged — leave create/list/approve/reject/cancel remain self-only for Viewer/Management.
+- Dashboard KPIs remain aggregate-only — no employee names, absence reasons, medical details, or PII exposed.
+- "Ação Necessária" section (missing mappings, stale requests, sync issues) restricted to HR/System Administrator.
+- Sync badge hidden for non-admin users.
+
+## [2.99.9] - 2026-05-13
+
+### Added
+- **HR Leave Notification System**: In-app notification bar alerts for HR leave/absence request lifecycle events.
+  - **Submit notification**: When a leave record transitions to SUBMITTED, the resolved approver (via `HREmployee.ManagerUserId` → `Department.ResponsibleUserId` fallback) receives a warning notification.
+  - **Approve notification**: When a leave record is APPROVED, the request creator receives a success notification.
+  - **Reject notification**: When a leave record is REJECTED, the request creator receives an error notification.
+  - **Cancel notification**: When a leave record is CANCELLED by someone other than the request creator, the creator receives a warning notification. Self-cancellation does not generate notifications.
+  - **Dedup-safe**: Uses `LeaveStatusHistory.Id` as `EventCorrelationId` with `CreateNotificationWithDedupAsync` to prevent duplicate notifications on retries or race conditions.
+  - **Non-blocking**: Notification failures are caught and logged as warnings; they never corrupt the leave workflow transaction.
+  - **Privacy**: Notifications contain only employee name, leave type, and date range. No notes, medical details, rejection reasons, or approval comments are exposed.
+  - **New category**: `NotificationCategories.HRLeave = "HR_LEAVE"` separates HR leave notifications from general categories.
+  - **No email**: In-app only. Email notifications deferred to future evaluation.
+  - **No frontend changes**: Existing `NotificationBell.tsx` automatically renders the new notifications with click-to-navigate to `/hr/leave`.
+
+## [2.99.8] - 2026-05-13
+
+### Changed
+- **HR Calendar — Department Visibility for Viewer / Management**: Broadened calendar scope from self-only to department-level for Viewer / Management users. The user's linked HREmployee → PortalDepartmentId determines which department's employees are visible. Leave management remains self-only.
+
+### Added
+- **`GetCalendarScopedEmployeesQuery()` in HRLeaveController**: Calendar-specific scope method. Privileged roles delegate to the unchanged `GetScopedEmployeesQuery()`. Viewer / Management users see active employees from their linked employee's department. Falls back to self-only if no department, or empty if unlinked.
+- **`scopeType = "team"`**: New scope type returned by the calendar endpoint for Viewer / Management with department access. Frontend displays contextual header and informational note.
+- **Frontend `HRTeamCalendar.tsx`**: Added `"team"` scope handling with appropriate Portuguese text for title, subtitle, and scope description.
+
+### Security
+- `GetScopedEmployeesQuery()` unchanged — leave create/list/approve/reject/cancel remain self-only for Viewer / Management.
+- Calendar projection confirmed: no notes, reasons, attachments, medical details, or approval comments exposed.
+- Only active employees returned (`e.IsActive == true`).
+
+## [2.99.7] - 2026-05-13
+
+### Changed
+- **HR Sidebar — "Férias e Ausências" Visible to All HR Roles**: Removed role restriction from the sidebar item. Viewer / Management self-service users now see "Férias e Ausências" alongside "Calendário da Equipa". Backend scope enforcement remains the data access boundary.
+- **HR Tabs — Self-Service Access Extended**: `VIEWER_ONLY_TABS` in `HRLandingPage.tsx` now includes `calendar` and `leave`. Viewer / Management users see both tabs; all other HR features remain hidden.
+
+### Added
+- **Self-Service Leave UI in HRLeaveList**: Role-aware `isSelfServiceOnly` mode for Viewer / Management users:
+  - Auto-resolves the user's own HREmployee via scoped backend API on page load.
+  - Drawer shows read-only employee display (no `EmployeeAutocomplete` selector).
+  - Helper text: "Esta solicitação será registada automaticamente em seu nome."
+  - Unlinked user warning: "A sua conta não está vinculada a um registo de funcionário. Contacte o RH." with disabled creation button.
+  - Approve/Reject action buttons hidden for self-service users.
+  - Cancel button restricted to DRAFT and SUBMITTED statuses (not APPROVED) for self-service.
+  - Subtitle changes to "Visualize e solicite as suas férias e ausências."
+- **No backend changes**. Backend scope enforcement via `GetScopedEmployeesQuery()` and `IsAdminOrHR` guards were verified as already secure.
+
+## [2.99.6] - 2026-05-13
+
+### Changed
+- **HR Sidebar — Role-Aware Filtering**: Viewer / Management users now see only "Calendário da Equipa" in the sidebar R.H. group. Admin-level HR links restricted to HR, System Administrator, and Local Manager roles. New `rh-calendar` sidebar item added for all HR-accessing roles.
+
+## [2.99.5] - 2026-05-13
+
+### Fixed
+- **Self-Calendar Mapping — Sync-Safety**: `HREmployeeSyncService.cs` preserves manually-linked corporate emails when Innux provides NULL/empty. Prevents sync from erasing Portal User ↔ HREmployee email mapping.
+- **Self-Calendar Empty-State Message**: `HRTeamCalendar.tsx` and `HRAttendanceCalendar.tsx` display an actionable message guiding users to contact HR for user-employee linking when no matching HREmployee is found.
+
+### Data
+- **Abel Domingos (EmployeeCode: 21000184)**: Targeted data correction — set `HREmployee.Email = 'abel.domingos@alpla.com'` for self-service test user.
+
+## [2.99.4] - 2026-05-13
+
+### Fixed
+- **HR Default Route — Viewer / Management Redirect**: `/hr` index route now redirects Viewer/Management users to `/hr/calendar` (self-calendar) instead of `/hr/overview`. Other HR roles retain the `/hr/overview` default. New `HRIndexRedirect` component in `App.tsx`. No backend changes. Sidebar role-filtering remains a future UX improvement.
+
+## [2.99.3] - 2026-05-13
+
+### Changed
+- **HR Module Access — Frontend Route Guard Alignment**: Expanded the frontend `HRRoute` guard to match the backend's `HasHRModuleAccess()` scope, allowing `Local Manager` and `Viewer / Management` users to access `/hr` routes.
+  - `Local Manager`: Can now access the HR workspace and Team Calendar through the UI. Sees employees within their assigned plant/department scope (enforced by backend).
+  - `Viewer / Management`: Can now access the HR workspace but sees only the "Calendário da Equipa" tab (self-calendar). Other HR tabs are hidden. Backend returns only the user's own HREmployee record via email match.
+  - `AuthContext.tsx`: Added `isViewerManagement` flag. Expanded `hasHRModuleAccess` to include `isLocalManager` and `isViewerManagement`.
+  - `HRLandingPage.tsx`: Role-aware tab filtering. Viewer/Management users see only the calendar tab. All other roles see the full tab set.
+  - No backend changes. Backend scope enforcement remains the source of truth.
 
 ## [2.99.2] - 2026-05-12
 
@@ -665,6 +771,7 @@ v2.99.2
 - **2.14.0**: Global UI Layering & Z-Index Standardization. Unified z-index hierarchy across the portal, eliminated stacking context traps in AppShell, and standardized all overlays (Drawers, Modals, Popovers, Tooltips) using centralized Z_INDEX constants and DropdownPortal.
 - **2.13.4**: Corrected a validation bug in the `Resubmeter Pedido` flow. High-level resubmission for requests in adjustment phases now correctly accounts for items contained within saved quotations, preventing false-positive "zero items" errors.
 - **2.12.2**: Role-Aware Decision Intelligence (DEC-084). Adapted DecisionInsightsPanel to provide contextually different emphasis for Area Approvers (Checklist de Legitimidade) and Final Approvers (Visão Financeira Comparativa). Role-based section reordering. No backend changes.
+- **2.103.0**: Requests Floating Mode Persistence. The "Flutuante Ativo / Inativo" UI toggle on the Requests dashboard now correctly saves its state to `localStorage`.
 - **2.12.1**: Resizable Approval Center Drawer. Implemented horizontal resizing with localStorage persistence and desktop-optimized reflow for decision insights.
 - **2.12.0**: Approval Center UX Refinement. Replaced stacked layout with a high-efficiency right-side drawer/panel workspace. Implemented auto-selection of next pending items and distinct queue-linked selection visual cues.
 - **2.11.5**: Fixed Cartesian Explosion in Quotation Management. Optimized backend hydration via `.AsSplitQuery()` to improve load times and resolve EF Core warnings.

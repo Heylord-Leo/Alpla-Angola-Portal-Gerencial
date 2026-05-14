@@ -11,7 +11,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 
-[Authorize]
+[Authorize(Roles = RoleConstants.SystemAdministrator + "," + RoleConstants.Finance)]
 [ApiController]
 [Route("api/v1/finance/budget")]
 public class FinanceBudgetController : BaseController

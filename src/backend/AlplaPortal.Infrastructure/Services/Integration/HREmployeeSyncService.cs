@@ -75,7 +75,13 @@ public class HREmployeeSyncService : IHREmployeeSyncService
                         existing.InnuxDepartmentId = innux.InnuxDepartmentId;
                         existing.JobTitle = innux.JobTitle;
                         existing.CardNumber = innux.CardNumber;
-                        existing.Email = innux.Email;
+                        // Only overwrite email if Innux provides a non-empty value.
+                        // This preserves manually-linked corporate emails used for
+                        // self-service Portal access (User ↔ HREmployee mapping).
+                        // Most Innux employees have no email; overwriting with NULL
+                        // would break self-calendar for linked Portal users.
+                        if (!string.IsNullOrWhiteSpace(innux.Email))
+                            existing.Email = innux.Email;
                         existing.HireDate = innux.HireDate;
                         existing.TerminationDate = innux.TerminationDate;
                         existing.IsActive = true;

@@ -1701,7 +1701,8 @@ public class RequestsController : BaseController
             return BadRequest("Nenhum arquivo enviado.");
         }
 
-        var request = await _context.Requests
+        var query = await GetScopedRequestsQuery();
+        var request = await query
             .Include(r => r.Status)
             .Include(r => r.LineItems.Where(li => !li.IsDeleted))
                 .ThenInclude(li => li.ItemCatalogItem)
@@ -1940,7 +1941,7 @@ public class RequestsController : BaseController
         Guid id, [FromBody] ReconciliationReviewRequestDto dto)
     {
         var actorId = CurrentUserId;
-        var request = await _context.Requests.FindAsync(id);
+        var request = await (await GetScopedRequestsQuery()).FirstOrDefaultAsync(r => r.Id == id);
         if (request == null) return NotFound("Pedido não encontrado.");
 
         var recordIds = dto.Reviews.Select(r => r.RecordId).ToList();
@@ -2082,7 +2083,8 @@ public class RequestsController : BaseController
         var user = await _context.Users.FindAsync(actorId);
         if (user == null) return Unauthorized();
 
-        var request = await _context.Requests
+        var query = await GetScopedRequestsQuery();
+        var request = await query
             .Include(r => r.Status)
             .Include(r => r.Quotations)
                 .ThenInclude(q => q.Items)
@@ -2296,7 +2298,8 @@ public class RequestsController : BaseController
         var user = await _context.Users.FindAsync(actorId);
         if (user == null) return Unauthorized();
 
-        var request = await _context.Requests
+        var query = await GetScopedRequestsQuery();
+        var request = await query
             .Include(r => r.Status)
             .FirstOrDefaultAsync(r => r.Id == requestId);
         

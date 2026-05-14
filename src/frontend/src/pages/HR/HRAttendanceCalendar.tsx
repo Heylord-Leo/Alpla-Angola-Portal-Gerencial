@@ -872,7 +872,7 @@ export default function HRAttendanceCalendar() {
             ) : (
                 <div className="att-empty">
                     {calendarData?.scopeType === 'self'
-                        ? 'Nenhum registo de presença encontrado para a sua conta.'
+                        ? 'Não foi encontrado um funcionário vinculado ao seu usuário. Se você precisa usar o Portal para consultar a sua assiduidade, solicite ao RH o vínculo do seu usuário ao cadastro de funcionário.'
                         : 'Nenhum funcionário mapeado no seu escopo de hierarquia.'}
                 </div>
             )}

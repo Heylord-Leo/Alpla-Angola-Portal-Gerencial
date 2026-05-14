@@ -2,7 +2,7 @@ import React from 'react';
 import { 
     FileText, Home, Settings, List, ShoppingCart, 
     Package, Activity, Network, Shield, CheckCircle,
-    CreditCard, DollarSign, Archive, Users, UserCheck, Calendar,
+    CreditCard, DollarSign, Archive, Users, UserCheck, Calendar, CalendarDays,
     Layers, History, FileSignature, Bell
 } from 'lucide-react';
 import { ROLES } from './roles';
@@ -224,7 +224,17 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                     icon: <Activity size={18} strokeWidth={2.5} />,
                     to: '/hr/overview',
                     isHrModule: true,
+                    roles: [ROLES.HR, ROLES.SYSTEM_ADMINISTRATOR, ROLES.LOCAL_MANAGER],
                     keywords: ['rh', 'dashboard', 'resumo', 'kpi']
+                },
+                {
+                    id: 'rh-calendar',
+                    type: 'link',
+                    label: 'Calendário da Equipa',
+                    icon: <CalendarDays size={18} strokeWidth={2.5} />,
+                    to: '/hr/calendar',
+                    isHrModule: true,
+                    keywords: ['rh', 'calendário', 'equipa', 'meu calendário', 'agenda', 'férias', 'ausências']
                 },
                 {
                     id: 'rh-leave',
@@ -233,6 +243,9 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                     icon: <Calendar size={18} strokeWidth={2.5} />,
                     to: '/hr/leave',
                     isHrModule: true,
+                    // No roles restriction — visible to all HR-accessing roles including
+                    // Viewer / Management (self-service). Backend GetScopedEmployeesQuery()
+                    // enforces data scope; self-service users see only their own records.
                     keywords: ['férias', 'ausência', 'falta', 'baixa', 'licença', 'aprovação']
                 },
                 {
@@ -242,6 +255,7 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                     icon: <UserCheck size={18} strokeWidth={2.5} />,
                     to: '/hr/badges/employees',
                     isHrModule: true,
+                    roles: [ROLES.HR, ROLES.SYSTEM_ADMINISTRATOR, ROLES.LOCAL_MANAGER],
                     keywords: ['rh', 'funcionários', 'cadastro', 'crachá', 'badge', 'foto', 'consulta', 'pessoal', 'impressão']
                 },
                 {
@@ -251,6 +265,7 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                     icon: <Layers size={18} strokeWidth={2.5} />,
                     to: '/hr/badges/layouts',
                     isHrModule: true,
+                    roles: [ROLES.HR, ROLES.SYSTEM_ADMINISTRATOR, ROLES.LOCAL_MANAGER],
                     keywords: ['rh', 'crachá', 'layout', 'template', 'design', 'modelo']
                 },
                 {
@@ -260,6 +275,7 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                     icon: <History size={18} strokeWidth={2.5} />,
                     to: '/hr/badges/history',
                     isHrModule: true,
+                    roles: [ROLES.HR, ROLES.SYSTEM_ADMINISTRATOR, ROLES.LOCAL_MANAGER],
                     keywords: ['rh', 'crachá', 'impressão', 'histórico', 'reimpressão', 'auditoria']
                 }
             ]

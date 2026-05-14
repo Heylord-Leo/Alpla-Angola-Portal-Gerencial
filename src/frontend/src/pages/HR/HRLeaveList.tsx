@@ -1,12 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import { Plus, X, Calendar as CalendarIcon, Clock, CheckCircle, XCircle, Ban, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, X, Calendar as CalendarIcon, Clock, CheckCircle, XCircle, Ban, ChevronLeft, ChevronRight, Info } from 'lucide-react';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { HRActionModal, HRActionType } from '../../components/modals/HRActionModal';
 import { EmployeeAutocomplete } from '../../components/EmployeeAutocomplete';
 import { DateInput } from '../../components/DateInput';
+import { useAuth } from '../../features/auth/AuthContext';
 
 export default function HRLeaveList() {
+    const { isViewerManagement, hasHRAccess, isAdmin, isLocalManager } = useAuth();
+    const isSelfServiceOnly = isViewerManagement && !hasHRAccess && !isAdmin && !isLocalManager;
+
+    // Self-service: resolved employee record (fetched from scoped backend)
+    const [selfEmployee, setSelfEmployee] = useState<{ id: string; fullName: string; employeeCode: string } | null>(null);
+    const [selfEmployeeLoading, setSelfEmployeeLoading] = useState(false);
+    const [selfEmployeeResolved, setSelfEmployeeResolved] = useState(false);
     const [records, setRecords] = useState<any[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
@@ -32,6 +40,22 @@ export default function HRLeaveList() {
     const [modalProcessing, setModalProcessing] = useState(false);
     const [modalFeedback, setModalFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'info', message: null });
 
+    // Resolve self-employee on mount for self-service users
+    useEffect(() => {
+        if (isSelfServiceOnly && !selfEmployeeResolved) {
+            setSelfEmployeeLoading(true);
+            api.hrLeave.getEmployees({ active: true, pageSize: 1 })
+                .then(res => {
+                    if (res.items && res.items.length > 0) {
+                        const emp = res.items[0];
+                        setSelfEmployee({ id: emp.id, fullName: emp.fullName, employeeCode: emp.employeeCode });
+                    }
+                })
+                .catch(console.error)
+                .finally(() => { setSelfEmployeeLoading(false); setSelfEmployeeResolved(true); });
+        }
+    }, [isSelfServiceOnly, selfEmployeeResolved]);
+
     useEffect(() => {
         loadRecords();
     }, [page, statusFilter]);
@@ -39,6 +63,10 @@ export default function HRLeaveList() {
     useEffect(() => {
         if (isDrawerOpen) {
             api.hrLeave.getTypes().then(setLeaveTypes).catch(console.error);
+            // Auto-set employee for self-service
+            if (isSelfServiceOnly && selfEmployee) {
+                setFormEmployeeId(selfEmployee.id);
+            }
         }
     }, [isDrawerOpen]);
 
@@ -176,7 +204,9 @@ export default function HRLeaveList() {
                 <div>
                     <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800, color: '#0f172a' }}>Férias e Ausências</h2>
                     <p style={{ margin: '4px 0 0 0', color: '#64748b', fontWeight: 500 }}>
-                        Gerencie registros de ausência e fluxo de aprovação.
+                        {isSelfServiceOnly
+                            ? 'Visualize e solicite as suas férias e ausências.'
+                            : 'Gerencie registros de ausência e fluxo de aprovação.'}
                     </p>
                 </div>
                 <div style={{ display: 'flex', gap: '12px' }}>
@@ -192,14 +222,26 @@ export default function HRLeaveList() {
                     </select>
                     <button 
                         onClick={() => setIsDrawerOpen(true)}
-                        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', backgroundColor: '#0ea5e9', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', transition: 'background-color 0.2s' }}
-                        onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#0284c7'}
-                        onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#0ea5e9'}
+                        disabled={isSelfServiceOnly && (!selfEmployee || selfEmployeeLoading)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', backgroundColor: (isSelfServiceOnly && !selfEmployee) ? '#cbd5e1' : '#0ea5e9', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: (isSelfServiceOnly && !selfEmployee) ? 'not-allowed' : 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', transition: 'background-color 0.2s' }}
+                        onMouseOver={(e) => { if (!(isSelfServiceOnly && !selfEmployee)) e.currentTarget.style.backgroundColor = '#0284c7'; }}
+                        onMouseOut={(e) => { if (!(isSelfServiceOnly && !selfEmployee)) e.currentTarget.style.backgroundColor = '#0ea5e9'; }}
                     >
-                        <Plus size={18} /> Novo Registo
+                        <Plus size={18} /> {isSelfServiceOnly ? 'Nova Solicitação' : 'Novo Registo'}
                     </button>
                 </div>
             </div>
+
+            {/* Self-service: unlinked employee warning */}
+            {isSelfServiceOnly && selfEmployeeResolved && !selfEmployee && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', backgroundColor: '#fef3c7', border: '1px solid #fde68a', borderRadius: '10px', color: '#92400e' }}>
+                    <Info size={20} style={{ flexShrink: 0 }} />
+                    <div>
+                        <span style={{ fontWeight: 700, fontSize: '0.875rem' }}>A sua conta não está vinculada a um registo de funcionário.</span>
+                        <span style={{ fontWeight: 500, fontSize: '0.825rem', display: 'block', marginTop: '2px' }}>Contacte o RH para vincular o seu utilizador ao registo de funcionário e poder solicitar férias e ausências.</span>
+                    </div>
+                </div>
+            )}
 
             {/* List */}
             <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
@@ -256,7 +298,7 @@ export default function HRLeaveList() {
                                         </td>
                                         <td style={{ padding: '16px', textAlign: 'right' }}>
                                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                                                {r.statusCode === 'SUBMITTED' && (
+                                                {!isSelfServiceOnly && r.statusCode === 'SUBMITTED' && (
                                                     <>
                                                         <button 
                                                             onClick={() => triggerAction(r.id, 'APPROVE')}
@@ -274,7 +316,10 @@ export default function HRLeaveList() {
                                                         </button>
                                                     </>
                                                 )}
-                                                {(r.statusCode === 'DRAFT' || r.statusCode === 'SUBMITTED' || r.statusCode === 'APPROVED') && (
+                                                {(isSelfServiceOnly
+                                                    ? (r.statusCode === 'DRAFT' || r.statusCode === 'SUBMITTED')
+                                                    : (r.statusCode === 'DRAFT' || r.statusCode === 'SUBMITTED' || r.statusCode === 'APPROVED')
+                                                ) && (
                                                     <button 
                                                         onClick={() => triggerAction(r.id, 'CANCEL')}
                                                         title="Cancelar"
@@ -332,9 +377,21 @@ export default function HRLeaveList() {
                                 
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                     <label style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>Funcionário *</label>
-                                    <EmployeeAutocomplete 
-                                        onChange={(id) => setFormEmployeeId(id || '')}
-                                    />
+                                    {isSelfServiceOnly ? (
+                                        <>
+                                            <div style={{ padding: '12px 14px', border: '1px solid var(--color-border)', borderRadius: '6px', backgroundColor: '#f8fafc', fontSize: '0.85rem', fontWeight: 600, color: '#0f172a', minHeight: '46px', display: 'flex', alignItems: 'center' }}>
+                                                {selfEmployee ? `[${selfEmployee.employeeCode}] ${selfEmployee.fullName}` : 'Nenhum funcionário vinculado'}
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', fontSize: '0.775rem', color: '#1e40af', fontWeight: 500 }}>
+                                                <Info size={14} style={{ flexShrink: 0 }} />
+                                                Esta solicitação será registada automaticamente em seu nome.
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <EmployeeAutocomplete 
+                                            onChange={(id) => setFormEmployeeId(id || '')}
+                                        />
+                                    )}
                                 </div>
 
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', opacity: formEmployeeId ? 1 : 0.5, pointerEvents: formEmployeeId ? 'auto' : 'none' }}>

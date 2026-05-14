@@ -52,7 +52,7 @@ export function PurchasingKPISummary({ summary }: PurchasingKPISummaryProps) {
             gap: '16px', 
             width: '100%'
         }}>
-            {cards.map((card, index) => (
+            {cards.map((card) => (
                 <KPICard
                     key={card.id}
                     title={card.label}

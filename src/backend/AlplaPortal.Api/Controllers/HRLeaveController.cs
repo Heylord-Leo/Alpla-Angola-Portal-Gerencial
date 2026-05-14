@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Application.Interfaces.Integration;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
@@ -6,6 +7,7 @@ using AlplaPortal.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace AlplaPortal.Api.Controllers;
 
@@ -28,15 +30,21 @@ public class HRLeaveController : ControllerBase
     private readonly ApplicationDbContext _context;
     private readonly IHREmployeeSyncService _syncService;
     private readonly IPrimaveraDepartmentSyncService _deptSyncService;
+    private readonly INotificationService _notificationService;
+    private readonly ILogger<HRLeaveController> _logger;
 
     public HRLeaveController(
         ApplicationDbContext context, 
         IHREmployeeSyncService syncService,
-        IPrimaveraDepartmentSyncService deptSyncService)
+        IPrimaveraDepartmentSyncService deptSyncService,
+        INotificationService notificationService,
+        ILogger<HRLeaveController> logger)
     {
         _context = context;
         _syncService = syncService;
         _deptSyncService = deptSyncService;
+        _notificationService = notificationService;
+        _logger = logger;
     }
 
     // ─── Helpers ───
@@ -191,6 +199,76 @@ public class HRLeaveController : ControllerBase
 
         // No email available — fail safe with empty result
         return query.Where(e => false);
+    }
+
+    /// <summary>
+    /// Shared team-scope query used by informational/read-only endpoints:
+    ///   - GET /api/hr/leave/calendar (team calendar)
+    ///   - GET /api/hr/leave/dashboard (command center KPIs)
+    ///
+    /// For privileged roles (System Admin, HR, Local Manager, Department Manager),
+    /// delegates to GetScopedEmployeesQuery() — same behavior as all other endpoints.
+    ///
+    /// For Viewer / Management (self-service) users, broadens visibility from
+    /// self-only to department-level:
+    ///   1. Finds the user's linked ACTIVE HREmployee via email match.
+    ///   2. Reads the linked employee's PortalDepartmentId.
+    ///   3. Returns ALL active employees from that same PortalDepartmentId.
+    ///   4. If linked employee has no department → self-only.
+    ///   5. If no linked employee or inactive → empty result.
+    ///
+    /// IMPORTANT: Leave management endpoints (create, list, approve, reject, cancel)
+    /// continue using GetScopedEmployeesQuery() which remains self-only for
+    /// Viewer / Management users. This method must NOT be used for write operations.
+    /// </summary>
+    private async Task<IQueryable<HREmployee>> GetTeamScopedEmployeesQuery()
+    {
+        var roles = CurrentUserRoles;
+
+        // All privileged roles delegate to standard scope
+        if (roles.Contains(RoleConstants.SystemAdministrator) ||
+            roles.Contains(RoleConstants.HR) ||
+            roles.Contains(RoleConstants.LocalManager))
+            return await GetScopedEmployeesQuery();
+
+        // Department Manager check — delegate to standard scope
+        var managedDeptIds = await _context.Departments
+            .Where(d => d.ResponsibleUserId == CurrentUserId)
+            .Select(d => d.Id)
+            .ToListAsync();
+        if (managedDeptIds.Any())
+            return await GetScopedEmployeesQuery();
+
+        // Viewer / Management: department-level calendar view
+        var userEmail = User.FindFirstValue(ClaimTypes.Email);
+        if (!string.IsNullOrEmpty(userEmail))
+        {
+            var emailLower = userEmail.ToLower();
+            var linkedEmployee = await _context.HREmployees
+                .AsNoTracking()
+                .FirstOrDefaultAsync(e =>
+                    e.IsActive &&
+                    e.Email != null &&
+                    e.Email.ToLower() == emailLower);
+
+            if (linkedEmployee?.PortalDepartmentId != null)
+            {
+                // Department-level: return all active employees from the same department
+                var deptId = linkedEmployee.PortalDepartmentId.Value;
+                return _context.HREmployees.AsNoTracking()
+                    .Where(e => e.IsActive && e.PortalDepartmentId == deptId);
+            }
+
+            // Linked but no department → self-only fallback
+            if (linkedEmployee != null)
+            {
+                return _context.HREmployees.AsNoTracking()
+                    .Where(e => e.Id == linkedEmployee.Id);
+            }
+        }
+
+        // No email / no linked active employee → empty
+        return _context.HREmployees.AsNoTracking().Where(e => false);
     }
 
     /// <summary>
@@ -773,8 +851,16 @@ public class HRLeaveController : ControllerBase
     [HttpPost("records/{id}/submit")]
     public async Task<IActionResult> SubmitLeaveRecord(Guid id)
     {
-        return await TransitionStatus(id, LeaveStatusCodes.Draft, LeaveStatusCodes.Submitted,
+        var result = await TransitionStatus(id, LeaveStatusCodes.Draft, LeaveStatusCodes.Submitted,
             "Submetido para aprovação.", requireScope: true);
+
+        // Notify approver on successful SUBMITTED transition
+        if (result is OkObjectResult)
+        {
+            await NotifyApproverOnSubmitAsync(id);
+        }
+
+        return result;
     }
 
     [HttpPost("records/{id}/approve")]
@@ -783,8 +869,16 @@ public class HRLeaveController : ControllerBase
         if (!IsAdminOrHR)
             return Forbid("Apenas utilizadores HR podem aprovar registos.");
 
-        return await TransitionStatus(id, LeaveStatusCodes.Submitted, LeaveStatusCodes.Approved,
+        var result = await TransitionStatus(id, LeaveStatusCodes.Submitted, LeaveStatusCodes.Approved,
             request?.Comment ?? "Aprovado.", requireScope: false, setApprover: true);
+
+        // Notify requester on successful APPROVED transition
+        if (result is OkObjectResult)
+        {
+            await NotifyRequesterOnStatusChangeAsync(id, LeaveStatusCodes.Approved);
+        }
+
+        return result;
     }
 
     [HttpPost("records/{id}/reject")]
@@ -796,8 +890,16 @@ public class HRLeaveController : ControllerBase
         if (string.IsNullOrWhiteSpace(request?.Reason))
             return BadRequest(new { message = "É necessário indicar o motivo da rejeição." });
 
-        return await TransitionStatus(id, LeaveStatusCodes.Submitted, LeaveStatusCodes.Rejected,
+        var result = await TransitionStatus(id, LeaveStatusCodes.Submitted, LeaveStatusCodes.Rejected,
             request.Reason, requireScope: false, rejectedReason: request.Reason);
+
+        // Notify requester on successful REJECTED transition
+        if (result is OkObjectResult)
+        {
+            await NotifyRequesterOnStatusChangeAsync(id, LeaveStatusCodes.Rejected);
+        }
+
+        return result;
     }
 
     [HttpPost("records/{id}/cancel")]
@@ -836,6 +938,31 @@ public class HRLeaveController : ControllerBase
         });
 
         await _context.SaveChangesAsync();
+
+        // Notify requester on CANCELLED — only if cancelled by someone other than the requester
+        if (record.RequestedByUserId != CurrentUserId)
+        {
+            var cancelHistory = await _context.LeaveStatusHistories
+                .Where(h => h.LeaveRecordId == id && h.NewStatus == LeaveStatusCodes.Cancelled)
+                .OrderByDescending(h => h.CreatedAtUtc)
+                .FirstOrDefaultAsync();
+
+            if (cancelHistory != null)
+            {
+                var emp = await _context.HREmployees.AsNoTracking().FirstOrDefaultAsync(e => e.Id == record.EmployeeId);
+                var leaveType = await _context.LeaveTypes.AsNoTracking().FirstOrDefaultAsync(lt => lt.Id == record.LeaveTypeId);
+                var empName = emp?.FullName ?? "Funcionário";
+                var ltName = leaveType?.DisplayNamePt ?? "ausência";
+
+                await SendLeaveNotificationAsync(
+                    record.RequestedByUserId,
+                    "Solicitação de férias/ausência cancelada",
+                    $"A solicitação de {ltName} para {empName} ({record.StartDate:dd/MM/yyyy} – {record.EndDate:dd/MM/yyyy}) foi cancelada.",
+                    NotificationTypes.Warning,
+                    cancelHistory.Id);
+            }
+        }
+
         return Ok(new { message = "Registo cancelado." });
     }
 
@@ -890,7 +1017,7 @@ public class HRLeaveController : ControllerBase
         if (!await HasHRModuleAccess())
             return Forbid();
 
-        var scopedEmployees = await GetScopedEmployeesQuery();
+        var scopedEmployees = await GetTeamScopedEmployeesQuery();
         var employeeQuery = scopedEmployees.Where(e => e.IsActive);
 
         if (departmentId.HasValue)
@@ -954,7 +1081,22 @@ public class HRLeaveController : ControllerBase
         else if (await _context.Departments.AnyAsync(d => d.ResponsibleUserId == CurrentUserId))
             scopeType = "department";
         else
-            scopeType = "self";
+        {
+            // Check if user has department-level calendar visibility
+            // (Viewer / Management with linked active employee in a department)
+            var calEmail = User.FindFirstValue(ClaimTypes.Email);
+            if (!string.IsNullOrEmpty(calEmail))
+            {
+                var linked = await _context.HREmployees.AsNoTracking()
+                    .FirstOrDefaultAsync(e =>
+                        e.IsActive &&
+                        e.Email != null &&
+                        e.Email.ToLower() == calEmail.ToLower());
+                scopeType = linked?.PortalDepartmentId != null ? "team" : "self";
+            }
+            else
+                scopeType = "self";
+        }
 
         return Ok(new { employees, records, from, to, scopeType });
     }
@@ -967,7 +1109,8 @@ public class HRLeaveController : ControllerBase
         if (!await HasHRModuleAccess())
             return Forbid();
 
-        var scopedEmployees = await GetScopedEmployeesQuery();
+        // Use team-scope: same department-level visibility as calendar for Viewer/Management
+        var scopedEmployees = await GetTeamScopedEmployeesQuery();
         var scopedIds = await scopedEmployees.Where(e => e.IsActive).Select(e => e.Id).ToListAsync();
 
         var today = DateTime.UtcNow.Date;
@@ -975,17 +1118,35 @@ public class HRLeaveController : ControllerBase
 
         var activeEmployees = scopedIds.Count;
 
-        // ActionRequired logic
-        var missingMappings = await scopedEmployees.CountAsync(e => e.IsActive && (e.PlantId == null || e.DepartmentMasterId == null));
+        // ActionRequired logic — only for HR/Admin (operational indicators)
+        var isPrivileged = IsAdminOrHR;
+        int missingMappings = 0, staleRequests = 0, syncIssuesCount = 0;
+        object? lastSyncData = null;
 
-        var staleThreshold = DateTime.UtcNow.AddHours(-48);
-        var staleRequests = await _context.LeaveRecords
-            .CountAsync(lr =>
-                scopedIds.Contains(lr.EmployeeId) &&
-                lr.StatusCode == LeaveStatusCodes.Submitted &&
-                (lr.UpdatedAtUtc ?? lr.CreatedAtUtc) < staleThreshold);
+        if (isPrivileged)
+        {
+            missingMappings = await scopedEmployees.CountAsync(e => e.IsActive && (e.PlantId == null || e.DepartmentMasterId == null));
 
-        // CurrentSituation logic
+            var staleThreshold = DateTime.UtcNow.AddHours(-48);
+            staleRequests = await _context.LeaveRecords
+                .CountAsync(lr =>
+                    scopedIds.Contains(lr.EmployeeId) &&
+                    lr.StatusCode == LeaveStatusCodes.Submitted &&
+                    (lr.UpdatedAtUtc ?? lr.CreatedAtUtc) < staleThreshold);
+
+            var lastSync = await _syncService.GetLastSyncAsync();
+            syncIssuesCount = (lastSync != null && lastSync.Status == "Failed") ? 1 : 0;
+
+            lastSyncData = lastSync != null ? new
+            {
+                lastSync.StartedAtUtc,
+                lastSync.CompletedAtUtc,
+                lastSync.Status,
+                lastSync.TotalProcessed
+            } : null;
+        }
+
+        // CurrentSituation logic — always scoped
         var pendingLeave = await _context.LeaveRecords
             .CountAsync(lr =>
                 scopedIds.Contains(lr.EmployeeId) &&
@@ -1005,8 +1166,63 @@ public class HRLeaveController : ControllerBase
                 lr.StartDate > today &&
                 lr.StartDate <= weekFromNow);
 
-        var lastSync = await _syncService.GetLastSyncAsync();
-        var syncIssuesCount = (lastSync != null && lastSync.Status == "Failed") ? 1 : 0;
+        // Resolve scope metadata for frontend adaptation
+        var roles = CurrentUserRoles;
+        string scopeType;
+        string scopeDescription;
+        if (roles.Contains(RoleConstants.SystemAdministrator))
+        {
+            scopeType = "all";
+            scopeDescription = "Visão geral de R.H. — todos os funcionários.";
+        }
+        else if (roles.Contains(RoleConstants.HR))
+        {
+            scopeType = "hr";
+            scopeDescription = "Visão geral de R.H. conforme seu escopo.";
+        }
+        else if (roles.Contains(RoleConstants.LocalManager))
+        {
+            scopeType = "department";
+            scopeDescription = "Indicadores limitados ao seu escopo de gestão.";
+        }
+        else if (await _context.Departments.AnyAsync(d => d.ResponsibleUserId == CurrentUserId))
+        {
+            scopeType = "department";
+            scopeDescription = "Indicadores limitados ao seu escopo de gestão.";
+        }
+        else
+        {
+            // Viewer / Management — check for department-level team scope
+            var calEmail = User.FindFirstValue(ClaimTypes.Email);
+            if (!string.IsNullOrEmpty(calEmail))
+            {
+                var linked = await _context.HREmployees.AsNoTracking()
+                    .FirstOrDefaultAsync(e =>
+                        e.IsActive &&
+                        e.Email != null &&
+                        e.Email.ToLower() == calEmail.ToLower());
+                if (linked?.PortalDepartmentId != null)
+                {
+                    scopeType = "team";
+                    scopeDescription = "Indicadores informativos da sua equipa/departamento.";
+                }
+                else if (linked != null)
+                {
+                    scopeType = "self";
+                    scopeDescription = "Dados limitados ao seu próprio registo.";
+                }
+                else
+                {
+                    scopeType = "none";
+                    scopeDescription = "A sua conta não está vinculada a um registo de funcionário.";
+                }
+            }
+            else
+            {
+                scopeType = "none";
+                scopeDescription = "A sua conta não está vinculada a um registo de funcionário.";
+            }
+        }
 
         return Ok(new
         {
@@ -1021,13 +1237,9 @@ public class HRLeaveController : ControllerBase
                 staleRequests,
                 syncIssuesCount
             },
-            lastSync = lastSync != null ? new
-            {
-                lastSync.StartedAtUtc,
-                lastSync.CompletedAtUtc,
-                lastSync.Status,
-                lastSync.TotalProcessed
-            } : null
+            lastSync = lastSyncData,
+            scopeType,
+            scopeDescription
         });
     }
 
@@ -1093,6 +1305,159 @@ public class HRLeaveController : ControllerBase
                 days++;
         }
         return days;
+    }
+
+    // ─── Notification Helpers ───
+
+    /// <summary>
+    /// Non-blocking notification dispatch. Catches all exceptions and logs warnings.
+    /// Uses dedup via LeaveStatusHistory.Id as correlationId.
+    /// </summary>
+    private async Task SendLeaveNotificationAsync(
+        Guid recipientUserId, string title, string message, string type, Guid correlationId)
+    {
+        try
+        {
+            await _notificationService.CreateNotificationWithDedupAsync(
+                recipientUserId, title, message, type,
+                "/hr/leave", correlationId,
+                NotificationCategories.HRLeave);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to create HR leave notification for User {UserId}. Non-blocking.", recipientUserId);
+        }
+    }
+
+    /// <summary>
+    /// Notifies the employee's responsible approver when a leave record reaches SUBMITTED.
+    /// Recipient resolution: HREmployee.ManagerUserId → Department.ResponsibleUserId → skip.
+    /// Skips self-notification if the submitter is the resolved approver.
+    /// </summary>
+    private async Task NotifyApproverOnSubmitAsync(Guid leaveRecordId)
+    {
+        try
+        {
+            var record = await _context.LeaveRecords
+                .AsNoTracking()
+                .Include(lr => lr.Employee)
+                .Include(lr => lr.LeaveType)
+                .FirstOrDefaultAsync(lr => lr.Id == leaveRecordId);
+
+            if (record == null) return;
+
+            // Find the SUBMITTED status history entry for correlationId (dedup anchor)
+            var submitHistory = await _context.LeaveStatusHistories
+                .Where(h => h.LeaveRecordId == leaveRecordId && h.NewStatus == LeaveStatusCodes.Submitted)
+                .OrderByDescending(h => h.CreatedAtUtc)
+                .FirstOrDefaultAsync();
+
+            if (submitHistory == null) return;
+
+            // Resolve approver: ManagerUserId → Department.ResponsibleUserId → skip
+            Guid? approverId = record.Employee?.ManagerUserId;
+
+            if (!approverId.HasValue && record.Employee?.PortalDepartmentId.HasValue == true)
+            {
+                approverId = await _context.Departments
+                    .AsNoTracking()
+                    .Where(d => d.Id == record.Employee.PortalDepartmentId.Value)
+                    .Select(d => d.ResponsibleUserId)
+                    .FirstOrDefaultAsync();
+            }
+
+            if (!approverId.HasValue || approverId.Value == Guid.Empty)
+            {
+                _logger.LogWarning(
+                    "No approver resolved for LeaveRecord {LeaveRecordId} (Employee {EmployeeId}). Skipping notification.",
+                    leaveRecordId, record.EmployeeId);
+                return;
+            }
+
+            // Skip self-notification: if submitter is the approver
+            if (approverId.Value == CurrentUserId)
+                return;
+
+            var empName = record.Employee?.FullName ?? "Funcionário";
+            var ltName = record.LeaveType?.DisplayNamePt ?? "ausência";
+
+            await SendLeaveNotificationAsync(
+                approverId.Value,
+                "Nova solicitação de férias/ausência",
+                $"{empName} criou uma solicitação de {ltName} para o período de {record.StartDate:dd/MM/yyyy} a {record.EndDate:dd/MM/yyyy}.",
+                NotificationTypes.Warning,
+                submitHistory.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to notify approver for LeaveRecord {LeaveRecordId}. Non-blocking.", leaveRecordId);
+        }
+    }
+
+    /// <summary>
+    /// Notifies the request creator when a leave record status changes (APPROVED, REJECTED, CANCELLED).
+    /// Skips self-notification if the actor is the requester.
+    /// </summary>
+    private async Task NotifyRequesterOnStatusChangeAsync(Guid leaveRecordId, string newStatus)
+    {
+        try
+        {
+            var record = await _context.LeaveRecords
+                .AsNoTracking()
+                .Include(lr => lr.Employee)
+                .Include(lr => lr.LeaveType)
+                .FirstOrDefaultAsync(lr => lr.Id == leaveRecordId);
+
+            if (record == null) return;
+
+            // Skip self-notification
+            if (record.RequestedByUserId == CurrentUserId)
+                return;
+
+            // Find the status history entry for correlationId
+            var statusHistory = await _context.LeaveStatusHistories
+                .Where(h => h.LeaveRecordId == leaveRecordId && h.NewStatus == newStatus)
+                .OrderByDescending(h => h.CreatedAtUtc)
+                .FirstOrDefaultAsync();
+
+            if (statusHistory == null) return;
+
+            var empName = record.Employee?.FullName ?? "Funcionário";
+            var ltName = record.LeaveType?.DisplayNamePt ?? "ausência";
+            var dateRange = $"{record.StartDate:dd/MM/yyyy} – {record.EndDate:dd/MM/yyyy}";
+
+            var (title, message, type) = newStatus switch
+            {
+                LeaveStatusCodes.Approved => (
+                    "Solicitação de férias/ausência aprovada",
+                    $"A sua solicitação de {ltName} para {empName} ({dateRange}) foi aprovada.",
+                    NotificationTypes.Success),
+                LeaveStatusCodes.Rejected => (
+                    "Solicitação de férias/ausência rejeitada",
+                    $"A sua solicitação de {ltName} para {empName} ({dateRange}) foi rejeitada.",
+                    NotificationTypes.Error),
+                LeaveStatusCodes.Cancelled => (
+                    "Solicitação de férias/ausência cancelada",
+                    $"A solicitação de {ltName} para {empName} ({dateRange}) foi cancelada.",
+                    NotificationTypes.Warning),
+                _ => (string.Empty, string.Empty, string.Empty)
+            };
+
+            if (string.IsNullOrEmpty(title)) return;
+
+            await SendLeaveNotificationAsync(
+                record.RequestedByUserId,
+                title, message, type,
+                statusHistory.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to notify requester for LeaveRecord {LeaveRecordId} status change to {NewStatus}. Non-blocking.",
+                leaveRecordId, newStatus);
+        }
     }
 
     // ─── Request DTOs ───

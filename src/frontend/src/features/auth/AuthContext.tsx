@@ -22,8 +22,13 @@ interface AuthContextType {
   isAdmin: boolean;
   isLocalManager: boolean;
   isDepartmentManager: boolean;
+  isViewerManagement: boolean;
   hasHRAccess: boolean;
-  /** True if user can access the HR module (HR role, admin, or department manager). */
+  /**
+   * True if user can access the HR module.
+   * Aligned with backend HasHRModuleAccess(): HR role, admin, Local Manager,
+   * Department Manager, or Viewer/Management (self-calendar).
+   */
   hasHRModuleAccess: boolean;
 }
 
@@ -69,9 +74,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isAdmin = user?.roles.includes(ROLES.SYSTEM_ADMINISTRATOR) || false;
   const isLocalManager = user?.roles.includes(ROLES.LOCAL_MANAGER) || false;
   const isDepartmentManager = (user?.managedDepartmentIds?.length ?? 0) > 0;
+  const isViewerManagement = user?.roles.includes(ROLES.VIEWER_MANAGEMENT) || false;
   const hasHRAccess = user?.roles.includes(ROLES.HR) || isAdmin;
-  // HR Module access: HR role users, admins, or department managers (ResponsibleUser of any department)
-  const hasHRModuleAccess = hasHRAccess || isDepartmentManager;
+  // HR Module access: aligned with backend HasHRModuleAccess().
+  // Includes HR role, admin, Local Manager, Department Manager, and Viewer/Management (self-calendar).
+  // Backend remains the source of truth for data scope (GetScopedEmployeesQuery).
+  const hasHRModuleAccess = hasHRAccess || isDepartmentManager || isLocalManager || isViewerManagement;
 
   if (isLoading) {
     return null; // Or a loading spinner
@@ -87,6 +95,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isAdmin,
       isLocalManager,
       isDepartmentManager,
+      isViewerManagement,
       hasHRAccess,
       hasHRModuleAccess
     }}>
