@@ -2,9 +2,14 @@
 
 ## Current Version
 
-v2.111.0
+v2.113.0
 
-## [2.111.0] - 2026-05-14
+## [2.113.0] - 2026-05-14
+
+### UI/UX Fix
+- **Dark Mode Contrast**: Improved contrast in `UserDropdown` and `NotificationBell` for dark mode visibility. Added `--color-status-red-surface` semantic token.
+
+## [2.112.0] - 2026-05-14
 
 ### Bug Fix — HR Team Calendar Scope for Local Manager
 - **Root Cause**: `GetScopedEmployeesQuery()` Local Manager branch filtered by `PortalDepartmentId` (which was NULL for all mapped employees), ignoring the `ManagerUserId` relationship. This caused zero employees to appear in the Team Calendar, Dashboard, and Leave views.

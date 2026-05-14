@@ -44,6 +44,9 @@
   --color-status-rejected: #DC2626;
   --color-status-rejected-rgb: 220, 38, 38;
 
+  /* Semantic Surfaces (light-tinted backgrounds for status indicators) */
+  --color-status-red-surface: #fee2e2;
+
   /* Typography (Geometric & Clean) */
   /* Alpla uses Futura for headings and a clean sans for body */
   --font-family-display: "Futura", "Space Grotesk", system-ui, sans-serif;
@@ -127,4 +130,7 @@
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
   
   --focus-ring: 0 0 0 2px var(--color-bg-page), 0 0 0 4px rgba(0, 163, 224, 0.4);
+
+  /* Semantic Surfaces */
+  --color-status-red-surface: rgba(220, 38, 38, 0.15);
 }

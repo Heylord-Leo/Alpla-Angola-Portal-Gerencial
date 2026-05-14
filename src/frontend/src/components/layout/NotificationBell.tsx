@@ -177,7 +177,7 @@ export function NotificationBell() {
                             borderBottom: '1px solid var(--color-border)',
                             backgroundColor: 'transparent'
                         }}>
-                            <div style={{ fontWeight: 600, fontSize: '1rem', color: 'var(--color-text)' }}>
+                            <div style={{ fontWeight: 600, fontSize: '1rem', color: 'var(--color-text-main)' }}>
                                 Notificações
                             </div>
                             <div style={{ display: 'flex', gap: '4px' }}>
@@ -214,7 +214,7 @@ export function NotificationBell() {
                                         transition: 'color 0.2s',
                                         borderRadius: 'var(--radius-md)'
                                     }}
-                                    onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-status-red)'; e.currentTarget.style.backgroundColor = '#fee2e2'; }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-status-red)'; e.currentTarget.style.backgroundColor = 'var(--color-status-red-surface)'; }}
                                     onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--color-text-muted)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
                                 >
                                     <Trash2 size={18} strokeWidth={2} />
@@ -224,7 +224,7 @@ export function NotificationBell() {
 
                         {unreadCount > 0 && (
                             <div style={{ 
-                                backgroundColor: '#fee2e2', 
+                                backgroundColor: 'var(--color-status-red-surface)', 
                                 padding: '10px 16px', 
                                 fontSize: '0.75rem', 
                                 fontWeight: 600, 
@@ -313,12 +313,12 @@ export function NotificationBell() {
                                                     <span style={{ 
                                                         fontSize: '0.85rem', 
                                                         fontWeight: 600, 
-                                                        color: n.isRead ? 'var(--color-text-muted)' : 'var(--color-text)', 
+                                                        color: n.isRead ? 'var(--color-text-muted)' : 'var(--color-text-main)', 
                                                     }}>
                                                         {n.title}
                                                     </span>
                                                     {n.count > 0 && (
-                                                        <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--color-status-red)', backgroundColor: '#fee2e2', padding: '2px 6px', borderRadius: '12px' }}>
+                                                        <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--color-status-red)', backgroundColor: 'var(--color-status-red-surface)', padding: '2px 6px', borderRadius: '12px' }}>
                                                             {n.count} {n.count > 1 ? 'itens' : 'item'}
                                                         </span>
                                                     )}
@@ -365,7 +365,7 @@ export function NotificationBell() {
                                     }}>
                                         <Bell size={28} strokeWidth={1.5} />
                                     </div>
-                                    <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--color-text)' }}>
+                                    <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--color-text-main)' }}>
                                         Sem Alertas Relevantes
                                     </div>
                                     <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginTop: '8px', fontWeight: 400 }}>
@@ -387,7 +387,7 @@ export function NotificationBell() {
                                 background: 'transparent',
                                 border: 'none',
                                 borderTop: '1px solid var(--color-border)',
-                                color: 'var(--color-text)',
+                                color: 'var(--color-text-main)',
                                 fontWeight: 500,
                                 fontSize: '0.85rem',
                                 cursor: 'pointer',
@@ -395,7 +395,7 @@ export function NotificationBell() {
                                 backgroundColor: 'var(--color-bg-surface)'
                             }}
                             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-primary)'; e.currentTarget.style.backgroundColor = 'var(--color-bg-page)'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--color-text)'; e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--color-text-main)'; e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
                         >
                             Ver Todos os Processos
                         </button>

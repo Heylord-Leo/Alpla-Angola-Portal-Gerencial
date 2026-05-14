@@ -85,9 +85,9 @@ export function UserDropdown() {
                                 top: 'calc(100% + 8px)',
                                 right: 0,
                                 width: '240px',
-                                backgroundColor: 'white',
-                                border: '2px solid var(--color-primary)',
-                                boxShadow: 'var(--shadow-md)',
+                                backgroundColor: 'var(--color-bg-surface)',
+                                border: '1px solid var(--color-border)',
+                                boxShadow: 'var(--shadow-lg)',
                                 zIndex: 100,
                                 padding: '8px 0'
                             }}
@@ -140,7 +140,7 @@ export function UserDropdown() {
                                         color: item.danger ? 'var(--color-status-red)' : 'var(--color-text-main)',
                                         transition: 'all 0.1s'
                                     }}
-                                    onMouseOver={(e) => (e.currentTarget.style.backgroundColor = '#f8fafc')}
+                                    onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-bg-page)')}
                                     onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                                 >
                                     {item.icon}

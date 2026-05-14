@@ -2,6 +2,14 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.113.0] - 2026-05-14 - Dark Mode Contrast Fix
+
+### Fixed
+- **Dark Mode Visibility**: Improved contrast for text and status indicators in `UserDropdown` and `NotificationBell` components when dark mode is active.
+- **Semantic Tokens**: Introduced `--color-status-red-surface` in `tokens.css` to provide accessible, theme-aware tinted backgrounds for status elements.
+
+---
+
 ## [v2.111.0] - 2026-05-14 - HR Team Calendar Scope Fix (Local Manager)
 
 ### Problem
