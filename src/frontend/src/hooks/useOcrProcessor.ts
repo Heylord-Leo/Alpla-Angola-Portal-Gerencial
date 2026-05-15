@@ -401,7 +401,67 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
             }
         }
 
-        // Set headerHasIva based on whether header implies IVA AND items have uncertainty
+        // --- Pass 3: Global VAT Inference ---
+        // When all items are flagged ivaUncertain AND headerImpliesIva,
+        // attempt to calculate the implied VAT rate from document totals
+        // and auto-assign it to all items if the math is consistent.
+        if (headerImpliesIva && draft.items.every(i => i.ivaUncertain)) {
+            const impliedVatRate = (ocrGrandTotal - itemSubtotalGross) / itemSubtotalGross;
+            const impliedVatPercent = Math.round(impliedVatRate * 10000) / 100; // e.g. 0.14 → 14.00
+
+            // Match against known IVA rates with ±0.30 percentage point tolerance
+            // (e.g. 13.90% matches 14%, but 13.00% does not)
+            const matchedRate = ivaRates.find(r =>
+                r.isActive && Math.abs(r.ratePercent - impliedVatPercent) < 0.30
+            );
+
+            if (matchedRate) {
+                // Validate: recalculate total with inferred rate and compare to OCR grand total
+                const expectedTotal = Math.round(itemSubtotalGross * (1 + matchedRate.ratePercent / 100) * 100) / 100;
+                const tolerance = ocrGrandTotal * 0.02; // 2% tolerance for rounding differences
+
+                if (Math.abs(expectedTotal - ocrGrandTotal) <= tolerance) {
+                    // ✅ Apply inferred global VAT to all items
+                    draft.items.forEach(item => {
+                        item.ivaRateId = matchedRate.id;
+                        item.taxRate = matchedRate.ratePercent;
+                        item.ivaUncertain = false;
+                        item.ivaGlobalInferred = true; // Distinguish inferred from OCR-extracted
+                    });
+                    draft.globalVatInferred = true;
+                    draft.inferredVatRatePercent = matchedRate.ratePercent;
+
+                    console.log(
+                        `[OCR] ✅ Global VAT inferred: ${impliedVatPercent.toFixed(2)}% → matched ${matchedRate.name} (${matchedRate.ratePercent}%). ` +
+                        `Expected total: ${expectedTotal.toFixed(2)}, OCR total: ${ocrGrandTotal.toFixed(2)}, tolerance: ${tolerance.toFixed(2)}`
+                    );
+                } else {
+                    console.warn(
+                        `[OCR] ⚠️ Global VAT rate ${impliedVatPercent.toFixed(2)}% matched ${matchedRate.name}, ` +
+                        `but total validation failed: expected ${expectedTotal.toFixed(2)} vs OCR ${ocrGrandTotal.toFixed(2)} ` +
+                        `(diff: ${Math.abs(expectedTotal - ocrGrandTotal).toFixed(2)}, tolerance: ${tolerance.toFixed(2)})`
+                    );
+                }
+            } else {
+                console.warn(
+                    `[OCR] ⚠️ Global VAT inference: implied rate ${impliedVatPercent.toFixed(2)}% does not match any active IVA rate within ±0.30pp tolerance.`
+                );
+            }
+        }
+
+        // --- Post-inference recalculation ---
+        // Pass 3 may have applied ivaRateId to items after the initial totalAmount
+        // calculation at line 363. Recalculate item totals and draft total so
+        // "Valor Total da Cotação" includes the newly inferred VAT.
+        if (draft.globalVatInferred) {
+            draft.items.forEach(item => {
+                item.totalPrice = calculateItemTotal(item);
+            });
+            draft.totalAmount = calculateDraftTotal(draft);
+        }
+
+        // Set headerHasIva based on whether header implies IVA AND items STILL have uncertainty
+        // (Pass 3 may have resolved the uncertainty by applying global VAT)
         const hasUncertainIvaItems = draft.items.some(item => item.ivaUncertain);
         draft.headerHasIva = headerImpliesIva && hasUncertainIvaItems;
 

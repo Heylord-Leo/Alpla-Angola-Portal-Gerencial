@@ -3571,12 +3571,12 @@ public class RequestsController : BaseController
             // 1. Validate that we have both Plant and CC for every active item
             foreach (var item in activeItems)
             {
-                if (itemAssignments == null || !itemAssignments.TryGetValue(item.Id, out var assignment) || assignment.PlantId <= 0 || assignment.CostCenterId <= 0)
+                if (itemAssignments == null || !itemAssignments.TryGetValue(item.Id, out var assignment) || !assignment.PlantId.HasValue || assignment.PlantId <= 0 || !assignment.CostCenterId.HasValue || assignment.CostCenterId <= 0)
                 {
                     string missingLabel = string.Empty;
                     if (itemAssignments == null || !itemAssignments.TryGetValue(item.Id, out var a)) missingLabel = "Planta e Centro de Custo";
-                    else if (a.PlantId <= 0 && a.CostCenterId <= 0) missingLabel = "Planta e Centro de Custo";
-                    else if (a.PlantId <= 0) missingLabel = "Planta";
+                    else if ((!a.PlantId.HasValue || a.PlantId <= 0) && (!a.CostCenterId.HasValue || a.CostCenterId <= 0)) missingLabel = "Planta e Centro de Custo";
+                    else if (!a.PlantId.HasValue || a.PlantId <= 0) missingLabel = "Planta";
                     else missingLabel = "Centro de Custo";
 
                     return BadRequest(new ProblemDetails
@@ -3588,8 +3588,8 @@ public class RequestsController : BaseController
                 }
                 
                 // 2. Persist the decided Plant and Cost Center to the line item
-                item.PlantId = assignment.PlantId;
-                item.CostCenterId = assignment.CostCenterId;
+                item.PlantId = assignment.PlantId.Value;
+                item.CostCenterId = assignment.CostCenterId.Value;
             }
         }
 

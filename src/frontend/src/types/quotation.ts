@@ -26,6 +26,7 @@ export interface QuotationDraftItem {
     taxRate?: number; // Raw extracted tax percentage for suggestion hint
     totalPrice: number; // Front-end calculated preview
     ivaUncertain?: boolean; // True when OCR could not confidently identify item-level IVA
+    ivaGlobalInferred?: boolean; // True when IVA was inferred from document summary, not extracted per item
     itemCatalogId?: number | null; // Linked catalog item (from autocomplete selection)
     itemCatalogCode?: string | null; // Catalog item code for display/traceability
     autoMatchStatus?: 'AUTO_MATCHED' | 'NEEDS_REVIEW' | null; // Catalog auto-match result from OCR
@@ -44,4 +45,6 @@ export interface QuotationDraft {
     proformaAttachmentId?: string; // Links attachment implicitly
     items: QuotationDraftItem[];
     headerHasIva?: boolean; // True when the document header/totals indicate IVA exists
+    globalVatInferred?: boolean; // True when global VAT was inferred from document summary and applied to all items
+    inferredVatRatePercent?: number; // The inferred VAT rate percentage for display in UI banner
 }

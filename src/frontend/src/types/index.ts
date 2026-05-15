@@ -203,6 +203,7 @@ export interface OcrDraftItem {
     itemCatalogId?: number | null; // Optional catalog reference
     itemCatalogCode?: string | null; // Optional catalog code for display/traceability
     ivaUncertain?: boolean; // True when OCR could not confidently identify item-level IVA
+    ivaGlobalInferred?: boolean; // True when IVA was inferred from document summary, not extracted per item
     autoMatchStatus?: 'AUTO_MATCHED' | 'NEEDS_REVIEW' | null; // Catalog auto-match result from OCR
 }
 
@@ -224,6 +225,8 @@ export interface OcrDraft {
     proformaAttachmentId?: string; // Links attachment implicitly
     items: OcrDraftItem[];
     headerHasIva?: boolean; // True when the document header/totals indicate IVA exists
+    globalVatInferred?: boolean; // True when global VAT was inferred from document summary and applied to all items
+    inferredVatRatePercent?: number; // The inferred VAT rate percentage for display in UI banner
 }
 
 export interface LookupDto {

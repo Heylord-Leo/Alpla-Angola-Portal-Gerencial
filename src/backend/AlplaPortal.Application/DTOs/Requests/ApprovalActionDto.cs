@@ -14,6 +14,6 @@ public class ApprovalActionDto
 
 public class ItemApprovalAssignmentDto
 {
-    public int PlantId { get; set; }
-    public int CostCenterId { get; set; }
+    public int? PlantId { get; set; }
+    public int? CostCenterId { get; set; }
 }

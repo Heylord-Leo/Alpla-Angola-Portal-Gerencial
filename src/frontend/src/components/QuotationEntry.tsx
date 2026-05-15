@@ -193,6 +193,39 @@ export function QuotationEntry({
                 }
             }
 
+            // --- Pass 3: Global VAT Inference ---
+            // When all items are uncertain AND header implies IVA, attempt to calculate
+            // the implied VAT rate from document totals and auto-assign if math is consistent.
+            if (headerImpliesIva && initialDraft.items.every(i => i.ivaUncertain)) {
+                const impliedVatRate = (ocrGrandTotal - itemSubtotalGross) / itemSubtotalGross;
+                const impliedVatPercent = Math.round(impliedVatRate * 10000) / 100;
+
+                // Match against known IVA rates with ±0.30 percentage point tolerance
+                const matchedRate = ivaRates.find(r =>
+                    r.isActive && Math.abs(r.ratePercent - impliedVatPercent) < 0.30
+                );
+
+                if (matchedRate) {
+                    const expectedTotal = Math.round(itemSubtotalGross * (1 + matchedRate.ratePercent / 100) * 100) / 100;
+                    const tolerance = ocrGrandTotal * 0.02;
+
+                    if (Math.abs(expectedTotal - ocrGrandTotal) <= tolerance) {
+                        initialDraft.items.forEach(item => {
+                            item.ivaRateId = matchedRate.id;
+                            item.taxRate = matchedRate.ratePercent;
+                            item.ivaUncertain = false;
+                            item.ivaGlobalInferred = true;
+                        });
+                        initialDraft.globalVatInferred = true;
+                        initialDraft.inferredVatRatePercent = matchedRate.ratePercent;
+
+                        console.log(
+                            `[Quotation OCR] ✅ Global VAT inferred: ${impliedVatPercent.toFixed(2)}% → ${matchedRate.name} (${matchedRate.ratePercent}%)`
+                        );
+                    }
+                }
+            }
+
             const hasUncertainItems = initialDraft.items.some(item => item.ivaUncertain);
             initialDraft.headerHasIva = headerImpliesIva && hasUncertainItems;
             initialDraft.totalAmount = recalculateQuotationTotal(initialDraft);
@@ -784,8 +817,23 @@ export function QuotationEntry({
                             </button>
                         </div>
 
-                        {/* IVA Uncertainty Banner */}
-                        {draft.headerHasIva && draft.items.some(i => i.ivaUncertain) && (
+                        {/* IVA Global Inference Success Banner */}
+                        {draft.globalVatInferred && draft.inferredVatRatePercent !== undefined && (
+                            <div style={{
+                                display: 'flex', alignItems: 'center', gap: '8px',
+                                padding: '12px', backgroundColor: '#f0fdf4',
+                                border: '1px solid #86efac', borderRadius: '4px',
+                                color: '#166534', fontSize: '12px', fontWeight: 600,
+                            }}>
+                                <CheckCircle2 style={{ width: 16, height: 16, flexShrink: 0 }} />
+                                <span>
+                                    IVA global de {draft.inferredVatRatePercent}% identificado no resumo do documento e aplicado automaticamente a todos os itens.
+                                </span>
+                            </div>
+                        )}
+
+                        {/* IVA Uncertainty Banner (fallback when inference fails) */}
+                        {!draft.globalVatInferred && draft.headerHasIva && draft.items.some(i => i.ivaUncertain) && (
                             <div style={{
                                 display: 'flex', alignItems: 'center', gap: '8px',
                                 padding: '12px', backgroundColor: '#fef2f2',

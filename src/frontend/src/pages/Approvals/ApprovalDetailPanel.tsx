@@ -341,12 +341,14 @@ export function ApprovalDetailPanel({
                     ? await api.requests.approveArea(data.id, approvalComment, data.quotations?.find(q => q.isSelected)?.id, itemAssignments)
                     : await api.requests.approveFinal(data.id, approvalComment);
             } else if (action === 'REJECT') {
+                // DEC-FIX: Rejection does not require item allocation — omit itemAssignments
                 result = isArea
-                    ? await api.requests.rejectArea(data.id, approvalComment, itemAssignments)
+                    ? await api.requests.rejectArea(data.id, approvalComment)
                     : await api.requests.rejectFinal(data.id, approvalComment);
             } else if (action === 'REQUEST_ADJUSTMENT') {
+                // DEC-FIX: Adjustment request does not require item allocation — omit itemAssignments
                 result = isArea
-                    ? await api.requests.requestAdjustmentArea(data.id, approvalComment, itemAssignments)
+                    ? await api.requests.requestAdjustmentArea(data.id, approvalComment)
                     : await api.requests.requestAdjustmentFinal(data.id, approvalComment);
             } else {
                 throw new Error('Ação inválida.');
@@ -357,7 +359,17 @@ export function ApprovalDetailPanel({
             setModalFeedback({ type: 'error', message: null });
             onActionCompleted(result.message || 'Ação concluída com sucesso.');
         } catch (err: any) {
-            setModalFeedback({ type: 'error', message: err.message || 'Não foi possível concluir a ação. Tente novamente.' });
+            // Extract detailed validation messages from ASP.NET field errors when available
+            let errorMsg = err.message || 'Não foi possível concluir a ação. Tente novamente.';
+            if (err.fieldErrors) {
+                const details = Object.entries(err.fieldErrors as Record<string, string[]>)
+                    .map(([, msgs]) => msgs.join(', '))
+                    .filter(Boolean);
+                if (details.length > 0) {
+                    errorMsg = details.join('. ');
+                }
+            }
+            setModalFeedback({ type: 'error', message: errorMsg });
         } finally {
             setApprovalProcessing(false);
         }

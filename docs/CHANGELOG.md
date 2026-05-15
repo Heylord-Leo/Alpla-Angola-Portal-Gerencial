@@ -2,6 +2,37 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.115.2] - 2026-05-15 - OCR Quotation Total Calculation Fix
+
+### Fixed
+- **OCR Quotation Total Missing VAT**: After OCR extraction with global VAT inference, the "Valor Total da Cotação" displayed the net subtotal (without VAT) instead of the final payable total. Root cause: `draft.totalAmount` was calculated in `useOcrProcessor.ts` **before** the Global VAT Inference pass applied `ivaRateId` to items. Added post-inference recalculation of both item totals and draft total when `globalVatInferred` is true.
+- **Item Removal Total Inconsistency**: Replaced inline `reduce` in `handleRemoveQuotationItem` with `calculateDraftTotal()` for consistent total calculation including global discount and proportional IVA adjustment.
+
+---
+
+## [v2.115.1] - 2026-05-15 - Area Approval Rejection Fix
+
+### Fixed
+- **Area Approval Rejection Blocked by Allocation Validation**: Rejecting or requesting adjustment on a purchase request at the Area Approval stage was incorrectly blocked when items had missing Plant or Cost Center assignments. The frontend was sending `itemAssignments` with `null` int values during rejection, causing ASP.NET ModelState deserialization to fail before the controller logic ran.
+  - **Frontend**: Stopped sending `itemAssignments` payload on `REJECT` and `REQUEST_ADJUSTMENT` actions (only sent on `APPROVE` where allocation validation is required).
+  - **Backend**: Made `ItemApprovalAssignmentDto.PlantId` and `CostCenterId` nullable as defensive hardening. Updated `ProcessAreaApproval` validation to use nullable-safe comparisons.
+  - **Error Handling**: Improved `ApprovalDetailPanel` error catch to extract detailed field-level validation messages from ASP.NET `ProblemDetails`, replacing the generic "One or more validation errors occurred" banner.
+
+---
+
+## [v2.115.0] - 2026-05-15 - OCR Global VAT Inference
+
+### Added
+- **OCR Global VAT Inference**: When a supplier quotation/proforma specifies VAT only at the document summary level (Subtotal + IVA + Total) but not per line item, the system now automatically infers the global VAT rate and applies it to all items.
+  - **Inference Algorithm**: Calculates `(GrandTotal - Subtotal) / Subtotal` to derive the implied VAT percentage. Matches against active `ivaRates` with ±0.30 percentage point tolerance (e.g., 13.90% → 14%, but 13.00% ≠ 14%). Validates recalculated total within 2% of OCR grand total before applying.
+  - **Priority Rule**: Explicit item-level VAT always takes priority. Global inference only triggers when **all** items have uncertain or missing VAT.
+  - **Auditability Flags**: New `globalVatInferred` (draft-level), `inferredVatRatePercent` (draft-level), and `ivaGlobalInferred` (item-level) fields distinguish inferred VAT from OCR-extracted VAT.
+  - **UI Feedback**: Green success banner ("IVA global de {rate}% identificado no resumo do documento e aplicado automaticamente a todos os itens.") replaces the red "IVA não identificado" warning when inference succeeds. Red warning preserved as fallback when inference fails.
+  - **Manual Override**: Users can still manually change any item's VAT rate after inference.
+  - **Dual Path**: Logic applied in both `useOcrProcessor.ts` (Buyer workspace) and `QuotationEntry.tsx` (legacy quotation entry).
+
+---
+
 ## [v2.114.0] - 2026-05-14 - Approvals Intelligence & Notification Fixes
 
 ### Added

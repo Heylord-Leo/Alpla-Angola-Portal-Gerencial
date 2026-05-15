@@ -2,7 +2,31 @@
 
 ## Current Version
 
-v2.114.0
+v2.115.2
+
+## [2.115.2] - 2026-05-15
+
+### Fixed — OCR Quotation Total Missing VAT
+- **Root Cause**: `draft.totalAmount` was calculated before Global VAT Inference applied `ivaRateId` to items, so the displayed total excluded VAT.
+- **Fix**: Added post-inference recalculation of item totals and draft total when `globalVatInferred` is true.
+- **Consistency**: Replaced inline `reduce` in `handleRemoveQuotationItem` with `calculateDraftTotal()`.
+
+## [2.115.1] - 2026-05-15
+
+### Fixed — Area Approval Rejection Blocked by Allocation Validation
+- **Root Cause**: Frontend sent `itemAssignments` with `null` int values during rejection, causing ASP.NET ModelState deserialization failure before controller logic ran.
+- **Frontend Fix**: Stopped sending `itemAssignments` on `REJECT` and `REQUEST_ADJUSTMENT` actions. Only sent on `APPROVE`.
+- **Backend Hardening**: Made `ItemApprovalAssignmentDto.PlantId` and `CostCenterId` nullable. Updated `ProcessAreaApproval` validation to use nullable-safe comparisons.
+- **Error Handling**: Improved `ApprovalDetailPanel` error catch to extract detailed field-level validation messages from ASP.NET `ProblemDetails`.
+
+## [2.115.0] - 2026-05-15
+
+### Added — OCR Global VAT Inference
+- **Global VAT Detection**: When a supplier document specifies VAT only at the summary level (Subtotal + IVA + Total), the OCR pipeline now automatically infers the implied VAT rate and applies it to all items.
+- **Inference Algorithm**: `(GrandTotal - Subtotal) / Subtotal` → match against active `ivaRates` with ±0.30pp tolerance → validate total within 2% before applying.
+- **Priority Rule**: Explicit item-level VAT always takes priority. Inference only triggers when all items have uncertain/missing VAT.
+- **Auditability**: New `globalVatInferred`, `inferredVatRatePercent` (draft-level), and `ivaGlobalInferred` (item-level) flags for traceability.
+- **UI**: Green success banner replaces "IVA não identificado" warning when inference succeeds. Manual override preserved.
 
 ## [2.114.0] - 2026-05-14
 

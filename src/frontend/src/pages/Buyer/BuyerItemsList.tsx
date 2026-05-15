@@ -757,8 +757,8 @@ export function BuyerItemsList() {
             if (!draft.items) return prev;
 
             const updatedItems = draft.items.filter((_, i) => i !== index);
-            draft.totalAmount = updatedItems.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
             draft.items = updatedItems;
+            draft.totalAmount = calculateDraftTotal(draft);
             return { ...prev, [requestId]: draft };
         });
     };
@@ -2881,8 +2881,25 @@ export function BuyerItemsList() {
                                                                             </div>
                                                                         </div>
 
-                                                                        {/* IVA Uncertainty Contextual Banner */}
-                                                                        {quotationDrafts[group.requestId]?.headerHasIva && quotationDrafts[group.requestId]?.items.some(i => i.ivaUncertain) && (
+                                                                        {/* IVA Global Inference Success Banner */}
+                                                                        {quotationDrafts[group.requestId]?.globalVatInferred && quotationDrafts[group.requestId]?.inferredVatRatePercent !== undefined && (
+                                                                            <div style={{
+                                                                                display: 'flex', alignItems: 'center', gap: '8px',
+                                                                                padding: '10px 16px', borderRadius: '8px',
+                                                                                background: 'rgba(22,163,74,0.06)',
+                                                                                border: '1px solid rgba(34,197,94,0.3)',
+                                                                                fontSize: '0.8rem', color: '#166534',
+                                                                                marginBottom: '8px'
+                                                                            }}>
+                                                                                <CheckCircle2 size={16} style={{ flexShrink: 0 }} />
+                                                                                <span>
+                                                                                    IVA global de {quotationDrafts[group.requestId]?.inferredVatRatePercent}% identificado no resumo do documento e aplicado automaticamente a todos os itens.
+                                                                                </span>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* IVA Uncertainty Contextual Banner (fallback when inference fails) */}
+                                                                        {!quotationDrafts[group.requestId]?.globalVatInferred && quotationDrafts[group.requestId]?.headerHasIva && quotationDrafts[group.requestId]?.items.some(i => i.ivaUncertain) && (
                                                                             <div style={{
                                                                                 display: 'flex', alignItems: 'center', gap: '8px',
                                                                                 padding: '10px 16px', borderRadius: '8px',
