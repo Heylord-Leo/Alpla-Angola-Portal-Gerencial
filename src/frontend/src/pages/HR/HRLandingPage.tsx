@@ -34,8 +34,9 @@ const ALL_HR_TABS: HRTab[] = [
     { id: 'directory',   label: 'Directório & Mapeamento',  path: '/hr/directory',   icon: Users,          secondary: true },
     { id: 'badges',      label: 'Gestão de Crachás',        path: '/hr/badges',      icon: CreditCard,     secondary: true },
 
-    // Diagnostic — secondary + restricted
+    // Diagnostic / Reports — secondary + restricted
     { id: 'attendance-review', label: 'Revisão de Presenças', path: '/hr/attendance-review', icon: ShieldCheck, secondary: true, diagnosticOnly: true },
+    { id: 'attendance-report', label: 'Relatório Mensal',     path: '/hr/reports/attendance/monthly-by-department', icon: Activity, secondary: true, diagnosticOnly: true },
 ];
 
 /**

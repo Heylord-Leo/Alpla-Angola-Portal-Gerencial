@@ -91,6 +91,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<SupplierDocument> SupplierDocuments => Set<SupplierDocument>();
     public DbSet<SupplierStatusHistory> SupplierStatusHistories => Set<SupplierStatusHistory>();
 
+    // Proforma Deadline Alerts (audit / dedup)
+    public DbSet<ProformaDeadlineAlert> ProformaDeadlineAlerts => Set<ProformaDeadlineAlert>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -621,6 +624,28 @@ public class ApplicationDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(h => h.ActorUserId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ─── Proforma Deadline Alerts ───
+
+        modelBuilder.Entity<ProformaDeadlineAlert>(entity =>
+        {
+            // Dedup: one alert per (Request, Level, Recipient) — globally unique
+            entity.HasIndex(a => new { a.RequestId, a.AlertLevel, a.RecipientUserId })
+                .IsUnique()
+                .HasDatabaseName("IX_ProformaDeadlineAlerts_Dedup");
+
+            entity.HasIndex(a => a.RequestId);
+
+            entity.HasOne(a => a.Request)
+                .WithMany()
+                .HasForeignKey(a => a.RequestId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(a => a.RecipientUser)
+                .WithMany()
+                .HasForeignKey(a => a.RecipientUserId)
+                .OnDelete(DeleteBehavior.NoAction);
         });
 
         modelBuilder.Entity<CostCenter>().HasIndex(c => c.Code).IsUnique();

@@ -333,13 +333,15 @@ public class InnuxAttendanceService : IInnuxAttendanceService
             parameters.Add(new SqlParameter("@EndDate", endDate.Date));
 
             // Aggregate non-dispensed periods by employee, date, and work type.
-            // CodigosTrabalho.Tipo values observed: 'Normal', 'Extra', 'Extra 2', etc.
+            // CodigosTrabalho.Codigo values observed in Innux:
+            //   'Basico' → basic work, 'Extra' → overtime 150%, 'Extra 2' → overtime 200%,
+            //   'Não Pago' → unpaid work, 'Total' → totals column (skip).
             // Duration = DATEDIFF(MINUTE, Inicio, Fim) using Innux's 1900-01-01 base encoding.
             var query = $@"
                 SELECT
                     a.IDFuncionario,
                     a.Data,
-                    ct.Tipo AS WorkType,
+                    ct.Codigo AS WorkCode,
                     SUM(DATEDIFF(MINUTE, ap.Inicio, ap.Fim)) AS TotalMinutes
                 FROM dbo.AlteracoesPeriodos ap
                 INNER JOIN dbo.Alteracoes a ON ap.IDAlteracao = a.IDAlteracao
@@ -348,7 +350,7 @@ public class InnuxAttendanceService : IInnuxAttendanceService
                   AND a.Data >= @StartDate
                   AND a.Data <= @EndDate
                   AND ISNULL(ap.Dispensa, 0) = 0
-                GROUP BY a.IDFuncionario, a.Data, ct.Tipo";
+                GROUP BY a.IDFuncionario, a.Data, ct.Codigo";
 
             await using var command = new SqlCommand(query, connection);
             command.Parameters.AddRange(parameters.ToArray());
@@ -361,10 +363,14 @@ public class InnuxAttendanceService : IInnuxAttendanceService
             {
                 var empId = InnuxTimeHelper.SafeInt(reader["IDFuncionario"]);
                 var date = reader["Data"] is DateTime d ? d.Date : DateTime.MinValue;
-                var workType = (reader["WorkType"] as string)?.Trim() ?? "";
+                var workCode = (reader["WorkCode"] as string)?.Trim() ?? "";
                 var minutes = InnuxTimeHelper.SafeInt(reader["TotalMinutes"]);
 
                 if (minutes <= 0) continue;
+
+                // Skip the "Total" aggregation row — it's a display-only column in Innux
+                if (workCode.Equals("Total", StringComparison.OrdinalIgnoreCase))
+                    continue;
 
                 var key = (empId, date);
                 if (!result.TryGetValue(key, out var dto))
@@ -373,11 +379,31 @@ public class InnuxAttendanceService : IInnuxAttendanceService
                     result[key] = dto;
                 }
 
-                // Classify: "Normal" → Basic, anything containing "Extra" → Overtime
-                if (workType.Contains("Extra", StringComparison.OrdinalIgnoreCase))
+                // Classify by Innux CodigosTrabalho.Codigo:
+                //   "Extra", "Extra 2" → Overtime
+                //   "Não Pago" / "Nao Pago" → Unpaid (separate column in Innux report)
+                //   "Basico", NULL, and anything else → Basic hours
+                var normalizedWorkCode = workCode
+                    .Trim()
+                    .Replace("ã", "a")
+                    .Replace("Ã", "A");
+
+                if (workCode.StartsWith("Extra", StringComparison.OrdinalIgnoreCase))
+                {
                     dto.OvertimeMinutes += minutes;
+                }
+                else if (
+                    workCode.Equals("Não Pago", StringComparison.OrdinalIgnoreCase) ||
+                    workCode.Equals("Nao Pago", StringComparison.OrdinalIgnoreCase) ||
+                    normalizedWorkCode.Equals("Nao Pago", StringComparison.OrdinalIgnoreCase)
+                )
+                {
+                    dto.UnpaidMinutes += minutes;
+                }
                 else
+                {
                     dto.BasicMinutes += minutes;
+                }
             }
 
             _logger.LogDebug(
@@ -394,6 +420,80 @@ public class InnuxAttendanceService : IInnuxAttendanceService
         {
             _logger.LogError(ex,
                 "Failed to compute worked hours for {Count} employees between {Start} and {End}",
+                idList.Count, startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<IEnumerable<AttendancePunchDto>> GetRawPunchesAsync(
+        IEnumerable<int> innuxEmployeeIds,
+        DateTime startDate,
+        DateTime endDate)
+    {
+        var idList = innuxEmployeeIds.ToList();
+        if (idList.Count == 0)
+            return Enumerable.Empty<AttendancePunchDto>();
+
+        try
+        {
+            await using var connection = await _connectionFactory.CreateConnectionAsync();
+
+            var (inClause, parameters) = BuildInClause(idList, "empId");
+            // Add an extra day to end date to fetch next-day early-morning punches for overnight shifts
+            parameters.Add(new SqlParameter("@StartDate", startDate.Date));
+            parameters.Add(new SqlParameter("@EndDate", endDate.Date.AddDays(1)));
+
+            var query = $@"
+                SELECT
+                    tm.IDFuncionario,
+                    tm.Data,
+                    tm.Hora,
+                    tm.TipoProcessado,
+                    tm.Gerada,
+                    t.Nome AS TerminalName
+                FROM dbo.TerminaisMarcacoes tm
+                LEFT JOIN dbo.Terminais t ON tm.IDTerminal = t.IDTerminal
+                WHERE tm.IDFuncionario IN ({inClause})
+                  AND tm.Data >= @StartDate
+                  AND tm.Data <= @EndDate
+                ORDER BY tm.IDFuncionario, tm.Data, tm.Hora";
+
+            await using var command = new SqlCommand(query, connection);
+            command.Parameters.AddRange(parameters.ToArray());
+            command.CommandTimeout = 30;
+
+            var results = new List<AttendancePunchDto>();
+            await using var reader = await command.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                var direction = (reader["TipoProcessado"] as string)?.Trim() ?? "";
+                var isAuto = InnuxTimeHelper.SafeBool(reader["Gerada"]);
+                var timeStr = InnuxTimeHelper.ToTimeString(reader["Hora"]);
+
+                results.Add(new AttendancePunchDto
+                {
+                    InnuxEmployeeId = InnuxTimeHelper.SafeInt(reader["IDFuncionario"]),
+                    Date = reader["Data"] is DateTime d ? d.Date : DateTime.MinValue,
+                    Time = timeStr ?? "",
+                    Direction = direction,
+                    DirectionLabel = MapDirectionLabel(direction),
+                    TerminalName = reader["TerminalName"] as string,
+                    IsAutoGenerated = isAuto
+                });
+            }
+
+            return results;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to fetch raw punches for {Count} employees between {Start} and {End}",
                 idList.Count, startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
             throw;
         }

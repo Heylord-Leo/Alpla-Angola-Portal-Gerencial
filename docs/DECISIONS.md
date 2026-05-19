@@ -2,6 +2,25 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-123 — Proforma Deadline Expiration Alerts
+
+- **Date:** 2026-05-15
+- **Status:** Accepted
+- **Context:** PAYMENT requests with Proforma documents often have strict payment deadlines (`NeedByDateUtc`). When a request is stalled in approval stages (`WAITING_AREA_APPROVAL` or `WAITING_FINAL_APPROVAL`), the responsible approver may not be aware that the Proforma is about to expire or has already expired, risking financial penalties and supplier relationship damage.
+- **Decision:** Implement an automated daily `BackgroundService` (`ProformaDeadlineAlertService`) to monitor and alert approvers:
+    1. **Scope**: Only PAYMENT requests with a non-null `NeedByDateUtc` in active approval stages are monitored.
+    2. **Alert Levels**: Four graduated levels — `WARNING_3D` (3 days before), `WARNING_1D` (1 day before), `CRITICAL_0D` (same day), `EXPIRED` (past due). Configurable via `ThresholdDays` in `appsettings.json`.
+    3. **Deduplication Strategy**: Global composite unique index `(RequestId, AlertLevel, RecipientUserId)`. Once an alert is sent, it is never repeated — no daily re-sends for the same alert level. When a request transitions to a new approval stage with a different approver, the new recipient can still receive the relevant alert.
+    4. **Recipient Resolution**: Mirrors `WorkflowNotificationOrchestrator` patterns — explicit `Request.AreaApproverId`/`FinalApproverId` preferred, with department-scoped fan-out as fallback for Area Approvers (active users with `Area Approver` role in the same department).
+    5. **Notification Channels**: Dual-channel — branded Portuguese email via `IEmailService` and in-app bell notification via `INotificationService` (category: `PROFORMA_DEADLINE`).
+    6. **Audit Trail**: `ProformaDeadlineAlert` entity persists every dispatched alert with email/notification delivery status, timestamps, and error details.
+    7. **Scheduling**: Runs at a configurable UTC hour (default 07:00 = 08:00 Angola time) with a 24-hour interval.
+    8. **EXPIRED Alert**: Sent only once per request per recipient. No daily repetition of overdue alerts.
+- **Alternatives considered:** (1) Real-time alerts triggered on approval-stage entry (rejected: does not handle requests already in the pipeline). (2) Same-day-only deduplication (rejected: a global unique index is simpler and prevents cumulative alert fatigue). (3) Including QUOTATION requests (rejected: deferred — they have different deadline semantics).
+- **Consequences:** Approvers are proactively warned before Proforma deadlines lapse. The system avoids alert fatigue through strict deduplication. The audit trail enables operational reporting on alert effectiveness. Configuration is externalized for easy tuning without code changes.
+
+---
+
 ## DEC-121 — Portal Attendance Engine: Phase 3 Comparison Engine
 
 - **Date:** 2026-05-12

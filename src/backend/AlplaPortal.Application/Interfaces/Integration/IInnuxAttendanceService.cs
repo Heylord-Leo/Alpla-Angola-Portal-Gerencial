@@ -51,4 +51,13 @@ public interface IInnuxAttendanceService
         IEnumerable<int> innuxEmployeeIds,
         DateTime startDate,
         DateTime endDate);
+
+    /// <summary>
+    /// Retrieves raw punch data from TerminaisMarcacoes for a set of employees over a date range.
+    /// This is used to build the up to 4 pairs of Entry/Exit records dynamically for the monthly report.
+    /// </summary>
+    Task<IEnumerable<AttendancePunchDto>> GetRawPunchesAsync(
+        IEnumerable<int> innuxEmployeeIds,
+        DateTime startDate,
+        DateTime endDate);
 }

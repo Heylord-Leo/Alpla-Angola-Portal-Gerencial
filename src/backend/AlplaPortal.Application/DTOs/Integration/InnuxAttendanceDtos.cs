@@ -223,17 +223,20 @@ public class AttendancePeriodDto
 
 /// <summary>
 /// Aggregated worked hours for one employee on one day.
-/// Computed from AlteracoesPeriodos grouped by CodigosTrabalho type.
+/// Computed from AlteracoesPeriodos grouped by CodigosTrabalho.Codigo.
 /// Used to merge into AttendanceDaySummaryDto during calendar assembly.
 /// </summary>
 public class WorkedHoursDto
 {
-    /// <summary>Normal/basic worked minutes (CodigosTrabalho.Tipo = 'Normal').</summary>
+    /// <summary>Normal/basic worked minutes (CodigosTrabalho.Codigo = 'Basico' or NULL).</summary>
     public int BasicMinutes { get; set; }
 
-    /// <summary>Overtime worked minutes (CodigosTrabalho.Tipo contains 'Extra').</summary>
+    /// <summary>Overtime worked minutes (CodigosTrabalho.Codigo starts with 'Extra').</summary>
     public int OvertimeMinutes { get; set; }
 
-    /// <summary>Total = BasicMinutes + OvertimeMinutes.</summary>
+    /// <summary>Unpaid worked minutes (CodigosTrabalho.Codigo = 'Não Pago').</summary>
+    public int UnpaidMinutes { get; set; }
+
+    /// <summary>Total = BasicMinutes + OvertimeMinutes (excludes unpaid, matching Innux semantics).</summary>
     public int TotalMinutes => BasicMinutes + OvertimeMinutes;
 }

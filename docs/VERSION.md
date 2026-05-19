@@ -2,7 +2,38 @@
 
 ## Current Version
 
-v2.115.2
+v2.117.1
+
+## [2.117.1] - 2026-05-18
+
+### Fixed — HR Monthly Attendance Reporting Corrections
+- **Backend Refactor**: Corrected `CS0103` build error by referencing `MapDirectionLabel` instead of `ClassifyDirection` in `InnuxAttendanceService`.
+- **Access Control**: Hardened `/api/hr/attendance/reports/monthly-by-department` with `[Authorize(Roles = "System Administrator,HR")]`.
+- **Punch Pairing**: Refactored logic to be direction-aware, prioritizing `DirectionLabel` over positional indices to handle anomalous codes `17` and `18`.
+- **DTO Realignment**: Fixed frontend DTO property mapping to strictly match backend JSON keys (`employeeCode`, `employeeName`, etc.) and updated `EmployeeId` typing.
+- **Frontend Refactor**: Replaced `<select>` with `DepartmentMasterAutocomplete` for scalable department picking, introduced an explicit read-only disclaimer, and improved warning UI.
+- **Print Optimization**: Rewrote `hr-attendance-monthly-report.css` to force A4 landscape density, include dark-themed department grand totals, and explicitly show the Portal-Interpreted badge upon PDF print.
+
+## [2.117.0] - 2026-05-18
+
+### Added — HR Monthly Attendance Reporting
+- **Backend API**: `GetMonthlyByDepartmentReport` generating aggregated, grouped daily attendance data from `TerminaisMarcacoes` and `Alteracoes`.
+- **Frontend UI**: `HRAttendanceMonthlyReport` with print-ready styling matching Innux "Resultados mensais por departamento" layout.
+- **Controls**: Department selection using `DepartmentMasterAutocomplete`, 62-day interval restriction, and "all/business/weekends" day filters.
+- **Access Control**: Limited to `System Administrator` and `HR` roles, integrating safely into the HR workspace.
+
+## [2.116.0] - 2026-05-15
+
+### Added — Proforma Deadline Expiration Alerts
+- **Background Service**: `ProformaDeadlineAlertService` scans PAYMENT requests in approval stages daily and alerts approvers when Proforma deadlines approach or expire.
+- **Alert Levels**: `WARNING_3D`, `WARNING_1D`, `CRITICAL_0D`, `EXPIRED` — configurable thresholds.
+- **Deduplication**: Composite unique index `(RequestId, AlertLevel, RecipientUserId)` — each alert sent at most once per recipient.
+- **Dual-Channel**: Branded Portuguese email + in-app bell notification (`PROFORMA_DEADLINE` category).
+- **Approver Resolution**: Mirrors `WorkflowNotificationOrchestrator` patterns (explicit + department fan-out fallback).
+- **Audit Trail**: `ProformaDeadlineAlerts` table with delivery status tracking. Admin log per cycle.
+- **Configuration**: `AppConfig:ProformaDeadlineAlerts` in `appsettings.json`.
+- **Migration**: `AddProformaDeadlineAlerts`.
+- **Decision**: DEC-123.
 
 ## [2.115.2] - 2026-05-15
 

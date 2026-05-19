@@ -689,6 +689,16 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao carregar detalhe de presença.');
             return response.json();
         },
+        getMonthlyDepartmentReport: async (params: { departmentId: number; startDate: string; endDate: string; daysFilter?: string }): Promise<any> => {
+            const qs = new URLSearchParams();
+            qs.append('departmentId', params.departmentId.toString());
+            qs.append('startDate', params.startDate);
+            qs.append('endDate', params.endDate);
+            if (params.daysFilter) qs.append('daysFilter', params.daysFilter);
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/attendance/reports/monthly-by-department?${qs.toString()}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar relatório mensal por departamento.');
+            return response.json();
+        },
         getAbsenceCodes: async (): Promise<any[]> => {
             const response = await apiFetch(`${API_BASE_URL}/api/hr/attendance/lookup/absence-codes`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar códigos de ausência.');

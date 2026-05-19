@@ -79,6 +79,9 @@ builder.Services.AddScoped<IWorkflowNotificationOrchestrator, WorkflowNotificati
 // Approval Intelligence
 builder.Services.AddScoped<IApprovalIntelligenceService, ApprovalIntelligenceService>();
 
+// Proforma Deadline Alerts — daily background check (first BackgroundService in the project)
+builder.Services.AddHostedService<ProformaDeadlineAlertService>();
+
 // Contract OCR Services
 builder.Services.AddScoped<IContractOcrNormalisationService, ContractOcrNormalisationService>();
 builder.Services.AddScoped<ContractOcrBackgroundProcessor>();

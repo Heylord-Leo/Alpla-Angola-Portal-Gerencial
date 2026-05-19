@@ -211,6 +211,297 @@ public class HRAttendanceController : ControllerBase
     }
 
     /// <summary>
+    /// Generates the Monthly Attendance Report by Department, mimicking the Innux
+    /// "Resultados mensais por departamento" PDF.
+    /// Backend-driven aggregation, calculation and grouping of attendance data.
+    /// </summary>
+    [HttpGet("reports/monthly-by-department")]
+    [Authorize(Roles = "System Administrator,HR")]
+    public async Task<IActionResult> GetMonthlyByDepartmentReport(
+        [FromQuery] int departmentId,
+        [FromQuery] DateTime startDate,
+        [FromQuery] DateTime endDate,
+        [FromQuery] string? daysFilter = null)
+    {
+        if (departmentId <= 0)
+            return BadRequest(new { message = "departmentId is required." });
+
+        if (startDate == default || endDate == default)
+            return BadRequest(new { message = "startDate and endDate are required." });
+
+        if (startDate > endDate)
+            return BadRequest(new { message = "startDate must be before endDate." });
+
+        if ((endDate - startDate).TotalDays > 62)
+            return BadRequest(new { message = "Date range cannot exceed 62 days (approx. 2 months)." });
+
+        try
+        {
+            var dept = await _context.DepartmentMasters.AsNoTracking()
+                .FirstOrDefaultAsync(d => d.Id == departmentId);
+
+            if (dept == null)
+                return NotFound(new { message = "Department not found." });
+
+            var scopedQuery = await GetScopedEmployeesQuery();
+            var employeeRecords = await scopedQuery
+                .Where(e => e.InnuxEmployeeId > 0 && e.DepartmentMasterId == departmentId)
+                .Select(e => new
+                {
+                    e.InnuxEmployeeId,
+                    e.EmployeeCode,
+                    e.FullName,
+                    Department = e.InnuxDepartmentName ?? dept.DepartmentName,
+                    PlantName = e.Plant != null ? e.Plant.Name : (string?)null
+                })
+                .ToListAsync();
+
+            if (!employeeRecords.Any())
+            {
+                return Ok(new AlplaPortal.Application.DTOs.HR.AttendanceDepartmentMonthlyReportDto
+                {
+                    DepartmentId = departmentId,
+                    DepartmentName = $"{dept.DepartmentName} ({dept.CompanyCode})",
+                    StartDate = startDate.Date,
+                    EndDate = endDate.Date,
+                    DaysFilter = daysFilter,
+                    GeneratedAt = DateTime.Now,
+                    GeneratedBy = User.FindFirstValue(ClaimTypes.Name) ?? "System",
+                    Warnings = new List<string> { "No employees found in this department for the current user's scope." }
+                });
+            }
+
+            var innuxIds = employeeRecords.Select(e => e.InnuxEmployeeId).ToList();
+
+            var attendanceTask = _attendanceService.GetDailyAttendanceAsync(innuxIds, startDate.Date, endDate.Date);
+            var workedTask = _attendanceService.GetWorkedHoursAsync(innuxIds, startDate.Date, endDate.Date);
+            var punchesTask = _attendanceService.GetRawPunchesAsync(innuxIds, startDate.Date, endDate.Date);
+
+            await Task.WhenAll(attendanceTask, workedTask, punchesTask);
+
+            var attendance = attendanceTask.Result.ToList();
+            var workedHours = workedTask.Result;
+            var rawPunches = punchesTask.Result.GroupBy(p => p.InnuxEmployeeId).ToDictionary(g => g.Key, g => g.ToList());
+
+            var report = new AlplaPortal.Application.DTOs.HR.AttendanceDepartmentMonthlyReportDto
+            {
+                DepartmentId = departmentId,
+                DepartmentName = $"{dept.DepartmentName} ({dept.CompanyCode})",
+                StartDate = startDate.Date,
+                EndDate = endDate.Date,
+                DaysFilter = daysFilter,
+                GeneratedAt = DateTime.Now,
+                GeneratedBy = User.FindFirstValue(ClaimTypes.Name) ?? "System"
+            };
+
+            foreach (var emp in employeeRecords.OrderBy(e => e.FullName))
+            {
+                var empReport = new AlplaPortal.Application.DTOs.HR.AttendanceEmployeeReportDto
+                {
+                    InnuxId = emp.InnuxEmployeeId,
+                    EmployeeId = emp.EmployeeCode,
+                    Name = emp.FullName,
+                    DepartmentName = emp.Department,
+                    PlantName = emp.PlantName
+                };
+
+                var empDaily = attendance.Where(a => a.InnuxEmployeeId == emp.InnuxEmployeeId).OrderBy(a => a.Date).ToList();
+                var empPunches = rawPunches.ContainsKey(emp.InnuxEmployeeId) ? rawPunches[emp.InnuxEmployeeId] : new List<AttendancePunchDto>();
+
+                // Month buckets for summaries
+                var monthSummaries = new Dictionary<string, AlplaPortal.Application.DTOs.HR.AttendanceMonthlySummaryDto>();
+
+                foreach (var day in empDaily)
+                {
+                    var key = (EmployeeId: emp.InnuxEmployeeId, Date: day.Date.Date);
+                    var dayWorked = workedHours.ContainsKey(key) ? workedHours[key] : new WorkedHoursDto { BasicMinutes = 0, OvertimeMinutes = 0 };
+
+                    // Get punches for this day (or early next day for overnight shifts, handled simplistically here by looking at punches where Date == day.Date or (Date == nextDay and time < 12:00) if overnight)
+                    // Note: Since GetRawPunches returns data by date of punch, we need to map them back to the shift date.
+                    // For simplicity and report mimicking, we just grab punches on this Date, and maybe next morning if IsOvernightShift.
+                    var dayPunches = empPunches.Where(p => 
+                        p.Date == day.Date.Date || 
+                        (day.IsOvernightShift && p.Date == day.Date.Date.AddDays(1) && string.Compare(p.Time, "12:00", StringComparison.Ordinal) < 0)
+                    ).OrderBy(p => p.Date).ThenBy(p => p.Time).ToList();
+
+                    // Determine if this day uses portal-interpreted punches
+                    var isPortalInterpreted = day.AnomalyDescription?.Contains("Portal") == true;
+                    var hasMissingPunch = day.MissedMandatoryPeriods || (day.PunchCount == 0 && day.ExpectedMinutes > 0 && !day.IsRestDay);
+                    var hasInconsistentData = !string.IsNullOrWhiteSpace(day.AnomalyDescription);
+                    var isVacation = day.AttendanceStatus == "Vacation";
+                    var isHoliday = day.AttendanceStatus == "Holiday";
+
+                    // Build warning message from available anomaly data
+                    string? warningMessage = null;
+                    if (!string.IsNullOrWhiteSpace(day.AnomalyDescription))
+                        warningMessage = day.AnomalyDescription;
+                    if (hasMissingPunch && string.IsNullOrWhiteSpace(warningMessage))
+                        warningMessage = "Marcação em falta";
+
+                    var recordDto = new AlplaPortal.Application.DTOs.HR.AttendanceDailyRecordDto
+                    {
+                        Date = day.Date,
+                        Weekday = day.Date.ToString("ddd", new System.Globalization.CultureInfo("pt-PT")).Substring(0, 3).ToUpper(),
+                        BasicMinutes = dayWorked.BasicMinutes,
+                        ExtraMinutes = dayWorked.OvertimeMinutes,
+                        UnpaidMinutes = dayWorked.UnpaidMinutes,
+                        TotalMinutes = dayWorked.TotalMinutes,
+                        MissingMinutes = 0,
+                        AbsenceMinutes = day.AbsenceMinutes,
+                        AbsenceDescription = day.Justification,
+                        Justification = day.Justification,
+                        DailyBalance = day.BalanceMinutes,
+                        Status = day.AttendanceStatus,
+                        IsDayOff = day.IsRestDay,
+                        IsVacation = isVacation,
+                        IsHoliday = isHoliday,
+                        HasMissingPunch = hasMissingPunch,
+                        HasInconsistentData = hasInconsistentData,
+                        IsPortalInterpreted = isPortalInterpreted,
+                        WarningMessage = warningMessage
+                    };
+
+                    // Direction-aware punch pairing:
+                    // When DirectionLabel is available (EN/SA, Entrada/Saída), use it for smarter pairing.
+                    // For Code 17/18 ambiguous punches, fall back to positional pairing.
+                    var entries = new List<string>();
+                    var exits = new List<string>();
+                    bool hasDirectionInfo = dayPunches.Any(p =>
+                        !string.IsNullOrWhiteSpace(p.DirectionLabel) &&
+                        (p.DirectionLabel.Equals("Entrada", StringComparison.OrdinalIgnoreCase) ||
+                         p.DirectionLabel.Equals("Saída", StringComparison.OrdinalIgnoreCase)));
+
+                    if (hasDirectionInfo)
+                    {
+                        // Direction-aware: separate entries and exits
+                        foreach (var p in dayPunches)
+                        {
+                            if (p.DirectionLabel?.Equals("Entrada", StringComparison.OrdinalIgnoreCase) == true)
+                                entries.Add(p.Time);
+                            else if (p.DirectionLabel?.Equals("Saída", StringComparison.OrdinalIgnoreCase) == true)
+                                exits.Add(p.Time);
+                            else
+                            {
+                                // Ambiguous direction — assign by position (odd = entry, even = exit)
+                                if ((entries.Count + exits.Count) % 2 == 0)
+                                    entries.Add(p.Time);
+                                else
+                                    exits.Add(p.Time);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // No direction info — positional pairing (1st=entry, 2nd=exit, ...)
+                        for (int pi = 0; pi < dayPunches.Count; pi++)
+                        {
+                            if (pi % 2 == 0) entries.Add(dayPunches[pi].Time);
+                            else exits.Add(dayPunches[pi].Time);
+                        }
+                    }
+
+                    if (entries.Count > 0) recordDto.Entrada1 = entries[0];
+                    if (exits.Count > 0) recordDto.Saida1 = exits[0];
+                    if (entries.Count > 1) recordDto.Entrada2 = entries[1];
+                    if (exits.Count > 1) recordDto.Saida2 = exits[1];
+                    if (entries.Count > 2) recordDto.Entrada3 = entries[2];
+                    if (exits.Count > 2) recordDto.Saida3 = exits[2];
+                    if (entries.Count > 3) recordDto.Entrada4 = entries[3];
+                    if (exits.Count > 3) recordDto.Saida4 = exits[3];
+
+                    // Filtering
+                    bool includeDay = true;
+                    if (!string.IsNullOrEmpty(daysFilter))
+                    {
+                        if (daysFilter == "missing_punches" && !hasMissingPunch) includeDay = false;
+                        if (daysFilter == "inconsistent" && !hasInconsistentData) includeDay = false;
+                        if (daysFilter == "absences" && day.AbsenceMinutes <= 0) includeDay = false;
+                    }
+
+                    if (includeDay)
+                        empReport.DailyRecords.Add(recordDto);
+
+                    // Update Monthly Summaries
+                    var monthKey = $"{day.Date.Year}-{day.Date.Month:D2}";
+                    if (!monthSummaries.ContainsKey(monthKey))
+                    {
+                        monthSummaries[monthKey] = new AlplaPortal.Application.DTOs.HR.AttendanceMonthlySummaryDto
+                        {
+                            Year = day.Date.Year,
+                            Month = day.Date.Month,
+                            MonthLabel = day.Date.ToString("MMMM yyyy", new System.Globalization.CultureInfo("pt-PT"))
+                        };
+                    }
+
+                    var mSum = monthSummaries[monthKey];
+                    mSum.BasicMinutes += recordDto.BasicMinutes;
+                    mSum.ExtraMinutes += recordDto.ExtraMinutes;
+                    mSum.UnpaidMinutes += recordDto.UnpaidMinutes;
+                    mSum.TotalMinutes += recordDto.TotalMinutes;
+                    mSum.BalanceMinutes += recordDto.DailyBalance;
+                    
+                    if (recordDto.IsVacation) mSum.VacationDays++;
+                    if (recordDto.IsDayOff) mSum.DayOffDays++;
+                    if (recordDto.BasicMinutes > 0 || recordDto.TotalMinutes > 0) mSum.WorkedDays++;
+                    if (recordDto.HasMissingPunch) mSum.MissingPunchDays++;
+                    if (recordDto.HasInconsistentData) mSum.InconsistentDays++;
+                    
+                    // Grand Totals
+                    empReport.GrandTotals.BasicMinutes += recordDto.BasicMinutes;
+                    empReport.GrandTotals.ExtraMinutes += recordDto.ExtraMinutes;
+                    empReport.GrandTotals.UnpaidMinutes += recordDto.UnpaidMinutes;
+                    empReport.GrandTotals.TotalMinutes += recordDto.TotalMinutes;
+                    empReport.GrandTotals.BalanceMinutes += recordDto.DailyBalance;
+
+                    if (recordDto.IsVacation) empReport.GrandTotals.VacationDays++;
+                    if (recordDto.IsDayOff) empReport.GrandTotals.DayOffDays++;
+                    if (recordDto.BasicMinutes > 0 || recordDto.TotalMinutes > 0) empReport.GrandTotals.WorkedDays++;
+                    if (recordDto.HasMissingPunch) empReport.GrandTotals.MissingPunchDays++;
+                    if (recordDto.HasInconsistentData) empReport.GrandTotals.InconsistentDays++;
+                }
+
+                empReport.MonthlyTotals = monthSummaries.Values.OrderBy(m => m.Year).ThenBy(m => m.Month).ToList();
+                report.Employees.Add(empReport);
+
+                // Add to Department Grand Totals
+                report.DepartmentGrandTotals.BasicMinutes += empReport.GrandTotals.BasicMinutes;
+                report.DepartmentGrandTotals.ExtraMinutes += empReport.GrandTotals.ExtraMinutes;
+                report.DepartmentGrandTotals.UnpaidMinutes += empReport.GrandTotals.UnpaidMinutes;
+                report.DepartmentGrandTotals.TotalMinutes += empReport.GrandTotals.TotalMinutes;
+                report.DepartmentGrandTotals.BalanceMinutes += empReport.GrandTotals.BalanceMinutes;
+
+                report.DepartmentGrandTotals.VacationDays += empReport.GrandTotals.VacationDays;
+                report.DepartmentGrandTotals.DayOffDays += empReport.GrandTotals.DayOffDays;
+                report.DepartmentGrandTotals.WorkedDays += empReport.GrandTotals.WorkedDays;
+                report.DepartmentGrandTotals.MissingPunchDays += empReport.GrandTotals.MissingPunchDays;
+                report.DepartmentGrandTotals.InconsistentDays += empReport.GrandTotals.InconsistentDays;
+            }
+
+            return Ok(report);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("Innux"))
+        {
+            _logger.LogWarning(ex, "Innux integration unavailable for department {DepartmentId}", departmentId);
+            return StatusCode(503, new { message = "O serviço Innux não está disponível. Verifique a configuração de integração." });
+        }
+        catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == -2 || ex.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogError(ex, "Innux query timeout for department {DepartmentId}, range {Start}-{End}", departmentId, startDate, endDate);
+            return StatusCode(504, new { message = "A consulta ao Innux excedeu o tempo limite. Tente um intervalo de datas mais curto." });
+        }
+        catch (Microsoft.Data.SqlClient.SqlException ex)
+        {
+            _logger.LogError(ex, "Innux SQL error for department {DepartmentId}: Error {ErrorNumber}", departmentId, ex.Number);
+            return StatusCode(502, new { message = "Erro de comunicação com o sistema Innux. Contacte o suporte técnico." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load monthly department report for department {DepartmentId}", departmentId);
+            return StatusCode(500, new { message = "Ocorreu um erro inesperado ao gerar o relatório. Contacte o suporte técnico." });
+        }
+    }
+
+    /// <summary>
     /// Returns all absence codes from Innux.
     /// Reference data — cached 1 hour server-side.
     /// Available to any authenticated user (codes are not scoped).
