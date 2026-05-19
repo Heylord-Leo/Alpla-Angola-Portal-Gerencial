@@ -56,8 +56,8 @@ public class UsersController : BaseController
             Email = user.Email,
             IsActive = user.IsActive,
             Roles = user.UserRoleAssignments.Select(ra => ra.Role.RoleName).ToList(),
-            Plants = user.UserPlantScopes.Select(ps => ps.Plant.Code).ToList(),
-            Departments = user.UserDepartmentScopes.Select(ds => ds.Department.Code).ToList(),
+            Plants = user.UserPlantScopes.Select(ps => ps.Plant.Code ?? string.Empty).ToList(),
+            Departments = user.UserDepartmentScopes.Select(ds => ds.Department.Code ?? string.Empty).ToList(),
             CanEdit = false
         });
     }
@@ -95,8 +95,8 @@ public class UsersController : BaseController
                 Email = u.Email,
                 IsActive = u.IsActive,
                 Roles = u.UserRoleAssignments.Select(ra => ra.Role.RoleName).ToList(),
-                Plants = u.UserPlantScopes.Select(ps => ps.Plant.Code).ToList(),
-                Departments = u.UserDepartmentScopes.Select(ds => ds.Department.Code).ToList(),
+                Plants = u.UserPlantScopes.Select(ps => ps.Plant.Code ?? string.Empty).ToList(),
+                Departments = u.UserDepartmentScopes.Select(ds => ds.Department.Code ?? string.Empty).ToList(),
                 CanEdit = isSystemAdmin || (isLocalManager && (
                     u.UserPlantScopes.Any(ps => lmPlantIds.Contains(ps.PlantId)) ||
                     u.UserDepartmentScopes.Any(ds => lmDeptIds.Contains(ds.DepartmentId))

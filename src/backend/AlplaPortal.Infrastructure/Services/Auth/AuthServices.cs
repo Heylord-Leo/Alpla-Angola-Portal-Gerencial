@@ -160,13 +160,13 @@ public class AuthService : IAuthService
         var plantCodes = await _context.UserPlantScopes
             .Where(ups => ups.UserId == user.Id)
             .Include(ups => ups.Plant)
-            .Select(ups => ups.Plant.Code)
+            .Select(ups => ups.Plant.Code ?? string.Empty)
             .ToListAsync();
 
         var departmentCodes = await _context.UserDepartmentScopes
             .Where(uds => uds.UserId == user.Id)
             .Include(uds => uds.Department)
-            .Select(uds => uds.Department.Code)
+            .Select(uds => uds.Department.Code ?? string.Empty)
             .ToListAsync();
 
         // HR Module: Fetch departments where this user is the ResponsibleUser (Department Manager)

@@ -478,11 +478,11 @@ public class FinanceController : BaseController
             dtoList.Add(new FinanceListItemDto
             {
                 Id = r.Id,
-                RequestNumber = r.RequestNumber,
+                RequestNumber = r.RequestNumber ?? string.Empty,
                 Title = r.Title ?? "---",
                 SupplierName = r.SelectedQuotationId.HasValue 
                     ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.SupplierNameSnapshot ?? "---"
-                    : r.Supplier != null ? r.Supplier.Name : "---",
+                    : r.Supplier?.Name ?? "---",
                 RequesterName = r.Requester!.FullName ?? "---",
                 PlantName = r.Plant != null ? r.Plant.Name : "---",
                 Amount = r.SelectedQuotationId.HasValue 
@@ -586,11 +586,11 @@ public class FinanceController : BaseController
                     ? sh.Request.Quotations.FirstOrDefault(q => q.Id == sh.Request.SelectedQuotationId.Value)!.Currency 
                     : (sh.Request.Currency != null ? sh.Request.Currency.Code : "---"),
                 ActionTaken = sh.ActionTaken ?? "Unknown",
-                Comment = sh.Comment,
+                Comment = sh.Comment ?? string.Empty,
                 CreatedAtUtc = sh.CreatedAtUtc,
                 ActorName = sh.ActorUser!.FullName ?? "Unknown",
-                NewStatusCode = sh.NewStatus!.Code,
-                NewStatusName = sh.NewStatus.Name
+                NewStatusCode = sh.NewStatus!.Code ?? string.Empty,
+                NewStatusName = sh.NewStatus.Name ?? string.Empty
             })
             .ToListAsync();
 
@@ -647,11 +647,11 @@ public class FinanceController : BaseController
                     ? sh.Request.Quotations.FirstOrDefault(q => q.Id == sh.Request.SelectedQuotationId.Value)!.Currency 
                     : (sh.Request.Currency != null ? sh.Request.Currency.Code : "---"),
                 ActionTaken = sh.ActionTaken ?? "Unknown",
-                Comment = sh.Comment,
+                Comment = sh.Comment ?? string.Empty,
                 CreatedAtUtc = sh.CreatedAtUtc,
                 ActorName = sh.ActorUser!.FullName ?? "Unknown",
-                NewStatusCode = sh.NewStatus!.Code,
-                NewStatusName = sh.NewStatus.Name
+                NewStatusCode = sh.NewStatus!.Code ?? string.Empty,
+                NewStatusName = sh.NewStatus.Name ?? string.Empty
             })
             .ToListAsync();
 

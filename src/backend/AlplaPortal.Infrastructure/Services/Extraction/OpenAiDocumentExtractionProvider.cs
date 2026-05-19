@@ -14,6 +14,7 @@ using PdfiumViewer;
 
 namespace AlplaPortal.Infrastructure.Services.Extraction;
 
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public record DocumentRenderProfile(int Dpi, int MaxPages, ImageFormat Format, long Quality, string OpenAiDetailMode)
 {
     public static DocumentRenderProfile InvoiceProfile => new(150, 3, ImageFormat.Jpeg, 85L, "high");
@@ -30,6 +31,7 @@ public enum DocumentStrategy
 /// <summary>
 /// OpenAI implementation for document extraction with adaptive PDF rasterization support.
 /// </summary>
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
 {
     private readonly HttpClient _httpClient;

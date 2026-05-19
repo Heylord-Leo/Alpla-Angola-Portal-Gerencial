@@ -442,7 +442,7 @@ public class MonthlyChangesOrchestrator : IMonthlyChangesOrchestrator
             .CountAsync();
     }
 
-    private async Task LogEventAsync(Guid runId, string eventType, string message, Guid? userId = null)
+    private Task LogEventAsync(Guid runId, string eventType, string message, Guid? userId = null)
     {
         var log = new MCProcessingLog
         {
@@ -455,6 +455,7 @@ public class MonthlyChangesOrchestrator : IMonthlyChangesOrchestrator
         };
         _context.MCProcessingLogs.Add(log);
         // SaveChanges called by the caller
+        return Task.CompletedTask;
     }
 
     private async Task<ProcessingRunDetailDto> BuildDetailDto(Guid runId, MCProcessingRun? run = null)

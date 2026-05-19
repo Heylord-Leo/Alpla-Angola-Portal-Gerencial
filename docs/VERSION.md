@@ -2,7 +2,12 @@
 
 ## Current Version
 
-v2.117.1
+v2.117.2
+
+## [2.117.2] - 2026-05-19
+
+### Fixed — Backend Warning Cleanup
+- **Backend Refactor**: Resolved `CS1998` compiler warning in `MonthlyChangesOrchestrator` by removing unnecessary `async` modifier from `LogEventAsync` and returning `Task.CompletedTask`.
 
 ## [2.117.1] - 2026-05-18
 

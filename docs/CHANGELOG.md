@@ -2,6 +2,13 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.117.2] - 2026-05-19 - Backend Warning Cleanup
+
+### Fixed
+- **Backend Refactor**: Resolved `CS1998` compiler warning in `MonthlyChangesOrchestrator` by removing unnecessary `async` modifier from `LogEventAsync` and returning `Task.CompletedTask`.
+
+---
+
 ## [v2.117.1] - 2026-05-18 - HR Monthly Attendance Reporting Corrections
 
 ### Fixed

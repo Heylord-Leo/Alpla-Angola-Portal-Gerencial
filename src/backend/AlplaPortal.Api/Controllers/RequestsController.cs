@@ -14,7 +14,6 @@ using AlplaPortal.Infrastructure.Logging;
 using AlplaPortal.Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using AlplaPortal.Domain.Constants;
 using System.Linq.Expressions;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;

@@ -32,7 +32,10 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddMemoryCache();
 
 builder.Services.AddHttpClient<IDocumentExtractionProvider, LocalOcrExtractionProvider>();
-builder.Services.AddHttpClient<IDocumentExtractionProvider, OpenAiDocumentExtractionProvider>();
+if (OperatingSystem.IsWindows())
+{
+    builder.Services.AddHttpClient<IDocumentExtractionProvider, OpenAiDocumentExtractionProvider>();
+}
 builder.Services.AddScoped<IDocumentExtractionService, DocumentExtractionService>();
 builder.Services.Configure<DocumentExtractionOptions>(builder.Configuration.GetSection("DocumentExtraction"));
 builder.Services.AddScoped<IDocumentExtractionSettingsService, DocumentExtractionSettingsService>();

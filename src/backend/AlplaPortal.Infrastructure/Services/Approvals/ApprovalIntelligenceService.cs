@@ -150,7 +150,7 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
             return new ItemIntelligenceDto
             {
                 LineItemId = item.Id,
-                Description = item.Description,
+                Description = item.Description ?? string.Empty,
                 CurrentUnitPrice = item.UnitPrice,
                 Currency = currentCurrency ?? string.Empty,
                 HasHistory = false
@@ -163,7 +163,7 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
         return new ItemIntelligenceDto
         {
             LineItemId = item.Id,
-            Description = item.Description,
+            Description = item.Description ?? string.Empty,
             CurrentUnitPrice = item.UnitPrice,
             Currency = currentCurrency ?? string.Empty,
             HasHistory = true,
@@ -276,7 +276,7 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
         return historicalItems.Select(li => new HistoricalPurchaseRecordDto
         {
             RequestId = li.RequestId,
-            RequestNumber = li.Request.RequestNumber,
+            RequestNumber = li.Request.RequestNumber ?? string.Empty,
             PurchaseDate = li.Request.CreatedAtUtc,
             SupplierName = li.SupplierName ?? "N/D",
             UnitPrice = li.UnitPrice,
