@@ -709,6 +709,31 @@ export interface SyncSupplierReviewedImportRequestDto {
     suppliers: ReviewedSupplierItemDto[];
 }
 
+// ── Catalog Conflict Resolution Types ─────────────────────────────────────
+
+export type CatalogConflictResolution =
+    | 'UpdatePortal'
+    | 'ConfirmAssociation'
+    | 'CreateNew'
+    | 'AssociateManually';
+
+export interface CatalogResolveConflictRequestDto {
+    primaveraCode: string;
+    resolution: CatalogConflictResolution;
+    portalItemId?: number | null;
+    targetPortalItemId?: number | null;
+    primaveraDescription?: string | null;
+    primaveraFamily?: string | null;
+    primaveraBaseUnit?: string | null;
+    updateFields?: string[] | null;
+}
+
+export interface CatalogResolveConflictResultDto {
+    success: boolean;
+    message: string;
+    affectedPortalItemId?: number | null;
+}
+
 export interface DepartmentMasterDto {
     id: number;
     departmentCode: string;

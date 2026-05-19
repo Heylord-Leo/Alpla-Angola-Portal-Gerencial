@@ -376,6 +376,385 @@ public class SyncController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Resolve a catalog sync conflict using one of four strategies:
+    /// UpdatePortal, ConfirmAssociation, CreateNew, or AssociateManually.
+    /// All actions are audit-logged. PrimaveraCode uniqueness is enforced.
+    /// </summary>
+    [HttpPost("catalog/resolve-conflict")]
+    public async Task<ActionResult<CatalogResolveConflictResultDto>> CatalogResolveConflict(
+        [FromQuery] int companyId,
+        [FromBody] CatalogResolveConflictRequestDto request)
+    {
+        var company = ResolveCompany(companyId);
+        if (company is null)
+            return BadRequest(new { error = "Empresa Primavera inválida." });
+
+        // ── Validate PrimaveraCode is not null/empty/whitespace/zero-only ──
+        var trimmedCode = request.PrimaveraCode?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmedCode) ||
+            trimmedCode.All(c => c == '0'))
+        {
+            return BadRequest(new CatalogResolveConflictResultDto
+            {
+                Success = false,
+                Message = "Código Primavera inválido para sincronização."
+            });
+        }
+
+        var companyName = company.Value.ToString();
+        var now = DateTime.UtcNow;
+        var validUpdateFields = new HashSet<string> { "Description", "Category", "Unit", "PrimaveraCode" };
+
+        try
+        {
+            switch (request.Resolution)
+            {
+                // ────────────────────────────────────────────────────────────
+                // A) UpdatePortal — selectively update chosen fields
+                // ────────────────────────────────────────────────────────────
+                case CatalogConflictResolution.UpdatePortal:
+                {
+                    if (!request.PortalItemId.HasValue)
+                        return BadRequest(new CatalogResolveConflictResultDto
+                        {
+                            Success = false,
+                            Message = "Item Portal sugerido é obrigatório para esta ação."
+                        });
+
+                    if (request.UpdateFields is not { Count: > 0 })
+                        return BadRequest(new CatalogResolveConflictResultDto
+                        {
+                            Success = false,
+                            Message = "Selecione pelo menos um campo para atualizar."
+                        });
+
+                    // Validate field names
+                    var invalidFields = request.UpdateFields
+                        .Where(f => !validUpdateFields.Contains(f))
+                        .ToList();
+                    if (invalidFields.Count > 0)
+                        return BadRequest(new CatalogResolveConflictResultDto
+                        {
+                            Success = false,
+                            Message = $"Campo(s) inválido(s): {string.Join(", ", invalidFields)}. " +
+                                      $"Válidos: {string.Join(", ", validUpdateFields)}."
+                        });
+
+                    var portalItem = await _context.ItemCatalogItems.FindAsync(request.PortalItemId.Value);
+                    if (portalItem is null)
+                        return NotFound(new CatalogResolveConflictResultDto
+                        {
+                            Success = false,
+                            Message = $"Item de catálogo Portal não encontrado (ID: {request.PortalItemId})."
+                        });
+
+                    // Duplicate PrimaveraCode check (if linking)
+                    if (request.UpdateFields.Contains("PrimaveraCode"))
+                    {
+                        var existing = await _context.ItemCatalogItems
+                            .Where(ic => ic.PrimaveraCode == trimmedCode && ic.Id != portalItem.Id)
+                            .Select(ic => new { ic.Id, ic.Code })
+                            .FirstOrDefaultAsync();
+                        if (existing is not null)
+                            return Conflict(new CatalogResolveConflictResultDto
+                            {
+                                Success = false,
+                                Message = $"O código Primavera '{trimmedCode}' já está vinculado ao item Portal " +
+                                          $"'{existing.Code}' (ID: {existing.Id}). Desvincule antes de reassociar."
+                            });
+                    }
+
+                    // Apply selected fields
+                    var appliedFields = new List<string>();
+                    if (request.UpdateFields.Contains("Description") && request.PrimaveraDescription is not null)
+                    {
+                        portalItem.Description = request.PrimaveraDescription.Trim();
+                        appliedFields.Add("Description");
+                    }
+                    if (request.UpdateFields.Contains("Category") && request.PrimaveraFamily is not null)
+                    {
+                        portalItem.Category = request.PrimaveraFamily.Trim();
+                        appliedFields.Add("Category");
+                    }
+                    if (request.UpdateFields.Contains("Unit") && request.PrimaveraBaseUnit is not null)
+                    {
+                        // Try to match unit by code
+                        var unit = await _context.Units
+                            .FirstOrDefaultAsync(u => u.Code == request.PrimaveraBaseUnit.Trim());
+                        if (unit is not null)
+                        {
+                            portalItem.DefaultUnitId = unit.Id;
+                            appliedFields.Add("Unit");
+                        }
+                        // If unit not found in Portal, skip silently (don't block the operation)
+                    }
+                    if (request.UpdateFields.Contains("PrimaveraCode"))
+                    {
+                        portalItem.PrimaveraCode = trimmedCode;
+                        portalItem.Origin = "SYNCED_PRIMAVERA";
+                        portalItem.SourceCompany = companyName;
+                        appliedFields.Add("PrimaveraCode");
+                    }
+
+                    portalItem.LastSyncedAtUtc = now;
+                    portalItem.UpdatedAtUtc = now;
+
+                    await _context.SaveChangesAsync();
+
+                    await _adminLog.WriteAsync("Activity", "Sync", "SYNC_CATALOG_RESOLVE_CONFLICT",
+                        $"Conflito resolvido (UpdatePortal): Primavera '{trimmedCode}' → Portal #{portalItem.Id} '{portalItem.Code}'. " +
+                        $"Campos atualizados: [{string.Join(", ", appliedFields)}]. Empresa: {companyName}.",
+                        payload: JsonSerializer.Serialize(new
+                        {
+                            resolution = "UpdatePortal",
+                            primaveraCode = trimmedCode,
+                            portalItemId = portalItem.Id,
+                            portalItemCode = portalItem.Code,
+                            appliedFields,
+                            company = companyName
+                        }));
+
+                    return Ok(new CatalogResolveConflictResultDto
+                    {
+                        Success = true,
+                        Message = $"Item Portal '{portalItem.Code}' atualizado com sucesso. Campos: {string.Join(", ", appliedFields)}.",
+                        AffectedPortalItemId = portalItem.Id
+                    });
+                }
+
+                // ────────────────────────────────────────────────────────────
+                // B) ConfirmAssociation — link only, no data change
+                // ────────────────────────────────────────────────────────────
+                case CatalogConflictResolution.ConfirmAssociation:
+                {
+                    if (!request.PortalItemId.HasValue)
+                        return BadRequest(new CatalogResolveConflictResultDto
+                        {
+                            Success = false,
+                            Message = "Item Portal sugerido é obrigatório para esta ação."
+                        });
+
+                    var portalItem = await _context.ItemCatalogItems.FindAsync(request.PortalItemId.Value);
+                    if (portalItem is null)
+                        return NotFound(new CatalogResolveConflictResultDto
+                        {
+                            Success = false,
+                            Message = $"Item de catálogo Portal não encontrado (ID: {request.PortalItemId})."
+                        });
+
+                    // Duplicate PrimaveraCode check
+                    var existing = await _context.ItemCatalogItems
+                        .Where(ic => ic.PrimaveraCode == trimmedCode && ic.Id != portalItem.Id)
+                        .Select(ic => new { ic.Id, ic.Code })
+                        .FirstOrDefaultAsync();
+                    if (existing is not null)
+                        return Conflict(new CatalogResolveConflictResultDto
+                        {
+                            Success = false,
+                            Message = $"O código Primavera '{trimmedCode}' já está vinculado ao item Portal " +
+                                      $"'{existing.Code}' (ID: {existing.Id}). Desvincule antes de reassociar."
+                        });
+
+                    portalItem.PrimaveraCode = trimmedCode;
+                    portalItem.SourceCompany = companyName;
+                    portalItem.LastSyncedAtUtc = now;
+                    portalItem.UpdatedAtUtc = now;
+
+                    await _context.SaveChangesAsync();
+
+                    await _adminLog.WriteAsync("Activity", "Sync", "SYNC_CATALOG_RESOLVE_CONFLICT",
+                        $"Conflito resolvido (ConfirmAssociation): Primavera '{trimmedCode}' → Portal #{portalItem.Id} '{portalItem.Code}'. " +
+                        $"Empresa: {companyName}.",
+                        payload: JsonSerializer.Serialize(new
+                        {
+                            resolution = "ConfirmAssociation",
+                            primaveraCode = trimmedCode,
+                            portalItemId = portalItem.Id,
+                            portalItemCode = portalItem.Code,
+                            company = companyName
+                        }));
+
+                    return Ok(new CatalogResolveConflictResultDto
+                    {
+                        Success = true,
+                        Message = $"Código Primavera '{trimmedCode}' vinculado ao item Portal '{portalItem.Code}' sem alterar dados.",
+                        AffectedPortalItemId = portalItem.Id
+                    });
+                }
+
+                // ────────────────────────────────────────────────────────────
+                // C) CreateNew — create a new Portal item from Primavera data
+                // ────────────────────────────────────────────────────────────
+                case CatalogConflictResolution.CreateNew:
+                {
+                    // Duplicate PrimaveraCode check — must not already be linked to any item
+                    var existing = await _context.ItemCatalogItems
+                        .Where(ic => ic.PrimaveraCode == trimmedCode)
+                        .Select(ic => new { ic.Id, ic.Code })
+                        .FirstOrDefaultAsync();
+                    if (existing is not null)
+                        return Conflict(new CatalogResolveConflictResultDto
+                        {
+                            Success = false,
+                            Message = $"O código Primavera '{trimmedCode}' já está vinculado ao item Portal " +
+                                      $"'{existing.Code}' (ID: {existing.Id}). Desvincule antes de reassociar."
+                        });
+
+                    // Generate next code via canonical ITEM_CATALOG_COUNTER (ITM-NNNNN)
+                    var counter = await _context.SystemCounters
+                        .FirstOrDefaultAsync(c => c.Id == "ITEM_CATALOG_COUNTER");
+                    if (counter == null)
+                    {
+                        counter = new SystemCounter
+                        {
+                            Id = "ITEM_CATALOG_COUNTER",
+                            CurrentValue = 1,
+                            LastUpdatedUtc = now
+                        };
+                        _context.SystemCounters.Add(counter);
+                    }
+                    else
+                    {
+                        counter.CurrentValue++;
+                        counter.LastUpdatedUtc = now;
+                    }
+
+                    var newCode = $"ITM-{counter.CurrentValue:D5}";
+
+                    // Try to match unit by code
+                    int? unitId = null;
+                    if (!string.IsNullOrWhiteSpace(request.PrimaveraBaseUnit))
+                    {
+                        var unit = await _context.Units
+                            .FirstOrDefaultAsync(u => u.Code == request.PrimaveraBaseUnit.Trim());
+                        unitId = unit?.Id;
+                    }
+
+                    var newItem = new ItemCatalog
+                    {
+                        Code = newCode,
+                        Description = (request.PrimaveraDescription ?? trimmedCode).Trim(),
+                        PrimaveraCode = trimmedCode,
+                        Category = request.PrimaveraFamily?.Trim(),
+                        DefaultUnitId = unitId,
+                        Origin = "SYNCED_PRIMAVERA",
+                        SourceCompany = companyName,
+                        LastSyncedAtUtc = now,
+                        IsActive = true,
+                        CreatedAtUtc = now
+                    };
+
+                    _context.ItemCatalogItems.Add(newItem);
+                    await _context.SaveChangesAsync();
+
+                    await _adminLog.WriteAsync("Activity", "Sync", "SYNC_CATALOG_RESOLVE_CONFLICT",
+                        $"Conflito resolvido (CreateNew): Primavera '{trimmedCode}' → Novo item Portal '{newCode}' (ID: {newItem.Id}). " +
+                        $"Empresa: {companyName}.",
+                        payload: JsonSerializer.Serialize(new
+                        {
+                            resolution = "CreateNew",
+                            primaveraCode = trimmedCode,
+                            newPortalItemId = newItem.Id,
+                            newPortalItemCode = newCode,
+                            company = companyName
+                        }));
+
+                    return Ok(new CatalogResolveConflictResultDto
+                    {
+                        Success = true,
+                        Message = $"Novo item de catálogo '{newCode}' criado com sucesso a partir do Primavera '{trimmedCode}'.",
+                        AffectedPortalItemId = newItem.Id
+                    });
+                }
+
+                // ────────────────────────────────────────────────────────────
+                // D) AssociateManually — link to a user-specified Portal item
+                // ────────────────────────────────────────────────────────────
+                case CatalogConflictResolution.AssociateManually:
+                {
+                    if (!request.TargetPortalItemId.HasValue)
+                        return BadRequest(new CatalogResolveConflictResultDto
+                        {
+                            Success = false,
+                            Message = "Item Portal de destino é obrigatório para associação manual."
+                        });
+
+                    var targetItem = await _context.ItemCatalogItems.FindAsync(request.TargetPortalItemId.Value);
+                    if (targetItem is null)
+                        return NotFound(new CatalogResolveConflictResultDto
+                        {
+                            Success = false,
+                            Message = $"Item de catálogo Portal não encontrado (ID: {request.TargetPortalItemId})."
+                        });
+
+                    if (!targetItem.IsActive)
+                        return BadRequest(new CatalogResolveConflictResultDto
+                        {
+                            Success = false,
+                            Message = $"Item de catálogo Portal está inativo (ID: {request.TargetPortalItemId})."
+                        });
+
+                    // Duplicate PrimaveraCode check
+                    var existing = await _context.ItemCatalogItems
+                        .Where(ic => ic.PrimaveraCode == trimmedCode && ic.Id != targetItem.Id)
+                        .Select(ic => new { ic.Id, ic.Code })
+                        .FirstOrDefaultAsync();
+                    if (existing is not null)
+                        return Conflict(new CatalogResolveConflictResultDto
+                        {
+                            Success = false,
+                            Message = $"O código Primavera '{trimmedCode}' já está vinculado ao item Portal " +
+                                      $"'{existing.Code}' (ID: {existing.Id}). Desvincule antes de reassociar."
+                        });
+
+                    targetItem.PrimaveraCode = trimmedCode;
+                    targetItem.SourceCompany = companyName;
+                    targetItem.LastSyncedAtUtc = now;
+                    targetItem.UpdatedAtUtc = now;
+
+                    await _context.SaveChangesAsync();
+
+                    await _adminLog.WriteAsync("Activity", "Sync", "SYNC_CATALOG_RESOLVE_CONFLICT",
+                        $"Conflito resolvido (AssociateManually): Primavera '{trimmedCode}' → Portal #{targetItem.Id} '{targetItem.Code}'. " +
+                        $"Empresa: {companyName}.",
+                        payload: JsonSerializer.Serialize(new
+                        {
+                            resolution = "AssociateManually",
+                            primaveraCode = trimmedCode,
+                            targetPortalItemId = targetItem.Id,
+                            targetPortalItemCode = targetItem.Code,
+                            company = companyName
+                        }));
+
+                    return Ok(new CatalogResolveConflictResultDto
+                    {
+                        Success = true,
+                        Message = $"Código Primavera '{trimmedCode}' vinculado manualmente ao item Portal '{targetItem.Code}'.",
+                        AffectedPortalItemId = targetItem.Id
+                    });
+                }
+
+                default:
+                    return BadRequest(new CatalogResolveConflictResultDto
+                    {
+                        Success = false,
+                        Message = "Estratégia de resolução inválida."
+                    });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during catalog conflict resolution. PrimaveraCode: {Code}, Company: {Company}",
+                trimmedCode, company);
+            return StatusCode(500, new CatalogResolveConflictResultDto
+            {
+                Success = false,
+                Message = "Erro interno durante a resolução do conflito."
+            });
+        }
+    }
+
     // ─── SUPPLIERS ─────────────────────────────────────────────────────────────
 
     /// <summary>

@@ -2,7 +2,21 @@
 
 ## Current Version
 
-v2.117.2
+v2.118.0
+
+## [2.118.0] - 2026-05-19
+
+### Added — Catalog Sync Conflict Resolution
+- **Backend**: New `POST /api/v1/sync/catalog/resolve-conflict` endpoint supporting 4 resolution strategies: `UpdatePortal` (field-level selection for Description, Category, Unit, PrimaveraCode), `ConfirmAssociation`, `CreateNew` (canonical ITM-NNNNN), and `AssociateManually`.
+- **Data Integrity**: Strict PrimaveraCode validation (rejects null, empty, whitespace, "0", and all-zeros). Duplicate PrimaveraCode-to-Portal item association prevention.
+- **Frontend UI**: New `CatalogConflictResolverModal` with side-by-side Primavera vs Portal comparison, field-level checkbox selection for UpdatePortal, manual search for AssociateManually, and preview-before-confirm summary.
+- **Integration**: "Resolver" action button in the catalog sync table for conflict-status rows. Immediate UI refresh on successful resolution.
+- **Audit Trail**: All resolution actions logged via `AdminLogWriter` with action code `SYNC_CATALOG_RESOLVE_CONFLICT`.
+
+## [2.117.3] - 2026-05-19
+
+### Fixed — EF Core Warning Cleanup
+- **Database Schema**: Explicitly configured `HasPrecision(18, 2)` for `AnnualBudget.TotalAmount` to resolve EF Core `Validation[30000]` silent truncation warning.
 
 ## [2.117.2] - 2026-05-19
 

@@ -2,6 +2,24 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.118.0] - 2026-05-19 - Catalog Sync Conflict Resolution
+
+### Added
+- **Catalog Sync Conflict Resolution Backend**: New `POST /api/v1/sync/catalog/resolve-conflict` endpoint with 4 resolution strategies: `UpdatePortal` (field-level selection for Description, Category, Unit, PrimaveraCode), `ConfirmAssociation` (link PrimaveraCode only), `CreateNew` (auto-generates ITM-NNNNN), and `AssociateManually` (link to a user-selected Portal item).
+- **Data Integrity Enforcement**: PrimaveraCode validation (rejects null/empty/whitespace/"0"/all-zeros). Duplicate PrimaveraCode-to-Portal association prevention with descriptive error messages.
+- **Conflict Resolver Modal**: New `CatalogConflictResolverModal.tsx` component with side-by-side Primavera vs Portal comparison, field-level checkbox selection for UpdatePortal strategy, manual item search for AssociateManually, and preview-before-confirm summary panel.
+- **Table Integration**: "Resolver" action button in the catalog sync table for conflict-status rows. Immediate visual feedback and UI refresh on successful resolution.
+- **Audit Logging**: All resolution actions logged via `AdminLogWriter` with action code `SYNC_CATALOG_RESOLVE_CONFLICT`, capturing strategy, codes, and timestamps.
+
+---
+
+## [v2.117.3] - 2026-05-19 - EF Core Warning Cleanup
+
+### Fixed
+- **Database Schema**: Explicitly configured `HasPrecision(18, 2)` for `AnnualBudget.TotalAmount` to resolve EF Core `Validation[30000]` silent truncation warning. Applied schema migration.
+
+---
+
 ## [v2.117.2] - 2026-05-19 - Backend Warning Cleanup
 
 ### Fixed

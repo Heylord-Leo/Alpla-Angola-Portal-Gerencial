@@ -10,6 +10,7 @@ import {
     SyncImportResultDto
 } from '../../types';
 import { SupplierImportReviewModal } from '../../components/Settings/SupplierImportReviewModal';
+import { CatalogConflictResolverModal } from '../../components/Settings/CatalogConflictResolverModal';
 import {
     ArrowLeft,
     RefreshCw,
@@ -186,6 +187,10 @@ export function SyncWorkspace() {
 
     // Supplier review modal state
     const [showReviewModal, setShowReviewModal] = useState(false);
+
+    // Catalog conflict resolver modal state
+    const [conflictItem, setConflictItem] = useState<CatalogSyncPreviewItemDto | null>(null);
+    const [showConflictModal, setShowConflictModal] = useState(false);
 
     // ─── Column sort & filter state (persisted across pages) ────────────
     const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
@@ -569,6 +574,10 @@ export function SyncWorkspace() {
                         columnFilters={mergedColumnFilters}
                         onSortChange={setSortConfig}
                         onFilterChange={handleFilterChange}
+                        onResolveConflict={(item) => {
+                            setConflictItem(item);
+                            setShowConflictModal(true);
+                        }}
                     />
                 ) : (
                     <SupplierTable
@@ -620,6 +629,24 @@ export function SyncWorkspace() {
                     companyId={companyId}
                 />
             )}
+
+            {/* ── Catalog Conflict Resolver Modal ── */}
+            {entity === 'catalog' && (
+                <CatalogConflictResolverModal
+                    isOpen={showConflictModal}
+                    onClose={() => {
+                        setShowConflictModal(false);
+                        setConflictItem(null);
+                    }}
+                    onResolved={() => {
+                        setShowConflictModal(false);
+                        setConflictItem(null);
+                        loadPreview();
+                    }}
+                    item={conflictItem}
+                    companyId={companyId}
+                />
+            )}
         </div>
     );
 }
@@ -640,11 +667,13 @@ function CatalogTable({
     sortConfig,
     columnFilters,
     onSortChange,
-    onFilterChange
+    onFilterChange,
+    onResolveConflict
 }: {
     items: CatalogSyncPreviewItemDto[];
     selectedCodes: Set<string>;
     onToggle: (code: string) => void;
+    onResolveConflict: (item: CatalogSyncPreviewItemDto) => void;
 } & TableInteractionProps) {
     return (
         <table className="sync-table" id="sync-catalog-table">
@@ -664,12 +693,13 @@ function CatalogTable({
                         />
                     ))}
                     <th>Detalhe</th>
+                    <th>Ações</th>
                 </tr>
             </thead>
             <tbody>
                 {items.length === 0 ? (
                     <tr>
-                        <td colSpan={9} className="sync-table-no-results">
+                        <td colSpan={10} className="sync-table-no-results">
                             <Filter size={16} />
                             <span>Nenhum item corresponde aos filtros de coluna aplicados.</span>
                         </td>
@@ -677,6 +707,7 @@ function CatalogTable({
                 ) : items.map((item, idx) => {
                     const cfg = STATUS_CONFIG[item.status];
                     const isNew = item.status === 'New';
+                    const isConflict = item.status === 'Conflict';
                     const isSelected = selectedCodes.has(item.primaveraCode);
                     return (
                         <tr
@@ -710,6 +741,21 @@ function CatalogTable({
                                         <AlertTriangle size={12} />
                                         {item.conflictDetail}
                                     </span>
+                                )}
+                            </td>
+                            <td className="sync-td-actions">
+                                {isConflict && (
+                                    <button
+                                        type="button"
+                                        className="sync-resolve-btn"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onResolveConflict(item);
+                                        }}
+                                    >
+                                        <AlertTriangle size={12} />
+                                        Resolver
+                                    </button>
                                 )}
                             </td>
                         </tr>

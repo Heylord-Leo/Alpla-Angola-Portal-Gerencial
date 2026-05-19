@@ -150,6 +150,10 @@ public class ApplicationDbContext : DbContext
             .HasDatabaseName("IX_AnnualBudget_Hierarchy");
 
         modelBuilder.Entity<AnnualBudget>()
+            .Property(a => a.TotalAmount)
+            .HasPrecision(18, 2);
+
+        modelBuilder.Entity<AnnualBudget>()
             .HasOne(a => a.Company)
             .WithMany()
             .HasForeignKey(a => a.CompanyId)

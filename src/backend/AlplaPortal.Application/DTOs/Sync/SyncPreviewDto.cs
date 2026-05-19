@@ -150,3 +150,78 @@ public class SyncSupplierReviewedImportRequestDto
 {
     public List<ReviewedSupplierItemDto> Suppliers { get; set; } = new();
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Catalog Conflict Resolution (V2 — assisted conflict resolution)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// Resolution strategies for catalog sync conflicts.
+/// Note: "Ignore" is client-side only (close modal); not included here.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CatalogConflictResolution
+{
+    /// <summary>Selectively update chosen fields on the matched Portal item from Primavera data.</summary>
+    UpdatePortal,
+
+    /// <summary>Link PrimaveraCode to the matched Portal item without changing any Portal fields.</summary>
+    ConfirmAssociation,
+
+    /// <summary>Create a brand-new Portal item from the Primavera data.</summary>
+    CreateNew,
+
+    /// <summary>Link PrimaveraCode to a user-specified (searched) Portal item.</summary>
+    AssociateManually
+}
+
+/// <summary>
+/// Request body for resolving a catalog sync conflict.
+/// </summary>
+public class CatalogResolveConflictRequestDto
+{
+    // ── Identification ──
+
+    /// <summary>The Primavera article code being resolved. Required.</summary>
+    public string PrimaveraCode { get; set; } = string.Empty;
+
+    /// <summary>The resolution strategy chosen by the user. Required.</summary>
+    public CatalogConflictResolution Resolution { get; set; }
+
+    /// <summary>
+    /// Portal item ID from the preview match (auto-suggested conflict target).
+    /// Required for UpdatePortal and ConfirmAssociation.
+    /// </summary>
+    public int? PortalItemId { get; set; }
+
+    /// <summary>
+    /// Portal item ID chosen manually by the user via search.
+    /// Required for AssociateManually only.
+    /// </summary>
+    public int? TargetPortalItemId { get; set; }
+
+    // ── Primavera-side data (echoed from preview) ──
+
+    public string? PrimaveraDescription { get; set; }
+    public string? PrimaveraFamily { get; set; }
+    public string? PrimaveraBaseUnit { get; set; }
+
+    // ── Field-level selection (UpdatePortal only) ──
+
+    /// <summary>
+    /// List of field names the user chose to overwrite on the Portal item.
+    /// Valid values: "Description", "Category", "Unit", "PrimaveraCode"
+    /// Required when Resolution is UpdatePortal.
+    /// </summary>
+    public List<string>? UpdateFields { get; set; }
+}
+
+/// <summary>
+/// Result of a catalog conflict resolution action.
+/// </summary>
+public class CatalogResolveConflictResultDto
+{
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int? AffectedPortalItemId { get; set; }
+}
