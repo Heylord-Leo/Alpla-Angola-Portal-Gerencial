@@ -15,6 +15,8 @@ interface DepartmentMasterAutocompleteProps {
     className?: string;
     allowedCompanyCode?: string | null;
     plantNotSelected?: boolean;
+    /** When true, shows a "Todos os Departamentos" option at the top of the dropdown */
+    showAllOption?: boolean;
 }
 
 const COL_WIDTHS = '70px 110px 1fr';
@@ -29,7 +31,8 @@ export function DepartmentMasterAutocomplete({
     hasError = false,
     className,
     allowedCompanyCode,
-    plantNotSelected = false
+    plantNotSelected = false,
+    showAllOption = false
 }: DepartmentMasterAutocompleteProps) {
     const [selectedDisplay, setSelectedDisplay] = useState(initialName);
     const [searchTerm, setSearchTerm] = useState('');
@@ -299,6 +302,30 @@ export function DepartmentMasterAutocomplete({
                         </div>
 
                         <div style={{ maxHeight: '280px', overflowY: 'auto', backgroundColor: 'var(--color-bg-surface)' }}>
+                            {showAllOption && !searchTerm && (
+                                <div
+                                    style={{
+                                        ...gridStyle,
+                                        cursor: 'pointer',
+                                        borderBottom: '2px solid var(--color-border)',
+                                        backgroundColor: hoveredId === -999 ? '#e2e8f0' : '#f0f9ff',
+                                        transition: 'background-color 0.1s ease',
+                                    }}
+                                    onMouseEnter={() => setHoveredId(-999)}
+                                    onMouseLeave={() => setHoveredId(null)}
+                                    onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        setSelectedDisplay('Todos os Departamentos');
+                                        setIsOpen(false);
+                                        setHoveredId(null);
+                                        onChange(0, 'Todos os Departamentos');
+                                    }}
+                                >
+                                    <div style={{ padding: '12px 10px', fontSize: '0.825rem', color: 'var(--color-primary)', fontWeight: 700, borderRight: '1px solid #f3f4f6', display: 'flex', alignItems: 'center' }}>★</div>
+                                    <div style={{ padding: '12px 10px', fontSize: '0.75rem', color: '#64748b', borderRight: '1px solid #f3f4f6', display: 'flex', alignItems: 'center' }}>TODAS</div>
+                                    <div style={{ padding: '12px 10px', fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-primary)', display: 'flex', alignItems: 'center', textTransform: 'uppercase', letterSpacing: '0.02em' }}>Todos os Departamentos</div>
+                                </div>
+                            )}
                             {isLoading ? (
                                 <div style={{ padding: '32px', textAlign: 'center' }}>
                                     <div style={{ display: 'inline-block', width: '24px', height: '24px', border: '3px solid #e5e7eb', borderTopColor: '#111827', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />

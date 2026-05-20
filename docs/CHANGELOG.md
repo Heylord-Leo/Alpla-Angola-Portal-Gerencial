@@ -2,6 +2,69 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.121.0] - 2026-05-20
+
+### Added — HR Monthly Attendance Report: Consolidated & 30-Day Activity Filter
+- **Consolidated Report ("Todos os Departamentos")**: Added a special option to the department selector to generate a single consolidated PDF report for all departments at once. The report groups employees by department, sorting departments and employees alphabetically.
+- **30-Day Activity Filter**: Injected the same 30-day "real terminal punch" activity filter into the Monthly Report (for both single and consolidated flows). Employees without biometric punches in the last 30 days are automatically excluded to prevent ghost employees from polluting the report.
+- **Segmented Filter UI**: Added a three-button segmented control (Com ponto recente, Sem ponto há +30 dias, Todos) to the Monthly Report UI.
+- **Print Notices**: Added visual and print-only notices explaining the default filter behavior in the PDF header.
+
+## [v2.120.1] - 2026-05-20
+
+### Fixed — HR Attendance: 30-Day Activity Filter Using Wrong Data Source
+- **Root Cause**: `GetLastAttendanceDatesAsync` queried `MAX(Data) FROM dbo.Alteracoes`, which includes pre-generated scheduled records (rest days, planned shifts). Innux auto-generates `Alteracoes` rows for employees with active work schedules, even after they leave the company. This caused `MAX(Data)` to return recent or future dates for inactive employees, making them incorrectly appear in the "Com ponto recente" default view.
+- **Fix**: Changed the query to use `dbo.TerminaisMarcacoes` (real terminal clock punches) instead. This table only contains actual physical clock-in/clock-out events, providing an accurate signal for real employee attendance activity.
+- **Employee Affected**: ABENECO MANUEL PEDRO (and similar former employees still scheduled in Innux) will now correctly appear only under "Sem ponto há +30 dias" or "Todos".
+- **Diagnostic Logging**: Added temporary classification logging in `HRAttendanceController.GetCalendar` to trace employee activity filter decisions (ABENECO-specific debug logging included).
+- **No Data Changes**: Read-only fix. No writes to Innux, Primavera, or Portal employee records.
+
+## [v2.120.0] - 2026-05-20
+
+### Added — HR Attendance: 30-Day Activity Filter
+- **Inactive Employee Hiding**: Employees without any attendance/punch data for more than 30 days are now hidden by default from the HR Attendance Calendar. This prevents former employees (still active in Primavera) from polluting the attendance grid.
+- **Backend Activity Detection**: New `GetLastAttendanceDatesAsync` method in `InnuxAttendanceService` queries `MAX(Data) FROM dbo.TerminaisMarcacoes` (real terminal punches) grouped by employee ID. The 30-day cutoff is calculated from today's date (not the viewed calendar month).
+- **`attendanceActivity` API Parameter**: `GET /api/hr/attendance/calendar` accepts `attendanceActivity` (`active`|`noRecent`|`all`). Default: `active`. Backend filters employee IDs before querying the daily attendance grid (performance optimization).
+- **Activity Summary**: API response includes `activitySummary` with `activeCount`, `noRecentCount`, and `totalCount`. Employees with `lastAttendanceDate == null` are categorized as `noRecent`.
+- **`lastAttendanceDate` Field**: Each employee object in the response now includes `lastAttendanceDate` (nullable ISO string).
+- **Segmented Filter UI**: Three-button segmented control above the existing filter bar: "Com ponto recente" (default), "Sem ponto há +30 dias", "Todos". Each button shows the employee count badge.
+- **Explanatory Hint**: When in default "active" view, an informational message explains why employees are hidden: "Funcionários sem ponto há mais de 30 dias são ocultados por padrão, pois podem não ter sido desativados no Primavera."
+- **"Último ponto" Display**: In "noRecent" view, each employee row shows their last attendance date in amber text, or "Não encontrado" if null.
+- **Non-Destructive**: This is purely a UI visibility filter. No employee status changes, no writes to Primavera or Innux, no HR mapping changes.
+
+## [v2.119.1] - 2026-05-20
+
+### Fixed — HR Directory Sync: Missing EF Core Migration
+- **Root Cause**: The v2.119.0 implementation added the `SuggestedPlantSource`, `SuggestedPlantReason`, `SuggestedPlantConfidence`, and `SuggestedPlantResolvedAtUtc` fields to the `HREmployee` domain entity, but the corresponding EF Core migration was not generated and applied to the database. This caused a runtime `SqlException: Invalid column name` when triggering the HR Directory synchronization.
+- **Fix**: Created and applied the missing EF Core migration (`20260520092813_AddPlantSuggestionFields.cs`), successfully adding the nullable columns to the `HREmployees` table and restoring sync functionality.
+
+## [v2.119.0] - 2026-05-20 - HR Directory: Primavera Plant Suggestion & Advanced Filters
+
+### Added
+- **Primavera Plant Suggestion Service** (`PrimaveraPlantSuggestionService`): New read-only advisory service that queries Primavera databases (ALPLASOPRO / ALPLAPLASTICO) to identify which Primavera company each unmapped HR employee belongs to. Does not write to Primavera.
+  - **ALPLASOPRO → High Confidence**: Employee found in ALPLASOPRO maps to Viana 3 with High confidence. Pre-fills plant selection on accept.
+  - **ALPLAPLASTICO → Ambiguous**: Employee found in ALPLAPLASTICO maps to Viana 1 or Viana 2. Requires manual selection.
+  - **Not Found**: Employee not found in either database. Displayed as "Não encontrada".
+  - **No Cost Center Logic**: Deliberately excluded per business decision — will be analyzed separately.
+- **Suggestion Domain Fields**: Added `SuggestedPlantSource`, `SuggestedPlantReason`, `SuggestedPlantConfidence`, and `SuggestedPlantResolvedAtUtc` to `HREmployee` entity. EF Core migration applied.
+- **Resolve Suggestions Endpoint**: `POST /api/hr/leave/employees/resolve-suggestions` triggers batch Primavera lookup for all active unmapped employees. Returns counts by confidence level (highConfidence, ambiguous, notFound).
+- **Advanced Filtering (Backend)**: `GET /api/hr/leave/employees` now supports `mappingStatus` (mapped/unmapped), `missingField` (plant/department/manager), `hasSuggestion`, `plantId`, `departmentMasterId`, and `innuxDepartment` query parameters.
+- **KPI Summary**: Backend returns a `summary` object with total, fullyMapped, unmapped, withoutPlant, withoutDepartment, withoutManager, and withSuggestion counts.
+- **Frontend Filter Bar**: Collapsible filter panel with chip buttons (Todos, Mapeados, Não Mapeados, Sem Planta, Sem Departamento, Sem Responsável, Com Sugestão), plant dropdown, and Innux department text filter.
+- **KPI Summary Cards**: Interactive clickable cards displaying mapping status metrics. Clicking a card applies the corresponding filter.
+- **Suggestion Hints**: Unmapped employee rows display inline Primavera suggestion badges with confidence level, source database, and accept/map button.
+- **Accept Suggestion Workflow**: "Aceitar Sugestão" button pre-fills Viana 3 for High-confidence suggestions; "Mapear Manualmente" opens edit mode for ambiguous suggestions.
+- **Sync Integration**: The "Sincronizar" action now includes suggestion resolution as step 3 after department and employee sync, reporting suggestion counts in the success message.
+
+### Security
+- Primavera queries are strictly read-only SELECT operations. No writes to Primavera databases.
+- No existing Portal mappings are overwritten — suggestions are advisory only.
+- Suggestion resolution restricted to `System Administrator` and `HR` roles (inherits from `IsAdminOrHR`).
+
+---
+
+
+
 ## [v2.118.2] - 2026-05-19 - HR Report Print Document Layout
 
 ### Fixed

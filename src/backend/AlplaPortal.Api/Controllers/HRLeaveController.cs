@@ -30,6 +30,7 @@ public class HRLeaveController : ControllerBase
     private readonly ApplicationDbContext _context;
     private readonly IHREmployeeSyncService _syncService;
     private readonly IPrimaveraDepartmentSyncService _deptSyncService;
+    private readonly IPrimaveraPlantSuggestionService _suggestionService;
     private readonly INotificationService _notificationService;
     private readonly ILogger<HRLeaveController> _logger;
 
@@ -37,12 +38,14 @@ public class HRLeaveController : ControllerBase
         ApplicationDbContext context, 
         IHREmployeeSyncService syncService,
         IPrimaveraDepartmentSyncService deptSyncService,
+        IPrimaveraPlantSuggestionService suggestionService,
         INotificationService notificationService,
         ILogger<HRLeaveController> logger)
     {
         _context = context;
         _syncService = syncService;
         _deptSyncService = deptSyncService;
+        _suggestionService = suggestionService;
         _notificationService = notificationService;
         _logger = logger;
     }
@@ -320,6 +323,12 @@ public class HRLeaveController : ControllerBase
         [FromQuery] string? search = null,
         [FromQuery] bool? mapped = null,
         [FromQuery] bool? active = null,
+        [FromQuery] int? plantId = null,
+        [FromQuery] int? departmentMasterId = null,
+        [FromQuery] string? mappingStatus = null,
+        [FromQuery] string? innuxDepartment = null,
+        [FromQuery] bool? hasSuggestion = null,
+        [FromQuery] string? missingField = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
@@ -336,6 +345,54 @@ public class HRLeaveController : ControllerBase
         if (mapped.HasValue)
             query = query.Where(e => e.IsMapped == mapped.Value);
 
+        // ─── New Filter: by confirmed plant ───
+        if (plantId.HasValue)
+            query = query.Where(e => e.PlantId == plantId.Value);
+
+        // ─── New Filter: by confirmed department master ───
+        if (departmentMasterId.HasValue)
+            query = query.Where(e => e.DepartmentMasterId == departmentMasterId.Value);
+
+        // ─── New Filter: mapping completeness ───
+        if (!string.IsNullOrWhiteSpace(mappingStatus))
+        {
+            query = mappingStatus.Trim().ToLower() switch
+            {
+                "mapped" => query.Where(e => e.PlantId.HasValue && e.DepartmentMasterId.HasValue && e.ManagerUserId.HasValue),
+                "unmapped" => query.Where(e => !e.PlantId.HasValue && !e.DepartmentMasterId.HasValue && !e.ManagerUserId.HasValue),
+                "partial" => query.Where(e => e.IsMapped && !(e.PlantId.HasValue && e.DepartmentMasterId.HasValue && e.ManagerUserId.HasValue)),
+                _ => query
+            };
+        }
+
+        // ─── New Filter: by specific missing field ───
+        if (!string.IsNullOrWhiteSpace(missingField))
+        {
+            query = missingField.Trim().ToLower() switch
+            {
+                "plant" => query.Where(e => !e.PlantId.HasValue),
+                "department" => query.Where(e => !e.DepartmentMasterId.HasValue),
+                "manager" => query.Where(e => !e.ManagerUserId.HasValue),
+                _ => query
+            };
+        }
+
+        // ─── New Filter: by Innux source department name ───
+        if (!string.IsNullOrWhiteSpace(innuxDepartment))
+        {
+            var dept = innuxDepartment.Trim().ToLower();
+            query = query.Where(e => e.InnuxDepartmentName != null && e.InnuxDepartmentName.ToLower().Contains(dept));
+        }
+
+        // ─── New Filter: employees with plant suggestion ───
+        if (hasSuggestion.HasValue)
+        {
+            if (hasSuggestion.Value)
+                query = query.Where(e => e.SuggestedPlantConfidence != null && e.SuggestedPlantConfidence != "NotFound");
+            else
+                query = query.Where(e => e.SuggestedPlantConfidence == null || e.SuggestedPlantConfidence == "NotFound");
+        }
+
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim().ToLower();
@@ -346,7 +403,20 @@ public class HRLeaveController : ControllerBase
             );
         }
 
-        var total = await query.CountAsync();
+        // ─── KPI Summary (computed from the filtered query, before pagination) ───
+        var summaryQuery = query; // same filters applied
+        var total = await summaryQuery.CountAsync();
+        var summary = new
+        {
+            total,
+            fullyMapped = await summaryQuery.CountAsync(e => e.PlantId.HasValue && e.DepartmentMasterId.HasValue && e.ManagerUserId.HasValue),
+            unmapped = await summaryQuery.CountAsync(e => !e.PlantId.HasValue && !e.DepartmentMasterId.HasValue && !e.ManagerUserId.HasValue),
+            withoutPlant = await summaryQuery.CountAsync(e => !e.PlantId.HasValue),
+            withoutDepartment = await summaryQuery.CountAsync(e => !e.DepartmentMasterId.HasValue),
+            withoutManager = await summaryQuery.CountAsync(e => !e.ManagerUserId.HasValue),
+            withSuggestion = await summaryQuery.CountAsync(e => e.SuggestedPlantConfidence != null && e.SuggestedPlantConfidence != "NotFound")
+        };
+
         var items = await query
             .OrderBy(e => e.FullName)
             .Skip((page - 1) * pageSize)
@@ -373,11 +443,16 @@ public class HRLeaveController : ControllerBase
                 e.IsMapped,
                 e.Email,
                 e.CardNumber,
-                e.LastSyncedAtUtc
+                e.LastSyncedAtUtc,
+                // ─── Plant Suggestion Fields (advisory) ───
+                e.SuggestedPlantSource,
+                e.SuggestedPlantReason,
+                e.SuggestedPlantConfidence,
+                e.SuggestedPlantResolvedAtUtc
             })
             .ToListAsync();
 
-        return Ok(new { items, total, page, pageSize });
+        return Ok(new { items, total, page, pageSize, summary });
     }
 
     /// <summary>Update Portal mapping fields for an HR employee.</summary>
@@ -524,6 +599,42 @@ public class HRLeaveController : ControllerBase
         catch (Exception ex)
         {
             return StatusCode(500, new { message = $"Falha inesperada durante a sincronização: {ex.Message}", errorType = "Exception" });
+        }
+    }
+
+    /// <summary>
+    /// Trigger Primavera plant suggestion resolution for unmapped employees (Admin/HR only).
+    /// Read-only lookup across Primavera company databases.
+    /// </summary>
+    [HttpPost("employees/resolve-suggestions")]
+    public async Task<IActionResult> ResolvePlantSuggestions()
+    {
+        if (!IsAdminOrHR)
+            return Forbid();
+
+        try
+        {
+            var result = await _suggestionService.ResolveSuggestionsAsync();
+            return Ok(new
+            {
+                message = "Sugestões de planta resolvidas com sucesso.",
+                result.TotalProcessed,
+                result.HighConfidence,
+                result.Ambiguous,
+                result.NotFound,
+                result.AlreadyMapped,
+                result.Errors,
+                result.ErrorMessages
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(503, new { message = ex.Message, errorType = "InvalidOperationException" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to resolve plant suggestions.");
+            return StatusCode(500, new { message = $"Falha ao resolver sugestões: {ex.Message}", errorType = "Exception" });
         }
     }
 

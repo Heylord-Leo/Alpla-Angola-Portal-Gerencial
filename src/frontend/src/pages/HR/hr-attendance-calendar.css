@@ -239,6 +239,91 @@
   margin-left: 4px;
 }
 
+/* ── Attendance Activity Filter (30-day rule) ── */
+.att-activity-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.att-activity-filter__group {
+  display: flex;
+  background-color: var(--color-bg-page);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--color-border);
+  width: fit-content;
+}
+
+.att-activity-filter__btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.att-activity-filter__btn:hover:not(.att-activity-filter__btn--active) {
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-main);
+}
+
+.att-activity-filter__btn--active {
+  background-color: var(--color-bg-surface);
+  color: var(--color-primary);
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+
+.att-activity-filter__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background-color: rgba(var(--color-primary-rgb), 0.08);
+  color: var(--color-primary);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.att-activity-filter__btn--active .att-activity-filter__count {
+  background-color: rgba(var(--color-primary-rgb), 0.15);
+}
+
+.att-activity-filter__hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* ── Employee last punch label (noRecent view) ── */
+.att-employee__last-punch {
+  font-size: 10px;
+  color: #d97706;
+  font-weight: 600;
+  margin-top: 1px;
+}
+
 /* ── Filter bar ── */
 .att-filters {
   display: flex;

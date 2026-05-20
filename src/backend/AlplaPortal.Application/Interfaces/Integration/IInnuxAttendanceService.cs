@@ -60,4 +60,16 @@ public interface IInnuxAttendanceService
         IEnumerable<int> innuxEmployeeIds,
         DateTime startDate,
         DateTime endDate);
+
+    /// <summary>
+    /// Returns the last real punch date (MAX(Data) from dbo.TerminaisMarcacoes) for each employee.
+    /// Uses terminal punches (not Alteracoes, which includes pre-generated scheduled records)
+    /// to accurately determine physical attendance activity.
+    /// Used by the 30-day attendance activity filter to classify employees.
+    /// Employees not returned have no Innux terminal punch records.
+    /// Read-only: SELECT only.
+    /// </summary>
+    /// <param name="innuxEmployeeIds">Pre-scoped Innux employee IDs.</param>
+    Task<Dictionary<int, DateTime>> GetLastAttendanceDatesAsync(
+        IEnumerable<int> innuxEmployeeIds);
 }

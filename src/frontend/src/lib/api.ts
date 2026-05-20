@@ -675,10 +675,15 @@ export const api = {
             const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/types`);
             if (!response.ok) return handleApiError(response, 'Falha ao buscar tipos de ausência.');
             return response.json();
+        },
+        resolveSuggestions: async (): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/employees/resolve-suggestions`, { method: 'POST' });
+            if (!response.ok) return handleApiError(response, 'Falha ao resolver sugestões de planta.');
+            return response.json();
         }
     },
     hrAttendance: {
-        getCalendar: async (params: { startDate: string; endDate: string }): Promise<any> => {
+        getCalendar: async (params: { startDate: string; endDate: string; attendanceActivity?: string }): Promise<any> => {
             const qs = new URLSearchParams(params as any).toString();
             const response = await apiFetch(`${API_BASE_URL}/api/hr/attendance/calendar?${qs}`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar calendário de presenças.');
@@ -689,12 +694,15 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao carregar detalhe de presença.');
             return response.json();
         },
-        getMonthlyDepartmentReport: async (params: { departmentId: number; startDate: string; endDate: string; daysFilter?: string }): Promise<any> => {
+        getMonthlyDepartmentReport: async (params: { departmentId?: number | null; startDate: string; endDate: string; daysFilter?: string; attendanceActivity?: string }): Promise<any> => {
             const qs = new URLSearchParams();
-            qs.append('departmentId', params.departmentId.toString());
+            if (params.departmentId != null && params.departmentId > 0) {
+                qs.append('departmentId', params.departmentId.toString());
+            }
             qs.append('startDate', params.startDate);
             qs.append('endDate', params.endDate);
             if (params.daysFilter) qs.append('daysFilter', params.daysFilter);
+            if (params.attendanceActivity) qs.append('attendanceActivity', params.attendanceActivity);
             const response = await apiFetch(`${API_BASE_URL}/api/hr/attendance/reports/monthly-by-department?${qs.toString()}`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar relatório mensal por departamento.');
             return response.json();

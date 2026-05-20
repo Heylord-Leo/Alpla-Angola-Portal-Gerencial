@@ -3,6 +3,23 @@ using System.Collections.Generic;
 
 namespace AlplaPortal.Application.DTOs.HR
 {
+    /// <summary>
+    /// Consolidated report wrapper containing multiple department reports.
+    /// Returned when departmentId is null/0 (all departments).
+    /// </summary>
+    public class AttendanceConsolidatedReportDto
+    {
+        public DateTime StartDate { get; set; }
+        public DateTime EndDate { get; set; }
+        public string? DaysFilter { get; set; }
+        public DateTime GeneratedAt { get; set; }
+        public string GeneratedBy { get; set; } = "";
+        public int TotalDepartments { get; set; }
+        public int TotalEmployees { get; set; }
+        public List<AttendanceDepartmentMonthlyReportDto> Departments { get; set; } = new();
+        public List<string> Warnings { get; set; } = new();
+    }
+
     public class AttendanceDepartmentMonthlyReportDto
     {
         public int DepartmentId { get; set; }

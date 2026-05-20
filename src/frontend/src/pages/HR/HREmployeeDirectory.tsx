@@ -1,11 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import { Search, Save, Edit2, X, RefreshCw, AlertTriangle, Building, Users } from 'lucide-react';
+import { Search, Save, Edit2, X, RefreshCw, AlertTriangle, Building, Users, Filter, Sparkles, CheckCircle2 } from 'lucide-react';
 import { ModernTooltip } from '../../components/ui/ModernTooltip';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { HRActionModal, HRActionType } from '../../components/modals/HRActionModal';
 
 import { DepartmentMasterAutocomplete } from '../../components/DepartmentMasterAutocomplete';
+
+// ─── Filter Chip Definitions ───
+type FilterChipKey = 'all' | 'mapped' | 'unmapped' | 'noPlant' | 'noDept' | 'noManager' | 'withSuggestion';
+interface FilterChipDef { key: FilterChipKey; label: string; icon?: React.ReactNode; color: string; }
+const FILTER_CHIPS: FilterChipDef[] = [
+    { key: 'all', label: 'Todos', color: '#0f172a' },
+    { key: 'mapped', label: 'Mapeados', icon: <CheckCircle2 size={13} />, color: '#16a34a' },
+    { key: 'unmapped', label: 'Não Mapeados', icon: <AlertTriangle size={13} />, color: '#d97706' },
+    { key: 'noPlant', label: 'Sem Planta', icon: <Building size={13} />, color: '#dc2626' },
+    { key: 'noDept', label: 'Sem Departamento', color: '#9333ea' },
+    { key: 'noManager', label: 'Sem Responsável', icon: <Users size={13} />, color: '#0284c7' },
+    { key: 'withSuggestion', label: 'Com Sugestão', icon: <Sparkles size={13} />, color: '#f59e0b' },
+];
 
 export default function HREmployeeDirectory() {
     const [employees, setEmployees] = useState<any[]>([]);
@@ -15,6 +28,16 @@ export default function HREmployeeDirectory() {
     const [page, setPage] = useState(1);
     const [total, setTotal] = useState(0);
     const pageSize = 20;
+
+    // ─── Filters ───
+    const [activeChip, setActiveChip] = useState<FilterChipKey>('all');
+    const [filterPlantId, setFilterPlantId] = useState<string>('');
+    const [filterDepartmentId, setFilterDepartmentId] = useState<string>('');
+    const [filterInnuxDept, setFilterInnuxDept] = useState<string>('');
+    const [showFilters, setShowFilters] = useState(false);
+
+    // ─── KPI Summary ───
+    const [summary, setSummary] = useState<any>(null);
 
     // Master Data for mapping
     const [plants, setPlants] = useState<any[]>([]);
@@ -55,7 +78,7 @@ export default function HREmployeeDirectory() {
     useEffect(() => {
         setSelectedIds([]);
         loadEmployees();
-    }, [page, search]);
+    }, [page, search, activeChip, filterPlantId, filterDepartmentId, filterInnuxDept]);
 
     const loadMasterData = async () => {
         try {
@@ -80,13 +103,63 @@ export default function HREmployeeDirectory() {
     const loadEmployees = async () => {
         setLoading(true);
         try {
-            const res = await api.hrLeave.getEmployees({ page, pageSize, search });
+            const params: Record<string, string | number | boolean> = { page, pageSize };
+            if (search) params.search = search;
+
+            // Map chip to backend params
+            if (activeChip === 'mapped') params.mappingStatus = 'mapped';
+            else if (activeChip === 'unmapped') params.mappingStatus = 'unmapped';
+            else if (activeChip === 'noPlant') params.missingField = 'plant';
+            else if (activeChip === 'noDept') params.missingField = 'department';
+            else if (activeChip === 'noManager') params.missingField = 'manager';
+            else if (activeChip === 'withSuggestion') params.hasSuggestion = true;
+
+            if (filterPlantId) params.plantId = filterPlantId;
+            if (filterDepartmentId) params.departmentMasterId = filterDepartmentId;
+            if (filterInnuxDept) params.innuxDepartment = filterInnuxDept;
+
+            const res = await api.hrLeave.getEmployees(params);
             setEmployees(res.items);
             setTotal(res.total);
+            if (res.summary) setSummary(res.summary);
         } catch (error) {
             console.error('Error loading employees', error);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleChipClick = (key: FilterChipKey) => {
+        setActiveChip(key);
+        setPage(1);
+    };
+
+    const clearAllFilters = () => {
+        setActiveChip('all');
+        setFilterPlantId('');
+        setFilterDepartmentId('');
+        setFilterInnuxDept('');
+        setSearch('');
+        setPage(1);
+    };
+
+    const hasActiveFilters = activeChip !== 'all' || filterPlantId || filterDepartmentId || filterInnuxDept || search;
+
+    const acceptSuggestion = (emp: any) => {
+        // For ALPLASOPRO, pre-fill with Viana 3
+        if (emp.suggestedPlantSource === 'PRIMAVERA:ALPLASOPRO') {
+            const viana3 = plants.find(p => p.name?.toUpperCase().includes('VIANA 3'));
+            startEditing(emp);
+            if (viana3) {
+                setTimeout(() => {
+                    setEditForm(prev => ({ ...prev, plantId: viana3.id }));
+                    setFeedback({ type: 'info', message: `Sugestão Viana 3 pré-preenchida. Confirme salvando.` });
+                }, 50);
+            }
+        } else {
+            // For ambiguous, just open edit mode
+            startEditing(emp);
+            setFeedback({ type: 'info', message: 'Sugestão ambígua — selecione a planta manualmente (Viana 1 ou Viana 2).' });
         }
     };
 
@@ -211,6 +284,16 @@ export default function HREmployeeDirectory() {
                 
                 // 2. Funcionários
                 const empData = await api.hrLeave.syncEmployees();
+
+                // 3. Resolve plant suggestions (Primavera read-only)
+                let sugMsg = '';
+                try {
+                    const sugData = await api.hrLeave.resolveSuggestions();
+                    sugMsg = ` [Sugestões] Alta: ${sugData.highConfidence} | Ambígua: ${sugData.ambiguous} | N/E: ${sugData.notFound}`;
+                } catch (sugError: any) {
+                    sugMsg = ' [Sugestões] Erro ao resolver sugestões de planta.';
+                    console.warn('Suggestion resolution failed', sugError);
+                }
                 
                 let deptMsg = `[Mestre] Processados: ${deptData.processed} | Criados: ${deptData.created} | Erros: ${deptData.errors ? deptData.errors.length : 0}`;
                 let empMsg = `[Innux] Criados: ${empData.employeesCreated} | Atualizados: ${empData.employeesUpdated} | Desativados: ${empData.employeesDeactivated}`;
@@ -226,7 +309,7 @@ export default function HREmployeeDirectory() {
                     alertContext = ` Aviso: ${empData.message}`;
                 }
 
-                setFeedback({ type: finalStatus, message: `Sincronização global concluída com sucesso. ${deptMsg}. ${empMsg}.${alertContext}` });
+                setFeedback({ type: finalStatus, message: `Sincronização global concluída com sucesso. ${deptMsg}. ${empMsg}.${sugMsg}${alertContext}` });
                 
                 // Recarrega tudo
                 loadEmployees();
@@ -239,6 +322,50 @@ export default function HREmployeeDirectory() {
                 setModalProcessing(false);
             }
         }
+    };
+
+    // ─── Suggestion Rendering Helper ───
+    const renderSuggestionHint = (emp: any) => {
+        if (!emp.suggestedPlantConfidence || emp.suggestedPlantConfidence === 'NotFound') {
+            if (emp.suggestedPlantConfidence === 'NotFound') {
+                return (
+                    <div style={{ marginTop: '4px', fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
+                        Sugestão Primavera: Não encontrada
+                    </div>
+                );
+            }
+            return null;
+        }
+
+        const isHigh = emp.suggestedPlantConfidence === 'High';
+        const bgColor = isHigh ? '#f0fdf4' : '#fefce8';
+        const borderColor = isHigh ? '#bbf7d0' : '#fef08a';
+        const textColor = isHigh ? '#166534' : '#854d0e';
+        const label = isHigh ? 'Viana 3' : 'Viana 1 ou Viana 2';
+        const confidence = isHigh ? 'Alta' : 'Parcial / Ambígua';
+        const source = emp.suggestedPlantSource?.replace('PRIMAVERA:', '') || '';
+
+        return (
+            <div style={{ marginTop: '6px', padding: '6px 8px', borderRadius: '6px', backgroundColor: bgColor, border: `1px solid ${borderColor}`, fontSize: '11px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: textColor, fontWeight: 600 }}>
+                    <Sparkles size={11} />
+                    Sugestão: {label}
+                </div>
+                <div style={{ color: textColor, opacity: 0.8, marginTop: '2px' }}>
+                    Fonte: {source} | Confiança: {confidence}
+                </div>
+                {!emp.plantId && (
+                    <button
+                        onClick={(e) => { e.stopPropagation(); acceptSuggestion(emp); }}
+                        style={{ marginTop: '4px', padding: '2px 8px', borderRadius: '4px', border: `1px solid ${borderColor}`, backgroundColor: '#fff', color: textColor, fontSize: '10px', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em' }}
+                        onMouseOver={e => e.currentTarget.style.backgroundColor = bgColor}
+                        onMouseOut={e => e.currentTarget.style.backgroundColor = '#fff'}
+                    >
+                        {isHigh ? '✓ Aceitar Sugestão' : '✎ Mapear Manualmente'}
+                    </button>
+                )}
+            </div>
+        );
     };
 
     return (
@@ -269,8 +396,8 @@ export default function HREmployeeDirectory() {
                     </p>
                 </div>
                 
-                <div style={{ display: 'flex', gap: '16px' }}>
-                    <div style={{ position: 'relative', width: '300px' }}>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <div style={{ position: 'relative', width: '280px' }}>
                         <Search size={16} color="#94a3b8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
                         <input
                             type="text"
@@ -285,15 +412,108 @@ export default function HREmployeeDirectory() {
                         />
                     </div>
                     <button 
+                        onClick={() => setShowFilters(!showFilters)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 14px', borderRadius: '8px', border: `1px solid ${showFilters ? '#0ea5e9' : '#cbd5e1'}`, backgroundColor: showFilters ? '#f0f9ff' : '#fff', cursor: 'pointer', fontSize: '13px', fontWeight: 600, color: showFilters ? '#0284c7' : '#475569' }}
+                    >
+                        <Filter size={15} />
+                        Filtros
+                        {hasActiveFilters && <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#0ea5e9' }} />}
+                    </button>
+                    <button 
                         onClick={() => setActionModal('SYNC_ALL')}
                         className="btn-primary"
                         style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '8px' }}
                     >
                         <RefreshCw size={16} />
-                        Sincronizar Dados Mestre
+                        Sincronizar
                     </button>
                 </div>
             </div>
+
+            {/* ─── KPI Summary Cards ─── */}
+            {summary && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
+                    {[
+                        { label: 'Total', value: summary.total, color: '#0f172a', chipKey: 'all' as FilterChipKey },
+                        { label: 'Mapeados', value: summary.fullyMapped, color: '#16a34a', chipKey: 'mapped' as FilterChipKey },
+                        { label: 'Não Mapeados', value: summary.unmapped, color: '#d97706', chipKey: 'unmapped' as FilterChipKey },
+                        { label: 'Sem Planta', value: summary.withoutPlant, color: '#dc2626', chipKey: 'noPlant' as FilterChipKey },
+                        { label: 'Sem Depto', value: summary.withoutDepartment, color: '#9333ea', chipKey: 'noDept' as FilterChipKey },
+                        { label: 'Sem Chefe', value: summary.withoutManager, color: '#0284c7', chipKey: 'noManager' as FilterChipKey },
+                        { label: 'Com Sugestão', value: summary.withSuggestion, color: '#f59e0b', chipKey: 'withSuggestion' as FilterChipKey },
+                    ].map(card => (
+                        <div
+                            key={card.label}
+                            onClick={() => handleChipClick(card.chipKey)}
+                            style={{
+                                padding: '14px 16px', borderRadius: '10px', cursor: 'pointer',
+                                backgroundColor: activeChip === card.chipKey ? `${card.color}08` : 'var(--color-bg-surface)',
+                                border: `1.5px solid ${activeChip === card.chipKey ? card.color : 'var(--color-border)'}`,
+                                transition: 'all 0.15s ease',
+                                boxShadow: activeChip === card.chipKey ? `0 0 0 3px ${card.color}15` : 'var(--shadow-sm)',
+                            }}
+                            onMouseOver={e => { if (activeChip !== card.chipKey) e.currentTarget.style.borderColor = card.color + '80'; }}
+                            onMouseOut={e => { if (activeChip !== card.chipKey) e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+                        >
+                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{card.label}</div>
+                            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: card.color, marginTop: '4px' }}>{card.value ?? '-'}</div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* ─── Filter Bar ─── */}
+            {showFilters && (
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', padding: '14px 16px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        {FILTER_CHIPS.map(chip => (
+                            <button
+                                key={chip.key}
+                                onClick={() => handleChipClick(chip.key)}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 10px', borderRadius: '16px',
+                                    border: `1px solid ${activeChip === chip.key ? chip.color : '#cbd5e1'}`,
+                                    backgroundColor: activeChip === chip.key ? chip.color + '12' : '#fff',
+                                    color: activeChip === chip.key ? chip.color : '#475569',
+                                    fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.12s ease',
+                                }}
+                            >
+                                {chip.icon}
+                                {chip.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div style={{ width: '1px', height: '24px', backgroundColor: '#e2e8f0' }} />
+
+                    <select
+                        value={filterPlantId}
+                        onChange={e => { setFilterPlantId(e.target.value); setPage(1); }}
+                        style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 500, color: filterPlantId ? '#0f172a' : '#94a3b8', minWidth: '140px', cursor: 'pointer' }}
+                    >
+                        <option value="">Planta (Todas)</option>
+                        {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+
+                    <input
+                        type="text"
+                        placeholder="Origem Innux..."
+                        value={filterInnuxDept}
+                        onChange={e => { setFilterInnuxDept(e.target.value); setPage(1); }}
+                        style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', width: '140px' }}
+                    />
+
+                    {hasActiveFilters && (
+                        <button
+                            onClick={clearAllFilters}
+                            style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid #fecaca', backgroundColor: '#fef2f2', color: '#dc2626', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                            <X size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                            Limpar
+                        </button>
+                    )}
+                </div>
+            )}
 
             {selectedIds.length > 0 && (
                 <div style={{ backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -376,6 +596,7 @@ export default function HREmployeeDirectory() {
                                                     <span style={{ fontSize: '12px', color: '#64748b', display: 'flex', gap: '8px', marginTop: '4px' }}>
                                                         <strong>#{emp.employeeCode}</strong> | Origem: {emp.innuxDepartmentName || '-'}
                                                     </span>
+                                                    {!emp.plantId && renderSuggestionHint(emp)}
                                                 </div>
                                             </td>
                                             

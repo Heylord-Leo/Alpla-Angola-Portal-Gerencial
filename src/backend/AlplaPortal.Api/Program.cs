@@ -54,6 +54,7 @@ builder.Services.AddScoped<IPrimaveraSupplierService, PrimaveraSupplierService>(
 builder.Services.AddScoped<IPrimaveraArticleSupplierService, PrimaveraArticleSupplierService>();
 builder.Services.AddScoped<IPrimaveraRequestValidationService, PrimaveraRequestValidationService>();
 builder.Services.AddScoped<IPrimaveraDepartmentSyncService, PrimaveraDepartmentSyncService>();
+builder.Services.AddScoped<IPrimaveraPlantSuggestionService, PrimaveraPlantSuggestionService>();
 builder.Services.AddScoped<InnuxConnectionFactory>();
 builder.Services.AddScoped<IInnuxEmployeeService, InnuxEmployeeService>();
 builder.Services.AddScoped<IInnuxEmployeePhotoService, InnuxEmployeePhotoService>();

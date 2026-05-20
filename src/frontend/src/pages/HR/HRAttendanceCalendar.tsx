@@ -4,7 +4,7 @@ import {
     RefreshCw, ChevronLeft, ChevronRight, Calendar, LayoutGrid, X,
     Clock, AlertTriangle, Moon, Filter, Search, Palmtree, Star, HelpCircle,
     Info, CheckCircle2, UserCheck, ChevronDown, ChevronUp, Database,
-    CircleCheck, CircleX, ShieldAlert, MinusCircle
+    CircleCheck, CircleX, ShieldAlert, MinusCircle, UserX
 } from 'lucide-react';
 import { GuideModal, GuideModalSection } from '../../components/ui/GuideModal';
 import './hr-attendance-calendar.css';
@@ -12,6 +12,7 @@ import './hr-attendance-calendar.css';
 // ─── Types ───
 
 type ViewMode = 'month' | 'week';
+type AttendanceActivity = 'active' | 'noRecent' | 'all';
 
 interface AttendanceEmployee {
     innuxEmployeeId: number;
@@ -19,6 +20,7 @@ interface AttendanceEmployee {
     department: string;
     plantName: string | null;
     companyName: string | null;
+    lastAttendanceDate: string | null;
 }
 
 interface AttendanceDaySummary {
@@ -49,6 +51,12 @@ interface AttendanceDaySummary {
     totalWorkedMinutes: number;
 }
 
+interface ActivitySummary {
+    activeCount: number;
+    noRecentCount: number;
+    totalCount: number;
+}
+
 interface CalendarResponse {
     data: AttendanceDaySummary[];
     employees: AttendanceEmployee[];
@@ -56,6 +64,7 @@ interface CalendarResponse {
     scopeType: string;
     startDate: string;
     endDate: string;
+    activitySummary?: ActivitySummary;
 }
 
 interface DayDetail {
@@ -257,8 +266,8 @@ interface CachedEntry {
     fetchedAt: Date;
 }
 
-function buildCacheKey(viewMode: ViewMode, from: Date, to: Date): string {
-    return `${viewMode}_${formatQueryDate(from)}_${formatQueryDate(to)}`;
+function buildCacheKey(viewMode: ViewMode, from: Date, to: Date, activity: AttendanceActivity = 'active'): string {
+    return `${viewMode}_${formatQueryDate(from)}_${formatQueryDate(to)}_${activity}`;
 }
 
 function formatTimestamp(d: Date): string {
@@ -286,6 +295,9 @@ export default function HRAttendanceCalendar() {
     const pageSize = 15;
     const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
     const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
+
+    // Attendance activity filter (30-day rule)
+    const [attendanceActivity, setAttendanceActivity] = useState<AttendanceActivity>('active');
 
     // Filter state
     const [filterPlant, setFilterPlant] = useState<string>('');
@@ -344,7 +356,7 @@ export default function HRAttendanceCalendar() {
 
     const loadCalendar = useCallback((forceRefresh = false) => {
         const { from, to } = getDateRange();
-        const key = buildCacheKey(viewMode, from, to);
+        const key = buildCacheKey(viewMode, from, to, attendanceActivity);
 
         // Serve from cache if available and not forcing refresh
         if (!forceRefresh && globalCalendarCache.has(key)) {
@@ -360,7 +372,11 @@ export default function HRAttendanceCalendar() {
         setLoading(true);
         setError(null);
         api.hrAttendance
-            .getCalendar({ startDate: formatQueryDate(from), endDate: formatQueryDate(to) })
+            .getCalendar({
+                startDate: formatQueryDate(from),
+                endDate: formatQueryDate(to),
+                attendanceActivity,
+            })
             .then((res: CalendarResponse) => {
                 const now = new Date();
                 globalCalendarCache.set(key, { data: res, fetchedAt: now });
@@ -374,7 +390,7 @@ export default function HRAttendanceCalendar() {
                 setError(err?.message || 'Falha ao carregar dados de presença.');
                 setLoading(false);
             });
-    }, [getDateRange, viewMode]);
+    }, [getDateRange, viewMode, attendanceActivity]);
 
     useEffect(() => { loadCalendar(); }, [loadCalendar]);
 
@@ -674,6 +690,48 @@ export default function HRAttendanceCalendar() {
                 </div>
             </div>
 
+            {/* Attendance Activity Filter (30-day rule) */}
+            <div className="att-activity-filter">
+                <div className="att-activity-filter__group">
+                    <button
+                        className={`att-activity-filter__btn${attendanceActivity === 'active' ? ' att-activity-filter__btn--active' : ''}`}
+                        onClick={() => { setAttendanceActivity('active'); setCurrentPage(1); }}
+                    >
+                        <UserCheck size={14} />
+                        <span>Com ponto recente</span>
+                        {calendarData?.activitySummary && (
+                            <span className="att-activity-filter__count">{calendarData.activitySummary.activeCount}</span>
+                        )}
+                    </button>
+                    <button
+                        className={`att-activity-filter__btn${attendanceActivity === 'noRecent' ? ' att-activity-filter__btn--active' : ''}`}
+                        onClick={() => { setAttendanceActivity('noRecent'); setCurrentPage(1); }}
+                    >
+                        <UserX size={14} />
+                        <span>Sem ponto há +30 dias</span>
+                        {calendarData?.activitySummary && (
+                            <span className="att-activity-filter__count">{calendarData.activitySummary.noRecentCount}</span>
+                        )}
+                    </button>
+                    <button
+                        className={`att-activity-filter__btn${attendanceActivity === 'all' ? ' att-activity-filter__btn--active' : ''}`}
+                        onClick={() => { setAttendanceActivity('all'); setCurrentPage(1); }}
+                    >
+                        <Database size={14} />
+                        <span>Todos</span>
+                        {calendarData?.activitySummary && (
+                            <span className="att-activity-filter__count">{calendarData.activitySummary.totalCount}</span>
+                        )}
+                    </button>
+                </div>
+                {attendanceActivity === 'active' && (
+                    <p className="att-activity-filter__hint">
+                        <Info size={12} />
+                        Funcionários sem ponto há mais de 30 dias são ocultados por padrão, pois podem não ter sido desativados no Primavera.
+                    </p>
+                )}
+            </div>
+
             {/* Filters */}
             <div className="att-filters">
                 <div className="att-filters__icon"><Filter size={14} /></div>
@@ -795,6 +853,13 @@ export default function HRAttendanceCalendar() {
                                             <div className="att-employee">
                                                 <span className="att-employee__name" title={emp.fullName}>{emp.fullName}</span>
                                                 <span className="att-employee__dept">{emp.department}</span>
+                                                {attendanceActivity === 'noRecent' && (
+                                                    <span className="att-employee__last-punch">
+                                                        Último ponto: {emp.lastAttendanceDate
+                                                            ? new Date(emp.lastAttendanceDate).toLocaleDateString('pt-AO', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                                                            : 'Não encontrado'}
+                                                    </span>
+                                                )}
                                             </div>
                                         </td>
                                         {days.map((d, dayIdx) => {

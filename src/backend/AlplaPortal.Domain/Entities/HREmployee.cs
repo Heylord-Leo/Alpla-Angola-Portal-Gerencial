@@ -83,6 +83,36 @@ public class HREmployee
     /// </summary>
     public bool IsMapped { get; set; }
 
+    // ─── Plant Suggestion Fields (advisory, from Primavera read-only lookup) ───
+
+    /// <summary>
+    /// Primavera source that generated this suggestion. 
+    /// Examples: "PRIMAVERA:ALPLASOPRO", "PRIMAVERA:ALPLAPLASTICO", "PRIMAVERA:MULTI", "PRIMAVERA:NOT_FOUND"
+    /// Null if suggestion has never been resolved.
+    /// </summary>
+    public string? SuggestedPlantSource { get; set; }
+
+    /// <summary>
+    /// Human-readable explanation of the suggestion.
+    /// Example: "Funcionário encontrado na base ALPLASOPRO — corresponde a Viana 3."
+    /// </summary>
+    public string? SuggestedPlantReason { get; set; }
+
+    /// <summary>
+    /// Confidence level of the plant suggestion.
+    /// Values: "High", "Ambiguous", "NotFound"
+    /// - High: ALPLASOPRO match → Viana 3 (direct 1:1)
+    /// - Ambiguous: ALPLAPLASTICO match → Viana 1 or Viana 2 (user must choose)
+    /// - NotFound: Employee code not found in any Primavera database
+    /// Null if suggestion has never been resolved.
+    /// </summary>
+    public string? SuggestedPlantConfidence { get; set; }
+
+    /// <summary>
+    /// UTC timestamp of the last suggestion resolution.
+    /// </summary>
+    public DateTime? SuggestedPlantResolvedAtUtc { get; set; }
+
     // ─── Sync Metadata ───
 
     public DateTime? LastSyncedAtUtc { get; set; }

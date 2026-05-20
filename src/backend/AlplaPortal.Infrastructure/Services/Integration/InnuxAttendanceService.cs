@@ -1043,6 +1043,79 @@ public class InnuxAttendanceService : IInnuxAttendanceService
         return direction;
     }
 
+
+    // ─── Last Attendance Date (30-day activity filter) ───
+
+    /// <inheritdoc />
+    public async Task<Dictionary<int, DateTime>> GetLastAttendanceDatesAsync(
+        IEnumerable<int> innuxEmployeeIds)
+    {
+        var idList = innuxEmployeeIds.ToList();
+        if (idList.Count == 0)
+            return new Dictionary<int, DateTime>();
+
+        // Cache key based on sorted IDs
+        var idHash = string.Join(",", idList.OrderBy(x => x));
+        var cacheKey = $"innux:lastAttendance:{idHash}";
+
+        if (_cache.TryGetValue(cacheKey, out Dictionary<int, DateTime>? cached) && cached != null)
+        {
+            _logger.LogDebug("InnuxAttendanceService: last-attendance cache hit");
+            return cached;
+        }
+
+        try
+        {
+            await using var connection = await _connectionFactory.CreateConnectionAsync();
+
+            var (inClause, parameters) = BuildInClause(idList, "empId");
+
+            // Use TerminaisMarcacoes (real terminal punches) instead of Alteracoes.
+            // Alteracoes contains pre-generated scheduled records (rest days, planned shifts)
+            // which inflate MAX(Data) for employees who left but still have active schedules.
+            // TerminaisMarcacoes only contains actual clock-in/clock-out events,
+            // which is the correct signal for the 30-day activity filter.
+            var query = $@"
+                SELECT IDFuncionario, MAX(Data) AS LastDate
+                FROM dbo.TerminaisMarcacoes
+                WHERE IDFuncionario IN ({inClause})
+                GROUP BY IDFuncionario";
+
+            await using var command = new SqlCommand(query, connection);
+            command.Parameters.AddRange(parameters.ToArray());
+            command.CommandTimeout = 15;
+
+            var result = new Dictionary<int, DateTime>();
+            await using var reader = await command.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                var empId = InnuxTimeHelper.SafeInt(reader["IDFuncionario"]);
+                if (reader["LastDate"] is DateTime lastDate)
+                {
+                    result[empId] = lastDate.Date;
+                }
+            }
+
+            _cache.Set(cacheKey, result, CalendarCacheDuration);
+            _logger.LogDebug(
+                "InnuxAttendanceService: fetched last punch dates for {Count}/{Total} employees",
+                result.Count, idList.Count);
+
+            return result;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to fetch last attendance dates for {Count} employees", idList.Count);
+            throw;
+        }
+    }
+
     // ─── SQL IN clause builder ───
 
     /// <summary>

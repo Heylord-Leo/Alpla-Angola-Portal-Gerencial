@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { api } from '../../../lib/api';
 import { useAuth } from '../../../features/auth/AuthContext';
 import { ROLES } from '../../../constants/roles';
-import { Printer, Loader2, AlertTriangle, FileText, Calendar as CalendarIcon, Filter, AlertCircle, ShieldAlert } from 'lucide-react';
+import { Printer, Loader2, AlertTriangle, FileText, Calendar as CalendarIcon, Filter, AlertCircle, ShieldAlert, UserCheck, UserX, Database, Info } from 'lucide-react';
 import { DepartmentMasterAutocomplete } from '../../../components/DepartmentMasterAutocomplete';
 import './hr-attendance-monthly-report.css';
 
@@ -91,6 +91,18 @@ interface AttendanceDepartmentMonthlyReportDto {
     warnings: string[];
 }
 
+interface AttendanceConsolidatedReportDto {
+    startDate: string;
+    endDate: string;
+    daysFilter: string | null;
+    generatedAt: string;
+    generatedBy: string;
+    totalDepartments: number;
+    totalEmployees: number;
+    departments: AttendanceDepartmentMonthlyReportDto[];
+    warnings: string[];
+}
+
 // ─── Helpers ───
 
 function formatMinutesToHours(minutes: number): string {
@@ -163,13 +175,18 @@ export default function HRAttendanceMonthlyReport() {
     const [startDate, setStartDate] = useState(defaultStartDate());
     const [endDate, setEndDate] = useState(defaultEndDate());
     const [daysFilter, setDaysFilter] = useState('all');
+    const [attendanceActivity, setAttendanceActivity] = useState<'active' | 'noRecent' | 'all'>('active');
 
     const [loading, setLoading] = useState(false);
     const [reportData, setReportData] = useState<AttendanceDepartmentMonthlyReportDto | null>(null);
+    const [consolidatedData, setConsolidatedData] = useState<AttendanceConsolidatedReportDto | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [validationError, setValidationError] = useState<string | null>(null);
 
     const printAreaRef = useRef<HTMLDivElement>(null);
+
+    // true when "Todos os Departamentos" is selected (departmentId === 0)
+    const isConsolidatedMode = departmentId === 0;
 
     const handleDepartmentChange = useCallback((id: number | null, name: string) => {
         setDepartmentId(id);
@@ -180,11 +197,7 @@ export default function HRAttendanceMonthlyReport() {
         setValidationError(null);
         setError(null);
         setReportData(null);
-
-        if (!departmentId) {
-            setValidationError('Por favor, seleccione um departamento.');
-            return;
-        }
+        setConsolidatedData(null);
 
         if (!startDate || !endDate) {
             setValidationError('Data inicial e data final são obrigatórias.');
@@ -204,21 +217,34 @@ export default function HRAttendanceMonthlyReport() {
             return;
         }
 
+        // Require either a department or "all departments" (departmentId === 0)
+        if (departmentId === null) {
+            setValidationError('Por favor, seleccione um departamento ou "Todos os Departamentos".');
+            return;
+        }
+
         setLoading(true);
         try {
+            const apiDeptId = isConsolidatedMode ? null : departmentId;
             const data = await api.hrAttendance.getMonthlyDepartmentReport({
-                departmentId,
+                departmentId: apiDeptId,
                 startDate,
                 endDate,
-                daysFilter: daysFilter === 'all' ? undefined : daysFilter
+                daysFilter: daysFilter === 'all' ? undefined : daysFilter,
+                attendanceActivity
             });
-            setReportData(data);
+
+            if (isConsolidatedMode) {
+                setConsolidatedData(data as AttendanceConsolidatedReportDto);
+            } else {
+                setReportData(data as AttendanceDepartmentMonthlyReportDto);
+            }
         } catch (err: any) {
             setError(err?.message || 'Falha ao gerar relatório mensal.');
         } finally {
             setLoading(false);
         }
-    }, [departmentId, startDate, endDate, daysFilter]);
+    }, [departmentId, startDate, endDate, daysFilter, attendanceActivity, isConsolidatedMode]);
 
     const handlePrint = () => {
         window.print();
@@ -247,6 +273,39 @@ export default function HRAttendanceMonthlyReport() {
                     <ShieldAlert size={16} />
                     <span>Este relatório é <strong>somente leitura</strong>. Os dados são obtidos do Innux e não são alterados pelo Portal.</span>
                 </div>
+
+                {/* 30-day attendance activity filter */}
+                <div className="att-report-activity-filter">
+                    <div className="att-report-activity-filter__group">
+                        <button
+                            className={`att-report-activity-filter__btn${attendanceActivity === 'active' ? ' att-report-activity-filter__btn--active' : ''}`}
+                            onClick={() => setAttendanceActivity('active')}
+                        >
+                            <UserCheck size={14} />
+                            <span>Com ponto recente</span>
+                        </button>
+                        <button
+                            className={`att-report-activity-filter__btn${attendanceActivity === 'noRecent' ? ' att-report-activity-filter__btn--active' : ''}`}
+                            onClick={() => setAttendanceActivity('noRecent')}
+                        >
+                            <UserX size={14} />
+                            <span>Sem ponto há +30 dias</span>
+                        </button>
+                        <button
+                            className={`att-report-activity-filter__btn${attendanceActivity === 'all' ? ' att-report-activity-filter__btn--active' : ''}`}
+                            onClick={() => setAttendanceActivity('all')}
+                        >
+                            <Database size={14} />
+                            <span>Todos</span>
+                        </button>
+                    </div>
+                    {attendanceActivity === 'active' && (
+                        <p className="att-report-activity-filter__hint">
+                            <Info size={12} />
+                            Funcionários sem marcação real de ponto há mais de 30 dias são excluídos por padrão.
+                        </p>
+                    )}
+                </div>
                 
                 <div className="att-report-filters">
                     <div className="att-report-filter-group att-report-filter-department">
@@ -256,6 +315,7 @@ export default function HRAttendanceMonthlyReport() {
                             initialName={departmentName}
                             onChange={handleDepartmentChange}
                             placeholder="Pesquisar departamento..."
+                            showAllOption={true}
                         />
                     </div>
 
@@ -291,16 +351,18 @@ export default function HRAttendanceMonthlyReport() {
                         <button 
                             className="btn-generate" 
                             onClick={handleGenerate} 
-                            disabled={loading || !departmentId}
+                            disabled={loading || departmentId === null}
                         >
                             {loading ? <Loader2 size={16} className="spin" /> : <FileText size={16} />}
-                            {loading ? 'A gerar...' : 'Gerar Relatório'}
+                            {loading
+                                ? (isConsolidatedMode ? 'A gerar relatório consolidado de todos os departamentos...' : 'A gerar...')
+                                : 'Gerar Relatório'}
                         </button>
 
                         <button 
                             className="btn-print" 
                             onClick={handlePrint} 
-                            disabled={!reportData || loading}
+                            disabled={(!reportData && !consolidatedData) || loading}
                         >
                             <Printer size={16} />
                             Imprimir PDF
@@ -323,8 +385,8 @@ export default function HRAttendanceMonthlyReport() {
                 )}
             </div>
 
-            {/* Print Area */}
-            {reportData && (
+            {/* ─── Single-department Print Area ─── */}
+            {reportData && !consolidatedData && (
                 <div className="att-report-print-area" ref={printAreaRef}>
                     {/* ─── Print-Only Official Document Header ─── */}
                     <div className="print-only att-print-doc-header">
@@ -342,6 +404,11 @@ export default function HRAttendanceMonthlyReport() {
                                 <span><strong>Filtro:</strong> {reportData.daysFilter === 'business' ? 'Dias Úteis' : 'Fins de Semana'}</span>
                             )}
                         </div>
+                        {attendanceActivity === 'active' && (
+                            <div className="att-print-doc-notice">
+                                * Funcionários sem marcação real de ponto há mais de 30 dias são excluídos por padrão.
+                            </div>
+                        )}
                     </div>
 
                     {/* ─── Screen-Only Report Header ─── */}
@@ -371,120 +438,7 @@ export default function HRAttendanceMonthlyReport() {
                         </div>
                     ) : (
                         <div className="att-report-employees">
-                            {reportData.employees.map(employee => (
-                                <div key={employee.innuxId} className="att-report-employee-section">
-                                    <div className="att-report-employee-header">
-                                        <div className="att-report-employee-title">
-                                            <strong>Funcionário:</strong> {employee.name}
-                                            <span className="employee-code">(Nº {employee.employeeId || employee.innuxId})</span>
-                                            {employee.plantName && <span className="employee-plant"> — {employee.plantName}</span>}
-                                        </div>
-                                        {employee.warnings && employee.warnings.length > 0 && (
-                                            <div className="att-report-employee-warnings no-print">
-                                                {employee.warnings.map((w, i) => (
-                                                    <span key={i} className="employee-warning-badge">
-                                                        <AlertTriangle size={12} /> {w}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <table className="att-report-table">
-                                        <thead>
-                                            <tr>
-                                                <th className="col-date">Data</th>
-                                                <th className="col-day">Dia</th>
-                                                <th className="col-punch">Ent.1</th>
-                                                <th className="col-punch">Saí.1</th>
-                                                <th className="col-punch">Ent.2</th>
-                                                <th className="col-punch">Saí.2</th>
-                                                <th className="col-punch">Ent.3</th>
-                                                <th className="col-punch">Saí.3</th>
-                                                <th className="col-hours">H.Básicas</th>
-                                                <th className="col-hours">H.Extra</th>
-                                                <th className="col-hours">H.N.Rem.</th>
-                                                <th className="col-hours">H.Falta</th>
-                                                <th className="col-hours">H.Totais</th>
-                                                <th className="col-balance">Saldo</th>
-                                                <th className="col-status">Estado</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {employee.dailyRecords.map(day => (
-                                                <tr key={day.date} className={getStatusClassName(day)}>
-                                                    <td className="col-date">{formatDateShort(day.date)}</td>
-                                                    <td className="col-day">{day.weekday}</td>
-                                                    <td className="col-punch">{day.entrada1 || ''}</td>
-                                                    <td className="col-punch">{day.saida1 || ''}</td>
-                                                    <td className="col-punch">{day.entrada2 || ''}</td>
-                                                    <td className="col-punch">{day.saida2 || ''}</td>
-                                                    <td className="col-punch">{day.entrada3 || ''}</td>
-                                                    <td className="col-punch">{day.saida3 || ''}</td>
-                                                    <td className="col-hours">{formatMinutesToHours(day.basicMinutes)}</td>
-                                                    <td className="col-hours">{day.extraMinutes > 0 ? formatMinutesToHours(day.extraMinutes) : ''}</td>
-                                                    <td className="col-hours">{day.unpaidMinutes > 0 ? formatMinutesToHours(day.unpaidMinutes) : ''}</td>
-                                                    <td className="col-hours">{day.absenceMinutes > 0 ? formatMinutesToHours(day.absenceMinutes) : ''}</td>
-                                                    <td className="col-hours font-bold">{formatMinutesToHours(day.totalMinutes)}</td>
-                                                    <td className="col-balance">{formatMinutesToHours(day.dailyBalance)}</td>
-                                                    <td className="col-status">
-                                                        <span className="status-label">{getStatusLabel(day)}</span>
-                                                        {day.justification && <span className="justification" title={day.justification}>{day.justification}</span>}
-                                                        {day.warningMessage && (
-                                                            <span className="warning-indicator" title={day.warningMessage}>
-                                                                <AlertTriangle size={10} />
-                                                            </span>
-                                                        )}
-                                                        {day.isPortalInterpreted && (
-                                                            <span className="portal-badge" title="Interpretado pelo Portal">P</span>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-
-                                    {/* Employee Monthly Totals */}
-                                    {employee.monthlyTotals && employee.monthlyTotals.length > 0 && (
-                                        <div className="att-report-employee-totals">
-                                            {employee.monthlyTotals.map(mt => (
-                                                <div key={`${mt.year}-${mt.month}`} className="totals-row">
-                                                    <strong>{mt.monthLabel}:</strong>
-                                                    <span>H.Básicas: {formatMinutesToHours(mt.basicMinutes)}</span>
-                                                    <span>H.Extra: {formatMinutesToHours(mt.extraMinutes)}</span>
-                                                    <span className="font-bold">H.Totais: {formatMinutesToHours(mt.totalMinutes)}</span>
-                                                    <span>Saldo: {formatMinutesToHours(mt.balanceMinutes)}</span>
-                                                    <span>Dias Trab.: {mt.workedDays}</span>
-                                                    <span>Férias: {mt.vacationDays}</span>
-                                                    <span>Folgas: {mt.dayOffDays}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    {/* Employee Grand Totals */}
-                                    <div className="att-report-employee-totals grand-totals">
-                                        <div className="totals-row">
-                                            <strong>Totais Gerais:</strong>
-                                            <span>H.Básicas: {formatMinutesToHours(employee.grandTotals.basicMinutes)}</span>
-                                            <span>H.Extra: {formatMinutesToHours(employee.grandTotals.extraMinutes)}</span>
-                                            <span className="font-bold">H.Totais: {formatMinutesToHours(employee.grandTotals.totalMinutes)}</span>
-                                            <span>Saldo: {formatMinutesToHours(employee.grandTotals.balanceMinutes)}</span>
-                                        </div>
-                                        <div className="totals-row totals-days">
-                                            <span>Dias Trab.: {employee.grandTotals.workedDays}</span>
-                                            <span>Férias: {employee.grandTotals.vacationDays}</span>
-                                            <span>Folgas: {employee.grandTotals.dayOffDays}</span>
-                                            {employee.grandTotals.missingPunchDays > 0 && (
-                                                <span className="totals-warning">Marc. Falta: {employee.grandTotals.missingPunchDays}</span>
-                                            )}
-                                            {employee.grandTotals.inconsistentDays > 0 && (
-                                                <span className="totals-warning">Inconsist.: {employee.grandTotals.inconsistentDays}</span>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
+                            {renderEmployeeList(reportData.employees)}
 
                             {/* Department Grand Totals */}
                             <div className="att-report-department-totals">
@@ -511,6 +465,216 @@ export default function HRAttendanceMonthlyReport() {
                     </div>
                 </div>
             )}
+
+            {/* ─── Consolidated All-Departments Print Area ─── */}
+            {consolidatedData && (
+                <div className="att-report-print-area" ref={printAreaRef}>
+                    {/* Screen-only consolidated header */}
+                    <div className="att-report-header screen-only">
+                        <h1>Relatório Consolidado — Todos os Departamentos</h1>
+                        <div className="att-report-meta">
+                            <div><strong>Período:</strong> {formatDateDisplay(consolidatedData.startDate)} a {formatDateDisplay(consolidatedData.endDate)}</div>
+                            <div><strong>Departamentos:</strong> {consolidatedData.totalDepartments}</div>
+                            <div><strong>Funcionários:</strong> {consolidatedData.totalEmployees}</div>
+                            <div><strong>Gerado em:</strong> {formatDateDisplay(consolidatedData.generatedAt)} por {consolidatedData.generatedBy}</div>
+                        </div>
+                    </div>
+
+                    {/* Consolidated-level warnings */}
+                    {consolidatedData.warnings && consolidatedData.warnings.length > 0 && (
+                        <div className="att-report-warnings no-print">
+                            {consolidatedData.warnings.map((w, i) => (
+                                <div key={i} className="att-report-warning-item">
+                                    <AlertTriangle size={14} /> {w}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {consolidatedData.departments.length === 0 ? (
+                        <div className="att-report-empty">
+                            Nenhum departamento com dados de assiduidade encontrado neste período.
+                        </div>
+                    ) : (
+                        consolidatedData.departments.map((dept, deptIdx) => (
+                            <div key={dept.departmentId} className={`att-report-department-section${deptIdx > 0 ? ' att-report-department-section-break' : ''}`}>
+                                {/* Print-only department header (repeated per department for separated pages) */}
+                                <div className="print-only att-print-doc-header">
+                                    <div className="att-print-doc-header-top">
+                                        <div className="att-print-doc-company">ALPLA Angola | Portal Gerencial</div>
+                                        <div className="att-print-doc-generated">
+                                            Gerado em: {formatDateDisplay(dept.generatedAt)} por {dept.generatedBy}
+                                        </div>
+                                    </div>
+                                    <h1 className="att-print-doc-title">Relatório Mensal de Presenças</h1>
+                                    <div className="att-print-doc-meta">
+                                        <span><strong>Departamento:</strong> {dept.departmentName}</span>
+                                        <span><strong>Período:</strong> {formatDateDisplay(dept.startDate)} a {formatDateDisplay(dept.endDate)}</span>
+                                        {dept.daysFilter && dept.daysFilter !== 'all' && (
+                                            <span><strong>Filtro:</strong> {dept.daysFilter === 'business' ? 'Dias Úteis' : 'Fins de Semana'}</span>
+                                        )}
+                                        <span><strong>Departamento {deptIdx + 1} de {consolidatedData.totalDepartments}</strong></span>
+                                    </div>
+                                    {attendanceActivity === 'active' && (
+                                        <div className="att-print-doc-notice">
+                                            * Funcionários sem marcação real de ponto há mais de 30 dias são excluídos por padrão.
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Screen-only department section title */}
+                                <div className="att-report-department-section-title screen-only">
+                                    {dept.departmentName}
+                                </div>
+
+                                <div className="att-report-employees">
+                                    {renderEmployeeList(dept.employees)}
+
+                                    {/* Department subtotals */}
+                                    <div className="att-report-department-totals">
+                                        <h3>Totais — {dept.departmentName}</h3>
+                                        <div className="totals-row">
+                                            <span>H.Básicas: {formatMinutesToHours(dept.departmentGrandTotals.basicMinutes)}</span>
+                                            <span>H.Extra: {formatMinutesToHours(dept.departmentGrandTotals.extraMinutes)}</span>
+                                            <span className="font-bold">H.Totais: {formatMinutesToHours(dept.departmentGrandTotals.totalMinutes)}</span>
+                                            <span>Saldo: {formatMinutesToHours(dept.departmentGrandTotals.balanceMinutes)}</span>
+                                        </div>
+                                        <div className="totals-row totals-days">
+                                            <span>Total Funcionários: {dept.employees.length}</span>
+                                            <span>Dias Trab.: {dept.departmentGrandTotals.workedDays}</span>
+                                            <span>Férias: {dept.departmentGrandTotals.vacationDays}</span>
+                                            <span>Folgas: {dept.departmentGrandTotals.dayOffDays}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+
+                    {/* Print Footer */}
+                    <div className="att-report-footer">
+                        <span>Portal Gerencial — Relatório consolidado gerado automaticamente. Somente leitura.</span>
+                    </div>
+                </div>
+            )}
         </div>
     );
+
+    // ─── Shared Employee List Renderer ───
+    function renderEmployeeList(employees: AttendanceEmployeeReportDto[]) {
+        return employees.map(employee => (
+            <div key={employee.innuxId} className="att-report-employee-section">
+                <div className="att-report-employee-header">
+                    <div className="att-report-employee-title">
+                        <strong>Funcionário:</strong> {employee.name}
+                        <span className="employee-code">(Nº {employee.employeeId || employee.innuxId})</span>
+                        {employee.plantName && <span className="employee-plant"> — {employee.plantName}</span>}
+                    </div>
+                    {employee.warnings && employee.warnings.length > 0 && (
+                        <div className="att-report-employee-warnings no-print">
+                            {employee.warnings.map((w, i) => (
+                                <span key={i} className="employee-warning-badge">
+                                    <AlertTriangle size={12} /> {w}
+                                </span>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                <table className="att-report-table">
+                    <thead>
+                        <tr>
+                            <th className="col-date">Data</th>
+                            <th className="col-day">Dia</th>
+                            <th className="col-punch">Ent.1</th>
+                            <th className="col-punch">Saí.1</th>
+                            <th className="col-punch">Ent.2</th>
+                            <th className="col-punch">Saí.2</th>
+                            <th className="col-punch">Ent.3</th>
+                            <th className="col-punch">Saí.3</th>
+                            <th className="col-hours">H.Básicas</th>
+                            <th className="col-hours">H.Extra</th>
+                            <th className="col-hours">H.N.Rem.</th>
+                            <th className="col-hours">H.Falta</th>
+                            <th className="col-hours">H.Totais</th>
+                            <th className="col-balance">Saldo</th>
+                            <th className="col-status">Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {employee.dailyRecords.map(day => (
+                            <tr key={day.date} className={getStatusClassName(day)}>
+                                <td className="col-date">{formatDateShort(day.date)}</td>
+                                <td className="col-day">{day.weekday}</td>
+                                <td className="col-punch">{day.entrada1 || ''}</td>
+                                <td className="col-punch">{day.saida1 || ''}</td>
+                                <td className="col-punch">{day.entrada2 || ''}</td>
+                                <td className="col-punch">{day.saida2 || ''}</td>
+                                <td className="col-punch">{day.entrada3 || ''}</td>
+                                <td className="col-punch">{day.saida3 || ''}</td>
+                                <td className="col-hours">{formatMinutesToHours(day.basicMinutes)}</td>
+                                <td className="col-hours">{day.extraMinutes > 0 ? formatMinutesToHours(day.extraMinutes) : ''}</td>
+                                <td className="col-hours">{day.unpaidMinutes > 0 ? formatMinutesToHours(day.unpaidMinutes) : ''}</td>
+                                <td className="col-hours">{day.absenceMinutes > 0 ? formatMinutesToHours(day.absenceMinutes) : ''}</td>
+                                <td className="col-hours font-bold">{formatMinutesToHours(day.totalMinutes)}</td>
+                                <td className="col-balance">{formatMinutesToHours(day.dailyBalance)}</td>
+                                <td className="col-status">
+                                    <span className="status-label">{getStatusLabel(day)}</span>
+                                    {day.justification && <span className="justification" title={day.justification}>{day.justification}</span>}
+                                    {day.warningMessage && (
+                                        <span className="warning-indicator" title={day.warningMessage}>
+                                            <AlertTriangle size={10} />
+                                        </span>
+                                    )}
+                                    {day.isPortalInterpreted && (
+                                        <span className="portal-badge" title="Interpretado pelo Portal">P</span>
+                                    )}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+
+                {/* Employee Monthly Totals */}
+                {employee.monthlyTotals && employee.monthlyTotals.length > 0 && (
+                    <div className="att-report-employee-totals">
+                        {employee.monthlyTotals.map(mt => (
+                            <div key={`${mt.year}-${mt.month}`} className="totals-row">
+                                <strong>{mt.monthLabel}:</strong>
+                                <span>H.Básicas: {formatMinutesToHours(mt.basicMinutes)}</span>
+                                <span>H.Extra: {formatMinutesToHours(mt.extraMinutes)}</span>
+                                <span className="font-bold">H.Totais: {formatMinutesToHours(mt.totalMinutes)}</span>
+                                <span>Saldo: {formatMinutesToHours(mt.balanceMinutes)}</span>
+                                <span>Dias Trab.: {mt.workedDays}</span>
+                                <span>Férias: {mt.vacationDays}</span>
+                                <span>Folgas: {mt.dayOffDays}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* Employee Grand Totals */}
+                <div className="att-report-employee-totals grand-totals">
+                    <div className="totals-row">
+                        <strong>Totais Gerais:</strong>
+                        <span>H.Básicas: {formatMinutesToHours(employee.grandTotals.basicMinutes)}</span>
+                        <span>H.Extra: {formatMinutesToHours(employee.grandTotals.extraMinutes)}</span>
+                        <span className="font-bold">H.Totais: {formatMinutesToHours(employee.grandTotals.totalMinutes)}</span>
+                        <span>Saldo: {formatMinutesToHours(employee.grandTotals.balanceMinutes)}</span>
+                    </div>
+                    <div className="totals-row totals-days">
+                        <span>Dias Trab.: {employee.grandTotals.workedDays}</span>
+                        <span>Férias: {employee.grandTotals.vacationDays}</span>
+                        <span>Folgas: {employee.grandTotals.dayOffDays}</span>
+                        {employee.grandTotals.missingPunchDays > 0 && (
+                            <span className="totals-warning">Marc. Falta: {employee.grandTotals.missingPunchDays}</span>
+                        )}
+                        {employee.grandTotals.inconsistentDays > 0 && (
+                            <span className="totals-warning">Inconsist.: {employee.grandTotals.inconsistentDays}</span>
+                        )}
+                    </div>
+                </div>
+            </div>
+        ));
+    }
 }
