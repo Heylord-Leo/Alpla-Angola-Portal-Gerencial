@@ -24,12 +24,12 @@ export function AppShell({ children }: AppShellProps) {
     };
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: 'var(--color-bg-page)' }}>
+        <div className="app-shell" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: 'var(--color-bg-page)' }}>
             {/* Topbar acts as the solid, heavy corporate anchor */}
             <Topbar />
 
             {/* The main workspace is an asymmetric overlapping grid */}
-            <div style={{
+            <div className="app-shell-grid" style={{
                 display: 'grid',
                 gridTemplateColumns: isSidebarExpanded ? '260px minmax(0, 1fr)' : '80px minmax(0, 1fr)',
                 gap: '2rem',
@@ -42,7 +42,7 @@ export function AppShell({ children }: AppShellProps) {
                 transition: 'grid-template-columns 0.3s ease-in-out'
             }}>
                 {/* Full-height sidebar container with independent scroll support */}
-                <div style={{ 
+                <div className="app-shell-sidebar" style={{ 
                     position: 'sticky', 
                     top: 'calc(64px + 2rem)', 
                     height: 'calc(100vh - 64px - 4rem)',
@@ -58,6 +58,7 @@ export function AppShell({ children }: AppShellProps) {
 
                 {/* Main Content Area has a heavy dramatic entry */}
                 <motion.main
+                    className="app-shell-main"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.5, ease: 'easeOut' }}

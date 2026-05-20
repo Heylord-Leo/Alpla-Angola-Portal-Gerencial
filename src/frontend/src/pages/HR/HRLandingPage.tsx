@@ -144,15 +144,17 @@ export default function HRLandingPage() {
         : <CalendarDays size={24} strokeWidth={2.5} />;
 
     return (
-        <PageContainer>
-            <PageHeader
-                title={pageTitle}
-                subtitle={pageSubtitle}
-                icon={pageIcon}
-            />
+        <PageContainer className="hr-landing-page">
+            <div className="screen-only">
+                <PageHeader
+                    title={pageTitle}
+                    subtitle={pageSubtitle}
+                    icon={pageIcon}
+                />
+            </div>
 
             {/* Tab navigation — Finance-style bottom-border pattern */}
-            <div style={{ display: 'flex', gap: '4px', borderBottom: '1px solid var(--color-border)', paddingBottom: '0' }}>
+            <div className="screen-only" style={{ display: 'flex', gap: '4px', borderBottom: '1px solid var(--color-border)', paddingBottom: '0' }}>
                 {primaryTabs.map(tab => {
                     const Icon = tab.icon;
                     return (

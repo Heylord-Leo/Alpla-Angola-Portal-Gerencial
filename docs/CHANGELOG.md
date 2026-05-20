@@ -2,6 +2,25 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.118.2] - 2026-05-19 - HR Report Print Document Layout
+
+### Fixed
+- **Print Document Layout**: Replaced screen-capture-style print output with a proper official document layout. Report starts with "ALPLA Angola | Portal Gerencial / Relatório Mensal de Presenças" header and immediately shows employee data.
+- **HR Module Chrome Hidden**: PageHeader ("RECURSOS HUMANOS") and navigation tabs (Visão Geral, Férias, Presenças, etc.) are now hidden during print via `screen-only` class in `HRLandingPage.tsx`.
+- **Scoped Print CSS**: Complete rewrite of `@media print` in `hr-attendance-monthly-report.css` with document header styling, compact table layout, employee section `break-inside: avoid`, repeating `thead`, and A4 landscape 8mm margins.
+- **Global Print CSS Simplified**: Reduced `globals.css` print rules to minimal AppShell override to avoid cross-page interference.
+
+---
+
+## [v2.118.1] - 2026-05-19 - HR Monthly Attendance Report Print Fix
+
+### Fixed
+- **Global Print CSS**: Added `@media print` rules to `globals.css` that hide the AppShell chrome (Topbar, Sidebar) and flatten the grid layout, resolving blank page output when printing the HR Monthly Attendance Report.
+- **AppShell CSS Classes**: Added semantic class names (`app-shell`, `app-shell-grid`, `app-shell-sidebar`, `app-shell-main`) to `AppShell.tsx` for print-media targeting.
+- **TypeScript Fix**: Removed unused `React` import in `HRAttendanceMonthlyReport.tsx` (TS6133).
+
+---
+
 ## [v2.118.0] - 2026-05-19 - Catalog Sync Conflict Resolution
 
 ### Added

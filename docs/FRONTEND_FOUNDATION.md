@@ -477,8 +477,21 @@ For fields requiring selection from large datasets (e.g., Suppliers, Materials),
 7. **Portal Overlay (Required)**: To ensure the dropdown is never clipped by scroll containers or parents with `overflow: hidden`, use **React Portals** via `ReactDOM.createPortal` (or the shared `DropdownPortal.tsx` component).
    - The panel must use `position: fixed` with dynamic coordinate calculation.
    - Use the `useDropdownPosition` hook to automatically track scroll-parent events and ensure viewport safety (automatic flipping and horizontal containment).
+## Print Media and Official Document Layouts (v2.118.2)
+
+To ensure that analytical reports and documents can be cleanly printed or exported directly from the browser without visual artifacts:
+
+1. **Global AppShell Override**: The global AppShell components (Sidebar, Topbar) are hidden during print media execution (`@media print`) via standard layout classes: `.app-shell > header`, `.app-shell-sidebar` are set to `display: none !important`.
+2. **Flattened Grid Layout**: The main workspace is converted from a grid layout to a simple block layout via `.app-shell` and `.app-shell-grid` styles in print media to ensure the printable report fills the full width of the paper without being crushed.
+3. **Visibility Utilities**: Explicitly use the utility classes `.no-print` and `.screen-only` to target and hide components that should not appear on paper (e.g., page-level headers, tab navigations, actions, and filters).
+4. **Scoped Report Print Styles**: Report-specific styling must be enclosed in localized `@media print` rules within the component's own CSS (e.g., `hr-attendance-monthly-report.css`), covering:
+   - **Official Document Header**: Render a professional header indicating the portal origin, document title, generation date, and metadata.
+   - **Compact Tables**: Apply compact padding, smaller fonts (6-7pt), absolute column widths, and table borders suited for print.
+   - **Page Break Control**: Avoid breaking in the middle of employee data blocks or sections using `break-inside: avoid` and `page-break-inside: avoid`.
+   - **A4 Layout Orientation**: Enforce landscape or portrait settings with controlled margins (e.g., `margin: 8mm` or `@page { size: A4 landscape; margin: 8mm; }`).
 
 ## List State Preservation
+
 
 To ensure users never lose their place within deeply paginated or filtered datasets when navigating away to Detail or Edit screens, all primary Lists (like the Requests List) must enforce the following pattern:
 

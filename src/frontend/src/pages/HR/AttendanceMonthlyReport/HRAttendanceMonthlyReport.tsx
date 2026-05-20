@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { api } from '../../../lib/api';
 import { useAuth } from '../../../features/auth/AuthContext';
 import { ROLES } from '../../../constants/roles';
@@ -326,8 +326,26 @@ export default function HRAttendanceMonthlyReport() {
             {/* Print Area */}
             {reportData && (
                 <div className="att-report-print-area" ref={printAreaRef}>
-                    {/* Report Header */}
-                    <div className="att-report-header">
+                    {/* ─── Print-Only Official Document Header ─── */}
+                    <div className="print-only att-print-doc-header">
+                        <div className="att-print-doc-header-top">
+                            <div className="att-print-doc-company">ALPLA Angola | Portal Gerencial</div>
+                            <div className="att-print-doc-generated">
+                                Gerado em: {formatDateDisplay(reportData.generatedAt)} por {reportData.generatedBy}
+                            </div>
+                        </div>
+                        <h1 className="att-print-doc-title">Relatório Mensal de Presenças</h1>
+                        <div className="att-print-doc-meta">
+                            <span><strong>Departamento:</strong> {reportData.departmentName}</span>
+                            <span><strong>Período:</strong> {formatDateDisplay(reportData.startDate)} a {formatDateDisplay(reportData.endDate)}</span>
+                            {reportData.daysFilter && reportData.daysFilter !== 'all' && (
+                                <span><strong>Filtro:</strong> {reportData.daysFilter === 'business' ? 'Dias Úteis' : 'Fins de Semana'}</span>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* ─── Screen-Only Report Header ─── */}
+                    <div className="att-report-header screen-only">
                         <h1>Resultados mensais por departamento</h1>
                         <div className="att-report-meta">
                             <div><strong>Departamento:</strong> {reportData.departmentName}</div>

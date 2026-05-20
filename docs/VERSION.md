@@ -2,7 +2,22 @@
 
 ## Current Version
 
-v2.118.0
+v2.118.2
+
+## [2.118.2] - 2026-05-19
+
+### Fixed — HR Monthly Attendance Report Print Document Layout
+- **Print Document Layout**: Replaced screen-capture-style print output with a proper official document layout. The printed report now starts with a dedicated document header ("ALPLA Angola | Portal Gerencial / Relatório Mensal de Presenças") and immediately shows employee data — no wasted pages.
+- **HR Module Chrome Hidden**: Added `screen-only` class to `HRLandingPage.tsx` PageHeader and tab navigation, ensuring "RECURSOS HUMANOS" title and navigation tabs (Visão Geral, Férias, Presenças, etc.) are completely hidden during print.
+- **Scoped Print CSS**: Rewrote the `@media print` block in `hr-attendance-monthly-report.css` with 300+ lines of report-specific print rules covering document header, compact tables, employee sections with `break-inside: avoid`, repeating table headers, and A4 landscape with 8mm margins.
+- **Global Print CSS Simplified**: Reduced `globals.css` print rules to a minimal AppShell override (hide sidebar/topbar, flatten grid, visibility utilities), avoiding over-specific selectors that could affect other pages.
+
+## [2.118.1] - 2026-05-19
+
+### Fixed — HR Monthly Attendance Report Print Blank Page
+- **Global Print CSS**: Added `@media print` rules to `globals.css` that hide the AppShell chrome (Topbar, Sidebar) and flatten the grid layout. The report content now fills the full printed page instead of being crushed by the fixed-width sidebar grid.
+- **AppShell CSS Classes**: Added semantic class names (`app-shell`, `app-shell-grid`, `app-shell-sidebar`, `app-shell-main`) to `AppShell.tsx` layout elements, enabling CSS-based print targeting alongside existing inline styles.
+- **TypeScript Fix**: Removed unused `React` import in `HRAttendanceMonthlyReport.tsx` (TS6133), ensuring a clean `npx tsc --noEmit` pass.
 
 ## [2.118.0] - 2026-05-19
 

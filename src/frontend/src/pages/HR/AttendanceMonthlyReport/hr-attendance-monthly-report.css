@@ -499,111 +499,335 @@
     font-style: italic;
 }
 
-/* ─────────────────────────────── */
-/*  Print Styles — A4 Landscape   */
-/* ─────────────────────────────── */
+/* ─── Print-Only Document Header (hidden on screen) ─── */
+
+.print-only {
+    display: none;
+}
+
+/* ─────────────────────────────────────────────────────── */
+/*  Print Styles — Official Report Document Layout        */
+/*  Scoped to HR Attendance Monthly Report classes.       */
+/*  Produces a clean A4 landscape document, not a         */
+/*  screen capture.                                       */
+/* ─────────────────────────────────────────────────────── */
 
 @media print {
+
+    /* ─── Page setup ─── */
+    @page {
+        size: A4 landscape;
+        margin: 8mm;
+    }
+
+    /* ─── Global print resets ─── */
     * {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
     }
 
     body {
-        background: white;
-        margin: 0;
-        padding: 0;
+        background: white !important;
+        margin: 0 !important;
+        padding: 0 !important;
     }
 
+    /* ─── Visibility utilities ─── */
+    .screen-only,
     .no-print {
         display: none !important;
     }
 
+    .print-only {
+        display: block !important;
+    }
+
+    /* ─── App Shell — hide all chrome ─── */
+    .app-shell > header,
+    .app-shell-sidebar {
+        display: none !important;
+    }
+
+    .app-shell {
+        display: block !important;
+        min-height: auto !important;
+        background: white !important;
+    }
+
+    .app-shell-grid {
+        display: block !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        gap: 0 !important;
+    }
+
+    .app-shell-main {
+        opacity: 1 !important;
+        background: white !important;
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        min-height: auto !important;
+        transform: none !important;
+    }
+
+    /* ─── Page Container — flatten for print ─── */
+    .page-container,
+    .hr-landing-page {
+        padding: 0 !important;
+        margin: 0 !important;
+        gap: 0 !important;
+        max-width: none !important;
+        min-height: auto !important;
+    }
+
+    /* ─── Report Container ─── */
     .att-report-container {
-        padding: 0;
-        margin: 0;
-        max-width: none;
-        gap: 0;
+        padding: 0 !important;
+        margin: 0 !important;
+        max-width: none !important;
+        gap: 0 !important;
     }
 
+    /* ─── Print Area — full-width document ─── */
     .att-report-print-area {
-        padding: 0;
-        box-shadow: none;
-        border-radius: 0;
+        padding: 0 !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        border: none !important;
+        background: white !important;
+        color: #111 !important;
+        min-height: auto !important;
+        width: 100% !important;
     }
 
-    .att-report-header h1 {
-        font-size: 14pt;
+    /* ─── Official Document Header (print-only) ─── */
+    .att-print-doc-header {
+        margin-bottom: 6px;
+        padding-bottom: 5px;
+        border-bottom: 2px solid #111;
     }
 
-    .att-report-meta {
-        font-size: 9pt;
+    .att-print-doc-header-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 2px;
+    }
+
+    .att-print-doc-company {
+        font-size: 8pt;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #333;
+    }
+
+    .att-print-doc-generated {
+        font-size: 7pt;
+        color: #666;
+    }
+
+    .att-print-doc-title {
+        font-size: 12pt !important;
+        font-weight: 800 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.03em !important;
+        margin: 3px 0 !important;
+        color: #111 !important;
+    }
+
+    .att-print-doc-meta {
+        display: flex;
+        gap: 24px;
+        font-size: 8pt;
+        color: #333;
+    }
+
+    .att-print-doc-meta strong {
+        font-weight: 700;
+    }
+
+    /* ─── Employee Sections ─── */
+    .att-report-employees {
+        margin-top: 4px;
     }
 
     .att-report-employee-section {
-        page-break-inside: avoid;
+        margin-bottom: 8px !important;
         break-inside: avoid;
-        margin-bottom: 20px;
+        page-break-inside: avoid;
     }
 
     .att-report-employee-header {
-        font-size: 10pt;
-        padding: 6px 10px;
+        background: #f0f0f0 !important;
+        border: 1px solid #999 !important;
+        border-bottom: none !important;
+        padding: 4px 8px !important;
+        font-size: 8pt !important;
     }
 
+    .att-report-employee-title {
+        font-size: 8pt !important;
+        font-weight: 700 !important;
+    }
+
+    .att-report-employee-title .employee-code {
+        font-size: 7.5pt !important;
+        color: #444 !important;
+    }
+
+    .att-report-employee-title .employee-plant {
+        font-size: 7pt !important;
+        color: #666 !important;
+    }
+
+    /* ─── Data Table — compact print layout ─── */
     .att-report-table {
-        font-size: 7pt;
-        page-break-inside: auto;
+        width: 100% !important;
+        border-collapse: collapse !important;
+        font-size: 7pt !important;
+        page-break-inside: auto !important;
+        table-layout: fixed !important;
+        border: 1px solid #999 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
     }
 
     .att-report-table thead {
-        display: table-header-group;
-    }
-
-    .att-report-table tr {
-        page-break-inside: avoid;
-        page-break-after: auto;
+        display: table-header-group !important;
     }
 
     .att-report-table th {
-        font-size: 6.5pt;
-        padding: 3px 4px;
+        background: #e8e8e8 !important;
+        font-size: 6pt !important;
+        font-weight: 700 !important;
+        padding: 2px 3px !important;
+        border: 1px solid #999 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.02em !important;
+        color: #222 !important;
     }
 
     .att-report-table td {
-        padding: 2px 3px;
-        font-size: 7pt;
+        padding: 1px 2px !important;
+        font-size: 6.5pt !important;
+        border: 1px solid #bbb !important;
+        color: #111 !important;
     }
 
-    .att-report-employee-totals {
-        padding: 6px 10px;
-        font-size: 8pt;
+    .att-report-table tr {
+        page-break-inside: avoid !important;
     }
 
-    .totals-row {
-        font-size: 8pt;
-        gap: 14px;
+    /* Status row colors — subtle for print */
+    .status-absent { background-color: #fee2e2 !important; }
+    .status-dayoff { background-color: #f5f5f5 !important; }
+    .status-vacation { background-color: #ecfdf5 !important; }
+    .status-holiday { background-color: #f0fdf4 !important; }
+    .status-justified { background-color: #fffbeb !important; }
+    .status-anomaly { background-color: #fefce8 !important; }
+
+    .status-dayoff,
+    .status-dayoff .col-hours,
+    .status-dayoff .col-punch,
+    .status-dayoff .col-balance {
+        color: #888 !important;
     }
 
-    .att-report-department-totals {
-        padding: 10px 14px;
-        border-radius: 0;
-        margin-top: 10px;
-    }
-
-    .att-report-footer {
-        margin-top: 10px;
-        font-size: 7pt;
-    }
-
-    /* Ensure portal badge prints */
+    /* Portal badge in print */
     .portal-badge {
         background: #3b82f6 !important;
         color: white !important;
+        font-size: 5pt !important;
+        width: 10px !important;
+        height: 10px !important;
     }
 
-    @page {
-        margin: 1cm;
-        size: A4 landscape;
+    .warning-indicator {
+        color: #d97706 !important;
+    }
+
+    .status-label {
+        font-size: 6.5pt !important;
+    }
+
+    .justification {
+        font-size: 5.5pt !important;
+    }
+
+    /* ─── Employee Totals ─── */
+    .att-report-employee-totals {
+        padding: 3px 8px !important;
+        background: #f5f5f5 !important;
+        border: 1px solid #999 !important;
+        border-top: none !important;
+        font-size: 7pt !important;
+    }
+
+    .att-report-employee-totals.grand-totals {
+        background: #e8e8e8 !important;
+        border-top: 2px solid #666 !important;
+    }
+
+    .totals-row {
+        font-size: 7pt !important;
+        gap: 12px !important;
+        color: #111 !important;
+    }
+
+    .totals-days {
+        font-size: 6.5pt !important;
+        color: #444 !important;
+    }
+
+    .totals-warning {
+        color: #b45309 !important;
+    }
+
+    /* ─── Department Grand Totals ─── */
+    .att-report-department-totals {
+        margin-top: 6px !important;
+        padding: 8px 12px !important;
+        background: #1e293b !important;
+        color: white !important;
+        border-radius: 0 !important;
+        border: 1px solid #333 !important;
+    }
+
+    .att-report-department-totals h3 {
+        font-size: 8pt !important;
+        margin-bottom: 4px !important;
+    }
+
+    .att-report-department-totals .totals-row {
+        color: rgba(255, 255, 255, 0.9) !important;
+        font-size: 7pt !important;
+    }
+
+    .att-report-department-totals .totals-days {
+        color: rgba(255, 255, 255, 0.7) !important;
+    }
+
+    /* ─── Footer ─── */
+    .att-report-footer {
+        margin-top: 6px !important;
+        padding-top: 4px !important;
+        border-top: 1px solid #999 !important;
+        font-size: 6pt !important;
+        color: #888 !important;
+    }
+
+    /* ─── Global table override — remove globals.css decorations ─── */
+    table {
+        box-shadow: none !important;
+        border-radius: 0 !important;
+    }
+
+    /* Remove hover effects */
+    tr:hover td {
+        background-color: transparent !important;
     }
 }
