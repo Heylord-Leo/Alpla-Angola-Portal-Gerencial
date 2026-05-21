@@ -2,7 +2,26 @@
 
 ## Current Version
 
-v2.124.0
+v2.126.0
+
+## [2.126.0] - 2026-05-21
+
+### Fixed — HR Attendance: "Falta" Status Despite Valid Punches (DEC-128)
+- PunchWithoutPeriod detection: When Portal-interpreted punches show valid Entry + Exit but Innux has no processed work period, status changes from "Falta" to "Verificar" with estimated Portal hours tooltip.
+- GetWorkedHoursAsync fix: Excluded `AlteracoesPeriodos` rows with absence codes (`IDCodigoAusencia IS NULL`) from worked hours calculation. Absence periods were incorrectly counted as basic worked time.
+- Frontend: "Verificar" label with AlertCircle icon, pulse animation, and print-safe CSS.
+- Diagnostic scan May 2026: 448 PunchWithoutPeriod day-records across 95 employees.
+- Decision: DEC-128.
+
+## [2.125.0] - 2026-05-21
+
+### Fixed — HR Attendance: Punch Classification in Monthly Report
+- Unified `ApplyPortalPunchInterpretation` shared method extracted in `InnuxAttendanceService.cs` — applied to both `GetRawPunchesAsync` (bulk/monthly report) and `GetPunchesAsync` (day-detail).
+- Root cause: `GetRawPunchesAsync` did not apply the "Double Code 17" interpretation, causing exit punches to appear under ENT.2 instead of SAÍ.1.
+- Added `HasDirectionWarning` and `DirectionWarningMessage` to `AttendanceDailyRecordDto` for audit visibility.
+- Frontend: Compass icon (🧭) indicator for days with Portal-interpreted punch direction. Distinct from anomaly triangle and Portal "P" badge.
+- Print-compatible CSS styling for direction warning indicator.
+- Decision: DEC-127.
 
 ## [2.124.0] - 2026-05-21
 

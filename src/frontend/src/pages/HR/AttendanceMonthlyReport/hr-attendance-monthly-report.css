@@ -462,6 +462,16 @@
     vertical-align: middle;
 }
 
+.att-report-table .direction-warning-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #b45309;
+    margin-left: 3px;
+    vertical-align: middle;
+    cursor: help;
+}
+
 .font-bold {
     font-weight: 700;
 }
@@ -480,6 +490,18 @@
 .status-dayoff .col-balance { color: #94a3b8; }
 
 .status-present { /* default, no highlight */ }
+
+.status-verify { background-color: #fff7ed; }
+
+.att-report-table .punch-without-period-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #c2410c;
+    margin-left: 3px;
+    vertical-align: middle;
+    cursor: help;
+}
 
 /* ─── Employee Totals ─── */
 
@@ -840,6 +862,12 @@
     .status-holiday { background-color: #f0fdf4 !important; }
     .status-justified { background-color: #fffbeb !important; }
     .status-anomaly { background-color: #fefce8 !important; }
+.status-verify { background-color: #fff7ed !important; }
+
+.punch-without-period-indicator {
+    color: #c2410c !important;
+    margin-left: 2px;
+}
 
     .status-dayoff,
     .status-dayoff .col-hours,
@@ -859,6 +887,11 @@
 
     .warning-indicator {
         color: #d97706 !important;
+    }
+
+    .direction-warning-indicator {
+        color: #b45309 !important;
+        font-size: 5pt !important;
     }
 
     .status-label {

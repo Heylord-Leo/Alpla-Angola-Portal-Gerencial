@@ -83,6 +83,20 @@ namespace AlplaPortal.Application.DTOs.HR
         public bool HasInconsistentData { get; set; }
         public bool IsPortalInterpreted { get; set; }
         public string? WarningMessage { get; set; }
+
+        /// <summary>Whether the day has a direction-related warning (ambiguous code, Portal interpretation, etc.).</summary>
+        public bool HasDirectionWarning { get; set; }
+
+        /// <summary>Portuguese direction warning message for the UI tooltip.</summary>
+        public string? DirectionWarningMessage { get; set; }
+
+        /// <summary>
+        /// Estimated worked minutes calculated by the Portal from interpreted entry/exit punches.
+        /// Only populated when Status = "PunchWithoutPeriod" (Innux has no processed work period
+        /// but Portal-interpreted punches show a valid entry/exit pair).
+        /// NOT official — for diagnostic/tooltip display only.
+        /// </summary>
+        public int PortalEstimatedMinutes { get; set; }
     }
 
     public class AttendanceMonthlySummaryDto

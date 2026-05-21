@@ -2,6 +2,71 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.126.0] - 2026-05-21
+
+### Fixed — HR Attendance: "Falta" Status Despite Valid Punches (DEC-128)
+
+**Root Cause**: Days with valid raw terminal Entry + Exit punches still displayed as "Falta" (Absent) with H.Totais=00:00. Two issues contributed:
+
+1. **Absence periods counted as worked**: `GetWorkedHoursAsync` included `AlteracoesPeriodos` rows with absence codes (e.g., F03 Falta Injustificada) in the BasicMinutes total. When the mixed-code portal interpreter cleared `AbsenceMinutes` to 0, the formula `Max(0, worked - absence)` no longer cancelled out, blocking PunchWithoutPeriod detection.
+
+2. **No fallback status**: The monthly report had no mechanism to flag days where the Portal shows valid Entry/Exit but Innux has no processed work period.
+
+**Backend — PunchWithoutPeriod Detection**
+- **New check** in `BuildSingleDepartmentReportAsync`: After punch pairing, if Portal has valid Entry + Exit pair AND Innux status is "Absent"/"PortalInterpreted" AND `dayWorked.TotalMinutes == 0` AND span ≥ 60 minutes → set status to `PunchWithoutPeriod`.
+- **Portal estimated time**: Calculates entry→exit span and includes it in the warning message: "Tempo estimado pelo Portal: HH:mm".
+- **No H.Totais override**: H.Totais stays from Innux (00:00). Only the status display changes.
+- **New DTO field**: `PortalEstimatedMinutes` on `AttendanceDailyRecordDto`.
+
+**Backend — GetWorkedHoursAsync Fix**
+- Added `AND ap.IDCodigoAusencia IS NULL` filter to exclude absence periods from worked hours calculation. Absence periods have time spans but represent scheduled absence, not actual work.
+
+**Frontend — "Verificar" Status**
+- Status column shows "Verificar" label with `AlertCircle` icon (orange/amber).
+- Tooltip shows Portuguese warning message including Portal-estimated hours.
+- Pulse animation on the warning icon for visual attention.
+- Print-safe styles (no animation, visible text).
+
+**Diagnostic Scan — May 2026**: 448 PunchWithoutPeriod day-records across 95 employees. This indicates a systemic Innux processing gap where raw terminal punches exist but Innux didn't generate work periods.
+
+### Files Changed
+- `backend/AlplaPortal.Infrastructure/Services/Integration/InnuxAttendanceService.cs` — `GetWorkedHoursAsync`: Added absence period filter (`IDCodigoAusencia IS NULL`).
+- `backend/AlplaPortal.Application/DTOs/HR/AttendanceReportDtos.cs` — Added `PortalEstimatedMinutes`.
+- `backend/AlplaPortal.Api/Controllers/HRAttendanceController.cs` — PunchWithoutPeriod detection in `BuildSingleDepartmentReportAsync`.
+- `frontend/src/pages/HR/AttendanceMonthlyReport/HRAttendanceMonthlyReport.tsx` — "Verificar" label, icon, tooltip.
+- `frontend/src/pages/HR/AttendanceMonthlyReport/hr-attendance-monthly-report.css` — Status badge and indicator styling.
+
+---
+
+## [v2.125.0] - 2026-05-21
+
+### Fixed — HR Attendance: Punch Classification in Monthly Report
+
+**Root Cause**: Innux biometric terminals can send mixed direction codes on the same day — e.g., Code `17` (alternate entry code) for the first punch and `EN` (standard entry code) for the second. Since `MapDirectionLabel` maps both `17` and `EN` to "Entrada", all punches ended up classified as entries. Exit punches (e.g., 17:32, 17:38) appeared in the wrong report column (ENT.2 instead of SAÍ.1). This affected both `GetRawPunchesAsync` (monthly report) and `GetPunchesAsync` (day-detail).
+
+**Backend — Shared Interpretation Logic**
+- **Extracted** `ApplyPortalPunchInterpretation` shared method in `InnuxAttendanceService.cs` — now applied to both `GetRawPunchesAsync` and `GetPunchesAsync` to ensure consistent direction interpretation.
+- **Rule 4 (Mixed Codes)**: If all punches in a day resolve to the same `DirectionLabel` after `MapDirectionLabel` (regardless of raw code differences), the first chronological punch is classified as Entrada and the last as Saída. Single ambiguous punches are not inferred — they trigger a warning instead.
+- **Tracking**: `IsPortalInterpreted` flag set on reinterpreted punches for audit transparency.
+
+**Backend — Direction Warnings**
+- **New DTO fields**: `HasDirectionWarning` and `DirectionWarningMessage` on `AttendanceDailyRecordDto`.
+- **Controller detection**: Three warning scenarios detected: Portal-interpreted punches, single ambiguous punches, and multiple punches all with same ambiguous direction code.
+
+**Frontend — Warning Indicators**
+- **New indicator**: Compass icon (🧭) rendered next to the status column for days with direction warnings. Distinct from the existing anomaly triangle and Portal "P" badge.
+- **Tooltip**: Hover shows the specific warning message in Portuguese.
+- **CSS**: Print-compatible styling added.
+
+### Files Changed
+- `backend/AlplaPortal.Infrastructure/Services/Integration/InnuxAttendanceService.cs` — Extracted `ApplyPortalPunchInterpretation`, applied to both bulk and detail methods.
+- `backend/AlplaPortal.Application/DTOs/HR/AttendanceReportDtos.cs` — Added `HasDirectionWarning`, `DirectionWarningMessage`.
+- `backend/AlplaPortal.Api/Controllers/HRAttendanceController.cs` — Direction warning detection in `BuildSingleDepartmentReportAsync`.
+- `frontend/src/pages/HR/AttendanceMonthlyReport/HRAttendanceMonthlyReport.tsx` — Direction warning rendering with Compass icon.
+- `frontend/src/pages/HR/AttendanceMonthlyReport/hr-attendance-monthly-report.css` — Warning indicator styling (screen + print).
+
+---
+
 ## [v2.124.0] - 2026-05-21
 
 ### Changed — I.T Equipment Documents: DOCX → PDF Migration with Branding

@@ -695,7 +695,8 @@ public class HRAttendanceController : ControllerBase
                     (day.IsOvernightShift && p.Date == day.Date.Date.AddDays(1) && string.Compare(p.Time, "12:00", StringComparison.Ordinal) < 0)
                 ).OrderBy(p => p.Date).ThenBy(p => p.Time).ToList();
 
-                var isPortalInterpreted = day.AnomalyDescription?.Contains("Portal") == true;
+                var isPortalInterpreted = day.AnomalyDescription?.Contains("Portal") == true
+                    || dayPunches.Any(p => p.IsPortalInterpreted);
                 var hasMissingPunch = day.MissedMandatoryPeriods || (day.PunchCount == 0 && day.ExpectedMinutes > 0 && !day.IsRestDay);
                 var hasInconsistentData = !string.IsNullOrWhiteSpace(day.AnomalyDescription);
                 var isVacation = day.AttendanceStatus == "Vacation";
@@ -706,6 +707,34 @@ public class HRAttendanceController : ControllerBase
                     warningMessage = day.AnomalyDescription;
                 if (hasMissingPunch && string.IsNullOrWhiteSpace(warningMessage))
                     warningMessage = "Marcação em falta";
+
+                // Direction warning detection
+                bool hasDirectionWarning = false;
+                string? directionWarningMessage = null;
+
+                if (dayPunches.Any(p => p.IsPortalInterpreted))
+                {
+                    hasDirectionWarning = true;
+                    directionWarningMessage = "Marcação interpretada pelo Portal";
+                }
+                else if (dayPunches.Count == 1 && dayPunches.Any(p =>
+                    string.IsNullOrWhiteSpace(p.Direction) || p.Direction == "17" || p.Direction == "18"))
+                {
+                    hasDirectionWarning = true;
+                    directionWarningMessage = "Marcação única com direção indefinida";
+                }
+                else if (dayPunches.Count >= 2)
+                {
+                    var allSameDir = dayPunches.All(p => p.Direction == dayPunches[0].Direction)
+                        && dayPunches.All(p => !p.IsPortalInterpreted)
+                        && (dayPunches[0].Direction == "17" || dayPunches[0].Direction == "18"
+                            || string.IsNullOrWhiteSpace(dayPunches[0].Direction));
+                    if (allSameDir)
+                    {
+                        hasDirectionWarning = true;
+                        directionWarningMessage = "Marcação com direção ambígua";
+                    }
+                }
 
                 // Portal-computed report fields (DEC-124):
                 // - BasicMinutes  = planned/scheduled hours (ExpectedMinutes), not worked hours
@@ -734,7 +763,9 @@ public class HRAttendanceController : ControllerBase
                     HasMissingPunch = hasMissingPunch,
                     HasInconsistentData = hasInconsistentData,
                     IsPortalInterpreted = isPortalInterpreted,
-                    WarningMessage = warningMessage
+                    WarningMessage = warningMessage,
+                    HasDirectionWarning = hasDirectionWarning,
+                    DirectionWarningMessage = directionWarningMessage
                 };
 
                 // Direction-aware punch pairing
@@ -779,6 +810,39 @@ public class HRAttendanceController : ControllerBase
                 if (exits.Count > 2) recordDto.Saida3 = exits[2];
                 if (entries.Count > 3) recordDto.Entrada4 = entries[3];
                 if (exits.Count > 3) recordDto.Saida4 = exits[3];
+
+                // ─── PunchWithoutPeriod detection (DEC-128) ───
+                // If Innux classifies as Absent/PortalInterpreted but the report shows
+                // a valid entry + exit pair (from raw punches), and Innux has no processed
+                // work period (worked.TotalMinutes == 0), flag as "PunchWithoutPeriod".
+                // This does NOT change H.Totais — only the status display.
+                if (entries.Count > 0 && exits.Count > 0 &&
+                    (day.AttendanceStatus == "Absent" || day.AttendanceStatus == "PortalInterpreted") &&
+                    dayWorked.TotalMinutes == 0)
+                {
+                    // Calculate estimated minutes from entry/exit span
+                    if (TimeSpan.TryParse(entries[0], out var tE) && TimeSpan.TryParse(exits[0], out var tX))
+                    {
+                        var span = tX - tE;
+                        if (span.TotalMinutes < 0) span = span.Add(TimeSpan.FromHours(24));
+                        
+                        if (span.TotalMinutes >= 60)
+                        {
+                            recordDto.Status = "PunchWithoutPeriod";
+                            recordDto.PortalEstimatedMinutes = (int)span.TotalMinutes;
+                            
+                            var estimatedFormatted = $"{(int)span.TotalHours:D2}:{(int)span.TotalMinutes % 60:D2}";
+                            var punchWarning = $"Existe entrada e saída, mas o Innux não gerou período trabalhado. Tempo estimado pelo Portal: {estimatedFormatted}. Verificar processamento de horas no Innux.";
+                            
+                            recordDto.WarningMessage = string.IsNullOrWhiteSpace(recordDto.WarningMessage)
+                                ? punchWarning
+                                : $"{recordDto.WarningMessage} | {punchWarning}";
+                            
+                            recordDto.HasMissingPunch = false; // entry+exit exist
+                            recordDto.HasInconsistentData = true;
+                        }
+                    }
+                }
 
                 // Filtering
                 bool includeDay = true;

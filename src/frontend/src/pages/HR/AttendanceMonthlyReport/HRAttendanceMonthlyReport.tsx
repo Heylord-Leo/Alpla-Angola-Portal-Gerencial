@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { api } from '../../../lib/api';
 import { useAuth } from '../../../features/auth/AuthContext';
 import { ROLES } from '../../../constants/roles';
-import { Printer, Loader2, AlertTriangle, FileText, Calendar as CalendarIcon, Filter, AlertCircle, ShieldAlert, UserCheck, UserX, Database, Info } from 'lucide-react';
+import { Printer, Loader2, AlertTriangle, FileText, Calendar as CalendarIcon, Filter, AlertCircle, ShieldAlert, UserCheck, UserX, Database, Info, Compass } from 'lucide-react';
 import { DepartmentMasterAutocomplete } from '../../../components/DepartmentMasterAutocomplete';
 import './hr-attendance-monthly-report.css';
 
@@ -36,6 +36,9 @@ interface AttendanceDailyRecordDto {
     hasInconsistentData: boolean;
     isPortalInterpreted: boolean;
     warningMessage: string | null;
+    hasDirectionWarning: boolean;
+    directionWarningMessage: string | null;
+    portalEstimatedMinutes: number;
 }
 
 interface AttendanceMonthlySummaryDto {
@@ -148,6 +151,7 @@ function getStatusClassName(day: AttendanceDailyRecordDto): string {
     const s = (day.status || '').toLowerCase();
     if (s === 'present') return 'status-present';
     if (s === 'absent') return 'status-absent';
+    if (s === 'punchwithoutperiod') return 'status-verify';
     if (s === 'justifiedabsence') return 'status-justified';
     return '';
 }
@@ -159,6 +163,7 @@ function getStatusLabel(day: AttendanceDailyRecordDto): string {
     const s = (day.status || '').toLowerCase();
     if (s === 'present') return 'Presente';
     if (s === 'absent') return 'Falta';
+    if (s === 'punchwithoutperiod') return 'Verificar';
     if (s === 'justifiedabsence') return 'Falta Just.';
     if (s === 'anomaly') return 'Anomalia';
     return day.status || '';
@@ -620,13 +625,23 @@ export default function HRAttendanceMonthlyReport() {
                                 <td className={`col-balance${day.dailyBalance < 0 ? ' balance-negative' : day.dailyBalance > 0 ? ' balance-positive' : ''}`}>{formatMinutesToHours(day.dailyBalance)}</td>
                                 <td className="col-status">
                                     <span className="status-label">{getStatusLabel(day)}</span>
+                                    {(day.status || '').toLowerCase() === 'punchwithoutperiod' && (
+                                        <span className="punch-without-period-indicator" title={day.warningMessage || 'Existe entrada e saída, mas o Innux não gerou período trabalhado.'}>
+                                            <AlertCircle size={10} />
+                                        </span>
+                                    )}
                                     {day.justification && <span className="justification" title={day.justification}>{day.justification}</span>}
-                                    {day.warningMessage && (
+                                    {day.warningMessage && (day.status || '').toLowerCase() !== 'punchwithoutperiod' && (
                                         <span className="warning-indicator" title={day.warningMessage}>
                                             <AlertTriangle size={10} />
                                         </span>
                                     )}
-                                    {day.isPortalInterpreted && (
+                                    {day.hasDirectionWarning && (
+                                        <span className="direction-warning-indicator" title={day.directionWarningMessage || 'Verificar direção da marcação'}>
+                                            <Compass size={10} />
+                                        </span>
+                                    )}
+                                    {day.isPortalInterpreted && !day.hasDirectionWarning && (
                                         <span className="portal-badge" title="Interpretado pelo Portal">P</span>
                                     )}
                                 </td>

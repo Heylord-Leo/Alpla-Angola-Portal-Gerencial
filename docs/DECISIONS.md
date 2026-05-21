@@ -2,6 +2,37 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-128 — HR Attendance: PunchWithoutPeriod Status Detection
+
+- **Date:** 2026-05-21
+- **Status:** Accepted
+- **Context:** After fixing punch column placement (DEC-127), the monthly report still showed days as "Falta" with H.Totais=00:00 even when Portal-interpreted punches displayed a valid Entry + Exit pair. Two root causes: (1) `GetWorkedHoursAsync` counted absence period minutes (F03) as basic worked time because `AlteracoesPeriodos` rows with `IDCodigoAusencia` were not filtered out, and (2) no status existed to represent the discrepancy between Portal-visible punches and Innux-absent work periods.
+- **Decision:** Implement a conservative "Verificar" status without overriding Innux official hours:
+    1. **GetWorkedHoursAsync Fix:** Added `AND ap.IDCodigoAusencia IS NULL` to the SQL query. Absence periods have time spans (e.g., 08:00-17:30) but represent scheduled absence, not actual work. This filter is safe because `ComputePositiveCountedMinutes` already handles justified/unjustified absence via separate `AbsenceMinutes`/`JustifiedAbsenceMinutes` fields.
+    2. **PunchWithoutPeriod Detection:** After punch pairing in the monthly report builder, if (a) Portal has valid Entry + Exit, (b) Innux status is "Absent" or "PortalInterpreted", (c) `dayWorked.TotalMinutes == 0`, and (d) entry→exit span ≥ 60 minutes, set status to `PunchWithoutPeriod`.
+    3. **H.Totais Unchanged:** The Portal does NOT override official Innux worked hours. H.Totais remains 00:00. Only the status display changes from "Falta" to "Verificar" to alert HR that Innux processing may need review.
+    4. **Portal Estimated Time:** Calculated from entry→exit span (e.g., 07:47→17:32 = 09:45). Shown in tooltip for HR reference, NOT as official hours.
+    5. **Frontend Display:** "Verificar" badge (orange/amber) with AlertCircle icon and pulse animation. Portuguese tooltip includes estimated hours.
+- **Alternatives considered:** (1) Override H.Totais with Portal-calculated hours (rejected: violates Innux-as-source-of-truth principle). (2) Show "Presente" based on Portal punches alone (rejected: Innux may have valid reasons for the absence classification). (3) Filter absence periods in the SQL JOIN instead of WHERE (rejected: LEFT JOIN filter in WHERE is equivalent and simpler).
+- **Consequences:** 448 day-records across 95 employees in May 2026 now show "Verificar" instead of "Falta", alerting HR to systematic Innux processing gaps. No data is modified.
+- **Diagnostic Impact:** The high volume (95/137 employees) suggests a systemic Innux configuration issue — raw terminal punches exist but Innux is not generating `AlteracoesPeriodos` work periods. This is an Innux-side issue, not a Portal defect.
+
+---
+## DEC-127 — HR Attendance: Unified Punch Direction Interpretation
+
+- **Date:** 2026-05-21
+- **Status:** Accepted
+- **Context:** The HR Attendance Monthly Report showed exit punches in the wrong column (e.g., ENT.2 instead of SAÍ.1) for employees whose terminal sends mixed direction codes. Real-world data showed a single day could have Code `17` (alternate entry code) on the first punch and Code `EN` (standard entry code) on the second punch. Since `MapDirectionLabel` maps both `17` and `EN` to "Entrada", both punches ended up in entry columns, regardless of clock time.
+- **Decision:** Extract the Portal punch interpretation logic into a shared method (`ApplyPortalPunchInterpretation`) and apply it consistently to both bulk and detail flows:
+    1. **Shared Method:** `ApplyPortalPunchInterpretation` in `InnuxAttendanceService.cs` groups punches by employee+day. Applies code-specific rules first (all Code 17, all Code 18), then a fallback Rule 4: if all punches in a day have the same `DirectionLabel` after `MapDirectionLabel` (e.g., Code 17→"Entrada" + EN→"Entrada"), the first chronological punch is classified as "Entrada" and the last as "Saída". Single ambiguous punches are not inferred.
+    2. **Rule 4 (Mixed Codes):** Handles the critical scenario where the terminal uses different raw codes that all map to the same direction. Without this rule, both punches would appear in entry columns. Example: 07:47 (Code 17→Entrada) + 17:32 (EN→Entrada) → Rule 4 infers 07:47=Entrada, 17:32=Saída.
+    3. **Audit Transparency:** Reinterpreted punches are flagged with `IsPortalInterpreted = true` for traceability.
+    4. **Direction Warnings:** Three warning scenarios propagated to the frontend: Portal-interpreted days, single ambiguous punch days, and multiple same-direction ambiguous punch days. Displayed via a compass icon (🧭) with Portuguese tooltip.
+    5. **Hour Calculations Unaffected:** Worked hours (H.Básicas, H.Totais, Saldo) come from `AlteracoesPeriodos` (Innux processed data), which is decoupled from the column-classification logic. The fix only affects visual punch column assignment — no numerical impact.
+- **Alternatives considered:** (1) Fix only `GetRawPunchesAsync` with duplicate logic (rejected: leads to future drift). (2) Trust terminal direction codes blindly (rejected: production data proves Code 17 and EN can both appear as entry on the same day). (3) Remap Code 17 to a different direction (rejected: Code 17 genuinely represents entry on days where both 17 and 18 are used).
+- **Consequences:** Entry/Exit punch columns in the monthly report now match chronological reality. Direction warnings provide audit visibility without blocking workflows. Rule 4 handles mixed-code terminals transparently.
+
+---
 ## DEC-126 — I.T Equipment Documents: DOCX → PDF Migration with Branding
 
 - **Date:** 2026-05-21
