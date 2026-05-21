@@ -447,7 +447,7 @@ export default function HRAttendanceMonthlyReport() {
                                     <span>H.Básicas: {formatMinutesToHours(reportData.departmentGrandTotals.basicMinutes)}</span>
                                     <span>H.Extra: {formatMinutesToHours(reportData.departmentGrandTotals.extraMinutes)}</span>
                                     <span className="font-bold">H.Totais: {formatMinutesToHours(reportData.departmentGrandTotals.totalMinutes)}</span>
-                                    <span>Saldo: {formatMinutesToHours(reportData.departmentGrandTotals.balanceMinutes)}</span>
+                                    <span className={reportData.departmentGrandTotals.balanceMinutes < 0 ? 'balance-negative' : reportData.departmentGrandTotals.balanceMinutes > 0 ? 'balance-positive' : ''}>Saldo: {formatMinutesToHours(reportData.departmentGrandTotals.balanceMinutes)}</span>
                                 </div>
                                 <div className="totals-row totals-days">
                                     <span>Total Funcionários: {reportData.employees.length}</span>
@@ -537,7 +537,7 @@ export default function HRAttendanceMonthlyReport() {
                                             <span>H.Básicas: {formatMinutesToHours(dept.departmentGrandTotals.basicMinutes)}</span>
                                             <span>H.Extra: {formatMinutesToHours(dept.departmentGrandTotals.extraMinutes)}</span>
                                             <span className="font-bold">H.Totais: {formatMinutesToHours(dept.departmentGrandTotals.totalMinutes)}</span>
-                                            <span>Saldo: {formatMinutesToHours(dept.departmentGrandTotals.balanceMinutes)}</span>
+                                            <span className={dept.departmentGrandTotals.balanceMinutes < 0 ? 'balance-negative' : dept.departmentGrandTotals.balanceMinutes > 0 ? 'balance-positive' : ''}>Saldo: {formatMinutesToHours(dept.departmentGrandTotals.balanceMinutes)}</span>
                                         </div>
                                         <div className="totals-row totals-days">
                                             <span>Total Funcionários: {dept.employees.length}</span>
@@ -617,7 +617,7 @@ export default function HRAttendanceMonthlyReport() {
                                 <td className="col-hours">{day.unpaidMinutes > 0 ? formatMinutesToHours(day.unpaidMinutes) : ''}</td>
                                 <td className="col-hours">{day.absenceMinutes > 0 ? formatMinutesToHours(day.absenceMinutes) : ''}</td>
                                 <td className="col-hours font-bold">{formatMinutesToHours(day.totalMinutes)}</td>
-                                <td className="col-balance">{formatMinutesToHours(day.dailyBalance)}</td>
+                                <td className={`col-balance${day.dailyBalance < 0 ? ' balance-negative' : day.dailyBalance > 0 ? ' balance-positive' : ''}`}>{formatMinutesToHours(day.dailyBalance)}</td>
                                 <td className="col-status">
                                     <span className="status-label">{getStatusLabel(day)}</span>
                                     {day.justification && <span className="justification" title={day.justification}>{day.justification}</span>}
@@ -644,7 +644,7 @@ export default function HRAttendanceMonthlyReport() {
                                 <span>H.Básicas: {formatMinutesToHours(mt.basicMinutes)}</span>
                                 <span>H.Extra: {formatMinutesToHours(mt.extraMinutes)}</span>
                                 <span className="font-bold">H.Totais: {formatMinutesToHours(mt.totalMinutes)}</span>
-                                <span>Saldo: {formatMinutesToHours(mt.balanceMinutes)}</span>
+                                <span className={`font-bold${mt.balanceMinutes < 0 ? ' balance-negative' : mt.balanceMinutes > 0 ? ' balance-positive' : ''}`}>Saldo: {formatMinutesToHours(mt.balanceMinutes)}</span>
                                 <span>Dias Trab.: {mt.workedDays}</span>
                                 <span>Férias: {mt.vacationDays}</span>
                                 <span>Folgas: {mt.dayOffDays}</span>
@@ -660,7 +660,7 @@ export default function HRAttendanceMonthlyReport() {
                         <span>H.Básicas: {formatMinutesToHours(employee.grandTotals.basicMinutes)}</span>
                         <span>H.Extra: {formatMinutesToHours(employee.grandTotals.extraMinutes)}</span>
                         <span className="font-bold">H.Totais: {formatMinutesToHours(employee.grandTotals.totalMinutes)}</span>
-                        <span>Saldo: {formatMinutesToHours(employee.grandTotals.balanceMinutes)}</span>
+                        <span className={employee.grandTotals.balanceMinutes < 0 ? 'balance-negative' : employee.grandTotals.balanceMinutes > 0 ? 'balance-positive' : ''}>Saldo: {formatMinutesToHours(employee.grandTotals.balanceMinutes)}</span>
                     </div>
                     <div className="totals-row totals-days">
                         <span>Dias Trab.: {employee.grandTotals.workedDays}</span>

@@ -126,6 +126,11 @@ const HRAttendanceMonthlyReport = React.lazy(() =>
     import('./pages/HR/AttendanceMonthlyReport/HRAttendanceMonthlyReport')
 );
 
+// IT pages
+const ITEquipmentPage = React.lazy(() =>
+    import('./pages/IT/ITEquipmentPage')
+);
+
 // Admin pages (isolated, rarely visited)
 const MasterData = React.lazy(() =>
     import('./pages/Settings/MasterData').then(m => ({ default: m.MasterData }))
@@ -212,6 +217,14 @@ function HRAdminRoute({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
 }
 
+/** IT Module route guard — only IT role and System Administrator. */
+function ITRoute({ children }: { children: React.ReactNode }) {
+    const { isAuthenticated, hasITAccess } = useAuth();
+    if (!isAuthenticated) return <Navigate to="/login" replace />;
+    if (!hasITAccess) return <Navigate to="/dashboard" replace />;
+    return <>{children}</>;
+}
+
 function AppContent() {
     return (
         <Routes>
@@ -292,6 +305,9 @@ function AppContent() {
                     <Route path="monthly-changes" element={<HRAdminRoute><Suspense fallback={<LoadingSkeleton />}><MonthlyChangesList /></Suspense></HRAdminRoute>} />
                     <Route path="monthly-changes/runs/:id" element={<HRAdminRoute><Suspense fallback={<LoadingSkeleton />}><MonthlyChangesRunDetail /></Suspense></HRAdminRoute>} />
                 </Route>
+
+                {/* IT Equipment Workspace */}
+                <Route path="/it/equipment" element={<ITRoute><Suspense fallback={<LoadingSkeleton />}><ITEquipmentPage /></Suspense></ITRoute>} />
 
                 {/* Settings Routes */}
                 <Route path="/settings/master-data" element={<AdminRoute><Suspense fallback={<LoadingSkeleton />}><MasterData /></Suspense></AdminRoute>} />

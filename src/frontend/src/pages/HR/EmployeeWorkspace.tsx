@@ -97,6 +97,34 @@ interface UnifiedProfile {
     innuxLookupStatus: string;
 }
 
+// ─── Resolve Identity Document (B.I. vs Passaporte) ───
+type DocResolution =
+    | { status: 'resolved'; label: 'B.I.' | 'Passaporte'; value: string }
+    | { status: 'ambiguous'; reason: string }
+    | { status: 'missing' };
+
+function resolveDocument(p: UnifiedProfile['primavera']): DocResolution {
+    const nat = p.nationality?.trim().toUpperCase();
+    const bi = p.identityDocNumber?.trim();
+    const passport = p.passportNumber?.trim();
+
+    if (nat) {
+        const isNational = ['AO', 'ANGOLA', 'ANGOLANA'].includes(nat);
+        if (isNational) {
+            return { status: 'resolved', label: 'B.I.', value: bi || '' };
+        } else {
+            return { status: 'resolved', label: 'Passaporte', value: passport || '' };
+        }
+    }
+
+    // Nationality is missing/unknown
+    if (bi && !passport) return { status: 'resolved', label: 'B.I.', value: bi || '' };
+    if (!bi && passport) return { status: 'resolved', label: 'Passaporte', value: passport || '' };
+    if (bi && passport) return { status: 'ambiguous', reason: 'Nacionalidade desconhecida e ambos os documentos presentes.' };
+
+    return { status: 'missing' };
+}
+
 const COMPANY_OPTIONS = [
     { value: 'ALPLAPLASTICO', label: 'Alpla Plástico' },
     { value: 'ALPLASOPRO', label: 'Alpla Sopro' }
@@ -145,6 +173,11 @@ export default function EmployeeWorkspace() {
     // Badge Preparation State (Local/Temporal)
     const [badgeCategory, setBadgeCategory] = useState(restored?.badgeCategory || '');
     const [badgeCardNumber, setBadgeCardNumber] = useState(restored?.badgeCardNumber || '');
+
+    // Document Type / Value state (Current session only)
+    const [badgeDocType, setBadgeDocType] = useState<'B.I.' | 'Passaporte' | ''>('');
+    const [badgeDocValue, setBadgeDocValue] = useState('');
+    const [isDocValueManual, setIsDocValueManual] = useState(false);
 
     // Photo state
     // Photo state — photoSource is restored; photoUrl requires re-fetch for innux
@@ -273,6 +306,9 @@ export default function EmployeeWorkspace() {
         setPhotoSource(null);
         setBadgeCategory('');
         setBadgeCardNumber('');
+        setBadgeDocType('');
+        setBadgeDocValue('');
+        setIsDocValueManual(false);
         setManualFullName('');
         setManualDepartment('');
         setPrintResult(null);
@@ -293,6 +329,9 @@ export default function EmployeeWorkspace() {
         setPhotoSource(null);
         setBadgeCategory('');
         setBadgeCardNumber('');
+        setBadgeDocType('');
+        setBadgeDocValue('');
+        setIsDocValueManual(false);
         setSearchError(null);
         setHasSearched(false);
         setPrintResult(null);
@@ -320,6 +359,9 @@ export default function EmployeeWorkspace() {
         setPhotoSource(null);
         setBadgeCategory('');
         setBadgeCardNumber('');
+        setBadgeDocType('');
+        setBadgeDocValue('');
+        setIsDocValueManual(false);
         setPrintResult(null);
 
         try {
@@ -388,6 +430,16 @@ export default function EmployeeWorkspace() {
 
             // Initialize badge category from source
             setBadgeCategory(data.innux?.category || emp.category || '');
+
+            const docRes = resolveDocument(data.primavera);
+            if (docRes.status === 'resolved') {
+                setBadgeDocType(docRes.label);
+                setBadgeDocValue(docRes.value);
+            } else {
+                setBadgeDocType('');
+                setBadgeDocValue('');
+            }
+            setIsDocValueManual(false);
 
             // Try to load photo from Innux
             if (data.innux?.hasPhoto) {
@@ -517,32 +569,6 @@ export default function EmployeeWorkspace() {
         }
     };
 
-    // ─── Resolve Identity Document (B.I. vs Passaporte) ───
-    // Rule: Nacionalidade-based primary, document-number fallback
-    const resolveDocument = (p: UnifiedProfile['primavera']): { label?: string; value?: string } => {
-        const nat = p.nationality?.trim().toUpperCase();
-        const bi = p.identityDocNumber?.trim();
-        const passport = p.passportNumber?.trim();
-
-        // Primary rule: nationality determines document type
-        if (nat) {
-            const isNational = ['AO', 'ANGOLA', 'ANGOLANA'].includes(nat);
-            if (isNational && bi) return { label: 'B.I.', value: bi };
-            if (!isNational && passport) return { label: 'Passaporte', value: passport };
-            // Nationality known but preferred document missing — try the other
-            if (isNational && passport) return { label: 'Passaporte', value: passport };
-            if (!isNational && bi) return { label: 'B.I.', value: bi };
-        }
-
-        // Fallback: no nationality — use whichever document is available
-        if (bi) return { label: 'B.I.', value: bi };
-        if (passport) return { label: 'Passaporte', value: passport };
-
-        return {}; // No document data available
-    };
-
-    const docInfo = selectedEmployee && profile ? resolveDocument(profile.primavera) : {};
-
     // ─── Build Badge Data ───
     const badgeData: BadgeData | null = (() => {
         if (isManualMode) {
@@ -557,6 +583,8 @@ export default function EmployeeWorkspace() {
                 cardNumber: badgeCardNumber || undefined,
                 company,
                 photoUrl,
+                documentLabel: badgeDocType || undefined,
+                documentValue: badgeDocValue || undefined,
             };
         }
         if (selectedEmployee && profile) {
@@ -570,16 +598,19 @@ export default function EmployeeWorkspace() {
                 cardNumber: badgeCardNumber || undefined, // Use session override (RFID)
                 company: profile.primavera.sourceCompany || profile.company,
                 photoUrl,
-                documentLabel: docInfo.label,
-                documentValue: docInfo.value,
+                documentLabel: badgeDocType || undefined,
+                documentValue: badgeDocValue || undefined,
             };
         }
         return null;
     })();
 
+    const isDocTypeUnresolved = !badgeDocType;
+    const isDocValueMissing = !badgeDocValue;
+
     const isPrintDisabled = isManualMode
-        ? (!manualFullName || !badgeCategory || !badgeCardNumber || isPrinting)
-        : (!badgeCategory || !badgeCardNumber || isPrinting);
+        ? (!manualFullName || !badgeCategory || !badgeCardNumber || isDocTypeUnresolved || isDocValueMissing || isPrinting)
+        : (!badgeCategory || !badgeCardNumber || isDocTypeUnresolved || isDocValueMissing || isPrinting);
 
 
     return (
@@ -824,6 +855,109 @@ export default function EmployeeWorkspace() {
                                                 </select>
                                             )}
                                         </div>
+                                        
+                                        {/* ── Document Type Selector ── */}
+                                        <div className="hr-form-field" style={{ gridColumn: '1 / -1' }}>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                Tipo de Documento no Crachá *
+                                            </label>
+                                            
+                                            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                                                <button
+                                                    className={`hr-doc-btn ${badgeDocType === 'B.I.' ? 'selected' : ''}`}
+                                                    onClick={() => { 
+                                                        setBadgeDocType('B.I.'); 
+                                                        if (profile?.primavera.identityDocNumber && !isManualMode) {
+                                                            setBadgeDocValue(profile.primavera.identityDocNumber); 
+                                                        } else {
+                                                            setBadgeDocValue(''); 
+                                                        }
+                                                        setIsDocValueManual(true);
+                                                    }}
+                                                >
+                                                    <div className="radio-circle"></div> B.I.
+                                                </button>
+                                                <button
+                                                    className={`hr-doc-btn ${badgeDocType === 'Passaporte' ? 'selected' : ''}`}
+                                                    onClick={() => { 
+                                                        setBadgeDocType('Passaporte'); 
+                                                        if (profile?.primavera.passportNumber && !isManualMode) {
+                                                            setBadgeDocValue(profile.primavera.passportNumber); 
+                                                        } else {
+                                                            setBadgeDocValue(''); 
+                                                        }
+                                                        setIsDocValueManual(true);
+                                                    }}
+                                                >
+                                                    <div className="radio-circle"></div> Passaporte
+                                                </button>
+                                            </div>
+
+                                            {/* Auto-detect hints */}
+                                            {!isManualMode && profile && (
+                                                <div style={{ marginBottom: '12px', fontSize: '0.8rem' }}>
+                                                    {(() => {
+                                                        const docRes = resolveDocument(profile.primavera);
+                                                        if (docRes.status === 'resolved' && docRes.label === badgeDocType && !isDocValueManual) {
+                                                            return (
+                                                                <span style={{ color: '#059669', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                    <CheckCircle size={12} /> Detectado automaticamente ({docRes.label})
+                                                                </span>
+                                                            );
+                                                        } else if (docRes.status === 'ambiguous' && !badgeDocType) {
+                                                            return (
+                                                                <span style={{ color: '#d97706', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                    <AlertTriangle size={12} /> Aviso: {docRes.reason} Confirme o documento.
+                                                                </span>
+                                                            );
+                                                        } else if (docRes.status === 'missing' && !badgeDocType) {
+                                                            return (
+                                                                <span style={{ color: '#d97706', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                    <AlertTriangle size={12} /> Aviso: Nenhum documento detectado no Primavera.
+                                                                </span>
+                                                            );
+                                                        } else if (badgeDocType) {
+                                                            return (
+                                                                <span style={{ color: '#d97706', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                    <AlertTriangle size={12} /> Definido manualmente nesta sessão
+                                                                </span>
+                                                            );
+                                                        }
+                                                        return null;
+                                                    })()}
+                                                </div>
+                                            )}
+
+                                            {/* Inline doc value input if needed */}
+                                            {badgeDocType && (
+                                                <div style={{ marginTop: '4px' }}>
+                                                    <label style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginBottom: '4px', display: 'block', fontWeight: 600 }}>
+                                                        Nº de {badgeDocType} *
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={badgeDocValue}
+                                                        onChange={(e) => {
+                                                            setBadgeDocValue(e.target.value.toUpperCase());
+                                                            setIsDocValueManual(true);
+                                                        }}
+                                                        placeholder={`Ex: ${badgeDocType === 'B.I.' ? '000000000LA000' : 'N0000000'}`}
+                                                        style={{ 
+                                                            borderColor: !badgeDocValue ? '#ef4444' : 'var(--color-border)',
+                                                            backgroundColor: isManualMode || isDocValueManual || (!profile?.primavera.identityDocNumber && !profile?.primavera.passportNumber) ? '#fff' : '#f8fafc',
+                                                            fontFamily: 'monospace',
+                                                            fontWeight: 600
+                                                        }}
+                                                    />
+                                                    {!badgeDocValue && (
+                                                        <div style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                            <AlertTriangle size={12} /> O número do documento é obrigatório para imprimir.
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
                                         <div className="hr-form-field">
                                             <label>Categoria / Função no Crachá</label>
                                             <input
@@ -917,6 +1051,20 @@ export default function EmployeeWorkspace() {
                                             <DetailItem
                                                 label="Empresa"
                                                 value={resolveCompanyDisplay(profile.primavera.sourceCompany)}
+                                            />
+                                            <DetailItem
+                                                label="Nacionalidade"
+                                                value={profile.primavera.nationality}
+                                            />
+                                            <DetailItem
+                                                label="Nº B.I."
+                                                value={profile.primavera.identityDocNumber}
+                                                mono
+                                            />
+                                            <DetailItem
+                                                label="Nº Passaporte"
+                                                value={profile.primavera.passportNumber}
+                                                mono
                                             />
                                             <DetailItem
                                                 label="Nº Cartão (Innux)"
@@ -1048,8 +1196,8 @@ export default function EmployeeWorkspace() {
                                                         <AlertTriangle size={14} />
                                                         <span>
                                                             {isManualMode 
-                                                                ? <>Preencha o <strong>Nome no Crachá</strong>, a <strong>Categoria</strong> e o <strong>Nº do Cartão RFID</strong> para imprimir.</>
-                                                                : <>Preencha a <strong>Categoria</strong> e o <strong>Nº do Cartão RFID</strong> para imprimir.</>
+                                                                ? <>Preencha o <strong>Nome no Crachá</strong>, <strong>Categoria</strong>, <strong>Nº do Cartão RFID</strong>, e certifique-se de que o <strong>Documento</strong> está preenchido para imprimir.</>
+                                                                : <>Preencha a <strong>Categoria</strong>, <strong>Nº do Cartão RFID</strong>, e certifique-se de que o <strong>Documento</strong> está preenchido para imprimir.</>
                                                             }
                                                         </span>
                                                     </div>

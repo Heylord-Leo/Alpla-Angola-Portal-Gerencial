@@ -3,7 +3,7 @@ import {
     FileText, Home, Settings, List, ShoppingCart, 
     Package, Activity, Network, Shield, CheckCircle,
     CreditCard, DollarSign, Archive, Users, UserCheck, Calendar, CalendarDays,
-    Layers, History, FileSignature, Bell, CalendarCheck
+    Layers, History, FileSignature, Bell, CalendarCheck, Monitor
 } from 'lucide-react';
 import { ROLES } from './roles';
 
@@ -209,6 +209,16 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                     keywords: ['contratos', 'alertas', 'vencimento', 'renovação', 'notificação']
                 }
             ]
+        },
+        // ── T.I. (IT Equipment Module) ──
+        {
+            id: 'ti',
+            type: 'link',
+            label: 'T.I.',
+            icon: <Monitor size={18} strokeWidth={2.5} />,
+            to: '/it/equipment',
+            roles: [ROLES.IT, ROLES.SYSTEM_ADMINISTRATOR],
+            keywords: ['ti', 'equipamento', 'computador', 'laptop', 'desktop', 'monitor', 'impressora', 'inventário', 'estoque', 'it', 'asset tag', 'hardware']
         },
         // ── R.H. (Full Administration) — visible only to HR and System Administrator ──
         // When user has hasHRAdminAccess, this group shows with ALL children.

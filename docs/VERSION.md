@@ -2,7 +2,50 @@
 
 ## Current Version
 
-v2.121.0
+v2.124.0
+
+## [2.124.0] - 2026-05-21
+
+### Changed — I.T Equipment Documents: DOCX → PDF Migration with Branding
+- Official I.T Equipment documents (Termo de Responsabilidade, Termo de Devolução) now generated as branded PDF files using PdfSharpCore (MIT license).
+- New `ITEquipmentPdfService` — branded A4 PDF with logo header, two-column data table, equipment usage policy text, signature lines, and automatic page breaks.
+- Policy text extracted to `data/templates/it-equipment/policy-text.txt` (required for Assignment Agreements, optional for Return).
+- Logo loaded from `data/templates/branding/portal-logo.png` — graceful fallback to text-only header if missing.
+- Email attachment and download endpoint MIME type auto-detection (PDF/DOCX).
+- Legacy DOCX documents remain downloadable. `ITEquipmentAgreementService` marked `[Obsolete]`.
+- Decision: DEC-126.
+
+## [2.123.0] - 2026-05-20
+
+### Added — I.T Equipment Inventory Management Module
+- **New Module**: Complete I.T equipment inventory management system for tracking, assigning, and auditing all company IT assets.
+- **Domain Entities**: `ITEquipment`, `ITEquipmentAssignment`, `ITEquipmentMovementLog`, `ITEquipmentAcquisition`, `ITEquipmentDocument` with full lifecycle support.
+- **Role-Based Access**: New `IT` role restricts module access to IT staff and System Administrators. Seed migration auto-creates the role.
+- **Equipment Lifecycle**: Full status machine (AVAILABLE → IN_USE → RETURNED / IN_REPAIR / LOST / RESERVED / RETIRED / DAMAGED / UNKNOWN) with movement log audit trail.
+- **CSV Import**: Multipart upload endpoint (`POST /api/it/equipment/import`) with flexible column mapping, duplicate detection (Asset Tag exact + Hostname conditional), and detailed error/skip reporting. Legacy records imported with UNKNOWN status when source status is empty.
+- **Equipment CRUD**: Create, update, list (with search, multi-filter, sorting, pagination), and detail endpoints.
+- **Action Endpoints**: Assign, Return (with condition: OK/DAMAGED/NEEDS_REPAIR), Send to Repair, Return from Repair, Mark Lost, Reserve, Retire — each with movement log and assignment status updates.
+- **Document Management**: Upload, download, list, delete equipment documents (invoices, warranties, POs) via `ITEquipmentDocumentsController`.
+- **Acquisition Tracking**: Optional 1:1 acquisition record per equipment with purchase order, invoice, payment, and warranty fields. Future integration fields (Primavera, Portal Request) are nullable.
+- **Frontend**: Full React SPA module at `/it/equipment` with KPI summary cards, sortable/filterable table, search, quick-view drawer (4 tabs: Info, Assignments, Movements, Documents), create/edit form modal, and dedicated action modals for each lifecycle transition.
+- **Import UI**: Upload modal with drag-and-drop, validation result preview (created/skipped/errors/duplicate hostnames).
+- **Navigation**: New "T.I" sidebar group with Monitor icon, visible only to IT/Admin roles.
+- **Migration**: `AddITEquipmentModule` — creates 5 tables with unique indexes, FK constraints (Restrict for Documents to avoid cascade cycles), and IT role seed.
+
+## [2.122.0] - 2026-05-20
+
+### Fixed — HR Monthly Attendance Report: Saldo (Balance) Always 00:00
+- **Root Cause**: The `Saldo` (balance) column was sourced from Innux's `BalanceMinutes` field, which is a datetime-as-duration column. `InnuxTimeHelper.ToMinutes()` returns 0 for any value ≤ the 1900-01-01 base date, silently truncating all negative balances to zero. This was a known limitation documented in the codebase but never addressed in the report output.
+- **Fix — Portal-Computed Balance (DEC-124)**: The monthly attendance report now computes `Saldo` independently using `H.Totais - H.Básicas` instead of relying on the unreliable Innux Saldo column.
+  - **H.Básicas** = Planned/scheduled working hours (`ExpectedMinutes`) — the expected workload for the day, shown even if the employee did not work.
+  - **H.Falta** = Unjustified absence hours (unchanged — sourced from Innux `Falta` column).
+  - **H.Totais** = Positive counted hours: real worked hours + justified/approved absence hours. Unjustified absence hours are NOT counted as positive time.
+  - **Saldo** = `H.Totais - H.Básicas`. Negative on unjustified absence days, zero on fully worked or justified/exempt days, positive on overtime days.
+- **Exempt Categories**: Vacation, Holiday, and Justified Absence days are balance-neutral (`H.Totais = H.Básicas`, `Saldo = 00:00`). Rest days remain all-zero.
+- **Visual Indicators**: Negative balance values render in **red/bold**, positive in **green**. Zero balance remains neutral. Styling applies to daily records, monthly summaries, employee grand totals, and department totals — both on screen and in print/PDF.
+- **Monthly/Grand Totals**: Now accumulate the corrected daily balance values, showing the real positive/negative time balance across the period.
+- **AbsenceMinutes Accumulation**: Monthly and grand total DTOs now accumulate `AbsenceMinutes` (previously the field existed but was never summed).
+- **No Data Changes**: Read-only computation change. No writes to Innux, Primavera, or Portal databases. Only affects the monthly report output.
 
 ## [2.121.0] - 2026-05-20
 

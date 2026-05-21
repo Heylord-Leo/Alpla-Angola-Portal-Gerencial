@@ -2,6 +2,63 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-126 — I.T Equipment Documents: DOCX → PDF Migration with Branding
+
+- **Date:** 2026-05-21
+- **Status:** Accepted
+- **Context:** Official I.T Equipment documents (Termo de Responsabilidade / Entrega, Termo de Devolução) were generated as DOCX files using `DocumentFormat.OpenXml`. The company required these official documents to be generated, stored, and emailed as PDF files, and to include the Portal Gerencial system logo in the document header for brand consistency.
+- **Decision:** Migrate all I.T Equipment document generation from DOCX to direct PDF output using PdfSharpCore:
+    1. **PDF Library:** PdfSharpCore 1.3.67 (MIT license — no revenue restrictions, no licensing risk for large companies like Alpla). QuestPDF was considered but rejected due to its paid license requirement for companies with ≥ $1M annual revenue.
+    2. **New Service:** `ITEquipmentPdfService` replaces `ITEquipmentAgreementService` for all new document generation. Uses `PdfSharpCore.Drawing.XGraphics` for layout with `XTextFormatter` for text wrapping and page-break management.
+    3. **Branded Header:** Every PDF includes a branded header with: Portal Gerencial logo (from `data/templates/branding/portal-logo.png`), company name, and module identifier. If the logo file is missing, the document is generated with a text-only header and a warning is logged — document generation does not fail.
+    4. **Policy Text:** The equipment usage policy text is stored externally at `data/templates/it-equipment/policy-text.txt`, editable without code changes. For Assignment Agreements, this file is **required** — if missing, generation fails with a clear error message. For Return Agreements, the policy text is not needed (uses internal declaration text only).
+    5. **Document Naming:** `Termo_Responsabilidade_[AssetTag]_[yyyyMMddHHmm].pdf` and `Termo_Devolucao_[AssetTag]_[yyyyMMddHHmm].pdf`.
+    6. **Legacy Compatibility:** Existing DOCX documents in the database remain downloadable. The download endpoint auto-detects MIME type from file extension (`.pdf` → `application/pdf`, `.docx` → `application/vnd.openxmlformats...`). The old `ITEquipmentAgreementService` is marked `[Obsolete]` but not removed.
+    7. **Email Attachments:** MIME type for email attachments is now auto-detected from file extension, ensuring email clients correctly recognize PDF and DOCX attachments.
+    8. **Affected Flows:** Assignment (assign), Return (return), and Change User (change-user) — all three flows now generate PDF documents.
+- **Alternatives considered:** (1) QuestPDF for fluent PDF layout (rejected: paid license ≥ $1M revenue). (2) DOCX-to-PDF conversion using LibreOffice/PdfiumViewer (rejected: user specified direct PDF generation, no external converter dependencies). (3) Hardcoding policy text in code (rejected: extracting to file makes it editable without deployments).
+- **Consequences:** All new I.T Equipment documents are PDF with branding. PDF files open inline in browsers via the download endpoint. The policy text can be updated by editing a text file without code changes. Legacy DOCX documents remain accessible.
+
+---
+## DEC-125 — I.T Equipment Inventory Management Module
+
+- **Date:** 2026-05-20
+- **Status:** Accepted
+- **Context:** The company manages a fleet of IT equipment (laptops, desktops, monitors, printers, servers, networking gear, peripherals, mobile devices) currently tracked in a CSV spreadsheet. The IT team needed a structured system within the Portal to manage the full lifecycle of every asset — from registration through assignment, repair, loss, and retirement — with audit-grade traceability.
+- **Decision:** Implement a new I.T Module with the following architectural decisions:
+    1. **Dedicated IT Role:** A new `IT` role (seeded via migration) controls module access. Only `IT` and `System Administrator` roles can access the module. This follows the pattern established by DEC-107 (HR role) — dedicated role per functional domain.
+    2. **Equipment Status Machine:** Equipment follows a defined lifecycle: `AVAILABLE → IN_USE → RETURNED / IN_REPAIR / LOST / RESERVED / RETIRED / DAMAGED / UNKNOWN`. The `UNKNOWN` status is reserved for legacy imported records where the original status was empty/null — per user requirement, empty status must NOT default to `AVAILABLE` since that incorrectly implies readiness for assignment.
+    3. **Movement Audit Log Pattern:** Every status change creates an `ITEquipmentMovementLog` entry recording: previous status → new status, previous/new assigned user, operator, timestamp, and notes. This provides a complete, immutable audit trail. The `PerformedByUserId` always records the authenticated user who triggered the action.
+    4. **Assignment Model:** `ITEquipmentAssignment` tracks current and historical user assignments with `Status` (ACTIVE/RETURNED/TRANSFERRED), assignment/return dates, return condition (OK/DAMAGED/NEEDS_REPAIR), and responsible approver. An equipment can only have one ACTIVE assignment at a time — the assign endpoint validates this.
+    5. **CSV Import Strategy:** Import is a controlled user action via multipart upload, NOT automatic on startup. The backend receives the CSV through the API endpoint, normalizes column headers (supporting both English and Portuguese names), and processes each row independently. Duplicate detection: exact match on `AssetTag`, conditional match on `Hostname` (only when both source and target are non-empty). Duplicates are reported but do not fail the entire import — each row succeeds or fails independently.
+    6. **Document FK Cascade Restriction:** `ITEquipmentDocument` has FKs to both `ITEquipment` and `ITEquipmentAcquisition`. SQL Server prohibits multiple cascade delete paths to the same target table. Solution: `Equipment→Document` uses `DeleteBehavior.Restrict` while `Acquisition→Document` uses `DeleteBehavior.Cascade`. This follows the same pattern used for other multi-FK entities in the system.
+    7. **Acquisition Tracking (Phase 1):** A 1:1 optional `ITEquipmentAcquisition` record per equipment stores purchase order, invoice, payment, and warranty data. Integration fields (`PrimaveraDocumentReference`, `PortalRequestId`) are nullable for future connection to the existing Purchase Request workflow.
+    8. **Hostname Conditional Uniqueness:** Hostname uniqueness is enforced only when the hostname is non-empty. Equipment without hostnames (e.g., peripherals, monitors) should not trigger uniqueness violations. Implemented via backend validation during create/update/import operations.
+- **Alternatives considered:** (1) Auto-importing CSV on first startup (rejected: user wants explicit control). (2) Defaulting empty status to AVAILABLE (rejected: misleading for unverified legacy data). (3) Using Cascade delete for all Document FKs (rejected: SQL Server cascade path limitation). (4) Embedding acquisition fields directly in ITEquipment (rejected: acquisition is a distinct concern with its own lifecycle and future integration potential).
+- **Consequences:** The IT team has a structured, auditable system replacing the CSV spreadsheet. Every equipment movement is logged. The module is isolated by role, preventing accidental access from other functional areas. The acquisition model is ready for future Primavera/Portal Purchase Request integration. Legacy data imports can be repeated safely due to duplicate detection.
+
+---
+
+## DEC-124 — Portal-Computed Attendance Report Balance (Saldo)
+
+- **Date:** 2026-05-20
+- **Status:** Accepted
+- **Context:** The HR Monthly Attendance Report `Saldo` (balance) column always displayed `00:00`, even for employees with unjustified absences. Root cause: Innux stores the `Saldo` value as a `datetime-as-duration` with base date `1900-01-01`. `InnuxTimeHelper.ToMinutes()` returns 0 for any value at or before the base date, silently truncating all negative balances to zero. This was already documented as a known limitation in `InnuxAttendanceDtos.cs` and `InnuxTimeHelper.cs` but was never addressed in the report output.
+- **Decision:** The monthly attendance report now computes `DailyBalance` independently in `HRAttendanceController.BuildSingleDepartmentReportAsync`, replacing the Innux-sourced `BalanceMinutes`.
+    1. **Column Semantics Clarification:**
+        - `H.Básicas` (`BasicMinutes`) = **Planned/scheduled** working hours (`AttendanceDaySummaryDto.ExpectedMinutes`), shown even if the employee did not work.
+        - `H.Falta` (`AbsenceMinutes`) = Unjustified absence hours (unchanged — Innux `Falta` column).
+        - `H.Totais` (`TotalMinutes`) = **Positive counted hours**: real worked hours + justified/approved absence hours. Unjustified absence is NOT counted.
+        - `Saldo` (`DailyBalance`) = `H.Totais - H.Básicas`. Portal-computed.
+    2. **Positive Counted Minutes Formula:** `max(0, WorkedTotalMinutes - AbsenceMinutes) + JustifiedAbsenceMinutes`. Innux may record scheduled periods in `AlteracoesPeriodos` even on absence days, so the unjustified `AbsenceMinutes` is subtracted to derive real worked time.
+    3. **Exempt Categories:** Vacation, Holiday, and JustifiedAbsence status days return `PositiveCountedMinutes = ExpectedMinutes`, making them balance-neutral (`Saldo = 00:00`). Rest days return 0 (no expected work).
+    4. **Visual Indicators:** Negative balance in red/bold, positive in green. Applied across daily records, monthly summaries, employee grand totals, and department totals — both screen and print.
+    5. **Scope:** Read-only computation change. No writes to Innux, Primavera, or Portal databases. Only affects the monthly report output. The HR Attendance Calendar is NOT affected.
+- **Alternatives considered:** (1) Fixing `InnuxTimeHelper.ToMinutes()` to detect and decode negative balances from Innux datetime values (rejected: Innux's negative encoding scheme is unconfirmed; would require reverse-engineering the vendor's internal convention). (2) Adding a `BalanceMinutesRaw` column to `AttendanceDaySummaryDto` with signed integer conversion (rejected: same unknown encoding problem — the issue is at the Innux source, not the Portal layer).
+- **Consequences:** Balance values now correctly reflect positive and negative time balances. Monthly/grand totals accumulate real balances. The report becomes actionable for HR to identify employees with time deficits. If Innux's negative encoding is ever documented, the Portal formula could be replaced with the Innux value, but the current formula is correct and self-consistent.
+
+---
+
 ## DEC-123 — Proforma Deadline Expiration Alerts
 
 - **Date:** 2026-05-15

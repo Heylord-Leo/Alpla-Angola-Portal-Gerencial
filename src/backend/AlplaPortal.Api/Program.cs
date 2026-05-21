@@ -98,6 +98,8 @@ builder.Services.AddScoped<IJwtService, JwtService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<ISmtpSettingsService, SmtpSettingsService>();
+builder.Services.AddScoped<ITEquipmentAgreementService>();
+builder.Services.AddScoped<ITEquipmentPdfService>();
 
 // Authentication
 var jwtOptions = builder.Configuration.GetSection("Jwt").Get<JwtOptions>();

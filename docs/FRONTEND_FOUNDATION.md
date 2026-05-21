@@ -707,3 +707,67 @@ The Finance Workspace (`FinanceLandingPage.tsx`) acts as the dedicated operation
 2. **Action Handlers**: Permitted actions (Agendar, Pagar, Notas, Devolver) are accessible directly from the payment list via the portal standard `<KebabMenu />` component, optimizing bulk processing velocity. 
 3. **Contextual Modals**: All explicit UI actions trigger the strictly native `<FinanceActionModal />` (`DropdownPortal`). No `window.prompt` or `window.confirm` dialogues are ever used in the business system. "Mark as Paid" executes a full (not partial) payment workflow transition.
 4. **Payment Divergence Highlighting (v2.93.2)**: Any payment history entry marked with `PAYMENT_DIVERGENCE_DETECTED` must be visually highlighted to draw attention. This highlight uses a light-yellow background (`var(--color-status-yellow)` / `#fefce8`), an amber border (`#fde047`), and dark text.
+
+## I.T Equipment Module (v2.123.0)
+
+The I.T Equipment Module (`ITEquipmentPage.tsx`) provides a complete inventory management workspace for the IT department, accessible at `/it/equipment`.
+
+### Access Control
+
+1. **Role Gate**: The module is accessible only to users with `IT` or `System Administrator` roles, controlled by `hasITAccess` in `AuthContext.tsx`.
+2. **Route Guard**: `ITRoute` component in `App.tsx` wraps the lazy-loaded page. Unauthorized users are redirected to `/dashboard`.
+3. **Navigation**: The "T.I" sidebar group (Monitor icon) is only rendered for users with IT access.
+
+### Page Architecture
+
+1. **KPI Summary Cards**: 8 status-based counters (Total, Disponível, Em Uso, Em Reparação, Perdido, Reservado, Aposentado, Desconhecido) using the shared `KPICard` component. Each card shows the count for its equipment status.
+2. **Search + Filter Bar**: Global text search (debounced 300ms) combined with collapsible multi-filter panel (Status, Type, Plant, Manufacturer). Active filters shown as removable chips.
+3. **Sortable Table**: `EquipmentTable` component with column-header sorting (AssetTag, Hostname, Type, Status, AssignedTo, Plant, LastUpdated). Follows the existing sort pattern with `ArrowUp`/`ArrowDown` indicators.
+4. **Pagination**: Standard page-size selector (10/25/50/100) with prev/next navigation, centered below the table.
+
+### Quick View Drawer
+
+The `EquipmentQuickViewDrawer` slides in from the right, following the existing drawer pattern used in the Approval Center.
+
+1. **4-Tab Layout**: Informações (equipment details + acquisition), Atribuições (assignment history), Movimentações (movement audit log), Documentos (attached files).
+2. **Context-Sensitive Actions**: Action buttons in the drawer header adapt based on equipment status:
+   - `AVAILABLE`: Assign, Edit, Send to Repair, Lost, Reserve, Retire
+   - `IN_USE`: Return, Edit, Send to Repair, Lost
+   - `IN_REPAIR`: Return from Repair, Lost
+   - `RESERVED`: Assign, Cancel Reserve
+   - Other statuses: Edit only
+3. **Data Fetching**: Detail data is loaded on-demand when the drawer opens (not prefetched in the list).
+
+### Action Modals
+
+All lifecycle transitions use dedicated modal components following the `EquipmentFormModal` shared UI helpers pattern:
+
+| Modal | Action | Key Fields |
+|---|---|---|
+| `EquipmentFormModal` | Create/Edit | All equipment fields + optional acquisition section |
+| `AssignEquipmentModal` | Assign to user | Assigned To, Approver, Expected Return Date, Notes |
+| `ReturnEquipmentModal` | Return from assignment | Return Condition (OK/DAMAGED/NEEDS_REPAIR), Notes |
+| `RepairEquipmentModal` | Send to / Return from repair | Repair Provider, Estimated Cost, Repair Result |
+| `LostEquipmentModal` | Mark as lost | Notes |
+| `RetireEquipmentModal` | Retire equipment | Notes |
+| `ReserveEquipmentModal` | Reserve for future use | Reserved For, Expected Date, Notes |
+| `ImportEquipmentModal` | CSV import | File upload with result preview |
+
+### CSV Import Flow
+
+1. **Upload**: Drag-and-drop or click-to-browse file selection. Accepts `.csv` files only.
+2. **Processing**: Backend parses the CSV with flexible column mapping (English + Portuguese headers).
+3. **Result Preview**: Modal displays categorized results (Created, Skipped, Errors, Duplicate Hostnames) with expandable detail sections.
+4. **Error Transparency**: Each failed row shows the specific error message, not a generic failure.
+
+### Type System (`itEquipment.ts`)
+
+- `EQUIPMENT_STATUS_CONFIG`: Maps status codes to Portuguese labels, colors, and icons.
+- `EQUIPMENT_TYPE_CONFIG`: Maps equipment type codes to Portuguese labels and icons.
+- `MOVEMENT_TYPE_LABELS`: Portuguese labels for all movement log event types.
+- `ASSIGNMENT_STATUS_CONFIG`: Display config for assignment statuses (ACTIVE/RETURNED/TRANSFERRED).
+- `DOCUMENT_TYPE_LABELS`: Portuguese labels for document types (Invoice, Warranty, PO, etc.).
+
+### Styling
+
+The module uses inline CSS styles with design tokens from `tokens.css`, consistent with the Modern Corporate standard. No module-specific CSS file — all styling is computed inline using the established pattern.

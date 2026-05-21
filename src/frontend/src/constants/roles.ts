@@ -14,7 +14,8 @@ export const ROLES = {
     IMPORT: 'Import',
     CONTRACTS: 'Contracts',
     VIEWER_MANAGEMENT: 'Viewer / Management',
-    HR: 'HR'
+    HR: 'HR',
+    IT: 'IT'
 };
 
 /**
@@ -33,5 +34,6 @@ export const ROLE_DESCRIPTIONS: Record<string, string> = {
     [ROLES.REQUESTER]: 'Cria e acompanha os próprios pedidos.',
     [ROLES.SYSTEM_ADMINISTRATOR]: 'Possui permissões administrativas amplas no sistema.',
     [ROLES.VIEWER_MANAGEMENT]: 'Pode consultar informações conforme o escopo permitido, sem atuar diretamente no processo.',
-    [ROLES.HR]: 'Acede às funcionalidades de Recursos Humanos (cadastro, crachás) dentro do escopo de planta e departamento atribuído.'
+    [ROLES.HR]: 'Acede às funcionalidades de Recursos Humanos (cadastro, crachás) dentro do escopo de planta e departamento atribuído.',
+    [ROLES.IT]: 'Gere o inventário de equipamentos de T.I, incluindo atribuições, devoluções, manutenções e histórico de movimentações.'
 };

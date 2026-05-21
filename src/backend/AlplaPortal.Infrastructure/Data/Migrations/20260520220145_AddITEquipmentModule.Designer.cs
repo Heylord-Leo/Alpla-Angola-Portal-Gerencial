@@ -4,16 +4,19 @@ using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace AlplaPortal.Infrastructure.Migrations
+namespace AlplaPortal.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260520220145_AddITEquipmentModule")]
+    partial class AddITEquipmentModule
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1604,10 +1607,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<string>("AssignedToEmail")
-                        .HasMaxLength(300)
-                        .HasColumnType("nvarchar(300)");
-
                     b.Property<string>("AssignedToName")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -1663,9 +1662,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                     b.Property<Guid?>("AcquisitionId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid?>("AssignmentId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<string>("DocumentType")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -1703,8 +1699,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AcquisitionId");
-
-                    b.HasIndex("AssignmentId");
 
                     b.HasIndex("EquipmentId");
 
@@ -5331,11 +5325,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                         .HasForeignKey("AcquisitionId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("AlplaPortal.Domain.Entities.ITEquipmentAssignment", "Assignment")
-                        .WithMany()
-                        .HasForeignKey("AssignmentId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
                     b.HasOne("AlplaPortal.Domain.Entities.ITEquipment", "Equipment")
                         .WithMany("Documents")
                         .HasForeignKey("EquipmentId")
@@ -5348,8 +5337,6 @@ namespace AlplaPortal.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.NoAction);
 
                     b.Navigation("Acquisition");
-
-                    b.Navigation("Assignment");
 
                     b.Navigation("Equipment");
 

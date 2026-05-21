@@ -212,7 +212,7 @@ export const DEFAULT_V3_CONFIG: LayoutConfigV3 = {
         footerValueCompany: textEl({ xPct: 70, yPct: 88, widthPct: 25, heightPct: 5, fontSize: 11, fontWeight: 700, textAlign: 'left', alignItems: 'flex-start', zIndex: 5 }),
         
         // Document row (below main footer columns)
-        footerLabelDoc: textEl({ xPct: 5, yPct: 93, widthPct: 20, heightPct: 4, fontSize: 8, fontWeight: 700, textTransform: 'uppercase', textAlign: 'left', labelText: 'B.I.', alignItems: 'center', zIndex: 5 }),
+        footerLabelDoc: textEl({ xPct: 5, yPct: 93, widthPct: 20, heightPct: 4, fontSize: 8, fontWeight: 700, textTransform: 'uppercase', textAlign: 'left', labelText: 'Doc.', alignItems: 'center', zIndex: 5 }),
         footerValueDoc: textEl({ xPct: 25, yPct: 93, widthPct: 40, heightPct: 4, fontSize: 10, fontWeight: 600, textAlign: 'left', alignItems: 'center', zIndex: 5 }),
     }
 };

@@ -2,6 +2,131 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.124.0] - 2026-05-21
+
+### Changed — I.T Equipment Documents: DOCX → PDF Migration with Branding
+
+**Summary**: All official I.T Equipment documents (Termo de Responsabilidade / Entrega, Termo de Devolução) are now generated and emailed as branded PDF files instead of DOCX, using PdfSharpCore (MIT license).
+
+**Backend — PDF Generation**
+- **New Service**: `ITEquipmentPdfService` — generates branded A4 PDF documents via PdfSharpCore with: company logo in header (from `data/templates/branding/portal-logo.png`), two-column info table, policy text (from `data/templates/it-equipment/policy-text.txt`), signature lines, and automatic page-break management.
+- **Logo Fallback**: If the logo file is missing, documents generate with a text-only header and a warning is logged — document generation does not fail.
+- **Policy Text Required**: For Assignment Agreements, `policy-text.txt` is mandatory — generation fails with a clear Portuguese error message if missing. For Return Agreements, policy text is not needed.
+- **MIME Detection**: Email attachments and download endpoint now auto-detect MIME type from file extension (`.pdf` / `.docx`), ensuring correct handling for both new PDFs and legacy DOCX files.
+- **Legacy Compatibility**: Old DOCX documents remain downloadable. `ITEquipmentAgreementService` methods marked `[Obsolete]`.
+
+**Frontend — UI Updates**
+- ReturnEquipmentModal and ChangeEquipmentUserModal notice texts updated to mention "PDF" format.
+
+**Affected Flows**: Assignment (Atribuir), Return (Devolver), and Change User (Trocar Utilizador) — all three now generate PDF.
+
+### Files Changed
+- `backend/AlplaPortal.Infrastructure/Services/ITEquipmentPdfService.cs` — [NEW] PDF generation service.
+- `backend/AlplaPortal.Infrastructure/Services/ITEquipmentAgreementService.cs` — Marked `GenerateAsync` and `GenerateReturnDocumentAsync` as `[Obsolete]`.
+- `backend/AlplaPortal.Infrastructure/Services/EmailService.cs` — Auto-detect MIME type for attachments.
+- `backend/AlplaPortal.Infrastructure/AlplaPortal.Infrastructure.csproj` — Added PdfSharpCore package.
+- `backend/AlplaPortal.Api/Program.cs` — Registered `ITEquipmentPdfService` in DI.
+- `backend/AlplaPortal.Api/Controllers/ITEquipmentController.cs` — Inject `ITEquipmentPdfService`; route all document generation to PDF service.
+- `backend/AlplaPortal.Api/Controllers/ITEquipmentDocumentsController.cs` — Auto-detect MIME type in download endpoint.
+- `frontend/src/components/it/ReturnEquipmentModal.tsx` — Updated notice text to mention PDF.
+- `frontend/src/components/it/ChangeEquipmentUserModal.tsx` — Updated notice text to mention PDF.
+- `data/templates/it-equipment/policy-text.txt` — [NEW] Extracted equipment usage policy text.
+- `data/templates/branding/portal-logo.png` — [NEW] Portal Gerencial logo for document branding.
+- `docs/DECISIONS.md` — DEC-126.
+- `docs/VERSION.md` — Bumped to v2.124.0.
+
+---
+
+## [v2.123.0] - 2026-05-20
+
+### Added — I.T Equipment Inventory Management Module
+
+**New Module**: Complete I.T equipment inventory management system. The IT department can now register, track, assign, return, repair, lose, reserve, and retire all company IT assets — with a full audit trail of every movement.
+
+**Backend — Domain & API**
+- **5 New Entities**: `ITEquipment`, `ITEquipmentAssignment`, `ITEquipmentMovementLog`, `ITEquipmentAcquisition`, `ITEquipmentDocument`.
+- **Role-Based Access**: New `IT` role (seeded via migration). Only IT and System Administrator roles can access the module.
+- **API Route**: `api/it/equipment` with endpoints for CRUD, lifecycle actions, and CSV import.
+- **Equipment CRUD**: Create, update, list (search + 5 filters + sort + pagination), and detail (with assignments, movements, documents, acquisition).
+- **Lifecycle Actions**: Assign → Return (OK/DAMAGED/NEEDS_REPAIR) → Send to Repair → Return from Repair (REPAIRED/NOT_REPAIRABLE) → Mark Lost → Reserve → Retire.
+- **Movement Audit Log**: Every action creates an `ITEquipmentMovementLog` entry with previous/new status, owner changes, and operator notes.
+- **CSV Import**: `POST /api/it/equipment/import` — multipart upload with flexible column mapping (supports English/Portuguese headers), duplicate detection (exact Asset Tag + conditional Hostname), and per-line error reporting. Empty status defaults to `UNKNOWN` (not `AVAILABLE`).
+- **Document Management**: `ITEquipmentDocumentsController` — upload (SHA256-named), download, list, soft-delete. Document types: Invoice, Warranty, PO, Receipt, Delivery Note, Proforma, Payment Proof, Other.
+- **Acquisition Tracking**: Optional 1:1 `ITEquipmentAcquisition` record per equipment (purchase order, invoice, payment, warranty dates/amounts). Future Primavera/Portal integration fields left nullable.
+
+**Frontend — React SPA**
+- **Navigation**: New "T.I" sidebar group (Monitor icon), visible only to IT/Admin roles. Lazy-loaded route at `/it/equipment`.
+- **ITEquipmentPage**: KPI summary cards (8 status counters), global search, collapsible filter bar (Status, Type, Plant, Manufacturer), sortable table, pagination.
+- **EquipmentQuickViewDrawer**: Slide-in detail view with 4 tabs (Informações, Atribuições, Movimentações, Documentos) and context-sensitive action buttons.
+- **EquipmentFormModal**: Create/edit form with conditional acquisition section (shown when sourceType = ManualPurchase), field validation, and shared UI helpers.
+- **Action Modals**: AssignEquipmentModal, ReturnEquipmentModal, RepairEquipmentModal (send/return), LostEquipmentModal, RetireEquipmentModal, ReserveEquipmentModal.
+- **ImportEquipmentModal**: Drag-and-drop CSV upload with result preview (created/skipped/errors/duplicate hostnames).
+- **Type System**: `itEquipment.ts` with status/type display configs, movement type labels, assignment status config, document type labels — all in Portuguese.
+
+**Database Migration**: `AddITEquipmentModule`
+- 5 tables: `ITEquipments`, `ITEquipmentAssignments`, `ITEquipmentMovementLogs`, `ITEquipmentAcquisitions`, `ITEquipmentDocuments`.
+- Unique indexes on `AssetTag` and `SerialNumber` (conditional, non-null).
+- FK cascade: `Restrict` on Equipment→Documents to avoid SQL Server multiple cascade path error.
+- IT role seeded into `Roles` table.
+
+### Files Changed
+- `backend/AlplaPortal.Domain/Entities/ITEquipment*.cs` — [NEW] 5 entity files.
+- `backend/AlplaPortal.Domain/Constants/ITEquipmentConstants.cs` — [NEW] Status/type/movement enums + CSV normalizers.
+- `backend/AlplaPortal.Domain/Constants/RoleConstants.cs` — Added `IT` role.
+- `backend/AlplaPortal.Infrastructure/Data/ApplicationDbContext.cs` — 5 DbSets + Fluent API configs + IT role seed.
+- `backend/AlplaPortal.Infrastructure/Data/Migrations/AddITEquipmentModule.cs` — [NEW] Migration.
+- `backend/AlplaPortal.Api/Controllers/ITEquipmentController.cs` — [NEW] Full equipment lifecycle API.
+- `backend/AlplaPortal.Api/Controllers/ITEquipmentDocumentsController.cs` — [NEW] Document management API.
+- `frontend/src/types/itEquipment.ts` — [NEW] TypeScript interfaces + display configs.
+- `frontend/src/lib/itEquipmentApi.ts` — [NEW] API client module.
+- `frontend/src/pages/IT/ITEquipmentPage.tsx` — [NEW] Main page.
+- `frontend/src/components/it/EquipmentSummaryCards.tsx` — [NEW] KPI cards.
+- `frontend/src/components/it/EquipmentTable.tsx` — [NEW] Sortable table.
+- `frontend/src/components/it/EquipmentQuickViewDrawer.tsx` — [NEW] Detail drawer with 4 tabs.
+- `frontend/src/components/it/EquipmentFormModal.tsx` — [NEW] Create/edit form + shared helpers.
+- `frontend/src/components/it/AssignEquipmentModal.tsx` — [NEW] Assignment modal.
+- `frontend/src/components/it/ReturnEquipmentModal.tsx` — [NEW] Return modal.
+- `frontend/src/components/it/RepairEquipmentModal.tsx` — [NEW] Repair send/return modal.
+- `frontend/src/components/it/LostEquipmentModal.tsx` — [NEW] Lost modal.
+- `frontend/src/components/it/RetireEquipmentModal.tsx` — [NEW] Retire modal.
+- `frontend/src/components/it/ReserveEquipmentModal.tsx` — [NEW] Reserve modal.
+- `frontend/src/components/it/ImportEquipmentModal.tsx` — [NEW] CSV import modal.
+- `frontend/src/constants/roles.ts` — Added IT role + description.
+- `frontend/src/constants/navigation.tsx` — Added T.I sidebar group.
+- `frontend/src/features/auth/AuthContext.tsx` — Added `hasITAccess`.
+- `frontend/src/App.tsx` — Added `/it/equipment` route with ITRoute guard.
+- `docs/VERSION.md` — Bumped to v2.123.0.
+
+---
+
+## [v2.122.0] - 2026-05-20
+
+### Fixed — HR Monthly Attendance Report: Saldo (Balance) Always 00:00
+
+**Problem**: The `Saldo` (balance) column in the HR Monthly Attendance Report always displayed `00:00`, even for employees with unjustified absences. Root cause: Innux stores balance as a `datetime-as-duration` value with base date `1900-01-01`. Negative balances (values before the base date) were silently truncated to 0 by `InnuxTimeHelper.ToMinutes()`.
+
+**Solution**: Portal-computed balance replaces the Innux-sourced value.
+
+| Column | Meaning | Source |
+|---|---|---|
+| H.Básicas | Planned/scheduled working hours | `AttendanceDaySummaryDto.ExpectedMinutes` |
+| H.Falta | Unjustified absence hours | `AttendanceDaySummaryDto.AbsenceMinutes` (unchanged) |
+| H.Totais | Positive counted hours (worked + justified) | Portal formula: `max(0, WorkedMinutes - AbsenceMinutes) + JustifiedMinutes` |
+| Saldo | Time balance | Portal formula: `H.Totais - H.Básicas` |
+
+**Exempt categories** (Vacation, Holiday, JustifiedAbsence): `H.Totais = H.Básicas`, `Saldo = 00:00`.
+
+**Visual indicators**: Negative saldo in red/bold, positive saldo in green. Applied to daily records, monthly summaries, employee grand totals, and department totals — screen and print.
+
+### Files Changed
+- `backend/AlplaPortal.Api/Controllers/HRAttendanceController.cs` — Portal-computed `BasicMinutes`, `TotalMinutes`, `DailyBalance`; new `ComputePositiveCountedMinutes` helper; `AbsenceMinutes` accumulation fix.
+- `frontend/src/pages/HR/AttendanceMonthlyReport/HRAttendanceMonthlyReport.tsx` — Balance color classes on all saldo display elements.
+- `frontend/src/pages/HR/AttendanceMonthlyReport/hr-attendance-monthly-report.css` — `.balance-negative`, `.balance-positive` styles (screen + print).
+- `docs/VERSION.md` — Bumped to v2.122.0.
+- `docs/DECISIONS.md` — DEC-124.
+
+---
+
 ## [v2.121.0] - 2026-05-20
 
 ### Added — HR Monthly Attendance Report: Consolidated & 30-Day Activity Filter

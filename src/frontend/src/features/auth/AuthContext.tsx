@@ -36,6 +36,8 @@ interface AuthContextType {
    * Restricted to HR role and System Administrator only.
    */
   hasHRAdminAccess: boolean;
+  /** True if user can access the I.T Equipment module. */
+  hasITAccess: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -89,6 +91,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Broader access: HR, admin, Local Manager, Department Manager, Viewer/Management.
   // Backend GetScopedEmployeesQuery() remains the source of truth for data scope.
   const hasHRModuleAccess = hasHRAccess || isDepartmentManager || isLocalManager || isViewerManagement;
+  const hasITAccess = user?.roles.includes(ROLES.IT) || isAdmin;
 
   if (isLoading) {
     return null; // Or a loading spinner
@@ -107,7 +110,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isViewerManagement,
       hasHRAccess,
       hasHRModuleAccess,
-      hasHRAdminAccess
+      hasHRAdminAccess,
+      hasITAccess
     }}>
       {children}
     </AuthContext.Provider>

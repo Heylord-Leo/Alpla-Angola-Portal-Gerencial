@@ -520,6 +520,57 @@
     background: var(--color-bg-surface);
 }
 
+/* ── Segmented Control (Doc Type) ── */
+.hr-doc-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-page);
+    color: var(--color-text-main);
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex: 1;
+}
+
+.hr-doc-btn:hover {
+    background: var(--color-bg-surface);
+    border-color: #cbd5e1;
+}
+
+.hr-doc-btn.selected {
+    border-color: var(--color-primary);
+    background: rgba(var(--color-primary-rgb), 0.04);
+    color: var(--color-primary);
+}
+
+.hr-doc-btn .radio-circle {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.hr-doc-btn.selected .radio-circle {
+    border-color: var(--color-primary);
+}
+
+.hr-doc-btn.selected .radio-circle::after {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: var(--color-primary);
+    border-radius: 50%;
+}
+
 /* ── Validation UI ── */
 .hr-validation-bubble {
     display: flex;

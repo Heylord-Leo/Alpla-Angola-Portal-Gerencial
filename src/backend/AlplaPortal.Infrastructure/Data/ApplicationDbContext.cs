@@ -94,6 +94,13 @@ public class ApplicationDbContext : DbContext
     // Proforma Deadline Alerts (audit / dedup)
     public DbSet<ProformaDeadlineAlert> ProformaDeadlineAlerts => Set<ProformaDeadlineAlert>();
 
+    // I.T Equipment Module
+    public DbSet<ITEquipment> ITEquipments => Set<ITEquipment>();
+    public DbSet<ITEquipmentAssignment> ITEquipmentAssignments => Set<ITEquipmentAssignment>();
+    public DbSet<ITEquipmentMovementLog> ITEquipmentMovementLogs => Set<ITEquipmentMovementLog>();
+    public DbSet<ITEquipmentAcquisition> ITEquipmentAcquisitions => Set<ITEquipmentAcquisition>();
+    public DbSet<ITEquipmentDocument> ITEquipmentDocuments => Set<ITEquipmentDocument>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -857,7 +864,8 @@ public class ApplicationDbContext : DbContext
             new Role { Id = 9, RoleName = "Contracts" },
             new Role { Id = 10, RoleName = "Import" },
             new Role { Id = 11, RoleName = "Viewer / Management" },
-            new Role { Id = 12, RoleName = "HR" }
+            new Role { Id = 12, RoleName = "HR" },
+            new Role { Id = 13, RoleName = "IT" }
         );
 
         // Initial Users & Roles Seed
@@ -990,5 +998,101 @@ public class ApplicationDbContext : DbContext
             new ContractType { Id = 3, Code = "SUPPLY", Name = "Fornecimento", IsActive = true, DisplayOrder = 3 },
             new ContractType { Id = 4, Code = "MAINTENANCE", Name = "Manutenção", IsActive = true, DisplayOrder = 4 }
         );
+
+        // ─── I.T Equipment Module Configuration ───
+
+        // ITEquipment
+        modelBuilder.Entity<ITEquipment>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.AssetTag).IsUnique();
+            entity.HasIndex(e => e.SerialNumber)
+                  .IsUnique()
+                  .HasFilter("\"SerialNumber\" IS NOT NULL AND \"SerialNumber\" <> ''");
+            entity.HasIndex(e => e.MacAddress)
+                  .IsUnique()
+                  .HasFilter("\"MacAddress\" IS NOT NULL AND \"MacAddress\" <> ''");
+            entity.HasIndex(e => e.Hostname)
+                  .IsUnique()
+                  .HasFilter("\"Hostname\" IS NOT NULL AND \"Hostname\" <> ''");
+            entity.HasIndex(e => e.StatusCode);
+            entity.Property(e => e.AssetTag).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Hostname).HasMaxLength(200);
+            entity.Property(e => e.Plant).HasMaxLength(100);
+            entity.Property(e => e.EquipmentType).HasMaxLength(50);
+            entity.Property(e => e.StatusCode).HasMaxLength(50);
+            entity.Property(e => e.Manufacturer).HasMaxLength(200);
+            entity.Property(e => e.Model).HasMaxLength(200);
+            entity.Property(e => e.SerialNumber).HasMaxLength(200);
+            entity.Property(e => e.MacAddress).HasMaxLength(100);
+            entity.Property(e => e.Processor).HasMaxLength(200);
+            entity.Property(e => e.MemoryRam).HasMaxLength(100);
+            entity.Property(e => e.Color).HasMaxLength(50);
+            entity.Property(e => e.CurrentOwnerName).HasMaxLength(200);
+            entity.Property(e => e.CurrentOwnerEmployeeId).HasMaxLength(100);
+            entity.Property(e => e.SourceType).HasMaxLength(50);
+            entity.Property(e => e.IdCard).HasMaxLength(200);
+            entity.HasOne(e => e.CurrentOwnerUser).WithMany().HasForeignKey(e => e.CurrentOwnerUserId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.CreatedByUser).WithMany().HasForeignKey(e => e.CreatedByUserId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.UpdatedByUser).WithMany().HasForeignKey(e => e.UpdatedByUserId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        // ITEquipmentAssignment
+        modelBuilder.Entity<ITEquipmentAssignment>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.AssignedToName).HasMaxLength(200);
+            entity.Property(e => e.AssignedToEmail).HasMaxLength(300);
+            entity.Property(e => e.AssignedToDepartment).HasMaxLength(200);
+            entity.Property(e => e.AssignedToPlant).HasMaxLength(100);
+            entity.Property(e => e.AssignmentStatus).HasMaxLength(50);
+            entity.HasOne(e => e.Equipment).WithMany(eq => eq.Assignments).HasForeignKey(e => e.EquipmentId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.AssignedToUser).WithMany().HasForeignKey(e => e.AssignedToUserId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.CreatedByUser).WithMany().HasForeignKey(e => e.CreatedByUserId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        // ITEquipmentMovementLog
+        modelBuilder.Entity<ITEquipmentMovementLog>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.MovementType).HasMaxLength(100);
+            entity.Property(e => e.PreviousStatus).HasMaxLength(50);
+            entity.Property(e => e.NewStatus).HasMaxLength(50);
+            entity.Property(e => e.PreviousOwnerName).HasMaxLength(200);
+            entity.Property(e => e.NewOwnerName).HasMaxLength(200);
+            entity.HasOne(e => e.Equipment).WithMany(eq => eq.MovementLogs).HasForeignKey(e => e.EquipmentId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.CreatedByUser).WithMany().HasForeignKey(e => e.CreatedByUserId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        // ITEquipmentAcquisition (1:1 with ITEquipment)
+        modelBuilder.Entity<ITEquipmentAcquisition>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.EquipmentId).IsUnique();
+            entity.Property(e => e.SupplierName).HasMaxLength(300);
+            entity.Property(e => e.PurchaseRequestNumber).HasMaxLength(100);
+            entity.Property(e => e.PurchaseOrderNumber).HasMaxLength(100);
+            entity.Property(e => e.InvoiceNumber).HasMaxLength(100);
+            entity.Property(e => e.PaymentReference).HasMaxLength(200);
+            entity.Property(e => e.PurchaseAmount).HasPrecision(18, 2);
+            entity.Property(e => e.Currency).HasMaxLength(10);
+            entity.HasOne(e => e.Equipment).WithOne(eq => eq.Acquisition).HasForeignKey<ITEquipmentAcquisition>(e => e.EquipmentId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.CreatedByUser).WithMany().HasForeignKey(e => e.CreatedByUserId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.UpdatedByUser).WithMany().HasForeignKey(e => e.UpdatedByUserId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        // ITEquipmentDocument
+        modelBuilder.Entity<ITEquipmentDocument>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.DocumentType).HasMaxLength(50);
+            entity.Property(e => e.FileName).HasMaxLength(300);
+            entity.Property(e => e.StorageReference).HasMaxLength(300);
+            entity.Property(e => e.FileHash).HasMaxLength(128);
+            entity.HasOne(e => e.Equipment).WithMany(eq => eq.Documents).HasForeignKey(e => e.EquipmentId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.Acquisition).WithMany().HasForeignKey(e => e.AcquisitionId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.Assignment).WithMany().HasForeignKey(e => e.AssignmentId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.UploadedByUser).WithMany().HasForeignKey(e => e.UploadedByUserId).OnDelete(DeleteBehavior.NoAction);
+        });
     }
 }

@@ -582,6 +582,27 @@
     margin-top: 0;
 }
 
+/* ─── Balance Visual Indicators (DEC-124) ─── */
+
+.balance-negative {
+    color: #dc2626 !important;
+    font-weight: 700;
+}
+
+.balance-positive {
+    color: #16a34a;
+    font-weight: 600;
+}
+
+/* Override for department totals dark background */
+.att-report-department-totals .balance-negative {
+    color: #fca5a5 !important;
+}
+
+.att-report-department-totals .balance-positive {
+    color: #86efac !important;
+}
+
 /* ─── Print-Only Document Header (hidden on screen) ─── */
 
 .print-only {
@@ -928,5 +949,24 @@
 
     .att-report-department-section-title {
         display: none !important;
+    }
+
+    /* ─── Balance Visual Indicators (print) ─── */
+    .balance-negative {
+        color: #b91c1c !important;
+        font-weight: 700 !important;
+    }
+
+    .balance-positive {
+        color: #15803d !important;
+        font-weight: 600 !important;
+    }
+
+    .att-report-department-totals .balance-negative {
+        color: #b91c1c !important;
+    }
+
+    .att-report-department-totals .balance-positive {
+        color: #15803d !important;
     }
 }

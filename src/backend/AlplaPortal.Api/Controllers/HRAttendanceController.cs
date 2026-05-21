@@ -707,19 +707,26 @@ public class HRAttendanceController : ControllerBase
                 if (hasMissingPunch && string.IsNullOrWhiteSpace(warningMessage))
                     warningMessage = "Marcação em falta";
 
+                // Portal-computed report fields (DEC-124):
+                // - BasicMinutes  = planned/scheduled hours (ExpectedMinutes), not worked hours
+                // - TotalMinutes  = positive counted hours (worked + justified, excluding unjustified absence)
+                // - DailyBalance  = TotalMinutes - BasicMinutes (replaces unreliable Innux Saldo)
+                var positiveCountedMinutes = ComputePositiveCountedMinutes(day, dayWorked);
+                var portalDailyBalance = positiveCountedMinutes - day.ExpectedMinutes;
+
                 var recordDto = new AlplaPortal.Application.DTOs.HR.AttendanceDailyRecordDto
                 {
                     Date = day.Date,
                     Weekday = day.Date.ToString("ddd", new System.Globalization.CultureInfo("pt-PT")).Substring(0, 3).ToUpper(),
-                    BasicMinutes = dayWorked.BasicMinutes,
+                    BasicMinutes = day.ExpectedMinutes,
                     ExtraMinutes = dayWorked.OvertimeMinutes,
                     UnpaidMinutes = dayWorked.UnpaidMinutes,
-                    TotalMinutes = dayWorked.TotalMinutes,
+                    TotalMinutes = positiveCountedMinutes,
                     MissingMinutes = 0,
                     AbsenceMinutes = day.AbsenceMinutes,
                     AbsenceDescription = day.Justification,
                     Justification = day.Justification,
-                    DailyBalance = day.BalanceMinutes,
+                    DailyBalance = portalDailyBalance,
                     Status = day.AttendanceStatus,
                     IsDayOff = day.IsRestDay,
                     IsVacation = isVacation,
@@ -802,6 +809,7 @@ public class HRAttendanceController : ControllerBase
                 mSum.ExtraMinutes += recordDto.ExtraMinutes;
                 mSum.UnpaidMinutes += recordDto.UnpaidMinutes;
                 mSum.TotalMinutes += recordDto.TotalMinutes;
+                mSum.AbsenceMinutes += recordDto.AbsenceMinutes;
                 mSum.BalanceMinutes += recordDto.DailyBalance;
 
                 if (recordDto.IsVacation) mSum.VacationDays++;
@@ -815,6 +823,7 @@ public class HRAttendanceController : ControllerBase
                 empReport.GrandTotals.ExtraMinutes += recordDto.ExtraMinutes;
                 empReport.GrandTotals.UnpaidMinutes += recordDto.UnpaidMinutes;
                 empReport.GrandTotals.TotalMinutes += recordDto.TotalMinutes;
+                empReport.GrandTotals.AbsenceMinutes += recordDto.AbsenceMinutes;
                 empReport.GrandTotals.BalanceMinutes += recordDto.DailyBalance;
 
                 if (recordDto.IsVacation) empReport.GrandTotals.VacationDays++;
@@ -1283,5 +1292,34 @@ public class HRAttendanceController : ControllerBase
         if (managesDepts)
             return "department";
         return "self";
+    }
+
+    // ─── Portal-Computed Attendance Balance Helpers (DEC-124) ───
+
+    /// <summary>
+    /// Computes the positive counted minutes for the day — the value shown as H.Totais.
+    /// Includes real worked hours and justified/approved absence hours.
+    /// Unjustified absence hours are NOT included.
+    ///
+    /// For exempt categories (Vacation, Holiday, JustifiedAbsence), returns ExpectedMinutes
+    /// so that H.Totais equals H.Básicas and Saldo = 0.
+    /// For rest days (ExpectedMinutes = 0), returns 0.
+    /// </summary>
+    private static int ComputePositiveCountedMinutes(AttendanceDaySummaryDto day, WorkedHoursDto worked)
+    {
+        // Rest days: no expected work, no positive counted time
+        if (day.IsRestDay)
+            return 0;
+
+        // Exempt categories: fully covered → H.Totais = ExpectedMinutes → Saldo = 0
+        var status = day.AttendanceStatus;
+        if (status == "Vacation" || status == "Holiday" || status == "JustifiedAbsence")
+            return day.ExpectedMinutes;
+
+        // Normal/worked days: actual worked minus unjustified absence, plus any justified portions.
+        // Innux may record scheduled periods in AlteracoesPeriodos even on absence days,
+        // so we subtract unjustified AbsenceMinutes to derive real worked time.
+        var realWorkedMinutes = Math.Max(0, worked.TotalMinutes - day.AbsenceMinutes);
+        return realWorkedMinutes + day.JustifiedAbsenceMinutes;
     }
 }
