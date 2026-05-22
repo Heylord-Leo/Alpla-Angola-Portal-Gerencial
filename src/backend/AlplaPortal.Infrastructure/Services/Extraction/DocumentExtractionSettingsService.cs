@@ -49,18 +49,22 @@ public class DocumentExtractionSettingsService : IDocumentExtractionSettingsServ
             return _configOptions;
         }
 
+        var defaultProvider = dbSettings.DefaultProvider ?? _configOptions.DefaultProvider;
+
+        // Guard: if legacy LOCAL_OCR is still stored in the database, override to OPENAI
+        if (defaultProvider.Equals("LOCAL_OCR", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(
+                "Database contains obsolete DefaultProvider='LOCAL_OCR'. " +
+                "LOCAL_OCR has been removed. Falling back to 'OPENAI'.");
+            defaultProvider = "OPENAI";
+        }
+
         return new DocumentExtractionOptions
         {
             IsEnabled = dbSettings.IsEnabled ?? _configOptions.IsEnabled,
-            DefaultProvider = dbSettings.DefaultProvider ?? _configOptions.DefaultProvider,
+            DefaultProvider = defaultProvider,
             GlobalTimeoutSeconds = dbSettings.GlobalTimeoutSeconds ?? _configOptions.GlobalTimeoutSeconds,
-
-            LocalOcr = new ProviderSettings
-            {
-                Enabled = dbSettings.LocalOcrEnabled ?? _configOptions.LocalOcr.Enabled,
-                BaseUrl = dbSettings.LocalOcrBaseUrl ?? _configOptions.LocalOcr.BaseUrl,
-                TimeoutSeconds = dbSettings.LocalOcrTimeoutSeconds ?? _configOptions.LocalOcr.TimeoutSeconds
-            },
 
             OpenAi = new OpenAiSettings
             {
@@ -84,15 +88,19 @@ public class DocumentExtractionSettingsService : IDocumentExtractionSettingsServ
     {
         var dbSettings = await GetDbSettingsAsync(ct);
 
+        var defaultProvider = dbSettings?.DefaultProvider ?? _configOptions.DefaultProvider;
+
+        // Guard: if legacy LOCAL_OCR is still stored in the database, override to OPENAI
+        if (defaultProvider.Equals("LOCAL_OCR", StringComparison.OrdinalIgnoreCase))
+        {
+            defaultProvider = "OPENAI";
+        }
+
         return new DocumentExtractionSettingsDto
         {
             IsEnabled = dbSettings?.IsEnabled ?? _configOptions.IsEnabled,
-            DefaultProvider = dbSettings?.DefaultProvider ?? _configOptions.DefaultProvider,
+            DefaultProvider = defaultProvider,
             GlobalTimeoutSeconds = dbSettings?.GlobalTimeoutSeconds ?? _configOptions.GlobalTimeoutSeconds,
-
-            LocalOcrEnabled = dbSettings?.LocalOcrEnabled ?? _configOptions.LocalOcr.Enabled,
-            LocalOcrBaseUrl = dbSettings?.LocalOcrBaseUrl ?? _configOptions.LocalOcr.BaseUrl,
-            LocalOcrTimeoutSeconds = dbSettings?.LocalOcrTimeoutSeconds ?? _configOptions.LocalOcr.TimeoutSeconds,
 
             OpenAiEnabled = dbSettings?.OpenAiEnabled ?? _configOptions.OpenAi.Enabled,
             OpenAiModel = dbSettings?.OpenAiModel ?? _configOptions.OpenAi.Model,
@@ -138,9 +146,10 @@ public class DocumentExtractionSettingsService : IDocumentExtractionSettingsServ
             dbSettings.DefaultProvider = dto.DefaultProvider;
             dbSettings.GlobalTimeoutSeconds = dto.GlobalTimeoutSeconds;
 
-            dbSettings.LocalOcrEnabled = dto.LocalOcrEnabled;
-            dbSettings.LocalOcrBaseUrl = dto.LocalOcrBaseUrl;
-            dbSettings.LocalOcrTimeoutSeconds = dto.LocalOcrTimeoutSeconds;
+            // LocalOcr fields are deprecated — clear them on save to avoid stale data
+            dbSettings.LocalOcrEnabled = false;
+            dbSettings.LocalOcrBaseUrl = null;
+            dbSettings.LocalOcrTimeoutSeconds = null;
 
             dbSettings.OpenAiEnabled = dto.OpenAiEnabled;
             dbSettings.OpenAiModel = dto.OpenAiModel;
@@ -160,7 +169,7 @@ public class DocumentExtractionSettingsService : IDocumentExtractionSettingsServ
                 source: Source,
                 eventType: "OCR_SETTINGS_SAVED",
                 message: $"Configurações OCR guardadas com sucesso. Provedor: {dto.DefaultProvider}, Ativo: {dto.IsEnabled}.",
-                payload: SafePayload.From(new { dto.DefaultProvider, dto.IsEnabled, dto.LocalOcrEnabled, dto.OpenAiEnabled, dto.AzureDocumentIntelligenceEnabled }));
+                payload: SafePayload.From(new { dto.DefaultProvider, dto.IsEnabled, dto.OpenAiEnabled, dto.AzureDocumentIntelligenceEnabled }));
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
@@ -188,14 +197,13 @@ public class DocumentExtractionSettingsService : IDocumentExtractionSettingsServ
     {
         if (dto.GlobalTimeoutSeconds <= 0) throw new ArgumentException("O timeout global deve ser um valor positivo.");
 
-        var supportedProviders = new[] { "LOCAL_OCR", "OPENAI", "AZURE_DOCUMENT_INTELLIGENCE" };
+        var supportedProviders = new[] { "OPENAI", "AZURE_DOCUMENT_INTELLIGENCE" };
         if (!supportedProviders.Contains(dto.DefaultProvider.ToUpperInvariant()))
-            throw new ArgumentException($"O provedor '{dto.DefaultProvider}' não é suportado.");
+            throw new ArgumentException($"O provedor '{dto.DefaultProvider}' não é suportado. Provedores disponíveis: {string.Join(", ", supportedProviders)}.");
 
         // Check if active provider is enabled
         bool isProviderEnabled = dto.DefaultProvider.ToUpperInvariant() switch
         {
-            "LOCAL_OCR" => dto.LocalOcrEnabled,
             "OPENAI" => dto.OpenAiEnabled,
             "AZURE_DOCUMENT_INTELLIGENCE" => dto.AzureDocumentIntelligenceEnabled,
             _ => false
@@ -203,15 +211,6 @@ public class DocumentExtractionSettingsService : IDocumentExtractionSettingsServ
 
         if (!isProviderEnabled)
             throw new ArgumentException("Não é possível definir um provedor como ativo se ele estiver desativado.");
-
-        if (dto.LocalOcrEnabled)
-        {
-            if (string.IsNullOrWhiteSpace(dto.LocalOcrBaseUrl))
-                throw new ArgumentException("A URL base para o Local OCR é obrigatória quando o provedor está ativado.");
-            
-            if (dto.LocalOcrTimeoutSeconds <= 0)
-                throw new ArgumentException("O timeout do Local OCR deve ser um valor positivo.");
-        }
 
         if (dto.OpenAiEnabled && dto.OpenAiTimeoutSeconds <= 0)
             throw new ArgumentException("O timeout do OpenAI deve ser um valor positivo.");
@@ -246,7 +245,6 @@ public class DocumentExtractionSettingsService : IDocumentExtractionSettingsServ
 
         return provider switch
         {
-            "LOCAL_OCR" => await TestLocalOcrConnectionAsync(options.LocalOcr, ct),
             "OPENAI" => await TestOpenAiConnectionAsync(options.OpenAi, ct),
             "AZURE_DOCUMENT_INTELLIGENCE" => new ConnectionTestResultDto 
             { 
@@ -261,69 +259,6 @@ public class DocumentExtractionSettingsService : IDocumentExtractionSettingsServ
                 Message = $"Provedor '{provider}' não suportado para testes." 
             }
         };
-    }
-
-    private async Task<ConnectionTestResultDto> TestLocalOcrConnectionAsync(ProviderSettings settings, CancellationToken ct)
-    {
-        if (!settings.Enabled)
-        {
-            return new ConnectionTestResultDto { Success = false, ProviderName = "Local OCR", Message = "O provedor Local OCR está desativado." };
-        }
-
-        if (string.IsNullOrWhiteSpace(settings.BaseUrl))
-        {
-            return new ConnectionTestResultDto { Success = false, ProviderName = "Local OCR", Message = "URL base do Local OCR não configurada." };
-        }
-
-        var sw = Stopwatch.StartNew();
-        try
-        {
-            using var client = _httpClientFactory.CreateClient();
-            client.Timeout = TimeSpan.FromSeconds(Math.Min(settings.TimeoutSeconds ?? 30, 10));
-
-            var response = await client.GetAsync(settings.BaseUrl, ct);
-            sw.Stop();
-
-            _logger.LogInformation("Local OCR connection test OK. Status: {StatusCode}, Time: {Elapsed}ms", response.StatusCode, sw.ElapsedMilliseconds);
-
-            await _adminLog.WriteAsync(
-                level: "Information",
-                source: Source,
-                eventType: "OCR_PROVIDER_TEST_OK",
-                message: $"Teste de conexão Local OCR bem-sucedido. Status HTTP: {(int)response.StatusCode}. Tempo: {sw.ElapsedMilliseconds}ms.",
-                payload: SafePayload.From(new { Provider = "LOCAL_OCR", BaseUrl = settings.BaseUrl, StatusCode = (int)response.StatusCode, ResponseTimeMs = sw.ElapsedMilliseconds }));
-
-            return new ConnectionTestResultDto { Success = true, ProviderName = "Local OCR", Message = $"Conexão com Local OCR estabelecida ({response.StatusCode}).", ResponseTimeMs = sw.ElapsedMilliseconds };
-        }
-        catch (OperationCanceledException)
-        {
-            sw.Stop();
-            _logger.LogWarning("Local OCR connection test timed out. URL: {Url}", settings.BaseUrl);
-
-            await _adminLog.WriteAsync(
-                level: "Warning",
-                source: Source,
-                eventType: "OCR_PROVIDER_TEST_FAILED",
-                message: "Teste de conexão Local OCR falhou: timeout.",
-                payload: SafePayload.From(new { Provider = "LOCAL_OCR", BaseUrl = settings.BaseUrl, FailureReason = "Timeout" }));
-
-            return new ConnectionTestResultDto { Success = false, ProviderName = "Local OCR", Message = "Timeout ao tentar conectar ao Local OCR." };
-        }
-        catch (Exception ex)
-        {
-            sw.Stop();
-            _logger.LogError(ex, "Local OCR connection test failed. URL: {Url}", settings.BaseUrl);
-
-            await _adminLog.WriteAsync(
-                level: "Error",
-                source: Source,
-                eventType: "OCR_PROVIDER_TEST_FAILED",
-                message: $"Teste de conexão Local OCR falhou: {ex.Message}",
-                exceptionDetail: $"{ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}",
-                payload: SafePayload.From(new { Provider = "LOCAL_OCR", BaseUrl = settings.BaseUrl }));
-
-            return new ConnectionTestResultDto { Success = false, ProviderName = "Local OCR", Message = $"Falha ao conectar ao Local OCR: {ex.Message}" };
-        }
     }
 
     private async Task<ConnectionTestResultDto> TestOpenAiConnectionAsync(OpenAiSettings settings, CancellationToken ct)

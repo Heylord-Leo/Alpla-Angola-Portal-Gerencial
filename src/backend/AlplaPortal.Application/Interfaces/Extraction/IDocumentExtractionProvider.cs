@@ -5,7 +5,7 @@ namespace AlplaPortal.Application.Interfaces.Extraction;
 public interface IDocumentExtractionProvider
 {
     /// <summary>
-    /// Unique provider name (e.g., LOCAL_OCR, OPENAI, AZURE).
+    /// Unique provider name (e.g., OPENAI, AZURE_DOCUMENT_INTELLIGENCE).
     /// </summary>
     string Name { get; }
 

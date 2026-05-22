@@ -13,7 +13,6 @@ export function ReturnEquipmentModal({ equipmentId, onClose, onSuccess }: Props)
     const [notes, setNotes] = useState('');
 
     const needsObservation = condition !== 'GOOD';
-    const canSubmit = !needsObservation || notes.trim().length > 0;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

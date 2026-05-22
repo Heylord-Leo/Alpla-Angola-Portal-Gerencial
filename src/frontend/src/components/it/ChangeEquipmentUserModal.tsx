@@ -48,7 +48,7 @@ export function ChangeEquipmentUserModal({ equipmentId, onClose, onSuccess }: Pr
     const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const [allUsers, setAllUsers] = useState<UserOption[]>([]);
-    const [usersLoaded, setUsersLoaded] = useState(false);
+    const [_usersLoaded, setUsersLoaded] = useState(false);
 
     // Same user confirmation
     const [sameUserConfirmed, setSameUserConfirmed] = useState(false);

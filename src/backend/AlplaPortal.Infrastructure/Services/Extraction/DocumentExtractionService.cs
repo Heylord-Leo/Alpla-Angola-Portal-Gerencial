@@ -32,17 +32,28 @@ public class DocumentExtractionService : IDocumentExtractionService
         }
 
         var providerName = options.DefaultProvider;
+
+        // Guard: if a legacy/obsolete provider name (e.g. LOCAL_OCR) is still in the database,
+        // log a warning and fall back to OPENAI.
+        if (providerName.Equals("LOCAL_OCR", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(
+                "DefaultProvider is set to 'LOCAL_OCR' which has been removed. " +
+                "Falling back to 'OPENAI'. Please update the database or appsettings to use 'OPENAI'.");
+            providerName = "OPENAI";
+        }
+
         var provider = GetEnabledProvider(providerName, options);
 
         if (provider == null)
         {
-            _logger.LogWarning("Configured provider '{ProviderName}' is missing, disabled, or invalid. Falling back to LOCAL_OCR.", providerName);
-            provider = GetEnabledProvider("LOCAL_OCR", options);
+            _logger.LogWarning("Configured provider '{ProviderName}' is missing, disabled, or invalid. Falling back to OPENAI.", providerName);
+            provider = GetEnabledProvider("OPENAI", options);
         }
 
         if (provider == null)
         {
-            _logger.LogCritical("No enabled document extraction providers available, including fallback LOCAL_OCR.");
+            _logger.LogCritical("No enabled document extraction providers available.");
             return new ExtractionResultDto { Success = false };
         }
 
@@ -82,7 +93,6 @@ public class DocumentExtractionService : IDocumentExtractionService
 
         var isEnabled = name.ToUpperInvariant() switch
         {
-            "LOCAL_OCR" => options.LocalOcr.Enabled,
             "OPENAI" => options.OpenAi.Enabled,
             "AZURE_DOCUMENT_INTELLIGENCE" => options.AzureDocumentIntelligence.Enabled,
             _ => false
@@ -95,7 +105,6 @@ public class DocumentExtractionService : IDocumentExtractionService
     {
         int? providerTimeout = name.ToUpperInvariant() switch
         {
-            "LOCAL_OCR" => options.LocalOcr.TimeoutSeconds,
             "OPENAI" => options.OpenAi.TimeoutSeconds,
             "AZURE_DOCUMENT_INTELLIGENCE" => options.AzureDocumentIntelligence.TimeoutSeconds,
             _ => null

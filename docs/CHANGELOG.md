@@ -2,6 +2,40 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.128.0] - 2026-05-22
+
+### Changed — Remove LOCAL_OCR Provider, Consolidate OpenAI (DEC-130)
+
+**Summary**: The local OCR provider (PaddleOCR/Tesseract) has been fully removed from the system. OpenAI Vision is now the sole active document extraction provider. The provider abstraction (`IDocumentExtractionProvider`) is preserved for future Azure Document Intelligence integration.
+
+**Backend — Deleted Files**
+- `AlplaPortal.Infrastructure/Services/Extraction/LocalOcrExtractionProvider.cs` — [DELETE] Provider implementation.
+- `AlplaPortal.Infrastructure/Services/OcrService.cs` — [DELETE] Legacy dead-code service (referenced localhost:5005).
+- `AlplaPortal.Application/Interfaces/IOcrService.cs` — [DELETE] Legacy dead-code interface (never registered in DI).
+
+**Backend — Modified Files**
+- `AlplaPortal.Api/Program.cs` — Removed `LocalOcrExtractionProvider` DI registration. OpenAI provider now registered unconditionally (removed Windows-only guard).
+- `AlplaPortal.Api/appsettings.json` — `DefaultProvider` → `OPENAI`, removed `LocalOcr` config block, `OpenAi.Enabled` → `true`.
+- `AlplaPortal.Application/Models/Configuration/DocumentExtractionOptions.cs` — Removed `LocalOcr` property, default → `OPENAI`.
+- `AlplaPortal.Application/DTOs/Extraction/DocumentExtractionSettingsDto.cs` — Removed `LocalOcr*` fields, default → `OPENAI`.
+- `AlplaPortal.Infrastructure/Services/Extraction/DocumentExtractionService.cs` — Removed LOCAL_OCR fallback and switch cases. Added explicit guard: legacy `LOCAL_OCR` DB value → warns and falls back to `OPENAI`.
+- `AlplaPortal.Infrastructure/Services/Extraction/DocumentExtractionSettingsService.cs` — Removed all LOCAL_OCR logic, `TestLocalOcrConnectionAsync`, and LOCAL_OCR validation. Added LOCAL_OCR→OPENAI guard. LocalOcr DB fields cleared on save.
+- `AlplaPortal.Api/Controllers/Admin/AdminDiagnosticsController.cs` — Removed `LocalOcr` from `ServiceHealthDto` and health check block.
+- `AlplaPortal.Domain/Entities/DocumentExtractionSettings.cs` — `[Obsolete]` attributes on `LocalOcr*` fields.
+- `AlplaPortal.Application/Interfaces/Extraction/IDocumentExtractionProvider.cs` — Updated `Name` doc comment.
+
+**Frontend — Modified Files**
+- `pages/Settings/DocumentExtractionSettings.tsx` — Removed LOCAL_OCR dropdown option and entire Local OCR config section. Removed `Cpu` icon import. Updated OpenAI label.
+- `pages/Admin/ServiceDiagnosis.tsx` — Removed `localOcr` from `DiagnosisData` interface, removed "Serviço OCR" card, updated skeleton count and diagnostic notes.
+- `pages/Admin/IntegrationHealth.tsx` — Updated OcrServiceCard description (removed "Local OCR e" text), updated status logic to check only OpenAI.
+- `types/index.ts` — Removed `localOcr*` fields from `DocumentExtractionSettingsDto`.
+
+**Documentation**
+- `docs/DECISIONS.md` — Added DEC-130.
+- `docs/VERSION.md` — Version bumped to v2.128.0.
+- `docs/ARCHITECTURE.md` — Updated provider selection note.
+- `docs/ui/ADMIN_MENUS_REFERENCE.md` — Updated code snippets.
+
 ## [v2.127.0] - 2026-05-21
 
 ### Changed — Dashboard Redesign: Operational Cockpit (DEC-129)

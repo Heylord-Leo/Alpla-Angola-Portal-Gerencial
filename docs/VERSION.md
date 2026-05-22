@@ -2,7 +2,18 @@
 
 ## Current Version
 
-v2.127.0
+v2.128.0
+
+## [2.128.0] - 2026-05-22
+
+### Changed — Remove LOCAL_OCR Provider, Consolidate OpenAI (DEC-130)
+- LOCAL_OCR (PaddleOCR/Tesseract) provider removed from the system. OpenAI is now the sole active document extraction provider.
+- Deleted: `LocalOcrExtractionProvider.cs`, legacy `OcrService.cs`, legacy `IOcrService.cs`.
+- Configuration: `appsettings.json` default changed to `OPENAI`, `LocalOcr` section removed, OpenAI enabled by default.
+- Backend: LOCAL_OCR fallback guard — if database still has `DefaultProvider = "LOCAL_OCR"`, system warns and falls back to OPENAI.
+- Database: `LocalOcr*` columns marked `[Obsolete]`, retained for EF Core compatibility, cleared on save.
+- Frontend: LOCAL_OCR option removed from provider dropdown, Local OCR settings section removed, diagnostics cards updated.
+- Decision: DEC-130.
 
 ## [2.127.0] - 2026-05-21
 

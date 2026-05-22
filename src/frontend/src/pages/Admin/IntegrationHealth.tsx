@@ -310,7 +310,7 @@ function OcrServiceCard({ status }: { status: string | null }) {
                 </span>
             </div>
             <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
-                Monitorização da comunicação com os serviços de extração de dados de facturas, cotações e documentos operacionais (Local OCR e OpenAI).
+                Monitorização da comunicação com o serviço de extração de dados de facturas, cotações e documentos operacionais (OpenAI).
             </p>
             <div style={{ marginTop: '0.75rem', fontSize: '0.65rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', opacity: 0.6 }}>
                 Diagnóstico interno — não é provedor de integração externo
@@ -341,7 +341,7 @@ export function IntegrationHealth() {
 
             if (healthData) {
                 setOcrStatus(
-                    healthData.localOcr?.status === 'Healthy' || healthData.openAi?.status === 'Healthy'
+                    healthData.openAi?.status === 'Healthy'
                         ? 'Operacional'
                         : 'Indisponível'
                 );

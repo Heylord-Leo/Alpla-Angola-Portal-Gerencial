@@ -56,7 +56,7 @@ export function AssignEquipmentModal({ equipmentId, onClose, onSuccess }: Props)
 
     // Load all portal users once for search
     const [allUsers, setAllUsers] = useState<UserOption[]>([]);
-    const [usersLoaded, setUsersLoaded] = useState(false);
+    const [_usersLoaded, setUsersLoaded] = useState(false);
 
     useEffect(() => {
         const loadUsers = async () => {

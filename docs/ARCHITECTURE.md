@@ -44,7 +44,7 @@ The portal uses a provider-agnostic abstraction for extracting structured data f
 - **Abstraction**: `IDocumentExtractionService` (Orchestrator) and `IDocumentExtractionProvider` (Engine).
 - **Internal Model**: `ExtractionResultDto` (Stable canonical model).
 - **Field Propagation**: All extracted fields must follow the [Document Extraction Field Propagation Standard](DOCUMENT_EXTRACTION_FIELD_PROPAGATION_STANDARD.md) to ensure front-to-back integrity.
-- **Provider Selection**: Driven by configuration key `DocumentExtraction:Provider` (e.g., `LOCAL_OCR`). Defaults to `LOCAL_OCR` if missing or invalid.
+- **Provider Selection**: Driven by configuration key `DocumentExtraction:DefaultProvider`. Defaults to `OPENAI`. The `LOCAL_OCR` provider was removed in v2.128.0 (DEC-130). The abstraction supports future providers (e.g., Azure Document Intelligence).
 - **Legacy Support**: `RequestsController` utilizes a dedicated mapper to bridge the internal stable model to the legacy JSON shape expected by the current frontend.
 
 ## Authentication / Credentials

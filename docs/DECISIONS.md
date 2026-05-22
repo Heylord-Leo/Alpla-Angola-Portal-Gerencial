@@ -2,6 +2,24 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-130 — Remove LOCAL_OCR Provider, Consolidate on OpenAI
+
+- **Date:** 2026-05-22
+- **Status:** Accepted
+- **Context:** The local OCR provider (PaddleOCR/Tesseract, deployed as a Python service on `localhost:5005`) was not meeting business needs for document extraction accuracy. The OpenAI Vision provider consistently delivered better structured extraction results for invoices, quotations, and contracts. Maintaining two providers added operational complexity (Docker container, health checks, configuration surface) without proportional value.
+- **Decision:** Remove LOCAL_OCR as a supported extraction provider and consolidate on OpenAI as the sole active provider.
+    1. **Deleted files:** `LocalOcrExtractionProvider.cs` (provider implementation), `OcrService.cs` (legacy dead-code service), `IOcrService.cs` (legacy dead-code interface).
+    2. **Configuration:** `appsettings.json` default changed from `LOCAL_OCR` to `OPENAI`. The `LocalOcr` config section was removed. OpenAI is now enabled by default.
+    3. **Backward compatibility:** If the database still contains `DefaultProvider = "LOCAL_OCR"`, the system logs a warning and falls back to `OPENAI`. The application does not crash.
+    4. **Database columns:** `LocalOcrEnabled`, `LocalOcrBaseUrl`, `LocalOcrTimeoutSeconds` columns in `DocumentExtractionSettings` are retained (no migration) but marked `[Obsolete]`. They are cleared to `false/null` on every settings save.
+    5. **Provider abstractions preserved:** `IDocumentExtractionProvider`, `ProviderSettings`, and the multi-provider DI pattern remain intact for future Azure Document Intelligence integration.
+    6. **Frontend:** LOCAL_OCR option removed from provider dropdown. The entire "Local OCR" settings section removed. OpenAI label changed from "Experimental" to primary.
+    7. **Diagnostics:** "Serviço OCR" card removed from Service Diagnosis. Integration Health card updated to reference only OpenAI. Admin Diagnostics health endpoint no longer returns `localOcr` status.
+- **Alternatives considered:** (1) Fixing PaddleOCR accuracy (rejected: fundamental accuracy limitations with Portuguese/Angolan document formats). (2) Keeping LOCAL_OCR as a dormant fallback (rejected: dead code and UI complexity for zero value). (3) Migrating to Azure Document Intelligence immediately (rejected: not ready — kept as future placeholder).
+- **Consequences:** The system no longer requires or attempts to connect to `http://localhost:5005`. Docker deployments can remove the Python OCR container. Future providers can be added via the existing `IDocumentExtractionProvider` abstraction.
+
+---
+
 ## DEC-129 — Dashboard Redesign: Operational Cockpit
 
 - **Date:** 2026-05-21

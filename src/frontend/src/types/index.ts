@@ -470,9 +470,6 @@ export interface DocumentExtractionSettingsDto {
     defaultProvider: string;
     isEnabled: boolean;
     globalTimeoutSeconds: number;
-    localOcrEnabled: boolean;
-    localOcrBaseUrl?: string;
-    localOcrTimeoutSeconds?: number;
     openAiEnabled: boolean;
     openAiModel?: string;
     openAiTimeoutSeconds?: number;
