@@ -393,6 +393,67 @@ export interface DashboardSummaryDto {
     filteredTotalTrendLabel: string | null;
 }
 
+// ── Cockpit Summary (Dashboard Operational Cockpit) ──
+
+export interface CockpitSummaryDto {
+    // My Work Queue
+    myPendingActions: number;
+    myUrgentItems: number;
+    myAdjustmentItems: number;
+    myOverdueItems: number;
+    myNearDeadlineItems: number;
+
+    // Pipeline counters
+    totalActiveRequests: number;
+    draft: number;
+    waitingQuotation: number;
+    waitingAreaApproval: number;
+    waitingFinalApproval: number;
+    inAdjustment: number;
+    awaitingPo: number;
+    awaitingPayment: number;
+    paymentCompleted: number;
+    waitingReceipt: number;
+    completed: number;
+
+    // Bottlenecks
+    bottlenecks: StageBottleneckDto[];
+
+    // Financial
+    financialByStatus: FinancialByStatusDto[];
+
+    // Alerts
+    alerts: AttentionAlertDto[];
+}
+
+export interface StageBottleneckDto {
+    stageCode: string;
+    stageName: string;
+    count: number;
+    oldestCreatedAtUtc: string | null;
+}
+
+export interface FinancialByStatusDto {
+    groupLabel: string;
+    totalAmount: number;
+    currencyCodes: string[];
+    count: number;
+}
+
+export interface AttentionAlertDto {
+    id: string;
+    requestId: string;
+    requestNumber: string;
+    title: string;
+    reason: string;
+    responsibleArea: string;
+    alertType: string;  // OVERDUE | NEAR_DEADLINE | STUCK | ADJUSTMENT
+    severity: string;   // CRITICAL | WARNING | INFO
+    createdAtUtc: string;
+    targetPath: string;
+}
+
+
 export interface PagedResult<T> {
     items: T[];
     totalCount: number;

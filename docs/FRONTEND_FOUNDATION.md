@@ -146,23 +146,55 @@ The "Copy Request" feature allows a user to create a new request using an existi
    - **Secondary Action**: `CANCELAR` is replaced by `DESCARTAR CÓPIA` to clarify that no persisted record is being deleted.
    - **Navigation Protection**: Standard `beforeunload` protection applies if the form has been touched.
 
-## Modern Dashboard Workspace (v2.40.0)
+## Dashboard — Operational Cockpit (DEC-129)
 
-The Modern Dashboard is the unified entry point. It has been completely redesigned around the `ActionCarouselWidget` to maximize real-estate and guide immediate action focus.
+The Dashboard (`/`) is the unified entry point, redesigned as an operational cockpit focused on action, priorities, exceptions, bottlenecks, and financial visibility.
 
-### Operational Overview Segment
+### Data Source
 
-1. **Action Carousel ("Para Minha Ação")**:
-    - A dynamic, fluidly scrolling horizontal container displaying high-urgency requests.
-    - Clickable action cards using the Modern Corporate soft-elevation standard and integrated Kebab Menus.
-2. **Status Grouping & Filter Dropdowns**:
-    - Custom `<FilterDropdown />` wrappers now group isolated statuses into user-friendly semantic modules: `INICIAL`, `APROVAÇÃO & COTAÇÃO`, `FINANCEIRO & RECEBIMENTO`, and `FINALIZADOS`.
-    - This eliminates cognitive overload when filtering standard queues.
-3. **Floating UI & Pagination Centralization**:
-    - "Total Filtrado" trackers and secondary actions are rendered as "Floating Widgets" (absolute/fixed position anchoring bottom-right).
-    - **Pagination rules**: All table pagination controls must be strictly centered at the bottom of the table to prevent `z-index` clashing with the floating summary cards. 
-4. **Attention Highlighting**:
-    - Automatic Urgency categorization (`needByDateUtc`) maps into priority highlights utilizing `var(--color-status-amber)` or `var(--color-status-rose)`.
+A dedicated `GET /api/v1/requests/cockpit-summary` endpoint returns all data in a single call (`CockpitSummaryDto`). It reuses `GetScopedRequestsQuery()` and the existing `myTasksCriteria` expression for role-based filtering. The old `GET /api/v1/requests/summary` endpoint is untouched (used by the Requests page).
+
+### Layout Sections (top to bottom)
+
+1. **Minha Fila de Trabalho** (`MyWorkQueue.tsx`):
+    - 5 role-contextual KPI cards: Aguardando Minha Ação, Urgentes (today/tomorrow), Em Reajuste, Atrasados, Próximos da Data (3 days).
+    - Cards with value=0 are hidden (except the main "pending" card which always shows).
+    - Counters are derived from the backend `myTasksCriteria` expression — see `task.md` for exact role-based status mapping.
+
+2. **Visão do Pipeline** (inline in `Dashboard.tsx`):
+    - 10 compact status counter cards: Activos, Ag. Cotação, Aprov. Área, Aprov. Final, Reajuste, Ag. PO, Ag. Pagamento, Pago, Recebimento, Concluídos.
+    - Each card links to the corresponding filtered Requests list.
+    - Color-coded accent bars and hover elevation effects.
+
+3. **Ações Rápidas** (`QuickActions.tsx`):
+    - 6 role-aware action buttons: Novo Pedido, Ver Pedidos, Gestão de Cotações (Buyer), Centro de Aprovações (Approvers), Pagamentos (Finance), Recebimentos (Receiving).
+    - Each action is visible only if the user has the required role.
+
+4. **Atenção Requerida** (`AlertList.tsx`):
+    - Always visible. Empty state: "Nenhuma atenção crítica no momento."
+    - Alerts sorted by severity: CRITICAL → WARNING → INFO.
+    - Types: OVERDUE (>7 days = CRITICAL), NEAR_DEADLINE, ADJUSTMENT.
+    - Each alert is clickable and navigates to the request detail.
+
+5. **Gargalos do Processo** (`BottleneckTable.tsx`):
+    - Table showing workflow stages ordered by stuck request count.
+    - Visual distribution bars (proportional to max count).
+    - Age column with color-coded badges: >14d red, >7d orange, >3d yellow, ≤3d green.
+    - Empty state: "Nenhum gargalo significativo no momento."
+
+6. **Resumo Financeiro** (`FinancialSummary.tsx`):
+    - Financial cards grouped by status: Em Aprovação, Aprovado / Ag. PO, Pendente Pagamento, Pago / Finalizado.
+    - Uses selected quotation amount when available, falls back to estimated total.
+    - Multi-currency aware: shows "Multi-moeda" label when currencies differ.
+    - Empty state when no financial metrics are available — no fake data.
+
+7. **Como funciona o processo** (collapsible `<details>`, collapsed by default):
+    - Preserves the existing `WorkflowInteractive` and `WorkflowStageDetails` components.
+    - Educational/onboarding content, not operational.
+
+### V2 Filter Readiness
+
+The `cockpit-summary` endpoint and frontend state are structured to accept optional query params (`companyId`, `plantId`, `departmentId`, `periodStart`, `periodEnd`) in a future V2 without requiring layout changes.
 
 ### Status and Action Badges
 
@@ -188,9 +220,9 @@ For `QUOTATION` requests, the `RequestEdit.tsx` component implements a **UI Pivo
 - **Identity Selection**: For COTAÇÃO requests, the "Winning Quotation" is the source of truth for the receiving operations.
 
 ---
-### Interactive Workflow (Educational Segment)
+### Interactive Workflow (Educational Segment — Collapsible)
 
-A non-operational, instructional guide to the purchasing process.
+A non-operational, instructional guide to the purchasing process, now rendered inside a `<details>` element at the bottom of the Dashboard, collapsed by default.
 
 1. **Main Path Dominance**: The workflow emphasizes the primary linear path (Rascunho to Execução) with clean connectors and explicit stage labels. Selected stages are clearly dominant, while non-selected stages maintain enough visual presence for readability.
 2. **Role Identification**: Each stage includes a short, clean role label (`Solicitante`, `Comprador`, `Aprovador Área`, `Aprovador Final`, `Processo`) for immediate clarity on responsibility.

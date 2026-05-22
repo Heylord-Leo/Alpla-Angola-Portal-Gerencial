@@ -2,7 +2,17 @@
 
 ## Current Version
 
-v2.126.0
+v2.127.0
+
+## [2.127.0] - 2026-05-21
+
+### Changed — Dashboard Redesign: Operational Cockpit (DEC-129)
+- Dashboard transformed from generic overview page to operational management cockpit.
+- New `GET /api/v1/requests/cockpit-summary` endpoint (CockpitSummaryDto) — scope-aware, single call for all dashboard data.
+- 7-section frontend layout: My Work Queue (5 KPI cards), Pipeline Vision (10 status cards), Quick Actions (6 role-aware), Attention Alerts (severity-sorted), Process Bottlenecks (visual distribution bars + age badges), Financial Summary (multi-currency aware), Workflow Guide (collapsible at bottom).
+- New components: MyWorkQueue.tsx, AlertList.tsx, BottleneckTable.tsx, FinancialSummary.tsx.
+- QuickActions rewritten with role-based visibility. Fixed Novo Pedido route from `/requests/create` to `/requests/new`.
+- Decision: DEC-129.
 
 ## [2.126.0] - 2026-05-21
 

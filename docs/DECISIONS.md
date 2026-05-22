@@ -2,6 +2,26 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-129 — Dashboard Redesign: Operational Cockpit
+
+- **Date:** 2026-05-21
+- **Status:** Accepted
+- **Context:** The Dashboard page mixed generic KPI cards, a weak "Atenção Requerida" section (which returned `null` when empty), and a large Workflow Interactive guide that dominated ~50% of the viewport. It felt more like a presentation/training page than an operational tool.
+- **Decision:** Redesign the Dashboard as an operational cockpit focused on action, priorities, exceptions, bottlenecks, and financial visibility.
+    1. **New dedicated endpoint:** `GET /api/v1/requests/cockpit-summary` returns all data for the Dashboard in a single call. The existing `GET /api/v1/requests/summary` is untouched — it is used by the Requests page.
+    2. **"Minha Fila de Trabalho" section:** 5 role-contextual cards showing: `Aguardando minha ação` (myTasksCriteria-based), `Urgentes` (today/tomorrow), `Em Reajuste`, `Atrasados`, `Próximos da data`. Only cards with items (+ the main "pending" card) are shown.
+    3. **Pipeline KPI cards:** 10 compact status counters (Activos, Ag. Cotação, Aprov. Área, Aprov. Final, Reajuste, Ag. PO, Ag. Pagamento, Pago, Recebimento, Concluídos) with click-through to filtered request lists.
+    4. **Quick Actions:** Expanded from 3 to 6 role-aware actions (Novo Pedido, Ver Pedidos, Cotações, Centro de Aprovações, Pagamentos, Recebimentos). Each visible only if the user has the required role.
+    5. **"Atenção Requerida":** Always visible. Empty state shows "Nenhuma atenção crítica no momento." Alerts are severity-sorted (CRITICAL → WARNING → INFO) and include overdue, near-deadline, and adjustment items.
+    6. **Bottlenecks table:** Visual distribution bars showing which workflow stages have the most requests stuck, with age indicators (color-coded by urgency).
+    7. **Financial summary:** Aggregated totals by status group (Em Aprovação, Aprovado, Pendente Pagamento, Pago). Multi-currency aware. Shows only reliable data — no fake metrics.
+    8. **Workflow guide:** Moved to a collapsible `<details>` at the bottom, collapsed by default. Available for onboarding but not dominating operational space.
+    9. **No global filters in V1:** Dashboard relies on existing role-based and scope-based filtering from `GetScopedRequestsQuery()`. The endpoint and frontend state are structured to support Empresa/Planta/Período filters in V2.
+- **Alternatives considered:** (1) Modifying the existing `/summary` endpoint (rejected: risk of breaking the Requests page). (2) Implementing global filters in V1 (rejected: scope creep — the role scoping already provides meaningful personalization). (3) Removing the Workflow guide entirely (rejected: still valuable for onboarding).
+- **Consequences:** The Dashboard becomes an actionable operational tool. The old `AttentionList` component is superseded by the new `AlertList`. The old generic KPI cards are replaced by the `MyWorkQueue` and Pipeline sections. The Workflow guide remains accessible but de-emphasized.
+
+---
+
 ## DEC-128 — HR Attendance: PunchWithoutPeriod Status Detection
 
 - **Date:** 2026-05-21

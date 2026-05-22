@@ -2,6 +2,41 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.127.0] - 2026-05-21
+
+### Changed — Dashboard Redesign: Operational Cockpit (DEC-129)
+
+**Summary**: The Dashboard has been completely redesigned from a generic overview/training page into an operational management cockpit focused on action, priorities, exceptions, bottlenecks, and financial visibility.
+
+**Backend — New Endpoint**
+- **`GET /api/v1/requests/cockpit-summary`**: Dedicated Dashboard endpoint returning all cockpit data in a single call. Uses `GetScopedRequestsQuery()` for role-based filtering and the existing `myTasksCriteria` expression for "My Work Queue" counters. The existing `GET /api/v1/requests/summary` endpoint is unchanged.
+- **`CockpitSummaryDto`**: Comprehensive DTO with my-work counters (pending, urgent, adjustment, overdue, near-deadline), pipeline KPIs (10 status counters), bottleneck analysis (stage distribution + oldest request age), financial aggregation (by status group, multi-currency aware), and severity-sorted attention alerts.
+
+**Frontend — New Layout (7 sections)**
+1. **Minha Fila de Trabalho** (`MyWorkQueue.tsx`): 5 role-contextual KPI cards. Cards with value=0 auto-hide (except the main "pending" card).
+2. **Visão do Pipeline**: 10 compact status counter cards with click-through to filtered Requests lists. Color-coded accent bars and hover effects.
+3. **Ações Rápidas** (`QuickActions.tsx`): Expanded from 3 to 6 role-aware actions (Novo Pedido, Ver Pedidos, Cotações, Aprovações, Pagamentos, Recebimentos).
+4. **Atenção Requerida** (`AlertList.tsx`): Always visible. Severity-sorted alerts (CRITICAL → WARNING → INFO) with click-through. Professional empty state.
+5. **Gargalos do Processo** (`BottleneckTable.tsx`): Visual distribution bars showing request concentration by workflow stage, with color-coded age badges.
+6. **Resumo Financeiro** (`FinancialSummary.tsx`): Financial cards by status group. Multi-currency aware. No fake data — proper empty state.
+7. **Como funciona o processo**: Workflow guide moved to collapsible `<details>` at bottom, collapsed by default.
+
+### Files Changed
+- `backend/AlplaPortal.Application/DTOs/Requests/CockpitSummaryDto.cs` — [NEW] DTO definitions.
+- `backend/AlplaPortal.Api/Controllers/RequestsController.cs` — Added `GetCockpitSummary` endpoint.
+- `frontend/src/types/index.ts` — Added cockpit TypeScript interfaces.
+- `frontend/src/lib/api.ts` — Added `getCockpitSummary` API method.
+- `frontend/src/pages/Dashboard/Dashboard.tsx` — Complete rewrite (cockpit layout).
+- `frontend/src/pages/Dashboard/components/MyWorkQueue.tsx` — [NEW] My work queue component.
+- `frontend/src/pages/Dashboard/components/AlertList.tsx` — [NEW] Attention alerts component.
+- `frontend/src/pages/Dashboard/components/BottleneckTable.tsx` — [NEW] Bottleneck analysis component.
+- `frontend/src/pages/Dashboard/components/FinancialSummary.tsx` — [NEW] Financial summary component.
+- `frontend/src/pages/Dashboard/components/QuickActions.tsx` — Rewritten with role-aware actions.
+- `docs/DECISIONS.md` — DEC-129.
+- `docs/FRONTEND_FOUNDATION.md` — Updated Dashboard section.
+
+---
+
 ## [v2.126.0] - 2026-05-21
 
 ### Fixed — HR Attendance: "Falta" Status Despite Valid Punches (DEC-128)

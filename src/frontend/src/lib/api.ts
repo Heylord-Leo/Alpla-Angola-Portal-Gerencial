@@ -1,4 +1,4 @@
-import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, DocumentExtractionSettingsDto, SmtpSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto } from '../types';
+import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, SmtpSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto } from '../types';
 import { logger, FrontendComponentKey } from './logger';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
@@ -182,6 +182,11 @@ export const api = {
         getDashboardSummary: async (): Promise<DashboardSummaryDto> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/summary`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar sumário do dashboard.');
+            return response.json();
+        },
+        getCockpitSummary: async (): Promise<CockpitSummaryDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/cockpit-summary`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar cockpit operacional.');
             return response.json();
         },
         getPurchasingSummary: async (): Promise<PurchasingSummaryDto> => {
