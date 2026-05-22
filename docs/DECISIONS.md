@@ -2,6 +2,22 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-133 — AOVIA1VMS011 Deployment Architecture & Security Decisions
+
+- **Date:** 2026-05-22
+- **Status:** Accepted
+- **Context:** Deploying the Alpla Angola Portal Gerencial (React + Vite SPA frontend, .NET 8 API backend, SQL Server relational database) to the shared VM server `AOVIA1VMS011` required aligning on critical infrastructure choices: database centralization vs local isolation, SSL/HTTPS bindings, security policy, and path-traversal remediation.
+- **Decision:**
+    1. **Local Database Isolation (Option A Accepted):** The Portal Gerencial production database will remain locally on `AOVIA1VMS011` as a dedicated database named `AlplaPortal`. Centralizing on `AOVIA1VMS012\SQLALPLA` is officially rejected.
+    2. **Strict Innux Database Segregation:** Under no circumstances will any existing `Innux`, `Innuxtime`, or `INUTIME` attendance databases on `AOVIA1VMS011` be touched, modified, or reused. The `AlplaPortal` database must co-exist on a general-purpose SQL instance (`MSSQLSERVER` or `MSSQLSERVER01`) with completely isolated resources, schemas, and permissions to guarantee operational safety.
+    3. **SSL / HTTPS Provisioning:** To ensure robust communication security, HTTPS is planned from day one. A valid SSL certificate file is pre-deployed and locally accessible at `C:\dev\alpla-portal\82460ec13b4d0f90a349c960c5e45ac8.pfx`.
+    4. **Secure Password Handling Policy:** The PFX certificate password must never be documented, stored in scripts, configuration files, or committed to source control. Import procedures (GUI Wizard or secure memory parameters in PowerShell using `Read-Host -AsSecureString`) are mandated.
+    5. **Path Traversal Remediation:** To prevent file uploads from default-writing to `C:\data\attachments` and potentially exhausting system drive storage when deployed under IIS, the hardcoded path resolution in `AttachmentsController.cs` must be refactored to read from configuration key `AppConfig:UploadStoragePath`, targeting `D:\AlplaPortal\Attachments` in production.
+    6. **Unified Single-Site Architecture:** IIS will host the static frontend on the root `D:\AlplaPortal\Frontend` and reverse-proxy all `/api/*` traffic via the URL Rewrite Module to the backend API hosted as an IIS sub-application (`D:\AlplaPortal\Api`).
+- **Consequences:** The deployment topology is fully defined and documented in the readiness assessment and implementation plan. Security parameters, folder permissions, and database boundaries are established, allowing for clean provisioning once authorization is granted.
+
+---
+
 ## DEC-132 — Guided Tour Evolution: Registry-Based Multi-Tour Architecture
 
 - **Date:** 2026-05-22

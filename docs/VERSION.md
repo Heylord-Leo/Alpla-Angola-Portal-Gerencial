@@ -2,7 +2,27 @@
 
 ## Current Version
 
-v2.137.0
+v2.139.0
+
+## [2.139.0] - 2026-05-22
+
+### Added — AOVIA1VMS011 Deployment Architecture Updates & Implementation Plan (DEC-133)
+- **Local Database Isolation Strategy**: Formally updated `docs/SERVER_AOVIA1VMS011_READINESS_ANALYSIS.md` to reflect Leonardo's decision to host the dedicated database `AlplaPortal` locally on a general-purpose SQL Server instance (MSSQLSERVER/MSSQLSERVER01) on server `AOVIA1VMS011` (Option A). Stressed absolute isolation from Innux attendance databases.
+- **SSL / HTTPS Provisioning Policy**: Documented the PFX certificate path at `C:\dev\alpla-portal\82460ec13b4d0f90a349c960c5e45ac8.pfx` and instituted a strict security guideline prohibiting the storage of the certificate password in any scripts, markdown files, configuration files, or logs.
+- **Deployment Implementation Plan**: Authored `docs/AOVIA1VMS011_DEPLOYMENT_IMPLEMENTATION_PLAN.md` spanning Phase A (Pre-deployment code correction in `AttachmentsController.cs`), Phase B (Server setup, IIS URL Rewrite, directory layout D:\AlplaPortal\), Phase C (SQL Server database creation), Phase D (Secure SSL certificate import), Phase E (appsettings.Production.json template), Phase F (Frontend & Backend publishing), and Phase G (Comprehensive Validation and Smoke Testing checklist).
+- **Decisions Log DEC-133**: Formalized technical and security decisions surrounding database isolation, HTTPS provisioning, path traversal fix, and IIS topology in `docs/DECISIONS.md`.
+
+## [2.138.0] - 2026-05-22
+
+### Added — Server Deployment Readiness Analysis: AOVIA1VMS011 (DEC-133)
+- **Comprehensive Deployment Assessment**: Generated a detailed, read-only 15-section readiness report under `docs/SERVER_AOVIA1VMS011_READINESS_ANALYSIS.md` for Windows Server `AOVIA1VMS011` to host the Portal Gerencial (.NET 8 + React Vite + SQL Server).
+- **Environment Inventory**: Documented OS (Windows Server 2022 Standard), dedicated system drive C: (61.98 GB free), empty data drive D: (199.88 GB free), and shared status (hosts Innux database instances).
+- **IIS Web Server Gap Analysis**: Identified missing `Web-Server (IIS)` role and **IIS URL Rewrite Module v2.1** as critical blockers on the server.
+- **SQL Server Strategy Recommendation**: Documented local SQL Server 2019 instances (`MSSQLSERVER`, `MSSQLSERVER01`, `INNUX`, `INUTIME`, `INNUXTIME`) and formally recommended Option B: host the database on the ERP database server `AOVIA1VMS012\SQLALPLA` next to Primavera databases.
+- **Path Traversal Security Fix**: Audited `AttachmentsController.cs` and discovered a hardcoded relative path traversal vulnerability resolving to `C:\data\attachments`. Recommended refactoring it to load from `appsettings.Production.json` and map to `D:\AlplaPortal\Attachments`.
+- **Integration Configuration Audit**: Cataloged development mappings to Primavera (`AOVIA1VMS012\SQLALPLA`) and Innux (`np:\\AOVIA1VMS012\pipe\MSSQL$SQLINNUX\sql\query`) for production enablement guidance.
+- **Production Architecture Design**: Detailed a single-site Unified Reverse Proxy architecture mapping Port 80/443 traffic to static frontend on `D:` and reverse-proxying `/api` requests back to .NET Kestrel backend, bypassing all CORS issues.
+- **Backup & Telemetry Recommendations**: Outlined daily database backups, incremental attachment logs, Serilog daily rotation on `D:\AlplaPortal\Logs`, and Event Viewer logging.
 
 ## [2.137.0] - 2026-05-22
 

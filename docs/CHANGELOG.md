@@ -2,6 +2,48 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.139.0] - 2026-05-22
+
+### Added — AOVIA1VMS011 Deployment Architecture Updates & Implementation Plan (DEC-133)
+
+**Summary**: Updated the technical assessment to reflect Leonardo's finalized deployment choices for server `AOVIA1VMS011` and authored a comprehensive, step-by-step deployment preparation roadmap (`docs/AOVIA1VMS011_DEPLOYMENT_IMPLEMENTATION_PLAN.md`).
+
+**Key Updates**:
+- **Local Database Strategy**: Formally accepted local isolation (Option A) with dedicated `AlplaPortal` database on general SQL Server instances (e.g. `MSSQLSERVER` / `MSSQLSERVER01`) on `AOVIA1VMS011`. Excluded any reuse or modification of existing Innux/Innuxtime databases.
+- **HTTPS & SSL Certificate Binding**: Confirmed HTTPS planned from the start using local PFX file `C:\dev\alpla-portal\82460ec13b4d0f90a349c960c5e45ac8.pfx`. Mandated that certificate passwords must not be saved in any markdown, script, or configuration file.
+- **Deployment Implementation Plan**: Authored `docs/AOVIA1VMS011_DEPLOYMENT_IMPLEMENTATION_PLAN.md` outlining controlled preparation steps across Phases A through G, covering controller path-traversal remediation, IIS URL Rewrite, SQL database creation, secure PFX import, production configuration templates, build publishing workflows, and a validation checklist.
+- **Architectural Decision DEC-133**: Registered the finalized deployment choices, security rules, and code mitigation policies in the central `docs/DECISIONS.md` log.
+
+**Files Changed**:
+- `docs/SERVER_AOVIA1VMS011_READINESS_ANALYSIS.md` — Updated database strategy and decisions checklist.
+- `docs/AOVIA1VMS011_DEPLOYMENT_IMPLEMENTATION_PLAN.md` — [NEW] Detailed multi-phase deployment roadmap.
+- `docs/DECISIONS.md` — Registered `DEC-133` decision log.
+- `docs/VERSION.md` — Bumped version to `v2.139.0`.
+- `docs/CHANGELOG.md` — This changelog entry.
+
+---
+
+## [v2.138.0] - 2026-05-22
+
+### Added — Server Deployment Readiness Analysis: AOVIA1VMS011 (DEC-133)
+
+**Summary**: A comprehensive, read-only technical assessment and deployment readiness analysis of Windows Server `AOVIA1VMS011` for hosting the Portal Gerencial, culminating in a detailed 15-section markdown report under `docs/SERVER_AOVIA1VMS011_READINESS_ANALYSIS.md`.
+
+**Key Assessment Points**:
+- **Environment Inventory**: Running Windows Server 2022 Standard on `alpla.net`, with a dedicated system C: drive (61.98 GB free) and empty data D: drive (199.88 GB free). Hosts five local active SQL Server 2019 instances for Innux/InnuxTime employee attendance databases.
+- **IIS Web Server Readiness**: Identified missing `Web-Server (IIS)` role and **IIS URL Rewrite Module v2.1** as critical blockers on the server.
+- **Database Centralization Strategy**: Formally recommended hosting the portal database on ERP server `AOVIA1VMS012\SQLALPLA` (Option B) for optimal Primavera proximity and automatic backups.
+- **Path Traversal Security Fix**: Audited `AttachmentsController.cs` and discovered a hardcoded relative path traversal vulnerability resolving to `C:\data\attachments`. Formulated a code correction loading from `appsettings.Production.json` to map to `D:\AlplaPortal\Attachments`.
+- **Production Architecture**: Designed a single-site Unified Reverse Proxy configuration mapping Port 80/443 traffic to the static frontend and reverse-proxying `/api` requests back to the .NET Kestrel backend, bypassing all CORS issues.
+- **Backup & Telemetry Recommendations**: Outlined database backups, incremental attachment logs, Serilog rotation on `D:\AlplaPortal\Logs`, and Event Viewer logging.
+
+**Files Changed**:
+- `docs/SERVER_AOVIA1VMS011_READINESS_ANALYSIS.md` — [NEW] detailed 15-section report
+- `docs/VERSION.md` — v2.138.0
+- `docs/CHANGELOG.md` — this entry
+
+---
+
 ## [v2.137.0] - 2026-05-22
 
 ### Added — Guided Tour: Approval Drawer Tours (DEC-132)
