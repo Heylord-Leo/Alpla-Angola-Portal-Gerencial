@@ -8,25 +8,29 @@
 
 ## 1. Executive Summary
 
-This document presents a comprehensive technical assessment of Windows Server **`AOVIA1VMS011`** for hosting the production deployment of the **Alpla Angola Portal Gerencial** (ASP.NET Core .NET 8 backend API + React Vite static frontend + SQL Server database).
+This document presents a comprehensive technical assessment of Windows Server **`AOVIA1VMS011`** for hosting a **dual-environment** deployment of the **Alpla Angola Portal Gerencial** (ASP.NET Core .NET 8 backend API + React Vite static frontend + SQL Server database): **Production** and **Test/Staging**.
 
 Following a review of the initial environment scan, Leonardo has confirmed the final architecture and deployment decisions:
-1. **Local Database Strategy:** The Portal Gerencial production database must remain locally on `AOVIA1VMS011`. Centralizing on `AOVIA1VMS012\SQLALPLA` is rejected. A dedicated database named `AlplaPortal` will be created locally. No existing Innux/Innuxtime databases will be touched, reused, or modified.
-2. **SSL / HTTPS Enablement:** HTTPS is planned from the beginning. A valid SSL certificate file is already provided and available locally at `C:\dev\alpla-portal\82460ec13b4d0f90a349c960c5e45ac8.pfx` for IIS bindings.
-3. **Password Security Policy:** The certificate password has been provided separately. To enforce strict security standards, this password must never be committed to repository files, documented in markdown, printed in scripts, or logged in system logs.
+1. **Local Database Strategy:** Two dedicated databases will be hosted locally on `AOVIA1VMS011`: `[Portal-Gerencial]` (Production) and `[Portal-Gerencial-Test]` (Test/Staging). Centralizing on `AOVIA1VMS012\SQLALPLA` is rejected. Because both names contain hyphens, all SQL references must use bracket notation. No existing Innux/Innuxtime databases will be touched, reused, or modified.
+2. **Backend Port Restriction:** Port 5000 is **reserved/unavailable** on `AOVIA1VMS011` (used intermittently by another service). The backend must **never** bind to port 5000 or 5001 in **either** environment. The preferred hosting model is **IIS in-process** via the ASP.NET Core Module (ANCM), which eliminates the need for an externally visible Kestrel port entirely. If a standalone Kestrel port is technically required, it must bind only to `localhost`/`127.0.0.1` on a confirmed free port (candidates: 5100, 5101, 8081) and must **never** be opened in Windows Firewall.
+3. **SSL / HTTPS Enablement:** HTTPS is planned from the beginning. Each environment has its own SSL certificate:
+   - **Production:** `C:\dev\alpla-portal\82460ec13b4d0f90a349c960c5e45ac8.pfx`
+   - **Test/Staging:** `C:\dev\alpla-portal\334ad6893b414f90a349c960c5e45af4.pfx`
+4. **Password Security Policy:** Certificate passwords have been provided separately. To enforce strict security standards, these passwords must never be committed to repository files, documented in markdown, printed in scripts, or logged in system logs.
+5. **Dual-Environment Isolation:** Production and Test/Staging are completely isolated: separate databases, separate folder trees (`D:\PortalGerencial` vs `D:\PortalGerencial-Test`), separate IIS sites, separate application pools, separate SSL certificates, and separate configuration files. Test must **never** share production resources.
 
 ### Key Assessment Findings:
 *   **OS & Hardware:** Running **Windows Server 2022 Standard** on the internal domain `alpla.net`. It features a dedicated system drive (**C:**, 61.98 GB free) and an empty, dedicated data drive (**D:**, 199.88 GB free).
 *   **.NET Runtime:** **Ready.** Both the .NET 8 SDK (`8.0.304`) and ASP.NET Core Runtime (`8.0.8`) are fully installed on the server.
 *   **Web Server (IIS):** **NOT READY (Critical Blocker).** The `Web-Server (IIS)` role is not installed, and the **IIS URL Rewrite Module** is missing.
-*   **Database Services:** **Ready with Instance Isolation.** SQL Server 2019 is installed locally with five active instances. The Portal database will reside in a dedicated, isolated database (`AlplaPortal`) on the general-purpose `MSSQLSERVER` or `MSSQLSERVER01` instance to ensure absolute separation from the attendance systems.
+*   **Database Services:** **Ready with Instance Isolation.** SQL Server 2019 is installed locally with five active instances. The Portal database will reside in a dedicated, isolated database (`[Portal-Gerencial]`) on the general-purpose `MSSQLSERVER` or `MSSQLSERVER01` instance to ensure absolute separation from the attendance systems.
 *   **Critical Path Traversal Vulnerability:** We identified a severe hardcoded path traversal risk in the backend `AttachmentsController.cs` which attempts to resolve paths using `..\\..\\..\\data\\attachments`. Deployed under IIS, this will crash or dump production uploads directly into `C:\data\attachments`.
 
 ### Next Action Recommendation:
 Do **NOT** proceed with deployment yet. We must complete the deployment preparation phase:
 1.  Apply the pre-deployment code correction to `AttachmentsController.cs` to enable configurable storage paths.
 2.  Enable the **IIS Web Server Role** and install the **URL Rewrite Module**.
-3.  Select which general-purpose SQL Server instance (`MSSQLSERVER` vs `MSSQLSERVER01`) will host the local `AlplaPortal` database.
+3.  Select which general-purpose SQL Server instance (`MSSQLSERVER` vs `MSSQLSERVER01`) will host the local `[Portal-Gerencial]` database.
 
 ---
 
@@ -43,7 +47,7 @@ A diagnostic sweep of the server's basic operating environment was conducted to 
     | Drive | Label / Volume | File System | Total Capacity | Free Space | Utilization | Recommendation |
     | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
     | **C:** | System Drive | NTFS | 99.37 GB | **61.98 GB** | 37.6% | Operating System & Runtimes only |
-    | **D:** | Data Drive | NTFS | 199.98 GB | **199.88 GB** | 0.05% | **Dedicated Portal Root (`D:\AlplaPortal`)** |
+    | **D:** | Data Drive | NTFS | 199.98 GB | **199.88 GB** | 0.05% | **Dedicated Portal Root — Production (`D:\PortalGerencial`) + Test (`D:\PortalGerencial-Test`)** |
 
 *   **Dedication Status:** **Shared System.** This server is **not dedicated** to the Portal Gerencial. It currently hosts five active SQL Server 2019 database instances containing employee attendance data for **Innux / InnuxTime** systems (specifically instances `MSSQL15.INNUXTIME`, `MSSQL15.INUTIME`, and `MSSQL15.INNUX`).
     > [!WARNING]
@@ -59,25 +63,38 @@ The Windows Web Server infrastructure was analyzed for IIS configuration and web
 *   **ASP.NET Core Hosting Bundle:** **Installed.** The ASP.NET Core shared framework (`8.0.8`) is present in the server's registry, meaning the runtime host is ready once the IIS role is activated.
 *   **IIS URL Rewrite Module:** **NOT INSTALLED.** This module is highly critical for supporting Single Page Application (SPA) routing in React (rewriting all requests back to `index.html`) and enabling IIS to act as a reverse proxy for the backend API.
 *   **Existing Sites and Bindings:** None. No web ports (80 or 443) are currently bound.
-*   **Preferred IIS Structure for Production:**
-    To ensure zero-CORS complications and ease of certificate binding, we strongly recommend a **Unified Reverse Proxy Single-Site Architecture**:
+*   **Preferred IIS Structure (Dual-Environment):**
+    To ensure zero-CORS complications and ease of certificate binding, we strongly recommend a **Unified Reverse Proxy Single-Site Architecture** replicated per environment using hostname-based SNI bindings on port 443:
 
 ```mermaid
 graph TD
-    User([User Browser]) -->|Port 80/443| IIS[IIS Web Server: portalangola.alpla.com]
-    IIS -->|Static Routing /| FE[D:\AlplaPortal\Frontend]
-    IIS -->|URL Rewrite /api/*| BE[ASP.NET Core Kestrel API]
-    BE -->|Internal Routing| AppPool[AlplaPortalApiPool]
-    AppPool -->|Local/Remote Connection| DB[(SQL Server Database)]
+    UserProd([Production User]) -->|HTTPS 443| IIS_Prod["IIS Site: PortalGerencial.Production<br/>portalangola.alpla.com"]
+    IIS_Prod -->|Static /| FE_Prod[D:\PortalGerencial\Frontend]
+    IIS_Prod -->|ANCM /api/*| BE_Prod[ANCM In-Process]
+    BE_Prod -->|w3wp.exe| Pool_Prod[PortalGerencialApiPool]
+    Pool_Prod -->|Local SQL| DB_Prod[(Portal-Gerencial)]
+
+    UserTest([Test User]) -->|HTTPS 443| IIS_Test["IIS Site: PortalGerencial.Test<br/>portalangola-test.alpla.com"]
+    IIS_Test -->|Static /| FE_Test[D:\PortalGerencial-Test\Frontend]
+    IIS_Test -->|ANCM /api/*| BE_Test[ANCM In-Process]
+    BE_Test -->|w3wp.exe| Pool_Test[PortalGerencialTestApiPool]
+    Pool_Test -->|Local SQL| DB_Test[(Portal-Gerencial-Test)]
 ```
 
-*   **Recommended IIS Site Layout:**
-    1.  **Site Name:** `AlplaPortal.Production`
-    2.  **Physical Path:** `D:\AlplaPortal\Frontend` (Root folder housing the React Vite build index.html and assets)
-    3.  **Application Pool:** `AlplaPortalAppPool` (Integrated pipeline, No Managed Code, running as `ApplicationPoolIdentity`)
-    4.  **Bindings:** Port 80 (HTTP) redirecting to Port 443 (HTTPS) bound to hostname `portalangola.alpla.com` (or internal IP/DNS alias).
-    5.  **Backend Sub-Application or URL Rewrite Rule:** 
-        Create an IIS Sub-Application named `api` (physical path: `D:\AlplaPortal\Api`) using a dedicated pool `AlplaPortalApiPool` (No Managed Code, Integrated pipeline). Requests directed to `https://portalangola.alpla.com/api/` will be handled directly by the ASP.NET Core Kestrel process via the `AspNetCoreModuleV2`.
+*   **Recommended IIS Production Site Layout:**
+    1.  **Site Name:** `PortalGerencial.Production`
+    2.  **Physical Path:** `D:\PortalGerencial\Frontend` (Root folder housing the React Vite build index.html and assets)
+    3.  **Application Pool:** `PortalGerencialAppPool` (Integrated pipeline, No Managed Code, running as `ApplicationPoolIdentity`)
+    4.  **Bindings:** Port 80 (HTTP) redirecting to Port 443 (HTTPS) bound to hostname `portalangola.alpla.com` (or internal IP/DNS alias). SSL certificate: `82460ec13b4d0f90a349c960c5e45ac8.pfx`.
+    5.  **Backend Sub-Application (IIS In-Process Hosting):** 
+        Create an IIS Sub-Application named `api` (physical path: `D:\PortalGerencial\Api`) using a dedicated pool `PortalGerencialApiPool` (No Managed Code, Integrated pipeline). The backend runs **in-process** via `AspNetCoreModuleV2` (`hostingModel="InProcess"`) — this means the .NET process runs inside `w3wp.exe` directly, with **no separate Kestrel port exposed**. Port 5000 must **not** be used (reserved by another service on this server).
+
+*   **Recommended IIS Test/Staging Site Layout:**
+    1.  **Site Name:** `PortalGerencial.Test`
+    2.  **Physical Path:** `D:\PortalGerencial-Test\Frontend`
+    3.  **Application Pool:** `PortalGerencialTestAppPool`
+    4.  **Bindings:** Port 443 (HTTPS) bound to hostname `portalangola-test.alpla.com` via SNI. SSL certificate: `334ad6893b414f90a349c960c5e45af4.pfx`.
+    5.  **Backend Sub-Application:** `api` (physical path: `D:\PortalGerencial-Test\Api`) using pool `PortalGerencialTestApiPool`. Same in-process hosting model — no Kestrel port exposed.
 
 ---
 
@@ -109,7 +126,7 @@ The server's capability for managing Node.js and frontend builds was analyzed:
     > 1. Compilations must take place on a separate build server (or local development machine).
     > 2. Run `npm run build` on the build machine to generate the static optimized production folder: `dist/`.
     > 3. Compress the `dist` folder into a ZIP package.
-    > 4. Deploy only the static HTML, JS, and CSS files from the ZIP folder to `D:\AlplaPortal\Frontend` on `AOVIA1VMS011`.
+    > 4. Deploy only the static HTML, JS, and CSS files from the ZIP folder to `D:\PortalGerencial\Frontend` on `AOVIA1VMS011`.
 
 ---
 
@@ -131,22 +148,22 @@ The server's database hosting capabilities and active local SQL server environme
 ### The Local Database Strategy
 
 To ensure absolute safety, the local database strategy must adhere to the following rules:
-1. **Dedicated Database:** Create a brand new, dedicated database named `AlplaPortal` on `AOVIA1VMS011`.
+1. **Dedicated Database:** Create a brand new, dedicated database named `[Portal-Gerencial]` on `AOVIA1VMS011`. Because the name contains a hyphen, all SQL scripts must use bracket notation.
 2. **Absolute Separation:** Do NOT use or modify any existing Innux or Innuxtime databases (such as `INNUX`, `INNUXTIME`, or `INUTIME`).
-3. **SQL Instance Isolation:** Recommend hosting the dedicated `AlplaPortal` database on either the default instance (`MSSQLSERVER`) or the secondary general-purpose instance (`MSSQLSERVER01`).
+3. **SQL Instance Isolation:** Recommend hosting the dedicated `[Portal-Gerencial]` database on either the default instance (`MSSQLSERVER`) or the secondary general-purpose instance (`MSSQLSERVER01`).
 
 #### Recommended SQL Instance Isolation Reasoning:
 Using a general-purpose instance (`MSSQLSERVER` or `MSSQLSERVER01`) is the safest approach for the following critical reasons:
 *   **Application Separation:** Keeping the Portal's data logical structure entirely separate from the attendance databases prevents administrative clashing, accidental schema modifications, and potential security holes.
 *   **Resource Isolation:** The Innux instances are custom-configured for heavy real-time capture from clock terminals. Placing the portal database on a general instance prevents database locks and contention on active attendance tables.
-*   **Granular Security Policies:** It simplifies configuring a minimal privilege database user/login mapping specifically for the IIS Application Pool identity (`IIS APPPOOL\AlplaPortalApiPool`) without exposing access to standard Innux database credentials.
+*   **Granular Security Policies:** It simplifies configuring a minimal privilege database user/login mapping specifically for the IIS Application Pool identity (`IIS APPPOOL\PortalGerencialApiPool`) without exposing access to standard Innux database credentials.
 
 | Feature / Criteria | Option A: Local SQL Server (`MSSQLSERVER` on `AOVIA1VMS011`) | Option B: Centralized ERP Database (`AOVIA1VMS012\SQLALPLA`) |
 | :--- | :--- | :--- |
-| **Description** | Host the new `AlplaPortal` database locally on the same VM as the web server. | Centralize the new database on the dedicated ERP/Integration server (`AOVIA1VMS012`). |
+| **Description** | Host the new `[Portal-Gerencial]` database locally on the same VM as the web server. | Centralize the new database on the dedicated ERP/Integration server (`AOVIA1VMS012`). |
 | **Latency** | **Extremely Low** (Local loopback socket connection). | **Low** (Internal gigabit LAN communication). |
 | **Server Security** | Database shares resources with critical Innux attendance instances. | Hosted on a dedicated database server designed for transactional databases. |
-| **Backup Management** | Configure a dedicated SQL Server Agent backup job for `AlplaPortal` pointing to `D:\AlplaPortal\Backups`. | Automatically included in the existing daily database backups managed on `AOVIA1VMS012`. |
+| **Backup Management** | Configure a dedicated SQL Server Agent backup job for `[Portal-Gerencial]` pointing to `D:\PortalGerencial\Backups`. | Automatically included in the existing daily database backups managed on `AOVIA1VMS012`. |
 | **Resource Isolation**| Isolated to the general `MSSQLSERVER` / `MSSQLSERVER01` instances. | Web server resources are completely isolated from database processing. |
 | **Decision Status** | **APPROVED BY LEONARDO** | **REJECTED** |
 
@@ -167,8 +184,10 @@ The network connectivity, domain layout, and firewall boundaries were assessed:
     *   **Innux Integration Path:** The backend connects to the Innux named pipe (`np:\\AOVIA1VMS012\pipe\MSSQL$SQLINNUX\sql\query`).
     *   *Status:* Network path from `AOVIA1VMS011` to `AOVIA1VMS012` is verified and fully functional.
 *   **Firewall Configuration Action Plan (After Approval):**
-    1.  Create Windows Defender Firewall inbound rule: **"Allow TCP Ports 80, 443"** for Web traffic.
-    2.  No other ports (5000, 5001) should be opened externally. External users will communicate exclusively through standard HTTPS port 443, which the IIS Web Server will reverse-proxy internally.
+    1.  Create Windows Defender Firewall inbound rule: **"Allow TCP Ports 80, 443"** for Web traffic. Port 80 is optional and should redirect to 443.
+    2.  **Port 5000 is RESERVED/UNAVAILABLE** on this server (used intermittently by another service). Port 5001 is also excluded unless explicitly validated. Do **NOT** create firewall rules for ports 5000 or 5001.
+    3.  The preferred backend hosting model is **IIS in-process** (ANCM `hostingModel="InProcess"`), which requires **no externally visible backend port**. If a standalone Kestrel port is technically needed, it must bind exclusively to `localhost`/`127.0.0.1` on a confirmed free port (candidates: 5100, 5101, 8081) and must **never** be opened in the firewall.
+    4.  Public user access happens **only** through IIS HTTPS on port 443.
 
 ---
 
@@ -178,30 +197,49 @@ To safeguard the environment and implement strict application isolation, we reco
 
 ### 1. Application Pool Identity
 *   Do **NOT** run the IIS application pools under local system accounts (such as `LocalSystem` or `NetworkService`).
-*   **Recommendation:** Use the default `ApplicationPoolIdentity` (which creates dynamically managed virtual accounts `IIS APPPOOL\AlplaPortalAppPool` and `IIS APPPOOL\AlplaPortalApiPool`).
+*   **Recommendation:** Use the default `ApplicationPoolIdentity` (which creates dynamically managed virtual accounts `IIS APPPOOL\PortalGerencialAppPool` and `IIS APPPOOL\PortalGerencialApiPool`).
 *   Alternatively, if the backend API requires access to external network folder shares, request a dedicated Active Directory domain service account (e.g., `alpla\svc_portalgerencial`) with standard domain user privileges and no local administrative rights.
 
 ### 2. Folder Layout & NTFS Security ACLs
 All files should be organized on the dedicated Data Drive (**D:**) using this strict ACL permission matrix:
 
+**Production:**
 ```
-D:\AlplaPortal\
+D:\PortalGerencial\
 ├── Frontend\        (React Vite Static Build assets)
 ├── Api\             (.NET 8 Backend Api binaries)
 ├── Logs\            (Serilog Rolling API Logs)
 ├── Attachments\     (Uploaded files and documents)
 ├── Backups\         (Database and application backups)
-└── Packages\        (Deployment packages and zip builds)
+├── Packages\        (Deployment packages and zip builds)
+└── Temp\            (Temporary processing files)
 ```
+
+**Test/Staging:**
+```
+D:\PortalGerencial-Test\
+├── Frontend\        (React Vite Static Build assets)
+├── Api\             (.NET 8 Backend Api binaries)
+├── Logs\            (Serilog Rolling API Logs)
+├── Attachments\     (Uploaded files and documents)
+├── Backups\         (Database and application backups)
+├── Packages\        (Deployment packages and zip builds)
+└── Temp\            (Temporary processing files)
+```
+
+**Production ACL Matrix:**
 
 | Path | Dedicated Content | Owner / Writer | Reader / Executor | NTFS Permissions Configuration |
 | :--- | :--- | :--- | :--- | :--- |
-| `D:\AlplaPortal\Frontend` | Static HTML, CSS, JS | Administrators / Deployer | `IIS_IUSRS` / AppPool | Administrators: Full Control<br>`IIS APPPOOL\AlplaPortalAppPool`: Read & Execute |
-| `D:\AlplaPortal\Api` | Published Web API Binaries | Administrators / Deployer | `IIS_IUSRS` / AppPool | Administrators: Full Control<br>`IIS APPPOOL\AlplaPortalApiPool`: Read & Execute |
-| `D:\AlplaPortal\Logs` | API text logs | `IIS APPPOOL\AlplaPortalApiPool` | Administrators | `IIS APPPOOL\AlplaPortalApiPool`: **Read, Write, Modify**<br>Administrators: Full Control |
-| `D:\AlplaPortal\Attachments` | Request uploads & documents | `IIS APPPOOL\AlplaPortalApiPool` | `IIS APPPOOL\AlplaPortalApiPool` | `IIS APPPOOL\AlplaPortalApiPool`: **Read, Write, Modify**<br>Administrators: Full Control |
-| `D:\AlplaPortal\Backups` | Relational database backups | SQL Server Service | Administrators | SQL Server / System Backup Identity: Full Control |
-| `D:\AlplaPortal\Packages` | Deployment artifacts & zip builds| Administrators / Deployer | Administrators | Administrators: Full Control |
+| `D:\PortalGerencial\Frontend` | Static HTML, CSS, JS | Administrators / Deployer | `IIS_IUSRS` / AppPool | Administrators: Full Control<br>`IIS APPPOOL\PortalGerencialAppPool`: Read & Execute |
+| `D:\PortalGerencial\Api` | Published Web API Binaries | Administrators / Deployer | `IIS_IUSRS` / AppPool | Administrators: Full Control<br>`IIS APPPOOL\PortalGerencialApiPool`: Read & Execute |
+| `D:\PortalGerencial\Logs` | API text logs | `IIS APPPOOL\PortalGerencialApiPool` | Administrators | `IIS APPPOOL\PortalGerencialApiPool`: **Read, Write, Modify**<br>Administrators: Full Control |
+| `D:\PortalGerencial\Attachments` | Request uploads & documents | `IIS APPPOOL\PortalGerencialApiPool` | `IIS APPPOOL\PortalGerencialApiPool` | `IIS APPPOOL\PortalGerencialApiPool`: **Read, Write, Modify**<br>Administrators: Full Control |
+| `D:\PortalGerencial\Temp` | Temporary processing files | `IIS APPPOOL\PortalGerencialApiPool` | `IIS APPPOOL\PortalGerencialApiPool` | `IIS APPPOOL\PortalGerencialApiPool`: **Read, Write, Modify**<br>Administrators: Full Control |
+| `D:\PortalGerencial\Backups` | Relational database backups | SQL Server Service | Administrators | SQL Server / System Backup Identity: Full Control |
+| `D:\PortalGerencial\Packages` | Deployment artifacts & zip builds| Administrators / Deployer | Administrators | Administrators: Full Control |
+
+**Test/Staging ACL Matrix:** Identical structure with `PortalGerencial-Test` paths and `PortalGerencialTestAppPool`/`PortalGerencialTestApiPool` pool identities.
 
 ### 3. Connection Strings and Secrets Management
 *   **Risk:** Hardcoding SQL database passwords or JWT signing keys in `appsettings.json` is a major security risk.
@@ -219,7 +257,7 @@ A comparative audit of `appsettings.json` and `appsettings.Development.json` was
 ### 1. Database Connection String
 *   **Current Development:** `Server=(localdb)\\MSSQLLocalDB;Database=AlplaPortalV1;...`
 *   **Production (If Option B selected):** 
-    `Server=AOVIA1VMS012\SQLALPLA;Database=AlplaPortal;User Id=sa;Password=[REDACTED];Trusted_Connection=False;MultipleActiveResultSets=true;TrustServerCertificate=True`
+    `Server=localhost;Database=Portal-Gerencial;User Id=usr_portalgerencial;Password=[REDACTED];Trusted_Connection=False;MultipleActiveResultSets=true;TrustServerCertificate=True`
     *(Password must be securely injected via environment variable).*
 
 ### 2. Base URLs and API Endpoints
@@ -277,8 +315,8 @@ else
 }
 _storagePath = Path.GetFullPath(Path.Combine(rootDir, "data", "attachments"));
 ```
-*   **Why this breaks on IIS:** In an IIS deployment, the application runs from `D:\AlplaPortal\Api`. The folder path does not contain `\src\`. Thus, the `else` block triggers, executing `..\\..\\..` which crawls up three levels:
-    `D:\AlplaPortal\Api` $\rightarrow$ `D:\AlplaPortal` $\rightarrow$ `D:\` $\rightarrow$ System root `C:\`.
+*   **Why this breaks on IIS:** In an IIS deployment, the application runs from `D:\PortalGerencial\Api`. The folder path does not contain `\src\`. Thus, the `else` block triggers, executing `..\\..\\..` which crawls up three levels:
+    `D:\PortalGerencial\Api` $\rightarrow$ `D:\PortalGerencial` $\rightarrow$ `D:\` $\rightarrow$ System root `C:\`.
     This results in the attachments being written to **`C:\data\attachments`**.
 *   **Consequence:** File uploads will either throw a `DirectoryNotFoundException` / `UnauthorizedAccessException` due to root drive write protections, or pollute the system C: drive and exhaust its disk space.
 *   **Recommended Resolution:**
@@ -287,7 +325,7 @@ _storagePath = Path.GetFullPath(Path.Combine(rootDir, "data", "attachments"));
 // Recommended change:
 _storagePath = configuration["AppConfig:UploadStoragePath"] ?? Path.Combine(env.ContentRootPath, "data", "attachments");
 ```
-    We can then define `"UploadStoragePath": "D:\\AlplaPortal\\Attachments"` in `appsettings.Production.json`.
+    We can then define `"UploadStoragePath": "D:\\PortalGerencial\\Attachments"` in `appsettings.Production.json`.
 
 ### 2. OCR Service Analysis
 *   The system uses cloud API endpoints (Azure Document Intelligence or OpenAI) for OCR proforma analysis based on the `DocumentExtraction` config section in `appsettings.json`.
@@ -300,7 +338,7 @@ _storagePath = configuration["AppConfig:UploadStoragePath"] ?? Path.Combine(env.
 To ensure production stability, we recommend the following logging and telemetry configuration:
 
 ### 1. Production Logging Folder
-*   Configure Serilog in the API backend to output log files directly to **`D:\AlplaPortal\Logs\`**.
+*   Configure Serilog in the API backend to output log files directly to **`D:\PortalGerencial\Logs\`**.
 *   File name pattern: `log-production-.txt` (e.g. `log-production-20260522.txt`).
 
 ### 2. Log Rotation & Retention
@@ -311,11 +349,11 @@ To ensure production stability, we recommend the following logging and telemetry
 ### 3. Monitoring Infrastructure
 *   **Endpoint Telemetry:** Implement an ASP.NET Core Health Checks middleware on `/health` returning status `Healthy` (HTTP 200) only if:
     *   Local disk write/read is successful.
-    *   Database connection to `AlplaPortal` is active.
+    *   Database connection to `[Portal-Gerencial]` is active.
     *   Primavera ERP SQL connection is responsive.
 *   **Windows Event Viewer Integration:** In `Program.cs`, ensure that critical application startup failures (e.g. database migration crash) are written to the Windows Application Event Log (`EventLogLoggerProvider`) under Source `"Alpla Portal Gerencial"`.
 *   **IIS Telemetry:** Set up basic monitoring on the server to track:
-    *   CPU and Memory consumption of the `w3wp.exe` worker process assigned to `AlplaPortalApiPool`.
+    *   CPU and Memory consumption of the `w3wp.exe` worker process assigned to `PortalGerencialApiPool`.
     *   Available disk space on `D:` drive (alert if space falls below 15%).
 
 ---
@@ -328,15 +366,15 @@ A reliable, multi-tier backup strategy is critical before moving to production:
 Since **Option A (Local SQL)** is the selected database strategy, the ALPLA Database Administrator must configure a dedicated SQL Server Agent Job on the approved local instance (e.g., `MSSQLSERVER` on `AOVIA1VMS011`):
 *   **Full Backup:** Daily at 01:00 AM (Retain 14 days).
 *   **Transaction Log Backup:** Every 1 hour (Retain 2 days, required only if using Full Recovery model).
-*   **Backup Destination:** Backups must be written locally to `D:\AlplaPortal\Backups` and automatically replicated/moved to an external, secure network storage share nightly to ensure disaster recovery resilience.
+*   **Backup Destination:** Backups must be written locally to `D:\PortalGerencial\Backups` and automatically replicated/moved to an external, secure network storage share nightly to ensure disaster recovery resilience.
 
 ### 2. Uploads and Attachments Backup
-*   Configure a nightly Windows Task Scheduler batch script or backup agent to copy all new/modified files in **`D:\AlplaPortal\Attachments`** to a secure network share.
+*   Configure a nightly Windows Task Scheduler batch script or backup agent to copy all new/modified files in **`D:\PortalGerencial\Attachments`** to a secure network share.
 *   Since attachments are static documents (PDFs, JPGs), incremental file syncing is highly efficient.
 
 ### 3. Configuration & Packages
 *   Store `appsettings.Production.json` configuration variables in a secure environment backup.
-*   No need to backup the static site files (`D:\AlplaPortal\Frontend` or `D:\AlplaPortal\Api`) since they are fully reproducible and managed inside Git source control.
+*   No need to backup the static site files (`D:\PortalGerencial\Frontend` or `D:\PortalGerencial\Api`) since they are fully reproducible and managed inside Git source control.
 
 ---
 
@@ -352,13 +390,13 @@ Based on the environment analysis, here is the step-by-step architecture we reco
 2.  **Module Installation:**
     Download and install the **IIS URL Rewrite Module v2.1** (x64) from official Microsoft repositories.
 3.  **Application Directory Creation:**
-    Generate the base structure on the dedicated data drive `D:\AlplaPortal\`.
+    Generate the base structure on the dedicated data drive `D:\PortalGerencial\`.
 4.  **IIS Site Setup:**
-    Create a single IIS website bound to Port 443 with the static files at `D:\AlplaPortal\Frontend`. Add a `web.config` file in the frontend root to manage SPA URL routing (redirecting all non-file requests to `index.html` via URL Rewrite).
+    Create a single IIS website bound to Port 443 with the static files at `D:\PortalGerencial\Frontend`. Add a `web.config` file in the frontend root to manage SPA URL routing (redirecting all non-file requests to `index.html` via URL Rewrite).
 5.  **Sub-Application API Setup:**
-    Configure a sub-application under the website named `api` pointing to `D:\AlplaPortal\Api`. Ensure the App Pool `AlplaPortalApiPool` runs `.NET CLR Version: No Managed Code` (Integrated pipeline) so that IIS acts solely as a reverse proxy forwarding requests to the internal .NET Core Kestrel engine.
+    Configure a sub-application under the website named `api` pointing to `D:\PortalGerencial\Api`. The App Pool `PortalGerencialApiPool` runs `.NET CLR Version: No Managed Code` (Integrated pipeline) with **in-process hosting** (`hostingModel="InProcess"`) so the .NET process runs directly inside `w3wp.exe` — **no separate Kestrel port is exposed**.
 6.  **Code Correction Deployment:**
-    Apply the path-override fix to the backend `AttachmentsController.cs` before deploying, mapping the upload directory to `D:\AlplaPortal\Attachments`.
+    Apply the path-override fix to the backend `AttachmentsController.cs` before deploying, mapping the upload directory to `D:\PortalGerencial\Attachments`.
 
 ---
 
@@ -378,28 +416,35 @@ Below is the definitive list of technical challenges, vulnerabilities, and manag
 1.  **Brittle Code Path (Uploads Traversal):** File uploads will default to C: drive root, resulting in system permission errors or disk resource exhaustion.
     *   *Remedy:* Modify `AttachmentsController.cs` to fetch storage paths from configuration keys.
 2.  **Shared System Resource Competition:** Server is shared with five Innux SQL database instances, meaning memory or CPU spikes in Innux could slow down the Portal.
-    *   *Remedy:* Configure the IIS application pools with private memory limits (e.g. limit `AlplaPortalApiPool` to 1.5 GB RAM limit in advanced settings) to guarantee system equilibrium.
+    *   *Remedy:* Configure the IIS application pools with private memory limits (e.g. limit `PortalGerencialApiPool` to 1.5 GB RAM limit in advanced settings) to guarantee system equilibrium.
 
 ### 📋 Decisions Required from Leonardo
 
 The following strategic decisions are now **confirmed and resolved**:
-*   **Database Strategy:** Hosted locally on `AOVIA1VMS011` as a dedicated database named `AlplaPortal`, keeping complete isolation from any Innux attendance databases.
-*   **SSL / HTTPS:** HTTPS is planned from the beginning. The SSL certificate is already provided via local PFX file at `C:\dev\alpla-portal\82460ec13b4d0f90a349c960c5e45ac8.pfx`.
+*   **Database Strategy:** Two dedicated databases hosted locally on `AOVIA1VMS011`: `[Portal-Gerencial]` (Production) and `[Portal-Gerencial-Test]` (Test/Staging), keeping complete isolation from any Innux attendance databases.
+*   **Backend Port Policy:** Port 5000 is **reserved/unavailable** on this server for **both** environments. The backend uses **IIS in-process hosting** (no exposed Kestrel port). Ports 5000 and 5001 are explicitly excluded from all configurations and firewall rules.
+*   **SSL / HTTPS:** HTTPS is planned from the beginning with separate certificates per environment:
+    - Production: `C:\dev\alpla-portal\82460ec13b4d0f90a349c960c5e45ac8.pfx`
+    - Test/Staging: `C:\dev\alpla-portal\334ad6893b414f90a349c960c5e45af4.pfx`
+*   **Dual-Environment Isolation:** Test/Staging uses completely separate folders (`D:\PortalGerencial-Test`), database (`[Portal-Gerencial-Test]`), IIS sites, app pools, and configuration files.
+*   **Test/Staging Integrations:** OCR, Primavera (read-only), and Innux (read-only) are enabled. Email notifications are disabled. Write-capable integrations are blocked until explicitly approved.
 
 The following technical decisions remain **open and pending approval**:
 *   [ ] **1. Safe SQL Instance Selection:**
-    Which general local SQL Server instance on `AOVIA1VMS011` should host the dedicated `AlplaPortal` database (Recommended: default instance `MSSQLSERVER` or secondary general-purpose `MSSQLSERVER01`)?
+    Which general local SQL Server instance on `AOVIA1VMS011` should host both `[Portal-Gerencial]` and `[Portal-Gerencial-Test]` databases (Recommended: default instance `MSSQLSERVER` or secondary general-purpose `MSSQLSERVER01`)?
 *   [ ] **2. Final Production URL/DNS:**
     What is the exact production URL/DNS for the Portal (e.g. `https://portalangola.alpla.com` or an alternate internal domain/alias)?
-*   [ ] **3. IIS Installation Approval:**
+*   [ ] **3. Test/Staging URL/DNS:**
+    What is the exact Test/Staging URL/DNS (e.g. `https://portalangola-test.alpla.com`)? If DNS is not ready, a temporary fallback will be documented.
+*   [ ] **4. IIS Installation Approval:**
     Confirm formal authorization to install the IIS Web Server role on `AOVIA1VMS011` as per the implementation plan.
-*   [ ] **4. IIS URL Rewrite Module Installation Approval:**
+*   [ ] **5. IIS URL Rewrite Module Installation Approval:**
     Confirm authorization to install the URL Rewrite Module (required for SPA routing and API reverse-proxy) on `AOVIA1VMS011`.
-*   [ ] **5. Application Pool Identity / Service Account:**
-    Shall we run the IIS application pool under the standard `ApplicationPoolIdentity` (recommended) or does ALPLA require a dedicated Active Directory domain service account (e.g. `alpla\svc_portalgerencial`)?
-*   [ ] **6. Folder Permissions & Storage Path Configuration:**
-    Verify and approve the folders and NTFS permissions specified in Section 8, and confirm `D:\AlplaPortal\Attachments` as the production path for file uploads.
-*   [ ] **7. OCR & Document Extraction Strategy:**
+*   [ ] **6. Application Pool Identity / Service Account:**
+    Shall we run the IIS application pools under the standard `ApplicationPoolIdentity` (recommended) or does ALPLA require a dedicated Active Directory domain service account (e.g. `alpla\svc_portalgerencial`)?
+*   [ ] **7. Folder Permissions & Storage Path Configuration:**
+    Verify and approve the folders and NTFS permissions specified in Section 8 for **both** environments.
+*   [ ] **8. OCR & Document Extraction Strategy:**
     Confirm if document/proforma extraction (using OpenAI Vision/Azure Document Intelligence) will be active and configured in the initial production release, or disabled/configured as a subsequent phase.
 
 ---

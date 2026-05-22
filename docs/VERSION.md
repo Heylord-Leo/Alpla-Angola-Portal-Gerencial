@@ -2,15 +2,34 @@
 
 ## Current Version
 
-v2.139.0
+v2.142.0
+
+## [2.142.0] - 2026-05-22
+
+### Added — AOVIA1VMS011 Dual-Environment Strategy: Test/Staging Environment (DEC-133)
+- **Dual-Environment Architecture**: Deployment documentation restructured to support both Production and Test/Staging on `AOVIA1VMS011` with complete isolation between environments.
+- **Test/Staging Resources**: Dedicated database `[Portal-Gerencial-Test]`, folder root `D:\PortalGerencial-Test` (with Frontend, Api, Logs, Attachments, Backups, Packages, Temp), IIS site `PortalGerencial.Test`, app pools `PortalGerencialTestAppPool`/`PortalGerencialTestApiPool`.
+- **Separate SSL Certificate**: Test/Staging uses its own PFX certificate (`334ad6893b414f90a349c960c5e45af4.pfx`), separate from the Production certificate.
+- **Integration Write-Safety Matrix**: Classified all integrations by write capability. Primavera/Innux enabled as read-only in Test/Staging. Email notifications disabled by default. Write-capable integrations blocked until explicitly approved.
+- **Release Promotion Workflow**: New Build→Test→Validate→Promote→Production deployment flow documented. Direct production deployment without test validation is prohibited.
+- **Temp Folders**: Added `Temp` subfolder to both Production and Test/Staging directory structures.
+- **DEC-133 Amended**: Added decision items #8 (Dual-Environment Isolation) and #9 (Integration Write-Safety Policy).
+
+## [2.140.0] - 2026-05-22
+
+### Changed — AOVIA1VMS011 Infrastructure Corrections: Database Rename & Port Restriction (DEC-133)
+- **Database Renamed**: Production database renamed from `AlplaPortal` to `[Portal-Gerencial]`. All SQL scripts, connection strings, and documentation now use bracket notation due to the hyphen in the name.
+- **Port 5000 Restriction**: Port 5000 is reserved/unavailable on AOVIA1VMS011 (used intermittently by another service). Port 5001 also excluded. Backend must never bind to ports 5000 or 5001.
+- **IIS In-Process Hosting**: Deployment model changed from Kestrel-on-port to IIS in-process hosting (`hostingModel="InProcess"` via ANCM). No separate Kestrel port is exposed externally. All user traffic flows through IIS HTTPS on port 443.
+- **Folder Root Renamed**: Application root folder renamed from `D:\AlplaPortal` to `D:\PortalGerencial`. All subfolder references (Frontend, Api, Logs, Attachments, Backups, Packages) updated.
+- **IIS Pool Names Renamed**: Application pools renamed from `AlplaPortalAppPool`/`AlplaPortalApiPool` to `PortalGerencialAppPool`/`PortalGerencialApiPool`.
+- **IIS Site Name Renamed**: From `AlplaPortal.Production` to `PortalGerencial.Production`.
+- **Smoke Test Expanded**: Added validation step #8 (Port 5000 NOT bound) to the deployment validation checklist.
+- **DEC-133 Amended**: Added decision items #7 (Backend Port Restriction) and updated items #1, #2, #5, #6 with new naming.
 
 ## [2.139.0] - 2026-05-22
 
 ### Added — AOVIA1VMS011 Deployment Architecture Updates & Implementation Plan (DEC-133)
-- **Local Database Isolation Strategy**: Formally updated `docs/SERVER_AOVIA1VMS011_READINESS_ANALYSIS.md` to reflect Leonardo's decision to host the dedicated database `AlplaPortal` locally on a general-purpose SQL Server instance (MSSQLSERVER/MSSQLSERVER01) on server `AOVIA1VMS011` (Option A). Stressed absolute isolation from Innux attendance databases.
-- **SSL / HTTPS Provisioning Policy**: Documented the PFX certificate path at `C:\dev\alpla-portal\82460ec13b4d0f90a349c960c5e45ac8.pfx` and instituted a strict security guideline prohibiting the storage of the certificate password in any scripts, markdown files, configuration files, or logs.
-- **Deployment Implementation Plan**: Authored `docs/AOVIA1VMS011_DEPLOYMENT_IMPLEMENTATION_PLAN.md` spanning Phase A (Pre-deployment code correction in `AttachmentsController.cs`), Phase B (Server setup, IIS URL Rewrite, directory layout D:\AlplaPortal\), Phase C (SQL Server database creation), Phase D (Secure SSL certificate import), Phase E (appsettings.Production.json template), Phase F (Frontend & Backend publishing), and Phase G (Comprehensive Validation and Smoke Testing checklist).
-- **Decisions Log DEC-133**: Formalized technical and security decisions surrounding database isolation, HTTPS provisioning, path traversal fix, and IIS topology in `docs/DECISIONS.md`.
 
 ## [2.138.0] - 2026-05-22
 

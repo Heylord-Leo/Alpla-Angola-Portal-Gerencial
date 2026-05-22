@@ -2,6 +2,52 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.142.0] - 2026-05-22
+
+### Added — AOVIA1VMS011 Dual-Environment Strategy: Test/Staging Environment (DEC-133)
+
+**Summary**: Updated all AOVIA1VMS011 deployment documentation to include a completely isolated Test/Staging environment alongside Production. Each environment has its own database, folder tree, IIS site, application pools, SSL certificate, and configuration file. An integration write-safety classification and a Test→Promote→Production release workflow were added.
+
+**Key Updates**:
+- **Dual-Environment Architecture**: Both Production (`D:\PortalGerencial`) and Test/Staging (`D:\PortalGerencial-Test`) documented with complete isolation rules.
+- **Separate SSL Certificates**: Production uses `82460ec13b4d0f90a349c960c5e45ac8.pfx`; Test/Staging uses `334ad6893b414f90a349c960c5e45af4.pfx`. Certificate passwords never stored.
+- **Test Database**: `[Portal-Gerencial-Test]` with separate SQL login `usr_portalgerencial_test`. Bracket notation enforced.
+- **Integration Write-Safety Matrix**: Primavera/Innux read-only in Test/Staging. Email disabled. Write-capable integrations blocked until approved.
+- **Release Promotion Workflow**: Build → Deploy to Test → Validate → Promote to Production.
+- **Temp Folders**: Added `Temp` subfolder to both environment folder structures.
+- **DEC-133 Expanded**: Added items #8 (Dual-Environment Isolation) and #9 (Integration Write-Safety Policy).
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_DEPLOYMENT_IMPLEMENTATION_PLAN.md` — Restructured for dual-environment with full Test/Staging IIS, SQL, config, and smoke test sections.
+- `docs/SERVER_AOVIA1VMS011_READINESS_ANALYSIS.md` — Updated executive summary, architecture diagram, folder layout, and open decisions.
+- `docs/DECISIONS.md` — DEC-133 amended with items #8 and #9.
+- `docs/VERSION.md` — Bumped to v2.142.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION bumped to "2.142.0".
+
+## [v2.140.0] - 2026-05-22
+
+### Changed — AOVIA1VMS011 Infrastructure Corrections: Database Rename & Port Restriction (DEC-133)
+
+**Summary**: Applied two critical infrastructure corrections from Leonardo to the deployment documentation: (1) production database renamed from `AlplaPortal` to `[Portal-Gerencial]`, and (2) backend port 5000 restricted (reserved by another service), with IIS in-process hosting (`hostingModel="InProcess"`) now preferred to eliminate exposed Kestrel ports entirely.
+
+**Key Updates**:
+- **Database Renamed**: All references updated from `AlplaPortal` to `[Portal-Gerencial]` across readiness analysis, implementation plan, decisions log, SQL scripts, and connection strings. Bracket notation enforced due to hyphen.
+- **Port 5000 Restricted**: Port 5000 marked as reserved/unavailable. Port 5001 also excluded. Backend must never bind to these ports.
+- **IIS In-Process Hosting**: Deployment model changed from Kestrel-on-port reverse-proxy to ANCM in-process hosting. The .NET process runs inside `w3wp.exe` directly — no separate Kestrel port is exposed.
+- **Folder Root Renamed**: Application root folder renamed from `D:\AlplaPortal` to `D:\PortalGerencial` across all documents and scripts.
+- **IIS Pool/Site Names Renamed**: `AlplaPortalAppPool`/`AlplaPortalApiPool` → `PortalGerencialAppPool`/`PortalGerencialApiPool`. Site name → `PortalGerencial.Production`.
+- **Validation Checklist Expanded**: Added smoke test step #8 verifying port 5000 is NOT bound on the server.
+
+**Files Changed**:
+- `docs/SERVER_AOVIA1VMS011_READINESS_ANALYSIS.md` — Database name, folder paths, pool names, port restrictions, hosting model.
+- `docs/AOVIA1VMS011_DEPLOYMENT_IMPLEMENTATION_PLAN.md` — SQL scripts (bracket notation), connection strings, folder paths, pool names, IIS scripts, validation checklist.
+- `docs/DECISIONS.md` — Amended DEC-133 with decisions #7 (port restriction) and updated #1, #2, #5, #6.
+- `docs/VERSION.md` — Bumped version to `v2.140.0`.
+- `docs/CHANGELOG.md` — This changelog entry.
+
+---
+
 ## [v2.139.0] - 2026-05-22
 
 ### Added — AOVIA1VMS011 Deployment Architecture Updates & Implementation Plan (DEC-133)
