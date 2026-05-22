@@ -12,6 +12,7 @@ import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { SearchFilterBar } from '../../components/ui/SearchFilterBar';
 import { StandardTable, TableEmptyState } from '../../components/ui/StandardTable';
+import { GuidedTourContextButton } from '../../features/guided-tour/GuidedTourContextButton';
 
 export function ReceivingWorkspace() {
     const { user: currentUser } = useAuth();
@@ -207,23 +208,29 @@ export function ReceivingWorkspace() {
         <PageContainer>
             {/* Header */}
             <PageHeader
+                data-tour="receiving-header"
                 title="Workspace de Recebimento"
                 subtitle="Gestão operacional de entrada de materiais e conferência de pedidos."
                 icon={<Package size={28} />}
+                actions={
+                    <GuidedTourContextButton tourId="page-receiving-workspace" label="Tour da Tela" />
+                }
             />
 
             {/* Sub-header info */}
-            <div style={{ padding: '12px 20px', backgroundColor: 'rgba(var(--color-primary-rgb), 0.05)', border: '2px solid var(--color-primary)', color: 'var(--color-primary)', fontWeight: 700, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '4px 4px 0px rgba(var(--color-primary-rgb), 0.1)', borderRadius: 'var(--radius-md)' }}>
+            <div data-tour="receiving-info" style={{ padding: '12px 20px', backgroundColor: 'rgba(var(--color-primary-rgb), 0.05)', border: '2px solid var(--color-primary)', color: 'var(--color-primary)', fontWeight: 700, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '4px 4px 0px rgba(var(--color-primary-rgb), 0.1)', borderRadius: 'var(--radius-md)' }}>
                 <span style={{ backgroundColor: 'var(--color-primary)', color: '#fff', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem' }}>NOTA</span>
                 Este workspace organiza os pedidos por estágio operacional de recebimento de itens e serviços.
             </div>
 
             {/* Search */}
+            <div data-tour="receiving-search">
             <SearchFilterBar
                 searchValue={searchInput}
                 onSearchChange={setSearchInput}
                 searchPlaceholder="BUSCAR NO RECEBIMENTO..."
             />
+            </div>
 
             {feedback.message && <Feedback type={feedback.type} message={feedback.message} onClose={() => setFeedback({ ...feedback, message: null })} />}
 
@@ -231,6 +238,7 @@ export function ReceivingWorkspace() {
                 <div style={{ padding: '60px', textAlign: 'center', fontWeight: 700 }}>CARREGANDO...</div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div data-tour="receiving-pending">
                     <CollapsibleSection
                         title="Pedidos aguardando recebimento"
                         count={groups.pending.length}
@@ -239,7 +247,9 @@ export function ReceivingWorkspace() {
                     >
                         {renderTable(groups.pending)}
                     </CollapsibleSection>
+                    </div>
 
+                    <div data-tour="receiving-in-progress">
                     <CollapsibleSection
                         title="Pedidos em acompanhamento de recebimento"
                         count={groups.followup.length}
@@ -248,7 +258,9 @@ export function ReceivingWorkspace() {
                     >
                         {renderTable(groups.followup)}
                     </CollapsibleSection>
+                    </div>
 
+                    <div data-tour="receiving-completed">
                     <CollapsibleSection
                         title="Pedidos recebidos"
                         count={groups.received.length}
@@ -257,6 +269,7 @@ export function ReceivingWorkspace() {
                     >
                         {renderTable(groups.received)}
                     </CollapsibleSection>
+                    </div>
                 </div>
             )}
             

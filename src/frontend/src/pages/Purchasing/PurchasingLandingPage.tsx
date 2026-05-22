@@ -9,6 +9,7 @@ import { Feedback } from '../../components/ui/Feedback';
 import { PlayCircle } from 'lucide-react';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
+import { GuidedTourContextButton } from '../../features/guided-tour/GuidedTourContextButton';
 
 export default function PurchasingLandingPage() {
     const [summary, setSummary] = useState<PurchasingSummaryDto | null>(null);
@@ -37,8 +38,12 @@ export default function PurchasingLandingPage() {
             
             {/* Header Section */}
             <PageHeader
+                data-tour="purchasing-overview"
                 title="Compras & Logística"
                 subtitle="Cockpit Operacional • Portal Gerencial ALPLA"
+                actions={
+                    <GuidedTourContextButton tourId="module-purchasing-logistics" label="Tour do Módulo" />
+                }
             />
 
             {error && <Feedback type="error" message={error} onClose={() => setError(null)} />}
@@ -51,7 +56,7 @@ export default function PurchasingLandingPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
                     
                     {/* KPI Cards Section */}
-                    <section>
+                    <section data-tour="purchasing-kpi-cards">
                         <PurchasingKPISummary summary={summary} />
                     </section>
 
@@ -64,7 +69,7 @@ export default function PurchasingLandingPage() {
                     }}>
                         
                         {/* Left Column: Attention Panel */}
-                        <section style={{ 
+                        <section data-tour="purchasing-attention-points" style={{ 
                             backgroundColor: 'var(--color-bg-surface)', 
                             padding: '24px', 
                             border: '2px solid var(--color-border)',
@@ -76,7 +81,7 @@ export default function PurchasingLandingPage() {
 
                         {/* Right Column: Quick Actions & Instructions */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-                            <section style={{ 
+                            <section data-tour="purchasing-quick-actions" style={{ 
                                 backgroundColor: 'var(--color-bg-surface)', 
                                 padding: '24px', 
                                 border: '2px solid var(--color-border)',
@@ -87,6 +92,7 @@ export default function PurchasingLandingPage() {
 
                             {/* Operational Guidance */}
                             <section 
+                                data-tour="purchasing-operation-manual"
                                 onClick={() => setIsHelpDrawerOpen(true)}
                                 style={{ 
                                     backgroundColor: 'var(--color-primary)', 

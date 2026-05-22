@@ -313,7 +313,7 @@ function CarouselCard({ order, onView, onDuplicate, onQuotationClick, onReceivin
                         fontWeight: 600,
                     }}>{order.requestNumber || 'S/N'}</span>
                 </div>
-                <div onClick={(e) => e.stopPropagation()}>
+                <div data-tour="requests-card-kebab-menu" onClick={(e) => e.stopPropagation()}>
                     <KebabMenu options={[
                         { label: 'Vis. Rápida', icon: <Eye size={16} />, onClick: onView },
                         { label: 'Duplicar', icon: <Copy size={16} />, onClick: onDuplicate }

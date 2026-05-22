@@ -5,7 +5,7 @@ import {
     Paperclip, AlertCircle, List,
     MessageSquare, Users, History as HistoryIcon, DollarSign,
     Target, TrendingUp, ArrowRightLeft, AlertTriangle, ShieldCheck,
-    BookOpen, X
+    BookOpen, X, Compass
 } from 'lucide-react';
 import { RequestDetailsDto, ApprovalIntelligenceDto } from '../../types';
 import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModal';
@@ -14,6 +14,8 @@ import { Tooltip } from '../../components/ui/Tooltip';
 import { api } from '../../lib/api';
 import { formatDate, formatCurrencyAO } from '../../lib/utils';
 import { motion } from 'framer-motion';
+import { useGuidedTourContext } from '../../features/guided-tour/GuidedTourProvider';
+import type { TourId } from '../../features/guided-tour/guidedTourTypes';
 
 // Decision specific components
 import { DecisionHeader } from './components/DecisionHeader';
@@ -69,6 +71,10 @@ export function ApprovalDetailPanel({
     currentIndex,
     totalCount
 }: ApprovalDetailPanelProps) {
+
+    // Guided tour context
+    const { startTour } = useGuidedTourContext();
+    const drawerTourId: TourId = approvalStage === 'FINAL' ? 'drawer-approval-final' : 'drawer-approval-area';
 
     // Approval modal state
     const [showApprovalModal, setShowApprovalModal] = useState<{
@@ -408,29 +414,59 @@ export function ApprovalDetailPanel({
             }}
         >
             {/* 1. DECISION HEADER (Top Navigation & Hero) */}
-            <DecisionHeader 
-                requestNumber={data.requestNumber || ''}
-                requestTypeCode={data.requestTypeCode || ''}
-                statusCode={data.statusCode || ''}
-                statusName={data.statusName || ''}
-                statusBadgeColor={data.statusBadgeColor || ''}
-                totalAmount={data.estimatedTotalAmount}
-                currencyCode={data.currencyCode || ''}
-                approvalStage={approvalStage}
-                onClose={onClose}
-                onOpenRequest={() => window.open(`/requests/${data.id}`, '_blank')}
-                onNext={onNext}
-                onPrev={onPrev}
-                currentIndex={currentIndex}
-                totalCount={totalCount}
-            />
+            <div data-tour="approval-drawer-header">
+                <DecisionHeader 
+                    requestNumber={data.requestNumber || ''}
+                    requestTypeCode={data.requestTypeCode || ''}
+                    statusCode={data.statusCode || ''}
+                    statusName={data.statusName || ''}
+                    statusBadgeColor={data.statusBadgeColor || ''}
+                    totalAmount={data.estimatedTotalAmount}
+                    currencyCode={data.currencyCode || ''}
+                    approvalStage={approvalStage}
+                    onClose={onClose}
+                    onOpenRequest={() => window.open(`/requests/${data.id}`, '_blank')}
+                    onNext={onNext}
+                    onPrev={onPrev}
+                    currentIndex={currentIndex}
+                    totalCount={totalCount}
+                />
+            </div>
 
             {/* Content Container */}
             <div style={{ maxWidth: '80rem', margin: '0 auto', width: '100%', padding: '16px 24px 96px 24px' }}>
 
                 {/* --- ACTION BAR --- */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginBottom: '16px' }}>
                     <button
+                        data-tour="approval-drawer-tour-button"
+                        onClick={() => startTour(drawerTourId)}
+                        title="Tour da Aprovação"
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '8px 16px',
+                            backgroundColor: 'rgba(var(--color-primary-rgb), 0.06)',
+                            color: 'var(--color-primary)',
+                            border: '1px solid rgba(var(--color-primary-rgb), 0.15)',
+                            borderRadius: '8px',
+                            fontWeight: 700,
+                            fontSize: '13px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            fontFamily: 'var(--font-family-display)',
+                            whiteSpace: 'nowrap',
+                        }}
+                        onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'rgba(var(--color-primary-rgb), 0.12)'; e.currentTarget.style.borderColor = 'rgba(var(--color-primary-rgb), 0.25)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                        onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'rgba(var(--color-primary-rgb), 0.06)'; e.currentTarget.style.borderColor = 'rgba(var(--color-primary-rgb), 0.15)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                    >
+                        <Compass size={14} strokeWidth={2.5} /> Tour da Aprovação
+                    </button>
+                    <button
+                        data-tour="approval-drawer-manual-button"
                         onClick={() => setShowHelp(true)}
                         style={{
                             display: 'flex',
@@ -456,7 +492,9 @@ export function ApprovalDetailPanel({
                     </button>
                 </div>
 
-                {/* --- INTELLIGENCE ALERTS --- */}
+                {/* --- INTELLIGENCE ALERTS (wrapper for tour) --- */}
+                {(hasItemAboveAvg || (isQuotation && !hasWinnerSelected) || (isAreaApprovalStage && !allAssigned)) && (
+                    <div data-tour="approval-drawer-alerts">
                 {/* Price warning banner: shown ONLY when items are above historical average */}
                 {hasItemAboveAvg && (
                     <div style={{
@@ -520,14 +558,16 @@ export function ApprovalDetailPanel({
                         </div>
                     </div>
                 )}
+                    </div>
+                )}
 
                 {/* 2. RESUMO PARA DECISÃO (Always Open Grid Context) */}
-                <div style={{ marginBottom: '32px' }}>
+                <div data-tour="approval-drawer-request-info" style={{ marginBottom: '32px' }}>
                     <DecisionSummaryGrid items={summaryItems} />
                 </div>
 
                 {/* 2.5. CONTEXTO FINANCEIRO (Gráfico de Tendência) */}
-                <div style={{ marginBottom: '32px' }}>
+                <div data-tour="approval-drawer-financial-context" style={{ marginBottom: '32px' }}>
                     <DecisionSection 
                         title="Contexto Financeiro Visual" 
                         icon={<TrendingUp size={16} style={{ color: 'black' }} />}
@@ -543,6 +583,7 @@ export function ApprovalDetailPanel({
                 {/* 2.6. COTAÇÕES SALVAS (Moved after Contexto Financeiro Visual) */}
                 {isQuotation && (
                     <motion.div
+                        data-tour="approval-drawer-quotations"
                         id="cotacoes-salvas-section"
                         animate={
                             highlightQuotationSection
@@ -585,6 +626,7 @@ export function ApprovalDetailPanel({
                 )}
 
                 {/* 3. INTELIGÊNCIA PARA DECISÃO (Phase 4 - Horizontal Navigation) */}
+                <div data-tour="approval-drawer-financial-allocation">
                 <DecisionSection 
                     title="Inteligência para Decisão" 
                     icon={<TrendingUp size={16} style={{ color: 'black' }} />}
@@ -687,9 +729,11 @@ export function ApprovalDetailPanel({
                         </div>
                     )}
                 </DecisionSection>
+                </div>
 
                 {/* 4. ITENS DO PEDIDO (Adaptive Navigation) */}
                 <motion.div
+                    data-tour="approval-drawer-items"
                     id="itens-do-pedido-section"
                     animate={
                         highlightSection
@@ -985,6 +1029,7 @@ export function ApprovalDetailPanel({
                 </DecisionSection>
 
                 {/* 8. ANEXOS (Collapsible) */}
+                <div data-tour="approval-drawer-documents">
                 <DecisionSection 
                     title="Anexos" 
                     icon={<Paperclip size={16} />}
@@ -1025,6 +1070,7 @@ export function ApprovalDetailPanel({
                         </div>
                     )}
                 </DecisionSection>
+                </div>
 
                 {/* 9. PARTICIPANTES DO FLUXO (Collapsible) */}
                 <DecisionSection 
@@ -1054,6 +1100,7 @@ export function ApprovalDetailPanel({
                 </DecisionSection>
 
                 {/* 10. HISTÓRICO DO PEDIDO (Collapsible) */}
+                <div data-tour="approval-drawer-workflow">
                 <DecisionSection 
                     title="Histórico do pedido" 
                     icon={<HistoryIcon size={16} />}
@@ -1063,10 +1110,11 @@ export function ApprovalDetailPanel({
                 >
                     <DecisionTimeline entries={data.statusHistory} />
                 </DecisionSection>
+                </div>
             </div>
 
             {/* Sticky Action Footer */}
-            <div style={{ position: 'sticky', bottom: 0, zIndex: 50, backgroundColor: 'var(--color-bg-page)', borderTop: '1px solid var(--color-border)', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', boxShadow: '0 -4px 12px -2px rgba(0,0,0,0.08)', width: '100%' }}>
+            <div data-tour="approval-drawer-actions" style={{ position: 'sticky', bottom: 0, zIndex: 50, backgroundColor: 'var(--color-bg-page)', borderTop: '1px solid var(--color-border)', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', boxShadow: '0 -4px 12px -2px rgba(0,0,0,0.08)', width: '100%' }}>
                 {showAdjustmentAction && (
                     <button
                         onClick={() => setShowApprovalModal({ show: true, type: 'REQUEST_ADJUSTMENT' })}

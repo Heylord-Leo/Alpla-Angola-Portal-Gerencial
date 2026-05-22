@@ -803,3 +803,67 @@ All lifecycle transitions use dedicated modal components following the `Equipmen
 ### Styling
 
 The module uses inline CSS styles with design tokens from `tokens.css`, consistent with the Modern Corporate standard. No module-specific CSS file — all styling is computed inline using the established pattern.
+
+## Guided Tour / Onboarding
+
+The portal includes a guided onboarding system using **React Joyride** with a registry-based multi-tour architecture supporting portal, module, page, and drawer-level tours.
+
+For complete documentation on the Guided Tour system architecture, levels, definition structure, registry rules, scroll behaviors, and maintenance guidelines, refer to the dedicated documentation:
+
+👉 [GUIDED_TOUR_SYSTEM.md](GUIDED_TOUR_SYSTEM.md)
+| `/requests` | `module-purchasing-logistics` | `page-requests` |
+| `/buyer/items` | `module-purchasing-logistics` | `page-buyer-items` |
+| `/receiving/workspace` | `module-purchasing-logistics` | `page-receiving-workspace` |
+
+The `portal-main` tour is always available regardless of route.
+
+### `data-tour` Attribute Convention
+
+Tour steps target UI elements via `[data-tour="..."]` CSS selectors. Attributes are placed on:
+
+- **Topbar.tsx**: `topbar`, `module-search`, `notifications`, `user-profile`
+- **Sidebar.tsx**: `main-menu`, `dashboard`, `purchase-requests`, `approvals`, `purchasing-logistics`, `contracts`, `finance`, `it-module`, `hr`, `configuration-module`, `administration-module`, `buyer-items-menu`, `receiving-menu`
+- **GuidedTourButton.tsx**: `guided-help-button`
+- **PurchasingLandingPage.tsx**: `purchasing-overview`
+- **RequestsDashboard.tsx**: `requests-header`, `requests-action-carousel`, `requests-explorer`, `requests-filter-tabs`
+- **BuyerItemsList.tsx**: `buyer-items-header`, `buyer-items-search`, `buyer-items-list`
+- **ReceivingWorkspace.tsx**: `receiving-header`, `receiving-pending`, `receiving-completed`
+
+The Sidebar uses a lookup map (`TOUR_ATTR_MAP`) to assign `data-tour` values based on `item.id` from the navigation config.
+
+### Help Button Dropdown (v2.130.0)
+
+The GuidedTourButton in the Topbar opens a **dropdown menu** showing available tours:
+1. **Tour inicial do Portal** — always visible
+2. **Tour deste módulo** — visible if a module tour exists for the current route
+3. **Tour desta tela** — visible if a page tour exists for the current route
+
+Pages also include `GuidedTourContextButton` inline for direct page-level tour access.
+
+### Step Filtering (RBAC Safety)
+
+Before starting any tour, `filterActiveSteps()` checks each step's target selector against the DOM. Steps whose targets don't exist (because the user lacks permissions for that module/page area) are silently excluded. If zero valid steps remain, a transient toast message appears instead of starting Joyride.
+
+### Persistence
+
+- **Key format**: `guided-tour:{tourId}:v1:{userId}`
+- **Storage**: `localStorage` (v1 — no backend persistence)
+- **States**: `not-started` (default), `completed`, `skipped`
+- **Separate per tour**: Completing `page-requests` does not affect `module-purchasing-logistics` or `portal-main`
+- **No anonymous keys**: State is never written without a valid `userId`
+- **Manual restart**: The help dropdown and inline buttons reset state and restart the tour
+
+### Layout Readiness
+
+The portal-main tour does NOT rely on a fixed delay. It polls for layout readiness:
+1. Waits for the authenticated `userId` to be available
+2. Polls the DOM every 200ms for `[data-tour="topbar"]` and `[data-tour="main-menu"]`
+3. Only shows the welcome modal after both conditions are met (max 8s timeout)
+
+### Adding a New Tour
+
+1. Create a tour file in `tours/` (e.g., `financeModuleTour.ts`) exporting a `TourDefinition`
+2. Add the tour ID to the `TourId` union type in `guidedTourTypes.ts`
+3. Register the tour in `guidedTourRegistry.ts` (`TOUR_REGISTRY` map + route mappings)
+4. Add `data-tour` attributes to the target page components
+5. Optionally add a `GuidedTourContextButton` to the page header

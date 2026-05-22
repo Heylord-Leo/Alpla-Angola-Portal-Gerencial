@@ -14,6 +14,7 @@ import { formatDate, formatCurrencyAO, getUrgencyStyle } from '../../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DropdownPortal } from '../../components/ui/DropdownPortal';
 import { PageContainer } from '../../components/ui/PageContainer';
+import { GuidedTourContextButton } from '../../features/guided-tour/GuidedTourContextButton';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { QueueSummary } from './components/QueueSummary';
 import { SearchFilterBar } from '../../components/ui/SearchFilterBar';
@@ -517,11 +518,16 @@ export function ApprovalCenter() {
             )}
 
             <PageHeader
+                data-tour="approvals-header"
                 title="Centro de Aprovações"
                 subtitle="Workspace centralizado para decisões e aprovações de Procurement."
+                actions={
+                    <GuidedTourContextButton tourId="page-approvals-center" label="Tour da Tela" />
+                }
             />
 
             {/* Queue Summary — KPI Cards (Phase 4) */}
+            <div data-tour="approvals-kpi-cards">
             <QueueSummary
                 areaApprovals={data?.areaApprovals || []}
                 finalApprovals={data?.finalApprovals || []}
@@ -531,8 +537,10 @@ export function ApprovalCenter() {
                         : undefined
                 }
             />
+            </div>
 
             {/* Triage Controls — Finance-style tab bar */}
+            <div data-tour="approvals-filter-tabs">
             <SearchFilterBar
                 searchValue=""
                 onSearchChange={() => {}}
@@ -565,6 +573,7 @@ export function ApprovalCenter() {
                     }
                 }}
             />
+            </div>
 
             {/* Reset triage controls when non-default */}
             {(sortMode !== 'default' || activeFilters.length > 0) && (
@@ -590,7 +599,7 @@ export function ApprovalCenter() {
             {/* QUEUE SECTIONS (Master) */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
                 {isAreaApprover && (
-                    <div style={{
+                    <div data-tour="approvals-area-queue" style={{
                         backgroundColor: '#eff6ff',
                         border: '1px solid #bfdbfe',
                         borderRadius: '12px',
@@ -605,12 +614,13 @@ export function ApprovalCenter() {
                             selectedId={selectedRequestId}
                             flashedId={flashedRequestId}
                             onRowSelect={(id) => handleRowSelect(id, 'AREA')}
+                            isFirstQueue={true}
                         />
                     </div>
                 )}
 
                 {isFinalApprover && (
-                    <div style={{
+                    <div data-tour="approvals-final-queue" style={{
                         backgroundColor: '#f0fdf4',
                         border: '1px solid #bbf7d0',
                         borderRadius: '12px',
@@ -624,6 +634,7 @@ export function ApprovalCenter() {
                             selectedId={selectedRequestId}
                             flashedId={flashedRequestId}
                             onRowSelect={(id) => handleRowSelect(id, 'FINAL')}
+                            isFirstQueue={!isAreaApprover}
                         />
                     </div>
                 )}
@@ -817,7 +828,7 @@ export function ApprovalCenter() {
 
             {/* All-clear state */}
             {!selectedRequestId && totalPending === 0 && (isAreaApprover || isFinalApprover) && (
-                <div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--color-text-muted)', border: '4px dashed var(--color-border)', backgroundColor: 'var(--color-bg-surface)' }}>
+                <div data-tour="approvals-empty-state" style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--color-text-muted)', border: '4px dashed var(--color-border)', backgroundColor: 'var(--color-bg-surface)' }}>
                     <Inbox size={64} strokeWidth={1.5} style={{ opacity: 0.2, margin: '0 auto 24px', color: 'var(--color-primary)' }} />
                     <p style={{ fontWeight: 700, fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-main)' }}>Tudo em dia!</p>
                     <p style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>Não há pedidos pendentes de aprovação no momento.</p>
@@ -905,7 +916,7 @@ export function ApprovalCenter() {
 
 
                             {/* Drawer Content */}
-                            <div style={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
+                            <div data-tour-scroll-container="approval-drawer" style={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
                                 {/* Main Detail Panel with potential dimming */}
                                 <div style={{ 
                                     flex: 1, 
@@ -1211,9 +1222,11 @@ interface ApprovalQueueSectionProps {
     selectedId: string | null;
     flashedId?: string | null;
     onRowSelect: (id: string) => void;
+    /** If true, the first card in this queue gets data-tour="approvals-request-card" */
+    isFirstQueue?: boolean;
 }
 
-function ApprovalQueueSection({ title, icon, tooltip, requests, showCostCenter, selectedId, flashedId, onRowSelect }: ApprovalQueueSectionProps) {
+function ApprovalQueueSection({ title, icon, tooltip, requests, showCostCenter, selectedId, flashedId, onRowSelect, isFirstQueue }: ApprovalQueueSectionProps) {
     if (requests.length === 0) {
         return (
             <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -1268,6 +1281,7 @@ function ApprovalQueueSection({ title, icon, tooltip, requests, showCostCenter, 
                             transition={{ delay: i * 0.04, duration: 0.2 }}
                             onClick={() => onRowSelect(req.id)}
                             className={isFlashed ? 'flash-red-row' : ''}
+                            {...(isFirstQueue && i === 0 ? { 'data-tour': 'approvals-request-card' } : {})}
                             style={{
                                 display: 'grid',
                                 gridTemplateColumns: '200px 1fr auto',

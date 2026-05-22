@@ -12,6 +12,7 @@ import { CorrectPoModal } from '../../../../components/CorrectPoModal';
 import { useTablePreferences } from '../../../../hooks/useTablePreferences';
 import { GuideModal, GuideModalSection } from '../../../../components/ui/GuideModal';
 import { PlayCircle, Compass, MoreVertical, Info } from 'lucide-react';
+import { GuidedTourContextButton } from '../../../../features/guided-tour/GuidedTourContextButton';
 
 export function RequestsDashboard() {
     const navigate = useNavigate();
@@ -230,7 +231,7 @@ export function RequestsDashboard() {
         }}>
 
             {/* ── Header ── */}
-            <header style={{
+            <header data-tour="requests-header" style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
@@ -267,6 +268,7 @@ export function RequestsDashboard() {
 
                         {/* Toggle de Modo Flutuante */}
                         <button
+                            data-tour="requests-floating-toggle"
                             onClick={() => setIsFloating(!isFloating)}
                             title={isFloating ? "Desativar modo flutuante" : "Ativar modo flutuante"}
                             style={{
@@ -296,6 +298,7 @@ export function RequestsDashboard() {
                     }}>Gerencie e acompanhe todos os pedidos corporativos em tempo real.</p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <GuidedTourContextButton tourId="page-requests" label="Tour da Tela" />
 
 
                     {!isFloating && (
@@ -366,16 +369,18 @@ export function RequestsDashboard() {
 
             {/* ── Action Carousel & Stats ── */}
             {summary && (
+                <div data-tour="requests-action-carousel">
                 <ActionCarouselWidget
                     summary={summary}
                     onRowClick={handleRowClick}
                     onCorrectPoClick={(requestId) => setCorrectPoRequestId(requestId)}
                     onHelpClick={() => setCurrentHelpSection('action')}
                 />
+                </div>
             )}
 
             {/* ── Explorer Section ── */}
-            <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <section data-tour="requests-explorer" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {/* Section header + filters */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '16px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -414,7 +419,7 @@ export function RequestsDashboard() {
                         </div>
 
                         {/* Quick Filters */}
-                        <div style={{
+                        <div data-tour="requests-filter-tabs" style={{
                             display: 'flex',
                             backgroundColor: 'rgba(241, 245, 249, 0.8)',
                             padding: '4px',
@@ -448,7 +453,7 @@ export function RequestsDashboard() {
                     </div>
 
                     {/* Search + Filter Controls */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div data-tour="requests-filter-button" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <div style={{ position: 'relative' }}>
                             <Search
                                 size={16}
@@ -524,6 +529,7 @@ export function RequestsDashboard() {
                 )}
 
                 {/* Table */}
+                <div data-tour="requests-table">
                 <RequestsTableWidget
                     requests={requests}
                     loading={loading}
@@ -536,10 +542,11 @@ export function RequestsDashboard() {
                     onPageChange={setPage}
                     onPageSizeChange={setPageSize}
                 />
+                </div>
 
                 {/* ── Total Value Footer (Inline) ── */}
                 {!isFloating && (
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+                    <div data-tour="requests-floating-total" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
                         <div style={{
                             backgroundColor: 'var(--color-bg-surface)',
                             border: '1px solid var(--color-border)',
@@ -570,7 +577,7 @@ export function RequestsDashboard() {
                             exit={{ opacity: 0, y: 20 }}
                             style={{ position: 'fixed', bottom: '32px', right: '32px', zIndex: 90 }}
                         >
-                            <div style={{
+                            <div data-tour="requests-floating-total" style={{
                                 backgroundColor: 'rgba(255, 255, 255, 0.90)',
                                 backdropFilter: 'blur(8px)',
                                 border: '1px solid rgba(226, 232, 240, 0.6)',

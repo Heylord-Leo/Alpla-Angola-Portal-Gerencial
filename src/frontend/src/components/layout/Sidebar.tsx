@@ -138,7 +138,7 @@ export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
                 </div>
 
                 {/* Top Zone: Main Navigation (Scrollable) */}
-                <nav style={{ 
+                <nav data-tour="main-menu" style={{ 
                     padding: '1rem', 
                     display: 'flex', 
                     flexDirection: 'column', 
@@ -163,30 +163,51 @@ export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
                         </div>
                     )}
 
-                    {MENU_ITEMS.map(item => (
-                        <div 
-                            key={item.id}
-                            onMouseEnter={(e) => handleItemMouseEnter(item, e)}
-                            onMouseLeave={handleItemMouseLeave}
-                        >
-                            {item.type === 'group' ? (
-                                <SidebarGroup
-                                    item={item}
-                                    isExpanded={expandedGroupId === item.id}
-                                    onToggle={() => toggleGroup(item.id)}
-                                    currentPath={location.pathname}
-                                    isSidebarExpanded={isExpanded}
-                                />
-                            ) : (
-                                <SidebarLink
-                                    to={item.to!}
-                                    icon={item.icon}
-                                    label={item.label}
-                                    isSidebarExpanded={isExpanded}
-                                />
-                            )}
-                        </div>
-                    ))}
+                    {MENU_ITEMS.map(item => {
+                        // Lookup map: navigation item.id → data-tour attribute value
+                        const TOUR_ATTR_MAP: Record<string, string> = {
+                            'dashboard': 'dashboard',
+                            'approvals': 'approvals',
+                            'compras-logistica': 'purchasing-logistics',
+                            'financas': 'finance',
+                            'rh': 'hr',
+                            'equipa': 'hr',
+                            'contratos': 'contracts',
+                            'administracao': 'administration-module',
+                            'configuracoes': 'configuration-module',
+                            'ti': 'it-module',
+                            // Sub-items (children) for module/page tours
+                            'itens-pedido': 'buyer-items-menu',
+                            'recebimento': 'receiving-menu',
+                        };
+                        const tourAttr = TOUR_ATTR_MAP[item.id];
+
+                        return (
+                            <div 
+                                key={item.id}
+                                data-tour={tourAttr}
+                                onMouseEnter={(e) => handleItemMouseEnter(item, e)}
+                                onMouseLeave={handleItemMouseLeave}
+                            >
+                                {item.type === 'group' ? (
+                                    <SidebarGroup
+                                        item={item}
+                                        isExpanded={expandedGroupId === item.id}
+                                        onToggle={() => toggleGroup(item.id)}
+                                        currentPath={location.pathname}
+                                        isSidebarExpanded={isExpanded}
+                                    />
+                                ) : (
+                                    <SidebarLink
+                                        to={item.to!}
+                                        icon={item.icon}
+                                        label={item.label}
+                                        isSidebarExpanded={isExpanded}
+                                    />
+                                )}
+                            </div>
+                        );
+                    })}
                 </nav>
 
                 {/* Bottom Zone: System Actions (Fixed) */}
@@ -434,7 +455,13 @@ function SidebarGroup({ item, isExpanded, onToggle, currentPath, isSidebarExpand
                         transition={{ duration: 0.2, ease: 'easeInOut' }}
                         style={{ overflow: 'hidden', paddingLeft: '1rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}
                     >
-                        {item.children?.map(child => (
+                        {item.children?.map(child => {
+                            const CHILD_TOUR_MAP: Record<string, string> = {
+                                'pedidos': 'purchase-requests-menu',
+                                'itens-pedido': 'buyer-items-menu',
+                                'recebimento': 'receiving-menu',
+                            };
+                            return (
                             <SidebarLink
                                 key={child.id}
                                 to={child.to!}
@@ -442,8 +469,9 @@ function SidebarGroup({ item, isExpanded, onToggle, currentPath, isSidebarExpand
                                 label={child.label}
                                 isSidebarExpanded={isSidebarExpanded}
                                 isNested
+                                tourAttr={CHILD_TOUR_MAP[child.id]}
                             />
-                        ))}
+                        );  })}
                     </motion.div>
                 )}
             </AnimatePresence>
@@ -451,16 +479,18 @@ function SidebarGroup({ item, isExpanded, onToggle, currentPath, isSidebarExpand
     );
 }
 
-function SidebarLink({ to, icon, label, isSidebarExpanded, isNested }: { 
+function SidebarLink({ to, icon, label, isSidebarExpanded, isNested, tourAttr }: { 
     to: string; 
     icon: React.ReactNode; 
     label: string; 
     isSidebarExpanded: boolean;
-    isNested?: boolean 
+    isNested?: boolean;
+    tourAttr?: string;
 }) {
     return (
         <NavLink
             to={to}
+            data-tour={tourAttr}
             className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
             style={({ isActive }) => ({
                 display: 'flex',

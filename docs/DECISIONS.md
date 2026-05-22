@@ -2,6 +2,41 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-132 — Guided Tour Evolution: Registry-Based Multi-Tour Architecture
+
+- **Date:** 2026-05-22
+- **Status:** Accepted
+- **Context:** The initial Guided Tour (DEC-131) was a single "portal-main" tour covering the overall system structure. As users become familiar with the top-level navigation, they need deeper contextual guidance for specific modules and pages. The Compras & Logística module was identified as the priority target due to its workflow complexity (Pedidos → Cotações → Recebimento).
+- **Decision:** Evolve the guided tour system from a single flat tour to a registry-based multi-tier architecture supporting portal, module, and page-level tours.
+    1. **Tour Registry**: Central `guidedTourRegistry.ts` maps `TourId` → `TourDefinition` and resolves available tours by route prefix.
+    2. **Tour Hierarchy**: Three tiers — `portal-*` (system-wide), `module-*` (feature area navigation), `page-*` (screen-specific usage).
+    3. **Route Resolution**: `getToursForRoute(pathname)` returns `{ portal, module?, page? }` — module and page are optional. Multiple routes can resolve to the same module tour.
+    4. **Help Dropdown**: GuidedTourButton transformed from single-click restart to a dropdown listing available tours for the current context. Always shows "Tour inicial do Portal"; conditionally shows module/page tours.
+    5. **Inline Tour Button**: `GuidedTourContextButton` placed in page headers for direct page-level tour launch.
+    6. **Separate Persistence**: Each tour uses `guided-tour:{tourId}:v1:{userId}` — completing one tour does not affect others.
+    7. **No-Steps Safety**: `filterActiveSteps` + toast message if no DOM targets found — prevents runtime errors from RBAC-hidden UI.
+    8. **Backward Compatible**: `portal-main` tour preserved exactly as before — auto-show on first access, welcome modal, same persistence key.
+- **Alternatives considered:** (1) Single monolithic tour with module "chapters" (rejected: too long, can't match context). (2) Router-level automatic tour start per page (rejected: intrusive). (3) Third-party tour library switch (rejected: React Joyride v3 is sufficient).
+- **Consequences:** New tours can be added by creating a tour file and registering it. Module teams can independently define their tour content without modifying core guided tour infrastructure.
+
+---
+
+## DEC-131 — Guided Tour / Onboarding System
+
+- **Date:** 2026-05-22
+- **Status:** Accepted
+- **Context:** First-time users of the Portal Gerencial had no structured introduction to the system's layout, navigation, or key features. Users relied on word-of-mouth or trial-and-error to discover functionality.
+- **Decision:** Implement a guided onboarding tour using React Joyride v3 with the following characteristics:
+    1. **16 tour steps** covering Topbar, Search, Notifications, Profile, Help, Main Menu, Dashboard, and all sidebar modules.
+    2. **Welcome modal** on first login with "Iniciar Tour" / "Agora Não" options.
+    3. **Layout readiness** via DOM polling (not fixed delay).
+    4. **RBAC-aware step filtering**: modules not visible to the user are silently skipped via DOM presence check.
+    5. **Persistence**: `guided-tour:portal-main:v1:{userId}` in localStorage.
+    6. **Help button** (❓) in Topbar for manual restart.
+- **Consequences:** Users have a structured introduction to the system. The tour is non-intrusive (skippable, dismissable) and respects role-based access boundaries.
+
+---
+
 ## DEC-130 — Remove LOCAL_OCR Provider, Consolidate on OpenAI
 
 - **Date:** 2026-05-22

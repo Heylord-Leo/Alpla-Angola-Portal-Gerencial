@@ -19,6 +19,7 @@ import { DropdownPortal } from '../../components/ui/DropdownPortal';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { SearchFilterBar } from '../../components/ui/SearchFilterBar';
+import { GuidedTourContextButton } from '../../features/guided-tour/GuidedTourContextButton';
 import { SavedQuotationDto, IvaRate, Unit, OcrDraft, OcrDraftItem, ReconciliationBatchDto } from '../../types';
 import { useOcrProcessor } from '../../hooks/useOcrProcessor';
 import { ReconciliationPanel } from '../../components/Buyer/ReconciliationPanel';
@@ -1282,6 +1283,30 @@ export function BuyerItemsList() {
 
     const groupedRequests = groupItemsByRequest(items);
 
+    /**
+     * Pre-tour preparation: automatically expand the first request
+     * when the page tour starts and no request is currently expanded.
+     * Listens for the 'guided-tour:prepare' CustomEvent dispatched by useGuidedTour.
+     */
+    useEffect(() => {
+        const handleTourPrepare = (e: Event) => {
+            const tourId = (e as CustomEvent).detail?.tourId;
+            if (tourId !== 'page-buyer-items') return;
+
+            // If a request is already expanded, nothing to do
+            if (expandedRequests.size > 0) return;
+
+            // If there are grouped requests, expand the first one
+            if (groupedRequests.length > 0) {
+                const firstRequestId = groupedRequests[0].requestId;
+                setExpandedRequests(new Set([firstRequestId]));
+            }
+        };
+
+        window.addEventListener('guided-tour:prepare', handleTourPrepare);
+        return () => window.removeEventListener('guided-tour:prepare', handleTourPrepare);
+    }, [expandedRequests, groupedRequests]);
+
     return (
         <PageContainer>
             <style>{highlightStyles}</style>
@@ -1307,12 +1332,15 @@ export function BuyerItemsList() {
             )}
 
             <PageHeader
+                data-tour="buyer-items-header"
                 title="Gestão de Cotações"
                 subtitle="Visualize e gerencie os itens solicitados e suas cotações em um único workspace."
                 actions={
-                    <button
-                        onClick={() => setShowHelpModal(true)}
-                        style={{
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <GuidedTourContextButton tourId="page-buyer-items" label="Tour da Tela" />
+                        <button
+                            onClick={() => setShowHelpModal(true)}
+                            style={{
                             display: 'flex',
                             alignItems: 'center',
                             gap: '8px',
@@ -1333,6 +1361,7 @@ export function BuyerItemsList() {
                     >
                         <BookOpen size={16} /> Manual de Cotação
                     </button>
+                    </div>
                 }
             />
 
@@ -1437,6 +1466,7 @@ export function BuyerItemsList() {
                 )}
             </AnimatePresence>
 
+            <div data-tour="buyer-items-search">
             <SearchFilterBar
                 searchPlaceholder="BUSCAR POR NÚMERO, TÍTULO, DESCRIÇÃO..."
                 searchValue={searchInput}
@@ -1463,9 +1493,10 @@ export function BuyerItemsList() {
                     </select>
                 }
             />
+            </div>
 
             {/* Grouped Area */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div data-tour="buyer-items-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {loading ? (
                     <>
                         <RequestGroupSkeleton />
@@ -1482,7 +1513,7 @@ export function BuyerItemsList() {
                         </button>
                     </div>
                 ) : groupedRequests.length === 0 ? (
-                    <div style={{ padding: '80px 20px', textAlign: 'center', border: '1px dashed var(--color-border)', borderRadius: '16px', backgroundColor: 'var(--color-bg-surface)', boxShadow: 'var(--shadow-sm)' }}>
+                    <div data-tour="buyer-items-empty-state" style={{ padding: '80px 20px', textAlign: 'center', border: '1px dashed var(--color-border)', borderRadius: '16px', backgroundColor: 'var(--color-bg-surface)', boxShadow: 'var(--shadow-sm)' }}>
                         <FileText size={64} strokeWidth={1.5} style={{ margin: '0 auto 24px', color: 'var(--color-primary)', opacity: 0.8 }} />
                         <h3 style={{ fontWeight: 700, fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-primary)', marginBottom: '16px' }}>Nenhuma cotação localizada.</h3>
 
@@ -1740,7 +1771,7 @@ export function BuyerItemsList() {
                                 </div>
 
                                 {isExpanded && (
-                                    <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                                    <div data-tour="buyer-open-request" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
                                         {isAdjustmentPhase && group.latestAdjustmentMessage && (
                                             <div style={{
@@ -1850,7 +1881,7 @@ export function BuyerItemsList() {
                                         </div>
 
                                         {/* REQUESTED ITEMS SECTION */}
-                                        <div style={{
+                                        <div data-tour="buyer-open-request-items" style={{
                                             padding: '24px',
                                             backgroundColor: 'var(--color-bg-page)',
                                             border: '1px solid var(--color-border)',
@@ -1986,7 +2017,7 @@ export function BuyerItemsList() {
                                         </div>
 
                                         {/* SECTION A: Existing Quotations / Documents */}
-                                        <div style={{
+                                        <div data-tour="buyer-open-request-quotations" style={{
                                             padding: '24px',
                                             backgroundColor: 'var(--color-bg-page)',
                                             border: '1px solid var(--color-border)',

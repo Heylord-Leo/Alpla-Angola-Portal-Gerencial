@@ -2,7 +2,107 @@
 
 ## Current Version
 
-v2.128.0
+v2.137.0
+
+## [2.137.0] - 2026-05-22
+
+### Added — Guided Tour: Approval Drawer Tours (DEC-132)
+- **Two New Drawer Tours**: `drawer-approval-area` (8 steps, operational validation focus) and `drawer-approval-final` (8 steps, decision validation focus) for the Approval Quick Overview Drawer.
+- **New Tour Level**: Added `'drawer'` to `TourLevel` type — distinct from page tours, drawer tours scroll inside a panel instead of the window.
+- **Drawer-Aware Scroll Handling**: Extended `scrollTargetIntoView()` in `useGuidedTour.ts` to detect a `scrollContainerSelector` on the active tour definition. When set, scrolls the drawer container using `container.scrollTo()` with sticky footer compensation (72px). Falls back to standard window scroll for page tours.
+- **`scrollContainerSelector` Property**: Added optional `scrollContainerSelector?: string` to `TourDefinition`. Drawer tours registered with `scrollContainerSelector: '[data-tour-scroll-container="approval-drawer"]'`.
+- **Tour Button in Drawer**: Added "Tour da Aprovação" button inside `ApprovalDetailPanel.tsx` next to the existing "Manual de Aprovação" button. Auto-selects the correct tour based on `approvalStage` (`AREA` → `drawer-approval-area`, `FINAL` → `drawer-approval-final`).
+- **Joyride Drawer Config**: For drawer-level tours, `scrollToFirstStep` is disabled, `disableScrolling` is enabled (custom scroll handler takes over), and `overlayClickAction` is set to `'none'` to prevent accidental drawer dismissal.
+- **data-tour Anchors**: Added 11 anchors to `ApprovalDetailPanel.tsx`: `approval-drawer-header`, `approval-drawer-tour-button`, `approval-drawer-manual-button`, `approval-drawer-alerts`, `approval-drawer-request-info`, `approval-drawer-financial-allocation`, `approval-drawer-financial-context`, `approval-drawer-quotations`, `approval-drawer-documents`, `approval-drawer-items`, `approval-drawer-workflow`, `approval-drawer-actions`.
+- **Scroll Container Attribute**: Added `data-tour-scroll-container="approval-drawer"` to the drawer's scrollable `div` in `ApprovalCenter.tsx`.
+- **Graceful Missing Targets**: Alert step skipped when no validation warnings exist. Financial context, quotations, documents, workflow, and items steps skipped when sections are absent. Existing `filterActiveSteps()` handles all cases.
+- **Area Tour Focus**: Request need, allocation status, cost center, plant, items, winning quotation, validation alerts.
+- **Final Tour Focus**: Financial impact, risks, supplier/quotation choice, documents, workflow history, final decision.
+
+## [2.136.0] - 2026-05-22
+
+### Added — Guided Tour: Centro de Aprovações Page Tour (DEC-132)
+- **New Tour Created**: `page-approvals-center` tour with 7 steps covering the full approval workflow: Page Header, KPI Cards, Filter Tabs, Area Queue, Final Queue, Request Card, and Empty State.
+- **New Tour File**: `approvalsCenterTour.ts` — tour definition with conditional steps for role-based queues and data-dependent cards.
+- **New TourId**: Added `'page-approvals-center'` to the `TourId` union type.
+- **Registry Entry**: Registered in `guidedTourRegistry.ts` matching route `/approvals`.
+- **Tour Button**: Added `GuidedTourContextButton` to the PageHeader of `ApprovalCenter.tsx`.
+- **data-tour Anchors**: Added `approvals-header`, `approvals-kpi-cards`, `approvals-filter-tabs`, `approvals-area-queue`, `approvals-final-queue`, `approvals-request-card` (first card only), and `approvals-empty-state`.
+- **Conditional Step Behavior**: Area/Final queue steps appear only if the user has the corresponding approver role. Request card step appears only if at least one card is in the DOM. Empty state step appears only when both queues are empty.
+- **DEV Seed Area Excluded**: No `data-tour` attributes were added to the DEV tools section; it is completely ignored by the tour.
+
+## [2.135.0] - 2026-05-22
+
+### Improved — Guided Tour: Workspace de Recebimento Tour Expansion (DEC-132)
+- **Tour Expanded (3→6 steps)**: Receiving Workspace page tour (`page-receiving-workspace`) expanded from 3 generic steps to 6 targeted steps: Page Header, Info Banner, Search, Pedidos Pendentes, Pedidos em Acompanhamento (new), Pedidos Recebidos.
+- **New data-tour Attributes**: Added `data-tour="receiving-info"` (info banner), `data-tour="receiving-search"` (search bar), and `data-tour="receiving-in-progress"` (followup/in-progress section) to `ReceivingWorkspace.tsx`.
+- **In-Progress Section Coverage**: The "Pedidos em acompanhamento de recebimento" section now has a dedicated tour step explaining partial receipts and pending inspections.
+- **Graceful Degradation**: All section tour anchors wrap the `CollapsibleSection` component (always rendered even with 0 items), so steps appear regardless of record count. `filterActiveSteps` handles any conditional rendering.
+
+## [2.134.0] - 2026-05-22
+
+### Fixed — Guided Tour: Auto-Expand First Request on Gestão de Cotações Tour (DEC-132)
+- **Pre-Tour Preparation Event**: `useGuidedTour.executeTourStart()` now dispatches a `guided-tour:prepare` CustomEvent before filtering steps. This allows page components to perform preparation (e.g., expanding a collapsed section) before the tour checks which DOM targets are available.
+- **Auto-Expand on BuyerItemsList**: When the `page-buyer-items` tour starts with no request expanded, the component listens for the preparation event and automatically expands the first available request. This ensures the full 6-step tour (header → search → list → opened request → items → quotations) runs without requiring manual preparation.
+- **350ms Render Delay**: After dispatching the preparation event, the tour system waits 350ms + one animation frame for React to process the state update and paint the expanded content before filtering steps.
+- **Graceful Fallback**: If no requests exist, the event handler does nothing and the tour runs in reduced mode (header → search → empty state).
+
+## [2.133.0] - 2026-05-22
+
+### Improved — Guided Tour: Gestão de Cotações Page Tour Expansion (DEC-132)
+- **Tour Expanded (3→7 steps)**: Buyer Items page tour (`page-buyer-items`) expanded from 3 generic steps to 7 targeted steps: Page Header, Search & Filters, Request List, Opened Request Details, Requested Items, Quotations & Documents, and Empty State.
+- **New data-tour Attributes**: Added `data-tour="buyer-open-request"` (expanded request container), `data-tour="buyer-open-request-items"` (requested items section), `data-tour="buyer-open-request-quotations"` (quotations/documents section), and `data-tour="buyer-items-empty-state"` (empty state placeholder) to `BuyerItemsList.tsx`.
+- **Conditional Step Behavior**: Steps 4–6 (opened request, items, quotations) only appear when a request is expanded. Step 7 (empty state) only appears when no requests exist. All handled via existing `filterActiveSteps()` — no custom logic needed.
+- **Graceful Degradation**: Tour runs with 3 steps (header, search, list + empty state) when no requests exist; runs with up to 6 steps (header, search, list, opened request, items, quotations) when a request is expanded.
+
+## [2.132.0] - 2026-05-22
+
+### Fixed — Guided Tour: Pedidos Submenu, Floating Buttons, Kebab Menu & Step Order (DEC-132)
+- **Pedidos Submenu Fix (Correction 1)**: The module tour step for "Pedidos" was targeting a wrapper `div` via the top-level `TOUR_ATTR_MAP` instead of the actual submenu `NavLink`. Fixed by: (a) removing `pedidos` from the top-level map, (b) adding `'pedidos': 'purchase-requests-menu'` to the `CHILD_TOUR_MAP` inside `SidebarGroup`, and (c) updating tour targets in both `purchasingLogisticsTour.ts` and `portalMainTour.ts`. The step now correctly highlights the clickable "Pedidos" link inside the expanded "Compras & Logística" group.
+- **Floating Buttons Tour (Correction 2)**: Added `data-tour="requests-floating-total"` to both inline and floating total value footers. Added `data-tour="requests-floating-toggle"` to the floating mode toggle button. New tour steps explain: (a) the total reflects the sum of values on the current page of filtered results, (b) the toggle switches between floating and inline summary modes.
+- **Kebab Menu Tour (Correction 3)**: Added `data-tour="requests-card-kebab-menu"` to the kebab wrapper in `CarouselCard` (ActionCarouselWidget). New tour step explains contextual actions (Vis. Rápida, Duplicar). Step is skipped gracefully if no action cards are visible.
+- **Step Reordering (Correction 4)**: Requests page tour reordered to: Action Carousel → Kebab Menu → Floating Total → Floating Toggle → Quick Filters → Advanced Filters → Table → Row Click/Workflow. Total: 8 steps (up from 5).
+- **Graceful Missing Targets (Correction 5)**: Verified existing `filterActiveSteps()` logic correctly handles all conditional scenarios: RBAC-hidden menus, empty action queues, hidden floating buttons, and collapsed sidebar groups. No code changes needed.
+
+## [2.131.0] - 2026-05-22
+
+### Improved — Guided Tour UX: Scroll Fix, Module & Page Tour Expansion (DEC-132)
+- **Scroll Alignment Fix**: Set Joyride `scrollOffset: 80` and `scrollDuration: 350` to compensate for the 64px sticky topbar. Added `scrollToFirstStep` prop. Implemented manual `scrollTargetIntoView` helper that runs on `STEP_BEFORE` events — uses `requestAnimationFrame` + delayed check to ensure targets are not hidden behind the header.
+- **Header Offset Detection**: `HEADER_OFFSET_PX` constant reads CSS variable `--header-height` at module load, with a 16px breathing room, falling back to 80px if unavailable.
+- **Module Tour Expansion (Compras & Logística)**: Tour expanded from 5 generic steps to 9 targeted steps covering: sidebar menu entry, cockpit overview, Pedidos menu, KPI cards, Pontos de Atenção, Ações Rápidas, Manual de Operação, Gestão de Cotações (buyer items), and Recebimento.
+- **Page Tour Expansion (Requests)**: Tour expanded from 3 generic steps to 5 focused steps: Fila de Ação & Indicadores, Filtros Rápidos (tabs), Pesquisa & Filtros Avançados, Tabela de Pedidos, and Row click/Workflow explanation.
+- **New data-tour Attributes**: Added `data-tour="purchasing-kpi-cards"`, `data-tour="purchasing-attention-points"`, `data-tour="purchasing-quick-actions"`, `data-tour="purchasing-operation-manual"` to `PurchasingLandingPage.tsx`. Added `data-tour="requests-filter-button"`, `data-tour="requests-table"` to `RequestsDashboard.tsx`.
+- **Graceful Missing Targets**: All tour steps auto-filter via `filterActiveSteps` — RBAC-hidden elements are silently skipped.
+
+## [2.130.0] - 2026-05-22
+
+### Added — Guided Tour Evolution: Registry-Based Multi-Tour Architecture (DEC-132)
+- **Tour Registry Architecture**: Introduced `guidedTourRegistry.ts` with `getToursForRoute()` to resolve portal, module, and page-level tours based on the current route.
+- **Multi-Tour Type System**: Expanded `TourId` union to support `portal-main`, `module-purchasing-logistics`, `page-requests`, `page-buyer-items`, and `page-receiving-workspace`.
+- **Module Tour — Compras & Logística**: 5 steps covering cockpit overview, sidebar sub-modules (Pedidos, Gestão de Cotações, Recebimento), and module workflow.
+- **Page Tours**: 3 page-level tours with contextual steps for Requests Dashboard (header, action carousel, explorer, filter tabs), Buyer Items / Gestão de Cotações (header, search bar, items list), and Receiving Workspace (header, pending queue, completed section).
+- **GuidedTourButton Dropdown**: Help button (❓) in Topbar now opens a dropdown menu showing up to 3 contextual tour options (Portal, Module, Page) based on the current route.
+- **GuidedTourContextButton**: New inline button component placed in page headers for direct page-level tour launch.
+- **Route-to-Module Resolution**: Routes `/purchasing`, `/requests`, `/buyer/items`, `/receiving/workspace` all resolve to the Compras & Logística module tour.
+- **Separate Persistence**: Each tour has its own `guided-tour:{tourId}:v1:{userId}` localStorage key. Completing a page tour does not affect the module or portal tour status.
+- **No-Steps Toast**: If a requested tour has no valid DOM targets (e.g., RBAC-hidden elements), a transient informational toast appears instead of crashing.
+- **Backward Compatible**: Existing `portal-main` tour preserved — auto-shows on first access, separate persistence key, welcome modal behavior unchanged.
+- **data-tour Attributes**: Added tour anchor attributes to Sidebar sub-items, PageHeader components, and key sections of PurchasingLandingPage, RequestsDashboard, BuyerItemsList, and ReceivingWorkspace.
+- **PageHeader Enhancement**: `PageHeader` component now supports `data-tour` prop for direct tour targeting.
+- Decision: DEC-132.
+
+## [2.129.0] - 2026-05-22
+
+### Added — Guided Tour / Onboarding (DEC-131)
+- Guided onboarding tour using React Joyride v3 for first-time users.
+- 16 tour steps covering Topbar, Search, Notifications, Profile, Help, Main Menu, Dashboard, Purchase Requests, Approvals, Compras & Logística, Finanças, Contratos, T.I., R.H., Configurações, Administração.
+- Each sidebar module (T.I., Configurações, Administração, Contratos) has its own dedicated tour step with distinct data-tour attribute and Portuguese explanatory content.
+- RBAC-aware step filtering: modules not visible to the user are silently skipped via DOM presence check.
+- Welcome modal on first login with "Iniciar Tour" / "Agora Não" options.
+- Layout readiness via DOM polling (not fixed delay).
+- Persistence: `guided-tour:portal-main:v1:{userId}` in localStorage.
+- Permanent help button (❓) in Topbar for manual restart.
+- Decision: DEC-131.
 
 ## [2.128.0] - 2026-05-22
 

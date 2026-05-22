@@ -4,6 +4,7 @@ import { Sidebar } from '../components/layout/Sidebar';
 import { Topbar } from '../components/layout/Topbar';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { motion } from 'framer-motion';
+import { GuidedTourProvider } from '../features/guided-tour/GuidedTourProvider';
 
 interface AppShellProps {
     children?: ReactNode;
@@ -24,60 +25,63 @@ export function AppShell({ children }: AppShellProps) {
     };
 
     return (
-        <div className="app-shell" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: 'var(--color-bg-page)' }}>
-            {/* Topbar acts as the solid, heavy corporate anchor */}
-            <Topbar />
+        <GuidedTourProvider>
+            <div className="app-shell" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: 'var(--color-bg-page)' }}>
+                {/* Topbar acts as the solid, heavy corporate anchor */}
+                <Topbar />
 
-            {/* The main workspace is an asymmetric overlapping grid */}
-            <div className="app-shell-grid" style={{
-                display: 'grid',
-                gridTemplateColumns: isSidebarExpanded ? '260px minmax(0, 1fr)' : '80px minmax(0, 1fr)',
-                gap: '2rem',
-                padding: '2rem 3rem',
-                maxWidth: '1800px',
-                margin: '0 auto',
-                width: '100%',
-                flex: 1,
-                alignItems: 'stretch',
-                transition: 'grid-template-columns 0.3s ease-in-out'
-            }}>
-                {/* Full-height sidebar container with independent scroll support */}
-                <div className="app-shell-sidebar" style={{ 
-                    position: 'sticky', 
-                    top: 'calc(64px + 2rem)', 
-                    height: 'calc(100vh - 64px - 4rem)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    transition: 'width 0.3s ease-in-out'
+                {/* The main workspace is an asymmetric overlapping grid */}
+                <div className="app-shell-grid" style={{
+                    display: 'grid',
+                    gridTemplateColumns: isSidebarExpanded ? '260px minmax(0, 1fr)' : '80px minmax(0, 1fr)',
+                    gap: '2rem',
+                    padding: '2rem 3rem',
+                    maxWidth: '1800px',
+                    margin: '0 auto',
+                    width: '100%',
+                    flex: 1,
+                    alignItems: 'stretch',
+                    transition: 'grid-template-columns 0.3s ease-in-out'
                 }}>
-                    <Sidebar 
-                        isExpanded={isSidebarExpanded} 
-                        onToggle={toggleSidebar} 
-                    />
-                </div>
-
-                {/* Main Content Area has a heavy dramatic entry */}
-                <motion.main
-                    className="app-shell-main"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.5, ease: 'easeOut' }}
-                    style={{
-                        backgroundColor: 'var(--color-bg-surface)',
-                        border: '1px solid var(--color-border)',
-                        boxShadow: 'var(--shadow-soft)',
-                        borderRadius: 'var(--radius-lg)',
-                        minHeight: '70vh',
+                    {/* Full-height sidebar container with independent scroll support */}
+                    <div className="app-shell-sidebar" style={{ 
+                        position: 'sticky', 
+                        top: 'calc(64px + 2rem)', 
+                        height: 'calc(100vh - 64px - 4rem)',
                         display: 'flex',
                         flexDirection: 'column',
-                        minWidth: 0,
-                        padding: '1.5rem',
-                        position: 'relative'
-                    }}
-                >
-                    {children || <ErrorBoundary fallbackName="AppShell.Outlet"><Outlet /></ErrorBoundary>}
-                </motion.main>
+                        transition: 'width 0.3s ease-in-out'
+                    }}>
+                        <Sidebar 
+                            isExpanded={isSidebarExpanded} 
+                            onToggle={toggleSidebar} 
+                        />
+                    </div>
+
+                    {/* Main Content Area has a heavy dramatic entry */}
+                    <motion.main
+                        className="app-shell-main"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.5, ease: 'easeOut' }}
+                        style={{
+                            backgroundColor: 'var(--color-bg-surface)',
+                            border: '1px solid var(--color-border)',
+                            boxShadow: 'var(--shadow-soft)',
+                            borderRadius: 'var(--radius-lg)',
+                            minHeight: '70vh',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            minWidth: 0,
+                            padding: '1.5rem',
+                            position: 'relative'
+                        }}
+                    >
+                        {children || <ErrorBoundary fallbackName="AppShell.Outlet"><Outlet /></ErrorBoundary>}
+                    </motion.main>
+                </div>
             </div>
-        </div>
+        </GuidedTourProvider>
     );
 }
+

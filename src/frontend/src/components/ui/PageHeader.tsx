@@ -6,11 +6,12 @@ interface PageHeaderProps {
     icon?: React.ReactNode;
     actions?: React.ReactNode;
     style?: React.CSSProperties;
+    'data-tour'?: string;
 }
 
-export function PageHeader({ title, subtitle, icon, actions, style = {} }: PageHeaderProps) {
+export function PageHeader({ title, subtitle, icon, actions, style = {}, 'data-tour': dataTour }: PageHeaderProps) {
     return (
-        <header style={{
+        <header data-tour={dataTour} style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',

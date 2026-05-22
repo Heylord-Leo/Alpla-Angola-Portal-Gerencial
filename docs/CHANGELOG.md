@@ -2,6 +2,153 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.137.0] - 2026-05-22
+
+### Added — Guided Tour: Approval Drawer Tours (DEC-132)
+
+**Summary**: Two new drawer-level guided tours for the Approval Quick Overview Drawer, with drawer-aware scroll handling and contextual tour selection based on approval stage.
+
+**New Tours**:
+- `drawer-approval-area` (8 steps): Operational validation focus — request need, allocation, CC/plant, items, quotation, alerts.
+- `drawer-approval-final` (8 steps): Decision validation focus — financial impact, risks, documents, supplier choice, workflow history, final decision.
+
+**Architecture**:
+- New `'drawer'` tour level added to `TourLevel` type.
+- New `scrollContainerSelector` property on `TourDefinition` — routes scroll handling to drawer container instead of window.
+- `scrollTargetIntoView()` extended with drawer-aware branch: detects scroll container, compensates for sticky footer (72px), uses `container.scrollTo()`.
+- Joyride config: `disableScrolling: true`, `scrollToFirstStep: false`, `overlayClickAction: false` for drawer tours.
+
+**UI**:
+- "Tour da Aprovação" button added to drawer action bar (next to "Manual de Aprovação").
+- Auto-selects correct tour based on `approvalStage` (AREA → area tour, FINAL → final tour).
+
+**Anchors Added**: `approval-drawer-header`, `approval-drawer-alerts`, `approval-drawer-request-info`, `approval-drawer-financial-allocation`, `approval-drawer-financial-context`, `approval-drawer-quotations`, `approval-drawer-documents`, `approval-drawer-items`, `approval-drawer-workflow`, `approval-drawer-actions`.
+
+**Scroll Container**: `data-tour-scroll-container="approval-drawer"` on drawer scrollable div.
+
+**Graceful Degradation**: All steps skipped when targets are absent (no alerts, no quotations, no documents, etc.).
+
+**Files Changed**:
+- `src/frontend/src/features/guided-tour/guidedTourTypes.ts` — drawer TourLevel, TourIds, scrollContainerSelector
+- `src/frontend/src/features/guided-tour/tours/approvalDrawerAreaTour.ts` — [NEW] area tour definition
+- `src/frontend/src/features/guided-tour/tours/approvalDrawerFinalTour.ts` — [NEW] final tour definition
+- `src/frontend/src/features/guided-tour/guidedTourRegistry.ts` — registered both drawer tours
+- `src/frontend/src/features/guided-tour/useGuidedTour.ts` — drawer-aware scroll, activeTourDef tracking
+- `src/frontend/src/features/guided-tour/GuidedTourProvider.tsx` — Joyride config for drawer tours
+- `src/frontend/src/pages/Approvals/ApprovalDetailPanel.tsx` — data-tour anchors, tour button
+- `src/frontend/src/pages/Approvals/ApprovalCenter.tsx` — scroll container attribute
+- `docs/VERSION.md` — v2.137.0
+- `docs/CHANGELOG.md` — this entry
+
+---
+
+## [v2.136.0] - 2026-05-22
+
+### Added — Guided Tour: Centro de Aprovações Page Tour (DEC-132)
+
+**Summary**: New `page-approvals-center` tour added to the Guided Tour system, covering the full operational approval workflow with 7 conditional steps.
+
+**Tour Steps**:
+1. **Page Header** (`approvals-header`): Introduces the centralized approval workspace.
+2. **KPI Cards** (`approvals-kpi-cards`): Explains pending counts, total value, urgency, and alerts.
+3. **Filter Tabs** (`approvals-filter-tabs`): Covers triage controls for prioritizing the approval queue.
+4. **Area Queue** (`approvals-area-queue`): Area-level approval decisions (conditional — area approvers only).
+5. **Final Queue** (`approvals-final-queue`): Final-level approval decisions (conditional — final approvers only).
+6. **Request Card** (`approvals-request-card`): Individual pending request card with key details (conditional — only if cards exist).
+7. **Empty State** (`approvals-empty-state`): Shown when no approvals are pending (conditional — only when queues empty).
+
+**Files Changed**:
+- `[NEW] approvalsCenterTour.ts` — Tour step definitions.
+- `[MODIFY] guidedTourTypes.ts` — Added `'page-approvals-center'` to `TourId`.
+- `[MODIFY] guidedTourRegistry.ts` — Registered tour for `/approvals` route.
+- `[MODIFY] ApprovalCenter.tsx` — Added `data-tour` anchors, `GuidedTourContextButton`, and `isFirstQueue` prop to `ApprovalQueueSection`.
+
+**Notes**:
+- DEV seed/debug area is explicitly excluded from the tour.
+- All conditional steps leverage the existing `filterActiveSteps()` mechanism for graceful skipping.
+
+## [v2.131.0] - 2026-05-22
+
+### Improved — Guided Tour UX: Scroll Fix, Module & Page Tour Expansion (DEC-132)
+
+**Summary**: Fixed Joyride scroll alignment issue where tour targets were hidden behind the 64px sticky topbar. Expanded module and page tour content with new targeted steps and data-tour anchor attributes.
+
+**Scroll Fix** (`useGuidedTour.ts`, `GuidedTourProvider.tsx`):
+- Joyride `scrollOffset: 80` (64px header + 16px breathing) and `scrollDuration: 350`
+- `scrollToFirstStep` enabled
+- `scrollTargetIntoView()` helper: compensates header on `STEP_BEFORE` using `requestAnimationFrame` + 80ms delay
+- `HEADER_OFFSET_PX` reads CSS `--header-height` variable at load time
+
+**Module Tour** (`purchasingLogisticsTour.ts`):
+- Expanded from 5 → 9 steps: sidebar entry, cockpit overview, Pedidos, KPI cards, Pontos de Atenção, Ações Rápidas, Manual de Operação, Gestão de Cotações, Recebimento
+
+**Page Tour** (`requestsPageTour.ts`):
+- Expanded from 3 → 5 steps: action carousel + KPIs, filter tabs, filter button, table, row click/workflow
+
+**Data Anchors**:
+- `PurchasingLandingPage.tsx`: `purchasing-kpi-cards`, `purchasing-attention-points`, `purchasing-quick-actions`, `purchasing-operation-manual`
+- `RequestsDashboard.tsx`: `requests-filter-button`, `requests-table`
+
+## [v2.130.0] - 2026-05-22
+
+### Added — Guided Tour Evolution: Multi-Tour Architecture (DEC-132)
+
+**Summary**: Evolved the single "portal-main" guided tour into a registry-based multi-tier architecture supporting portal, module, and page-level tours. Initial target: Compras & Logística module with 3 page-level tours (Requests, Buyer Items, Receiving).
+
+**Architecture**:
+- `guidedTourRegistry.ts`: Central registry mapping `TourId` → `TourDefinition` with `getToursForRoute()` route-prefix resolution
+- `guidedTourTypes.ts`: Expanded `TourId` union type and `GuidedTourContextValue` multi-tour API
+- `useGuidedTour.ts`: Full refactor for registry-based tour selection and per-tour persistence
+
+**New Tour Content** (`tours/` directory):
+- `purchasingLogisticsTour.ts`: 5 steps (cockpit overview, pedidos, cotações, recebimento, module workflow)
+- `requestsPageTour.ts`: 4 steps (header, action carousel, explorer, filter tabs)
+- `buyerItemsPageTour.ts`: 3 steps (header, search bar, items list)
+- `receivingWorkspaceTour.ts`: 3 steps (header, pending queue, completed section)
+
+**UI Components**:
+- `GuidedTourButton.tsx`: Transformed from single-click to dropdown menu with up to 3 contextual options (Portal / Module / Page)
+- `GuidedTourContextButton.tsx`: Inline page-header button for direct page-level tour launch
+- `GuidedTourProvider.tsx`: Updated context API + "no steps" toast notification
+
+**Page Integration**:
+- `PageHeader.tsx`: Added `data-tour` prop support
+- `Sidebar.tsx`: Added `data-tour` attributes for sub-items (`buyer-items-menu`, `receiving-menu`)
+- `PurchasingLandingPage.tsx`: data-tour + GuidedTourContextButton
+- `RequestsDashboard.tsx`: data-tour on header, carousel, explorer, filter tabs + GuidedTourContextButton
+- `BuyerItemsList.tsx`: data-tour on header, search bar, items list + GuidedTourContextButton
+- `ReceivingWorkspace.tsx`: data-tour on header, pending, completed sections + GuidedTourContextButton
+
+**Key Behaviors**:
+- Separate localStorage persistence per tour (`guided-tour:{tourId}:v1:{userId}`)
+- `filterActiveSteps()` prevents runtime errors from missing DOM targets
+- Transient toast if no valid steps exist for a tour
+- Existing `portal-main` tour preserved (backward compatible)
+
+## [v2.129.0] - 2026-05-22
+
+### Added — Guided Tour / Onboarding (DEC-131)
+
+**Summary**: Implemented a guided onboarding tour using React Joyride v3 for first-time users. The tour introduces the portal's main structure (Topbar, Search, Notifications, Profile, Help, Sidebar modules) with RBAC-aware step filtering — modules the user cannot see are automatically skipped. Persistence via versioned localStorage keys scoped to user ID.
+
+**New Feature Module**: `src/frontend/src/features/guided-tour/` (6 files: types, storage, steps, hook, provider, button).
+
+**Layout Integration**:
+- `AppShell.tsx` wrapped with `GuidedTourProvider`
+- `Topbar.tsx`: `data-tour` attributes on topbar, search, notifications, profile + new `GuidedTourButton` (help icon)
+- `Sidebar.tsx`: `data-tour` attributes on main menu and individual modules via `TOUR_ATTR_MAP` lookup
+
+**Tour Steps (16 steps, PT content)**:
+- Topbar → Search → Notifications → Profile → Help Button → Main Menu → Dashboard → Purchase Requests → Approvals → Compras & Logística → Finanças → Contratos → T.I. → R.H. → Configurações → Administração
+- Each module (T.I., Configurações, Administração, Contratos) has its own dedicated step with distinct explanatory content
+- Modules not visible to the user (due to RBAC) are silently skipped via DOM presence check
+
+**Welcome Modal**: Animated overlay on first login ("Bem-vindo ao Portal Gerencial!") with "Iniciar Tour" / "Agora Não" options.
+**Layout Readiness**: DOM polling (200ms intervals, 8s max) for authenticated user + topbar/menu presence instead of a fixed delay.
+**Persistence**: `guided-tour:portal-main:v1:{userId}` — no anonymous keys.
+**Help Button**: Permanent topbar button allows manual restart after completion/skip.
+**Dependency**: `react-joyride` (~35KB gzipped).
+
 ## [v2.128.0] - 2026-05-22
 
 ### Changed — Remove LOCAL_OCR Provider, Consolidate OpenAI (DEC-130)
