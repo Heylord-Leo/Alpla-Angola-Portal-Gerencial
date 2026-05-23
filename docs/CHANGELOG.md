@@ -2,6 +2,27 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.146.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 Phase 2 Database Prep: AD & SQL Server Logins Discovery (DEC-133)
+
+**Summary**: Successfully completed Phase 2 read-only Active Directory (AD) sweeps and local SQL Server logins discovery on server `AOVIA1VMS011`. Analyzed the generated discovery report over SMB Administrative Share (`\\AOVIA1VMS011\C$`) and uncovered a critical infrastructure finding concerning SQL Server Metadata Visibility Restrictions. Mapped the corporate AD group prefix standards (`SQ-`), audited local IT support group memberships, and formulated a robust least-privilege security recommendation to create a dedicated group before database provisioning in Phase 2.
+
+**Key Updates**:
+- **Active Directory sweeps & corporate standards**: Completed domain-wide group discovery and verified that SQL Server database administration groups at ALPLA are formatted with the **`SQ-`** prefix (e.g. `SQ-<ServerName>-<DatabaseName>_DBOwner`).
+- **Leonardo Group membership audit**: Verified that Leonardo belongs to candidate IT support groups `ALPLA\SD-AOVIA1-IT-Systems` (local Viana IT support) and `ALPLA\SD-AO0001-IT-Systems` (Angola IT support).
+- **SQL Logins discovery script execution**: Verified the successful execution of the pre-placed script `C:\temp\AOVIA1VMS011_PHASE2_DISCOVERY.ps1` locally under Leonardo's active administrative Windows context (`ALPLA\adm_cintra01`) on default instance `MSSQLSERVER`.
+- **Metadata Visibility diagnosis**: Discovered that Leonardo's account successfully connected but queries returned 0 rows. Diagnosed this as an SQL Server Metadata Visibility Restriction, confirming that Leonardo's account `ALPLA\adm_cintra01` is NOT individually registered as an SQL login or member of the `sysadmin` role, and `BUILTIN\Administradores` is not configured as `sysadmin` on `MSSQLSERVER`.
+- **SQL Portal DBAdmin group recommendation**: Formulated the official recommendation to request the Active Directory team to create a dedicated security group: **`ALPLA\SQ-AOVIA1VMS011-PortalGerencial-DBAdmins`** to align with corporate standards and least-privilege principles.
+- **Critical database creation requirements**: Outlined that because `ALPLA\adm_cintra01` lacks SQL sysadmin rights, Leonardo must connect as a `sysadmin` (e.g., using `sa` or the default SQL Server service account) to create the Portal databases and assign logins in Phase 2.
+- **Safe discovery policies**: Confirmed that no databases, logins, or users were created, no secrets were stored, and no changes were made to SQL security or Innux databases.
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_PHASE2_DATABASE_PREPARATION_REPORT.md` — Updated Status to "SUCCESSFULLY COMPLETED", added verified script outputs, documented metadata visibility analysis, and detailed the official dedicated group recommendation.
+- `docs/VERSION.md` — Bumped to v2.146.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION bumped to "2.146.0".
+
 ## [v2.145.0] - 2026-05-23
 
 ### Added — AOVIA1VMS011 Post-Remediation Validation: ANCM Blocker Resolved (DEC-133)

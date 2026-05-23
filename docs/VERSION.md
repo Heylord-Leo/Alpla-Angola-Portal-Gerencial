@@ -2,7 +2,17 @@
 
 ## Current Version
 
-v2.145.0
+v2.146.0
+
+## [2.146.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 Phase 2 Database Prep: AD & SQL Server Logins Discovery (DEC-133)
+- **Active Directory Sweeps:** Completed domain-wide group discovery and mapped the ALPLA corporate AD group naming convention prefix standard (`SQ-`).
+- **Leonardo Group memberships audit:** Checked Leonardo's active domain group memberships via `whoami /groups` and identified candidate IT support groups `ALPLA\SD-AOVIA1-IT-Systems` and `ALPLA\SD-AO0001-IT-Systems`.
+- **SQL Server Logins discovery script:** Pre-placed and executed the read-only SQL Server discovery script `C:\temp\AOVIA1VMS011_PHASE2_DISCOVERY.ps1` under Leonardo's administrative Windows context (`ALPLA\adm_cintra01`) on default instance `MSSQLSERVER`.
+- **Metadata Visibility restrictions analysis:** Documented the critical infrastructure finding where Leonardo's admin account connects successfully but suffers from metadata visibility restrictions (returning 0 rows), confirming it is not individually configured as a `sysadmin` login or mapped to a `sysadmin` group.
+- **SQL Portal DBAdmin group recommendation:** Formulated the official recommendation to request the Active Directory team to create a dedicated least-privilege security group: `ALPLA\SQ-AOVIA1VMS011-PortalGerencial-DBAdmins`.
+- **Safe Database Prep Policies:** Confirmed that no databases, logins, or users were created, no secrets were stored, and no changes were made to SQL security or Innux databases.
 
 ## [2.145.0] - 2026-05-23
 
