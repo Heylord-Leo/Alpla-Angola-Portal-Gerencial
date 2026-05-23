@@ -2,7 +2,18 @@
 
 ## Current Version
 
-v2.148.0
+v2.149.0
+
+## [2.149.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 SQL Portal Databases & Logins Provisioned (DEC-133)
+- **Local Provisioning Wrapper:** Created PowerShell provisioning wrapper `AOVIA1VMS011_PHASE2_CREATE_PORTAL_DATABASES_AND_LOGINS.ps1` with secure in-memory random password generation and copied it over SMB.
+- **Portal Databases Created:** Provisioned dedicated relational databases `[Portal-Gerencial]` and `[Portal-Gerencial-Test]` using bracket notation.
+- **SQL Application Logins Created:** Created SQL Authentication logins `adm_portalgerencial`, `usr_portalgerencial`, and `usr_portalgerencial_test`.
+- **Database Mappings & Permissions Mapped:** Configured `adm_portalgerencial` as `db_owner` on both databases, and mapped runtime logins as `db_owner` temporarily to support Entity Framework Core DDL migrations.
+- **Cross-Database Isolation Verified:** Verified zero mapping exposure in system databases and confirmed complete production/test isolation.
+- **SQL Express Backup Strategy:** Prepared a robust daily backup strategy using Windows Task Scheduler + sqlcmd scripts to handle SQL Agent unavailability.
+- **Documentation Updated:** Created `docs/AOVIA1VMS011_PHASE2_DATABASE_AND_LOGIN_CREATION_REPORT.md` and updated database prep report and decisions log.
 
 ## [2.148.0] - 2026-05-23
 

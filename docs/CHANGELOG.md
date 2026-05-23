@@ -2,6 +2,28 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.149.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 SQL Portal Databases & Logins Provisioned (DEC-133)
+
+**Summary**: Created and copied the local database provisioning PowerShell wrapper script `AOVIA1VMS011_PHASE2_CREATE_PORTAL_DATABASES_AND_LOGINS.ps1` to server `AOVIA1VMS011` over SMB. Provisioned dedicated databases `[Portal-Gerencial]` and `[Portal-Gerencial-Test]`, SQL Authentication logins (`adm_portalgerencial`, `usr_portalgerencial`, `usr_portalgerencial_test`), mapped roles and permissions (including temporary `db_owner` mappings to support EF migrations), verified cross-database isolation, and formulated the daily backup strategy using Windows Task Scheduler to address SQL Express Agent unavailability.
+
+**Key Updates**:
+- **Local provisioning wrapper created**: Created the PowerShell wrapper with secure dynamic in-memory password generation, zero password storage on disk, and copied it over SMB.
+- **Portal databases provisioned**: Created dedicated databases `[Portal-Gerencial]` and `[Portal-Gerencial-Test]` using proper bracket notation.
+- **SQL Server logins provisioned**: Created SQL Authentication logins `adm_portalgerencial` (DB Owner on both databases), `usr_portalgerencial` (DB Owner temporarily on production database), and `usr_portalgerencial_test` (DB Owner temporarily on test database).
+- **Strict cross-database isolation verified**: Verified zero user mapping exposure in default system databases and complete isolation between Production and Test/Staging runtime sessions.
+- **SQL Express backup blueprint**: Prepared the recommended automated daily backup strategy using Windows Task Scheduler and PowerShell/SQLCMD scripts.
+- **Documentation and alignment**: Created `docs/AOVIA1VMS011_PHASE2_DATABASE_AND_LOGIN_CREATION_REPORT.md`, updated the database prep report, and bumped version to **v2.149.0**.
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_PHASE2_DATABASE_AND_LOGIN_CREATION_REPORT.md` — [NEW] Detailed report detailing database/login creation, permissions, secure password handling, and backup strategies.
+- `docs/AOVIA1VMS011_PHASE2_DATABASE_PREPARATION_REPORT.md` — Updated status and summary sections to document active provisioning outcomes.
+- `docs/DECISIONS.md` — Updated DEC-133 to add database and login provisioning decisions (item 10).
+- `docs/VERSION.md` — Bumped to v2.149.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — Updated `APP_VERSION` to "2.149.0".
+
 ## [v2.148.0] - 2026-05-23
 
 ### Added — AOVIA1VMS011 SQL Sysadmin Recovery Validation (DEC-133)

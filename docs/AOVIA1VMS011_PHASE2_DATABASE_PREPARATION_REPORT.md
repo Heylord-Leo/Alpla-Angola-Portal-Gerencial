@@ -1,26 +1,28 @@
 # Phase 2 Database Preparation Report: AOVIA1VMS011
 **Application:** Alpla Angola - Portal Gerencial  
-**Execution Date/Time:** May 23, 2026, 16:31:00 UTC+1  
-**Status:** **SUCCESSFULLY COMPLETED** (AD Sweeps, SQL sysadmin Recovery, and Multi-user Verification completed and verified).
+**Execution Date/Time:** May 23, 2026, 16:48:00 UTC+1  
+**Status:** **SUCCESSFULLY COMPLETED** (AD Sweeps, SQL sysadmin Recovery, and Database/Login Provisioning completed and verified).
 
 ---
 
 ## 1. Executive Summary
 
-This report documents the completion of the **Phase 2 read-only discovery phase** and the decommission/readiness assessment of the default SQL Server instance **`MSSQLSERVER`** on server **`AOVIA1VMS011`** (Windows Server 2022 Standard) for the upcoming deployment of the Portal Gerencial relational databases:
+This report documents the completion of **Phase 2 database preparation** and active provisioning on the default SQL Server instance **`MSSQLSERVER`** on server **`AOVIA1VMS011`** (Windows Server 2022 Standard) for the upcoming deployment of the Portal Gerencial relational databases:
 *   **Production Database:** `[Portal-Gerencial]`
 *   **Test/Staging Database:** `[Portal-Gerencial-Test]`
 
-Before provisioning the dedicated SQL Logins (`adm_portalgerencial`, `usr_portalgerencial`, and `usr_portalgerencial_test`), schemas, and database owners, we executed read-only Active Directory sweeps, SQL Server logins discovery, and a physical decommission validation of `MSSQLSERVER` on disk and process levels.
+Following read-only Active Directory sweeps, SQL logins audits, physical decommission scans, and a successful **Single-User Mode SQL Administrative Recovery**, the dedicated Portal relational databases and SQL Authentication logins (`adm_portalgerencial`, `usr_portalgerencial`, and `usr_portalgerencial_test`) have been successfully provisioned on `AOVIA1VMS011`.
 
-### Key Sweeps & Assessment Outcomes:
-1. **AD Group Sweeps:** Mapped corporate standard `SQ-` prefix and Leonardo's local IT support group memberships.
-2. **SQL Logins Sweeps:** Connected successfully under `ALPLA\adm_cintra01` but verified that Leonardo's account lacks SQL sysadmin privileges on `MSSQLSERVER` due to SQL Server Metadata Visibility Restrictions.
-3. **Decommission & Reuse Assessment:** Successfully audited `MSSQLSERVER` and confirmed that **0 user databases** exist on disk, **0 active connections** are registered, and SQL Agent is disabled (Express Edition). It is **100% safe to reuse** `MSSQLSERVER` for the Portal.
-4. **Administrative Access Recovery Plan:** Prepared a step-by-step single-user mode SQL administrative recovery procedure to resolve the sysadmin access blocker.
+### Key Phase 2 Outcomes:
+1. **AD Group Mappings:** Mapped corporate database standard `SQ-` prefix and local IT support groups.
+2. **Sysadmin Recovery:** Successfully executed a controlled Single-User Mode recovery, promoting `ALPLA\adm_cintra01` to the SQL Server `sysadmin` role and restoring normal multi-user operation.
+3. **Database Provisioning:** Successfully created databases `[Portal-Gerencial]` and `[Portal-Gerencial-Test]` under bracket notation, completely segregated from all Innux databases.
+4. **SQL Login & Security Provisioning:** Created the administrative database owner login `adm_portalgerencial` and the isolated runtime logins (`usr_portalgerencial`, `usr_portalgerencial_test`) with secure in-memory password generation, complete cross-database segregation, and temporary `db_owner` permissions for EF migrations.
 
-For a detailed analysis of the SQL Server environment, physical database inventories, and the recovery procedure, please refer to the dedicated assessment document:  
-👉 **[AOVIA1VMS011 SQL Instance Reuse Assessment](file:///C:/dev/alpla-portal/docs/AOVIA1VMS011_SQL_INSTANCE_REUSE_ASSESSMENT.md)**
+For a detailed analysis of the SQL Server environments and provisioning outcomes, please refer to the dedicated assessment and creation documents:  
+👉 **[AOVIA1VMS011 SQL Instance Reuse Assessment](file:///C:/dev/alpla-portal/docs/AOVIA1VMS011_SQL_INSTANCE_REUSE_ASSESSMENT.md)**  
+👉 **[AOVIA1VMS011 SQL Sysadmin Recovery Validation](file:///C:/dev/alpla-portal/docs/AOVIA1VMS011_PHASE2_SQL_SYSADMIN_RECOVERY_VALIDATION.md)**  
+👉 **[AOVIA1VMS011 SQL Database & Login Provisioning Report](file:///C:/dev/alpla-portal/docs/AOVIA1VMS011_PHASE2_DATABASE_AND_LOGIN_CREATION_REPORT.md)**
 
 ---
 
