@@ -2,7 +2,16 @@
 
 ## Current Version
 
-v2.149.0
+v2.150.0
+
+## [2.150.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 Phase 3 Test/Staging Deployment Staged & Configured (DEC-133)
+- **Controlled Binary Deployments:** Packaged backend API in Release mode and compiled Vite frontend static assets; successfully transferred all assets over SMB to remote server.
+- **IIS Secure Configuration Blueprint:** Configured a secure local PowerShell deployment configuration script `AOVIA1VMS011_PHASE3_SECURE_CONFIGURATION.ps1` utilizing interactive credential prompt and redacting all passwords in report.
+- **IIS applicationHost.config tradeoff defined:** Explicitly identified and documented connection string plaintext persistence in IIS applicationHost.config and recommended Windows Authentication for Phase 4.
+- **Explicit migrations strategy:** Pre-placed idempotent migrations SQL script `migration.sql` and established explicit controlled database execution against `[Portal-Gerencial-Test]` using `sqlcmd` with Windows Authentication, rather than automatic health check triggers.
+- **Automated Express backups wrapper:** Staged PowerShell daily backup wrapper script and idempotent SQL scripts on remote server to bypass Express Edition SQL Agent limitations.
 
 ## [2.149.0] - 2026-05-23
 

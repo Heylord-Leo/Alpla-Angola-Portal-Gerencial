@@ -599,6 +599,12 @@ For enhanced security, passwords can be injected into the server environment:
 
 When using environment variables, set them per-environment using IIS Application Pool environment variables or Windows machine-level environment variables scoped by site identity.
 
+> [!WARNING]
+> **IIS Environment Variables Storage tradeoff:**
+> Setting environment variables on an IIS Application Pool via `appcmd.exe` persists the keys and values in plaintext inside the central IIS configuration file `C:\Windows\System32\inetsrv\config\applicationHost.config`.
+> While this file is strictly protected by the OS (only accessible to Administrators and SYSTEM), it is still stored *on disk* in plaintext. This is a known staging tradeoff.
+> For maximum security in production environments, consider mapping the App Pool identity to a SQL Server Windows login (Trusted Connection / Windows Auth) to eliminate SQL Server login passwords entirely.
+
 ---
 
 ## 8. Integration Write-Safety Classification
@@ -753,7 +759,7 @@ All releases must follow a **Test-First** deployment flow. The same build packag
 | **A** | Build package | Compile frontend (`npm run build`) and backend (`dotnet publish`) on the build machine. |
 | **B** | Deploy to Test/Staging | Copy frontend artifacts to `D:\PortalGerencial-Test\Frontend`. Copy backend binaries to `D:\PortalGerencial-Test\Api`. |
 | **C** | Validate smoke tests | Execute the Test/Staging smoke test checklist (Section 11). |
-| **D** | Validate database migrations | Confirm EF Core migrations run successfully against `[Portal-Gerencial-Test]`. Check `D:\PortalGerencial-Test\Logs` for migration errors. |
+| **D** | Validate database migrations | Explicitly execute the pre-placed idempotent migrations SQL script using sqlcmd with Windows Auth against `[Portal-Gerencial-Test]` and verify `__EFMigrationsHistory`. |
 | **E** | Validate upload/download | Upload and download a document. Verify files appear in `D:\PortalGerencial-Test\Attachments`. |
 | **F** | Validate login & permissions | Log in with test accounts. Verify RBAC roles, sidebar visibility, and module access. |
 | **G** | Validate integrations | Confirm Primavera read, Innux attendance read, and OCR extraction work correctly against Test/Staging. Verify no write side-effects. |
@@ -788,7 +794,7 @@ Following the completion of deployment steps, each environment must be rigorousl
 | **T1** | Web Port Inbound | `Test-NetConnection -ComputerName AOVIA1VMS011 -Port 443` | TCP Connection Succeeded = `True` | `[ ]` |
 | **T2** | HTTPS Web Routing | Open browser to `https://portalangola-test.alpla.com` | Static React welcome page loads securely. | `[ ]` |
 | **T3** | Backend API Health | Navigate to `https://portalangola-test.alpla.com/api/v1/health` | HTTP 200 returned with JSON: `{"status": "Healthy"}`. | `[ ]` |
-| **T4** | SQL local DB | Check `D:\PortalGerencial-Test\Logs` files on startup | No database connection exception logs. EF Migrations successfully ran against `[Portal-Gerencial-Test]`. | `[ ]` |
+| **T4** | SQL local DB | Check tables via sqlcmd / SSMS after running migration.sql | No database connection exceptions. __EFMigrationsHistory and expected database tables are present. | `[ ]` |
 | **T5** | Primavera Integration | Navigate to the Compras dashboard | KPI cards populate with procurement counts (read-only integration). | `[ ]` |
 | **T6** | File Uploads Path | Upload a document in the Portal | File is physically created under `D:\PortalGerencial-Test\Attachments`. NOT under Production path. | `[ ]` |
 | **T7** | Daily rolling logs | Trigger an error or wait | Log files exist in `D:\PortalGerencial-Test\Logs`. NOT in Production log path. | `[ ]` |

@@ -2,6 +2,19 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.150.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 Phase 3 Test/Staging Deployment Staged & Configured (DEC-133)
+
+**Summary**: Packaged the Release backend API and Vite frontend static assets locally, transferred them over SMB to remote server `AOVIA1VMS011` staging directories (`D:\PortalGerencial-Test\Api` and `D:\PortalGerencial-Test\Frontend`), pre-placed Express backup scripts, created the secure IIS environment variable script `AOVIA1VMS011_PHASE3_SECURE_CONFIGURATION.ps1`, identified and documented connection string plaintext storage inside `C:\Windows\System32\inetsrv\config\applicationHost.config` (with Windows ACL protection) as a staging tradeoff, generated the idempotent SQL migrations script `migration.sql`, and established a controlled explicit database execution strategy against `[Portal-Gerencial-Test]` using `sqlcmd` with Windows Authentication, completely bypassing automatic health endpoint triggers.
+
+**Key Updates**:
+- **Controlled Binary Deployments**: Packaged Release backend API and Vite frontend static assets; copied them over SMB to remote server staging folders.
+- **IIS Secure Configuration Script**: Configured secure environment variables configuration script utilizing interactive prompt and redacting all passwords in reports/logs.
+- **IIS applicationHost.config Secret tradeoff defined**: Explicitly identified and documented connection string plaintext persistence in IIS applicationHost.config and recommended Windows Authentication for Phase 4 to eliminate passwords entirely.
+- **Explicit migrations strategy**: Pre-placed idempotent migrations SQL script `migration.sql` and established explicit controlled database execution against `[Portal-Gerencial-Test]` using `sqlcmd` with Windows Authentication, bypassing automatic triggers.
+- **Automated Express backups wrapper**: Staged PowerShell daily backup wrapper script and SQL scripts on remote server to bypass Express Edition SQL Agent limitations.
+
 ## [v2.149.0] - 2026-05-23
 
 ### Added — AOVIA1VMS011 SQL Portal Databases & Logins Provisioned (DEC-133)
