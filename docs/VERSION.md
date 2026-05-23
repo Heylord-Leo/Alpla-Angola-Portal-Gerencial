@@ -2,7 +2,19 @@
 
 ## Current Version
 
-v2.142.0
+v2.143.0
+
+## [2.143.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 Phase 1 Server Preparation Completed (DEC-133)
+- **IIS Server Role Provisioned:** Successfully enabled IIS Web Server features and Management Tools locally on `AOVIA1VMS011` using the idempotent setup script.
+- **Offline URL Rewrite Installation:** Installed IIS URL Rewrite module offline from `C:\temp\rewrite_amd64_en-US.msi`. Checked `rewrite.dll` binary presence.
+- **Isolated Directory Layouts:** Provisioned the complete isolated 14 folder structures over SMB on drive `D:\PortalGerencial` and `D:\PortalGerencial-Test`.
+- **NTFS ACL Permissions Applied:** Assigned Modify/Read rights specifically to the dynamial App Pool Identities (`IIS APPPOOL\PortalGerencialApiPool` and `IIS APPPOOL\PortalGerencialTestApiPool`).
+- **Interactive SSL Certificate Binding:** Securely imported Production and Test/Staging SSL certificates (prompting securely for passwords via SecureStrings) and configured HTTPS port 443 bindings with SNI.
+- **Firewall Exceptions:** Added TCP 80/443 inbound firewall rules. Verified ports 5000/5001 remain closed and unused.
+- **ANCM Blocker Logged:** Identified and verified the ASP.NET Core IIS Module (ANCM) `aspnetcorev2.dll` missing registration warning as the primary remaining blocker before backend deployment. Recommended Hosting Bundle repair in Phase 2.
+- **SQL Instance Confirmed:** Officially recorded instance `MSSQLSERVER` as the approved target for the Portal databases.
 
 ## [2.142.0] - 2026-05-22
 

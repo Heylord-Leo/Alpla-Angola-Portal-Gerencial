@@ -2,6 +2,28 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.143.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 Phase 1 Server Preparation Completed (DEC-133)
+
+**Summary**: Completed Phase 1 server provisioning and setup on Windows Server `AOVIA1VMS011` for a secure, isolated dual-environment deployment. Provisioned all folder hierarchies, copied certificates, set up local orchestration scripts, enabled IIS features, installed URL Rewrite module offline, securely bound PFX SSL certificates with SNI on HTTPS port 443, assigned NTFS folder security permissions, and opened firewall rules. Identified a critical Global IIS Module ANCM DLL blocker for Phase 2 backend deployment.
+
+**Key Updates**:
+- **Isolated Directory Layouts**: Created all 14 subfolders under drive `D:\PortalGerencial` and `D:\PortalGerencial-Test` remotely over SMB share.
+- **IIS Enabled & URL Rewrite Installed**: Web Server role activated locally via PowerShell. URL Rewrite module successfully installed offline from the pre-placed `rewrite_amd64_en-US.msi`.
+- **NTFS ACL Folder Permissions**: Mapped exact Modify/Read rules specifically for `IIS APPPOOL\PortalGerencialApiPool` and `IIS APPPOOL\PortalGerencialTestApiPool`.
+- **Secure Certificate bindings**: Securely imported Production (`portal-gerencial.alpla.net`) and Test (`portal-gerencial-test.alpla.net`) SSL certificates (prompting passwords securely via SecureStrings) and bound them via SNI on HTTPS Port 443.
+- **Firewall Exceptions**: Created HTTP 80 and HTTPS 443 inbound firewall rules. Confirmed ports 5000 and 5001 remain closed and unused.
+- **ANCM Blocker Warning**: Discovered and validated that `aspnetcorev2.dll` is missing from registry and folders (due to Hosting Bundle pre-installation before IIS enablement). Documented this remaining blocker and recommended Repair in Phase 2.
+- **SQL Instance Confirmed**: Instance `MSSQLSERVER` approved and documented. No databases created yet.
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_PHASE1_SERVER_PREPARATION_REPORT.md` — [NEW] Detailed Phase 1 execution, validation, and readiness report.
+- `docs/DECISIONS.md` — DEC-133 item #2 amended with approved `MSSQLSERVER` instance decision.
+- `docs/VERSION.md` — Bumped to v2.143.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION bumped to "2.143.0".
+
 ## [v2.142.0] - 2026-05-22
 
 ### Added — AOVIA1VMS011 Dual-Environment Strategy: Test/Staging Environment (DEC-133)
