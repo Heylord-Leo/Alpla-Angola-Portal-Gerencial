@@ -1,7 +1,7 @@
 # Phase 2 Database Preparation Report: AOVIA1VMS011
 **Application:** Alpla Angola - Portal Gerencial  
-**Execution Date/Time:** May 23, 2026, 15:34:00 UTC+1  
-**Status:** Read-only Discovery Sweeps and Local Server Execution **SUCCESSFULLY COMPLETED** (AD Sweeps, Group Membership Audits, and SQL Server Logins Scan verified).
+**Execution Date/Time:** May 23, 2026, 16:31:00 UTC+1  
+**Status:** **SUCCESSFULLY COMPLETED** (AD Sweeps, SQL sysadmin Recovery, and Multi-user Verification completed and verified).
 
 ---
 
@@ -97,14 +97,14 @@ To align with the **principle of least-privilege** and corporate AD formatting s
 > 
 > **Leonardo's Action Gate:** Leonardo must formally confirm which group is approved before we execute any SQL Server logins or security mappings in Phase 2.
 
-### Critical Execution Requirement for Database Creation
-Because Leonardo's current account `ALPLA\adm_cintra01` is confirmed to lack `sysadmin` rights in SQL Server `MSSQLSERVER`, Leonardo **cannot** create SQL Logins, create databases, or assign database users under his own current Windows Authentication context.
+### Resolved Administrative Blocker for Database Creation
+During the initial discovery, it was confirmed that Leonardo's account `ALPLA\adm_cintra01` lacked `sysadmin` rights in SQL Server `MSSQLSERVER`. 
 
-**Resolution:**
-To create the Portal Gerencial databases and logins in Phase 2, Leonardo must:
-1. Connect to SQL Server using a SQL account with `sysadmin` privileges, such as the built-in **`sa`** login.
-2. Or, run the SQL Server service under an account with local admin privileges and launch SQL Server in single-user mode (`-m`) to add `ALPLA\adm_cintra01` as a `sysadmin` login.
-3. Or, request the database administrator who installed SQL Server to map `ALPLA\adm_cintra01` or the approved Portal AD group as a login with `sysadmin` privileges.
+**Resolution (Successfully Completed):**
+To resolve this blocker, a controlled **Single-User Mode SQL Administrative Recovery** was successfully executed locally on `AOVIA1VMS011` under Leonardo's RDP context. Leonardo's Windows login `ALPLA\adm_cintra01` has been officially mapped and added to the SQL Server `sysadmin` server role.
+
+A comprehensive multi-user validation sweep has been executed, confirming that `ALPLA\adm_cintra01` now has full catalog visibility and database creation privileges, with SQL Server restored to normal multi-user operation. For details, please refer to the validation report:  
+👉 **[AOVIA1VMS011 SQL Sysadmin Recovery Validation](file:///C:/dev/alpla-portal/docs/AOVIA1VMS011_PHASE2_SQL_SYSADMIN_RECOVERY_VALIDATION.md)**
 
 ---
 

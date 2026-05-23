@@ -2,6 +2,28 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.148.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 SQL Sysadmin Recovery Validation (DEC-133)
+
+**Summary**: Verified and validated the controlled **SQL Server Single-User Mode Sysadmin Recovery** executed on default instance **`MSSQLSERVER`** locally on server `AOVIA1VMS011`. Analyzed the validation sweep report under Leonardo's administrative context (`ALPLA\adm_cintra01`) and confirmed that the administrative blocker has been completely resolved. The SQL Server instance has been successfully restored to **normal multi-user mode** and accepts normal Windows Authentication connections, Leonardo's account has been verified with **`sysadmin`** server role privileges, the instance remains completely clean, and no existing attendance databases were touched.
+
+**Key Updates**:
+- **Local validation script execution**: Authored and copied the read-only validation script `AOVIA1VMS011_PHASE2_SQL_SYSADMIN_RECOVERY_VALIDATION.ps1` to the server over SMB.
+- **Service multi-user mode verified**: Checked default service status and verified that SQL Server `MSSQLSERVER` is running and is restored to normal multi-user mode with no active Single-User `/m` parameters.
+- **Windows Login sysadmin validation**: Executed connection catalog queries showing that `ALPLA\adm_cintra01` successfully connects via local Windows Authentication and has full database catalog access (`IS_SRVROLEMEMBER('sysadmin') = 1`).
+- **Pristine instance integrity verified**: Checked `sys.databases` and `sys.server_principals`, confirming that **no** Portal databases or SQL application logins have been created yet, and all system databases remain intact and healthy.
+- **Operational safety sweeps**: Confirmed that `INNUX`, `INNUXTIME`, and `INUTIME` remain completely untouched, no secrets were stored, and no binaries have been deployed.
+- **Documentation and alignment**: Created `docs/AOVIA1VMS011_PHASE2_SQL_SYSADMIN_RECOVERY_VALIDATION.md`, updated the database preparation report, and bumped version to **v2.148.0**.
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_PHASE2_SQL_SYSADMIN_RECOVERY_VALIDATION.md` — [NEW] Comprehensive validation report detailing service state, sysadmin logins, catalog visibility, and integrity checks.
+- `docs/AOVIA1VMS011_PHASE2_DATABASE_PREPARATION_REPORT.md` — Aligned status, resolved administrative blocker resolution, and linked to the new validation report.
+- `docs/DECISIONS.md` — Updated DEC-133 item #2 to reflect successful recovery execution and validation.
+- `docs/VERSION.md` — Bumped to v2.148.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — Updated `APP_VERSION` to "2.148.0".
+
 ## [v2.147.0] - 2026-05-23
 
 ### Added — AOVIA1VMS011 SQL Instance Reuse Assessment: Decommission Verified (DEC-133)

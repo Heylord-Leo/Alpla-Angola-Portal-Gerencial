@@ -2,7 +2,17 @@
 
 ## Current Version
 
-v2.147.0
+v2.148.0
+
+## [2.148.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 SQL Sysadmin Recovery Validation (DEC-133)
+- **Local Validation Execution:** Authored the validation script `AOVIA1VMS011_PHASE2_SQL_SYSADMIN_RECOVERY_VALIDATION.ps1` and copied it to the remote server over SMB.
+- **Service Multi-User Audit:** Validated that service `MSSQLSERVER` is running and is restored to normal multi-user mode with no Single-User `/m` parameter active.
+- **Windows Login sysadmin validation:** Confirmed that `ALPLA\adm_cintra01` successfully connects via local Windows Authentication and has full administrative rights (`IS_SRVROLEMEMBER('sysadmin') = 1`).
+- **Catalog Integrity Checked:** Physically and logically verified that no Portal databases or logins have been created yet, and all existing databases are intact and untouched.
+- **Operational Isolation Confirmed:** Confirmed that no Innux or attendance databases were impacted, no secrets were stored, and no binaries were deployed.
+- **Documentation Updated:** Created `docs/AOVIA1VMS011_PHASE2_SQL_SYSADMIN_RECOVERY_VALIDATION.md` and updated the database preparation report.
 
 ## [2.147.0] - 2026-05-23
 
