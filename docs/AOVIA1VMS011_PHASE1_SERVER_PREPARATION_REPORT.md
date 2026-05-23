@@ -1,7 +1,7 @@
 # Server Preparation Phase 1 Report: AOVIA1VMS011
 **Application:** Alpla Angola - Portal Gerencial  
 **Execution Date/Time:** May 23, 2026, 13:10:00 UTC+1  
-**Status:** Phase 1 Successfully Executed locally (IIS, URL Rewrite, Folders, Certs, and Firewall Setup complete). Validation sweep conducted. **1 Core Blocker Identified.**
+**Status:** Phase 1 Server Preparation & Post-Remediation Validation **SUCCESSFULLY COMPLETED** (0 Blockers Remaining, IIS In-Process Hosting fully unblocked).
 
 ---
 
@@ -38,22 +38,17 @@ To accommodate the WinRM/RPC network port block between the developer workstatio
 
 ---
 
-## 4. ANCM / Hosting Bundle Investigation (🚨 1 CORE BLOCKER)
+## 4. ANCM / Hosting Bundle Investigation (✅ RESOLVED)
 
-During local setup script execution, a critical warning was logged:
+During initial local setup script execution, a critical warning was logged:
 > `ASP.NET Core Module registry key not detected. ASP.NET Core Hosting Bundle may need to be re-run/repaired after IIS installation.`
 
-### Post-Setup Verification Results:
-- **Registry Key Check:** `HKLM:\SOFTWARE\Microsoft\IIS Extensions\IIS AspNetCore Module V2` is absent.
-- **DLL Check:** `aspnetcorev2.dll` is **MISSING** from `C:\Program Files\IIS\Asp.Net Core Module\V2\`.
-- **Cause Analysis:** The ASP.NET Core Hosting Bundle (8.0.8) was installed *prior* to enabling the Web Server (IIS) role. When the Hosting Bundle installer ran, it did not find the IIS role and skipped registering the ASP.NET Core IIS Module (ANCM). Enabling the IIS role afterwards does not automatically register the module.
-- **Consequence:** This is a **core blocker**. Any attempt to host the .NET backend API inside IIS using `hostingModel="InProcess"` or `OutOfProcess` will immediately fail with an IIS `500.19 - Internal Server Error` (Configuration error - unrecognized handler `aspNetCore`).
-- **Workstation & Server Installer Audit:**
-  - Targeted, non-recursive sweeps were performed over SMB on `AOVIA1VMS011` under `C:\Users\adm_cintra001\Downloads` and `C:\Users\Public\Downloads`, and on `AOVIA1OLP031` under `C:\Users\cintra01\Downloads` and `C:\temp\`.
-  - Targeted searches were also run recursively under `C:\ProgramData\Package Cache\` on `AOVIA1VMS011` to find bootstrapper cache.
-  - The local `dotnet-hosting-8.0.8-win.exe` offline installer was **not found** cached on the server or developer workstation.
-  - Local workstation command-line downloads from Microsoft CDN via `Invoke-WebRequest` are blocked by corporate proxy gateway policies (`GatewayExceptionResponse`).
-- **Remediation Plan:** Leonardo must obtain the official installer (download link provided below), place it at `C:\temp\dotnet-hosting-8.0.8-win.exe` on `AOVIA1VMS011`, and run a **Repair** to place and register the required IIS handler binaries.
+### Remediation & Post-Remediation Validation Results:
+- **Audit & Link Delivery:** Confirmed that the bootstrapper installer `dotnet-hosting-8.0.8-win.exe` was not cached on the server or developer workstation. Delivered the secure, official Microsoft CDN download link and execution blueprint to Leonardo.
+- **RDP Execution:** Leonardo downloaded the official Microsoft installer `dotnet-hosting-8.0.8-win.exe` securely, copied it to `C:\temp\dotnet-hosting-8.0.8-win.exe` on `AOVIA1VMS011`, logged in via RDP as Administrator, and executed the **Repair** wizard.
+- **IIS Reset:** Completed a successful server reset via `iisreset`.
+- **ANCM DLL Verification Check:** Post-remediation remote sweep successfully verified that **`aspnetcorev2.dll` exists and is present** under `C:\Program Files\IIS\Asp.Net Core Module\V2\aspnetcorev2.dll`.
+- **IIS Module Registration:** Verification confirmed that `AspNetCoreModuleV2` is now registered as a global IIS module and active, fully enabling IIS to host .NET Core backend applications in-process. The blocker is officially **resolved and closed**.
 
 ---
 
@@ -150,20 +145,8 @@ The 14 isolated folder structures were successfully provisioned on drive D: and 
 ## 10. Remaining Blockers before Backend Deployment
 
 1. **Missing ASP.NET Core IIS Module (ANCM) Registration:**
-   - **Status:** **High Blocker.**
-   - **Offline Installer Source:** Leonardo can download the official Microsoft installer securely here:  
-     👉 **[dotnet-hosting-8.0.8-win.exe](https://download.visualstudio.microsoft.com/download/pr/4458f278-f7ad-45c1-8418-403487f55b9e/1066046e331c18bf79b4a1b023730e6a/dotnet-hosting-8.0.8-win.exe)**
-   - **Local Workstation/Server Target Path:** `C:\temp\dotnet-hosting-8.0.8-win.exe` on `AOVIA1VMS011`
-   - **Remediation Execution Steps (RDP):**
-     1. Download `dotnet-hosting-8.0.8-win.exe` from the secure link above on a machine with internet access.
-     2. Copy the file to `C:\temp\dotnet-hosting-8.0.8-win.exe` on server `AOVIA1VMS011` via SMB share.
-     3. Log into `AOVIA1VMS011` via RDP as Administrator.
-     4. Run the installer `dotnet-hosting-8.0.8-win.exe` as Administrator and select **Repair** or **Reinstall** on the installation wizard.
-     5. Open a PowerShell command prompt as Administrator and run:
-        ```powershell
-        iisreset
-        ```
-     6. Verify that `aspnetcorev2.dll` now exists under `C:\Program Files\IIS\Asp.Net Core Module\V2\aspnetcorev2.dll` and that the global module `AspNetCoreModuleV2` is visible in IIS.
+   - **Status:** **RESOLVED** ✅
+   - **Verification:** `aspnetcorev2.dll` is verified as present under `C:\Program Files\IIS\Asp.Net Core Module\V2\aspnetcorev2.dll`, and `AspNetCoreModuleV2` is fully registered as an active global module. In-process ASP.NET Core hosting is now fully unblocked.
 2. **DNS Names Mapping:**
    - **Status:** **Low Blocker** (can bypass using local hosts files).
    - **Remediation:** Map DNS names `portalangola.alpla.com` and `portalangola-test.alpla.com` to AOVIA1VMS011 IP `10.130.9.31` in the internal active directory domain `alpla.net`.
@@ -172,11 +155,10 @@ The 14 isolated folder structures were successfully provisioned on drive D: and 
 
 ## 11. Next Recommended Steps (Phase 2 Roadmap)
 
-With Phase 1 preparation successfully completed, we recommend the following roadmap for Phase 2:
-1. **Resolve ANCM Blocker:** Run Repair on the Hosting Bundle.
-2. **Database Provisioning:** Execute SQL scripts to create databases `[Portal-Gerencial]` and `[Portal-Gerencial-Test]` inside SQL instance `MSSQLSERVER`, and provision the isolated `usr_portalgerencial` and `usr_portalgerencial_test` SQL logins.
-3. **Application Compilation & Deployment:**
+With Phase 1 preparation and blocker resolution successfully completed, we recommend the following roadmap for Phase 2:
+1. **Database Provisioning:** Execute SQL scripts to create databases `[Portal-Gerencial]` and `[Portal-Gerencial-Test]` inside SQL instance `MSSQLSERVER`, and provision the isolated `usr_portalgerencial` and `usr_portalgerencial_test` SQL logins.
+2. **Application Compilation & Deployment:**
    - Compile React static files and copy to Frontend folders.
    - Publish .NET API binaries and copy to Api folders.
    - Configure isolated `appsettings.Production.json` and `appsettings.Test.json` configurations.
-4. **Integration Setup & EF Migrations:** Run EF Core database migrations, configure Primavera/Innux read-only integration parameters, and conduct full smoke testing.
+3. **Integration Setup & EF Migrations:** Run EF Core database migrations, configure Primavera/Innux read-only integration parameters, and conduct full smoke testing.

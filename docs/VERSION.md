@@ -2,7 +2,16 @@
 
 ## Current Version
 
-v2.144.0
+v2.145.0
+
+## [2.145.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 Post-Remediation Validation: ANCM Blocker Resolved (DEC-133)
+- **ANCM Blocker Resolved:** Verified that the ASP.NET Core IIS Module (ANCM) `aspnetcorev2.dll` is now present and successfully registered as an active global module.
+- **IIS Post-Setup Verification:** Confirmed that the IIS Web Server service is running, and that all Production and Test/Staging folders, application pools, and site settings remain completely intact.
+- **HTTPS Bindings Secured:** Confirmed that the SSL certificate SNI bindings remain intact on Port 443 with 0 plain-text credentials stored.
+- **Secure Port Enforcements:** Verified that ports `5000` and `5001` remain closed and unused.
+- **Database Isolation Verification:** Audited and confirmed that no databases have been created yet, and that all Innux operational attendance databases remain untouched.
 
 ## [2.144.0] - 2026-05-23
 

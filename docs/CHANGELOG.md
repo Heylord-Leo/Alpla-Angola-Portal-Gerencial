@@ -2,6 +2,25 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.145.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 Post-Remediation Validation: ANCM Blocker Resolved (DEC-133)
+
+**Summary**: Conducted a highly successful post-remediation validation sweep on server `AOVIA1VMS011` following Leonardo's local RDP-based execution of the Hosting Bundle 8.0.8 Repair and `iisreset`. Confirmed that the ASP.NET Core IIS Module (ANCM) `aspnetcorev2.dll` is now present on the server, and `AspNetCoreModuleV2` is successfully registered in IIS global modules. Swept all sites, app pools, folders, permissions, cert SNI bindings, and closed ports to confirm absolute environment readiness for Phase 2.
+
+**Key Updates**:
+- **ANCM Blocker Resolved**: Remote sweep successfully verified that `aspnetcorev2.dll` is present in `C:\Program Files\IIS\Asp.Net Core Module\V2\aspnetcorev2.dll` and that the global module `AspNetCoreModuleV2` is registered and active in IIS.
+- **IIS Sites & App Pools Verified**: Confirmed that the IIS Web Server service is running, both sites (`PortalGerencial.Production` and `PortalGerencial.Test`) exist, and all 4 app pools remain intact and properly configured.
+- **Isolated Directory Layouts & Permissions**: Re-validated all 14 folders under drive `D:` and confirmed that NTFS ACL rules are mapped to dynamic App Pool identities (`IIS APPPOOL\PortalGerencialApiPool` and `IIS APPPOOL\PortalGerencialTestApiPool`).
+- **HTTPS & Certificates Binding Integrity**: Verified that `CN=portal-gerencial.alpla.net` and `CN=portal-gerencial-test.alpla.net` SSL certificates are correctly bound to port 443 with SNI enabled.
+- **Secure Port and Database Enforcements**: Verified that ports `5000` and `5001` remain completely closed and unused, no databases were created, and no application binaries have been deployed. No credentials or passwords were stored.
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_PHASE1_SERVER_PREPARATION_REPORT.md` — Updated Status to "SUCCESSFULLY COMPLETED", marked the ANCM blocker as "RESOLVED ✅", and updated the Phase 2 roadmap next steps.
+- `docs/VERSION.md` — Bumped to v2.145.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION bumped to "2.145.0".
+
 ## [v2.144.0] - 2026-05-23
 
 ### Added — AOVIA1VMS011 Backend Deployment Blocker Remediation: ANCM Repair Plan (DEC-133)
