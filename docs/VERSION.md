@@ -2,7 +2,18 @@
 
 ## Current Version
 
-v2.146.0
+v2.147.0
+
+## [2.147.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 SQL Instance Reuse Assessment: Decommission Verified (DEC-133)
+- **Local Service Audit:** Checked SQL services locally on `AOVIA1VMS011`, confirming the default instance `MSSQLSERVER` is running and service account is `NT Service\MSSQLSERVER`.
+- **Physical DATA Audit:** Performed direct scanning of SQL default DATA folder and recursively drive D:, verifying **0 user databases** exist on disk (only system databases present).
+- **Active Connections Audit:** Ran network and process netstat scans, confirming **0 active connections** on port 1433 or local pipes.
+- **SQL Agent Status:** Audited service launcher, confirming SQL Server Agent is stopped and unavailable due to Express Edition restrictions.
+- **Controlled SQL Access Recovery Blueprint:** Prepared a step-by-step single-user mode (`/m"SQLCMD"`) recovery plan to resolve the sysadmin access blocker for account `ALPLA\adm_cintra01` with zero operational risk.
+- **Decommission Verdict:** Officially confirmed the instance is no longer used, and is 100% safe to repurpose for Portal databases `[Portal-Gerencial]` and `[Portal-Gerencial-Test]`.
+- **Changelog & Documentation Alignment:** Created `AOVIA1VMS011_SQL_INSTANCE_REUSE_ASSESSMENT.md` and aligned system to v2.147.0.
 
 ## [2.146.0] - 2026-05-23
 

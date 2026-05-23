@@ -7,13 +7,20 @@
 
 ## 1. Executive Summary
 
-This report documents the completion of the **Phase 2 read-only discovery phase** for the database and administrative permissions setup on server **`AOVIA1VMS011`** (Windows Server 2022 Standard) for the upcoming deployment of the Portal Gerencial relational databases:
+This report documents the completion of the **Phase 2 read-only discovery phase** and the decommission/readiness assessment of the default SQL Server instance **`MSSQLSERVER`** on server **`AOVIA1VMS011`** (Windows Server 2022 Standard) for the upcoming deployment of the Portal Gerencial relational databases:
 *   **Production Database:** `[Portal-Gerencial]`
 *   **Test/Staging Database:** `[Portal-Gerencial-Test]`
 
-Before provisioning the dedicated SQL Logins (`usr_portalgerencial` and `usr_portalgerencial_test`), schemas, and database owners, we executed read-only Active Directory and SQL Server login discovery sweeps to identify existing domain groups or SQL Windows logins that could be utilized for database administration.
+Before provisioning the dedicated SQL Logins (`adm_portalgerencial`, `usr_portalgerencial`, and `usr_portalgerencial_test`), schemas, and database owners, we executed read-only Active Directory sweeps, SQL Server logins discovery, and a physical decommission validation of `MSSQLSERVER` on disk and process levels.
 
-To preserve absolute network safety, remote SQL connection (TCP Port 1433) is blocked from our workstation to `AOVIA1VMS011`, proving that our local-only database isolation is successfully working. The local discovery script `C:\temp\AOVIA1VMS011_PHASE2_DISCOVERY.ps1` was executed locally via RDP by Leonardo under his administrative domain context (`ALPLA\adm_cintra01`), and the resulting report `C:\temp\AOVIA1VMS011_PHASE2_DISCOVERY_REPORT.txt` was read over the SMB administrative share to complete our discovery sweep.
+### Key Sweeps & Assessment Outcomes:
+1. **AD Group Sweeps:** Mapped corporate standard `SQ-` prefix and Leonardo's local IT support group memberships.
+2. **SQL Logins Sweeps:** Connected successfully under `ALPLA\adm_cintra01` but verified that Leonardo's account lacks SQL sysadmin privileges on `MSSQLSERVER` due to SQL Server Metadata Visibility Restrictions.
+3. **Decommission & Reuse Assessment:** Successfully audited `MSSQLSERVER` and confirmed that **0 user databases** exist on disk, **0 active connections** are registered, and SQL Agent is disabled (Express Edition). It is **100% safe to reuse** `MSSQLSERVER` for the Portal.
+4. **Administrative Access Recovery Plan:** Prepared a step-by-step single-user mode SQL administrative recovery procedure to resolve the sysadmin access blocker.
+
+For a detailed analysis of the SQL Server environment, physical database inventories, and the recovery procedure, please refer to the dedicated assessment document:  
+👉 **[AOVIA1VMS011 SQL Instance Reuse Assessment](file:///C:/dev/alpla-portal/docs/AOVIA1VMS011_SQL_INSTANCE_REUSE_ASSESSMENT.md)**
 
 ---
 

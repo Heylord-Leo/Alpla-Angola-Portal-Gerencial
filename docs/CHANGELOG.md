@@ -2,6 +2,29 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.147.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 SQL Instance Reuse Assessment: Decommission Verified (DEC-133)
+
+**Summary**: Successfully executed and completed the decommission and readiness validation of the local SQL Server default instance **`MSSQLSERVER`** on `AOVIA1VMS011`. Retargeted our Phase 2 SQL strategy based on Leonardo's confirmation that the previous workload has been successfully migrated to `AOVIA1VMS012`. Analyzed the verified local script execution report over SMB and physically confirmed that the default instance contains **zero user databases**, **zero active connections**, and is **100% safe to repurpose and reuse** for the Portal Gerencial databases. Prepared a detailed, controlled 9-step single-user mode recovery procedure to bypass the SQL sysadmin access blocker for `ALPLA\adm_cintra01`.
+
+**Key Updates**:
+- **Local service state audit**: Verified that default instance service `MSSQLSERVER` is running under virtual account `NT Service\MSSQLSERVER` with startup type `Automatic`.
+- **Physical DATA directories scan**: Performed filesystem scanning on default DATA folder and recursively drive D:, verifying **0 user databases** exist on disk. All files represent standard clean system database templates.
+- **Active network and process connections check**: Audited local port 1433 and netstat connections, confirming **0 active connections** exist on port 1433 or Named Pipes/Shared Memory for `MSSQLSERVER` process PID 3980.
+- **SQL Agent validation**: Verified that SQL Server Agent `SQLSERVERAGENT` is stopped and disabled, and is functionally unavailable due to Express Edition limitations.
+- **Controlled SQL sysadmin recovery blueprint**: Authored a step-by-step recovery plan using SQL Server Single-User Mode (`net start MSSQLSERVER /m"SQLCMD"`) to add `ALPLA\adm_cintra01` as a `sysadmin` login with zero risk of operational disruption.
+- **Approved instance reuse recommendation**: Formally recommended keeping `MSSQLSERVER` installed, leaving system databases untouched, and provisioning only the new Portal databases (`[Portal-Gerencial]` and `[Portal-Gerencial-Test]`) and Portal logins (`adm_portalgerencial`, `usr_portalgerencial`, `usr_portalgerencial_test`).
+- **Changelog & Documentation Alignment**: Created `docs/AOVIA1VMS011_SQL_INSTANCE_REUSE_ASSESSMENT.md` and integrated the decommission findings in `docs/AOVIA1VMS011_PHASE2_DATABASE_PREPARATION_REPORT.md` and amended `docs/DECISIONS.md` DEC-133.
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_SQL_INSTANCE_REUSE_ASSESSMENT.md` — [NEW] Detailed SQL decommission, physical/network validation, Express feature analysis, and single-user recovery procedure.
+- `docs/AOVIA1VMS011_PHASE2_DATABASE_PREPARATION_REPORT.md` — Updated Executive Summary to integrate decommission outcomes and link to the dedicated assessment report.
+- `docs/DECISIONS.md` — Amended DEC-133 item #2 to record formal decommission validation and single-user recovery approvals.
+- `docs/VERSION.md` — Bumped to v2.147.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION bumped to "2.147.0".
+
 ## [v2.146.0] - 2026-05-23
 
 ### Added — AOVIA1VMS011 Phase 2 Database Prep: AD & SQL Server Logins Discovery (DEC-133)
