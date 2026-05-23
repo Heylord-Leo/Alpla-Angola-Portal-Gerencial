@@ -2,7 +2,14 @@
 
 ## Current Version
 
-v2.143.0
+v2.144.0
+
+## [2.144.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 Backend Deployment Blocker Remediation: ANCM Repair Plan (DEC-133)
+- **ANCM Blocker Diagnosis:** Documented the full cause analysis and post-setup findings for the missing `aspnetcorev2.dll` and unconfigured global handler.
+- **Detailed Remediation Blueprint:** Prepared and documented clear, step-by-step instructions for Leonardo to download the correct `dotnet-hosting-8.0.8-win.exe` offline installer, copy it to `C:\temp\`, and execute an administrative **Repair**.
+- **Post-Setup Validation Checks:** Documented IIS service verification, HTTPS cert bindings, URL Rewrite checks, and `iisreset` verification metrics to guarantee deployment readiness.
 
 ## [2.143.0] - 2026-05-23
 

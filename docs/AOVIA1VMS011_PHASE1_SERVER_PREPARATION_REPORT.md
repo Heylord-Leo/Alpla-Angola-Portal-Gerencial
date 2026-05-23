@@ -48,9 +48,12 @@ During local setup script execution, a critical warning was logged:
 - **DLL Check:** `aspnetcorev2.dll` is **MISSING** from `C:\Program Files\IIS\Asp.Net Core Module\V2\`.
 - **Cause Analysis:** The ASP.NET Core Hosting Bundle (8.0.8) was installed *prior* to enabling the Web Server (IIS) role. When the Hosting Bundle installer ran, it did not find the IIS role and skipped registering the ASP.NET Core IIS Module (ANCM). Enabling the IIS role afterwards does not automatically register the module.
 - **Consequence:** This is a **core blocker**. Any attempt to host the .NET backend API inside IIS using `hostingModel="InProcess"` or `OutOfProcess` will immediately fail with an IIS `500.19 - Internal Server Error` (Configuration error - unrecognized handler `aspNetCore`).
-- **Safest Remediation:** Run a **Repair** or **Re-installation** of the **ASP.NET Core Hosting Bundle 8.0.8** on `AOVIA1VMS011`. This will automatically detect the now-active IIS role, register the global `aspNetCore` handler, and write `aspnetcorev2.dll` to `inetsrv`.
-  > [!IMPORTANT]
-  > **Remediation Constraint:** Do not execute this repair until formally reviewed and approved by Leonardo.
+- **Workstation & Server Installer Audit:**
+  - Targeted, non-recursive sweeps were performed over SMB on `AOVIA1VMS011` under `C:\Users\adm_cintra001\Downloads` and `C:\Users\Public\Downloads`, and on `AOVIA1OLP031` under `C:\Users\cintra01\Downloads` and `C:\temp\`.
+  - Targeted searches were also run recursively under `C:\ProgramData\Package Cache\` on `AOVIA1VMS011` to find bootstrapper cache.
+  - The local `dotnet-hosting-8.0.8-win.exe` offline installer was **not found** cached on the server or developer workstation.
+  - Local workstation command-line downloads from Microsoft CDN via `Invoke-WebRequest` are blocked by corporate proxy gateway policies (`GatewayExceptionResponse`).
+- **Remediation Plan:** Leonardo must obtain the official installer (download link provided below), place it at `C:\temp\dotnet-hosting-8.0.8-win.exe` on `AOVIA1VMS011`, and run a **Repair** to place and register the required IIS handler binaries.
 
 ---
 
@@ -148,7 +151,19 @@ The 14 isolated folder structures were successfully provisioned on drive D: and 
 
 1. **Missing ASP.NET Core IIS Module (ANCM) Registration:**
    - **Status:** **High Blocker.**
-   - **Remediation:** RDP into the server `AOVIA1VMS011` as Administrator, run the **ASP.NET Core Hosting Bundle 8.0.8** installer, and select **Repair/Reinstall**. This will register `aspnetcorev2.dll` with IIS.
+   - **Offline Installer Source:** Leonardo can download the official Microsoft installer securely here:  
+     👉 **[dotnet-hosting-8.0.8-win.exe](https://download.visualstudio.microsoft.com/download/pr/4458f278-f7ad-45c1-8418-403487f55b9e/1066046e331c18bf79b4a1b023730e6a/dotnet-hosting-8.0.8-win.exe)**
+   - **Local Workstation/Server Target Path:** `C:\temp\dotnet-hosting-8.0.8-win.exe` on `AOVIA1VMS011`
+   - **Remediation Execution Steps (RDP):**
+     1. Download `dotnet-hosting-8.0.8-win.exe` from the secure link above on a machine with internet access.
+     2. Copy the file to `C:\temp\dotnet-hosting-8.0.8-win.exe` on server `AOVIA1VMS011` via SMB share.
+     3. Log into `AOVIA1VMS011` via RDP as Administrator.
+     4. Run the installer `dotnet-hosting-8.0.8-win.exe` as Administrator and select **Repair** or **Reinstall** on the installation wizard.
+     5. Open a PowerShell command prompt as Administrator and run:
+        ```powershell
+        iisreset
+        ```
+     6. Verify that `aspnetcorev2.dll` now exists under `C:\Program Files\IIS\Asp.Net Core Module\V2\aspnetcorev2.dll` and that the global module `AspNetCoreModuleV2` is visible in IIS.
 2. **DNS Names Mapping:**
    - **Status:** **Low Blocker** (can bypass using local hosts files).
    - **Remediation:** Map DNS names `portalangola.alpla.com` and `portalangola-test.alpla.com` to AOVIA1VMS011 IP `10.130.9.31` in the internal active directory domain `alpla.net`.

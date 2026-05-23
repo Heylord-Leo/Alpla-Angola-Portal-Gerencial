@@ -2,6 +2,24 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.144.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 Backend Deployment Blocker Remediation: ANCM Repair Plan (DEC-133)
+
+**Summary**: Prepared the concrete remediation steps to resolve the missing ASP.NET Core IIS Module (ANCM) `aspnetcorev2.dll` blocker before backend deployment on `AOVIA1VMS011`. Conducted thorough recursive searches on the server and workstation over SMB and confirmed that the `dotnet-hosting-8.0.8-win.exe` offline installer is not pre-cached on disk and proxy gateway rules block direct command-line downloads. Documented a clear, step-by-step remediation guide with secure CDN links for Leonardo to perform a local RDP Repair of the Hosting Bundle and run `iisreset`.
+
+**Key Updates**:
+- **Workstation & Server Installer Audit**: Verified that `dotnet-hosting-8.0.8-win.exe` is not available in the remote downloads, temp, or package cache folders, nor locally on the developer machine downloads.
+- **Remediation Integration in Phase 1 Report**: Fully updated `docs/AOVIA1VMS011_PHASE1_SERVER_PREPARATION_REPORT.md` with step-by-step repair and verification guidelines.
+- **Secure Installer Reference**: Documented the exact, secure Microsoft CDN download link for the offline installer `dotnet-hosting-8.0.8-win.exe`.
+- **Validation After Remediation Checklist**: Detailed the post-repair checklists covering IIS status, SNI site integrity, URL Rewrite, closed ports 5000/5001, and zero databases/binaries deployed.
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_PHASE1_SERVER_PREPARATION_REPORT.md` — Updated with local targeted search audits, secure download link, and RDP repair guidelines.
+- `docs/VERSION.md` — Bumped to v2.144.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION bumped to "2.144.0".
+
 ## [v2.143.0] - 2026-05-23
 
 ### Added — AOVIA1VMS011 Phase 1 Server Preparation Completed (DEC-133)
