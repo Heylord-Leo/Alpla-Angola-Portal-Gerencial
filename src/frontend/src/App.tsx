@@ -150,6 +150,9 @@ const ServiceDiagnosis = React.lazy(() =>
 const IntegrationHealth = React.lazy(() =>
     import('./pages/Admin/IntegrationHealth').then(m => ({ default: m.IntegrationHealth }))
 );
+const IntegrationSettings = React.lazy(() =>
+    import('./pages/Admin/IntegrationSettings').then(m => ({ default: m.IntegrationSettings }))
+);
 const UserManagement = React.lazy(() =>
     import('./pages/Admin/UserManagement')
 );
@@ -320,6 +323,7 @@ function AppContent() {
                 <Route path="/admin/users" element={<AdminRoute allowedRoles={[ROLES.LOCAL_MANAGER]}><Suspense fallback={<LoadingSkeleton />}><UserManagement /></Suspense></AdminRoute>} />
                 <Route path="/admin/diagnosis" element={<AdminRoute><Suspense fallback={<LoadingSkeleton />}><ServiceDiagnosis /></Suspense></AdminRoute>} />
                 <Route path="/admin/health" element={<AdminRoute><Suspense fallback={<LoadingSkeleton />}><IntegrationHealth /></Suspense></AdminRoute>} />
+                <Route path="/admin/integrations" element={<AdminRoute><Suspense fallback={<LoadingSkeleton />}><IntegrationSettings /></Suspense></AdminRoute>} />
             </Route>
         </Routes>
     );

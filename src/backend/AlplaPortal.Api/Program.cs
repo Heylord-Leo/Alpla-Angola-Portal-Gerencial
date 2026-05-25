@@ -39,10 +39,12 @@ builder.Services.AddScoped<IDocumentExtractionSettingsService, DocumentExtractio
 // Admin audit log writer — dedicated, best-effort persistence (not a generic ILoggerProvider).
 builder.Services.AddScoped<AdminLogWriter>();
 
-// Integration Foundation — generic provider health service + concrete providers.
+// Integration Foundation — settings cascade resolver + health service + concrete providers.
+builder.Services.AddScoped<IntegrationConfigResolver>();
 builder.Services.AddScoped<IIntegrationProvider, PrimaveraIntegrationProvider>();
 builder.Services.AddScoped<IIntegrationProvider, InnuxIntegrationProvider>();
 builder.Services.AddScoped<IIntegrationHealthService, IntegrationHealthService>();
+builder.Services.AddScoped<IIntegrationSettingsService, IntegrationSettingsService>();
 builder.Services.AddScoped<PrimaveraConnectionFactory>();
 builder.Services.AddScoped<IPrimaveraEmployeeService, PrimaveraEmployeeService>();
 builder.Services.AddScoped<IPrimaveraArticleService, PrimaveraArticleService>();

@@ -941,6 +941,7 @@ public class ApplicationDbContext : DbContext
             .OnDelete(DeleteBehavior.Cascade);
 
         // Seed: Primavera + Innux (Phase 1A — Primavera has real implementation, Innux remains planned)
+        // Seed: OPENAI + SMTP (Phase 2 — Integration Management Module, DEC-135)
         modelBuilder.Entity<IntegrationProvider>().HasData(
             new IntegrationProvider
             {
@@ -971,13 +972,45 @@ public class ApplicationDbContext : DbContext
                 DisplayOrder = 2,
                 Capabilities = "[\"EMPLOYEES\",\"ATTENDANCE\"]",
                 CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new IntegrationProvider
+            {
+                Id = 3,
+                Code = "OPENAI",
+                Name = "OpenAI / ChatGPT API",
+                ProviderType = "API",
+                ConnectionType = "REST_API",
+                Description = "AI-powered document extraction and analysis — OCR processing for proformas, invoices, and contracts.",
+                Environment = "PRODUCTION",
+                IsEnabled = true,
+                IsPlanned = false,
+                DisplayOrder = 3,
+                Capabilities = "[\"DOCUMENT_EXTRACTION\",\"OCR\"]",
+                CreatedAtUtc = new DateTime(2026, 5, 25, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new IntegrationProvider
+            {
+                Id = 4,
+                Code = "SMTP",
+                Name = "Email / SMTP Service",
+                ProviderType = "API",
+                ConnectionType = "SMTP",
+                Description = "Email notification service — sends workflow alerts, password resets, and proforma deadline reminders.",
+                Environment = "PRODUCTION",
+                IsEnabled = true,
+                IsPlanned = false,
+                DisplayOrder = 4,
+                Capabilities = "[\"EMAIL_NOTIFICATIONS\",\"ALERTS\"]",
+                CreatedAtUtc = new DateTime(2026, 5, 25, 0, 0, 0, DateTimeKind.Utc)
             }
         );
 
         // Seed: initial connection status records
         modelBuilder.Entity<IntegrationConnectionStatus>().HasData(
             new IntegrationConnectionStatus { Id = 1, IntegrationProviderId = 1, CurrentStatus = IntegrationStatusCodes.NotConfigured },
-            new IntegrationConnectionStatus { Id = 2, IntegrationProviderId = 2, CurrentStatus = IntegrationStatusCodes.Planned }
+            new IntegrationConnectionStatus { Id = 2, IntegrationProviderId = 2, CurrentStatus = IntegrationStatusCodes.Planned },
+            new IntegrationConnectionStatus { Id = 3, IntegrationProviderId = 3, CurrentStatus = IntegrationStatusCodes.NotConfigured },
+            new IntegrationConnectionStatus { Id = 4, IntegrationProviderId = 4, CurrentStatus = IntegrationStatusCodes.NotConfigured }
         );
 
         // Seed: HR Leave Types

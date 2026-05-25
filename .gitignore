@@ -27,6 +27,10 @@ redesign-temp/
 *.certificate
 *.cert
 
+# .NET development secrets — NEVER track credentials in Git
+appsettings.Development.json
+secrets.json
+
 # .NET Specific
 *.user
 *.suo

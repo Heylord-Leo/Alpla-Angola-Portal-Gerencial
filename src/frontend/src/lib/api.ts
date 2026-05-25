@@ -1,7 +1,7 @@
-import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, SmtpSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto } from '../types';
+import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, SmtpSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto, IntegrationSettingsDto, IntegrationConnectionTestResultDto, UpdateIntegrationSettingsDto } from '../types';
 import { logger, FrontendComponentKey } from './logger';
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 export class ApiError extends Error {
     public status?: number;
@@ -1672,6 +1672,56 @@ export const api = {
                     method: 'POST'
                 });
                 if (!response.ok) return handleApiError(response, 'Falha ao testar conexão do provedor.', 'AdminApi');
+                return response.json();
+            }
+        },
+        integrationSettings: {
+            getAll: async (): Promise<IntegrationSettingsDto[]> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings`);
+                if (!response.ok) return handleApiError(response, 'Falha ao carregar configurações de integração.', 'AdminApi');
+                return response.json();
+            },
+            getByCode: async (code: string): Promise<IntegrationSettingsDto> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings/${code}`);
+                if (!response.ok) return handleApiError(response, 'Falha ao carregar configuração do provedor.', 'AdminApi');
+                return response.json();
+            },
+            update: async (code: string, data: UpdateIntegrationSettingsDto): Promise<void> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings/${code}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao atualizar configurações do provedor.', 'AdminApi');
+            },
+            replaceSecret: async (code: string, secretType: string, newSecretValue: string): Promise<{ message: string }> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings/${code}/secret`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ secretType, newSecretValue }),
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao atualizar segredo.', 'AdminApi');
+                return response.json();
+            },
+            testConnection: async (code: string): Promise<IntegrationConnectionTestResultDto> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings/${code}/test`, {
+                    method: 'POST'
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao testar conexão.', 'AdminApi');
+                return response.json();
+            },
+            enable: async (code: string): Promise<{ message: string }> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings/${code}/enable`, {
+                    method: 'POST'
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao habilitar provedor.', 'AdminApi');
+                return response.json();
+            },
+            disable: async (code: string): Promise<{ message: string }> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings/${code}/disable`, {
+                    method: 'POST'
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao desabilitar provedor.', 'AdminApi');
                 return response.json();
             }
         }

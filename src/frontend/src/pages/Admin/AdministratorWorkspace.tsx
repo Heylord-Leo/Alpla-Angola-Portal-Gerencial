@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, Activity, Network, ChevronRight, Users } from 'lucide-react';
+import { FileText, Activity, Network, ChevronRight, Users, Settings2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -97,6 +97,14 @@ export function AdministratorWorkspace() {
                     title="Saúde das Integrações"
                     description="Monitorize a integridade das comunicações com AlplaPROD e Primavera ERP."
                     color="var(--color-status-blue)"
+                />
+                <AdminTile 
+                    to="/admin/integrations"
+                    icon={<Settings2 size={24} />}
+                    title="Gestão de Integrações"
+                    description="Configure credenciais, endpoints e segredos das integrações externas (Primavera, Innux, OpenAI, SMTP)."
+                    color="var(--color-status-teal, #14b8a6)"
+                    data-tour="admin-integrations-tile"
                 />
             </div>
             

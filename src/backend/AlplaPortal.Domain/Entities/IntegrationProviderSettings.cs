@@ -58,6 +58,17 @@ public class IntegrationProviderSettings
     /// </summary>
     public string? AdditionalConfig { get; set; }
 
+    // ─── Management & access control ───
+
+    /// <summary>Prevents UI edits when true. Used for production-critical providers.</summary>
+    public bool IsReadOnly { get; set; }
+
+    /// <summary>Incremented on each secret rotation for audit tracking.</summary>
+    public int SecretVersion { get; set; }
+
+    /// <summary>FK to the User who last modified these settings.</summary>
+    public Guid? UpdatedByUserId { get; set; }
+
     // Audit
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAtUtc { get; set; }

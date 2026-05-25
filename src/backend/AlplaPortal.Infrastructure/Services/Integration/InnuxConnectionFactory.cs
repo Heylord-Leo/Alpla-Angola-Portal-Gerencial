@@ -10,31 +10,34 @@ namespace AlplaPortal.Infrastructure.Services.Integration;
 /// Unlike PrimaveraConnectionFactory, Innux has a single database target —
 /// no company routing, no multi-database strategy.
 ///
-/// Reads connection settings from Integrations:Innux section:
-/// - Server, InstanceName, DatabaseName
-/// - AuthenticationMode (SQL / WINDOWS)
-/// - Username, Password (for SQL auth)
-/// - TimeoutSeconds
+/// Settings cascade (Phase 3):
+///   1. Database-backed IntegrationProviderSettings for code "INNUX"
+///      → Server, InstanceName, DatabaseName, AuthMode, Username, EncryptedPassword
+///   2. IConfiguration fallback: Integrations:Innux section
+///   3. Safe disabled state if neither is available
 ///
-/// Reusable by any future Innux domain service (employees, attendance,
+/// Reusable by any Innux domain service (employees, attendance,
 /// terminals, etc.) — this factory provides connections only.
 /// </summary>
 public class InnuxConnectionFactory
 {
     private readonly IConfiguration _configuration;
+    private readonly IntegrationConfigResolver _configResolver;
     private readonly ILogger<InnuxConnectionFactory> _logger;
 
     public InnuxConnectionFactory(
         IConfiguration configuration,
+        IntegrationConfigResolver configResolver,
         ILogger<InnuxConnectionFactory> logger)
     {
         _configuration = configuration;
+        _configResolver = configResolver;
         _logger = logger;
     }
 
     /// <summary>
     /// Creates and opens a SQL connection to the Innux database.
-    /// Validates configuration completeness before attempting connection.
+    /// Uses the settings cascade: DB → IConfiguration → disabled.
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// Thrown when Innux is not enabled, credentials are missing,
@@ -42,22 +45,26 @@ public class InnuxConnectionFactory
     /// </exception>
     public async Task<SqlConnection> CreateConnectionAsync(CancellationToken ct = default)
     {
-        var section = _configuration.GetSection("Integrations:Innux");
+        var resolved = await _configResolver.ResolveSqlSettingsAsync(
+            "INNUX", "Integrations:Innux", ct);
 
         // ─── Validate provider-level configuration ───
 
-        var enabledRaw = section["Enabled"];
-        if (!bool.TryParse(enabledRaw, out var isEnabled) || !isEnabled)
+        if (!resolved.IsEnabled)
         {
             throw new InvalidOperationException("Innux integration is not enabled.");
         }
 
-        var server = section["Server"];
-        var databaseName = section["DatabaseName"];
-
-        if (string.IsNullOrWhiteSpace(server))
+        if (!resolved.IsConfigured)
         {
             throw new InvalidOperationException("Innux server is not configured.");
+        }
+
+        // For Innux, DatabaseName comes from the resolved settings or config section
+        var databaseName = resolved.DatabaseName;
+        if (resolved.Source == "CONFIGURATION" && string.IsNullOrWhiteSpace(databaseName))
+        {
+            databaseName = _configuration["Integrations:Innux:DatabaseName"];
         }
 
         if (string.IsNullOrWhiteSpace(databaseName))
@@ -67,11 +74,11 @@ public class InnuxConnectionFactory
 
         // ─── Build connection string ───
 
-        var connectionString = BuildConnectionString(section);
+        var connectionString = BuildConnectionString(resolved, databaseName);
 
         _logger.LogDebug(
-            "InnuxConnectionFactory: opening connection to database {Database}, server {Server}",
-            databaseName, server);
+            "InnuxConnectionFactory: opening connection to database {Database}, server {Server}, source {Source}",
+            databaseName, resolved.Server, resolved.Source);
 
         var connection = new SqlConnection(connectionString);
 
@@ -89,19 +96,39 @@ public class InnuxConnectionFactory
 
     /// <summary>
     /// Returns the configured database name for diagnostics/logging.
+    /// Checks DB-backed settings first, then IConfiguration fallback.
     /// Does not open a connection.
     /// </summary>
     public string? GetDatabaseName()
     {
+        // Synchronous — acceptable for diagnostics
+        var resolved = _configResolver.ResolveSqlSettingsAsync(
+            "INNUX", "Integrations:Innux").GetAwaiter().GetResult();
+
+        if (resolved.Source == "DATABASE" && !string.IsNullOrWhiteSpace(resolved.DatabaseName))
+            return resolved.DatabaseName;
+
         return _configuration["Integrations:Innux:DatabaseName"];
     }
 
     /// <summary>
     /// Returns the configured server/instance data source for diagnostics/logging.
+    /// Checks DB-backed settings first, then IConfiguration fallback.
     /// Does not open a connection.
     /// </summary>
     public string? GetDataSource()
     {
+        // Synchronous — acceptable for diagnostics
+        var resolved = _configResolver.ResolveSqlSettingsAsync(
+            "INNUX", "Integrations:Innux").GetAwaiter().GetResult();
+
+        if (resolved.Source == "DATABASE" && resolved.IsConfigured)
+        {
+            return string.IsNullOrWhiteSpace(resolved.InstanceName)
+                ? resolved.Server
+                : $"{resolved.Server}\\{resolved.InstanceName}";
+        }
+
         var section = _configuration.GetSection("Integrations:Innux");
         var server = section["Server"];
         var instanceName = section["InstanceName"];
@@ -114,16 +141,14 @@ public class InnuxConnectionFactory
     }
 
     /// <summary>
-    /// Builds a SQL Server connection string from the Integrations:Innux section.
-    /// Strictly adheres to explicit authentication rules.
+    /// Builds a SQL Server connection string from resolved settings.
     /// </summary>
-    internal static string BuildConnectionString(IConfigurationSection section)
+    private static string BuildConnectionString(
+        IntegrationConfigResolver.ResolvedSqlSettings resolved, string databaseName)
     {
-        var server = section["Server"] ?? string.Empty;
-        var instanceName = section["InstanceName"];
-        var databaseName = section["DatabaseName"] ?? string.Empty;
-        var authMode = section["AuthenticationMode"]?.ToUpperInvariant() ?? "SQL";
-        var timeoutSeconds = GetTimeoutSeconds(section);
+        var server = resolved.Server ?? string.Empty;
+        var instanceName = resolved.InstanceName;
+        var authMode = resolved.AuthenticationMode;
 
         var dataSource = string.IsNullOrWhiteSpace(instanceName)
             ? server
@@ -133,7 +158,7 @@ public class InnuxConnectionFactory
         {
             DataSource = dataSource,
             InitialCatalog = databaseName,
-            ConnectTimeout = timeoutSeconds,
+            ConnectTimeout = resolved.TimeoutSeconds,
             TrustServerCertificate = true,
             Encrypt = SqlConnectionEncryptOption.Optional,
             ApplicationName = "AlplaPortal_Integration_Innux"
@@ -145,23 +170,24 @@ public class InnuxConnectionFactory
         }
         else
         {
-            var username = section["Username"];
-            var password = section["Password"];
-
-            if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+            if (string.IsNullOrWhiteSpace(resolved.Username) || string.IsNullOrWhiteSpace(resolved.DecryptedPassword))
             {
                 throw new InvalidOperationException(
                     "Innux SQL Authentication credentials are not fully configured. Required: Username, Password.");
             }
 
             builder.IntegratedSecurity = false;
-            builder.UserID = username;
-            builder.Password = password;
+            builder.UserID = resolved.Username;
+            builder.Password = resolved.DecryptedPassword;
         }
 
         return builder.ConnectionString;
     }
 
+    /// <summary>
+    /// Returns timeout seconds from resolved settings.
+    /// Used by InnuxIntegrationProvider for command timeouts.
+    /// </summary>
     internal static int GetTimeoutSeconds(IConfigurationSection section)
     {
         if (int.TryParse(section["TimeoutSeconds"], out var timeout) && timeout > 0)

@@ -4,6 +4,7 @@ using AlplaPortal.Application.Models.Configuration;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Logging;
+using AlplaPortal.Infrastructure.Services.Integration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -19,6 +20,7 @@ public class DocumentExtractionSettingsService : IDocumentExtractionSettingsServ
     private readonly DocumentExtractionOptions _configOptions;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
+    private readonly IntegrationConfigResolver _configResolver;
     private readonly ILogger<DocumentExtractionSettingsService> _logger;
     private readonly AdminLogWriter _adminLog;
 
@@ -29,6 +31,7 @@ public class DocumentExtractionSettingsService : IDocumentExtractionSettingsServ
         IOptions<DocumentExtractionOptions> configOptions,
         IHttpClientFactory httpClientFactory,
         IConfiguration configuration,
+        IntegrationConfigResolver configResolver,
         ILogger<DocumentExtractionSettingsService> logger,
         AdminLogWriter adminLog)
     {
@@ -36,6 +39,7 @@ public class DocumentExtractionSettingsService : IDocumentExtractionSettingsServ
         _configOptions = configOptions.Value;
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
+        _configResolver = configResolver;
         _logger = logger;
         _adminLog = adminLog;
     }
@@ -268,14 +272,18 @@ public class DocumentExtractionSettingsService : IDocumentExtractionSettingsServ
             return new ConnectionTestResultDto { Success = false, ProviderName = "OpenAI", Message = "O provedor OpenAI está desativado." };
         }
 
-        var apiKey = _configuration["OPENAI_API_KEY"];
+        // Phase 3: Cascade API key resolution — DB first, env var fallback
+        var resolvedApi = await _configResolver.ResolveApiSettingsAsync("OPENAI", "OPENAI_API_KEY", ct);
+        var apiKey = resolvedApi.DecryptedApiKey;
+        var apiKeySource = resolvedApi.Source;
+
         var isApiKeyPresent = !string.IsNullOrWhiteSpace(apiKey);
         var isModelPresent = !string.IsNullOrWhiteSpace(settings.Model);
 
         if (!isApiKeyPresent || !isModelPresent)
         {
             var missing = new List<string>();
-            if (!isApiKeyPresent) missing.Add("OPENAI_API_KEY (Environment/Config)");
+            if (!isApiKeyPresent) missing.Add("OPENAI API Key (Database ou Environment)");
             if (!isModelPresent) missing.Add("Model");
 
             await _adminLog.WriteAsync(
@@ -283,7 +291,7 @@ public class DocumentExtractionSettingsService : IDocumentExtractionSettingsServ
                 source: Source,
                 eventType: "OCR_PROVIDER_TEST_FAILED",
                 message: $"Teste de conexão OpenAI falhou: configuração incompleta. Faltando: {string.Join(", ", missing)}.",
-                payload: SafePayload.From(new { Provider = "OPENAI", Model = settings.Model, MissingFields = missing }));
+                payload: SafePayload.From(new { Provider = "OPENAI", Model = settings.Model, MissingFields = missing, KeySource = apiKeySource }));
 
             return new ConnectionTestResultDto { Success = false, ProviderName = "OpenAI", Message = $"Configuração de OpenAI incompleta. Faltando: {string.Join(", ", missing)}." };
         }

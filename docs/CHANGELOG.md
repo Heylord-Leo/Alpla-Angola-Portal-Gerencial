@@ -2,6 +2,137 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.153.0] - 2026-05-25
+
+### Added — Integration Management Module: CRUD UI, Factory Refactoring & Frontend Type Safety (DEC-134)
+
+**Summary**: Implemented a complete Integration Management module enabling System Administrators to view, configure, test, and manage all integration provider settings (Primavera, Innux, OpenAI, SMTP) from a unified admin UI. Refactored all runtime services to resolve configuration from database-backed `IntegrationProviderSettings` first, with `IConfiguration`/environment variable fallback, and a safe disabled state when neither source is available. Performed comprehensive frontend type safety cleanup eliminating all `any` types from the integration API layer.
+
+**Phase A — Architecture Review**:
+- Comprehensive analysis of the existing 4-layer configuration cascade (IIS env vars → appsettings → DB rows).
+- Identified 3 services requiring refactoring: `PrimaveraConnectionFactory`, `InnuxConnectionFactory`, `DocumentExtractionSettingsService`.
+- Documented security findings: plaintext credentials in `appsettings.Development.json`, hardcoded AES fallback key.
+- Architecture review saved to `docs/INTEGRATION_MANAGEMENT_ARCHITECTURE_REVIEW.md`.
+
+**Phase B — CRUD API & Frontend UI**:
+- **New Controller**: `IntegrationSettingsController` under `/api/admin/integration-settings` with 7 endpoints (GET all, GET by code, PUT settings, POST secret, POST test, POST enable, POST disable).
+- **New Service**: `IntegrationSettingsService` — full CRUD orchestration with AES encryption for secrets, admin log audit trail, and `IntegrationHealthService` delegation for test connections.
+- **New DTOs**: `IntegrationSettingsDto`, `UpdateIntegrationSettingsRequest`, `ReplaceIntegrationSecretRequest` with `[JsonPropertyName]` serialization.
+- **Database Migration**: `AddIntegrationManagementUI` — seeds OPENAI and SMTP providers + `IntegrationProviderSettings` rows with default config.
+- **Frontend Page**: `IntegrationSettings.tsx` at `/admin/integrations` — expandable provider cards, inline field editing, masked secret management (`SecretManager` component), real-time connection testing, enable/disable toggle.
+- **Admin Tile**: Added "Configurar Integrações" tile to `AdministratorWorkspace.tsx`.
+- **Route**: Registered `/admin/integrations` in `App.tsx` with `System Administrator` role guard.
+
+**Phase C — Factory Refactoring (DB-First Configuration)**:
+- **New Service**: `IntegrationConfigResolver` — scoped DI service implementing the 3-tier cascade: DB (`IntegrationProviderSettings` with `AesEncryptionHelper` decryption) → `IConfiguration` fallback → Safe disabled state.
+- **PrimaveraConnectionFactory**: Now resolves Server, InstanceName, Username, and Password from `IntegrationConfigResolver.ResolveAsync("PRIMAVERA")` before falling back to `Integrations:Primavera` config section.
+- **InnuxConnectionFactory**: Same DB-first resolution via `IntegrationConfigResolver.ResolveAsync("INNUX")`.
+- **OpenAiDocumentExtractionProvider**: API key now resolved via `IntegrationConfigResolver.ResolveApiKeyAsync("OPENAI")` with `OPENAI_API_KEY` environment variable fallback.
+- **DocumentExtractionSettingsService**: Test connection method also uses the resolver cascade.
+- **DI Registration**: `IntegrationConfigResolver` registered as scoped in `Program.cs`.
+
+**Phase D — Frontend Type Safety Cleanup**:
+- Moved inline `IntegrationSettingsDto` from `IntegrationSettings.tsx` to shared `types/index.ts`.
+- Added `UpdateIntegrationSettingsDto`, `ReplaceIntegrationSecretDto`, `IntegrationConnectionTestResultDto` to shared types.
+- Replaced all `Promise<any>` return types in `api.ts` integration methods with strongly-typed DTOs.
+- Replaced all `catch (err: any)` with `catch (err: unknown)` and safe `instanceof Error` message extraction.
+- **Bug Fix**: Test connection handler was reading `result.currentStatus` and `result.lastResponseTimeMs` (properties from `IntegrationProviderStatusDto`) instead of `result.success` and `result.responseTimeMs` (from `IntegrationConnectionTestResultDto`). This would have caused all test results to display as failures.
+- Added `data-tour="integrations-configure-btn"` anchor to provider card header for guided tour integration.
+
+**Files Changed**:
+- `src/backend/AlplaPortal.Api/Controllers/Admin/IntegrationSettingsController.cs` — [NEW] CRUD + secret rotation + test + enable/disable.
+- `src/backend/AlplaPortal.Application/DTOs/Integration/IntegrationSettingsDtos.cs` — [NEW] GET/PUT/POST DTOs.
+- `src/backend/AlplaPortal.Application/Interfaces/IIntegrationSettingsService.cs` — [NEW] Service interface.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/IntegrationSettingsService.cs` — [NEW] Service implementation.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/IntegrationConfigResolver.cs` — [NEW] DB-first config resolver.
+- `src/backend/AlplaPortal.Infrastructure/Persistence/Migrations/AddIntegrationManagementUI.cs` — [NEW] Migration.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/PrimaveraConnectionFactory.cs` — Refactored to use resolver.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/InnuxConnectionFactory.cs` — Refactored to use resolver.
+- `src/backend/AlplaPortal.Infrastructure/Services/Extraction/OpenAiDocumentExtractionProvider.cs` — Refactored to use resolver.
+- `src/backend/AlplaPortal.Api/Program.cs` — DI registration for `IntegrationSettingsService` and `IntegrationConfigResolver`.
+- `src/frontend/src/pages/Admin/IntegrationSettings.tsx` — [NEW] Integration management UI.
+- `src/frontend/src/pages/Admin/AdministratorWorkspace.tsx` — Added integration tile.
+- `src/frontend/src/App.tsx` — Route registration.
+- `src/frontend/src/types/index.ts` — Added 4 integration DTO types.
+- `src/frontend/src/lib/api.ts` — Typed integration API methods.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.153.0".
+- `docs/INTEGRATION_MANAGEMENT_ARCHITECTURE_REVIEW.md` — [NEW] Phase A architecture review.
+- `docs/VERSION.md` — v2.153.0.
+- `docs/CHANGELOG.md` — This entry.
+- `docs/DECISIONS.md` — DEC-134.
+
+## [v2.152.0] - 2026-05-25
+
+### Fixed — AOVIA1VMS011 Staging IIS Connection String Mismatch & Hardening (DEC-133)
+
+**Summary**: Resolved the staging login connection failure (`HTTP 500` error) by diagnosing a mismatch between the environment variable written by the secure configuration script (`ConnectionStrings__PortalDatabase`) and the configuration key expected by the .NET 8 backend API (`builder.Configuration.GetConnectionString("DefaultConnection")` in `Program.cs`). Patched the secure local PowerShell configuration script to map the correct `ConnectionStrings__DefaultConnection` variable in IIS using `Microsoft.Web.Administration` and recycle the target app pool `PortalGerencialTestApiPool` successfully. Documented the intentional double `/api` path prefix (`/api/api/auth/login`) arising from IIS virtual directories, and analyzed ephemeral in-memory DataProtection keys warnings with hardening recommendations for subsequent production releases.
+
+**Key Updates**:
+- **Staging Connection String Key Correction**: Patched the secure local PowerShell configuration script (`AOVIA1VMS011_PHASE3_SECURE_CONFIGURATION.ps1`) to set the `ConnectionStrings__DefaultConnection` environment variable on `PortalGerencialTestApiPool`, resolving the `System.InvalidOperationException: The ConnectionString property has not been initialized` exception.
+- **IIS Secure Script Overwrite**: Transferred the updated configuration script over SMB to remote server temp path `\\AOVIA1VMS011\C$\temp\AOVIA1VMS011_PHASE3_SECURE_CONFIGURATION.ps1` for local execution.
+- **IIS Virtual Path Routing Audit**: Documented the double `/api` prefix in request paths (IIS virtual path `/api` + controller routing prefix `/api/...`) showing it is intentional and functional under relative same-origin routing.
+- **DataProtection Key Ring Analysis**: Analyzed IIS Event Viewer warnings regarding ephemeral in-memory key repository and provided actionable persistent DPAPI/registry key ring blueprints for future production security hardening.
+
+### Fixed — SQL Login Password Mismatch (Error 18456)
+
+**Summary**: Resolved SQL Server authentication failure (`Error 18456: Login failed for user 'usr_portalgerencial_test'`) caused by password mismatch between Phase 2 SQL login provisioning and Phase 3 IIS connection string configuration. Created and deployed a unified password reset script that atomically sets both the SQL login password and IIS AppPool environment variables.
+
+**Key Updates**:
+- **Root Cause Diagnosis**: Enabled ANCM stdout logging temporarily, triggered a login request, and captured the exact `SqlException` from the stdout log confirming `Error 18456, State 1, Class 14`.
+- **Health Check Limitation Identified**: Documented that `/api/health` returns `Healthy` even with broken database authentication because `AddHealthChecks()` lacks `.AddSqlServer()`.
+- **Unified Password Reset Script**: Created `AOVIA1VMS011_PHASE3_SQL_PASSWORD_RESET.ps1` to atomically `ALTER LOGIN` and update both `ConnectionStrings__DefaultConnection` and `ConnectionStrings__PortalDatabase` IIS environment variables in a single execution.
+- **PowerShell Parser Fix**: Fixed Unicode em-dash (`U+2014`) corruption in PowerShell 5.1 by replacing with ASCII double-dashes and saving with UTF-8 BOM.
+
+### Fixed — Stale Frontend Bundle Purge & Redeployment
+
+**Summary**: Resolved stale v2.150.0 frontend assets being served despite v2.151.0 deployment by performing a full directory purge and clean redeployment of v2.152.0 bundle.
+
+**Key Updates**:
+- **Full Directory Purge**: Purged all files from `D:\PortalGerencial-Test\Frontend\*` before copying fresh v2.152.0 dist assets.
+- **Bundle Verification**: Confirmed deployed `index.html` references `index-2C6NsQze.js` (v2.152.0), zero `localhost:5000` occurrences, zero stale chunk files.
+- **Deployment Checklist**: Documented mandatory Vite deployment procedure requiring full directory purge before copy.
+- **Browser Cache**: Identified browser-level cache as secondary cause; documented InPrivate/site data clear as validation procedure.
+
+### Validated — Final Staging Operational State
+
+- Login via `https://portal-gerencial-test.alpla.net/login` confirmed working.
+- Frontend v2.152.0 bundle active (`index-2C6NsQze.js`).
+- API calls route to same-origin `/api` (no `localhost:5000`).
+- Production database `[Portal-Gerencial]` and frontend directory remain untouched.
+- ANCM stdout logging restored to `false`.
+- No secrets committed to source control.
+- Ports 5000/5001 remain unused.
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_PHASE3_STAGING_ADMIN_ACCESS_RECOVERY.md` — Updated with SQL login fix, health check limitation, and comprehensive issue resolution table.
+- `docs/DECISIONS.md` — Updated DEC-133 choices for the `DefaultConnection` environment variable and DataProtection persistence.
+- `docs/VERSION.md` — Bumped to v2.152.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — Updated `APP_VERSION` to "2.152.0".
+
+
+## [v2.151.0] - 2026-05-25
+
+### Added — AOVIA1VMS011 Phase 3 Staging Access Recovery & same-origin API Routing (DEC-133)
+
+**Summary**: Successfully executed administrative staging access recovery on `AOVIA1VMS011` for target database `[Portal-Gerencial-Test]` using a dedicated compiled .NET 8 console utility `StagingAccessRecovery.exe` (which resolved Windows PowerShell .NET Core assembly loading blockers). Performed automated database schema sweeps to confirm `dbo.Users` and `dbo.UserRoleAssignments` structures and Role ID 1 mapping. Idempotently inserted/updated Leonardo's account state (`IsActive = 1`, `MustChangePassword = 1`, `AccessFailedCount = 0`, `LockoutEndUtc = NULL`) and assigned `System Administrator` role. Resolved frontend base URL connection blockers (`localhost:5000` failures) by refactoring Vite default API base path fallback in `api.ts` to same-origin relative `/api`, completely eliminating CORS and port binding complexities. Saved secure redacted logs on staging server, redeployed static frontend assets, and validated isolation from Production environment.
+
+**Key Updates**:
+- **Staging Access Recovery .NET 8 Utility**: Compiled a dedicated C# console utility and copied it over SMB to `C:\temp\StagingAccessRecovery\` to execute native BCrypt hashing and ADO.NET SQL updates locally on `AOVIA1VMS011`.
+- **Database Schema Validation**: Automated column sweeps confirming expected properties on `dbo.Users` and role mappings on `dbo.UserRoleAssignments` and `dbo.Roles`.
+- **Same-Origin Relative API Routing**: Refactored Vite API client base URL to relative `/api`, ensuring same-domain routing through IIS to bypass CORS preflights and remove direct Kestrel port 5000/5001 dependencies.
+- **Frontend redeployment**: Built and redeployed clean static assets to `D:\PortalGerencial-Test\Frontend` with zero hardcoded `localhost:5000` occurrences in the dist bundle.
+- **Strict Production Isolation**: Audited and confirmed that the Production database `[Portal-Gerencial]` and folders remain 100% clean and untouched.
+- **Exposed temporary password remediation**: Safely recommended Leonardo rerun the recovery utility to reset his temporary credentials following screenshot exposure.
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_PHASE3_STAGING_ADMIN_ACCESS_RECOVERY.md` — [NEW] Detailed staging recovery report.
+- `docs/DECISIONS.md` — Updated DEC-133 to record recovery utility architecture and same-origin relative API path choice.
+- `docs/VERSION.md` — Bumped to v2.151.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — Updated `APP_VERSION` to "2.151.0".
+- `src/frontend/src/lib/api.ts` — Changed API client fallback URL to `/api`.
+
 ## [v2.150.0] - 2026-05-23
 
 ### Added — AOVIA1VMS011 Phase 3 Test/Staging Deployment Staged & Configured (DEC-133)

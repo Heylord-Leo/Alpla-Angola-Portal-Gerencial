@@ -3,7 +3,7 @@ import {
     FileText, Home, Settings, List, ShoppingCart, 
     Package, Activity, Network, Shield, CheckCircle,
     CreditCard, DollarSign, Archive, Users, UserCheck, Calendar, CalendarDays,
-    Layers, History, FileSignature, Bell, CalendarCheck, Monitor
+    Layers, History, FileSignature, Bell, CalendarCheck, Monitor, Settings2
 } from 'lucide-react';
 import { ROLES } from './roles';
 
@@ -104,6 +104,15 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                     to: '/admin/health',
                     roles: [ROLES.SYSTEM_ADMINISTRATOR],
                     keywords: ['admin', 'técnico', 'dados', 'sincronizacao', 'primavera', 'erp', 'integridade']
+                },
+                {
+                    id: 'admin-integrations',
+                    type: 'link',
+                    label: 'Gestão de Integrações',
+                    icon: <Settings2 size={18} strokeWidth={2.5} />,
+                    to: '/admin/integrations',
+                    roles: [ROLES.SYSTEM_ADMINISTRATOR],
+                    keywords: ['admin', 'integrações', 'credenciais', 'segredos', 'configuração', 'openai', 'smtp', 'primavera', 'innux']
                 }
             ]
         },

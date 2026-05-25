@@ -2,7 +2,33 @@
 
 ## Current Version
 
-v2.150.0
+v2.153.0
+
+## [2.153.0] - 2026-05-25
+
+### Added — Integration Management Module: CRUD UI, Factory Refactoring & Frontend Type Safety (DEC-134)
+- **Integration Settings CRUD API**: New `IntegrationSettingsController` with GET (all/by-code), PUT (non-secret update), POST (secret rotation via AES encryption), POST (test connection), POST (enable/disable) endpoints under `[Authorize(Roles = "System Administrator")]`.
+- **Integration Settings Management UI**: New `IntegrationSettings.tsx` page at `/admin/integrations` with expandable provider cards, inline field editing, masked secret management, real-time connection testing, and enable/disable controls. Added to `AdministratorWorkspace.tsx` admin tile grid.
+- **Factory Refactoring — DB-First Configuration**: Created `IntegrationConfigResolver` (scoped service) implementing the DB → `IConfiguration` → Safe Disabled cascade. Refactored `PrimaveraConnectionFactory`, `InnuxConnectionFactory`, and `OpenAiDocumentExtractionProvider` to consume DB-backed settings with environment variable fallback.
+- **Frontend Type Safety**: Moved inline `IntegrationSettingsDto` to shared `types/index.ts`. Added `UpdateIntegrationSettingsDto`, `ReplaceIntegrationSecretDto`, and `IntegrationConnectionTestResultDto` types. Eliminated all `Promise<any>` returns in `api.ts` integration methods. Replaced all `catch (err: any)` with `catch (err: unknown)` and safe `instanceof Error` checks.
+- **Bug Fix — Test Connection Result Mapping**: Fixed test connection handler reading `result.currentStatus` (wrong DTO shape) instead of `result.success` from `IntegrationConnectionTestResultDto`. This would have caused test results to always show failure.
+- **Tour Anchors**: Added `data-tour="integrations-configure-btn"` anchor to the provider card header for guided tour integration.
+- **Database Migration**: `AddIntegrationManagementUI` migration seeds OPENAI and SMTP providers and `IntegrationProviderSettings` rows.
+
+## [2.152.0] - 2026-05-25
+
+### Fixed — AOVIA1VMS011 Staging IIS Connection String Mismatch & Hardening (DEC-133)
+- **Staging Connection String Key Correction:** Resolved the staging backend login `HTTP 500` error by patching the secure IIS configuration script to write the correct **`ConnectionStrings__DefaultConnection`** environment variable key expected by EF Core (`Program.cs`), resolving the `System.InvalidOperationException: The ConnectionString property has not been initialized` blocker.
+- **Same-Origin Virtual Directory Audit:** Documented the intentional double `/api` virtual path structure (`/api/api/auth/login`) arising from IIS virtual directories combined with backend controller route prefixes.
+- **DataProtection Key Ring Hardening Analysis:** Identified and analyzed ephemeral in-memory DataProtection keys warnings from IIS AppPool and outlined persistent key ring mitigation strategies for production.
+
+## [2.151.0] - 2026-05-25
+
+### Added — AOVIA1VMS011 Phase 3 Staging Access Recovery & same-origin API Routing (DEC-133)
+- **Staging Access Recovery Utility:** Compiled and deployed a dedicated .NET 8 console utility `StagingAccessRecovery.exe` to `C:\temp\StagingAccessRecovery\` on `AOVIA1VMS011` to resolve legacy Windows PowerShell .NET Core loading blockers.
+- **BCrypt Hashing Validation:** Automated schema mapping verification (`dbo.Users` columns, `dbo.Roles` admin seed, `dbo.UserRoleAssignments`) and mapped Leonardo's user account securely using standard `BCrypt.Net-Next` assembly.
+- **Relative API base path routing:** Refactored frontend API client default base URL in `api.ts` from hardcoded `localhost:5000` to relative same-origin `/api` path, eliminating CORS preflights and direct Kestrel dependency in staging/production builds.
+- **Secure Redacted Logging:** Confirmed zero plaintext secrets or hashes saved to documentation, repository, or remote audit logs.
 
 ## [2.150.0] - 2026-05-23
 

@@ -8,6 +8,7 @@ using AlplaPortal.Application.DTOs.Extraction;
 using AlplaPortal.Application.DTOs.Requests;
 using AlplaPortal.Application.Interfaces.Extraction;
 using AlplaPortal.Application.Models.Configuration;
+using AlplaPortal.Infrastructure.Services.Integration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using PdfiumViewer;
@@ -36,6 +37,7 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
 {
     private readonly HttpClient _httpClient;
     private readonly IConfiguration _configuration;
+    private readonly IntegrationConfigResolver _configResolver;
     private readonly ILogger<OpenAiDocumentExtractionProvider> _logger;
     private readonly IDocumentExtractionSettingsService _settingsService;
 
@@ -47,11 +49,13 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
     public OpenAiDocumentExtractionProvider(
         HttpClient httpClient,
         IConfiguration configuration,
+        IntegrationConfigResolver configResolver,
         IDocumentExtractionSettingsService settingsService,
         ILogger<OpenAiDocumentExtractionProvider> logger)
     {
         _httpClient = httpClient;
         _configuration = configuration;
+        _configResolver = configResolver;
         _logger = logger;
         _settingsService = settingsService;
     }
@@ -62,11 +66,14 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
         {
             var options = await _settingsService.GetEffectiveSettingsAsync(ct);
             var settings = options.OpenAi;
-            var apiKey = _configuration["OPENAI_API_KEY"];
+
+            // Phase 3: Cascade API key resolution — DB first, env var fallback
+            var resolvedApi = await _configResolver.ResolveApiSettingsAsync("OPENAI", "OPENAI_API_KEY", ct);
+            var apiKey = resolvedApi.DecryptedApiKey;
 
             if (string.IsNullOrEmpty(apiKey))
             {
-                _logger.LogError("OpenAI API Key is not configured in environment variables.");
+                _logger.LogError("OpenAI API Key is not configured (checked DB and environment variables).");
                 return new ExtractionResultDto { Success = false, ProviderName = Name };
             }
 

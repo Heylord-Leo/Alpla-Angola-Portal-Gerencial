@@ -838,3 +838,71 @@ export interface ClassifiedItem<T extends ReconcilableItem = ReconcilableItem> {
     status: ReconciliationItemStatus;
     justification?: string;
 }
+
+// ─── Integration Management Types ─────────────────────────────────────────
+
+/** GET response DTO for integration provider settings. Never contains secrets. */
+export interface IntegrationSettingsDto {
+    code: string;
+    name: string;
+    providerType: string;
+    connectionType: string;
+    description?: string;
+    environment?: string;
+    isEnabled: boolean;
+    isPlanned: boolean;
+    isReadOnly: boolean;
+
+    // Connection settings (non-secret)
+    server?: string;
+    databaseName?: string;
+    instanceName?: string;
+    authenticationMode?: string;
+    username?: string;
+    apiBaseUrl?: string;
+    timeoutSeconds?: number;
+    additionalConfig?: string;
+
+    // Secret presence indicators — NEVER actual secrets
+    hasPassword: boolean;
+    hasApiKey: boolean;
+    secretVersion: number;
+
+    // Last connection test status
+    lastTestStatus?: string;
+    lastTestAt?: string;
+    lastTestMessage?: string;
+    lastTestResponseTimeMs?: number;
+
+    // Audit
+    updatedByUserName?: string;
+    updatedAt?: string;
+}
+
+/** PUT request DTO for updating non-secret integration settings. */
+export interface UpdateIntegrationSettingsDto {
+    server?: string;
+    databaseName?: string;
+    instanceName?: string;
+    authenticationMode?: string;
+    username?: string;
+    apiBaseUrl?: string;
+    timeoutSeconds?: number;
+    additionalConfig?: string;
+}
+
+/** POST request DTO for replacing an encrypted secret. */
+export interface ReplaceIntegrationSecretDto {
+    secretType: 'PASSWORD' | 'API_KEY';
+    newSecretValue: string;
+}
+
+/** POST response DTO from test-connection endpoint. */
+export interface IntegrationConnectionTestResultDto {
+    providerCode: string;
+    success: boolean;
+    message?: string;
+    responseTimeMs?: number;
+    testedAtUtc: string;
+}
+
