@@ -23,5 +23,5 @@ public interface IIntegrationHealthService
     /// Triggers a manual connection test for a specific provider.
     /// Only succeeds if the provider is enabled, configured, and has a registered implementation.
     /// </summary>
-    Task<IntegrationConnectionTestResultDto> TestProviderConnectionAsync(string providerCode, CancellationToken ct = default);
+    Task<IntegrationConnectionTestResultDto> TestProviderConnectionAsync(string providerCode, string? companyKey = null, CancellationToken ct = default);
 }

@@ -85,10 +85,48 @@ public class IntegrationSettingsController : ControllerBase
 
     /// <summary>Test connection using current settings (delegates to health service).</summary>
     [HttpPost("{code}/test")]
-    public async Task<IActionResult> TestConnection(string code, CancellationToken ct)
+    public async Task<IActionResult> TestConnection(string code, [FromQuery] string? companyKey, CancellationToken ct)
     {
-        var result = await _healthService.TestProviderConnectionAsync(code, ct);
+        var result = await _healthService.TestProviderConnectionAsync(code, companyKey, ct);
         return Ok(result);
+    }
+
+    /// <summary>Update Primavera company-specific settings.</summary>
+    [HttpPut("PRIMAVERA/company")]
+    public async Task<IActionResult> UpdatePrimaveraCompany([FromBody] UpdatePrimaveraCompanyDto dto, CancellationToken ct)
+    {
+        try
+        {
+            await _settingsService.UpdatePrimaveraCompanyAsync(dto, 0, ct);
+            return NoContent();
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(403, new { message = ex.Message });
+        }
+    }
+
+    /// <summary>Replace Primavera company-specific password.</summary>
+    [HttpPost("PRIMAVERA/company/secret")]
+    public async Task<IActionResult> ReplacePrimaveraCompanySecret([FromBody] ReplacePrimaveraCompanySecretDto dto, CancellationToken ct)
+    {
+        try
+        {
+            await _settingsService.ReplacePrimaveraCompanySecretAsync(dto, 0, ct);
+            return Ok(new { message = "Senha da empresa Primavera atualizada com sucesso." });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(403, new { message = ex.Message });
+        }
     }
 
     /// <summary>Enable a provider.</summary>

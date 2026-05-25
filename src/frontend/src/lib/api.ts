@@ -1,4 +1,4 @@
-import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, SmtpSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto, IntegrationSettingsDto, IntegrationConnectionTestResultDto, UpdateIntegrationSettingsDto } from '../types';
+import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto, IntegrationSettingsDto, IntegrationConnectionTestResultDto, UpdateIntegrationSettingsDto, UpdatePrimaveraCompanyDto, ReplacePrimaveraCompanySecretDto } from '../types';
 import { logger, FrontendComponentKey } from './logger';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -1632,28 +1632,6 @@ export const api = {
                 return response.json();
             }
         },
-        smtpSettings: {
-            get: async (): Promise<SmtpSettingsDto> => {
-                const response = await apiFetch(`${API_BASE_URL}/api/admin/smtp-settings`);
-                if (!response.ok) return handleApiError(response, 'Falha ao carregar configurações SMTP.', 'AdminApi');
-                return response.json();
-            },
-            update: async (data: SmtpSettingsDto): Promise<void> => {
-                const response = await apiFetch(`${API_BASE_URL}/api/admin/smtp-settings`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data),
-                });
-                if (!response.ok) return handleApiError(response, 'Falha ao atualizar configurações SMTP.', 'AdminApi');
-            },
-            testConnection: async (): Promise<any> => {
-                const response = await apiFetch(`${API_BASE_URL}/api/admin/smtp-settings/test-connection`, {
-                    method: 'POST'
-                });
-                if (!response.ok) return handleApiError(response, 'Falha ao testar conexão SMTP.', 'AdminApi');
-                return response.json();
-            }
-        },
         diagnostics: {
             getHealth: async (): Promise<any> => {
                 const response = await apiFetch(`${API_BASE_URL}/api/admin/diagnostics/health`);
@@ -1703,11 +1681,31 @@ export const api = {
                 if (!response.ok) return handleApiError(response, 'Falha ao atualizar segredo.', 'AdminApi');
                 return response.json();
             },
-            testConnection: async (code: string): Promise<IntegrationConnectionTestResultDto> => {
-                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings/${code}/test`, {
+            testConnection: async (code: string, companyKey?: string): Promise<IntegrationConnectionTestResultDto> => {
+                const url = companyKey 
+                    ? `${API_BASE_URL}/api/admin/integration-settings/${code}/test?companyKey=${encodeURIComponent(companyKey)}`
+                    : `${API_BASE_URL}/api/admin/integration-settings/${code}/test`;
+                const response = await apiFetch(url, {
                     method: 'POST'
                 });
                 if (!response.ok) return handleApiError(response, 'Falha ao testar conexão.', 'AdminApi');
+                return response.json();
+            },
+            updatePrimaveraCompany: async (data: UpdatePrimaveraCompanyDto): Promise<void> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings/PRIMAVERA/company`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao atualizar configurações da empresa Primavera.', 'AdminApi');
+            },
+            replacePrimaveraCompanySecret: async (data: ReplacePrimaveraCompanySecretDto): Promise<{ message: string }> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings/PRIMAVERA/company/secret`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao atualizar senha da empresa Primavera.', 'AdminApi');
                 return response.json();
             },
             enable: async (code: string): Promise<{ message: string }> => {

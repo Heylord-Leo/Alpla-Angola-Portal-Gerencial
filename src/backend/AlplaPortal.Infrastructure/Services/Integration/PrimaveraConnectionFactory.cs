@@ -1,5 +1,6 @@
 using AlplaPortal.Application.Interfaces.Integration;
 using AlplaPortal.Infrastructure.Data;
+using AlplaPortal.Infrastructure.Security;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -70,36 +71,27 @@ public class PrimaveraConnectionFactory
             throw new InvalidOperationException("Primavera server is not configured.");
         }
 
-        // ─── Resolve company database name ───
+        // ─── Resolve company settings ───
 
         var companyKey = company.ToString();
-        var databaseName = ResolveCompanyDatabase(resolved, companyKey);
+        var companySettings = ResolveCompanySettings(resolved, companyKey);
 
+        if (!companySettings.Enabled)
+        {
+            throw new InvalidOperationException($"Primavera company '{companyKey}' is disabled.");
+        }
+
+        var databaseName = companySettings.DatabaseName;
         if (string.IsNullOrWhiteSpace(databaseName))
         {
             throw new InvalidOperationException(
-                $"Primavera company '{companyKey}' is not configured. " +
-                $"Source: {resolved.Source}. " +
-                (resolved.Source == "DATABASE"
-                    ? "Add company mapping in AdditionalConfig JSON."
-                    : $"Missing DatabaseName in Integrations:Primavera:Companies:{companyKey}."));
-        }
-
-        // Check company-level enabled flag (config fallback only)
-        if (resolved.Source == "CONFIGURATION")
-        {
-            var companySection = _configuration.GetSection($"Integrations:Primavera:Companies:{companyKey}");
-            var companyEnabled = companySection.GetValue<bool?>("Enabled") ?? true;
-            if (!companyEnabled)
-            {
-                throw new InvalidOperationException(
-                    $"Primavera company '{companyKey}' is disabled in configuration.");
-            }
+                $"Primavera company '{companyKey}' database name is not configured. " +
+                $"Source: {resolved.Source}.");
         }
 
         // ─── Build connection string ───
 
-        var connectionString = BuildConnectionString(resolved, databaseName);
+        var connectionString = BuildConnectionString(resolved, companySettings);
 
         _logger.LogDebug(
             "PrimaveraConnectionFactory: opening connection for company {Company}, database {Database}, server {Server}, source {Source}",
@@ -117,6 +109,96 @@ public class PrimaveraConnectionFactory
             await connection.DisposeAsync();
             throw;
         }
+    }
+
+    public record PrimaveraCompanySettings
+    {
+        public string? DatabaseName { get; init; }
+        public bool Enabled { get; init; } = true;
+        public string? Username { get; init; }
+        public bool HasPassword { get; init; }
+    }
+
+    public async Task<(bool IsProviderEnabled, bool IsConfigured, string? Server, string? AuthMode, PrimaveraCompanySettings Settings)> GetCompanySettingsAsync(
+        PrimaveraCompany company, CancellationToken ct = default)
+    {
+        var resolved = await _configResolver.ResolveSqlSettingsAsync(
+            "PRIMAVERA", "Integrations:Primavera", ct);
+
+        var companyKey = company.ToString();
+        var companySettings = ResolveCompanySettings(resolved, companyKey);
+
+        return (
+            resolved.IsEnabled,
+            resolved.IsConfigured,
+            resolved.Server,
+            resolved.AuthenticationMode,
+            new PrimaveraCompanySettings
+            {
+                DatabaseName = companySettings.DatabaseName,
+                Enabled = companySettings.Enabled,
+                Username = companySettings.Username,
+                HasPassword = !string.IsNullOrWhiteSpace(companySettings.DecryptedPassword)
+            }
+        );
+    }
+
+    private string EncryptionKey => _configuration["AppConfig:EncryptionKey"] ?? string.Empty;
+
+    private ResolvedCompanySettings ResolveCompanySettings(
+        IntegrationConfigResolver.ResolvedSqlSettings resolved, string companyKey)
+    {
+        // 1. Try database-backed AdditionalConfig
+        if (resolved.Source == "DATABASE" && !string.IsNullOrWhiteSpace(resolved.AdditionalConfig))
+        {
+            try
+            {
+                var additionalConfig = JsonSerializer.Deserialize<PrimaveraAdditionalConfig>(
+                    resolved.AdditionalConfig,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                if (additionalConfig?.Companies != null &&
+                    additionalConfig.Companies.TryGetValue(companyKey, out var companyConfig))
+                {
+                    string? decryptedPassword = null;
+                    if (!string.IsNullOrWhiteSpace(companyConfig.EncryptedPassword))
+                    {
+                        try
+                        {
+                            decryptedPassword = AesEncryptionHelper.Decrypt(
+                                companyConfig.EncryptedPassword, EncryptionKey);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Failed to decrypt Primavera company password for {Company}", companyKey);
+                        }
+                    }
+
+                    return new ResolvedCompanySettings
+                    {
+                        DatabaseName = companyConfig.DatabaseName,
+                        Enabled = companyConfig.Enabled,
+                        Username = companyConfig.Username,
+                        DecryptedPassword = decryptedPassword
+                    };
+                }
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to parse AdditionalConfig JSON for Primavera. Falling back to IConfiguration.");
+            }
+        }
+
+        // 2. Fallback: IConfiguration
+        var companySection = _configuration.GetSection($"Integrations:Primavera:Companies:{companyKey}");
+        return new ResolvedCompanySettings
+        {
+            DatabaseName = companySection["DatabaseName"],
+            Enabled = companySection.GetValue<bool?>("Enabled") ?? true,
+            Username = companySection["Username"],
+            DecryptedPassword = companySection["Password"]
+        };
     }
 
     /// <summary>
@@ -251,7 +333,8 @@ public class PrimaveraConnectionFactory
     /// <summary>
     /// Builds a SQL Server connection string from resolved settings.
     /// </summary>
-    private static string BuildConnectionString(IntegrationConfigResolver.ResolvedSqlSettings resolved, string databaseName)
+    private static string BuildConnectionString(
+        IntegrationConfigResolver.ResolvedSqlSettings resolved, ResolvedCompanySettings companySettings)
     {
         var dataSource = string.IsNullOrWhiteSpace(resolved.InstanceName)
             ? resolved.Server!
@@ -260,7 +343,7 @@ public class PrimaveraConnectionFactory
         var builder = new SqlConnectionStringBuilder
         {
             DataSource = dataSource,
-            InitialCatalog = databaseName,
+            InitialCatalog = companySettings.DatabaseName,
             ConnectTimeout = resolved.TimeoutSeconds,
             TrustServerCertificate = true,
             Encrypt = SqlConnectionEncryptOption.Optional,
@@ -273,15 +356,24 @@ public class PrimaveraConnectionFactory
         }
         else
         {
-            if (string.IsNullOrWhiteSpace(resolved.Username) || string.IsNullOrWhiteSpace(resolved.DecryptedPassword))
+            // Use company-specific credentials, fallback to provider-level
+            var username = !string.IsNullOrWhiteSpace(companySettings.Username)
+                ? companySettings.Username
+                : resolved.Username;
+
+            var password = !string.IsNullOrWhiteSpace(companySettings.DecryptedPassword)
+                ? companySettings.DecryptedPassword
+                : resolved.DecryptedPassword;
+
+            if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
             {
                 throw new InvalidOperationException(
                     "Primavera SQL Authentication credentials are not fully configured. Required: Username, Password.");
             }
 
             builder.IntegratedSecurity = false;
-            builder.UserID = resolved.Username;
-            builder.Password = resolved.DecryptedPassword;
+            builder.UserID = username;
+            builder.Password = password;
         }
 
         return builder.ConnectionString;
@@ -298,5 +390,16 @@ public class PrimaveraConnectionFactory
     {
         public string? DatabaseName { get; init; }
         public bool Enabled { get; init; } = true;
+        public string? Username { get; init; }
+        public string? EncryptedPassword { get; init; }
+        public int SecretVersion { get; set; }
+    }
+
+    private record ResolvedCompanySettings
+    {
+        public string? DatabaseName { get; init; }
+        public bool Enabled { get; init; } = true;
+        public string? Username { get; init; }
+        public string? DecryptedPassword { get; init; }
     }
 }

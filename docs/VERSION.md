@@ -2,7 +2,26 @@
 
 ## Current Version
 
-v2.153.0
+v2.154.0
+
+## [2.154.0] - 2026-05-25
+
+### Improved — Primavera ERP Connection Validation & Health Consistency Corrections
+- **Sequential Validation Pipeline**: `TestCompanyConnectionAsync` in `PrimaveraIntegrationProvider.cs` now runs 6 strict sequential validation checks in Portuguese before executing any SQL connection: (1) provider disabled, (2) company disabled, (3) server missing, (4) database missing, (5) username missing, (6) password missing — each returning a specific, actionable diagnostic message.
+- **Enabled State Alignment**: `IntegrationSettingsService.MapToDto` and `IntegrationHealthService.GetHealthSummaryAsync` now derive `isEnabled` strictly from `provider.IsEnabled` in the database, eliminating the `|| configEnabled` fallback that caused mismatch between toggle buttons and backend connection test behavior.
+- **Dynamic Display Status**: `DetermineDisplayStatus` in `IntegrationHealthService.cs` now dynamically evaluates all active Primavera companies, returning `Inactive` when the provider is disabled and `NotConfigured` when any enabled company lacks database, username, or password.
+- **Primavera Bypass Gate**: `TestProviderConnectionAsync` bypasses the global `isEnabled` early-exit for `PRIMAVERA` so the provider-level validation can report the specific Portuguese diagnostic message instead of a generic English error.
+- **UI Warning Badge**: `IntegrationSettings.tsx` now renders `"⚠ Senha não configurada."` on active company cards where the password has not been set.
+- **Zero-Error Verification**: Backend build (`dotnet build`) and frontend type check (`npx tsc --noEmit`) passed with 0 warnings and 0 errors.
+
+### Added — Security Incident Response & Unified SMTP Integration Consolidation (DEC-135)
+- **GitGuardian Security Incident Remediation**: Created the official security incident report (`docs/SECURITY_INCIDENT_GITGUARDIAN_SMTP_SECRET_LEAK.md`) outlining date, repository context, and a git history scrubbing procedure using `git-filter-repo`. Removed the hardcoded plaintext database password from the tracked script `scripts/query_innux.ps1`, replacing it with a dynamic environment variable `INNUX_DB_PASSWORD`. Confirmed `appsettings.Development.json` is untracked and safely gitignored.
+- **Dados Mestres SMTP Removal**: Completely stripped the legacy SMTP tab, panel rendering (`<SmtpSettingsPanel>`), import statements, and related component state variables from `MasterData.tsx`, ensuring that SMTP is no longer managed under Master Data.
+- **Unified SMTP Configuration**: Modified `IntegrationSettingsService.cs` and `IntegrationSettingsDtos.cs` to route the `"SMTP"` provider operations securely to the existing database-backed single-row `SmtpSettings` table, preventing duplicate model creation and preserving historical record encryption.
+- **Integration Settings UI Enhancements**: Extended `IntegrationSettings.tsx` to display SMTP connection fields (Host, Port, SSL, Sender Email, Sender Name, Username) inside the cards, and implemented `ConnectionConfigureModal` allowing administrators to configure connection details for Primavera, Innux, OpenAI, and SMTP.
+- **New Integration Health Providers**: Created `SmtpIntegrationProvider.cs` and `OpenAiIntegrationProvider.cs` implementing `IIntegrationProvider` to enable real-time connection testing under the unified `IntegrationSettingsController`. Deleted the obsolete `SmtpSettingsController.cs`.
+- **Guided Tour Audit**: Verified that no active tours target the legacy SMTP master data panels.
+- **Zero-Error Verification**: Confirmed zero compilation errors (`dotnet build`) and zero type safety issues (`npx tsc --noEmit`).
 
 ## [2.153.0] - 2026-05-25
 

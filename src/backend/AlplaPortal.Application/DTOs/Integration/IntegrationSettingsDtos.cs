@@ -26,6 +26,12 @@ public class IntegrationSettingsDto
     public int? TimeoutSeconds { get; set; }
     public string? AdditionalConfig { get; set; }
 
+    // SMTP-specific connection settings
+    public int? Port { get; set; }
+    public bool? EnableSsl { get; set; }
+    public string? SenderEmail { get; set; }
+    public string? SenderName { get; set; }
+
     // Secret presence indicators — NEVER the actual secrets
     public bool HasPassword { get; set; }
     public bool HasApiKey { get; set; }
@@ -37,9 +43,22 @@ public class IntegrationSettingsDto
     public string? LastTestMessage { get; set; }
     public int? LastTestResponseTimeMs { get; set; }
 
+    // Company-specific settings for Primavera
+    public List<PrimaveraCompanySettingsDto>? PrimaveraCompanies { get; set; }
+
     // Audit
     public string? UpdatedByUserName { get; set; }
     public DateTime? UpdatedAt { get; set; }
+}
+
+public class PrimaveraCompanySettingsDto
+{
+    public string CompanyKey { get; set; } = string.Empty;
+    public string? DatabaseName { get; set; }
+    public bool Enabled { get; set; }
+    public string? Username { get; set; }
+    public bool HasPassword { get; set; }
+    public int SecretVersion { get; set; }
 }
 
 /// <summary>
@@ -55,6 +74,12 @@ public class UpdateIntegrationSettingsDto
     public string? ApiBaseUrl { get; set; }
     public int? TimeoutSeconds { get; set; }
     public string? AdditionalConfig { get; set; }
+
+    // SMTP-specific connection settings
+    public int? Port { get; set; }
+    public bool? EnableSsl { get; set; }
+    public string? SenderEmail { get; set; }
+    public string? SenderName { get; set; }
 }
 
 /// <summary>
@@ -67,4 +92,18 @@ public class ReplaceIntegrationSecretDto
 
     /// <summary>The new plaintext value — will be AES-encrypted before persistence.</summary>
     public string NewSecretValue { get; set; } = string.Empty;
+}
+
+public class UpdatePrimaveraCompanyDto
+{
+    public string CompanyKey { get; set; } = string.Empty;
+    public string? DatabaseName { get; set; }
+    public bool Enabled { get; set; }
+    public string? Username { get; set; }
+}
+
+public class ReplacePrimaveraCompanySecretDto
+{
+    public string CompanyKey { get; set; } = string.Empty;
+    public string NewPassword { get; set; } = string.Empty;
 }

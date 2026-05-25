@@ -1,4 +1,4 @@
-$connString = "Server=AOVIA1VMS012\SQLINNUX;Database=Innux;User Id=sa;Password=ad#56&Hfe;TrustServerCertificate=True"
+$connString = "Server=AOVIA1VMS012\SQLINNUX;Database=Innux;User Id=sa;Password=$($env:INNUX_DB_PASSWORD);TrustServerCertificate=True"
 $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
 $conn.Open()
 

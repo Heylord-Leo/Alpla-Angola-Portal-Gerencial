@@ -43,6 +43,8 @@ builder.Services.AddScoped<AdminLogWriter>();
 builder.Services.AddScoped<IntegrationConfigResolver>();
 builder.Services.AddScoped<IIntegrationProvider, PrimaveraIntegrationProvider>();
 builder.Services.AddScoped<IIntegrationProvider, InnuxIntegrationProvider>();
+builder.Services.AddScoped<IIntegrationProvider, SmtpIntegrationProvider>();
+builder.Services.AddScoped<IIntegrationProvider, OpenAiIntegrationProvider>();
 builder.Services.AddScoped<IIntegrationHealthService, IntegrationHealthService>();
 builder.Services.AddScoped<IIntegrationSettingsService, IntegrationSettingsService>();
 builder.Services.AddScoped<PrimaveraConnectionFactory>();

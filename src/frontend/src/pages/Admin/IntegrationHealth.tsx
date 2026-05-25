@@ -48,19 +48,32 @@ interface IntegrationHealthSummary {
  */
 
 const STATUS_DISPLAY: Record<string, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
-    HEALTHY:        { label: 'Operacional',    color: 'var(--color-status-green)',  bg: 'color-mix(in srgb, var(--color-status-green) 15%, transparent)', icon: <CheckCircle2 size={14} /> },
-    UNHEALTHY:      { label: 'Com Falhas',     color: 'var(--color-status-red)',    bg: 'color-mix(in srgb, var(--color-status-red) 15%, transparent)',   icon: <XCircle size={14} /> },
-    UNREACHABLE:    { label: 'Inacessível',    color: 'var(--color-status-red)',    bg: 'color-mix(in srgb, var(--color-status-red) 15%, transparent)',   icon: <AlertCircle size={14} /> },
-    NOT_CONFIGURED: { label: 'Não Configurado', color: 'var(--color-text-main)',    bg: 'color-mix(in srgb, var(--color-text-muted) 15%, transparent)',   icon: <HelpCircle size={14} /> },
-    PLANNED:        { label: 'Prevista',       color: 'var(--color-status-blue)',   bg: 'color-mix(in srgb, var(--color-status-blue) 15%, transparent)',  icon: <Clock size={14} /> },
+    HEALTHY:        { label: 'Operacional',     color: 'var(--color-status-green)',  bg: 'color-mix(in srgb, var(--color-status-green) 15%, transparent)', icon: <CheckCircle2 size={14} /> },
+    UNHEALTHY:      { label: 'Erro',            color: 'var(--color-status-red)',    bg: 'color-mix(in srgb, var(--color-status-red) 15%, transparent)',   icon: <XCircle size={14} /> },
+    UNREACHABLE:    { label: 'Erro',            color: 'var(--color-status-red)',    bg: 'color-mix(in srgb, var(--color-status-red) 15%, transparent)',   icon: <AlertCircle size={14} /> },
+    NOT_CONFIGURED: { label: 'Não Configurado', color: 'color-mix(in srgb, var(--color-text-main) 70%, transparent)', bg: 'color-mix(in srgb, var(--color-text-muted) 12%, transparent)', icon: <HelpCircle size={14} /> },
+    PLANNED:        { label: 'Prevista',        color: 'var(--color-status-blue)',   bg: 'color-mix(in srgb, var(--color-status-blue) 15%, transparent)',  icon: <Clock size={14} /> },
+    INACTIVE:       { label: 'Inativo',         color: 'var(--color-text-muted)',    bg: 'color-mix(in srgb, var(--color-text-muted) 15%, transparent)',   icon: <XCircle size={14} /> },
+    PENDING_TEST:   { label: 'Pendente de Teste', color: '#d97706',                  bg: 'rgba(217, 119, 6, 0.12)',                                        icon: <Clock size={14} /> }
 };
 
 const PROVIDER_TYPE_LABELS: Record<string, string> = {
-    ERP: 'Enterprise Resource Planning',
-    BIOMETRIC: 'Biometric / Time & Attendance',
-    PRODUCTION: 'Production & Supply Chain',
-    API: 'API Service',
-    OTHER: 'External System',
+    ERP: 'Gestão de Recursos Empresariais (ERP)',
+    BIOMETRIC: 'Biometria / Assiduidade e Ponto',
+    PRODUCTION: 'Produção e Cadeia de Suprimentos',
+    API: 'Serviço de API',
+    OTHER: 'Sistema Externo',
+};
+
+const DESCRIPTION_TRANSLATIONS: Record<string, string> = {
+    "Enterprise Resource Planning — master data source for employees, articles, suppliers, departments, and cost centers.":
+        "Sistema ERP utilizado como fonte de dados mestre para colaboradores, artigos, fornecedores, departamentos e centros de custo.",
+    "Biometric time and attendance system — complementary employee/attendance data source.":
+        "Sistema de assiduidade e marcação de ponto utilizado como fonte complementar de dados de colaboradores e presenças.",
+    "AI-powered document extraction and analysis — OCR processing for proformas, invoices, and contracts.":
+        "Serviço de IA para extração e análise de documentos, utilizado no OCR de proformas, faturas e contratos.",
+    "Email notification service — sends workflow alerts, password resets, and proforma deadline reminders.":
+        "Serviço de e-mail utilizado para envio de alertas de workflow, redefinição de senha e lembretes de prazos de proformas."
 };
 
 /**
@@ -88,6 +101,7 @@ function IntegrationProviderCard({ provider, onTestConnection, isTesting }: {
     const statusInfo = STATUS_DISPLAY[provider.currentStatus] || STATUS_DISPLAY.NOT_CONFIGURED;
     const typeLabel = PROVIDER_TYPE_LABELS[provider.providerType] || provider.providerType;
     const isPlanned = provider.isPlanned;
+    const displayDescription = DESCRIPTION_TRANSLATIONS[provider.description || ''] || provider.description;
 
     return (
         <div style={{
@@ -129,7 +143,7 @@ function IntegrationProviderCard({ provider, onTestConnection, isTesting }: {
 
             {/* Description */}
             <p style={{ margin: '0 0 1.25rem 0', fontSize: '0.875rem', color: 'var(--color-text-main)', lineHeight: 1.6, fontWeight: 500 }}>
-                {provider.description}
+                {displayDescription}
             </p>
 
             {/* Capabilities */}

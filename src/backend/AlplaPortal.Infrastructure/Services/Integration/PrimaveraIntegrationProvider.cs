@@ -39,21 +39,6 @@ public class PrimaveraIntegrationProvider : IIntegrationProvider
 
     public async Task<IntegrationConnectionTestResult> TestConnectionAsync(CancellationToken ct = default)
     {
-        var section = _configuration.GetSection("Integrations:Primavera");
-
-        // ─── Validate provider is enabled ───
-
-        var enabledRaw = section["Enabled"];
-        if (!bool.TryParse(enabledRaw, out var isEnabled) || !isEnabled)
-        {
-            return new IntegrationConnectionTestResult
-            {
-                Success = false,
-                Message = "Primavera provider is not enabled in configuration.",
-                ResponseTimeMs = 0
-            };
-        }
-
         // ─── Determine health check target (Option A: first configured company) ───
 
         var defaultCompany = _connectionFactory.GetDefaultCompany();
@@ -67,28 +52,86 @@ public class PrimaveraIntegrationProvider : IIntegrationProvider
             };
         }
 
-        var targetCompany = defaultCompany.Value;
+        return await TestCompanyConnectionAsync(defaultCompany.Value, ct);
+    }
+
+    public async Task<IntegrationConnectionTestResult> TestCompanyConnectionAsync(PrimaveraCompany company, CancellationToken ct = default)
+    {
+        var targetCompany = company;
         var targetDatabase = _connectionFactory.GetDatabaseName(targetCompany) ?? "unknown";
 
-        // ─── Diagnostic logging ───
+        // ─── Sequential validations in Portuguese ───
+        var (isProviderEnabled, isConfigured, server, authMode, companySettings) = 
+            await _connectionFactory.GetCompanySettingsAsync(targetCompany, ct);
 
-        var server = section["Server"];
-        var instanceName = section["InstanceName"];
-        var authMode = section["AuthenticationMode"]?.ToUpperInvariant() ?? "SQL";
-        var timeoutSeconds = section["TimeoutSeconds"];
-        var hasUsername = !string.IsNullOrWhiteSpace(section["Username"]);
-        var hasPassword = !string.IsNullOrWhiteSpace(section["Password"]);
-        var dataSource = string.IsNullOrWhiteSpace(instanceName) ? server : $"{server}\\{instanceName}";
-        var configuredCompanies = _connectionFactory.GetConfiguredCompanies();
+        // 1. If provider PRIMAVERA IsEnabled=false:
+        if (!isProviderEnabled)
+        {
+            return new IntegrationConnectionTestResult
+            {
+                Success = false,
+                Message = "A integração Primavera está desativada. Ative a integração antes de testar a conexão.",
+                ResponseTimeMs = 0
+            };
+        }
 
-        _logger.LogWarning(
-            "DIAGNOSTIC - PRIMAVERA CONFIG: AuthMode=[{AuthMode}], Server=[{Server}], Instance=[{Instance}], " +
-            "HasUser=[{HasUser}], HasPass=[{HasPass}], FinalDataSource=[{DataSource}], " +
-            "HealthTarget=[{HealthTarget}], HealthDB=[{HealthDB}], ConfiguredCompanies=[{Companies}]",
-            authMode, server, instanceName, hasUsername, hasPassword, dataSource,
-            targetCompany, targetDatabase, string.Join(", ", configuredCompanies));
+        // 2. If company Enabled=false:
+        if (!companySettings.Enabled)
+        {
+            return new IntegrationConnectionTestResult
+            {
+                Success = false,
+                Message = "A empresa selecionada está desativada para esta integração.",
+                ResponseTimeMs = 0
+            };
+        }
 
-        // ─── Execute connection test against default company ───
+        // 3. If Server is missing:
+        if (string.IsNullOrWhiteSpace(server))
+        {
+            return new IntegrationConnectionTestResult
+            {
+                Success = false,
+                Message = "Servidor do Primavera não configurado.",
+                ResponseTimeMs = 0
+            };
+        }
+
+        // 4. If company DatabaseName is missing:
+        if (string.IsNullOrWhiteSpace(companySettings.DatabaseName))
+        {
+            return new IntegrationConnectionTestResult
+            {
+                Success = false,
+                Message = "Base de dados da empresa não configurada.",
+                ResponseTimeMs = 0
+            };
+        }
+
+        // 5. If SQL authentication and company Username is missing:
+        bool isSqlAuth = authMode?.Equals("SQL", StringComparison.OrdinalIgnoreCase) ?? true;
+        if (isSqlAuth && string.IsNullOrWhiteSpace(companySettings.Username))
+        {
+            return new IntegrationConnectionTestResult
+            {
+                Success = false,
+                Message = "Utilizador da empresa não configurado.",
+                ResponseTimeMs = 0
+            };
+        }
+
+        // 6. If SQL authentication and company password is missing:
+        if (isSqlAuth && !companySettings.HasPassword)
+        {
+            return new IntegrationConnectionTestResult
+            {
+                Success = false,
+                Message = "Senha da empresa não configurada. Utilize 'Substituir Senha' antes de testar a conexão.",
+                ResponseTimeMs = 0
+            };
+        }
+
+        // ─── Execute connection test against company database ───
 
         var sw = Stopwatch.StartNew();
 
@@ -100,7 +143,7 @@ public class PrimaveraIntegrationProvider : IIntegrationProvider
             // Read-only, no business tables, no writes.
             await using var command = new SqlCommand(
                 "SELECT @@SERVERNAME AS ServerName, DB_NAME() AS DatabaseName", connection);
-            command.CommandTimeout = int.TryParse(timeoutSeconds, out var t) ? t : 15;
+            command.CommandTimeout = 15;
 
             await using var reader = await command.ExecuteReaderAsync(ct);
 

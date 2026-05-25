@@ -23,4 +23,10 @@ public static class IntegrationStatusCodes
 
     /// <summary>Provider is registered as a future/roadmap item — no implementation exists yet.</summary>
     public const string Planned = "PLANNED";
+
+    /// <summary>Provider is operationally disabled.</summary>
+    public const string Inactive = "INACTIVE";
+
+    /// <summary>Provider is enabled and configured, but connection has never been tested.</summary>
+    public const string PendingTest = "PENDING_TEST";
 }

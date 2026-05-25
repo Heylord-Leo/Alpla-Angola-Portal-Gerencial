@@ -52,6 +52,10 @@ public class IntegrationHealthService : IIntegrationHealthService
             .ThenBy(p => p.Name)
             .ToListAsync(ct);
 
+        var smtpSettings = await _db.SmtpSettings
+            .OrderByDescending(s => s.Id)
+            .FirstOrDefaultAsync(ct);
+
         var result = new IntegrationHealthSummaryDto();
 
         foreach (var dbProvider in dbProviders)
@@ -61,16 +65,22 @@ public class IntegrationHealthService : IIntegrationHealthService
 
             var configSection = _configuration.GetSection($"Integrations:{dbProvider.Code}");
             var configHasSettings = !string.IsNullOrEmpty(configSection["Server"]) || !string.IsNullOrEmpty(configSection["ApiBaseUrl"]);
-            var configEnabled = configSection.GetValue<bool>("Enabled");
 
             var capabilities = ParseCapabilities(dbProvider.Capabilities);
             var hasSettings = configHasSettings || (dbProvider.Settings != null &&
                 (!string.IsNullOrEmpty(dbProvider.Settings.Server) || !string.IsNullOrEmpty(dbProvider.Settings.ApiBaseUrl)));
-            var hasImpl = implementation != null;
-            var isEnabled = dbProvider.IsEnabled || configEnabled;
+            
+            // SMTP custom hasSettings check
+            if (dbProvider.Code.Equals("SMTP", StringComparison.OrdinalIgnoreCase))
+            {
+                hasSettings = smtpSettings != null && !string.IsNullOrEmpty(smtpSettings.Server);
+            }
 
-            // Determine current status
-            var currentStatus = DetermineDisplayStatus(dbProvider, hasSettings, hasImpl, isEnabled);
+            var hasImpl = implementation != null;
+            var isEnabled = dbProvider.IsEnabled;
+
+            // Determine current status dynamically
+            var currentStatus = DetermineDisplayStatus(dbProvider, isEnabled, smtpSettings, _configuration);
 
             var dto = new IntegrationProviderStatusDto
             {
@@ -111,7 +121,7 @@ public class IntegrationHealthService : IIntegrationHealthService
     }
 
     public async Task<IntegrationConnectionTestResultDto> TestProviderConnectionAsync(
-        string providerCode, CancellationToken ct = default)
+        string providerCode, string? companyKey = null, CancellationToken ct = default)
     {
         var dbProvider = await _db.IntegrationProviders
             .Include(p => p.ConnectionStatus)
@@ -137,9 +147,8 @@ public class IntegrationHealthService : IIntegrationHealthService
             };
         }
 
-        var configSection = _configuration.GetSection($"Integrations:{dbProvider.Code}");
-        var configEnabled = configSection.GetValue<bool>("Enabled");
-        var isEnabled = dbProvider.IsEnabled || configEnabled;
+        // Use DB status strictly, bypassing for Primavera to let its custom validation handle the disabled message
+        bool isEnabled = providerCode.Equals("PRIMAVERA", StringComparison.OrdinalIgnoreCase) || dbProvider.IsEnabled;
 
         if (!isEnabled)
         {
@@ -167,14 +176,29 @@ public class IntegrationHealthService : IIntegrationHealthService
         // Log test start
         await _logWriter.WriteAsync("Information", IntegrationLogEventTypes.LogSource,
             IntegrationLogEventTypes.ConnectionTestStarted,
-            $"Connection test started for provider: {providerCode}");
+            $"Connection test started for provider: {providerCode}{(string.IsNullOrEmpty(companyKey) ? "" : $" (Company: {companyKey})")}");
 
         var sw = Stopwatch.StartNew();
         IntegrationConnectionTestResult testResult;
 
         try
         {
-            testResult = await implementation.TestConnectionAsync(ct);
+            if (providerCode.Equals("PRIMAVERA", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(companyKey))
+            {
+                if (System.Enum.TryParse<AlplaPortal.Application.Interfaces.Integration.PrimaveraCompany>(companyKey, true, out var company))
+                {
+                    var primaveraProvider = (PrimaveraIntegrationProvider)implementation;
+                    testResult = await primaveraProvider.TestCompanyConnectionAsync(company, ct);
+                }
+                else
+                {
+                    throw new ArgumentException($"Empresa '{companyKey}' inválida para o Primavera.");
+                }
+            }
+            else
+            {
+                testResult = await implementation.TestConnectionAsync(ct);
+            }
             sw.Stop();
             testResult.ResponseTimeMs ??= (int)sw.ElapsedMilliseconds;
         }
@@ -252,18 +276,136 @@ public class IntegrationHealthService : IIntegrationHealthService
     /// <summary>
     /// Determines the display status for a provider based on its configuration state.
     /// </summary>
-    private static string DetermineDisplayStatus(IntegrationProvider provider, bool hasSettings, bool hasImplementation, bool isEnabled)
+    public static string DetermineDisplayStatus(IntegrationProvider provider, bool isEnabled, SmtpSettings? smtpSettings, IConfiguration configuration)
     {
-        if (provider.IsPlanned) return IntegrationStatusCodes.Planned;
-        if (!isEnabled) return IntegrationStatusCodes.NotConfigured;
-        if (!hasSettings) return IntegrationStatusCodes.NotConfigured;
+        if (provider.IsPlanned) 
+            return IntegrationStatusCodes.Planned;
 
-        // If we have a persisted connection status, use it
-        if (provider.ConnectionStatus != null)
-            return provider.ConnectionStatus.CurrentStatus;
+        if (!isEnabled) 
+            return IntegrationStatusCodes.Inactive;
 
-        // Has settings but never tested
-        return IntegrationStatusCodes.NotConfigured;
+        // Check if configured
+        bool isConfigured = false;
+        if (provider.Code.Equals("PRIMAVERA", StringComparison.OrdinalIgnoreCase))
+        {
+            var s = provider.Settings;
+            var configSec = configuration.GetSection("Integrations:Primavera");
+            var server = s?.Server ?? configSec["Server"];
+            var authMode = s?.AuthenticationMode ?? configSec["AuthenticationMode"] ?? "SQL";
+
+            if (!string.IsNullOrEmpty(server))
+            {
+                bool allCompaniesValid = true;
+                bool atLeastOneCompany = false;
+
+                PrimaveraAdditionalConfig? parsed = null;
+                if (s != null && !string.IsNullOrWhiteSpace(s.AdditionalConfig))
+                {
+                    try
+                    {
+                        parsed = JsonSerializer.Deserialize<PrimaveraAdditionalConfig>(
+                            s.AdditionalConfig,
+                            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    }
+                    catch
+                    {
+                        // ignore malformed JSON
+                    }
+                }
+
+                foreach (var company in System.Enum.GetValues<AlplaPortal.Application.Interfaces.Integration.PrimaveraCompany>())
+                {
+                    var companyKey = company.ToString();
+                    bool compEnabled = true;
+                    
+                    // Fallback to configuration settings
+                    var companySection = configuration.GetSection($"Integrations:Primavera:Companies:{companyKey}");
+                    var dbName = companySection["DatabaseName"];
+                    var username = companySection["Username"];
+                    var hasPassword = !string.IsNullOrEmpty(companySection["Password"]);
+                    if (companySection["Enabled"] != null)
+                    {
+                        compEnabled = companySection.GetValue<bool>("Enabled");
+                    }
+
+                    // DB override
+                    if (parsed?.Companies != null && parsed.Companies.TryGetValue(companyKey, out var compSettings))
+                    {
+                        dbName = compSettings.DatabaseName ?? dbName;
+                        compEnabled = compSettings.Enabled;
+                        username = compSettings.Username ?? username;
+                        hasPassword = !string.IsNullOrEmpty(compSettings.EncryptedPassword) || hasPassword;
+                    }
+
+                    if (compEnabled)
+                    {
+                        atLeastOneCompany = true;
+                        if (string.IsNullOrEmpty(dbName))
+                        {
+                            allCompaniesValid = false;
+                            break;
+                        }
+
+                        if (authMode.Equals("SQL", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (string.IsNullOrEmpty(username) || !hasPassword)
+                            {
+                                allCompaniesValid = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                isConfigured = allCompaniesValid && atLeastOneCompany;
+            }
+        }
+        else if (provider.Code.Equals("INNUX", StringComparison.OrdinalIgnoreCase))
+        {
+            var s = provider.Settings;
+            var configSec = configuration.GetSection("Integrations:Innux");
+            var server = s?.Server ?? configSec["Server"];
+            var db = s?.DatabaseName ?? configSec["DatabaseName"];
+            var authMode = s?.AuthenticationMode ?? configSec["AuthenticationMode"] ?? "SQL";
+            var username = s?.Username ?? configSec["Username"];
+            var hasPassword = (s != null && !string.IsNullOrEmpty(s.EncryptedPassword)) || !string.IsNullOrEmpty(configSec["Password"]);
+
+            isConfigured = !string.IsNullOrEmpty(server) && !string.IsNullOrEmpty(db) &&
+                           (authMode.Equals("WINDOWS", StringComparison.OrdinalIgnoreCase) || 
+                            (!string.IsNullOrEmpty(username) && hasPassword));
+        }
+        else if (provider.Code.Equals("OPENAI", StringComparison.OrdinalIgnoreCase))
+        {
+            var s = provider.Settings;
+            var configSec = configuration.GetSection("Integrations:OpenAi");
+            var hasApiKey = (s != null && !string.IsNullOrEmpty(s.ApiKeyEncrypted)) || 
+                             !string.IsNullOrEmpty(configSec["ApiKey"]) || 
+                             !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("OPENAI_API_KEY"));
+
+            isConfigured = hasApiKey;
+        }
+        else if (provider.Code.Equals("SMTP", StringComparison.OrdinalIgnoreCase))
+        {
+            var smtp = smtpSettings;
+            var configSec = configuration.GetSection("SmtpSettings");
+            var server = smtp?.Server ?? configSec["Server"];
+            var portVal = smtp?.Port ?? (configSec["Port"] != null ? int.Parse(configSec["Port"]!) : 0);
+            var senderEmail = smtp?.SenderEmail ?? configSec["SenderEmail"];
+
+            isConfigured = !string.IsNullOrEmpty(server) && portVal > 0 && !string.IsNullOrEmpty(senderEmail);
+        }
+
+        if (!isConfigured) 
+            return IntegrationStatusCodes.NotConfigured;
+
+        // If configured, check last test connection status
+        var status = provider.ConnectionStatus;
+        if (status == null || status.LastCheckedAtUtc == null)
+        {
+            return IntegrationStatusCodes.PendingTest;
+        }
+
+        return status.CurrentStatus;
     }
 
     private static List<string> ParseCapabilities(string? capabilitiesJson)
@@ -279,5 +421,19 @@ public class IntegrationHealthService : IIntegrationHealthService
         {
             return new List<string>();
         }
+    }
+
+    private class PrimaveraAdditionalConfig
+    {
+        public Dictionary<string, PrimaveraCompanyConfig>? Companies { get; set; }
+    }
+
+    private class PrimaveraCompanyConfig
+    {
+        public string? DatabaseName { get; set; }
+        public bool Enabled { get; set; } = true;
+        public string? Username { get; set; }
+        public string? EncryptedPassword { get; set; }
+        public int SecretVersion { get; set; }
     }
 }

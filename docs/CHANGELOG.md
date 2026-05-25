@@ -2,6 +2,55 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.154.0] - 2026-05-25
+
+### Added — Primavera ERP Connection Validation & Health Consistency Corrections
+
+**Summary**: Resolved the connection testing validation messages and state discrepancies for the Primavera ERP integration in the **Gestão de Integrações (Integration Management)** module. Implemented 6 strict sequential validation checks in Portuguese before executing SQL connections, returning exact user-friendly diagnostics. Aligned the DTO enabled state directly with `provider.IsEnabled` in the database, resolving configuration button inconsistencies. Updated display status calculations to dynamically evaluate Primavera based on company-specific configurations (showing `"Inativo"` when disabled, `"Não Configurado"` if company database/credentials are missing, and fallback health states). Added a visual warning badge reading `"Senha não configurada."` next to the status badge on active company cards.
+
+**Key Updates**:
+- **Sequential Validation Pipeline**: Integrated 6 sequential connection validations in Portuguese (`PrimaveraIntegrationProvider.cs`) before attempting SQL connections. Returns exact diagnostic warnings (e.g. database missing, username missing, password missing) directly.
+- **Enabled State Alignment**: Refactored DTO mappings (`IntegrationSettingsService.cs` and `IntegrationHealthService.cs`) to strictly check `provider.IsEnabled` from the database directly, ensuring toggles and health cards reflect true database states.
+- **Dynamic Display Status**: Updated the health state calculator (`IntegrationHealthService.cs`) to dynamically check all active Primavera companies and their database/credential completeness, returning `"Inativo"` or `"Não Configurado"` as appropriate.
+- **UI Warning Badge**: Added a warning badge reading `"Senha não configurada."` next to the status badge on active company rows in `IntegrationSettings.tsx` to highlight missing credentials.
+
+**Files Changed**:
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/PrimaveraConnectionFactory.cs` — Exposed company configuration state safely via `GetCompanySettingsAsync`.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/PrimaveraIntegrationProvider.cs` — Integrated the 6 Portuguese validation checks.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/IntegrationHealthService.cs` — Aligned health statuses and bypassed early connection test exits for Primavera.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/IntegrationSettingsService.cs` — Removed enabled state configuration fallback in `MapToDto`.
+- `src/frontend/src/pages/Admin/IntegrationSettings.tsx` — Rendered `"Senha não configurada."` warning badge on active company cards.
+
+### Added — Security Incident Response & Unified SMTP Integration Consolidation (DEC-135)
+
+**Summary**: Addressed the GitGuardian alert by staging a security incident report (`docs/SECURITY_INCIDENT_GITGUARDIAN_SMTP_SECRET_LEAK.md`), confirming that development configuration secrets are untracked and gitignored, and removing hardcoded passwords from scripts (`scripts/query_innux.ps1`). Consolidated the SMTP configuration strictly inside the **Gestão de Integrações (Integration Management)** module, completely removing it from the legacy **Dados Mestres (Master Data)** tab. Refactored the C# backend to route provider `"SMTP"` CRUD operations to the existing database-backed `SmtpSettings` table, preventing duplicate databases or configurations. Implemented scoped `IIntegrationProvider` health check providers (`SmtpIntegrationProvider.cs` and `OpenAiIntegrationProvider.cs`) and deleted the obsolete `SmtpSettingsController.cs`. Developed an administrative modal (`ConnectionConfigureModal`) in the frontend to securely modify non-secret connection parameters in real time.
+
+**Key Updates**:
+- **Immediate Security Incident Response**: Created the detailed incident report outlining historical exposure context, credential rotation requirements for Leonardo, and git history scrubbing procedures via `git-filter-repo`. Removed the plaintext database password `ad#56&Hfe` from the tracked `scripts/query_innux.ps1` script, resolving it dynamically from the `INNUX_DB_PASSWORD` environment variable. Confirmed active HEAD cleanliness, `.gitignore` rules, and absence of active hardcoded secrets.
+- **Dados Mestres SMTP Removal**: Stripped the SMTP tab from the sidebar menu, state hooks, and `<SmtpSettingsPanel>` render block out of `MasterData.tsx` to prevent duplicate configuration areas.
+- **Unified SMTP Configuration Routing**: Refactored `IntegrationSettingsService.cs` to map read/write and password rotation operations for provider `"SMTP"` securely to the legacy `SmtpSettings` database table, preserving database-backed single-row constraints and AES encryption keys.
+- **New Integration Health Providers**: Created `SmtpIntegrationProvider.cs` and `OpenAiIntegrationProvider.cs` implementing the `IIntegrationProvider` connection test contract. Registered them in the DI pipeline (`Program.cs`) and deleted `SmtpSettingsController.cs`.
+- **Administrative Configuration UI**: Implemented `ConnectionConfigureModal` inside `IntegrationSettings.tsx` to support editing non-secret connection parameters (Primavera, Innux, OpenAI, SMTP) in a clean, responsive modal form, keeping secret inputs securely masked.
+- **Guided Tour & Type Verification**: Confirmed that guided tours are unaffected by the SMTP master data removal, and verified type-safety compilation on backend (`dotnet build`) and frontend (`npx tsc --noEmit`) with 0 errors.
+
+**Files Changed**:
+- `docs/SECURITY_INCIDENT_GITGUARDIAN_SMTP_SECRET_LEAK.md` — [NEW] Security incident report document.
+- `scripts/query_innux.ps1` — Replaced hardcoded plaintext password with environment variable.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/SmtpIntegrationProvider.cs` — [NEW] Unified SMTP test connection provider.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/OpenAiIntegrationProvider.cs` — [NEW] Unified OpenAI test connection provider.
+- `src/backend/AlplaPortal.Api/Controllers/Admin/SmtpSettingsController.cs` — [DELETE] Obsolete legacy controller.
+- `src/backend/AlplaPortal.Api/Program.cs` — Registered new integration health providers.
+- `src/backend/AlplaPortal.Application/DTOs/Integration/IntegrationSettingsDtos.cs` — Added SMTP transport properties.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/IntegrationSettingsService.cs` — Routed SMTP settings securely to `SmtpSettings` table.
+- `src/frontend/src/pages/Settings/MasterData.tsx` — Stripped legacy SMTP settings UI panel.
+- `src/frontend/src/pages/Admin/IntegrationSettings.tsx` — Added expandable SMTP cards and administrative configuration modal.
+- `src/frontend/src/lib/api.ts` — Cleaned up old SMTP API definitions.
+- `src/frontend/src/types/index.ts` — Updated types for integration parameters.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.154.0".
+- `docs/VERSION.md` — Updated to v2.154.0.
+- `docs/CHANGELOG.md` — This entry.
+- `docs/DECISIONS.md` — DEC-135.
+
 ## [v2.153.0] - 2026-05-25
 
 ### Added — Integration Management Module: CRUD UI, Factory Refactoring & Frontend Type Safety (DEC-134)

@@ -24,10 +24,23 @@ const PROVIDER_ICONS: Record<string, React.ReactNode> = {
 
 const STATUS_DISPLAY: Record<string, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
     HEALTHY:        { label: 'Operacional',     color: 'var(--color-status-green)',  bg: 'color-mix(in srgb, var(--color-status-green) 15%, transparent)', icon: <CheckCircle2 size={14} /> },
-    UNHEALTHY:      { label: 'Com Falhas',      color: 'var(--color-status-red)',    bg: 'color-mix(in srgb, var(--color-status-red) 15%, transparent)',   icon: <XCircle size={14} /> },
-    UNREACHABLE:    { label: 'Inacessível',     color: 'var(--color-status-red)',    bg: 'color-mix(in srgb, var(--color-status-red) 15%, transparent)',   icon: <AlertCircle size={14} /> },
-    NOT_CONFIGURED: { label: 'Não Configurado', color: 'var(--color-text-main)',     bg: 'color-mix(in srgb, var(--color-text-muted) 15%, transparent)',   icon: <HelpCircle size={14} /> },
+    UNHEALTHY:      { label: 'Erro',            color: 'var(--color-status-red)',    bg: 'color-mix(in srgb, var(--color-status-red) 15%, transparent)',   icon: <XCircle size={14} /> },
+    UNREACHABLE:    { label: 'Erro',            color: 'var(--color-status-red)',    bg: 'color-mix(in srgb, var(--color-status-red) 15%, transparent)',   icon: <AlertCircle size={14} /> },
+    NOT_CONFIGURED: { label: 'Não Configurado', color: 'color-mix(in srgb, var(--color-text-main) 70%, transparent)', bg: 'color-mix(in srgb, var(--color-text-muted) 12%, transparent)', icon: <HelpCircle size={14} /> },
     PLANNED:        { label: 'Prevista',        color: 'var(--color-status-blue)',   bg: 'color-mix(in srgb, var(--color-status-blue) 15%, transparent)',  icon: <Clock size={14} /> },
+    INACTIVE:       { label: 'Inativo',         color: 'var(--color-text-muted)',    bg: 'color-mix(in srgb, var(--color-text-muted) 15%, transparent)',   icon: <XCircle size={14} /> },
+    PENDING_TEST:   { label: 'Pendente de Teste', color: '#d97706',                  bg: 'rgba(217, 119, 6, 0.12)',                                        icon: <Clock size={14} /> }
+};
+
+const DESCRIPTION_TRANSLATIONS: Record<string, string> = {
+    "Enterprise Resource Planning — master data source for employees, articles, suppliers, departments, and cost centers.":
+        "Sistema ERP utilizado como fonte de dados mestre para colaboradores, artigos, fornecedores, departamentos e centros de custo.",
+    "Biometric time and attendance system — complementary employee/attendance data source.":
+        "Sistema de assiduidade e marcação de ponto utilizado como fonte complementar de dados de colaboradores e presenças.",
+    "AI-powered document extraction and analysis — OCR processing for proformas, invoices, and contracts.":
+        "Serviço de IA para extração e análise de documentos, utilizado no OCR de proformas, faturas e contratos.",
+    "Email notification service — sends workflow alerts, password resets, and proforma deadline reminders.":
+        "Serviço de e-mail utilizado para envio de alertas de workflow, redefinição de senha e lembretes de prazos de proformas."
 };
 
 function StatusBadge({ status }: { status?: string }) {
@@ -202,6 +215,529 @@ function SecretReplaceModal({ provider, secretType, onClose, onSuccess }: {
 
 /*
  * ──────────────────────────────────────────────────────
+ *  Primavera Company Secret Modal (New)
+ * ──────────────────────────────────────────────────────
+ */
+
+function PrimaveraCompanySecretModal({ companyKey, companyName, onClose, onSuccess }: {
+    companyKey: 'ALPLAPLASTICO' | 'ALPLASOPRO';
+    companyName: string;
+    onClose: () => void;
+    onSuccess: () => void;
+}) {
+    const [value, setValue] = useState('');
+    const [confirm, setConfirm] = useState('');
+    const [showValue, setShowValue] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState('');
+
+    const canSave = value.length > 0 && value === confirm;
+
+    async function handleSave() {
+        if (!canSave) return;
+        setSaving(true);
+        setError('');
+        try {
+            await api.admin.integrationSettings.replacePrimaveraCompanySecret({
+                companyKey,
+                newPassword: value
+            });
+            onSuccess();
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Falha ao atualizar senha.');
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    return (
+        <div style={{
+            position: 'fixed', inset: 0, zIndex: 1000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)'
+        }}>
+            <div style={{
+                backgroundColor: 'var(--color-bg-surface)', borderRadius: 'var(--radius-lg)',
+                border: '1px solid var(--color-border)', padding: '2rem',
+                width: '100%', maxWidth: '480px', boxShadow: '0 24px 48px rgba(0,0,0,0.2)'
+            }}>
+                <h3 style={{ margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Key size={20} /> Substituir Senha
+                </h3>
+                <p style={{ margin: '0 0 1.5rem 0', fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
+                    Empresa: <strong>{companyName}</strong> (Primavera ERP)
+                </p>
+
+                {error && (
+                    <div style={{
+                        padding: '0.75rem', marginBottom: '1rem', borderRadius: 'var(--radius-sm)',
+                        backgroundColor: 'color-mix(in srgb, var(--color-status-red) 10%, transparent)',
+                        color: 'var(--color-status-red)', fontSize: '0.875rem'
+                    }}>
+                        {error}
+                    </div>
+                )}
+
+                <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ display: 'block', marginBottom: '0.375rem', fontSize: '0.8125rem', fontWeight: 600 }}>
+                        Nova Senha
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                        <input
+                            type={showValue ? 'text' : 'password'}
+                            value={value}
+                            onChange={e => setValue(e.target.value)}
+                            placeholder="Digite a nova senha..."
+                            autoComplete="new-password"
+                            style={{
+                                width: '100%', padding: '0.625rem 2.5rem 0.625rem 0.75rem',
+                                border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)',
+                                backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-main)',
+                                fontSize: '0.875rem', boxSizing: 'border-box'
+                            }}
+                        />
+                        <button
+                            type="button"
+                            onClick={() => setShowValue(!showValue)}
+                            style={{
+                                position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)',
+                                background: 'none', border: 'none', cursor: 'pointer',
+                                color: 'var(--color-text-muted)', padding: '0.25rem'
+                            }}
+                        >
+                            {showValue ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                    </div>
+                </div>
+
+                <div style={{ marginBottom: '1.5rem' }}>
+                    <label style={{ display: 'block', marginBottom: '0.375rem', fontSize: '0.8125rem', fontWeight: 600 }}>
+                        Confirmar Senha
+                    </label>
+                    <input
+                        type="password"
+                        value={confirm}
+                        onChange={e => setConfirm(e.target.value)}
+                        placeholder="Confirme a nova senha..."
+                        autoComplete="new-password"
+                        style={{
+                            width: '100%', padding: '0.625rem 0.75rem',
+                            border: `1px solid ${confirm && confirm !== value ? 'var(--color-status-red)' : 'var(--color-border)'}`,
+                            borderRadius: 'var(--radius-sm)',
+                            backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-main)',
+                            fontSize: '0.875rem', boxSizing: 'border-box'
+                        }}
+                    />
+                    {confirm && confirm !== value && (
+                        <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: 'var(--color-status-red)' }}>
+                            Os valores não coincidem.
+                        </p>
+                    )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                    <button onClick={onClose} style={{
+                        padding: '0.5rem 1.25rem', borderRadius: 'var(--radius-sm)',
+                        border: '1px solid var(--color-border)', backgroundColor: 'transparent',
+                        color: 'var(--color-text-main)', cursor: 'pointer', fontSize: '0.875rem'
+                    }}>
+                        Cancelar
+                    </button>
+                    <button onClick={handleSave} disabled={!canSave || saving} style={{
+                        padding: '0.5rem 1.25rem', borderRadius: 'var(--radius-sm)',
+                        border: 'none', backgroundColor: canSave ? 'var(--color-primary)' : 'var(--color-border)',
+                        color: 'white', cursor: canSave ? 'pointer' : 'not-allowed',
+                        fontSize: '0.875rem', fontWeight: 600,
+                        display: 'flex', alignItems: 'center', gap: '0.5rem'
+                    }}>
+                        {saving && <Loader2 size={14} className="spin" />}
+                        Substituir
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+
+/*
+ * ──────────────────────────────────────────────────────
+ *  Connection Configure Modal
+ * ──────────────────────────────────────────────────────
+ */
+
+function ConnectionConfigureModal({ provider, onClose, onSuccess }: {
+    provider: IntegrationSettingsDto;
+    onClose: () => void;
+    onSuccess: () => void;
+}) {
+    const isSQL = provider.connectionType === 'SQL';
+    const isAPI = provider.connectionType === 'REST_API';
+    const isSMTP = provider.code === 'SMTP';
+    const isPrimavera = provider.code === 'PRIMAVERA';
+
+    const [server, setServer] = useState(provider.server || '');
+    const [databaseName, setDatabaseName] = useState(provider.databaseName || '');
+    const [instanceName, setInstanceName] = useState(provider.instanceName || '');
+    const [authenticationMode, setAuthenticationMode] = useState(provider.authenticationMode || 'SQL');
+    const [username, setUsername] = useState(provider.username || '');
+    const [apiBaseUrl, setApiBaseUrl] = useState(provider.apiBaseUrl || '');
+    const [timeoutSeconds, setTimeoutSeconds] = useState(provider.timeoutSeconds || 15);
+    const [additionalConfig, setAdditionalConfig] = useState(provider.additionalConfig || '');
+
+    // Company DB state for Primavera
+    const [alplaPlasticoDb, setAlplaPlasticoDb] = useState('');
+    const [alplaPlasticoEnabled, setAlplaPlasticoEnabled] = useState(true);
+    const [alplaPlasticoUsername, setAlplaPlasticoUsername] = useState('');
+    const [alplaSoproDb, setAlplaSoproDb] = useState('');
+    const [alplaSoproEnabled, setAlplaSoproEnabled] = useState(true);
+    const [alplaSoproUsername, setAlplaSoproUsername] = useState('');
+
+    useEffect(() => {
+        if (isPrimavera && provider.primaveraCompanies) {
+            const plastico = provider.primaveraCompanies.find(c => c.companyKey === 'ALPLAPLASTICO');
+            if (plastico) {
+                setAlplaPlasticoDb(plastico.databaseName || '');
+                setAlplaPlasticoEnabled(plastico.enabled !== false);
+                setAlplaPlasticoUsername(plastico.username || '');
+            }
+            const sopro = provider.primaveraCompanies.find(c => c.companyKey === 'ALPLASOPRO');
+            if (sopro) {
+                setAlplaSoproDb(sopro.databaseName || '');
+                setAlplaSoproEnabled(sopro.enabled !== false);
+                setAlplaSoproUsername(sopro.username || '');
+            }
+        }
+    }, [isPrimavera, provider.primaveraCompanies]);
+
+    // SMTP fields
+    const [port, setPort] = useState(provider.port || 587);
+    const [enableSsl, setEnableSsl] = useState(provider.enableSsl !== false);
+    const [senderEmail, setSenderEmail] = useState(provider.senderEmail || '');
+    const [senderName, setSenderName] = useState(provider.senderName || '');
+
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState('');
+
+    async function handleSave() {
+        setSaving(true);
+        setError('');
+        try {
+            const payload: any = {};
+            if (isSQL) {
+                payload.server = server;
+                payload.databaseName = databaseName;
+                payload.instanceName = instanceName;
+                payload.authenticationMode = authenticationMode;
+                payload.username = username;
+                payload.timeoutSeconds = Number(timeoutSeconds) || undefined;
+                payload.additionalConfig = additionalConfig;
+            } else if (isAPI) {
+                payload.apiBaseUrl = apiBaseUrl;
+                payload.timeoutSeconds = Number(timeoutSeconds) || undefined;
+            } else if (isSMTP) {
+                payload.server = server;
+                payload.port = Number(port);
+                payload.enableSsl = enableSsl;
+                payload.senderEmail = senderEmail;
+                payload.senderName = senderName;
+            }
+
+            await api.admin.integrationSettings.update(provider.code, payload);
+
+            if (isPrimavera) {
+                await Promise.all([
+                    api.admin.integrationSettings.updatePrimaveraCompany({
+                        companyKey: 'ALPLAPLASTICO',
+                        databaseName: alplaPlasticoDb,
+                        enabled: alplaPlasticoEnabled,
+                        username: alplaPlasticoUsername
+                    }),
+                    api.admin.integrationSettings.updatePrimaveraCompany({
+                        companyKey: 'ALPLASOPRO',
+                        databaseName: alplaSoproDb,
+                        enabled: alplaSoproEnabled,
+                        username: alplaSoproUsername
+                    })
+                ]);
+            }
+
+            onSuccess();
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Falha ao salvar configurações.');
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    const inputStyle: React.CSSProperties = {
+        width: '100%', padding: '0.625rem 0.75rem',
+        border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)',
+        backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-main)',
+        fontSize: '0.875rem', boxSizing: 'border-box'
+    };
+
+    const labelStyle: React.CSSProperties = {
+        display: 'block', marginBottom: '0.375rem', fontSize: '0.8125rem', fontWeight: 600
+    };
+
+    return (
+        <div style={{
+            position: 'fixed', inset: 0, zIndex: 1000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)'
+        }}>
+            <div style={{
+                backgroundColor: 'var(--color-bg-surface)', borderRadius: 'var(--radius-lg)',
+                border: '1px solid var(--color-border)', padding: '2rem',
+                width: '100%', maxWidth: '540px', maxHeight: '90vh', overflowY: 'auto',
+                boxShadow: '0 24px 48px rgba(0,0,0,0.2)'
+            }}>
+                <h3 style={{ margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Server size={20} /> Configurar Conexão
+                </h3>
+                <p style={{ margin: '0 0 1.5rem 0', fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
+                    Provedor: <strong>{provider.name}</strong> ({provider.code})
+                </p>
+
+                {error && (
+                    <div style={{
+                        padding: '0.75rem', marginBottom: '1rem', borderRadius: 'var(--radius-sm)',
+                        backgroundColor: 'color-mix(in srgb, var(--color-status-red) 10%, transparent)',
+                        color: 'var(--color-status-red)', fontSize: '0.875rem'
+                    }}>
+                        {error}
+                    </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+                    {isSQL && (
+                        <>
+                            <div>
+                                <label style={labelStyle}>Servidor (IP ou Hostname)</label>
+                                <input type="text" value={server} onChange={e => setServer(e.target.value)} placeholder="ex: 192.168.1.100" style={inputStyle} />
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: isPrimavera ? '1fr' : '1fr 1fr', gap: '1rem' }}>
+                                {!isPrimavera && (
+                                    <div>
+                                        <label style={labelStyle}>Base de Dados</label>
+                                        <input type="text" value={databaseName} onChange={e => setDatabaseName(e.target.value)} placeholder="ex: PRIANGOLA" style={inputStyle} />
+                                    </div>
+                                )}
+                                <div>
+                                    <label style={labelStyle}>Instância SQL</label>
+                                    <input type="text" value={instanceName} onChange={e => setInstanceName(e.target.value)} placeholder="ex: SQLEXPRESS (opcional)" style={inputStyle} />
+                                </div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                <div>
+                                    <label style={labelStyle}>Modo de Autenticação</label>
+                                    <select value={authenticationMode} onChange={e => setAuthenticationMode(e.target.value)} style={inputStyle}>
+                                        <option value="SQL">SQL Server Authentication</option>
+                                        <option value="WINDOWS">Windows Authentication</option>
+                                    </select>
+                                </div>
+                                {authenticationMode === 'SQL' && !isPrimavera && (
+                                    <div>
+                                        <label style={labelStyle}>Utilizador Geral</label>
+                                        <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="ex: sa" style={inputStyle} />
+                                    </div>
+                                )}
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
+                                <div>
+                                    <label style={labelStyle}>Timeout (segundos)</label>
+                                    <input type="number" value={timeoutSeconds} onChange={e => setTimeoutSeconds(Number(e.target.value))} style={inputStyle} />
+                                </div>
+                            </div>
+                            {!isPrimavera && (
+                                <div>
+                                    <label style={labelStyle}>Configurações Adicionais de Conexão (ex: TrustServerCertificate=True)</label>
+                                    <textarea value={additionalConfig} onChange={e => setAdditionalConfig(e.target.value)} placeholder="Adicione chaves extras de connection string" style={{ ...inputStyle, minHeight: '60px', fontFamily: 'monospace' }} />
+                                </div>
+                            )}
+
+                            {isPrimavera && (
+                                <div style={{
+                                    marginTop: '1rem',
+                                    paddingTop: '1rem',
+                                    borderTop: '2px solid var(--color-border)'
+                                }}>
+                                    <h4 style={{
+                                        margin: '0 0 1rem 0',
+                                        fontSize: '0.875rem',
+                                        fontWeight: 800,
+                                        textTransform: 'uppercase',
+                                        color: 'var(--color-text-primary)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem'
+                                    }}>
+                                        <Database size={16} /> Bases de Dados por Empresa
+                                    </h4>
+                                    
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                        {/* Alpla Plástico */}
+                                        <div style={{
+                                            display: 'grid',
+                                            gridTemplateColumns: '2fr 2fr auto',
+                                            alignItems: 'end',
+                                            gap: '1rem',
+                                            padding: '0.75rem',
+                                            backgroundColor: 'color-mix(in srgb, var(--color-text-muted) 5%, transparent)',
+                                            borderRadius: 'var(--radius-sm)',
+                                            border: '1px solid var(--color-border)'
+                                        }}>
+                                            <div>
+                                                <label style={labelStyle}>Alpla Plástico (Base de Dados)</label>
+                                                <input
+                                                    type="text"
+                                                    value={alplaPlasticoDb}
+                                                    onChange={e => setAlplaPlasticoDb(e.target.value)}
+                                                    placeholder="ex: PRI297514001"
+                                                    style={inputStyle}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label style={labelStyle}>Utilizador</label>
+                                                <input
+                                                    type="text"
+                                                    value={alplaPlasticoUsername}
+                                                    onChange={e => setAlplaPlasticoUsername(e.target.value)}
+                                                    placeholder="ex: usuario_plastico"
+                                                    style={inputStyle}
+                                                />
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', height: '38px', justifyContent: 'center' }}>
+                                                <span style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', textAlign: 'center' }}>Ativar</span>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={alplaPlasticoEnabled}
+                                                    onChange={e => setAlplaPlasticoEnabled(e.target.checked)}
+                                                    style={{ width: '18px', height: '18px', margin: '0 auto' }}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Alpla Sopro */}
+                                        <div style={{
+                                            display: 'grid',
+                                            gridTemplateColumns: '2fr 2fr auto',
+                                            alignItems: 'end',
+                                            gap: '1rem',
+                                            padding: '0.75rem',
+                                            backgroundColor: 'color-mix(in srgb, var(--color-text-muted) 5%, transparent)',
+                                            borderRadius: 'var(--radius-sm)',
+                                            border: '1px solid var(--color-border)'
+                                        }}>
+                                            <div>
+                                                <label style={labelStyle}>Alpla Sopro (Base de Dados)</label>
+                                                <input
+                                                    type="text"
+                                                    value={alplaSoproDb}
+                                                    onChange={e => setAlplaSoproDb(e.target.value)}
+                                                    placeholder="ex: PRI297514003"
+                                                    style={inputStyle}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label style={labelStyle}>Utilizador</label>
+                                                <input
+                                                    type="text"
+                                                    value={alplaSoproUsername}
+                                                    onChange={e => setAlplaSoproUsername(e.target.value)}
+                                                    placeholder="ex: usuario_sopro"
+                                                    style={inputStyle}
+                                                />
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', height: '38px', justifyContent: 'center' }}>
+                                                <span style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', textAlign: 'center' }}>Ativar</span>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={alplaSoproEnabled}
+                                                    onChange={e => setAlplaSoproEnabled(e.target.checked)}
+                                                    style={{ width: '18px', height: '18px', margin: '0 auto' }}
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    {isAPI && (
+                        <>
+                            <div>
+                                <label style={labelStyle}>URL Base da API</label>
+                                <input type="text" value={apiBaseUrl} onChange={e => setApiBaseUrl(e.target.value)} placeholder="https://api.openai.com/v1" style={inputStyle} />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Timeout (segundos)</label>
+                                <input type="number" value={timeoutSeconds} onChange={e => setTimeoutSeconds(Number(e.target.value))} style={inputStyle} />
+                            </div>
+                        </>
+                    )}
+
+                    {isSMTP && (
+                        <>
+                            <div>
+                                <label style={labelStyle}>Servidor SMTP (Host)</label>
+                                <input type="text" value={server} onChange={e => setServer(e.target.value)} placeholder="smtp.office365.com" style={inputStyle} />
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                <div>
+                                    <label style={labelStyle}>Porta</label>
+                                    <input type="number" value={port} onChange={e => setPort(Number(e.target.value))} style={inputStyle} />
+                                </div>
+                                <div>
+                                    <label style={labelStyle}>Segurança</label>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', height: '38px' }}>
+                                        <input type="checkbox" checked={enableSsl} onChange={e => setEnableSsl(e.target.checked)} style={{ width: '16px', height: '16px' }} />
+                                        <span style={{ fontSize: '0.875rem' }}>Habilitar SSL/TLS</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                <div>
+                                    <label style={labelStyle}>E-mail Remetente</label>
+                                    <input type="email" value={senderEmail} onChange={e => setSenderEmail(e.target.value)} placeholder="portal@empresa.com" style={inputStyle} />
+                                </div>
+                                <div>
+                                    <label style={labelStyle}>Nome Remetente</label>
+                                    <input type="text" value={senderName} onChange={e => setSenderName(e.target.value)} placeholder="ALPLA Portal" style={inputStyle} />
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                    <button onClick={onClose} style={{
+                        padding: '0.5rem 1.25rem', borderRadius: 'var(--radius-sm)',
+                        border: '1px solid var(--color-border)', backgroundColor: 'transparent',
+                        color: 'var(--color-text-main)', cursor: 'pointer', fontSize: '0.875rem'
+                    }}>
+                        Cancelar
+                    </button>
+                    <button onClick={handleSave} disabled={saving} style={{
+                        padding: '0.5rem 1.25rem', borderRadius: 'var(--radius-sm)',
+                        border: 'none', backgroundColor: 'var(--color-primary)',
+                        color: 'white', cursor: 'pointer',
+                        fontSize: '0.875rem', fontWeight: 600,
+                        display: 'flex', alignItems: 'center', gap: '0.5rem'
+                    }}>
+                        {saving && <Loader2 size={14} className="spin" />}
+                        Salvar Configurações
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/*
+ * ──────────────────────────────────────────────────────
  *  Provider Card Component
  * ──────────────────────────────────────────────────────
  */
@@ -215,10 +751,40 @@ function ProviderCard({ provider, onRefresh }: {
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
     const [toggling, setToggling] = useState(false);
     const [secretModal, setSecretModal] = useState<'PASSWORD' | 'API_KEY' | null>(null);
+    const [primaveraSecretModal, setPrimaveraSecretModal] = useState<{ key: 'ALPLAPLASTICO' | 'ALPLASOPRO'; name: string } | null>(null);
+    const [configModal, setConfigModal] = useState(false);
+
+    const [companyTesting, setCompanyTesting] = useState<string | null>(null);
+    const [companyTestResults, setCompanyTestResults] = useState<Record<string, { success: boolean; message: string }>>({});
 
     const icon = PROVIDER_ICONS[provider.code] || <Globe size={24} />;
     const isSQL = provider.connectionType === 'SQL';
-    const isAPI = provider.connectionType === 'REST_API' || provider.connectionType === 'SMTP';
+    const isAPI = provider.connectionType === 'REST_API';
+    const isSMTP = provider.code === 'SMTP';
+    const isPrimavera = provider.code === 'PRIMAVERA';
+
+    let plasticoDb = '';
+    let plasticoEnabled = true;
+    let soproDb = '';
+    let soproEnabled = true;
+
+    if (isPrimavera && provider.additionalConfig) {
+        try {
+            const parsed = JSON.parse(provider.additionalConfig);
+            if (parsed?.Companies) {
+                const plastico = parsed.Companies.ALPLAPLASTICO;
+                if (plastico) {
+                    plasticoDb = plastico.DatabaseName || '';
+                    plasticoEnabled = plastico.Enabled !== false;
+                }
+                const sopro = parsed.Companies.ALPLASOPRO;
+                if (sopro) {
+                    soproDb = sopro.DatabaseName || '';
+                    soproEnabled = sopro.Enabled !== false;
+                }
+            }
+        } catch {}
+    }
 
     async function handleTest() {
         setTesting(true);
@@ -249,6 +815,33 @@ function ProviderCard({ provider, onRefresh }: {
             onRefresh();
         } catch { /* ignored */ } finally {
             setToggling(false);
+        }
+    }
+
+    async function handleTestCompany(companyKey: string) {
+        setCompanyTesting(companyKey);
+        setCompanyTestResults(prev => ({ ...prev, [companyKey]: undefined as any }));
+        try {
+            const result = await api.admin.integrationSettings.testConnection(provider.code, companyKey);
+            setCompanyTestResults(prev => ({
+                ...prev,
+                [companyKey]: {
+                    success: result.success,
+                    message: result.success
+                        ? `Conexão OK — ${result.responseTimeMs ?? '?'}ms`
+                        : result.message || 'Falha na conexão.'
+                }
+            }));
+        } catch (err: unknown) {
+            setCompanyTestResults(prev => ({
+                ...prev,
+                [companyKey]: {
+                    success: false,
+                    message: err instanceof Error ? err.message : 'Erro ao testar conexão.'
+                }
+            }));
+        } finally {
+            setCompanyTesting(null);
         }
     }
 
@@ -308,7 +901,7 @@ function ProviderCard({ provider, onRefresh }: {
                             )}
                         </div>
                         <p style={{ margin: '0.25rem 0 0', fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
-                            {provider.description || `${provider.providerType} / ${provider.connectionType}`}
+                            {DESCRIPTION_TRANSLATIONS[provider.description || ''] || provider.description || `${provider.providerType} / ${provider.connectionType}`}
                         </p>
                     </div>
                 </div>
@@ -331,7 +924,30 @@ function ProviderCard({ provider, onRefresh }: {
                         {isSQL && (
                             <>
                                 <SettingField label="Servidor" value={provider.server} icon={<Server size={14} />} />
-                                <SettingField label="Base de Dados" value={provider.databaseName} icon={<Database size={14} />} />
+                                {isPrimavera ? (
+                                    <>
+                                        <SettingField 
+                                            label="Alpla Plástico (Base)" 
+                                            value={plasticoDb ? `${plasticoDb} (${plasticoEnabled ? 'Ativo' : 'Inativo'})` : undefined} 
+                                            icon={<Database size={14} />} 
+                                        />
+                                        <SettingField 
+                                            label="Alpla Plástico (Utilizador)" 
+                                            value={provider.primaveraCompanies?.find(c => c.companyKey === 'ALPLAPLASTICO')?.username} 
+                                        />
+                                        <SettingField 
+                                            label="Alpla Sopro (Base)" 
+                                            value={soproDb ? `${soproDb} (${soproEnabled ? 'Ativo' : 'Inativo'})` : undefined} 
+                                            icon={<Database size={14} />} 
+                                        />
+                                        <SettingField 
+                                            label="Alpla Sopro (Utilizador)" 
+                                            value={provider.primaveraCompanies?.find(c => c.companyKey === 'ALPLASOPRO')?.username} 
+                                        />
+                                    </>
+                                ) : (
+                                    <SettingField label="Base de Dados" value={provider.databaseName} icon={<Database size={14} />} />
+                                )}
                                 <SettingField label="Instância" value={provider.instanceName} />
                                 <SettingField label="Autenticação" value={provider.authenticationMode} />
                                 <SettingField label="Utilizador" value={provider.username} />
@@ -342,62 +958,244 @@ function ProviderCard({ provider, onRefresh }: {
                                 <SettingField label="URL Base" value={provider.apiBaseUrl} icon={<Globe size={14} />} />
                             </>
                         )}
+                        {isSMTP && (
+                            <>
+                                <SettingField label="Servidor (Host)" value={provider.server} icon={<Server size={14} />} />
+                                <SettingField label="Porta" value={provider.port?.toString()} />
+                                <SettingField label="SSL/TLS" value={provider.enableSsl !== undefined ? (provider.enableSsl ? 'Ativado' : 'Desativado') : undefined} icon={<Shield size={14} />} />
+                                <SettingField label="E-mail Remetente" value={provider.senderEmail} icon={<Mail size={14} />} />
+                                <SettingField label="Nome Remetente" value={provider.senderName} />
+                                <SettingField label="Utilizador" value={provider.username} />
+                            </>
+                        )}
                         <SettingField label="Timeout" value={provider.timeoutSeconds ? `${provider.timeoutSeconds}s` : undefined} />
                     </div>
 
                     {/* Secrets Section */}
-                    <div style={{
-                        padding: '1rem', borderRadius: 'var(--radius-md)',
-                        backgroundColor: 'color-mix(in srgb, var(--color-text-muted) 5%, transparent)',
-                        marginBottom: '1.5rem'
-                    }}>
-                        <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.8125rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
-                            <Shield size={14} style={{ marginRight: '0.375rem', verticalAlign: 'middle' }} />
-                            Segredos
-                        </h4>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.5rem', alignItems: 'center' }}>
-                            {isSQL && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                    <SecretIndicator hasSecret={provider.hasPassword} version={provider.secretVersion} />
-                                    {!provider.isReadOnly && (
-                                        <button
-                                            data-tour="integrations-secret-btn"
-                                            onClick={() => setSecretModal('PASSWORD')}
-                                            style={{
-                                                padding: '0.375rem 0.75rem', borderRadius: 'var(--radius-sm)',
-                                                border: '1px solid var(--color-border)', backgroundColor: 'transparent',
-                                                color: 'var(--color-text-main)', cursor: 'pointer',
-                                                fontSize: '0.75rem', fontWeight: 600,
-                                                display: 'flex', alignItems: 'center', gap: '0.375rem'
-                                            }}
-                                        >
-                                            <Key size={12} /> Substituir Senha
-                                        </button>
-                                    )}
-                                </div>
-                            )}
-                            {isAPI && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                    <SecretIndicator hasSecret={provider.hasApiKey} version={provider.secretVersion} />
-                                    {!provider.isReadOnly && (
-                                        <button
-                                            data-tour="integrations-secret-btn"
-                                            onClick={() => setSecretModal('API_KEY')}
-                                            style={{
-                                                padding: '0.375rem 0.75rem', borderRadius: 'var(--radius-sm)',
-                                                border: '1px solid var(--color-border)', backgroundColor: 'transparent',
-                                                color: 'var(--color-text-main)', cursor: 'pointer',
-                                                fontSize: '0.75rem', fontWeight: 600,
-                                                display: 'flex', alignItems: 'center', gap: '0.375rem'
-                                            }}
-                                        >
-                                            <Key size={12} /> Substituir Chave API
-                                        </button>
-                                    )}
-                                </div>
-                            )}
+                    {!isPrimavera && (
+                        <div style={{
+                            padding: '1rem', borderRadius: 'var(--radius-md)',
+                            backgroundColor: 'color-mix(in srgb, var(--color-text-muted) 5%, transparent)',
+                            marginBottom: '1.5rem'
+                        }}>
+                            <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.8125rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
+                                <Shield size={14} style={{ marginRight: '0.375rem', verticalAlign: 'middle' }} />
+                                Segredos
+                            </h4>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.5rem', alignItems: 'center' }}>
+                                {isSQL && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <SecretIndicator hasSecret={provider.hasPassword} version={provider.secretVersion} />
+                                        {!provider.isReadOnly && (
+                                            <button
+                                                data-tour="integrations-secret-btn"
+                                                onClick={() => setSecretModal('PASSWORD')}
+                                                style={{
+                                                    padding: '0.375rem 0.75rem', borderRadius: 'var(--radius-sm)',
+                                                    border: '1px solid var(--color-border)', backgroundColor: 'transparent',
+                                                    color: 'var(--color-text-main)', cursor: 'pointer',
+                                                    fontSize: '0.75rem', fontWeight: 600,
+                                                    display: 'flex', alignItems: 'center', gap: '0.375rem'
+                                                }}
+                                            >
+                                                <Key size={12} /> Substituir Senha
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                                {isSMTP && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <SecretIndicator hasSecret={provider.hasPassword} version={provider.secretVersion} />
+                                        {!provider.isReadOnly && (
+                                            <button
+                                                data-tour="integrations-secret-btn"
+                                                onClick={() => setSecretModal('PASSWORD')}
+                                                style={{
+                                                    padding: '0.375rem 0.75rem', borderRadius: 'var(--radius-sm)',
+                                                    border: '1px solid var(--color-border)', backgroundColor: 'transparent',
+                                                    color: 'var(--color-text-main)', cursor: 'pointer',
+                                                    fontSize: '0.75rem', fontWeight: 600,
+                                                    display: 'flex', alignItems: 'center', gap: '0.375rem'
+                                                }}
+                                            >
+                                                <Key size={12} /> Substituir Senha
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                                {isAPI && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <SecretIndicator hasSecret={provider.hasApiKey} version={provider.secretVersion} />
+                                        {!provider.isReadOnly && (
+                                            <button
+                                                data-tour="integrations-secret-btn"
+                                                onClick={() => setSecretModal('API_KEY')}
+                                                style={{
+                                                    padding: '0.375rem 0.75rem', borderRadius: 'var(--radius-sm)',
+                                                    border: '1px solid var(--color-border)', backgroundColor: 'transparent',
+                                                    color: 'var(--color-text-main)', cursor: 'pointer',
+                                                    fontSize: '0.75rem', fontWeight: 600,
+                                                    display: 'flex', alignItems: 'center', gap: '0.375rem'
+                                                }}
+                                            >
+                                                <Key size={12} /> Substituir Chave API
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    </div>
+                    )}
+
+                    {isPrimavera && (
+                        <div style={{
+                            padding: '1.25rem', borderRadius: 'var(--radius-lg)',
+                            backgroundColor: 'color-mix(in srgb, var(--color-text-muted) 4%, transparent)',
+                            border: '1px solid var(--color-border)',
+                            marginBottom: '1.5rem'
+                        }}>
+                            <h4 style={{
+                                margin: '0 0 1rem 0',
+                                fontSize: '0.875rem',
+                                fontWeight: 700,
+                                textTransform: 'uppercase',
+                                color: 'var(--color-text-muted)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem'
+                            }}>
+                                <Database size={16} /> Bases de Dados e Credenciais por Empresa
+                            </h4>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                {[
+                                    { key: 'ALPLAPLASTICO', name: 'Alpla Plástico' },
+                                    { key: 'ALPLASOPRO', name: 'Alpla Sopro' }
+                                ].map(companyInfo => {
+                                    const cSettings = provider.primaveraCompanies?.find(c => c.companyKey === companyInfo.key);
+                                    const dbName = cSettings?.databaseName || '—';
+                                    const isEnabled = cSettings?.enabled !== false;
+                                    const usr = cSettings?.username || '—';
+                                    const hasPass = cSettings?.hasPassword ?? false;
+                                    const secVer = cSettings?.secretVersion ?? 0;
+                                    const testingCompany = companyTesting === companyInfo.key;
+                                    const testRes = companyTestResults[companyInfo.key];
+
+                                    return (
+                                        <div key={companyInfo.key} style={{
+                                            padding: '1rem',
+                                            borderRadius: 'var(--radius-md)',
+                                            border: '1px solid var(--color-border)',
+                                            backgroundColor: 'var(--color-bg-surface)',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '0.75rem'
+                                        }}>
+                                            {/* Company Row Header */}
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                                <h5 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 700 }}>
+                                                    {companyInfo.name}
+                                                </h5>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    {isEnabled && !hasPass && (
+                                                        <span style={{
+                                                            display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+                                                            padding: '0.2rem 0.5rem', borderRadius: '4px',
+                                                            fontSize: '0.7rem', fontWeight: 600,
+                                                            color: 'var(--color-status-red)',
+                                                            backgroundColor: 'color-mix(in srgb, var(--color-status-red) 12%, transparent)',
+                                                            border: '1px solid var(--color-status-red)'
+                                                        }}>
+                                                            <AlertCircle size={10} /> Senha não configurada.
+                                                        </span>
+                                                    )}
+                                                    <span style={{
+                                                        display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+                                                        padding: '0.2rem 0.5rem', borderRadius: '9999px',
+                                                        fontSize: '0.7rem', fontWeight: 600,
+                                                        color: isEnabled ? 'var(--color-status-green)' : 'var(--color-text-muted)',
+                                                        backgroundColor: isEnabled 
+                                                            ? 'color-mix(in srgb, var(--color-status-green) 12%, transparent)' 
+                                                            : 'color-mix(in srgb, var(--color-text-muted) 12%, transparent)'
+                                                    }}>
+                                                        {isEnabled ? 'Ativo' : 'Inativo'}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {/* Settings Grid */}
+                                            <div style={{
+                                                display: 'grid',
+                                                gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+                                                gap: '0.75rem',
+                                                fontSize: '0.8125rem'
+                                            }}>
+                                                <div>
+                                                    <div style={{ color: 'var(--color-text-muted)', fontWeight: 600, marginBottom: '0.125rem' }}>BASE DE DADOS</div>
+                                                    <div style={{ color: 'var(--color-text-main)', fontFamily: 'monospace' }}>{dbName}</div>
+                                                </div>
+                                                <div>
+                                                    <div style={{ color: 'var(--color-text-muted)', fontWeight: 600, marginBottom: '0.125rem' }}>UTILIZADOR</div>
+                                                    <div style={{ color: 'var(--color-text-main)' }}>{usr}</div>
+                                                </div>
+                                                <div>
+                                                    <div style={{ color: 'var(--color-text-muted)', fontWeight: 600, marginBottom: '0.125rem' }}>SENHA</div>
+                                                    <SecretIndicator hasSecret={hasPass} version={secVer} />
+                                                </div>
+                                            </div>
+
+                                            {/* Company Test Result */}
+                                            {testRes && (
+                                                <div style={{
+                                                    padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-sm)',
+                                                    backgroundColor: testRes.success
+                                                        ? 'color-mix(in srgb, var(--color-status-green) 8%, transparent)'
+                                                        : 'color-mix(in srgb, var(--color-status-red) 8%, transparent)',
+                                                    color: testRes.success ? 'var(--color-status-green)' : 'var(--color-status-red)',
+                                                    fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.375rem'
+                                                }}>
+                                                    {testRes.success ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                                                    {testRes.message}
+                                                </div>
+                                            )}
+
+                                            {/* Actions */}
+                                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+                                                {!provider.isReadOnly && (
+                                                    <button
+                                                        onClick={() => setPrimaveraSecretModal({ key: companyInfo.key as any, name: companyInfo.name })}
+                                                        style={{
+                                                            padding: '0.375rem 0.75rem', borderRadius: 'var(--radius-sm)',
+                                                            border: '1px solid var(--color-border)', backgroundColor: 'transparent',
+                                                            color: 'var(--color-text-main)', cursor: 'pointer',
+                                                            fontSize: '0.75rem', fontWeight: 600,
+                                                            display: 'flex', alignItems: 'center', gap: '0.375rem'
+                                                        }}
+                                                    >
+                                                        <Key size={12} /> Substituir Senha
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={() => handleTestCompany(companyInfo.key)}
+                                                    disabled={testingCompany}
+                                                    style={{
+                                                        padding: '0.375rem 0.75rem', borderRadius: 'var(--radius-sm)',
+                                                        border: '1px solid var(--color-primary)', backgroundColor: 'transparent',
+                                                        color: 'var(--color-primary)', cursor: testingCompany ? 'wait' : 'pointer',
+                                                        fontSize: '0.75rem', fontWeight: 600,
+                                                        display: 'flex', alignItems: 'center', gap: '0.375rem'
+                                                    }}
+                                                >
+                                                    {testingCompany ? <Loader2 size={12} className="spin" /> : <RefreshCw size={12} />}
+                                                    Testar Conexão
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Test Result */}
                     {testResult && (
@@ -416,6 +1214,21 @@ function ProviderCard({ provider, onRefresh }: {
 
                     {/* Action Buttons */}
                     <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                        {!provider.isReadOnly && (
+                            <button
+                                onClick={() => setConfigModal(true)}
+                                style={{
+                                    padding: '0.5rem 1rem', borderRadius: 'var(--radius-sm)',
+                                    border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-surface)',
+                                    color: 'var(--color-text-main)', cursor: 'pointer',
+                                    fontSize: '0.8125rem', fontWeight: 600,
+                                    display: 'flex', alignItems: 'center', gap: '0.5rem'
+                                }}
+                            >
+                                <Server size={14} /> Configurar
+                            </button>
+                        )}
+
                         <button
                             data-tour="integrations-test-btn"
                             onClick={handleTest}
@@ -470,6 +1283,25 @@ function ProviderCard({ provider, onRefresh }: {
                     secretType={secretModal}
                     onClose={() => setSecretModal(null)}
                     onSuccess={() => { setSecretModal(null); onRefresh(); }}
+                />
+            )}
+
+            {/* Configure Connection Modal */}
+            {configModal && (
+                <ConnectionConfigureModal
+                    provider={provider}
+                    onClose={() => setConfigModal(false)}
+                    onSuccess={() => { setConfigModal(false); onRefresh(); }}
+                />
+            )}
+
+            {/* Primavera Company Secret Modal */}
+            {primaveraSecretModal && (
+                <PrimaveraCompanySecretModal
+                    companyKey={primaveraSecretModal.key}
+                    companyName={primaveraSecretModal.name}
+                    onClose={() => setPrimaveraSecretModal(null)}
+                    onSuccess={() => { setPrimaveraSecretModal(null); onRefresh(); }}
                 />
             )}
         </div>

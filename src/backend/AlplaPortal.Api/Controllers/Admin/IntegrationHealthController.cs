@@ -46,7 +46,7 @@ public class IntegrationHealthController : ControllerBase
     [HttpPost("{providerCode}/test-connection")]
     public async Task<IActionResult> TestConnection(string providerCode, CancellationToken ct)
     {
-        var result = await _healthService.TestProviderConnectionAsync(providerCode, ct);
+        var result = await _healthService.TestProviderConnectionAsync(providerCode, ct: ct);
         return Ok(result);
     }
 }

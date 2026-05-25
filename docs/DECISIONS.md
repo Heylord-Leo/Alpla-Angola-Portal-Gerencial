@@ -2,6 +2,28 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-135 — Security Incident Response & Unified SMTP Integration Consolidation
+
+- **Date:** 2026-05-25
+- **Status:** Accepted
+- **Context:** A GitGuardian alert indicated that SMTP credentials were exposed historically in the repository's Git history (originating from a previously tracked `appsettings.Development.json` file). Immediate remediation was required to secure the active repository HEAD, establish rotation checklists, and prepare a history cleanup plan before proceeding to staging replication. Concurrently, a usability review of the new Integration Management Module (DEC-134) revealed a duplication in SMTP management interface: a legacy "SMTP" tab existed under "Dados Mestres" (Master Data) in `MasterData.tsx`, while a new "Email / SMTP Service" card was introduced under "Gestão de Integrações" (Integration Management). The two settings areas needed consolidation, completely removing SMTP from Master Data and hosting it solely under Integration Management, without introducing duplicate database entities or breaking existing email service encryption flows.
+- **Decision:**
+    1. **Immediate Security Incident Response:**
+        - Created the official security incident report at `docs/SECURITY_INCIDENT_GITGUARDIAN_SMTP_SECRET_LEAK.md` detailing the alert, exposure analysis, mandatory credential rotation list, and history purge steps using `git-filter-repo`.
+        - Purged the plaintext database password (`ad#56&Hfe`) from the tracked `scripts/query_innux.ps1` script, modifying it to dynamically resolve from the `INNUX_DB_PASSWORD` environment variable.
+        - Confirmed that `appsettings.Development.json` is successfully untracked in HEAD and robustly ignored in `.gitignore` along with `secrets.json`, guaranteeing no plaintext credentials are tracked in active source control.
+    2. **Master Data Cleanup:** Completely removed the SMTP tab, associated state hooks, panels, and import dependencies from the master settings page `MasterData.tsx`, ensuring that SMTP settings are no longer accessible under Master Data.
+    3. **Unified Backend Configuration Routing:** Extended the unified integration service (`IntegrationSettingsService.cs`) to route the `"SMTP"` provider operations directly to the existing database-backed single-row `SmtpSettings` table, reusing the pre-existing AES encryption and connection mechanisms without creating duplicate entities or schemas.
+    4. **Health Check Provider Abstraction:** Created scoped `IIntegrationProvider` implementations (`SmtpIntegrationProvider` and `OpenAiIntegrationProvider`) to handle connection health tests dynamically under the unified integrations endpoint. Deleted the legacy obsolete `SmtpSettingsController.cs`.
+    5. **Administrative Connection Editing UI:** Introduced `ConnectionConfigureModal` inside `IntegrationSettings.tsx` to allow administrators to edit non-secret connection parameters (Host, Port, SSL, Sender Email, Sender Name, Usernames, URLs) in a clean modal form, while secret parameters remain strictly masked and manageable only via secure rotation fields.
+    6. **Guided Onboarding Tour Impact:** Audited Joyride tour files and verified that the removal of legacy SMTP tab elements has zero impact on active guided onboarding flows.
+- **Alternatives considered:**
+    - Creating a new `SMTP` mapping model and schema under `IntegrationProviderSettings` (rejected: introduces database duplication and breaks backward compatibility with existing encrypted `SmtpSettings` table and mail transport flows).
+    - Executing the Git history rewrite immediately (rejected: history purge requires repository lock and team coordination, so we staged the plan for explicit approval before execution).
+- **Consequences:** The GitGuardian security leak is mitigated in the active HEAD, and the historical purge procedure is fully defined. SMTP configuration is consolidated into a single technical settings area under Integration Management, eliminating confusion and ensuring administrative settings are securely encrypted at rest, masked in transit, and validated in real time.
+
+---
+
 ## DEC-134 — Integration Management Module: CRUD UI, Factory Refactoring & Frontend Type Safety
 
 - **Date:** 2026-05-25

@@ -23,4 +23,10 @@ public interface IIntegrationSettingsService
 
     /// <summary>Enable or disable a provider.</summary>
     Task SetEnabledAsync(string code, bool enabled, int userId, CancellationToken ct = default);
+
+    /// <summary>Update Primavera company-specific settings.</summary>
+    Task UpdatePrimaveraCompanyAsync(UpdatePrimaveraCompanyDto dto, int userId, CancellationToken ct = default);
+
+    /// <summary>Replace Primavera company-specific password.</summary>
+    Task ReplacePrimaveraCompanySecretAsync(ReplacePrimaveraCompanySecretDto dto, int userId, CancellationToken ct = default);
 }

@@ -863,6 +863,12 @@ export interface IntegrationSettingsDto {
     timeoutSeconds?: number;
     additionalConfig?: string;
 
+    // SMTP-specific settings
+    port?: number;
+    enableSsl?: boolean;
+    senderEmail?: string;
+    senderName?: string;
+
     // Secret presence indicators — NEVER actual secrets
     hasPassword: boolean;
     hasApiKey: boolean;
@@ -874,9 +880,33 @@ export interface IntegrationSettingsDto {
     lastTestMessage?: string;
     lastTestResponseTimeMs?: number;
 
+    // Company-specific settings for Primavera
+    primaveraCompanies?: PrimaveraCompanySettingsDto[];
+
     // Audit
     updatedByUserName?: string;
     updatedAt?: string;
+}
+
+export interface PrimaveraCompanySettingsDto {
+    companyKey: string;
+    databaseName?: string;
+    enabled: boolean;
+    username?: string;
+    hasPassword: boolean;
+    secretVersion: number;
+}
+
+export interface UpdatePrimaveraCompanyDto {
+    companyKey: string;
+    databaseName?: string;
+    enabled: boolean;
+    username?: string;
+}
+
+export interface ReplacePrimaveraCompanySecretDto {
+    companyKey: string;
+    newPassword: string;
 }
 
 /** PUT request DTO for updating non-secret integration settings. */
@@ -889,6 +919,12 @@ export interface UpdateIntegrationSettingsDto {
     apiBaseUrl?: string;
     timeoutSeconds?: number;
     additionalConfig?: string;
+
+    // SMTP-specific settings
+    port?: number;
+    enableSsl?: boolean;
+    senderEmail?: string;
+    senderName?: string;
 }
 
 /** POST request DTO for replacing an encrypted secret. */
