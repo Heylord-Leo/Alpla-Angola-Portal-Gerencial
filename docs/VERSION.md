@@ -2,7 +2,15 @@
 
 ## Current Version
 
-v2.155.0
+v2.155.1
+
+## [2.155.1] - 2026-05-26
+
+### Fixed — Post-Deployment TEST Environment Issues
+- **Blank Page Fix**: Replaced `Copy-Item` with `robocopy /E` in `deploy-test.yml` to preserve Vite `dist/assets/` subdirectory structure. Added validation step to verify `assets/` directory and JS/CSS files exist before artifact upload.
+- **API URL Duplication Fix**: Changed `API_BASE_URL` default from `'/api'` to `''` in `api.ts`. Endpoints already include `/api/` prefix — the old default caused double `/api/api/` paths in production builds.
+- **Frontend web.config**: Created `src/frontend/public/web.config` with IIS URL Rewrite rules for reverse proxy (`/api/*` → `http://localhost:5001/api/*`) and SPA fallback (`index.html` for React Router).
+- **Documentation**: Expanded `GITHUB_ACTIONS_TEST_DEPLOYMENT.md` with reverse proxy prerequisites (ARR), `ASPNETCORE_ENVIRONMENT` configuration, `appsettings.Test.json` requirements, API 500 diagnosis checklist, and post-deployment issue log.
 
 ## [2.155.0] - 2026-05-26
 

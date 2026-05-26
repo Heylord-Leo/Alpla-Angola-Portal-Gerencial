@@ -228,7 +228,161 @@ After the workflow completes successfully, validate:
 
 ---
 
-## 9. Troubleshooting
+## 9. Same-Origin API Routing (Reverse Proxy)
+
+The frontend and API are hosted on **separate IIS sites**:
+
+| Component | IIS Site | URL |
+|:---|:---|:---|
+| Frontend | `AlplaPortal-Test-Web` | `https://portalgerencial-test.alpla.net/` |
+| API | `AlplaPortal-Test-Api` | `http://localhost:5001/` (internal only) |
+
+The browser cannot call `localhost:5001` directly. The frontend makes same-origin API calls to:
+```
+https://portalgerencial-test.alpla.net/api/auth/login
+```
+
+The frontend IIS site uses a `web.config` with URL Rewrite rules to reverse-proxy `/api/*` to the internal API:
+```
+/api/*  →  http://localhost:5001/api/*
+```
+
+### 9.1 Server Prerequisites for Reverse Proxy
+
+The following must be installed on `AOVIA1VMS011` for the reverse proxy to work:
+
+| Prerequisite | Purpose | Verification |
+|:---|:---|:---|
+| **IIS URL Rewrite Module v2.1** | Enables URL rewrite rules in `web.config` | Check: `Get-WebGlobalModule \| Where-Object { $_.Name -like '*Rewrite*' }` |
+| **IIS Application Request Routing (ARR) 3.0** | Enables reverse proxy functionality | Check: IIS Manager → Server level → Application Request Routing Cache |
+| **ARR Proxy Enabled** | Activates the proxy feature | IIS Manager → Server → Application Request Routing Cache → Server Proxy Settings → ✅ Enable proxy |
+
+> **If ARR is not installed:**
+> 1. Download the ARR 3.0 standalone installer from Microsoft.
+> 2. Install on `AOVIA1VMS011`.
+> 3. Open IIS Manager → Server level → Application Request Routing Cache → Server Proxy Settings.
+> 4. Check **"Enable proxy"** → Apply.
+> 5. Run `iisreset` to apply changes.
+
+### 9.2 Frontend web.config
+
+The file `src/frontend/public/web.config` is included in the Vite build output and deployed automatically. It contains:
+
+1. **Reverse Proxy Rule**: `/api/*` → `http://localhost:5001/api/*`
+2. **SPA Fallback Rule**: Non-file requests → `index.html` (React Router support)
+
+Port 5000 is **never** used. The reverse proxy always targets port 5001.
+
+---
+
+## 10. Backend Environment Configuration
+
+### 10.1 ASPNETCORE_ENVIRONMENT
+
+The `ASPNETCORE_ENVIRONMENT` variable must be set to `Test` for the TEST API App Pool:
+
+**How to set (IIS App Pool environment variable):**
+```powershell
+# Run on AOVIA1VMS011 as administrator:
+Import-Module WebAdministration
+$pool = "AlplaPortal-Test-Api-Pool"
+
+# Get current environment variables collection
+$envVars = Get-ItemProperty "IIS:\AppPools\$pool" -Name environmentVariables
+# Add ASPNETCORE_ENVIRONMENT=Test
+$envVar = New-Object Microsoft.Web.Administration.ConfigurationElement
+# Manual method via IIS Manager:
+# 1. Open IIS Manager → Application Pools → AlplaPortal-Test-Api-Pool → Advanced Settings
+# 2. Environment Variables → Add: Name=ASPNETCORE_ENVIRONMENT, Value=Test
+# 3. Restart the App Pool
+```
+
+Or edit via `applicationHost.config`:
+```xml
+<add name="AlplaPortal-Test-Api-Pool">
+  <environmentVariables>
+    <add name="ASPNETCORE_ENVIRONMENT" value="Test" />
+  </environmentVariables>
+</add>
+```
+
+### 10.2 appsettings.Test.json
+
+The file `C:\Apps\AlplaPortal\Test\api\appsettings.Test.json` must exist on the server with environment-specific overrides. This file is **never committed** to the repository.
+
+Required contents (minimum):
+
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "[REDACTED — SQL Server connection string to Portal-Gerencial-Test database]"
+  },
+  "Jwt": {
+    "Secret": "[REDACTED — production-grade JWT signing key, minimum 32 characters]"
+  },
+  "AppConfig": {
+    "FrontendBaseUrl": "https://portalgerencial-test.alpla.net"
+  }
+}
+```
+
+> **IMPORTANT:** The workflow preserves this file during deployment. If it is accidentally deleted, it must be recreated manually with the correct secrets.
+
+### 10.3 Database Requirements
+
+- The `[Portal-Gerencial-Test]` database must exist on the SQL Server instance.
+- EF Core migrations must be applied manually before the API can process requests.
+- The SQL login used in the connection string must have `db_owner` permissions on the database.
+- Migrations are run manually via `sqlcmd` or SSMS — **never automated** by the workflow.
+
+---
+
+## 11. Troubleshooting
+
+### Frontend shows blank page
+
+**Symptom:** `index.html` loads but JS/CSS return 404.
+
+**Cause:** The `assets/` subdirectory was not preserved during deployment.
+
+**Check:**
+```powershell
+# Verify the assets directory exists:
+Test-Path "C:\Apps\AlplaPortal\Test\web\assets"
+Get-ChildItem "C:\Apps\AlplaPortal\Test\web\assets" -Filter "*.js"
+Get-ChildItem "C\Apps\AlplaPortal\Test\web\assets" -Filter "*.css"
+```
+
+**Fix (v2.155.1):** The workflow now uses `robocopy /E` instead of `Copy-Item` to preserve the Vite `dist/` directory structure, and validates that `assets/` exists before uploading artifacts.
+
+### Login returns 404 with /api/api/ path
+
+**Symptom:** Browser shows `POST /api/api/auth/login 404`.
+
+**Cause:** The frontend `API_BASE_URL` defaulted to `/api`, but every endpoint path already included `/api/...`, producing a double prefix.
+
+**Fix (v2.155.1):** `API_BASE_URL` default changed from `'/api'` to `''`. In development, `VITE_API_BASE_URL=http://localhost:5000` provides the full base. In production/TEST, the empty default produces same-origin calls like `/api/auth/login`.
+
+### API returns 500 Internal Server Error
+
+**Diagnosis checklist:**
+
+| # | Check | Command / Location |
+|:---:|:---|:---|
+| 1 | `ASPNETCORE_ENVIRONMENT` is set to `Test` | IIS Manager → App Pool → Advanced Settings → Environment Variables |
+| 2 | `appsettings.Test.json` exists | `Test-Path "C:\Apps\AlplaPortal\Test\api\appsettings.Test.json"` |
+| 3 | Connection string is valid | Check `appsettings.Test.json` → `ConnectionStrings.DefaultConnection` |
+| 4 | Database exists | `sqlcmd -S . -d "Portal-Gerencial-Test" -Q "SELECT 1"` |
+| 5 | Migrations are applied | Check Event Viewer or API startup logs for migration errors |
+| 6 | JWT secret is configured | Check `appsettings.Test.json` → `Jwt.Secret` (min 32 chars) |
+| 7 | SQL permissions are correct | Verify the SQL login has `db_owner` on `[Portal-Gerencial-Test]` |
+| 8 | Event Viewer errors | Event Viewer → Windows Logs → Application → Source: IIS AspNetCore Module |
+| 9 | IIS stdout logs | Check `C:\Apps\AlplaPortal\Test\api\logs\stdout_*.log` (enable in web.config if needed) |
+
+**Common causes:**
+- Empty or missing connection string → startup migration fails silently, subsequent DB requests return 500.
+- Missing `appsettings.Test.json` → app falls back to `appsettings.json` with empty connection string.
+- Wrong `ASPNETCORE_ENVIRONMENT` → app runs as Production, doesn't load `appsettings.Test.json`.
 
 ### Smoke test fails
 - The API may need additional time to start after IIS App Pool restart.
@@ -240,20 +394,38 @@ After the workflow completes successfully, validate:
 - Exit codes 0–7 are success/informational (files copied, skipped, etc.).
 - Exit code 8+ indicates an error (access denied, network error, etc.).
 
-### Configuration file issues
-- If `appsettings.Test.json` is missing on the server, it must be created manually with the correct connection strings and settings.
-- The workflow preserves but does not create these files.
-
 ### IIS App Pool won't start
 - Check Event Viewer → Windows Logs → Application for ASP.NET Core errors.
 - Verify the .NET 8 Hosting Bundle is installed on the server.
 - Ensure `web.config` in the API directory is valid.
 
+### Reverse proxy returns 500 or 502
+- Verify ARR is installed: IIS Manager → Server → Application Request Routing Cache.
+- Verify ARR proxy is enabled: Server Proxy Settings → "Enable proxy" must be checked.
+- Verify the API site is running: `Get-WebAppPoolState -Name "AlplaPortal-Test-Api-Pool"`
+- Verify API is listening on port 5001: `Get-NetTCPConnection -LocalPort 5001`
+- Check the frontend `web.config` rule: `type="Rewrite" url="http://localhost:5001/api/{R:1}"`
+
 ---
 
-## 10. Security Notes
+## 12. Security Notes
 
 - **No secrets are stored in the workflow file or repository.**
-- Connection strings, JWT secrets, and integration credentials are configured as IIS App Pool environment variables directly on the server.
+- Connection strings, JWT secrets, and integration credentials are configured in `appsettings.Test.json` on the server and/or as IIS App Pool environment variables.
 - The workflow uses only GitHub environment **variables** (not secrets) for paths and non-sensitive configuration.
+- The workflow preserves `appsettings.*.json` files on the server during deployment — they are never overwritten by the build artifact.
 - All `[REDACTED]` values in documentation are placeholders — real values are never committed.
+
+---
+
+## 13. Post-Deployment Issue Log
+
+### v2.155.0 → v2.155.1 (First Deployment Fixes)
+
+| Issue | Root Cause | Fix |
+|:---|:---|:---|
+| **Blank page** — JS/CSS 404 | `Copy-Item` flattened Vite `dist/assets/` during artifact staging | Replaced with `robocopy /E` + validation step |
+| **Login 404** — `/api/api/auth/login` | `API_BASE_URL` defaulted to `/api` but endpoints already had `/api/` prefix | Default changed to `''` (empty string) |
+| **API 500** — Internal Server Error | Missing `appsettings.Test.json`, no `ASPNETCORE_ENVIRONMENT`, empty connection string | Server config checklist documented; requires manual admin setup |
+| **No reverse proxy** — browser can't reach API | Frontend and API on separate IIS sites, no routing from `/api/*` to `localhost:5001` | Added `web.config` with URL Rewrite + ARR reverse proxy rule |
+
