@@ -2,7 +2,16 @@
 
 ## Current Version
 
-v2.155.1
+v2.155.2
+
+## [2.155.2] - 2026-05-26
+
+### Fixed — RequestCreate Scope Loading Resilience
+- **Decoupled API Calls**: Separated `/me` (live user profile) from the 8 auxiliary lookups in `RequestCreate.tsx` into independent try/catch blocks. This prevents unrelated lookup failures from causing a false "ACESSO RESTRITO" error.
+- **Detailed Error Banner**: Added a red "ERRO AO CARREGAR PERFIL" banner with Reload and Dashboard buttons when `/me` fails.
+- **Auxiliary Lookups Warning**: Added an amber warning banner if auxiliary lookups fail, while preserving the valid user plant scope and keeping the creation form interactive.
+- **Safe Diagnostic Logs**: Added three safe, non-sensitive `console.info` statements logging loaded plant counts, lookup status, and filter metrics for local debugging without exposing secrets.
+- **Diagnostic Guide**: Created a comprehensive guide `docs/REQUEST_CREATE_ACCESS_RESTRICTED_DIAGNOSTIC.md` featuring DevTools instructions, network status lookup guides, and read-only database queries to troubleshoot access rules.
 
 ## [2.155.1] - 2026-05-26
 
