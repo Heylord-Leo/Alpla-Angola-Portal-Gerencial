@@ -2,7 +2,18 @@
 
 ## Current Version
 
-v2.154.0
+v2.155.0
+
+## [2.155.0] - 2026-05-26
+
+### Added — GitHub Actions TEST Deployment Workflow (CI/CD)
+- **First CI/CD Pipeline**: Created `.github/workflows/deploy-test.yml` — the first GitHub Actions workflow for automated deployment to the TEST environment on `AOVIA1VMS011`.
+- **Workflow Dispatch**: Manual trigger via `workflow_dispatch` with a required `version` input (e.g., `v2.154.0`).
+- **Build Job**: Compiles backend (.NET 8 Release) and frontend (React/Vite with TypeScript type check) on `windows-latest`, uploads artifacts.
+- **Deploy Job**: Runs on self-hosted runner (`[self-hosted, Windows, X64, iis, test, alpla-portal-test]`) with GitHub Environment `test`. Downloads artifacts, creates timestamped backups, stops IIS App Pools, deploys files, starts IIS App Pools, runs smoke test.
+- **Config Preservation**: Environment-specific `appsettings.*.json` files on the server are preserved during deployment. Frontend server-side `web.config` (SPA rewrite rules) conditionally preserved.
+- **Safety**: No secrets committed, no production touched, port 5000 never used (API uses port 5001), EF migrations intentionally not automated.
+- **Documentation**: Created `docs/GITHUB_ACTIONS_TEST_DEPLOYMENT.md` — comprehensive deployment guide covering prerequisites, IIS configuration, runner labels, environment variables, certificate info, backup/rollback, migration policy, post-deployment checklist, and troubleshooting.
 
 ## [2.154.0] - 2026-05-25
 

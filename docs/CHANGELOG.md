@@ -2,6 +2,17 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.155.0] - 2026-05-26
+
+### Added — GitHub Actions TEST Deployment Workflow (CI/CD)
+- First automated CI/CD pipeline for deploying the Alpla Angola Portal Gerencial to the TEST environment on `AOVIA1VMS011`.
+- Workflow: `.github/workflows/deploy-test.yml` — manual trigger (`workflow_dispatch`) with version input.
+- Build job on `windows-latest`: .NET 8 restore → build → publish, Node.js 20 npm ci → tsc → vite build.
+- Deploy job on self-hosted runner: timestamped backups, IIS App Pool stop/start, file deployment with config preservation, smoke test.
+- Environment-specific `appsettings.*.json` files preserved on the server during deployment.
+- Documentation: `docs/GITHUB_ACTIONS_TEST_DEPLOYMENT.md` — full deployment guide with prerequisites, IIS config, certificate info, rollback, and troubleshooting.
+- No secrets committed, no production touched, port 5000 never used, EF migrations intentionally not automated.
+
 ## [v2.154.0] - 2026-05-25
 
 ### Added — Primavera ERP Connection Validation & Health Consistency Corrections

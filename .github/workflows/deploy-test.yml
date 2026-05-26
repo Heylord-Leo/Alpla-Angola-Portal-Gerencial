@@ -1,0 +1,412 @@
+# =============================================================================
+# Alpla Angola - Portal Gerencial
+# GitHub Actions Workflow: Deploy to TEST Environment
+# =============================================================================
+#
+# Target Server: AOVIA1VMS011
+# Target Environment: TEST
+# Official URL: https://portalgerencial-test.alpla.net/
+# API Port: 5001 (NOT 5000 — port 5000 is reserved by another application)
+#
+# This workflow builds the backend (.NET 8) and frontend (React/Vite),
+# then deploys both to the TEST environment on the self-hosted runner.
+#
+# IMPORTANT:
+# - This workflow does NOT touch Production.
+# - This workflow does NOT run EF database migrations.
+# - This workflow does NOT commit or expose any secrets.
+#
+# TODO: EF Core database migrations are intentionally NOT automated yet.
+#       Migrations will be handled in a separate controlled phase.
+#       See docs/GITHUB_ACTIONS_TEST_DEPLOYMENT.md for details.
+# =============================================================================
+
+name: Deploy to TEST
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v2.154.0)'
+        required: true
+        type: string
+
+# Prevent concurrent deployments to TEST
+concurrency:
+  group: deploy-test
+  cancel-in-progress: false
+
+jobs:
+  # ===========================================================================
+  # Job 1: Build
+  # ===========================================================================
+  # Compiles backend and frontend on a GitHub-hosted runner, then uploads
+  # the artifacts for the deploy job.
+  # ===========================================================================
+  build:
+    name: Build (${{ inputs.version }})
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      # --- Checkout ---
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # --- Backend (.NET 8) ---
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore backend dependencies
+        run: dotnet restore src/backend/AlplaPortal.sln
+
+      - name: Build backend (Release)
+        run: dotnet build src/backend/AlplaPortal.sln --configuration Release --no-restore
+
+      - name: Publish backend API
+        run: >
+          dotnet publish src/backend/AlplaPortal.Api/AlplaPortal.Api.csproj
+          --configuration Release
+          --no-build
+          --output ${{ github.workspace }}/artifacts/api
+
+      # --- Frontend (React + Vite) ---
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: src/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: src/frontend
+        run: npm ci
+
+      - name: Frontend type check
+        working-directory: src/frontend
+        run: npx tsc --noEmit
+
+      - name: Build frontend
+        working-directory: src/frontend
+        run: npm run build
+
+      - name: Copy frontend dist to artifact folder
+        shell: pwsh
+        run: |
+          Copy-Item -Path "src/frontend/dist/*" -Destination "${{ github.workspace }}/artifacts/web" -Recurse -Force
+
+      # --- Upload Artifacts ---
+      - name: Upload API artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-artifact
+          path: ${{ github.workspace }}/artifacts/api
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload Web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-artifact
+          path: ${{ github.workspace }}/artifacts/web
+          retention-days: 7
+          if-no-files-found: error
+
+  # ===========================================================================
+  # Job 2: Deploy to TEST
+  # ===========================================================================
+  # Downloads artifacts on the self-hosted runner, backs up current files,
+  # stops IIS, deploys new files, starts IIS, and runs a smoke test.
+  #
+  # TODO: EF Core database migrations are intentionally NOT automated yet.
+  #       Migrations must be executed manually by the DBA/admin before or
+  #       after deployment as needed. This will be addressed in a future
+  #       controlled phase with proper rollback and validation procedures.
+  # ===========================================================================
+  deploy-test:
+    name: Deploy TEST (${{ inputs.version }})
+    needs: build
+    runs-on: [self-hosted, Windows, X64, iis, test, alpla-portal-test]
+    timeout-minutes: 15
+    environment: test
+
+    env:
+      ARTIFACT_API_PATH: C:\ActionsArtifacts\AlplaPortal\api
+      ARTIFACT_WEB_PATH: C:\ActionsArtifacts\AlplaPortal\web
+
+    steps:
+      # --- Download Artifacts ---
+      - name: Clean artifact staging directories
+        shell: pwsh
+        run: |
+          if (Test-Path "${{ env.ARTIFACT_API_PATH }}") {
+            Remove-Item -Path "${{ env.ARTIFACT_API_PATH }}" -Recurse -Force
+          }
+          if (Test-Path "${{ env.ARTIFACT_WEB_PATH }}") {
+            Remove-Item -Path "${{ env.ARTIFACT_WEB_PATH }}" -Recurse -Force
+          }
+          New-Item -ItemType Directory -Force -Path "${{ env.ARTIFACT_API_PATH }}" | Out-Null
+          New-Item -ItemType Directory -Force -Path "${{ env.ARTIFACT_WEB_PATH }}" | Out-Null
+
+      - name: Download API artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: api-artifact
+          path: ${{ env.ARTIFACT_API_PATH }}
+
+      - name: Download Web artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-artifact
+          path: ${{ env.ARTIFACT_WEB_PATH }}
+
+      # --- Backup ---
+      - name: Create timestamped backup
+        shell: pwsh
+        run: |
+          $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+          $backupDir = Join-Path "${{ vars.BACKUP_PATH }}" "backup_$timestamp"
+          New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
+
+          Write-Host "::notice::Backup directory: $backupDir"
+
+          # Backup current API folder
+          $apiDeploy = "${{ vars.API_DEPLOY_PATH }}"
+          if (Test-Path $apiDeploy) {
+            $apiBackup = Join-Path $backupDir "api"
+            Write-Host "Backing up API from $apiDeploy to $apiBackup"
+            robocopy $apiDeploy $apiBackup /E /NFL /NDL /NJH /NJS /NC /NS /NP
+            # Robocopy exit codes 0-7 are success
+            if ($LASTEXITCODE -gt 7) { throw "API backup failed with robocopy exit code $LASTEXITCODE" }
+          } else {
+            Write-Host "::warning::API deploy path does not exist yet. Skipping API backup."
+          }
+
+          # Backup current Web folder
+          $webDeploy = "${{ vars.WEB_DEPLOY_PATH }}"
+          if (Test-Path $webDeploy) {
+            $webBackup = Join-Path $backupDir "web"
+            Write-Host "Backing up Web from $webDeploy to $webBackup"
+            robocopy $webDeploy $webBackup /E /NFL /NDL /NJH /NJS /NC /NS /NP
+            if ($LASTEXITCODE -gt 7) { throw "Web backup failed with robocopy exit code $LASTEXITCODE" }
+          } else {
+            Write-Host "::warning::Web deploy path does not exist yet. Skipping Web backup."
+          }
+
+          # Reset exit code so the step doesn't fail on robocopy success codes 1-7
+          $global:LASTEXITCODE = 0
+
+      # --- Stop IIS App Pools ---
+      - name: Stop IIS App Pools
+        shell: pwsh
+        run: |
+          Import-Module WebAdministration
+
+          $apiPool = "${{ vars.IIS_API_APPPOOL }}"
+          $webPool = "${{ vars.IIS_WEB_APPPOOL }}"
+
+          foreach ($pool in @($apiPool, $webPool)) {
+            $state = (Get-WebAppPoolState -Name $pool).Value
+            if ($state -eq "Started") {
+              Write-Host "Stopping App Pool: $pool"
+              Stop-WebAppPool -Name $pool
+            } else {
+              Write-Host "App Pool '$pool' is already in state: $state"
+            }
+          }
+
+          # Wait for pools to fully stop
+          Start-Sleep -Seconds 5
+
+          foreach ($pool in @($apiPool, $webPool)) {
+            $state = (Get-WebAppPoolState -Name $pool).Value
+            Write-Host "App Pool '$pool' state after stop: $state"
+          }
+
+      # --- Deploy API ---
+      - name: Deploy API files
+        shell: pwsh
+        run: |
+          $apiSource = "${{ env.ARTIFACT_API_PATH }}"
+          $apiDeploy = "${{ vars.API_DEPLOY_PATH }}"
+
+          # Ensure deploy directory exists
+          if (-not (Test-Path $apiDeploy)) {
+            New-Item -ItemType Directory -Force -Path $apiDeploy | Out-Null
+          }
+
+          # ---------------------------------------------------------------
+          # Preserve environment-specific configuration files on the server.
+          # These files contain server-side secrets and environment config
+          # that must NOT be overwritten by the build artifact.
+          # ---------------------------------------------------------------
+          $configFilesToPreserve = @(
+            "appsettings.Staging.json",
+            "appsettings.Test.json",
+            "appsettings.Production.json",
+            "appsettings.Local.json"
+          )
+
+          $tempConfigDir = Join-Path $env:TEMP "AlplaPortal_ConfigBackup_API"
+          if (Test-Path $tempConfigDir) { Remove-Item -Path $tempConfigDir -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $tempConfigDir | Out-Null
+
+          # Save existing config files
+          $preservedFiles = @()
+          foreach ($configFile in $configFilesToPreserve) {
+            $sourcePath = Join-Path $apiDeploy $configFile
+            if (Test-Path $sourcePath) {
+              Copy-Item -Path $sourcePath -Destination $tempConfigDir -Force
+              $preservedFiles += $configFile
+              Write-Host "Preserved: $configFile"
+            }
+          }
+
+          # Deploy new API files (overwrite existing, add new, but do NOT mirror/delete)
+          Write-Host "Deploying API files from $apiSource to $apiDeploy"
+          robocopy $apiSource $apiDeploy /E /IS /IT /NFL /NDL /NJH /NJS /NC /NS /NP
+          if ($LASTEXITCODE -gt 7) { throw "API deployment failed with robocopy exit code $LASTEXITCODE" }
+
+          # Restore preserved config files (overwrite whatever the artifact brought)
+          foreach ($configFile in $preservedFiles) {
+            $backupPath = Join-Path $tempConfigDir $configFile
+            $targetPath = Join-Path $apiDeploy $configFile
+            Copy-Item -Path $backupPath -Destination $targetPath -Force
+            Write-Host "Restored: $configFile"
+          }
+
+          # Cleanup temp
+          Remove-Item -Path $tempConfigDir -Recurse -Force -ErrorAction SilentlyContinue
+
+          # Reset exit code
+          $global:LASTEXITCODE = 0
+
+      # --- Deploy Web ---
+      - name: Deploy Web files
+        shell: pwsh
+        run: |
+          $webSource = "${{ env.ARTIFACT_WEB_PATH }}"
+          $webDeploy = "${{ vars.WEB_DEPLOY_PATH }}"
+
+          # Ensure deploy directory exists
+          if (-not (Test-Path $webDeploy)) {
+            New-Item -ItemType Directory -Force -Path $webDeploy | Out-Null
+          }
+
+          # ---------------------------------------------------------------
+          # Preserve the server-side web.config (IIS SPA rewrite rules)
+          # if the build artifact does not include one.
+          # ---------------------------------------------------------------
+          $serverWebConfig = Join-Path $webDeploy "web.config"
+          $artifactWebConfig = Join-Path $webSource "web.config"
+          $preserveWebConfig = $false
+          $tempWebConfig = Join-Path $env:TEMP "AlplaPortal_WebConfig_Backup_web.config"
+
+          if ((Test-Path $serverWebConfig) -and (-not (Test-Path $artifactWebConfig))) {
+            Copy-Item -Path $serverWebConfig -Destination $tempWebConfig -Force
+            $preserveWebConfig = $true
+            Write-Host "Preserved server-side web.config (not present in artifact)"
+          }
+
+          # Deploy new Web files
+          Write-Host "Deploying Web files from $webSource to $webDeploy"
+          robocopy $webSource $webDeploy /MIR /NFL /NDL /NJH /NJS /NC /NS /NP
+          if ($LASTEXITCODE -gt 7) { throw "Web deployment failed with robocopy exit code $LASTEXITCODE" }
+
+          # Restore preserved web.config
+          if ($preserveWebConfig -and (Test-Path $tempWebConfig)) {
+            Copy-Item -Path $tempWebConfig -Destination $serverWebConfig -Force
+            Write-Host "Restored server-side web.config"
+            Remove-Item -Path $tempWebConfig -Force -ErrorAction SilentlyContinue
+          }
+
+          # Reset exit code
+          $global:LASTEXITCODE = 0
+
+      # --- Start IIS App Pools ---
+      # This step runs even if a previous deploy step fails, to ensure
+      # the server is not left in a broken state with stopped App Pools.
+      - name: Start IIS App Pools
+        if: always()
+        shell: pwsh
+        run: |
+          Import-Module WebAdministration
+
+          $apiPool = "${{ vars.IIS_API_APPPOOL }}"
+          $webPool = "${{ vars.IIS_WEB_APPPOOL }}"
+
+          foreach ($pool in @($apiPool, $webPool)) {
+            try {
+              $state = (Get-WebAppPoolState -Name $pool).Value
+              if ($state -ne "Started") {
+                Write-Host "Starting App Pool: $pool"
+                Start-WebAppPool -Name $pool
+              } else {
+                Write-Host "App Pool '$pool' is already Started"
+              }
+            } catch {
+              Write-Host "::error::Failed to start App Pool '$pool': $_"
+            }
+          }
+
+          # Verify final state
+          Start-Sleep -Seconds 3
+          foreach ($pool in @($apiPool, $webPool)) {
+            try {
+              $state = (Get-WebAppPoolState -Name $pool).Value
+              Write-Host "App Pool '$pool' final state: $state"
+            } catch {
+              Write-Host "::error::Could not read state for App Pool '$pool': $_"
+            }
+          }
+
+      # --- Smoke Test ---
+      - name: Smoke test - API health check
+        shell: pwsh
+        run: |
+          # Wait for IIS worker processes to initialize
+          Start-Sleep -Seconds 10
+
+          $healthUrl = "${{ vars.TEST_API_HEALTH_URL }}"
+          Write-Host "Smoke test URL: $healthUrl"
+
+          try {
+            $response = Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 30
+            $statusCode = $response.StatusCode
+
+            if ($statusCode -eq 200) {
+              Write-Host "::notice::Smoke test PASSED (HTTP $statusCode)"
+              Write-Host "Response length: $($response.Content.Length) bytes"
+            } else {
+              Write-Host "::warning::Smoke test returned unexpected status code: $statusCode"
+            }
+          } catch {
+            Write-Host "::error::Smoke test FAILED: $_"
+            Write-Host "::error::The API may need additional time to start, or there may be a configuration issue."
+            Write-Host "::error::Health URL: $healthUrl"
+            throw "Smoke test failed"
+          }
+
+      # --- Summary ---
+      - name: Deployment summary
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "============================================="
+          Write-Host "  Deployment Summary"
+          Write-Host "============================================="
+          Write-Host "Version:      ${{ inputs.version }}"
+          Write-Host "Environment:  TEST"
+          Write-Host "API Path:     ${{ vars.API_DEPLOY_PATH }}"
+          Write-Host "Web Path:     ${{ vars.WEB_DEPLOY_PATH }}"
+          Write-Host "API Pool:     ${{ vars.IIS_API_APPPOOL }}"
+          Write-Host "Web Pool:     ${{ vars.IIS_WEB_APPPOOL }}"
+          Write-Host "Health URL:   ${{ vars.TEST_API_HEALTH_URL }}"
+          Write-Host "============================================="
+          Write-Host ""
+          Write-Host "NOTE: EF Core database migrations are NOT automated."
+          Write-Host "If this deployment includes schema changes, run"
+          Write-Host "migrations manually before verifying the application."
+          Write-Host "============================================="
