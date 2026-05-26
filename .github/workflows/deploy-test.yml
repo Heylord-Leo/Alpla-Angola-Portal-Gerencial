@@ -95,7 +95,27 @@ jobs:
       - name: Copy frontend dist to artifact folder
         shell: pwsh
         run: |
-          Copy-Item -Path "src/frontend/dist/*" -Destination "${{ github.workspace }}/artifacts/web" -Recurse -Force
+          $source = "src/frontend/dist"
+          $destination = "${{ github.workspace }}/artifacts/web"
+          New-Item -ItemType Directory -Force -Path $destination | Out-Null
+          robocopy $source $destination /E /NFL /NDL /NJH /NJS /NC /NS /NP
+          if ($LASTEXITCODE -gt 7) { throw "Frontend dist copy failed with robocopy exit code $LASTEXITCODE" }
+          $global:LASTEXITCODE = 0
+
+      - name: Validate frontend artifact structure
+        shell: pwsh
+        run: |
+          $assetsDir = "${{ github.workspace }}/artifacts/web/assets"
+          if (-not (Test-Path $assetsDir)) {
+            throw "FATAL: artifacts/web/assets/ directory is missing. Vite build output was not preserved correctly."
+          }
+          $jsFiles = Get-ChildItem -Path $assetsDir -Filter "*.js" -ErrorAction SilentlyContinue
+          $cssFiles = Get-ChildItem -Path $assetsDir -Filter "*.css" -ErrorAction SilentlyContinue
+          if (-not $jsFiles) { throw "FATAL: No .js files found in artifacts/web/assets/" }
+          if (-not $cssFiles) { throw "FATAL: No .css files found in artifacts/web/assets/" }
+          Write-Host "Frontend artifact structure validated:"
+          Write-Host "  JS files: $($jsFiles.Count)"
+          Write-Host "  CSS files: $($cssFiles.Count)"
 
       # --- Upload Artifacts ---
       - name: Upload API artifact

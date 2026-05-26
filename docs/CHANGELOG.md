@@ -2,6 +2,23 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.155.1] - 2026-05-26
+
+### Fixed — Post-Deployment TEST Environment Issues (CI/CD)
+- **Blank Page Fix**: `Copy-Item` in `deploy-test.yml` flattened the Vite `dist/assets/` subdirectory during artifact staging. Replaced with `robocopy /E` to preserve the full directory tree. Added a validation step that fails the build if `assets/` is missing or empty.
+- **API URL Duplication Fix**: Changed `API_BASE_URL` default in `api.ts` from `'/api'` to `''`. Every endpoint path already includes `/api/...`, so the old default produced double `/api/api/...` paths in production builds. Development (`VITE_API_BASE_URL=http://localhost:5000`) is unaffected.
+- **Frontend web.config**: Created `src/frontend/public/web.config` with two IIS URL Rewrite rules: (1) reverse proxy from `/api/*` to `http://localhost:5001/api/*` (same-origin API routing), (2) SPA fallback to `index.html` for React Router. Requires IIS URL Rewrite Module + ARR on the server.
+- **Documentation Update**: Expanded `docs/GITHUB_ACTIONS_TEST_DEPLOYMENT.md` with: reverse proxy architecture and ARR prerequisites, `ASPNETCORE_ENVIRONMENT=Test` configuration guide, `appsettings.Test.json` template and preservation strategy, API 500 diagnosis checklist, and post-deployment issue log table.
+
+**Files Changed**:
+- `.github/workflows/deploy-test.yml` — Replaced Copy-Item with robocopy + validation step.
+- `src/frontend/src/lib/api.ts` — API_BASE_URL default changed from `'/api'` to `''`.
+- `src/frontend/public/web.config` — [NEW] SPA fallback + reverse proxy rules.
+- `docs/GITHUB_ACTIONS_TEST_DEPLOYMENT.md` — Expanded with 5 new sections.
+- `docs/VERSION.md` — Bumped to v2.155.1.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.155.1".
+
 ## [v2.155.0] - 2026-05-26
 
 ### Added — GitHub Actions TEST Deployment Workflow (CI/CD)

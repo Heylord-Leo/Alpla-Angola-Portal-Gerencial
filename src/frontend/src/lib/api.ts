@@ -1,7 +1,7 @@
 import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto, IntegrationSettingsDto, IntegrationConnectionTestResultDto, UpdateIntegrationSettingsDto, UpdatePrimaveraCompanyDto, ReplacePrimaveraCompanySecretDto } from '../types';
 import { logger, FrontendComponentKey } from './logger';
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 export class ApiError extends Error {
     public status?: number;
