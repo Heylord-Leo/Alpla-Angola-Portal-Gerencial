@@ -39,6 +39,8 @@ export function RequestCreate() {
     const [plants, setPlants] = useState<any[]>([]);
     const [allowedPlantCodes, setAllowedPlantCodes] = useState<string[]>([]);
     const [isScopeLoading, setIsScopeLoading] = useState(true);
+    const [scopeError, setScopeError] = useState<string | null>(null);
+    const [lookupsError, setLookupsError] = useState<string | null>(null);
     const [attachments, setAttachments] = useState<File[]>([]);
     
     // Payment OCR States
@@ -98,18 +100,33 @@ export function RequestCreate() {
         return () => window.removeEventListener('beforeunload', handleBeforeUnload);
     }, [formData, loading]);
 
-    // Load Lookups
+    // Load user scope (plants) independently from auxiliary lookups.
+    // This prevents an unrelated lookup failure from hiding the user's plant access.
     useEffect(() => {
-        async function loadLookups() {
+        async function loadScopeAndLookups() {
+            setIsScopeLoading(true);
+            setScopeError(null);
+            setLookupsError(null);
+
+            // 1. Load user profile (critical for scope determination)
             try {
-                setIsScopeLoading(true);
-                const [levelsData, departmentsData, companiesData, plantsData, rtData, meData, ivaData, unitsData, currenciesData] = await Promise.all([
+                const meData = await api.users.me();
+                const userPlants: string[] = meData.plants || [];
+                setAllowedPlantCodes(userPlants);
+                console.info(`[RequestCreate] Profile loaded: ${userPlants.length} plant(s)`, userPlants);
+            } catch (err) {
+                console.error('[RequestCreate] Failed to load user profile (/me)', err);
+                setScopeError('Não foi possível carregar o seu perfil de acesso. Tente recarregar a página ou contacte o Administrador.');
+            }
+
+            // 2. Load auxiliary lookups (independent from scope)
+            try {
+                const [levelsData, departmentsData, companiesData, plantsData, rtData, ivaData, unitsData, currenciesData] = await Promise.all([
                     api.lookups.getNeedLevels(true),
                     api.lookups.getDepartments(true),
                     api.lookups.getCompanies(true),
                     api.lookups.getPlants(undefined, true),
                     api.lookups.getRequestTypes(true),
-                    api.users.me(),
                     api.lookups.getIvaRates(true),
                     api.lookups.getUnits(true),
                     api.lookups.getCurrencies(true)
@@ -119,17 +136,18 @@ export function RequestCreate() {
                 setCompanies(companiesData);
                 setPlants(plantsData);
                 setRequestTypes(rtData);
-                setAllowedPlantCodes(meData.plants || []);
                 setIvaRates(ivaData);
                 setUnits(unitsData);
                 setCurrencies(currenciesData);
+                console.info('[RequestCreate] Auxiliary lookups loaded successfully');
             } catch (err) {
-                console.error('Falha ao carregar dados auxiliares', err);
-            } finally {
-                setIsScopeLoading(false);
+                console.error('[RequestCreate] Failed to load auxiliary lookups', err);
+                setLookupsError('Falha ao carregar dados auxiliares (tipos, departamentos, etc.). Tente recarregar a página.');
             }
+
+            setIsScopeLoading(false);
         }
-        loadLookups();
+        loadScopeAndLookups();
     }, []);
 
     // Handle Copy Mode Data Fetching
@@ -173,6 +191,13 @@ export function RequestCreate() {
     const filteredCompanies = companies.filter(c => 
         filteredPlants.some(p => p.companyId === c.id)
     );
+
+    // Diagnostic log: plant scope filter result (non-sensitive)
+    useEffect(() => {
+        if (!isScopeLoading && plants.length > 0) {
+            console.info(`[RequestCreate] Plant scope filter: ${filteredPlants.length} allowed out of ${plants.length} total`);
+        }
+    }, [isScopeLoading, plants.length, filteredPlants.length]);
 
 
 
@@ -784,7 +809,45 @@ export function RequestCreate() {
         >
             <RequestActionHeader {...headerProps} />
 
-            {!isScopeLoading && allowedPlantCodes.length === 0 && (
+            {/* Error State: Failed to load user profile */}
+            {!isScopeLoading && scopeError && (
+                <div style={{
+                    backgroundColor: '#FEF2F2', border: '2px solid #EF4444', padding: '24px', borderRadius: 'var(--radius-sm)',
+                    boxShadow: 'var(--shadow-md)', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', textAlign: 'center'
+                }}>
+                    <AlertCircle size={32} style={{ color: '#EF4444' }} />
+                    <div style={{ color: '#EF4444', fontWeight: 800, fontSize: '1.1rem' }}>ERRO AO CARREGAR PERFIL</div>
+                    <p style={{ color: 'var(--color-text-main)', fontSize: '0.875rem', maxWidth: '500px' }}>
+                        {scopeError}
+                    </p>
+                    <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+                        <button 
+                            type="button"
+                            onClick={() => window.location.reload()}
+                            style={{
+                                padding: '8px 16px', backgroundColor: 'var(--color-primary)', color: 'white',
+                                border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: 700, cursor: 'pointer'
+                            }}
+                        >
+                            <RefreshCw size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
+                            TENTAR NOVAMENTE
+                        </button>
+                        <button 
+                            type="button"
+                            onClick={() => navigate('/')}
+                            style={{
+                                padding: '8px 16px', backgroundColor: 'var(--color-bg-page)', color: 'var(--color-text-main)',
+                                border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontWeight: 700, cursor: 'pointer'
+                            }}
+                        >
+                            VOLTAR AO DASHBOARD
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Error State: Profile loaded OK but user has zero plant assignments */}
+            {!isScopeLoading && !scopeError && allowedPlantCodes.length === 0 && (
                 <div style={{
                     backgroundColor: '#FEF2F2', border: '2px solid #EF4444', padding: '24px', borderRadius: 'var(--radius-sm)',
                     boxShadow: 'var(--shadow-md)', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', textAlign: 'center'
@@ -795,6 +858,7 @@ export function RequestCreate() {
                         Por favor, contacte o Administrador do Sistema para configurar o seu perfil antes de tentar criar novos pedidos.
                     </p>
                     <button 
+                        type="button"
                         onClick={() => navigate('/')}
                         style={{
                             marginTop: '8px', padding: '8px 16px', backgroundColor: 'var(--color-text-main)', color: 'white',
@@ -806,10 +870,37 @@ export function RequestCreate() {
                 </div>
             )}
 
+            {/* Warning State: Auxiliary lookups failed but scope loaded OK */}
+            {!isScopeLoading && !scopeError && lookupsError && allowedPlantCodes.length > 0 && (
+                <div style={{
+                    backgroundColor: '#FFFBEB', border: '2px solid #F59E0B', padding: '16px 24px', borderRadius: 'var(--radius-sm)',
+                    boxShadow: 'var(--shadow-md)', display: 'flex', alignItems: 'center', gap: '12px'
+                }}>
+                    <AlertTriangle size={24} style={{ color: '#D97706', flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                        <div style={{ color: '#92400E', fontWeight: 700, fontSize: '0.875rem' }}>Falha ao carregar dados auxiliares</div>
+                        <p style={{ color: '#92400E', fontSize: '0.8rem', margin: '4px 0 0' }}>
+                            {lookupsError}
+                        </p>
+                    </div>
+                    <button 
+                        type="button"
+                        onClick={() => window.location.reload()}
+                        style={{
+                            padding: '6px 12px', backgroundColor: '#D97706', color: 'white',
+                            border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: 700, cursor: 'pointer', fontSize: '0.75rem'
+                        }}
+                    >
+                        <RefreshCw size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                        RECARREGAR
+                    </button>
+                </div>
+            )}
+
             <form 
                 onSubmit={handleSubmit} 
                 style={{
-                    display: allowedPlantCodes.length === 0 ? 'none' : 'flex',
+                    display: (scopeError || allowedPlantCodes.length === 0) ? 'none' : 'flex',
                     flexDirection: 'column', gap: '32px', opacity: isScopeLoading ? 0.5 : 1, pointerEvents: isScopeLoading ? 'none' : 'auto'
                 }}
             >
