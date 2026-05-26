@@ -88,8 +88,8 @@ const ReceivingModal: React.FC<ReceivingModalProps> = ({
               borderRadius: 'var(--radius-md)',
               maxWidth: '600px',
               width: '100%',
-              border: '4px solid var(--color-border-heavy)',
-              boxShadow: 'var(--shadow-brutal)',
+              border: '1px solid var(--color-border)',
+              boxShadow: 'var(--shadow-md)',
               position: 'relative' as const
             }}
           >
@@ -175,7 +175,7 @@ const ReceivingModal: React.FC<ReceivingModalProps> = ({
                   height: '48px',
                   padding: '0 24px',
                   background: 'none',
-                  border: '2px solid var(--color-border-heavy)',
+                  border: '1px solid var(--color-border)',
                   cursor: 'pointer',
                   fontWeight: 800,
                   borderRadius: 'var(--radius-sm)',
@@ -198,7 +198,7 @@ const ReceivingModal: React.FC<ReceivingModalProps> = ({
                   cursor: readOnly ? 'not-allowed' : 'pointer',
                   fontWeight: 800,
                   borderRadius: 'var(--radius-sm)',
-                  boxShadow: readOnly ? 'none' : '4px 4px 0 var(--color-accent)',
+                  boxShadow: readOnly ? 'none' : 'var(--shadow-md)',
                   fontFamily: 'var(--font-family-display)',
                   fontSize: '0.875rem',
                   opacity: (receivedQty < 0 || readOnly) ? 0.5 : 1

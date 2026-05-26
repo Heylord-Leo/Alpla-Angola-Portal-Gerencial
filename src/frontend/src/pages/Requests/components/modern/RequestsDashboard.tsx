@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Filter, FolderKanban, Pin, PinOff, ArrowUpRight } from 'lucide-react';
+import { Plus, Search, Filter, Pin, PinOff, ArrowUpRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../../../lib/api';
 import { RequestListItemDto, DashboardSummaryDto } from '../../../../types';
@@ -9,6 +9,10 @@ import { RequestsTableWidget } from './RequestsTableWidget';
 import { RequestDrawerPresentation } from './RequestDrawerPresentation';
 import { FilterDropdown } from '../../../../components/ui/FilterDropdown';
 import { CorrectPoModal } from '../../../../components/CorrectPoModal';
+import { useTablePreferences } from '../../../../hooks/useTablePreferences';
+import { GuideModal, GuideModalSection } from '../../../../components/ui/GuideModal';
+import { PlayCircle, Compass, MoreVertical, Info } from 'lucide-react';
+import { GuidedTourContextButton } from '../../../../features/guided-tour/GuidedTourContextButton';
 
 export function RequestsDashboard() {
     const navigate = useNavigate();
@@ -20,7 +24,25 @@ export function RequestsDashboard() {
     const [totalCount, setTotalCount] = useState(0);
 
     // Feature Toggles
-    const [isFloating, setIsFloating] = useState(true);
+    const [isFloating, setIsFloating] = useState(() => {
+        try {
+            const saved = localStorage.getItem('alpla-portal.requests.floatingMode.enabled');
+            if (saved !== null) {
+                return saved === 'true';
+            }
+        } catch (e) {
+            console.error('Failed to access localStorage for floatingMode', e);
+        }
+        return true; // Default behavior
+    });
+
+    useEffect(() => {
+        try {
+            localStorage.setItem('alpla-portal.requests.floatingMode.enabled', isFloating.toString());
+        } catch (e) {
+            console.error('Failed to save floatingMode to localStorage', e);
+        }
+    }, [isFloating]);
 
     // Navigation state (Drawer)
     const [drawerRequestId, setDrawerRequestId] = useState<string | null>(null);
@@ -28,20 +50,50 @@ export function RequestsDashboard() {
     // P.O. Correction Modal state
     const [correctPoRequestId, setCorrectPoRequestId] = useState<string | null>(null);
 
-    // Filters and Pagination
-    const [searchTerm, setSearchTerm] = useState('');
-    const [debouncedSearch, setDebouncedSearch] = useState('');
-    const [filterType, setFilterType] = useState<string>('all');
-    const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+    // Help Modal state
+    const [currentHelpSection, setCurrentHelpSection] = useState<'action' | 'explorer' | 'main' | null>(null);
+
+    // Persistent preferences
+    const { preferences: savedPrefs, setPreferences: persistPrefs, resetPreferences } = useTablePreferences('requests-dashboard', {
+        pageSize: 20,
+        filters: { filterType: 'all', showAdvancedFilters: false, statusIds: [], plantIds: [], companyIds: [], departmentIds: [] },
+        sort: { key: '', direction: 'asc' as const },
+    });
+
+    // Filters and Pagination — hydrated from preferences
+    const [searchTerm, setSearchTerm] = useState(savedPrefs.search || '');
+    const [debouncedSearch, setDebouncedSearch] = useState(savedPrefs.search || '');
+    const [filterType, setFilterType] = useState<string>(savedPrefs.filters?.filterType || 'all');
+    const [showAdvancedFilters, setShowAdvancedFilters] = useState(savedPrefs.filters?.showAdvancedFilters ?? false);
     const [lookups, setLookups] = useState<{ statuses: any[], requestTypes: any[], plants: any[], companies: any[], departments: any[] } | null>(null);
-    const [statusIds, setStatusIds] = useState<string[]>([]);
-    const [plantIds, setPlantIds] = useState<string[]>([]);
-    const [companyIds, setCompanyIds] = useState<string[]>([]);
-    const [departmentIds, setDepartmentIds] = useState<string[]>([]);
-    
+    const [statusIds, setStatusIds] = useState<string[]>(savedPrefs.filters?.statusIds || []);
+    const [plantIds, setPlantIds] = useState<string[]>(savedPrefs.filters?.plantIds || []);
+    const [companyIds, setCompanyIds] = useState<string[]>(savedPrefs.filters?.companyIds || []);
+    const [departmentIds, setDepartmentIds] = useState<string[]>(savedPrefs.filters?.departmentIds || []);
+
     const [page, setPage] = useState(1);
-    const [pageSize, setPageSize] = useState(20);
-    const [sortConfig, setSortConfig] = useState<{ key: string | null; direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
+    const [pageSize, setPageSize] = useState(savedPrefs.pageSize || 20);
+    const [sortConfig, setSortConfig] = useState<{ key: string | null; direction: 'asc' | 'desc' }>({
+        key: savedPrefs.sort?.key || null,
+        direction: (savedPrefs.sort?.direction as 'asc' | 'desc') || 'asc',
+    });
+
+    // Sync filter/sort/pageSize changes to persistent storage
+    useEffect(() => {
+        persistPrefs({
+            search: searchTerm || undefined,
+            pageSize,
+            sort: sortConfig.key ? { key: sortConfig.key, direction: sortConfig.direction } : undefined,
+            filters: {
+                filterType: filterType !== 'all' ? filterType : undefined,
+                showAdvancedFilters: showAdvancedFilters || undefined,
+                statusIds: statusIds.length > 0 ? statusIds : undefined,
+                plantIds: plantIds.length > 0 ? plantIds : undefined,
+                companyIds: companyIds.length > 0 ? companyIds : undefined,
+                departmentIds: departmentIds.length > 0 ? departmentIds : undefined,
+            },
+        });
+    }, [searchTerm, filterType, showAdvancedFilters, statusIds, plantIds, companyIds, departmentIds, pageSize, sortConfig]);
 
     // Debounce search
     useEffect(() => {
@@ -79,7 +131,7 @@ export function RequestsDashboard() {
 
             const data = await api.requests.list(
                 debouncedSearch || undefined,
-                { 
+                {
                     typeIds,
                     statusIds: statusIds.length > 0 ? statusIds.join(',') : undefined,
                     plantIds: plantIds.length > 0 ? plantIds.join(',') : undefined,
@@ -131,20 +183,22 @@ export function RequestsDashboard() {
         { id: 'PAYMENT', label: 'Pagamentos' },
     ];
 
-    const totalFilteredValue = requests.reduce((sum, req) => sum + (req.estimatedTotalAmount || 0), 0);
+    const totalFilteredValue = requests
+        .filter(req => !['CANCELLED', 'REJECTED'].includes(req.statusCode))
+        .reduce((sum, req) => sum + (req.estimatedTotalAmount || 0), 0);
 
     const statusGroups = useMemo(() => {
         if (!lookups || !lookups.statuses) return undefined;
-        
+
         const gInicial = ["Rascunho", "Reajuste A.A", "Reajuste A.F"];
         const gAprovacao = ["Aguardando Cotação", "Aguardando Aprovação da Área", "Aguardando Aprovação Final", "Aprovado"];
         const gFinanceiro = ["P.O Emitida", "Pagamento Agendado", "Pagamento Realizado", "Aguardando Recibo"];
         const gFinalizados = ["Finalizado", "Cancelado", "Rejeitado"];
 
-        const findOptions = (names: string[]) => 
+        const findOptions = (names: string[]) =>
             names.map(name => lookups.statuses.find(s => s.name.trim() === name))
-                 .filter(Boolean)
-                 .map(s => ({ id: s!.id, name: s!.name }));
+                .filter(Boolean)
+                .map(s => ({ id: s!.id, name: s!.name }));
 
         const groups = [
             { name: "INICIAL", options: findOptions(gInicial) },
@@ -177,7 +231,7 @@ export function RequestsDashboard() {
         }}>
 
             {/* ── Header ── */}
-            <header style={{
+            <header data-tour="requests-header" style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
@@ -192,10 +246,29 @@ export function RequestsDashboard() {
                             color: 'var(--color-primary)',
                             margin: 0,
                             letterSpacing: '-0.01em',
-                        }}>Pedidos de Compras e Pagamentos</h1>
-                        
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                        }}>
+                            Pedidos de Compras e Pagamentos
+                            <button
+                                onClick={() => setCurrentHelpSection('main')}
+                                style={{
+                                    background: 'none', border: 'none', cursor: 'pointer',
+                                    color: '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    padding: '4px', borderRadius: '50%', transition: 'all 0.2s'
+                                }}
+                                onMouseOver={(e) => { e.currentTarget.style.color = 'var(--color-primary)'; e.currentTarget.style.backgroundColor = '#EFF6FF'; }}
+                                onMouseOut={(e) => { e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                title="Ajuda sobre o Dashboard Principal"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                            </button>
+                        </h1>
+
                         {/* Toggle de Modo Flutuante */}
-                        <button 
+                        <button
+                            data-tour="requests-floating-toggle"
                             onClick={() => setIsFloating(!isFloating)}
                             title={isFloating ? "Desativar modo flutuante" : "Ativar modo flutuante"}
                             style={{
@@ -225,8 +298,9 @@ export function RequestsDashboard() {
                     }}>Gerencie e acompanhe todos os pedidos corporativos em tempo real.</p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <GuidedTourContextButton tourId="page-requests" label="Tour da Tela" />
 
-                    
+
                     {!isFloating && (
                         <button
                             onClick={() => navigate('/requests/new')}
@@ -259,7 +333,7 @@ export function RequestsDashboard() {
             {/* ── Floating Action Button (New Request) ── */}
             <AnimatePresence>
                 {isFloating && (
-                    <motion.div 
+                    <motion.div
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.8 }}
@@ -295,15 +369,18 @@ export function RequestsDashboard() {
 
             {/* ── Action Carousel & Stats ── */}
             {summary && (
-                <ActionCarouselWidget 
-                    summary={summary} 
+                <div data-tour="requests-action-carousel">
+                <ActionCarouselWidget
+                    summary={summary}
                     onRowClick={handleRowClick}
                     onCorrectPoClick={(requestId) => setCorrectPoRequestId(requestId)}
+                    onHelpClick={() => setCurrentHelpSection('action')}
                 />
+                </div>
             )}
 
             {/* ── Explorer Section ── */}
-            <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <section data-tour="requests-explorer" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {/* Section header + filters */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '16px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -313,7 +390,25 @@ export function RequestsDashboard() {
                                 fontWeight: 800,
                                 color: 'var(--color-primary)',
                                 margin: 0,
-                            }}>Explorador de Pedidos</h2>
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                            }}>
+                                Explorador de Pedidos
+                                <button
+                                    onClick={() => setCurrentHelpSection('explorer')}
+                                    style={{
+                                        background: 'none', border: 'none', cursor: 'pointer',
+                                        color: '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        padding: '4px', borderRadius: '50%', transition: 'all 0.2s'
+                                    }}
+                                    onMouseOver={(e) => { e.currentTarget.style.color = 'var(--color-primary)'; e.currentTarget.style.backgroundColor = '#EFF6FF'; }}
+                                    onMouseOut={(e) => { e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                    title="Ajuda sobre esta seção"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                                </button>
+                            </h2>
                             <p style={{
                                 fontSize: '0.75rem',
                                 color: 'var(--color-text-muted)',
@@ -324,7 +419,7 @@ export function RequestsDashboard() {
                         </div>
 
                         {/* Quick Filters */}
-                        <div style={{
+                        <div data-tour="requests-filter-tabs" style={{
                             display: 'flex',
                             backgroundColor: 'rgba(241, 245, 249, 0.8)',
                             padding: '4px',
@@ -348,8 +443,8 @@ export function RequestsDashboard() {
                                         color: filterType === tab.id ? 'var(--color-primary)' : '#64748b',
                                         boxShadow: filterType === tab.id ? '0 1px 2px 0 rgba(0, 0, 0, 0.05)' : 'none',
                                     }}
-                                    onMouseEnter={(e) => { if(filterType !== tab.id) { e.currentTarget.style.color = '#0f172a'; e.currentTarget.style.backgroundColor = 'rgba(226,232,240,0.5)' } }}
-                                    onMouseLeave={(e) => { if(filterType !== tab.id) { e.currentTarget.style.color = '#64748b'; e.currentTarget.style.backgroundColor = 'transparent' } }}
+                                    onMouseEnter={(e) => { if (filterType !== tab.id) { e.currentTarget.style.color = '#0f172a'; e.currentTarget.style.backgroundColor = 'rgba(226,232,240,0.5)' } }}
+                                    onMouseLeave={(e) => { if (filterType !== tab.id) { e.currentTarget.style.color = '#64748b'; e.currentTarget.style.backgroundColor = 'transparent' } }}
                                 >
                                     {tab.label}
                                 </button>
@@ -358,7 +453,7 @@ export function RequestsDashboard() {
                     </div>
 
                     {/* Search + Filter Controls */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div data-tour="requests-filter-button" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <div style={{ position: 'relative' }}>
                             <Search
                                 size={16}
@@ -373,7 +468,7 @@ export function RequestsDashboard() {
                             />
                             <input
                                 type="text"
-                                placeholder="Buscar por número ou título..."
+                                placeholder="Buscar por número, título ou solicitante..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 style={{
@@ -395,7 +490,7 @@ export function RequestsDashboard() {
                                 onBlur={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.boxShadow = '0 1px 2px 0 rgba(0, 0, 0, 0.05)'; }}
                             />
                         </div>
-                        <button 
+                        <button
                             onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
                             style={{
                                 padding: '8px',
@@ -425,8 +520,8 @@ export function RequestsDashboard() {
                         <FilterDropdown label="Empresa" options={lookups.companies.map(c => ({ id: c.id, name: c.name }))} selectedIds={companyIds} onChange={setCompanyIds} />
                         <FilterDropdown label="Planta" options={lookups.plants.map(p => ({ id: p.id, name: p.name }))} selectedIds={plantIds} onChange={setPlantIds} />
                         <FilterDropdown label="Departamento" options={lookups.departments.map(d => ({ id: d.id, name: d.name }))} selectedIds={departmentIds} onChange={setDepartmentIds} />
-                        {(statusIds.length > 0 || companyIds.length > 0 || plantIds.length > 0 || departmentIds.length > 0) && (
-                            <button onClick={() => { setStatusIds([]); setCompanyIds([]); setPlantIds([]); setDepartmentIds([]); }} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontWeight: 800, textTransform: 'uppercase', fontSize: '0.75rem', padding: '0 12px' }}>
+                        {(statusIds.length > 0 || companyIds.length > 0 || plantIds.length > 0 || departmentIds.length > 0 || filterType !== 'all' || searchTerm) && (
+                            <button onClick={() => { setStatusIds([]); setCompanyIds([]); setPlantIds([]); setDepartmentIds([]); setFilterType('all'); setSearchTerm(''); setDebouncedSearch(''); setPage(1); resetPreferences(); }} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontWeight: 800, textTransform: 'uppercase', fontSize: '0.75rem', padding: '0 12px' }}>
                                 Limpar Filtros
                             </button>
                         )}
@@ -434,6 +529,7 @@ export function RequestsDashboard() {
                 )}
 
                 {/* Table */}
+                <div data-tour="requests-table">
                 <RequestsTableWidget
                     requests={requests}
                     loading={loading}
@@ -446,19 +542,20 @@ export function RequestsDashboard() {
                     onPageChange={setPage}
                     onPageSizeChange={setPageSize}
                 />
+                </div>
 
                 {/* ── Total Value Footer (Inline) ── */}
                 {!isFloating && (
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
-                        <div style={{ 
-                            backgroundColor: 'var(--color-bg-surface)', 
-                            border: '1px solid var(--color-border)', 
-                            padding: '16px', 
-                            borderRadius: '16px', 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            gap: '16px', 
-                            boxShadow: 'var(--shadow-sm)' 
+                    <div data-tour="requests-floating-total" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+                        <div style={{
+                            backgroundColor: 'var(--color-bg-surface)',
+                            border: '1px solid var(--color-border)',
+                            padding: '16px',
+                            borderRadius: '16px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '16px',
+                            boxShadow: 'var(--shadow-sm)'
                         }}>
                             <div style={{ width: '40px', height: '40px', backgroundColor: '#ECFDF5', color: 'var(--color-status-emerald)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <ArrowUpRight size={20} />
@@ -474,22 +571,22 @@ export function RequestsDashboard() {
                 {/* ── Total Value Footer (Floating) ── */}
                 <AnimatePresence>
                     {isFloating && (
-                        <motion.div 
+                        <motion.div
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: 20 }}
                             style={{ position: 'fixed', bottom: '32px', right: '32px', zIndex: 90 }}
                         >
-                            <div style={{ 
-                                backgroundColor: 'rgba(255, 255, 255, 0.90)', 
+                            <div data-tour="requests-floating-total" style={{
+                                backgroundColor: 'rgba(255, 255, 255, 0.90)',
                                 backdropFilter: 'blur(8px)',
-                                border: '1px solid rgba(226, 232, 240, 0.6)', 
-                                padding: '16px', 
-                                borderRadius: '16px', 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                gap: '16px', 
-                                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' 
+                                border: '1px solid rgba(226, 232, 240, 0.6)',
+                                padding: '16px',
+                                borderRadius: '16px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '16px',
+                                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
                             }}>
                                 <div style={{ width: '40px', height: '40px', backgroundColor: '#ECFDF5', color: 'var(--color-status-emerald)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                     <ArrowUpRight size={20} />
@@ -519,11 +616,149 @@ export function RequestsDashboard() {
                 show={!!correctPoRequestId}
                 requestId={correctPoRequestId || ''}
                 onClose={() => setCorrectPoRequestId(null)}
-                onSuccess={(msg) => {
+                onSuccess={() => {
                     setCorrectPoRequestId(null);
                     loadData();
                 }}
             />
+
+            {/* ── Contextual Help Modals ── */}
+            <GuideModal
+                isOpen={currentHelpSection === 'main'}
+                onClose={() => setCurrentHelpSection(null)}
+                title="Pedidos Corporativos"
+                subtitle="Visão geral do seu painel principal"
+            >
+                <GuideModalSection
+                    icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></svg>}
+                    iconBgColor="#EFF6FF"
+                    iconColor="var(--color-primary)"
+                    title="Métricas de Desempenho (Cards)"
+                >
+                    <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                        No topo, você encontra indicadores instantâneos que refletem o volume global sob a sua visualização:
+                    </p>
+                    <ul style={{ margin: '0 0 16px 20px', fontSize: '14px', color: '#334155', lineHeight: 1.6 }}>
+                        <li><strong>Total de Pedidos:</strong> Todos os pedidos abertos/relevantes atuais.</li>
+                        <li><strong>Em Cotação:</strong> Demandas no setor de Compras aguardando valores e fornecedores.</li>
+                        <li><strong>Pend. Aprovação:</strong> Pedidos travados com superiores aguardando parecer final.</li>
+                        <li><strong>Rascunhos:</strong> Pedidos iniciados mas ainda não enviados formalmente.</li>
+                        <li><strong>Pend. Finanças:</strong> Entregues, porém aguardando compensação/pagamento.</li>
+                    </ul>
+                </GuideModalSection>
+
+                <GuideModalSection
+                    icon={<Pin size={24} />}
+                    iconBgColor="#F3F4F6"
+                    iconColor="#4B5563"
+                    title="Modo Flutuante"
+                >
+                    <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                        <strong>Como funciona:</strong> Ao invés de um botão gigantesco no topo consumindo espaço, o portal oferece o modo <strong>Flutuante</strong> para criar novos pedidos.
+                    </p>
+                    <p style={{ margin: 0, fontSize: '14px', backgroundColor: '#f1f5f9', padding: '8px', borderLeft: '4px solid #94a3b8' }}>
+                        Quando o <em>Flutuante Ativo</em> está marcado, um botão ágil ficará preso no canto inferior direito da tela. Ao desligá-lo, o botão clássico <em>"Novo Pedido"</em> voltará a aparecer permanentemente preso ao cabeçalho da página. Escolha o estilo que preferir.
+                    </p>
+                </GuideModalSection>
+            </GuideModal>
+
+            <GuideModal
+                isOpen={currentHelpSection === 'action'}
+                onClose={() => setCurrentHelpSection(null)}
+                title="Para Minha Ação"
+                subtitle="Guia rápido sobre a fila de ações pendentes."
+            >
+                <GuideModalSection
+                    icon={<PlayCircle size={24} />}
+                    iconBgColor="#FFF1F2"
+                    iconColor="var(--color-status-rose)"
+                    title="Foco Operacional"
+                >
+                    <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                        <strong>O que é:</strong> Esta seção exibe os pedidos que foram explicitamente atribuídos a você ou que exigem uma ação imediata da sua parte (ex: aprovar, cotar, validar).
+                    </p>
+                    <p style={{ margin: 0, fontSize: '14px', backgroundColor: '#f1f5f9', padding: '8px', borderLeft: '4px solid #94a3b8' }}>
+                        <em>Nota:</em> Este carrossel <strong>não</strong> mostra todos os pedidos do sistema. É um funil afunilado projetado para reduzir o ruído visual e destacar apenas o que precisa da sua intervenção neste exato momento.
+                    </p>
+                </GuideModalSection>
+
+                <GuideModalSection
+                    icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>}
+                    iconBgColor="#EFF6FF"
+                    iconColor="var(--color-primary)"
+                    title="Atalhos pelo Status"
+                >
+                    <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                        <strong>Como agir rápido:</strong> O status do pedido (a etiqueta colorida no canto inferior esquerdo do cartão) é mais que um indicador visual — é um <strong style={{ color: 'var(--color-primary)' }}>botão clicável de ação direta</strong>.
+                    </p>
+                    <ul style={{ margin: '0 0 16px 20px', fontSize: '14px', color: '#334155', lineHeight: 1.6 }}>
+                        <li>Cotações Pendentes? Clique no status e vá direto para a tela de cotações com o pedido selecionado.</li>
+                        <li>Falta Receber Carga? Clique e caia na tela de recebimento.</li>
+                        <li>Falta Pagamento? Clique e transporte-se para a visualização financeira.</li>
+                    </ul>
+                    <p style={{ margin: 0, fontSize: '14px', backgroundColor: '#f1f5f9', padding: '8px', borderLeft: '4px solid #94a3b8' }}>
+                        <em>Atenção:</em> O acesso a essas telas de destino operacionais depende do seu nível de permissão e escopo de usuário no sistema.
+                    </p>
+                </GuideModalSection>
+            </GuideModal>
+
+            <GuideModal
+                isOpen={currentHelpSection === 'explorer'}
+                onClose={() => setCurrentHelpSection(null)}
+                title="Explorador de Pedidos"
+                subtitle="Guia sobre a visualização estendida do portfólio."
+            >
+                <GuideModalSection
+                    icon={<Compass size={24} />}
+                    iconBgColor="#EFF6FF"
+                    iconColor="var(--color-primary)"
+                    title="Consulta e Filtros"
+                >
+                    <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                        <strong>O que é:</strong> O Explorador exibe o espectro completo das solicitações de compras visíveis ao seu nível hierárquico e departamento.
+                    </p>
+                    <p style={{ margin: 0, fontSize: '14px', backgroundColor: '#f1f5f9', padding: '8px', borderLeft: '4px solid #94a3b8' }}>
+                        <em>Tipos de Pedido:</em> Acima da lista, os botões <strong>"Pagamento"</strong> e <strong>"Cotação"</strong> filtram a natureza da requisição. <br />
+                        • <strong>Pagamento:</strong> Um pedido de pagamento direto, que pula a cotação e vai direto para a Aprovação de Área.<br />
+                        • <strong>Cotação:</strong> Um pedido de compras padrão, que flui primeiro para o time de compras fazer a cotação no mercado antes da área aprovar.
+                    </p>
+                    <p style={{ margin: '8px 0 0 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                        <strong>Barra de Pesquisa:</strong> Busca resultados com base no número do pedido (ex: <span style={{ fontFamily: 'monospace', backgroundColor: '#e2e8f0', padding: '2px 4px', borderRadius: '4px' }}>REQ-13/04/2026-001</span>), no título ou no <strong>nome do solicitante</strong>.
+                    </p>
+                    <p style={{ margin: '8px 0 0 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                        <strong>Filtros Avançados:</strong> Ao lado da barra de pesquisa, você encontrará um ícone de botão com controles. Ao clicar nele, opções adicionais de filtro (Status, Empresa, Planta, Departamento) serão exibidas para ajudá-lo a refinar exatamente o que procura.
+                    </p>
+                </GuideModalSection>
+
+                <GuideModalSection
+                    icon={<Info size={24} />}
+                    iconBgColor="#FFFBEB"
+                    iconColor="var(--color-status-amber)"
+                    title="Detalhes Adicionais (Hover)"
+                >
+                    <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                        <strong>Descubra mais sem clicar:</strong> Em vários campos da tabela (como nomes de aprovadores, descrições longas ou status complexos), experimente <strong>manter a seta do mouse parada</strong> sobre o texto.
+                    </p>
+                    <p style={{ margin: 0, fontSize: '14px', color: '#475569' }}>
+                        Um pequeno balão de ajuda (tooltip) aparecerá revelando informações estendidas e cruciais sem precisar abrir a tela completa do pedido!
+                    </p>
+                </GuideModalSection>
+
+                <GuideModalSection
+                    icon={<MoreVertical size={24} />}
+                    iconBgColor="#F3F4F6"
+                    iconColor="#4B5563"
+                    title="Menu de Ações (Kebab)"
+                >
+                    <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                        <strong>Oculto para limpeza visual:</strong> O ícone de três pontinhos verticais no canto direito de cada pedido é o seu centro de comando individual.
+                    </p>
+                    <ul style={{ margin: '0 0 16px 20px', fontSize: '14px', color: '#334155', lineHeight: 1.6 }}>
+                        <li><strong>Vis. Rápida:</strong> Abre uma gaveta lateral rápida com o extrato do pedido em vez de abrir uma nova tela.</li>
+                        <li><strong>Duplicar:</strong> Cria um novo rascunho de pedido contendo os mesmos itens e configurações deste pedido original.</li>
+                    </ul>
+                </GuideModalSection>
+            </GuideModal>
         </div>
     );
 }

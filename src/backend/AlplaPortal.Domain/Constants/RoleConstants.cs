@@ -13,4 +13,6 @@ public static class RoleConstants
     public const string Contracts = "Contracts";
     public const string Import = "Import";
     public const string Viewer = "Viewer / Management";
+    public const string HR = "HR";
+    public const string IT = "IT";
 }

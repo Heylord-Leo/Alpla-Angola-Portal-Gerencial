@@ -570,7 +570,6 @@ interface ServiceStatus {
 interface DiagnosisData {
     backend: ServiceStatus;
     database: ServiceStatus;
-    localOcr: ServiceStatus;
     openAi: ServiceStatus;
 }
 
@@ -731,14 +730,13 @@ export function ServiceDiagnosis() {
                 gap: '1.5rem' 
             }}>
                 {loading && !data ? (
-                    Array(4).fill(0).map((_, i) => (
+                    Array(3).fill(0).map((_, i) => (
                         <div key={i} style={{ height: '180px', backgroundColor: 'var(--color-bg-surface)', border: '2px solid var(--color-border-light)', opacity: 0.5 }}></div>
                     ))
                 ) : data ? (
                     <>
                         <StatusCard title="Backend API" status={data.backend} icon={Activity} />
                         <StatusCard title="Base de Dados" status={data.database} icon={Activity} />
-                        <StatusCard title="Serviço OCR" status={data.localOcr} icon={Activity} />
                         <StatusCard title="OpenAI API" status={data.openAi} icon={Activity} />
                     </>
                 ) : null}
@@ -753,7 +751,7 @@ export function ServiceDiagnosis() {
                 <h3 style={{ fontSize: '0.875rem', fontWeight: 800, textTransform: 'uppercase', marginBottom: '1rem' }}>Notas de Diagnóstico</h3>
                 <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.875rem', color: 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                     <li>A verificação de conectividade é realizada em tempo real a partir do servidor central.</li>
-                    <li>O <b>Serviço OCR</b> e <b>OpenAI</b> são validados apenas se estiverem configurados como o provedor activo.</li>
+                    <li>O provedor <b>OpenAI</b> é validado apenas se estiver configurado como o provedor activo.</li>
                     <li>As credenciais não são expostas neste painel por motivos de segurança.</li>
                 </ul>
             </section>
@@ -779,7 +777,7 @@ export function IntegrationHealth() {
 
     useEffect(() => {
         api.admin.diagnostics.getHealth().then(data => {
-            setOcrStatus(data.localOcr.status === 'Healthy' || data.openAi.status === 'Healthy' ? 'Operacional' : 'Indisponível');
+            setOcrStatus(data.openAi.status === 'Healthy' ? 'Operacional' : 'Indisponível');
         }).catch(() => setOcrStatus('Erro na verificação'));
     }, []);
 
@@ -848,7 +846,7 @@ export function IntegrationHealth() {
                     name="Extração de Documentos" 
                     type="OCR / AI Service" 
                     status={ocrStatus || 'A verificar...'} 
-                    description="Monitorização da comunicação com os serviços de extração de dados de facturas, cotações e documentos operacionais (Local OCR e OpenAI)."
+                    description="Monitorização da comunicação com o serviço de extração de dados de facturas, cotações e documentos operacionais (OpenAI)."
                 />
                 <IntegrationCard 
                     name="AlplaPROD" 

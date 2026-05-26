@@ -14,9 +14,13 @@ public class DocumentExtractionSettings
     public bool? IsEnabled { get; set; }
     public int? GlobalTimeoutSeconds { get; set; }
 
-    // Local OCR Settings
+    // Local OCR Settings — DEPRECATED (v2.128.0): LOCAL_OCR provider has been removed.
+    // Columns are kept for EF Core mapping stability. Values are cleared on save.
+    [Obsolete("LOCAL_OCR provider removed in v2.128.0. These columns are retained for DB compatibility only.")]
     public bool? LocalOcrEnabled { get; set; }
+    [Obsolete("LOCAL_OCR provider removed in v2.128.0. These columns are retained for DB compatibility only.")]
     public string? LocalOcrBaseUrl { get; set; }
+    [Obsolete("LOCAL_OCR provider removed in v2.128.0. These columns are retained for DB compatibility only.")]
     public int? LocalOcrTimeoutSeconds { get; set; }
 
     // OpenAI Settings (Operational flags only, no secrets)

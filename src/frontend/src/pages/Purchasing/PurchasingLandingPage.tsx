@@ -6,9 +6,10 @@ import { QuickActions } from './components/QuickActions';
 import { PurchasingHelpDrawer } from './components/PurchasingHelpDrawer';
 import { PurchasingSummaryDto } from '../../types';
 import { Feedback } from '../../components/ui/Feedback';
-import { LayoutGrid, PlayCircle } from 'lucide-react';
+import { PlayCircle } from 'lucide-react';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
+import { GuidedTourContextButton } from '../../features/guided-tour/GuidedTourContextButton';
 
 export default function PurchasingLandingPage() {
     const [summary, setSummary] = useState<PurchasingSummaryDto | null>(null);
@@ -37,8 +38,12 @@ export default function PurchasingLandingPage() {
             
             {/* Header Section */}
             <PageHeader
+                data-tour="purchasing-overview"
                 title="Compras & Logística"
                 subtitle="Cockpit Operacional • Portal Gerencial ALPLA"
+                actions={
+                    <GuidedTourContextButton tourId="module-purchasing-logistics" label="Tour do Módulo" />
+                }
             />
 
             {error && <Feedback type="error" message={error} onClose={() => setError(null)} />}
@@ -51,7 +56,7 @@ export default function PurchasingLandingPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
                     
                     {/* KPI Cards Section */}
-                    <section>
+                    <section data-tour="purchasing-kpi-cards">
                         <PurchasingKPISummary summary={summary} />
                     </section>
 
@@ -64,11 +69,11 @@ export default function PurchasingLandingPage() {
                     }}>
                         
                         {/* Left Column: Attention Panel */}
-                        <section style={{ 
+                        <section data-tour="purchasing-attention-points" style={{ 
                             backgroundColor: 'var(--color-bg-surface)', 
                             padding: '24px', 
                             border: '2px solid var(--color-border)',
-                            boxShadow: 'var(--shadow-brutal)',
+                            boxShadow: 'var(--shadow-md)',
                             minHeight: '400px'
                         }}>
                             <AttentionPanel points={summary.attentionPoints} />
@@ -76,23 +81,24 @@ export default function PurchasingLandingPage() {
 
                         {/* Right Column: Quick Actions & Instructions */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-                            <section style={{ 
+                            <section data-tour="purchasing-quick-actions" style={{ 
                                 backgroundColor: 'var(--color-bg-surface)', 
                                 padding: '24px', 
                                 border: '2px solid var(--color-border)',
-                                boxShadow: 'var(--shadow-brutal)'
+                                boxShadow: 'var(--shadow-md)'
                             }}>
                                 <QuickActions />
                             </section>
 
                             {/* Operational Guidance */}
                             <section 
+                                data-tour="purchasing-operation-manual"
                                 onClick={() => setIsHelpDrawerOpen(true)}
                                 style={{ 
                                     backgroundColor: 'var(--color-primary)', 
                                     color: '#fff',
                                     padding: '24px', 
-                                    boxShadow: 'var(--shadow-brutal)',
+                                    boxShadow: 'var(--shadow-md)',
                                     display: 'flex',
                                     flexDirection: 'column',
                                     gap: '12px',
@@ -103,14 +109,14 @@ export default function PurchasingLandingPage() {
                                 onMouseOver={(e) => {
                                     e.currentTarget.style.backgroundColor = 'var(--color-bg-page)';
                                     e.currentTarget.style.color = 'var(--color-primary)';
-                                    e.currentTarget.style.transform = 'translate(-2px, -2px)';
-                                    e.currentTarget.style.boxShadow = '6px 6px 0 var(--color-primary)';
+                                    e.currentTarget.style.transform = 'translateY(-3px)';
+                                    e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
                                 }}
                                 onMouseOut={(e) => {
                                     e.currentTarget.style.backgroundColor = 'var(--color-primary)';
                                     e.currentTarget.style.color = '#fff';
-                                    e.currentTarget.style.transform = 'none';
-                                    e.currentTarget.style.boxShadow = 'var(--shadow-brutal)';
+                                    e.currentTarget.style.transform = 'translateY(0)';
+                                    e.currentTarget.style.boxShadow = 'var(--shadow-md)';
                                 }}
                             >
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 900, textTransform: 'uppercase', fontSize: '1rem' }}>

@@ -1,0 +1,338 @@
+﻿
+============================================
+=== A1: Terminal/Code Mapping Overview (ALL terminals) ===
+============================================
+IDTerminal | TerminalName | TotalPunches | RawTipo17 | RawTipo18 | Proc17 | Proc18 | 17_to_EN | 17_to_SA | 18_to_EN | 18_to_SA
+------------------------------------------------------------------------------------------------------------------------
+ |  | 164 | 2 | 0 | 2 | 0 | 0 | 0 | 0 | 0
+10 | AOVIA1_ESCRITORIO | 31298 | 1219 | 4 | 881 | 2 | 8 | 5 | 0 | 0
+13 | AOVIA2-ZEE | 12357 | 141 | 72 | 76 | 35 | 1 | 0 | 0 | 0
+16 | AOVIA3-SOPROS | 31227 | 230 | 161 | 24 | 7 | 0 | 0 | 0 | 0
+(Rows: 4)
+
+============================================
+=== A2: Detailed Type/ProcessedType combinations for 17 & 18 ===
+============================================
+IDTerminal | TerminalName | RawTipo | ProcessedTipo | Cnt
+------------------------------------------------------------------------------------------------------------------------
+ |  | 17 | 17 | 2
+10 | AOVIA1_ESCRITORIO | 17 |  | 324
+10 | AOVIA1_ESCRITORIO | 17 | 01 | 1
+10 | AOVIA1_ESCRITORIO | 17 | 17 | 881
+10 | AOVIA1_ESCRITORIO | 17 | EN | 8
+10 | AOVIA1_ESCRITORIO | 17 | SA | 5
+10 | AOVIA1_ESCRITORIO | 18 |  | 2
+10 | AOVIA1_ESCRITORIO | 18 | 18 | 2
+13 | AOVIA2-ZEE | 17 |  | 64
+13 | AOVIA2-ZEE | 17 | 17 | 76
+13 | AOVIA2-ZEE | 17 | EN | 1
+13 | AOVIA2-ZEE | 18 |  | 37
+13 | AOVIA2-ZEE | 18 | 18 | 35
+16 | AOVIA3-SOPROS | 17 |  | 206
+16 | AOVIA3-SOPROS | 17 | 17 | 24
+16 | AOVIA3-SOPROS | 18 |  | 154
+16 | AOVIA3-SOPROS | 18 | 18 | 7
+(Rows: 17)
+
+============================================
+=== A3: ALL distinct Tipo->TipoProcessado combinations (global) ===
+============================================
+RawTipo | ProcessedTipo | Cnt
+------------------------------------------------------------------------------------------------------------------------
+ | EN | 46
+ | SA | 116
+ |  | 23899
+ |  | 539
+ | 01 | 1
+ | EN | 30029
+ | SA | 18581
+17 |  | 594
+17 | 01 | 1
+17 | 17 | 983
+17 | EN | 9
+17 | SA | 5
+18 |  | 193
+18 | 18 | 44
+19 | 19 | 1
+20 |  | 1
+20 | 20 | 1
+EN | EN | 3
+(Rows: 18)
+
+============================================
+=== B1: Code 17 -> Entry (EN) examples ===
+============================================
+IDFuncionario | Nome | Data | Hora | Tipo | TipoProcessado | Terminal | TipodeMarcacaoNoTerminal
+------------------------------------------------------------------------------------------------------------------------
+1570 | ABEL BEIRÃO DOMINGOS | 4/16/2026 12:00:00 AM | 1/1/1900 8:14:00 AM | 17 | EN | AOVIA1_ESCRITORIO | Sem informação
+1570 | ABEL BEIRÃO DOMINGOS | 4/15/2026 12:00:00 AM | 1/1/1900 7:54:00 AM | 17 | EN | AOVIA2-ZEE | Sem informação
+1570 | ABEL BEIRÃO DOMINGOS | 4/14/2026 12:00:00 AM | 1/1/1900 8:08:00 AM | 17 | EN | AOVIA1_ESCRITORIO | Sem informação
+1570 | ABEL BEIRÃO DOMINGOS | 4/13/2026 12:00:00 AM | 1/1/1900 8:09:00 AM | 17 | EN | AOVIA1_ESCRITORIO | Sem informação
+1570 | ABEL BEIRÃO DOMINGOS | 4/8/2026 12:00:00 AM | 1/1/1900 7:53:00 AM | 17 | EN | AOVIA1_ESCRITORIO | Sem informação
+(Rows: 5)
+
+============================================
+=== B2: Code 17 -> Exit (SA) examples ===
+============================================
+IDFuncionario | Nome | Data | Hora | Tipo | TipoProcessado | Terminal | TipodeMarcacaoNoTerminal
+------------------------------------------------------------------------------------------------------------------------
+1570 | ABEL BEIRÃO DOMINGOS | 4/14/2026 12:00:00 AM | 1/1/1900 5:56:00 PM | 17 | SA | AOVIA1_ESCRITORIO | Sem informação
+1570 | ABEL BEIRÃO DOMINGOS | 4/8/2026 12:00:00 AM | 1/1/1900 5:36:00 PM | 17 | SA | AOVIA1_ESCRITORIO | Sem informação
+1570 | ABEL BEIRÃO DOMINGOS | 4/6/2026 12:00:00 AM | 1/1/1900 5:41:00 PM | 17 | SA | AOVIA1_ESCRITORIO | Sem informação
+1570 | ABEL BEIRÃO DOMINGOS | 4/2/2026 12:00:00 AM | 1/1/1900 6:07:00 PM | 17 | SA | AOVIA1_ESCRITORIO | Sem informação
+1570 | ABEL BEIRÃO DOMINGOS | 7/1/2024 12:00:00 AM | 1/1/1900 5:38:00 PM | 17 | SA | AOVIA1_ESCRITORIO | Sem informação
+(Rows: 5)
+
+============================================
+=== B3: Code 18 -> Entry (EN) examples ===
+============================================
+IDFuncionario | Nome | Data | Hora | Tipo | TipoProcessado | Terminal | TipodeMarcacaoNoTerminal
+------------------------------------------------------------------------------------------------------------------------
+(Rows: 0)
+
+============================================
+=== B4: Code 18 -> Exit (SA) examples ===
+============================================
+IDFuncionario | Nome | Data | Hora | Tipo | TipoProcessado | Terminal | TipodeMarcacaoNoTerminal
+------------------------------------------------------------------------------------------------------------------------
+(Rows: 0)
+
+============================================
+=== B5: Full day punches for one employee with code 17 ===
+============================================
+IDFuncionario | Nome | Data | Hora | Tipo | TipoProcessado | Terminal | TipodeMarcacaoNoTerminal
+------------------------------------------------------------------------------------------------------------------------
+1673 | AFONSO CASSENGUE ABEL ELIZEU | 4/22/2026 12:00:00 AM | 1/1/1900 8:27:00 AM | 17 | 17 | AOVIA1_ESCRITORIO | Sem informação
+(Rows: 1)
+
+============================================
+=== B6: Alteracoes (attendance result) for same employee/day as B5 ===
+============================================
+IDAlteracao | IDFuncionario | Data | Entrada1 | Saida1 | Entrada2 | Saida2 | Marcacao | Objectivo | Falta | Ausencia | Saldo | Validado | TipoAnomalia | Horario
+------------------------------------------------------------------------------------------------------------------------
+123441 | 1673 | 4/22/2026 12:00:00 AM |  |  |  |  | 0 | 1/1/1900 12:00:00 AM | 1/1/1900 12:00:00 AM | 1/1/1900 12:00:00 AM | 1/1/1900 12:00:00 AM | True |  | 8h00 as 17h30
+(Rows: 1)
+
+============================================
+=== B7: Full day punches for one employee with code 18 ===
+============================================
+IDFuncionario | Nome | Data | Hora | Tipo | TipoProcessado | Terminal | TipodeMarcacaoNoTerminal
+------------------------------------------------------------------------------------------------------------------------
+1613 | SAULO JOSÉ FRANCISCO | 4/22/2026 12:00:00 AM | 1/1/1900 8:01:00 AM | 18 | 18 | AOVIA3-SOPROS | Sem informação
+(Rows: 1)
+
+============================================
+=== B8: Alteracoes (attendance result) for same employee/day as B7 ===
+============================================
+IDAlteracao | IDFuncionario | Data | Entrada1 | Saida1 | Entrada2 | Saida2 | Marcacao | Objectivo | Falta | Ausencia | Saldo | Validado | TipoAnomalia | Horario
+------------------------------------------------------------------------------------------------------------------------
+106003 | 1613 | 4/22/2026 12:00:00 AM |  |  |  |  | 2 | 1/1/1900 12:00:00 AM | 1/1/1900 12:00:00 AM | 1/1/1900 12:00:00 AM | 1/1/1900 12:00:00 AM | False |  | FOLGA
+(Rows: 1)
+
+============================================
+=== C1: Code 17 -> EN vs SA distribution per terminal ===
+============================================
+Terminal | AsEntry | AsExit | Other | Total | PctEntry
+------------------------------------------------------------------------------------------------------------------------
+ | 0 | 0 | 2 | 2 | 0.0
+AOVIA1_ESCRITORIO | 8 | 5 | 1206 | 1219 | 0.7
+AOVIA2-ZEE | 1 | 0 | 140 | 141 | 0.7
+AOVIA3-SOPROS | 0 | 0 | 230 | 230 | 0.0
+(Rows: 4)
+
+============================================
+=== C2: Code 18 -> EN vs SA distribution per terminal ===
+============================================
+Terminal | AsEntry | AsExit | Other | Total | PctEntry
+------------------------------------------------------------------------------------------------------------------------
+AOVIA1_ESCRITORIO | 0 | 0 | 4 | 4 | 0.0
+AOVIA2-ZEE | 0 | 0 | 72 | 72 | 0.0
+AOVIA3-SOPROS | 0 | 0 | 161 | 161 | 0.0
+(Rows: 3)
+
+============================================
+=== C3: Code 17/18 behavior by time of day ===
+============================================
+Tipo | TimeSlot | TipoProcessado | Cnt
+------------------------------------------------------------------------------------------------------------------------
+17 | Afternoon (12+) |  | 303
+17 | Afternoon (12+) | 17 | 460
+17 | Afternoon (12+) | EN | 1
+17 | Afternoon (12+) | SA | 5
+17 | Morning (before 12) |  | 291
+17 | Morning (before 12) | 01 | 1
+17 | Morning (before 12) | 17 | 523
+17 | Morning (before 12) | EN | 8
+18 | Afternoon (12+) |  | 131
+18 | Afternoon (12+) | 18 | 32
+18 | Morning (before 12) |  | 62
+18 | Morning (before 12) | 18 | 12
+(Rows: 12)
+
+============================================
+=== C4: TipodeMarcacaoNoTerminal for codes 17 and 18 ===
+============================================
+Tipo | TipoProcessado | TipodeMarcacaoNoTerminal | Cnt
+------------------------------------------------------------------------------------------------------------------------
+17 |  | Sem informação | 594
+17 | 01 | Sem informação | 1
+17 | 17 | Sem informação | 983
+17 | EN | Sem informação | 9
+17 | SA | Sem informação | 5
+18 |  | Sem informação | 193
+18 | 18 | Sem informação | 44
+(Rows: 7)
+
+============================================
+=== C5: Tecla (key) pressed for codes 17 and 18 ===
+============================================
+Tipo | TipoProcessado | Tecla | Cnt
+------------------------------------------------------------------------------------------------------------------------
+17 |  |  | 594
+17 | 01 |  | 1
+17 | 17 |  | 983
+17 | EN |  | 9
+17 | SA |  | 5
+18 |  |  | 193
+18 | 18 |  | 44
+(Rows: 7)
+
+============================================
+=== C6: Top 10 employees using codes 17/18 ===
+============================================
+IDFuncionario | Nome | Code17Count | Code18Count | TotalPunches
+------------------------------------------------------------------------------------------------------------------------
+1570 | ABEL BEIRÃO DOMINGOS | 69 | 0 | 69
+1534 | EDMUNDO MANUEL GASPAR  - CAPS  | 37 | 2 | 39
+1598 | TOMISSON CAETANO DOS SANTOS PEDRO | 38 | 0 | 38
+1517 | INOCENCIO LUVANGUE VAN-DUNEM | 34 | 2 | 36
+1555 | FRANCISCO CELESTINO LUÍS PEDRO | 35 | 0 | 35
+1560 | BENJAMIM KINABACUNA | 33 | 0 | 33
+1755 | MAYIMONA MATONDO GARCIA | 31 | 0 | 31
+1529 | ANTONIO JOÃO SALVADOR DAVID | 29 | 0 | 29
+1558 | FELIZARDO JOSÉ SEBASTIÃO | 29 | 0 | 29
+1518 | FERREIRA TEIXEIRA ERNESTO | 29 | 0 | 29
+(Rows: 10)
+
+============================================
+=== C7: Date range when codes 17/18 appeared ===
+============================================
+Tipo | FirstSeen | LastSeen | DistinctDays | TotalRecords
+------------------------------------------------------------------------------------------------------------------------
+17 | 6/13/2024 12:00:00 AM | 4/22/2026 12:00:00 AM | 47 | 1592
+18 | 6/27/2024 12:00:00 AM | 4/22/2026 12:00:00 AM | 16 | 237
+(Rows: 2)
+
+============================================
+=== D1: All Terminals ===
+============================================
+IDTerminal | Nome | Modelo | Comunicacao | Porta | Endereco | ModoAcesso | TempoAberturaPorta | AtrazoFecharPorta | DuracaoAlarme | ValidarHorarios | SoAcessos | HorariosAcesso | ActivarSirene | TempoActivacaoSirene | Toques | NomePerfilAcesso | IDZonaAcesso | Marcacoes | UltimoNS | EnviarCartaoAlternativo | DesactivarCardinal | TextoEcran | RecolhaAutomatica | PC | GMT | NumeroSerie | Grupo | Registo | Local | Morada | LocalInterno | NomePCusb | PortaSwitch | Observacoes
+------------------------------------------------------------------------------------------------------------------------
+10 | AOVIA1_ESCRITORIO | ProBioAC | Ethernet | TCP5005 | 10.130.12.3 |  | 2 |  |  | False | False |  | False | 5 |  |  |  | 0 |  |  |  |  | 0 |  |  | 3712211290001 |  | 9tJu4zX3r66seWGXb7z7/1zMfB8MvIy0v0r7QB+hud8= |  |  |  |  |  | 
+13 | AOVIA2-ZEE | ProBioAC | Ethernet | TCP5005 | 10.142.12.8 |  |  |  |  | False | False |  | False | 5 |  |  |  | 0 |  |  |  |  | 0 |  |  | 3712211290017 |  | 9tJu4zX3r66seWGXb7z7/+Rte7K2h59MDtLTmDgf8kY= |  |  |  |  |  | 
+16 | AOVIA3-SOPROS | ProBioAC | Ethernet | TCP5005 | 10.130.12.4 |  |  |  |  | False | False |  | False | 5 |  |  |  | 0 |  |  |  |  | 0 |  |  | 3712302130045 |  | v9Vv05NMK2uV/OIfMlPgjenAL9UsFobK7fV/AN+84/E= |  |  |  |  |  | 
+(Rows: 3)
+
+============================================
+=== D2: MarcacoesTipos (Punch Type Lookup) ===
+============================================
+IDMarcacaoTipo | Codigo | Descricao
+------------------------------------------------------------------------------------------------------------------------
+(Rows: 0)
+
+============================================
+=== D3: Relevant terminal/config/type tables ===
+============================================
+TABLE_NAME
+------------------------------------------------------------------------------------------------------------------------
+ConfiguracoesEntidade
+ConfiguracoesNovosServicos
+ModoValidacaoTerminal
+(Rows: 3)
+
+============================================
+=== D4: TerminaisEventosTipos ===
+============================================
+IDTipoEvento | Descricao
+------------------------------------------------------------------------------------------------------------------------
+1 | Leitura de cartão não registado
+2 | Leitura de cartão inválido
+3 | Leitura de cartão fora do seu horário de acesso
+4 | Under intimation
+5 | Abertura forçada do terminal
+7 | Aberta forçada da porta
+8 | Impressão digital inválida
+(Rows: 7)
+
+============================================
+=== D5: Terminais table schema ===
+============================================
+COLUMN_NAME | DATA_TYPE | CHARACTER_MAXIMUM_LENGTH
+------------------------------------------------------------------------------------------------------------------------
+IDTerminal | int | 
+Nome | nvarchar | 50
+Modelo | nvarchar | 20
+Comunicacao | nvarchar | 20
+Porta | nvarchar | 15
+Endereco | nvarchar | 50
+ModoAcesso | int | 
+TempoAberturaPorta | int | 
+AtrazoFecharPorta | int | 
+DuracaoAlarme | int | 
+ValidarHorarios | bit | 
+SoAcessos | bit | 
+HorariosAcesso | int | 
+ActivarSirene | bit | 
+TempoActivacaoSirene | int | 
+Toques | nvarchar | 20
+NomePerfilAcesso | nvarchar | 20
+IDZonaAcesso | int | 
+Marcacoes | int | 
+UltimoNS | int | 
+EnviarCartaoAlternativo | bit | 
+DesactivarCardinal | bit | 
+TextoEcran | nvarchar | 50
+RecolhaAutomatica | int | 
+PC | nvarchar | 64
+GMT | nvarchar | 20
+NumeroSerie | nvarchar | 50
+Grupo | nvarchar | 100
+Registo | nvarchar | 100
+Local | nvarchar | 100
+Morada | nvarchar | 200
+LocalInterno | nvarchar | 100
+NomePCusb | nvarchar | 100
+PortaSwitch | nvarchar | 100
+Observacoes | nvarchar | 100
+(Rows: 35)
+
+============================================
+=== D6: MarcacoesTipos table schema ===
+============================================
+COLUMN_NAME | DATA_TYPE | CHARACTER_MAXIMUM_LENGTH
+------------------------------------------------------------------------------------------------------------------------
+IDMarcacaoTipo | int | 
+Codigo | nvarchar | 2
+Descricao | nvarchar | 50
+(Rows: 3)
+
+============================================
+=== D7: All tables with 'Tipo' in name ===
+============================================
+TABLE_NAME
+------------------------------------------------------------------------------------------------------------------------
+MarcacoesTipos
+ServicosHorariosEscalasTipos
+TerminaisEventosTipos
+TiposSaidaServico
+(Rows: 4)
+
+============================================
+=== D8: Terminal columns related to type/direction/config ===
+============================================
+COLUMN_NAME
+------------------------------------------------------------------------------------------------------------------------
+Marcacoes
+(Rows: 1)
+
+=== Investigation complete ===

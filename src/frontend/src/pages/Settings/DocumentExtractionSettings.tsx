@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { DocumentExtractionSettingsDto } from '../../types';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
-import { Save, Info, AlertTriangle, Cpu, Globe, Braces, Settings } from 'lucide-react';
+import { Save, Info, AlertTriangle, Globe, Braces, Settings } from 'lucide-react';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 
@@ -198,8 +198,7 @@ export function DocumentExtractionSettings() {
                                 onChange={(e) => handleChange('defaultProvider', e.target.value)}
                                 style={{ width: '100%' }}
                             >
-                                <option value="LOCAL_OCR">Local OCR (Tesseract / Python)</option>
-                                <option value="OPENAI">OpenAI Vision (Experimental)</option>
+                                <option value="OPENAI">OpenAI Vision</option>
                                 <option value="AZURE_DOCUMENT_INTELLIGENCE">Azure Document Intelligence</option>
                             </select>
                         </div>
@@ -235,59 +234,6 @@ export function DocumentExtractionSettings() {
                         >
                             <Globe size={16} /> {testing ? 'A TESTAR...' : 'TESTAR CONEXÃO DO PROVEDOR'}
                         </button>
-                    </div>
-                </section>
-
-                {/* Local OCR Section */}
-                <section style={{ 
-                    backgroundColor: 'var(--color-bg-surface)', 
-                    border: '1px solid var(--color-border)', 
-                    borderRadius: 'var(--radius-lg)',
-                    padding: '1.5rem'
-                }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.75rem' }}>
-                        <h2 style={{ fontSize: '1.1rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <Cpu size={20} color="var(--color-primary)" />
-                            Local OCR
-                        </h2>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                            <label style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', color: settings.localOcrEnabled ? 'var(--color-status-green)' : 'var(--color-text-muted)' }}>
-                                {settings.localOcrEnabled ? 'ATIVO' : 'DESATIVADO'}
-                            </label>
-                            <input
-                                type="checkbox"
-                                checked={settings.localOcrEnabled}
-                                onChange={(e) => handleChange('localOcrEnabled', e.target.checked)}
-                                style={{ width: '1.1rem', height: '1.1rem', cursor: 'pointer' }}
-                            />
-                        </div>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                            <label style={{ fontSize: '0.85rem', fontWeight: 700, textTransform: 'uppercase' }}>URL Base do Serviço</label>
-                            <input
-                                type="text"
-                                value={settings.localOcrBaseUrl || ''}
-                                onChange={(e) => handleChange('localOcrBaseUrl', e.target.value)}
-                                placeholder="ex: http://local-ocr:5000"
-                                required={settings.localOcrEnabled}
-                                style={{ width: '100%' }}
-                            />
-                            <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-                                Endereço interno do serviço Python responsável pelo processamento Tesseract.
-                            </p>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxWidth: '300px' }}>
-                            <label style={{ fontSize: '0.85rem', fontWeight: 700, textTransform: 'uppercase' }}>Timeout Específico (Segundos)</label>
-                            <input
-                                type="number"
-                                value={settings.localOcrTimeoutSeconds || ''}
-                                onChange={(e) => handleChange('localOcrTimeoutSeconds', e.target.value ? parseInt(e.target.value) : null)}
-                                placeholder="Seguir Global"
-                                style={{ width: '100%' }}
-                            />
-                        </div>
                     </div>
                 </section>
 

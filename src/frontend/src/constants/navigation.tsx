@@ -2,7 +2,8 @@ import React from 'react';
 import { 
     FileText, Home, Settings, List, ShoppingCart, 
     Package, Activity, Network, Shield, CheckCircle,
-    CreditCard, DollarSign, Archive
+    CreditCard, DollarSign, Archive, Users, UserCheck, Calendar, CalendarDays,
+    Layers, History, FileSignature, Bell, CalendarCheck, Monitor, Settings2
 } from 'lucide-react';
 import { ROLES } from './roles';
 
@@ -18,6 +19,9 @@ export interface NavItem {
     children?: NavItem[];
     keywords?: string[];
     roles?: string[];      // New: explicit allowed roles
+    isHrModule?: boolean;  // New: explicit HR module flag
+    isHrAdmin?: boolean;   // Full R.H. group — visible only to HR/Admin
+    isTeamModule?: boolean; // Gestão da Equipa group — visible only to non-admin team users
     isAdminOnly?: boolean;  // Legacy
     isManagerOnly?: boolean; // Legacy
 }
@@ -27,7 +31,7 @@ export interface NavItem {
  * All new modules must be registered here to automatically appear
  * in both the Sidebar and the Global Search.
  */
-export const getNavigationConfig = (userRoles: string[]): NavItem[] => {
+export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: boolean = false, hasHRAdminAccess: boolean = false): NavItem[] => {
     const isAdmin = userRoles.includes(ROLES.SYSTEM_ADMINISTRATOR);
     const isLocalManager = userRoles.includes(ROLES.LOCAL_MANAGER);
 
@@ -100,6 +104,15 @@ export const getNavigationConfig = (userRoles: string[]): NavItem[] => {
                     to: '/admin/health',
                     roles: [ROLES.SYSTEM_ADMINISTRATOR],
                     keywords: ['admin', 'técnico', 'dados', 'sincronizacao', 'primavera', 'erp', 'integridade']
+                },
+                {
+                    id: 'admin-integrations',
+                    type: 'link',
+                    label: 'Gestão de Integrações',
+                    icon: <Settings2 size={18} strokeWidth={2.5} />,
+                    to: '/admin/integrations',
+                    roles: [ROLES.SYSTEM_ADMINISTRATOR],
+                    keywords: ['admin', 'integrações', 'credenciais', 'segredos', 'configuração', 'openai', 'smtp', 'primavera', 'innux']
                 }
             ]
         },
@@ -178,6 +191,137 @@ export const getNavigationConfig = (userRoles: string[]): NavItem[] => {
             ]
         },
         {
+            id: 'contratos',
+            type: 'group',
+            label: 'Contratos',
+            to: '/contracts/list',
+            icon: <FileSignature size={18} strokeWidth={2.5} />,
+            roles: [ROLES.CONTRACTS, ROLES.FINANCE, ROLES.SYSTEM_ADMINISTRATOR],
+            keywords: ['contratos', 'obrigações', 'pagamento', 'fornecedor', 'contratual', 'renovação'],
+            children: [
+                {
+                    id: 'contracts-list',
+                    type: 'link',
+                    label: 'Lista de Contratos',
+                    icon: <List size={18} strokeWidth={2.5} />,
+                    to: '/contracts/list',
+                    roles: [ROLES.CONTRACTS, ROLES.FINANCE, ROLES.SYSTEM_ADMINISTRATOR],
+                    keywords: ['contratos', 'lista', 'consulta', 'pesquisa', 'ativos']
+                },
+                {
+                    id: 'contracts-alerts',
+                    type: 'link',
+                    label: 'Alertas',
+                    icon: <Bell size={18} strokeWidth={2.5} />,
+                    to: '/contracts/alerts',
+                    roles: [ROLES.CONTRACTS, ROLES.FINANCE, ROLES.SYSTEM_ADMINISTRATOR],
+                    keywords: ['contratos', 'alertas', 'vencimento', 'renovação', 'notificação']
+                }
+            ]
+        },
+        // ── T.I. (IT Equipment Module) ──
+        {
+            id: 'ti',
+            type: 'link',
+            label: 'T.I.',
+            icon: <Monitor size={18} strokeWidth={2.5} />,
+            to: '/it/equipment',
+            roles: [ROLES.IT, ROLES.SYSTEM_ADMINISTRATOR],
+            keywords: ['ti', 'equipamento', 'computador', 'laptop', 'desktop', 'monitor', 'impressora', 'inventário', 'estoque', 'it', 'asset tag', 'hardware']
+        },
+        // ── R.H. (Full Administration) — visible only to HR and System Administrator ──
+        // When user has hasHRAdminAccess, this group shows with ALL children.
+        // Non-admin users instead see the "Gestão da Equipa" group below.
+        {
+            id: 'rh',
+            type: 'group',
+            label: 'R.H.',
+            to: '/hr/overview',
+            icon: <Users size={18} strokeWidth={2.5} />,
+            isHrAdmin: true,
+            keywords: ['rh', 'recursos humanos', 'funcionários', 'colaboradores', 'pessoal', 'férias', 'ausências'],
+            children: [
+                {
+                    id: 'rh-overview',
+                    type: 'link',
+                    label: 'Visão Geral',
+                    icon: <Activity size={18} strokeWidth={2.5} />,
+                    to: '/hr/overview',
+                    keywords: ['rh', 'dashboard', 'resumo', 'kpi']
+                },
+                {
+                    id: 'rh-calendar',
+                    type: 'link',
+                    label: 'Calendário da Equipa',
+                    icon: <CalendarDays size={18} strokeWidth={2.5} />,
+                    to: '/hr/calendar',
+                    keywords: ['rh', 'calendário', 'equipa', 'meu calendário', 'agenda', 'férias', 'ausências']
+                },
+                {
+                    id: 'rh-leave',
+                    type: 'link',
+                    label: 'Férias e Ausências',
+                    icon: <Calendar size={18} strokeWidth={2.5} />,
+                    to: '/hr/leave',
+                    keywords: ['férias', 'ausência', 'falta', 'baixa', 'licença', 'aprovação']
+                },
+                {
+                    id: 'rh-badges-employees',
+                    type: 'link',
+                    label: 'Funcionários',
+                    icon: <UserCheck size={18} strokeWidth={2.5} />,
+                    to: '/hr/badges/employees',
+                    keywords: ['rh', 'funcionários', 'cadastro', 'crachá', 'badge', 'foto', 'consulta', 'pessoal', 'impressão']
+                },
+                {
+                    id: 'rh-badges-layouts',
+                    type: 'link',
+                    label: 'Layouts',
+                    icon: <Layers size={18} strokeWidth={2.5} />,
+                    to: '/hr/badges/layouts',
+                    keywords: ['rh', 'crachá', 'layout', 'template', 'design', 'modelo']
+                },
+                {
+                    id: 'rh-badges-history',
+                    type: 'link',
+                    label: 'Histórico de Impressão',
+                    icon: <History size={18} strokeWidth={2.5} />,
+                    to: '/hr/badges/history',
+                    keywords: ['rh', 'crachá', 'impressão', 'histórico', 'reimpressão', 'auditoria']
+                }
+            ]
+        },
+        // ── Gestão da Equipa (Team-level) — visible only to NON-admin HR-module users ──
+        // Shows for Local Manager, Department Manager, Viewer/Management when they
+        // do NOT also have HR/Admin roles. Contains only team-level features.
+        {
+            id: 'equipa',
+            type: 'group',
+            label: 'Gestão da Equipa',
+            to: '/hr/calendar',
+            icon: <CalendarCheck size={18} strokeWidth={2.5} />,
+            isTeamModule: true,
+            keywords: ['equipa', 'calendário', 'férias', 'ausências', 'gestão', 'team'],
+            children: [
+                {
+                    id: 'equipa-calendar',
+                    type: 'link',
+                    label: 'Calendário da Equipa',
+                    icon: <CalendarDays size={18} strokeWidth={2.5} />,
+                    to: '/hr/calendar',
+                    keywords: ['calendário', 'equipa', 'meu calendário', 'agenda', 'férias', 'ausências']
+                },
+                {
+                    id: 'equipa-leave',
+                    type: 'link',
+                    label: 'Férias e Ausências',
+                    icon: <Calendar size={18} strokeWidth={2.5} />,
+                    to: '/hr/leave',
+                    keywords: ['férias', 'ausência', 'falta', 'baixa', 'licença', 'aprovação']
+                }
+            ]
+        },
+        {
             id: 'configuracoes',
             type: 'group',
             label: 'Configurações',
@@ -212,9 +356,17 @@ export const getNavigationConfig = (userRoles: string[]): NavItem[] => {
                 return false;
             }
 
-            // Priority 2: Legacy Booleans (Fallback)
+            // Priority 2: HR module gates
+            // isHrAdmin: Full R.H. group — only for HR/Admin users
+            if (item.isHrAdmin && !hasHRAdminAccess) return false;
+            // isTeamModule: "Gestão da Equipa" group — only for team-level users WITHOUT admin access
+            // (prevents duplication: admin users already see team features inside the full R.H. group)
+            if (item.isTeamModule && (!hasHRModuleAccess || hasHRAdminAccess)) return false;
+
+            // Priority 3: Legacy Booleans (Fallback)
             if (item.isAdminOnly && !isAdmin) return false;
             if (item.isManagerOnly && !isLocalManager) return false;
+            if (item.isHrModule && !hasHRModuleAccess) return false;
 
             return true;
         })
@@ -228,6 +380,7 @@ export const getNavigationConfig = (userRoles: string[]): NavItem[] => {
                         }
                         if (child.isAdminOnly && !isAdmin) return false;
                         if (child.isManagerOnly && !isLocalManager) return false;
+                        if (child.isHrModule && !hasHRModuleAccess) return false;
                         return true;
                     })
                 };

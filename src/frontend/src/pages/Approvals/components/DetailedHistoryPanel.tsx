@@ -34,8 +34,16 @@ export const DetailedHistoryPanel: React.FC<DetailedHistoryPanelProps> = ({ item
 
     return (
         <div 
-            className="flex-1 bg-[var(--color-bg-page)] z-[60] flex flex-col animate-in slide-in-from-right duration-300 relative"
-            style={{ height: '100%', width: '100%' }}
+            style={{ 
+                flex: 1,
+                backgroundColor: 'var(--color-bg-page)',
+                zIndex: 60,
+                display: 'flex',
+                flexDirection: 'column',
+                position: 'relative',
+                height: '100%',
+                width: '100%'
+            }}
         >
             {/* Header */}
             <div style={{ 
@@ -64,7 +72,8 @@ export const DetailedHistoryPanel: React.FC<DetailedHistoryPanelProps> = ({ item
                         boxShadow: 'var(--shadow-sm)',
                         transition: 'all 0.2s'
                     }}
-                    className="hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none"
+                    onMouseOver={(e) => { e.currentTarget.style.transform = 'translate(1px, 1px)'; e.currentTarget.style.boxShadow = 'none'; }}
+                    onMouseOut={(e) => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
                 >
                     <ArrowLeft size={16} strokeWidth={3} /> Voltar
                 </button>
@@ -197,8 +206,9 @@ export const DetailedHistoryPanel: React.FC<DetailedHistoryPanelProps> = ({ item
                                     {history.map((record, idx) => (
                                         <tr 
                                             key={record.requestId + idx}
-                                            style={{ borderBottom: idx === history.length - 1 ? 'none' : '1px solid var(--color-border)', backgroundColor: record.isLastPurchase ? 'rgba(234, 179, 8, 0.05)' : 'transparent' }}
-                                            className="hover:bg-gray-50 transition-colors"
+                                            style={{ borderBottom: idx === history.length - 1 ? 'none' : '1px solid var(--color-border)', backgroundColor: record.isLastPurchase ? 'rgba(234, 179, 8, 0.05)' : 'transparent', transition: 'background-color 0.15s' }}
+                                            onMouseOver={(e) => (e.currentTarget.style.backgroundColor = '#f9fafb')}
+                                            onMouseOut={(e) => (e.currentTarget.style.backgroundColor = record.isLastPurchase ? 'rgba(234, 179, 8, 0.05)' : 'transparent')}
                                         >
                                             <td style={{ padding: '16px', verticalAlign: 'top' }}>
                                                 <div style={{ fontWeight: 900, fontSize: '0.85rem', color: 'var(--color-text-main)', marginBottom: '8px' }}>{formatDate(record.purchaseDate)}</div>

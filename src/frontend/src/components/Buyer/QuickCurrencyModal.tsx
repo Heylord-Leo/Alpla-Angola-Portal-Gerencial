@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Feedback, FeedbackType } from '../ui/Feedback';
@@ -18,13 +18,8 @@ export function QuickCurrencyModal({ isOpen, onClose, onSuccess, initialCode }: 
 
     useEffect(() => {
         if (isOpen) {
-            // Normalize initial code: trim, uppercase, and take first 3 chars if it looks like a code
             const normalized = initialCode.trim().toUpperCase();
-            if (normalized.length === 3) {
-                setCode(normalized);
-            } else {
-                setCode('');
-            }
+            setCode(normalized.length === 3 ? normalized : '');
             setSymbol('');
             setFeedback({ type: 'success', message: null });
         }
@@ -32,9 +27,8 @@ export function QuickCurrencyModal({ isOpen, onClose, onSuccess, initialCode }: 
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
-        
         const normalizedCode = code.trim().toUpperCase();
-        
+
         if (!normalizedCode || normalizedCode.length !== 3) {
             setFeedback({ type: 'error', message: 'O código deve ter exatamente 3 caracteres (ex: USD).' });
             return;
@@ -48,18 +42,15 @@ export function QuickCurrencyModal({ isOpen, onClose, onSuccess, initialCode }: 
                 code: normalizedCode,
                 symbol: symbol.trim()
             });
-
             setFeedback({ type: 'success', message: 'Moeda criada com sucesso!' });
-            
-            // Short delay to show success
             setTimeout(() => {
                 onSuccess(newCurrency);
                 onClose();
             }, 500);
         } catch (err: any) {
-            setFeedback({ 
-                type: 'error', 
-                message: err.message || 'Falha ao criar moeda. Verifique se o código já existe.' 
+            setFeedback({
+                type: 'error',
+                message: err.message || 'Falha ao criar moeda. Verifique se o código já existe.'
             });
         } finally {
             setIsSaving(false);
@@ -68,75 +59,148 @@ export function QuickCurrencyModal({ isOpen, onClose, onSuccess, initialCode }: 
 
     if (!isOpen) return null;
 
+    // ── Shared input style ────────────────────────────────────────────────────
+    const inputStyle: React.CSSProperties = {
+        width: '100%',
+        padding: '9px 14px',
+        border: '1px solid var(--color-border)',
+        borderRadius: '8px',
+        backgroundColor: 'var(--color-bg-page)',
+        color: 'var(--color-text)',
+        fontSize: '14px',
+        fontWeight: 500,
+        outline: 'none',
+        transition: 'border-color 0.15s',
+        boxSizing: 'border-box',
+    };
+
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-                    <h3 className="text-lg font-semibold text-gray-900">Nova Moeda</h3>
-                    <button 
+        /* Backdrop */
+        <div style={{
+            position: 'fixed', inset: 0, zIndex: 100,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '16px',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            backdropFilter: 'blur(4px)',
+        }}>
+            {/* Modal card */}
+            <div style={{
+                backgroundColor: 'var(--color-bg-surface)',
+                borderRadius: '12px',
+                boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+                width: '100%',
+                maxWidth: '420px',
+                overflow: 'hidden',
+                border: '1px solid var(--color-border)',
+            }}>
+                {/* Header */}
+                <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '16px 24px',
+                    borderBottom: '1px solid var(--color-border)',
+                    backgroundColor: 'var(--color-bg-page)',
+                }}>
+                    <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
+                        Nova Moeda
+                    </h3>
+                    <button
                         onClick={onClose}
-                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                        style={{
+                            width: 32, height: 32, borderRadius: '50%',
+                            border: 'none', backgroundColor: 'transparent',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            color: 'var(--color-text-muted)', cursor: 'pointer',
+                            transition: 'background-color 0.15s',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'}
+                        onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                     >
-                        <X className="w-5 h-5" />
+                        <X size={18} />
                     </button>
                 </div>
 
-                <form onSubmit={handleSave} className="p-6 space-y-4">
+                {/* Body */}
+                <form onSubmit={handleSave} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
                     {feedback.message && (
                         <Feedback type={feedback.type} message={feedback.message} />
                     )}
 
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Código (ISO) <span className="text-red-500">*</span>
+                    {/* Code field */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <label style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text)' }}>
+                            Código (ISO) <span style={{ color: '#ef4444' }}>*</span>
                         </label>
                         <input
                             type="text"
                             value={code}
-                            onChange={(e) => setCode(e.target.value.toUpperCase())}
+                            onChange={e => setCode(e.target.value.toUpperCase())}
                             placeholder="Ex: USD"
                             maxLength={3}
-                            className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all uppercase"
                             required
+                            style={{ ...inputStyle, textTransform: 'uppercase' }}
+                            onFocus={e => e.target.style.borderColor = 'var(--color-primary)'}
+                            onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
                         />
-                        <p className="mt-1 text-xs text-gray-500">Deve conter exatamente 3 letras.</p>
+                        <p style={{ fontSize: '12px', color: 'var(--color-text-muted)', margin: 0 }}>
+                            Deve conter exatamente 3 letras.
+                        </p>
                     </div>
 
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {/* Symbol field */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <label style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text)' }}>
                             Símbolo
                         </label>
                         <input
                             type="text"
                             value={symbol}
-                            onChange={(e) => setSymbol(e.target.value)}
+                            onChange={e => setSymbol(e.target.value)}
                             placeholder="Ex: $"
-                            className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                            style={inputStyle}
+                            onFocus={e => e.target.style.borderColor = 'var(--color-primary)'}
+                            onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
                         />
                     </div>
 
-                    <div className="pt-4 flex items-center justify-end space-x-3">
+                    {/* Actions */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', paddingTop: '8px' }}>
                         <button
                             type="button"
                             onClick={onClose}
                             disabled={isSaving}
-                            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors"
+                            style={{
+                                padding: '9px 18px', fontSize: '13px', fontWeight: 600,
+                                color: 'var(--color-text-muted)',
+                                background: 'none', border: 'none', cursor: 'pointer',
+                                transition: 'color 0.15s',
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text)'}
+                            onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-muted)'}
                         >
                             Cancelar
                         </button>
                         <button
                             type="submit"
                             disabled={isSaving}
-                            className="px-6 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center"
+                            style={{
+                                padding: '9px 22px', fontSize: '13px', fontWeight: 700,
+                                backgroundColor: isSaving ? '#93c5fd' : 'var(--color-primary)',
+                                color: '#fff',
+                                border: 'none', borderRadius: '8px',
+                                cursor: isSaving ? 'not-allowed' : 'pointer',
+                                display: 'flex', alignItems: 'center', gap: '8px',
+                                transition: 'background-color 0.2s',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                            }}
+                            onMouseEnter={e => { if (!isSaving) e.currentTarget.style.filter = 'brightness(0.9)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.filter = 'none'; }}
                         >
                             {isSaving ? (
                                 <>
-                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    <Loader2 style={{ width: 14, height: 14, animation: 'spin 1s linear infinite' }} />
                                     Gravando...
                                 </>
-                            ) : (
-                                'Criar Moeda'
-                            )}
+                            ) : 'Criar Moeda'}
                         </button>
                     </div>
                 </form>

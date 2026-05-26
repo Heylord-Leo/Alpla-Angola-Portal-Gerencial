@@ -72,7 +72,7 @@ public class RequestLineItemDto
     public string ItemPriority { get; set; } = "MEDIUM";
     public string Description { get; set; } = string.Empty;
     public decimal Quantity { get; set; }
-    public string Unit { get; set; } = string.Empty;
+    public string? Unit { get; set; }
     public decimal UnitPrice { get; set; }
     public decimal? DiscountPercent { get; set; }
     public decimal? DiscountAmount { get; set; }

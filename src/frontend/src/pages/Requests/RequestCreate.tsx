@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Save, X, Paperclip, Trash2, AlertTriangle, FileText, RefreshCw, UploadCloud, CheckCircle2, UserPlus, AlertCircle, Edit2, Plus } from 'lucide-react';
+import { Save, X, Paperclip, Trash2, AlertTriangle, FileText, RefreshCw, UploadCloud, CheckCircle2, UserPlus, AlertCircle, Edit2, Plus, ArrowLeft } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { SupplierAutocomplete } from '../../components/SupplierAutocomplete';
 import { QuickSupplierModal } from '../../components/Buyer/QuickSupplierModal';
@@ -13,6 +13,10 @@ import { scrollToFirstError } from '../../lib/validation';
 import { DateInput } from '../../components/DateInput';
 import { computeFileHash, formatDateTime } from '../../lib/utils';
 import { CatalogItemAutocomplete } from '../../components/CatalogItemAutocomplete';
+import { useCatalogItemReconciliation } from '../../hooks/useCatalogItemReconciliation';
+import { CatalogItemReconciliationModal } from '../../components/CatalogItemReconciliationModal';
+import { ReconciliationWarningDialog } from '../../components/ReconciliationWarningDialog';
+import { ReconcilableItem, ItemResolution } from '../../types';
 
 
 export function RequestCreate() {
@@ -70,6 +74,13 @@ export function RequestCreate() {
         areaApproverId: '',
         finalApproverId: ''
     });
+
+    // Reconciliation Engine — unified for both payment and requester items
+    const [showReconciliationWarning, setShowReconciliationWarning] = useState(false);
+    const activeItems: ReconcilableItem[] = Number(formData.requestTypeId) === 2 && paymentDraft
+        ? paymentDraft.items
+        : requesterItems;
+    const reconciliation = useCatalogItemReconciliation(activeItems);
 
     const initialFormDataRef = useRef(formData);
 
@@ -359,6 +370,14 @@ export function RequestCreate() {
             } else {
                 nextItems[index] = { ...nextItems[index], [field]: value };
             }
+
+            // If user manually edits the description, clear auto-match linkage
+            // to prevent showing "Correspondência automática" for a modified description
+            if (field === 'description') {
+                nextItems[index].autoMatchStatus = null;
+                nextItems[index].itemCatalogId = null;
+                nextItems[index].itemCatalogCode = null;
+            }
             
             // Reactive discount recalculation if percentage is locked in
             if ((field === 'quantity' || field === 'unitPrice') && nextItems[index].discountPercent !== undefined) {
@@ -375,6 +394,24 @@ export function RequestCreate() {
             
             const next = { ...prev, items: nextItems };
             next.totalAmount = calculateDraftTotal(next);
+            return next;
+        });
+    };
+
+    const handleCatalogSelectOcrItem = (index: number, description: string, catalogId: number | null, catalogCode: string | null, defaultUnitId: number | null) => {
+        setPaymentDraft(prev => {
+            if (!prev) return null;
+            const nextItems = [...prev.items];
+            nextItems[index] = {
+                ...nextItems[index],
+                description,
+                itemCatalogId: catalogId,
+                itemCatalogCode: catalogCode,
+                unitId: defaultUnitId || nextItems[index].unitId,
+                // Clear AUTO_MATCHED when user manually selects (it's now a manual selection)
+                autoMatchStatus: catalogId ? null : 'NEEDS_REVIEW',
+            };
+            const next = { ...prev, items: nextItems };
             return next;
         });
     };
@@ -507,6 +544,14 @@ export function RequestCreate() {
         setFeedback({ type: 'error', message: null });
         setFieldErrors({});
 
+        // Reconciliation guardrail: check for unresolved catalog items before submission
+        if (reconciliation.hasUnresolved && !showReconciliationWarning) {
+            setShowReconciliationWarning(true);
+            setLoading(false);
+            return;
+        }
+        setShowReconciliationWarning(false);
+
         const safeCurrencyId = Number(formData.currencyId) || 1;
         const safePlantId = Number(formData.plantId) || 0;
 
@@ -632,8 +677,8 @@ export function RequestCreate() {
         width: '100%',
         padding: '12px 14px',
         borderRadius: 'var(--radius-sm)',
-        border: '1px solid var(--color-border-heavy)',
-        boxShadow: 'var(--shadow-brutal)',
+        border: '1px solid var(--color-border)',
+        boxShadow: 'var(--shadow-md)',
         fontSize: '0.875rem',
         fontFamily: 'var(--font-family-body)',
         color: 'var(--color-text-main)',
@@ -688,7 +733,7 @@ export function RequestCreate() {
 
     const getInputStyle = (fieldName: string) => ({
         ...inputStyle,
-        ...(getFieldErrors(fieldName) ? { borderColor: '#EF4444', backgroundColor: '#FEF2F2', boxShadow: '3px 3px 0px #EF4444' } : {})
+        ...(getFieldErrors(fieldName) ? { borderColor: '#EF4444', backgroundColor: '#FEF2F2', boxShadow: '0 0 0 3px rgba(239,68,68,0.2)' } : {})
     });
 
     const headerProps = {
@@ -703,7 +748,7 @@ export function RequestCreate() {
                 type="button"
                 onClick={() => navigate(`/requests${location.state?.fromList || ''}`)}
                 style={{
-                    height: '36px', padding: '0 12px', borderRadius: 'var(--radius-sm)', border: '2px solid var(--color-border-heavy)',
+                    height: '36px', padding: '0 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)',
                     backgroundColor: 'var(--color-bg-page)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
                     fontWeight: 800, fontFamily: 'var(--font-family-display)', fontSize: '0.75rem', color: 'var(--color-text-main)'
                 }}
@@ -742,7 +787,7 @@ export function RequestCreate() {
             {!isScopeLoading && allowedPlantCodes.length === 0 && (
                 <div style={{
                     backgroundColor: '#FEF2F2', border: '2px solid #EF4444', padding: '24px', borderRadius: 'var(--radius-sm)',
-                    boxShadow: 'var(--shadow-brutal)', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', textAlign: 'center'
+                    boxShadow: 'var(--shadow-md)', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', textAlign: 'center'
                 }}>
                     <div style={{ color: '#EF4444', fontWeight: 800, fontSize: '1.25rem' }}>ACESSO RESTRITO</div>
                     <p style={{ color: 'var(--color-text-main)', fontSize: '0.875rem', maxWidth: '500px' }}>
@@ -768,7 +813,7 @@ export function RequestCreate() {
                     flexDirection: 'column', gap: '32px', opacity: isScopeLoading ? 0.5 : 1, pointerEvents: isScopeLoading ? 'none' : 'auto'
                 }}
             >
-                <section style={{ backgroundColor: 'var(--color-bg-surface)', padding: '32px', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-brutal)', border: '2px solid var(--color-border-heavy)' }}>
+                <section style={{ backgroundColor: 'var(--color-bg-surface)', padding: '32px', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', border: '1px solid var(--color-border)' }}>
                     <h2 style={sectionTitleStyle}>Dados Gerais do Pedido</h2>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -816,7 +861,7 @@ export function RequestCreate() {
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-start' }}>
                                 <div style={{ 
-                                    border: '1px solid var(--color-border-heavy)', padding: '8px 16px', textAlign: 'left', borderRadius: 'var(--radius-sm)',
+                                    border: '1px solid var(--color-border)', padding: '8px 16px', textAlign: 'left', borderRadius: 'var(--radius-sm)',
                                     backgroundColor: 'var(--color-bg-page)', cursor: 'pointer', position: 'relative', transition: 'all 0.2s ease',
                                     display: 'inline-flex', alignItems: 'center', gap: '8px', boxShadow: 'var(--shadow-sm)'
                                 }}>
@@ -834,7 +879,7 @@ export function RequestCreate() {
                                             <div key={idx} style={{ 
                                                 display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
                                                 padding: '8px 12px', backgroundColor: 'white', border: '1px solid var(--color-border)', 
-                                                borderRadius: 'var(--radius-sm)', boxShadow: '1px 1px 0px var(--color-border)'
+                                                borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-sm)'
                                             }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                                                     <Paperclip size={14} style={{ flexShrink: 0 }} />
@@ -876,9 +921,9 @@ export function RequestCreate() {
                                          marginBottom: '16px',
                                          padding: '24px',
                                          backgroundColor: 'var(--color-bg-surface)',
-                                         border: '2px solid var(--color-primary)',
+                                         border: '1px solid var(--color-border)',
                                          borderRadius: 'var(--radius-sm)',
-                                         boxShadow: 'var(--shadow-brutal-sm)'
+                                         boxShadow: 'var(--shadow-sm)'
                                      }}>
                                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                                              <div>
@@ -995,7 +1040,7 @@ export function RequestCreate() {
                                  >
                                      <div style={{ 
                                          marginBottom: '32px', padding: '24px', backgroundColor: 'var(--color-bg-surface)', 
-                                         border: '2px solid var(--color-primary)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-brutal-sm)',
+                                         border: '1px solid var(--color-border)',  borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-sm)',
                                          position: 'relative'
                                      }}>
                                          <AnimatePresence>
@@ -1104,47 +1149,75 @@ export function RequestCreate() {
                                                  style={{ display: 'block' }}
                                              >
                                                  {isManualOcr ? (
-                                                     <div style={{ 
-                                                         display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-                                                         padding: '12px 16px', backgroundColor: '#FDF4FF', border: '1px solid #F0ABFC', 
-                                                         borderRadius: 'var(--radius-sm)', marginBottom: '16px' 
-                                                     }}>
-                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#86198F' }}>
-                                                             <Edit2 size={16} />
-                                                             <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>INSCRIÇÃO MANUAL DA FATURA</span>
-                                                             <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>({ocrFile?.name})</span>
-                                                         </div>
-                                                         <button 
-                                                            type="button"
-                                                            onClick={() => { setPaymentDraft(null); setOcrFile(null); setIsManualOcr(false); }}
-                                                            style={{ fontSize: '0.7rem', fontWeight: 800, color: '#86198F', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
-                                                         >
-                                                             TROCAR ARQUIVO
-                                                         </button>
-                                                     </div>
-                                                 ) : (
-                                                     <div style={{ 
-                                                         display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-                                                         padding: '12px 16px', backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', 
-                                                         borderRadius: 'var(--radius-sm)', marginBottom: '16px' 
-                                                     }}>
-                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#166534' }}>
-                                                             <CheckCircle2 size={16} />
-                                                             <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>DADOS EXTRAÍDOS COM SUCESSO</span>
-                                                             <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>({ocrFile?.name})</span>
-                                                         </div>
-                                                         <button 
-                                                            type="button"
-                                                            onClick={() => { setPaymentDraft(null); setOcrFile(null); setIsManualOcr(false); }}
-                                                            style={{ fontSize: '0.7rem', fontWeight: 800, color: '#166534', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
-                                                         >
-                                                             TROCAR ARQUIVO
-                                                         </button>
-                                                     </div>
-                                                 )}
+                                                      <div style={{ 
+                                                          display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                                                          padding: '12px 16px', backgroundColor: '#FDF4FF', border: '1px solid #F0ABFC', 
+                                                          borderRadius: 'var(--radius-sm)', marginBottom: '16px',
+                                                          boxShadow: '2px 2px 0 #F0ABFC'
+                                                      }}>
+                                                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#86198F' }}>
+                                                              <div style={{ backgroundColor: '#FAE8FF', padding: '6px', borderRadius: '50%', display: 'flex' }}>
+                                                                <Edit2 size={16} />
+                                                              </div>
+                                                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                                <span style={{ fontSize: '0.8rem', fontWeight: 800, letterSpacing: '0.025em' }}>INSCRIÇÃO MANUAL DA FATURA</span>
+                                                                <span style={{ fontSize: '0.7rem', opacity: 0.8, fontWeight: 600 }}>Arquivo: {ocrFile?.name}</span>
+                                                              </div>
+                                                          </div>
+                                                          <button 
+                                                             type="button"
+                                                             onClick={() => { setPaymentDraft(null); setOcrFile(null); setIsManualOcr(false); }}
+                                                             style={{ 
+                                                                display: 'flex', alignItems: 'center', gap: '6px',
+                                                                fontSize: '0.75rem', fontWeight: 900, color: '#86198F', 
+                                                                backgroundColor: 'white', border: '2px solid #F0ABFC', 
+                                                                padding: '6px 12px', borderRadius: '6px', cursor: 'pointer',
+                                                                boxShadow: '2px 2px 0 #F0ABFC', transition: 'all 0.1s ease',
+                                                                textTransform: 'uppercase'
+                                                             }}
+                                                             onMouseOver={(e) => { e.currentTarget.style.transform = 'translate(-1px, -1px)'; e.currentTarget.style.boxShadow = '3px 3px 0 #F0ABFC'; }}
+                                                             onMouseOut={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '2px 2px 0 #F0ABFC'; }}
+                                                          >
+                                                              <ArrowLeft size={14} /> VOLTAR / TROCAR DOCUMENTO
+                                                          </button>
+                                                      </div>
+                                                  ) : (
+                                                      <div style={{ 
+                                                          display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                                                          padding: '12px 16px', backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', 
+                                                          borderRadius: 'var(--radius-sm)', marginBottom: '16px',
+                                                          boxShadow: '2px 2px 0 #BBF7D0'
+                                                      }}>
+                                                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#166534' }}>
+                                                              <div style={{ backgroundColor: '#DCFCE7', padding: '6px', borderRadius: '50%', display: 'flex' }}>
+                                                                <CheckCircle2 size={16} />
+                                                              </div>
+                                                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                                <span style={{ fontSize: '0.8rem', fontWeight: 800, letterSpacing: '0.025em' }}>DADOS EXTRAÍDOS COM SUCESSO via OCR</span>
+                                                                <span style={{ fontSize: '0.7rem', opacity: 0.8, fontWeight: 600 }}>Arquivo: {ocrFile?.name}</span>
+                                                              </div>
+                                                          </div>
+                                                          <button 
+                                                             type="button"
+                                                             onClick={() => { setPaymentDraft(null); setOcrFile(null); setIsManualOcr(false); }}
+                                                             style={{ 
+                                                                display: 'flex', alignItems: 'center', gap: '6px',
+                                                                fontSize: '0.75rem', fontWeight: 900, color: '#166534', 
+                                                                backgroundColor: 'white', border: '2px solid #BBF7D0', 
+                                                                padding: '6px 12px', borderRadius: '6px', cursor: 'pointer',
+                                                                boxShadow: '2px 2px 0 #BBF7D0', transition: 'all 0.1s ease',
+                                                                textTransform: 'uppercase'
+                                                             }}
+                                                             onMouseOver={(e) => { e.currentTarget.style.transform = 'translate(-1px, -1px)'; e.currentTarget.style.boxShadow = '3px 3px 0 #BBF7D0'; }}
+                                                             onMouseOut={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '2px 2px 0 #BBF7D0'; }}
+                                                          >
+                                                              <ArrowLeft size={14} /> VOLTAR / TROCAR DOCUMENTO
+                                                          </button>
+                                                      </div>
+                                                  )}
 
                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-                                                      <label style={{ ...labelStyle, marginBottom: 0, gridColumn: '1 / -1' }}>
+                                                      <div style={{ ...labelStyle, marginBottom: 0, gridColumn: '1 / -1' }}>
                                                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                               <span>Fornecedor</span>
                                                               <button
@@ -1177,7 +1250,7 @@ export function RequestCreate() {
                                                               <motion.div 
                                                                   initial={{ opacity: 0, height: 0 }} 
                                                                   animate={{ opacity: 1, height: 'auto' }}
-                                                                  style={{ marginTop: '8px', padding: '12px', backgroundColor: '#fff7ed', border: '2px solid #fdba74', borderRadius: 'var(--radius-sm)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: 'var(--shadow-brutal-sm)' }}
+                                                                  style={{ marginTop: '8px', padding: '12px', backgroundColor: '#fff7ed', border: '2px solid #fdba74', borderRadius: 'var(--radius-sm)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: 'var(--shadow-sm)' }}
                                                               >
                                                                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                                                       <AlertCircle size={18} color="#c2410c" style={{ flexShrink: 0 }} />
@@ -1202,7 +1275,7 @@ export function RequestCreate() {
                                                                   </button>
                                                               </motion.div>
                                                           )}
-                                                      </label>
+                                                      </div>
                                                      <label style={{ ...labelStyle, marginBottom: 0 }}>
                                                          Nº Documento
                                                          <input type="text" value={String(paymentDraft.documentNumber || '')} onChange={(e) => handleUpdateOcrDraft('documentNumber', e.target.value)} style={inputStyle} />
@@ -1288,7 +1361,38 @@ export function RequestCreate() {
                                                                                 />
                                                                             </td>
                                                                             <td style={{ padding: '4px 8px' }}>
-                                                                                <input type="text" value={String(item.description || '')} onChange={(e) => handleUpdateOcrItem(idx, 'description', e.target.value)} style={{ ...inputStyle, padding: '6px 8px', marginTop: 0 }} />
+                                                                                <CatalogItemAutocomplete
+                                                                                    value={item.itemCatalogCode ? `[${item.itemCatalogCode}] ${item.description}` : (item.description || '')}
+                                                                                    itemCatalogId={item.itemCatalogId || null}
+                                                                                    onChange={(desc, catId, catCode, defaultUnitId) => handleCatalogSelectOcrItem(idx, desc, catId, catCode, defaultUnitId)}
+                                                                                    placeholder="Pesquisar item do catálogo ou digitar descrição..."
+                                                                                    style={{ padding: '6px 8px', marginTop: 0 }}
+                                                                                />
+                                                                                {/* Auto-match status badge */}
+                                                                                {item.autoMatchStatus === 'AUTO_MATCHED' && (
+                                                                                    <div style={{
+                                                                                        display: 'flex', alignItems: 'center', gap: '4px',
+                                                                                        fontSize: '0.65rem', fontWeight: 600, color: '#059669',
+                                                                                        backgroundColor: '#ECFDF5', border: '1px solid #A7F3D0',
+                                                                                        borderRadius: 'var(--radius-sm)', padding: '2px 6px', marginTop: '3px',
+                                                                                        width: 'fit-content'
+                                                                                    }}>
+                                                                                        <CheckCircle2 size={11} />
+                                                                                        Correspondência automática{item.itemCatalogCode ? ` — ${item.itemCatalogCode}` : ''}
+                                                                                    </div>
+                                                                                )}
+                                                                                {item.autoMatchStatus === 'NEEDS_REVIEW' && !item.itemCatalogId && (
+                                                                                    <div style={{
+                                                                                        display: 'flex', alignItems: 'center', gap: '4px',
+                                                                                        fontSize: '0.65rem', fontWeight: 600, color: '#D97706',
+                                                                                        backgroundColor: '#FFFBEB', border: '1px solid #FDE68A',
+                                                                                        borderRadius: 'var(--radius-sm)', padding: '2px 6px', marginTop: '3px',
+                                                                                        width: 'fit-content'
+                                                                                    }}>
+                                                                                        <AlertCircle size={11} />
+                                                                                        Item não catalogado — verifique manualmente
+                                                                                    </div>
+                                                                                )}
                                                                             </td>
                                                                          <td style={{ padding: '4px 8px' }}>
                                                                              <select 
@@ -1553,6 +1657,52 @@ export function RequestCreate() {
                     </div>
                 )}
             </AnimatePresence>
+
+            {/* Reconciliation Modal */}
+            <CatalogItemReconciliationModal
+                isOpen={reconciliation.isModalOpen}
+                onClose={reconciliation.closeModal}
+                classifiedItems={reconciliation.classifiedItems}
+                onResolveAll={(resolutions: ItemResolution[]) => {
+                    reconciliation.resolveAll(resolutions);
+                    // Apply resolutions back to source items
+                    resolutions.forEach(r => {
+                        if (r.linkedCatalogId) {
+                            if (Number(formData.requestTypeId) === 2 && paymentDraft) {
+                                handleCatalogSelectOcrItem(
+                                    r.itemIndex,
+                                    r.linkedDescription || paymentDraft.items[r.itemIndex]?.description || '',
+                                    r.linkedCatalogId,
+                                    r.linkedCatalogCode || null,
+                                    r.defaultUnitId || null
+                                );
+                            } else {
+                                handleCatalogSelectRequesterItem(
+                                    r.itemIndex,
+                                    r.linkedDescription || requesterItems[r.itemIndex]?.description || '',
+                                    r.linkedCatalogId,
+                                    r.linkedCatalogCode || null,
+                                    r.defaultUnitId || null
+                                );
+                            }
+                        }
+                    });
+                }}
+            />
+
+            {/* Reconciliation Warning Dialog */}
+            <ReconciliationWarningDialog
+                isOpen={showReconciliationWarning}
+                unresolvedCount={reconciliation.unresolvedCount}
+                onReviewItems={() => {
+                    setShowReconciliationWarning(false);
+                    reconciliation.openModal();
+                }}
+                onCancel={() => {
+                    setShowReconciliationWarning(false);
+                    setLoading(false);
+                }}
+            />
         </motion.div >
     );
 }

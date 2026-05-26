@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { Upload, FileText, X } from 'lucide-react';
+import { Upload, FileText, X, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DropdownPortal } from '../ui/DropdownPortal';
 import { Z_INDEX } from '../../constants/ui';
 import { Feedback, FeedbackType } from '../ui/Feedback';
+import { CurrencyInput } from '../CurrencyInput';
 
 export type FinanceActionType = 'SCHEDULE' | 'PAY' | 'RETURN' | 'NOTE' | null;
 
@@ -11,7 +12,7 @@ interface FinanceActionModalProps {
     show: boolean;
     action: FinanceActionType;
     onClose: () => void;
-    onConfirm: (action: FinanceActionType, payload: { date?: string; notes?: string; file?: File | null }) => void;
+    onConfirm: (action: FinanceActionType, payload: { date?: string; notes?: string; file?: File | null; amount?: string }) => void;
     processing: boolean;
     feedback: { type: FeedbackType; message: string | null };
     onCloseFeedback: () => void;
@@ -29,6 +30,7 @@ export function FinanceActionModal({
     const [notes, setNotes] = useState('');
     const [date, setDate] = useState('');
     const [file, setFile] = useState<File | null>(null);
+    const [amount, setAmount] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleClearFile = () => {
@@ -41,6 +43,7 @@ export function FinanceActionModal({
             setNotes('');
             setDate('');
             setFile(null);
+            setAmount('');
         }
     }, [show]);
 
@@ -59,7 +62,7 @@ export function FinanceActionModal({
     const getDescription = () => {
         switch (action) {
             case 'SCHEDULE': return 'Informe a data prevista para a saída do pagamento.';
-            case 'PAY': return 'Deseja confirmar que o pagamento deste pedido foi liquidado?';
+            case 'PAY': return 'Informe o montante efetivamente pago e anexe o comprovante de pagamento.';
             case 'RETURN': return 'Descreva o motivo da devolução para que o setor de Compras possa realizar os ajustes necessários na P.O.';
             case 'NOTE': return 'Registre uma observação financeira sobre este pedido. Esta nota ficará visível no histórico de auditoria.';
             default: return '';
@@ -72,7 +75,7 @@ export function FinanceActionModal({
     // Determine button disabled state
     const isConfirmDisabled = processing || 
         (action === 'SCHEDULE' && !date) || 
-        (action === 'PAY' && !file) ||
+        (action === 'PAY' && (!file || !amount || parseFloat(amount) <= 0 || !date)) ||
         (isCommentRequired && !notes.trim());
 
     const inputStyle = {
@@ -86,6 +89,13 @@ export function FinanceActionModal({
         color: 'var(--color-text-main)',
         transition: 'all 0.2s ease',
         fontFamily: 'inherit'
+    };
+
+    const formatDate = (d: string) => {
+        if (!d) return '';
+        const [year, month, day] = d.split('-');
+        if (!year || !month || !day) return d;
+        return `${day}/${month}/${year}`;
     };
 
     return (
@@ -119,8 +129,8 @@ export function FinanceActionModal({
                             borderRadius: 'var(--radius-md)',
                             maxWidth: '500px',
                             width: '100%',
-                            border: '4px solid var(--color-border-heavy)',
-                            boxShadow: 'var(--shadow-brutal)'
+                            border: '1px solid var(--color-border)',
+                            boxShadow: 'var(--shadow-md)'
                         }}
                     >
                         <h2 style={{ fontSize: '1.5rem', fontWeight: 900, marginBottom: '24px', color: 'var(--color-text-main)', textTransform: 'uppercase', letterSpacing: '-0.02em' }}>
@@ -136,12 +146,23 @@ export function FinanceActionModal({
                                 <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
                                     Data de Agendamento (obrigatório)
                                 </label>
-                                <input
-                                    type="date"
-                                    value={date}
-                                    onChange={(e) => setDate(e.target.value)}
-                                    style={inputStyle}
-                                />
+                                <div style={{ position: 'relative' }}>
+                                    <input
+                                        type="date"
+                                        value={date}
+                                        onChange={(e) => setDate(e.target.value)}
+                                        onClick={(e) => {
+                                            if ('showPicker' in HTMLInputElement.prototype) {
+                                                try { e.currentTarget.showPicker(); } catch (err) {}
+                                            }
+                                        }}
+                                        style={{ ...inputStyle, opacity: 0, position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 2, cursor: 'pointer', padding: 0 }}
+                                    />
+                                    <div style={{ ...inputStyle, position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: date ? 'var(--color-text-main)' : '#94a3b8' }}>
+                                        <span>{date ? formatDate(date) : 'DD/MM/YYYY'}</span>
+                                        <Calendar size={18} color="#94a3b8" />
+                                    </div>
+                                </div>
                                 <label style={{ display: 'block', marginTop: '24px', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
                                     Comprovante de Agendamento (opcional)
                                 </label>
@@ -159,10 +180,19 @@ export function FinanceActionModal({
                                     </div>
                                 ) : (
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', backgroundColor: 'var(--color-bg-page)', border: '2px solid var(--color-text-main)', borderRadius: 'var(--radius-md)' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
                                             <FileText size={20} color="var(--color-text-main)" />
-                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                <span style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '0.85rem' }}>{file.name}</span>
+                                            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                                                <span style={{ 
+                                                    fontWeight: 800, 
+                                                    color: 'var(--color-text-main)', 
+                                                    fontSize: '0.85rem',
+                                                    whiteSpace: 'nowrap',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis'
+                                                }}>
+                                                    {file.name}
+                                                </span>
                                                 <span style={{ fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>{(file.size / 1024 / 1024).toFixed(2)} MB</span>
                                             </div>
                                         </div>
@@ -171,6 +201,48 @@ export function FinanceActionModal({
                                         </button>
                                     </div>
                                 )}
+                            </div>
+                        )}
+
+                        {action === 'PAY' && (
+                            <div style={{ marginBottom: '24px' }}>
+                                <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
+                                    Data do Pagamento (obrigatório)
+                                </label>
+                                <div style={{ position: 'relative' }}>
+                                    <input
+                                        type="date"
+                                        value={date}
+                                        onChange={(e) => setDate(e.target.value)}
+                                        onClick={(e) => {
+                                            if ('showPicker' in HTMLInputElement.prototype) {
+                                                try { e.currentTarget.showPicker(); } catch (err) {}
+                                            }
+                                        }}
+                                        style={{ ...inputStyle, opacity: 0, position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 2, cursor: 'pointer', padding: 0 }}
+                                    />
+                                    <div style={{ ...inputStyle, position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: date ? 'var(--color-text-main)' : '#94a3b8' }}>
+                                        <span>{date ? formatDate(date) : 'DD/MM/YYYY'}</span>
+                                        <Calendar size={18} color="#94a3b8" />
+                                    </div>
+                                </div>
+                                <div style={{ marginTop: '6px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                                    Informe a data constante no comprovativo de pagamento.
+                                </div>
+                            </div>
+                        )}
+
+                        {action === 'PAY' && (
+                            <div style={{ marginBottom: '24px' }}>
+                                <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
+                                    Montante Efetivamente Pago (obrigatório)
+                                </label>
+                                <CurrencyInput
+                                    value={amount}
+                                    onChange={(val) => setAmount(val)}
+                                    placeholder="0,00"
+                                    style={inputStyle}
+                                />
                             </div>
                         )}
 
@@ -193,10 +265,19 @@ export function FinanceActionModal({
                                     </div>
                                 ) : (
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', backgroundColor: 'var(--color-bg-page)', border: '2px solid var(--color-text-main)', borderRadius: 'var(--radius-md)' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
                                             <FileText size={20} color="var(--color-text-main)" />
-                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                <span style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '0.85rem' }}>{file.name}</span>
+                                            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                                                <span style={{ 
+                                                    fontWeight: 800, 
+                                                    color: 'var(--color-text-main)', 
+                                                    fontSize: '0.85rem',
+                                                    whiteSpace: 'nowrap',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis'
+                                                }}>
+                                                    {file.name}
+                                                </span>
                                                 <span style={{ fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>{(file.size / 1024 / 1024).toFixed(2)} MB</span>
                                             </div>
                                         </div>
@@ -237,7 +318,7 @@ export function FinanceActionModal({
                             <button
                                 onClick={onClose}
                                 style={{
-                                    height: '48px', padding: '0 32px', background: 'none', border: '2px solid var(--color-border-heavy)',
+                                    height: '48px', padding: '0 32px', background: 'none', border: '1px solid var(--color-border)',
                                     cursor: 'pointer', fontWeight: 800, borderRadius: 'var(--radius-sm)',
                                     fontFamily: 'var(--font-family-display)', fontSize: '0.875rem'
                                 }}
@@ -246,7 +327,7 @@ export function FinanceActionModal({
                             </button>
                             <button
                                 disabled={isConfirmDisabled}
-                                onClick={() => onConfirm(action, { date, notes, file })}
+                                onClick={() => onConfirm(action, { date, notes, file, amount })}
                                 style={{
                                     height: '48px',
                                     padding: '0 40px',
@@ -256,7 +337,7 @@ export function FinanceActionModal({
                                     cursor: isConfirmDisabled ? 'not-allowed' : 'pointer',
                                     fontWeight: 800,
                                     borderRadius: 'var(--radius-sm)',
-                                    boxShadow: isConfirmDisabled ? 'none' : '4px 4px 0 var(--color-accent)',
+                                    boxShadow: isConfirmDisabled ? 'none' : 'var(--shadow-md)',
                                     fontFamily: 'var(--font-family-display)',
                                     fontSize: '0.875rem',
                                     opacity: isConfirmDisabled ? 0.6 : 1

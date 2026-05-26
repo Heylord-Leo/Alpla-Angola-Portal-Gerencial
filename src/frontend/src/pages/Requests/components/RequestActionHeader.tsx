@@ -46,7 +46,7 @@ export const RequestActionHeader: React.FC<RequestActionHeaderProps> = ({
         <div style={isDrawerMode ? {
             backgroundColor: 'var(--color-bg-page)',
             padding: '16px',
-            borderBottom: '2px solid var(--color-border-heavy)',
+            borderBottom: '1px solid var(--color-border)',
             display: 'flex',
             flexDirection: 'column',
             marginBottom: '16px',
@@ -57,7 +57,7 @@ export const RequestActionHeader: React.FC<RequestActionHeaderProps> = ({
             backgroundColor: 'var(--color-bg-page)',
             margin: '-1rem -24px 0 -24px',
             padding: '8px 24px 0 24px',
-            borderBottom: '2px solid var(--color-border-heavy)',
+            borderBottom: '1px solid var(--color-border)',
             display: 'flex',
             flexDirection: 'column',
             transition: 'all 0.2s ease',

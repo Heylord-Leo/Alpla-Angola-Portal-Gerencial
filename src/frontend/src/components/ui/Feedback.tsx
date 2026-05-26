@@ -88,7 +88,7 @@ export function Feedback({ type, message, autoCloseMs, onClose, isFixed = false 
           color: style.text,
           borderRadius: 'var(--radius-sm)',
           borderLeft: `4px solid ${style.border}`,
-          boxShadow: 'var(--shadow-brutal)',
+          boxShadow: 'var(--shadow-sm)',
           display: 'flex',
           alignItems: 'flex-start',
           gap: '12px',

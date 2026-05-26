@@ -1,0 +1,75 @@
+/* ─── HR Badges Sub-Navigation ─── */
+/* Mirrors the hr-landing.css tab pattern for the nested badge management area. */
+
+.hr-badges-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.hr-badges-tab-nav {
+    display: flex;
+    gap: 2px;
+    padding: 3px;
+    background: var(--color-surface-secondary, rgba(0,0,0,0.03));
+    border-radius: var(--radius-md, 8px);
+    margin-bottom: 20px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.hr-badges-tab-link {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 16px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--color-text-muted, #6b7280);
+    text-decoration: none;
+    border-radius: var(--radius-sm, 6px);
+    transition: color 0.2s, background 0.2s;
+    white-space: nowrap;
+    cursor: pointer;
+    border: none;
+    background: none;
+}
+
+.hr-badges-tab-link:hover {
+    color: var(--color-text-primary, #1e293b);
+    background: var(--color-surface-hover, rgba(0,0,0,0.04));
+}
+
+.hr-badges-tab-link.active {
+    color: var(--color-primary, #2563eb);
+    background: var(--color-surface, #fff);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.hr-badges-tab-indicator {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 20px;
+    height: 2px;
+    background: var(--color-primary, #2563eb);
+    border-radius: 2px;
+}
+
+.hr-badges-content {
+    min-height: 300px;
+}
+
+/* ─── Responsive ─── */
+@media (max-width: 768px) {
+    .hr-badges-tab-nav {
+        gap: 1px;
+        padding: 2px;
+    }
+    .hr-badges-tab-link {
+        padding: 7px 10px;
+        font-size: 0.72rem;
+    }
+}

@@ -24,8 +24,13 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
     {
         var request = await _context.Requests
             .Include(r => r.LineItems)
+                .ThenInclude(li => li.CostCenter)
             .Include(r => r.Department)
             .Include(r => r.Currency)
+            .Include(r => r.Plant)
+            .Include(r => r.Company)
+            .Include(r => r.Quotations)
+                .ThenInclude(q => q.Items)
             .FirstOrDefaultAsync(r => r.Id == requestId);
 
         if (request == null) return new ApprovalIntelligenceDto { RequestId = requestId };
@@ -45,7 +50,10 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
             result.Items.Add(itemIntel);
         }
 
-        // 3. Overall Alerts (Aggregated from items + global rules)
+        // 3. Budget Availability
+        result.BudgetAvailability = await GetBudgetAvailabilityAsync(request);
+
+        // 4. Overall Alerts (Aggregated from items + global rules)
         result.OverallAlerts = GenerateOverallAlerts(result, request);
 
         return result;
@@ -60,11 +68,16 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
         var validStatuses = new[] 
         { 
             RequestConstants.Statuses.FinalApproved,
+            RequestConstants.Statuses.WaitingCostCenter,
+            RequestConstants.Statuses.QuotationCompleted,
             RequestConstants.Statuses.PoIssued,
             RequestConstants.Statuses.PaymentRequestSent,
             RequestConstants.Statuses.PaymentScheduled,
             RequestConstants.Statuses.Paid,
-            RequestConstants.Statuses.PaymentCompleted
+            RequestConstants.Statuses.PaymentCompleted,
+            RequestConstants.Statuses.InFollowup,
+            RequestConstants.Statuses.Completed,
+            RequestConstants.Statuses.WaitingPoCorrection
         };
 
         var deptApprovedRequests = await _context.Requests
@@ -106,11 +119,16 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
         var validStatuses = new[] 
         { 
             RequestConstants.Statuses.FinalApproved,
+            RequestConstants.Statuses.WaitingCostCenter,
+            RequestConstants.Statuses.QuotationCompleted,
             RequestConstants.Statuses.PoIssued,
             RequestConstants.Statuses.PaymentRequestSent,
             RequestConstants.Statuses.PaymentScheduled,
             RequestConstants.Statuses.Paid,
-            RequestConstants.Statuses.PaymentCompleted
+            RequestConstants.Statuses.PaymentCompleted,
+            RequestConstants.Statuses.InFollowup,
+            RequestConstants.Statuses.Completed,
+            RequestConstants.Statuses.WaitingPoCorrection
         };
 
         // Lookup historical items with the same normalized description, same currency, and from approved requests
@@ -132,7 +150,7 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
             return new ItemIntelligenceDto
             {
                 LineItemId = item.Id,
-                Description = item.Description,
+                Description = item.Description ?? string.Empty,
                 CurrentUnitPrice = item.UnitPrice,
                 Currency = currentCurrency ?? string.Empty,
                 HasHistory = false
@@ -145,7 +163,7 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
         return new ItemIntelligenceDto
         {
             LineItemId = item.Id,
-            Description = item.Description,
+            Description = item.Description ?? string.Empty,
             CurrentUnitPrice = item.UnitPrice,
             Currency = currentCurrency ?? string.Empty,
             HasHistory = true,
@@ -221,11 +239,16 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
         var validStatuses = new[] 
         { 
             RequestConstants.Statuses.FinalApproved,
+            RequestConstants.Statuses.WaitingCostCenter,
+            RequestConstants.Statuses.QuotationCompleted,
             RequestConstants.Statuses.PoIssued,
             RequestConstants.Statuses.PaymentRequestSent,
             RequestConstants.Statuses.PaymentScheduled,
             RequestConstants.Statuses.Paid,
-            RequestConstants.Statuses.PaymentCompleted
+            RequestConstants.Statuses.PaymentCompleted,
+            RequestConstants.Statuses.InFollowup,
+            RequestConstants.Statuses.Completed,
+            RequestConstants.Statuses.WaitingPoCorrection
         };
 
         var historicalItems = await _context.RequestLineItems
@@ -253,7 +276,7 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
         return historicalItems.Select(li => new HistoricalPurchaseRecordDto
         {
             RequestId = li.RequestId,
-            RequestNumber = li.Request.RequestNumber,
+            RequestNumber = li.Request.RequestNumber ?? string.Empty,
             PurchaseDate = li.Request.CreatedAtUtc,
             SupplierName = li.SupplierName ?? "N/D",
             UnitPrice = li.UnitPrice,
@@ -296,6 +319,7 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
             RequestConstants.Statuses.AreaAdjustment,
             RequestConstants.Statuses.FinalAdjustment,
             RequestConstants.Statuses.InFollowup,
+            RequestConstants.Statuses.Completed,
             RequestConstants.Statuses.WaitingCostCenter,
             RequestConstants.Statuses.WaitingPoCorrection
         };
@@ -303,7 +327,8 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
         var paidStatuses = new[] 
         { 
             RequestConstants.Statuses.Paid,
-            RequestConstants.Statuses.PaymentCompleted
+            RequestConstants.Statuses.PaymentCompleted,
+            RequestConstants.Statuses.Completed
         };
 
         // Needs to have been approved
@@ -378,5 +403,342 @@ public class ApprovalIntelligenceService : IApprovalIntelligenceService
             Scope = scope,
             DataPoints = points
         };
+    }
+
+    // ─── Budget Availability Calculation ─────────────────────────────────────
+
+    /// <summary>
+    /// Committed statuses aligned with FinanceBudgetController.CommittedStatuses.
+    /// </summary>
+    private static readonly string[] BudgetCommittedStatuses = new[]
+    {
+        RequestConstants.Statuses.FinalApproved,
+        RequestConstants.Statuses.WaitingCostCenter,
+        RequestConstants.Statuses.QuotationCompleted,
+        RequestConstants.Statuses.PoIssued,
+        RequestConstants.Statuses.PaymentRequestSent,
+        RequestConstants.Statuses.PaymentScheduled,
+        RequestConstants.Statuses.Paid,
+        RequestConstants.Statuses.PaymentCompleted,
+        RequestConstants.Statuses.InFollowup,
+        RequestConstants.Statuses.Completed,
+        RequestConstants.Statuses.WaitingPoCorrection
+    };
+
+    private async Task<BudgetAvailabilityDto> GetBudgetAvailabilityAsync(Domain.Entities.Request request)
+    {
+        var fiscalYear = DateTime.UtcNow.Year;
+        var currencyCode = request.Currency?.Code ?? "AOA";
+
+        // Determine distinct cost centers from request line items
+        var lineItems = request.LineItems.Where(li => !li.IsDeleted).ToList();
+        var distinctCCIds = lineItems.Select(li => li.CostCenterId).Distinct().ToList();
+
+        // Load all budget lines for this department/company/plant/currency/year
+        var budgetLines = await _context.AnnualBudgets
+            .Include(ab => ab.CostCenter)
+            .Include(ab => ab.Department)
+            .Include(ab => ab.Plant)
+            .Include(ab => ab.Company)
+            .Include(ab => ab.Currency)
+            .Where(ab => ab.Year == fiscalYear
+                      && ab.IsActive
+                      && ab.DepartmentId == request.DepartmentId
+                      && ab.CompanyId == request.CompanyId)
+            .ToListAsync();
+
+        // No budget configured at all
+        if (!budgetLines.Any())
+        {
+            return new BudgetAvailabilityDto
+            {
+                HasBudgetConfig = false,
+                MatchLevel = "NONE",
+                FiscalYear = fiscalYear,
+                CurrencyCode = currencyCode,
+                DepartmentName = request.Department?.Name,
+                PlantName = request.Plant?.Name,
+                CompanyName = request.Company?.Name,
+                InfoMessage = "Orçamento não configurado para esta combinação."
+            };
+        }
+
+        // Check currency match — budget may be in a different currency
+        var matchingCurrencyBudgets = budgetLines
+            .Where(ab => ab.Currency?.Code == currencyCode)
+            .ToList();
+
+        if (!matchingCurrencyBudgets.Any())
+        {
+            var budgetCurrency = budgetLines.First().Currency?.Code ?? "N/D";
+            return new BudgetAvailabilityDto
+            {
+                HasBudgetConfig = true,
+                MatchLevel = "NONE",
+                FiscalYear = fiscalYear,
+                CurrencyCode = currencyCode,
+                DepartmentName = request.Department?.Name,
+                PlantName = request.Plant?.Name,
+                CompanyName = request.Company?.Name,
+                Status = "WARNING",
+                InfoMessage = $"Moeda do pedido ({currencyCode}) diferente da moeda do orçamento ({budgetCurrency})."
+            };
+        }
+
+        // Optionally narrow by plant
+        var plantBudgets = request.PlantId.HasValue
+            ? matchingCurrencyBudgets.Where(ab => ab.PlantId == request.PlantId.Value).ToList()
+            : matchingCurrencyBudgets;
+
+        if (!plantBudgets.Any()) plantBudgets = matchingCurrencyBudgets;
+
+        // Determine the current request's total amount
+        decimal currentRequestAmount = GetRequestEffectiveAmount(request);
+
+        // Route to the appropriate calculation strategy
+        if (distinctCCIds.Count == 1)
+        {
+            // Single cost center (or all items with no CC)
+            return await CalculateSingleCCBudget(request, plantBudgets, distinctCCIds[0], currentRequestAmount, fiscalYear, currencyCode);
+        }
+        else
+        {
+            // Multiple cost centers — provide summary + per-CC breakdown
+            return await CalculateMultiCCBudget(request, plantBudgets, distinctCCIds, lineItems, currentRequestAmount, fiscalYear, currencyCode);
+        }
+    }
+
+    private async Task<BudgetAvailabilityDto> CalculateSingleCCBudget(
+        Domain.Entities.Request request,
+        List<Domain.Entities.AnnualBudget> plantBudgets,
+        int? costCenterId,
+        decimal currentRequestAmount,
+        int fiscalYear,
+        string currencyCode)
+    {
+        // Try to find budget line for the specific cost center
+        Domain.Entities.AnnualBudget? budgetLine = null;
+        string matchLevel = "NONE";
+
+        if (costCenterId.HasValue)
+        {
+            budgetLine = plantBudgets.FirstOrDefault(ab => ab.CostCenterId == costCenterId.Value);
+            if (budgetLine != null) matchLevel = "COST_CENTER";
+        }
+
+        // Fallback: department general (CostCenterId = null)
+        if (budgetLine == null)
+        {
+            budgetLine = plantBudgets.FirstOrDefault(ab => ab.CostCenterId == null);
+            if (budgetLine != null) matchLevel = "DEPARTMENT_GENERAL";
+        }
+
+        if (budgetLine == null)
+        {
+            return new BudgetAvailabilityDto
+            {
+                HasBudgetConfig = false,
+                MatchLevel = "NONE",
+                FiscalYear = fiscalYear,
+                CurrencyCode = currencyCode,
+                CurrentRequestAmount = currentRequestAmount,
+                DepartmentName = request.Department?.Name,
+                PlantName = request.Plant?.Name,
+                CompanyName = request.Company?.Name,
+                InfoMessage = "Orçamento não configurado para esta combinação."
+            };
+        }
+
+        // Calculate committed amount (excluding current request)
+        decimal committed = await CalculateCommittedForBudgetLine(
+            budgetLine.DepartmentId,
+            matchLevel == "COST_CENTER" ? costCenterId : null,
+            request.CurrencyId ?? budgetLine.CurrencyId,
+            fiscalYear,
+            request.Id);
+
+        return BuildResult(budgetLine, committed, currentRequestAmount, matchLevel, fiscalYear, currencyCode, request);
+    }
+
+    private async Task<BudgetAvailabilityDto> CalculateMultiCCBudget(
+        Domain.Entities.Request request,
+        List<Domain.Entities.AnnualBudget> plantBudgets,
+        List<int?> distinctCCIds,
+        List<Domain.Entities.RequestLineItem> lineItems,
+        decimal currentRequestAmount,
+        int fiscalYear,
+        string currencyCode)
+    {
+        // Aggregate: use department-general budget as the summary level
+        var generalBudget = plantBudgets.FirstOrDefault(ab => ab.CostCenterId == null);
+        var totalBudget = generalBudget?.TotalAmount ?? plantBudgets.Sum(ab => ab.TotalAmount);
+
+        // Calculate total committed across all CCs for this department (excluding current request)
+        decimal totalCommitted = await CalculateCommittedForBudgetLine(
+            request.DepartmentId, null, request.CurrencyId ?? 0, fiscalYear, request.Id);
+
+        // Build per-CC breakdown
+        var breakdown = new List<BudgetCostCenterBreakdownDto>();
+        foreach (var ccId in distinctCCIds)
+        {
+            var ccItems = lineItems.Where(li => li.CostCenterId == ccId).ToList();
+            decimal ccRequestAmount = ccItems.Sum(li => li.TotalAmount);
+            var ccBudgetLine = ccId.HasValue
+                ? plantBudgets.FirstOrDefault(ab => ab.CostCenterId == ccId.Value)
+                : generalBudget;
+
+            decimal ccCommitted = ccBudgetLine != null
+                ? await CalculateCommittedForBudgetLine(request.DepartmentId, ccId, request.CurrencyId ?? 0, fiscalYear, request.Id)
+                : 0;
+
+            decimal ccAnnual = ccBudgetLine?.TotalAmount ?? 0;
+            decimal ccAvailAfter = ccAnnual - ccCommitted - ccRequestAmount;
+            decimal ccUtil = ccAnnual > 0 ? ((ccCommitted + ccRequestAmount) / ccAnnual) * 100 : 0;
+
+            breakdown.Add(new BudgetCostCenterBreakdownDto
+            {
+                CostCenterId = ccId,
+                CostCenterName = ccId.HasValue
+                    ? (ccItems.FirstOrDefault()?.CostCenter?.Name ?? $"CC {ccId}")
+                    : "Não Alocado",
+                HasBudgetLine = ccBudgetLine != null,
+                AnnualBudget = ccAnnual,
+                CommittedAmount = ccCommitted,
+                RequestAmountInCC = ccRequestAmount,
+                AvailableAfter = ccAvailAfter,
+                Status = DeriveStatus(ccUtil),
+                UtilizationPercent = Math.Round(ccUtil, 1)
+            });
+        }
+
+        decimal availBefore = totalBudget - totalCommitted;
+        decimal availAfter = availBefore - currentRequestAmount;
+        decimal utilPct = totalBudget > 0 ? ((totalCommitted + currentRequestAmount) / totalBudget) * 100 : 0;
+
+        return new BudgetAvailabilityDto
+        {
+            HasBudgetConfig = true,
+            MatchLevel = "MULTI_CC",
+            AnnualBudget = totalBudget,
+            CommittedAmount = totalCommitted,
+            AvailableBefore = availBefore,
+            CurrentRequestAmount = currentRequestAmount,
+            AvailableAfter = availAfter,
+            CurrencyCode = currencyCode,
+            DepartmentName = request.Department?.Name,
+            CostCenterName = "Múltiplos CCs",
+            PlantName = request.Plant?.Name,
+            CompanyName = request.Company?.Name,
+            FiscalYear = fiscalYear,
+            Status = DeriveStatus(utilPct),
+            UtilizationPercent = Math.Round(utilPct, 1),
+            CostCenterBreakdown = breakdown
+        };
+    }
+
+    /// <summary>
+    /// Calculates the committed amount for a given department (and optionally cost center),
+    /// excluding the current request to prevent double-counting.
+    /// </summary>
+    private async Task<decimal> CalculateCommittedForBudgetLine(
+        int departmentId, int? costCenterId, int currencyId, int fiscalYear, Guid excludeRequestId)
+    {
+        var committedRequests = await _context.Requests
+            .Include(r => r.Status)
+            .Include(r => r.LineItems)
+            .Include(r => r.Quotations)
+                .ThenInclude(q => q.Items)
+            .Where(r => r.DepartmentId == departmentId
+                     && r.CurrencyId == currencyId
+                     && r.CreatedAtUtc.Year == fiscalYear
+                     && !r.IsCancelled
+                     && r.Id != excludeRequestId
+                     && BudgetCommittedStatuses.Contains(r.Status!.Code))
+            .ToListAsync();
+
+        decimal total = 0;
+        foreach (var req in committedRequests)
+        {
+            if (costCenterId.HasValue)
+            {
+                // Only sum line items attributed to this specific cost center
+                var selectedQ = req.SelectedQuotationId.HasValue
+                    ? req.Quotations.FirstOrDefault(q => q.Id == req.SelectedQuotationId.Value)
+                    : null;
+
+                foreach (var li in req.LineItems.Where(li => li.CostCenterId == costCenterId.Value))
+                {
+                    decimal amount = li.TotalAmount;
+                    if (selectedQ != null)
+                    {
+                        var qItem = selectedQ.Items.FirstOrDefault(qi => qi.LineNumber == li.LineNumber);
+                        if (qItem != null) amount = qItem.LineTotal;
+                    }
+                    total += amount;
+                }
+            }
+            else
+            {
+                // Department-level: sum all line items
+                total += GetRequestEffectiveAmount(req);
+            }
+        }
+        return total;
+    }
+
+    /// <summary>
+    /// Gets the effective total amount for a request, preferring the selected quotation total.
+    /// </summary>
+    private static decimal GetRequestEffectiveAmount(Domain.Entities.Request request)
+    {
+        if (request.SelectedQuotationId.HasValue)
+        {
+            var selectedQ = request.Quotations.FirstOrDefault(q => q.Id == request.SelectedQuotationId.Value);
+            if (selectedQ != null) return selectedQ.TotalAmount;
+        }
+        return request.EstimatedTotalAmount;
+    }
+
+    private static BudgetAvailabilityDto BuildResult(
+        Domain.Entities.AnnualBudget budgetLine,
+        decimal committed,
+        decimal currentRequestAmount,
+        string matchLevel,
+        int fiscalYear,
+        string currencyCode,
+        Domain.Entities.Request request)
+    {
+        decimal availBefore = budgetLine.TotalAmount - committed;
+        decimal availAfter = availBefore - currentRequestAmount;
+        decimal utilPct = budgetLine.TotalAmount > 0
+            ? ((committed + currentRequestAmount) / budgetLine.TotalAmount) * 100
+            : 0;
+
+        return new BudgetAvailabilityDto
+        {
+            HasBudgetConfig = true,
+            MatchLevel = matchLevel,
+            AnnualBudget = budgetLine.TotalAmount,
+            CommittedAmount = committed,
+            AvailableBefore = availBefore,
+            CurrentRequestAmount = currentRequestAmount,
+            AvailableAfter = availAfter,
+            CurrencyCode = currencyCode,
+            DepartmentName = request.Department?.Name,
+            CostCenterName = budgetLine.CostCenter?.Name ?? "Orçamento Geral",
+            PlantName = request.Plant?.Name ?? budgetLine.Plant?.Name,
+            CompanyName = request.Company?.Name ?? budgetLine.Company?.Name,
+            FiscalYear = fiscalYear,
+            Status = DeriveStatus(utilPct),
+            UtilizationPercent = Math.Round(utilPct, 1)
+        };
+    }
+
+    private static string DeriveStatus(decimal utilizationPercent)
+    {
+        return utilizationPercent > 100 ? "EXCEEDED"
+             : utilizationPercent > 90  ? "CRITICAL"
+             : utilizationPercent > 75  ? "WARNING"
+             : "OK";
     }
 }

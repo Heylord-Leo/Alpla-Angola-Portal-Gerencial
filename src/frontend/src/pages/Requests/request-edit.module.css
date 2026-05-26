@@ -1,0 +1,64 @@
+/**
+ * request-edit.module.css
+ *
+ * Phase 4A: CSS Module for shared visual styles used across
+ * RequestEdit and its extracted child components.
+ *
+ * Replaces inline style objects: inputStyle, sectionTitleStyle, labelStyle,
+ * and the field error display.
+ *
+ * Uses existing CSS custom properties from tokens.css for consistency.
+ */
+
+/* ─── Section Title ─── */
+.sectionTitle {
+    font-size: 0.85rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-primary);
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* ─── Form Label ─── */
+.formLabel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    letter-spacing: 0.02em;
+}
+
+/* ─── Form Input (base) ─── */
+.formInput {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-sm);
+    transition: all 0.2s;
+    background-color: #fcfcfc;
+}
+
+/* ─── Form Input (error state) ─── */
+.formInputError {
+    border-color: #EF4444;
+    background-color: #FEF2F2;
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.1);
+}
+
+/* ─── Field Error Message ─── */
+.fieldError {
+    color: #EF4444;
+    font-size: 0.75rem;
+    margin-top: 4px;
+    position: absolute;
+}

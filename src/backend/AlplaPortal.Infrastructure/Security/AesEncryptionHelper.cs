@@ -20,7 +20,7 @@ public static class AesEncryptionHelper
         if (string.IsNullOrEmpty(plainText))
             return string.Empty;
 
-        var key = DeriveKey(keyMaterial ?? DefaultKeyMaterial);
+        var key = DeriveKey(string.IsNullOrWhiteSpace(keyMaterial) ? DefaultKeyMaterial : keyMaterial);
 
         using var aes = Aes.Create();
         aes.Key = key;
@@ -45,7 +45,7 @@ public static class AesEncryptionHelper
         if (string.IsNullOrEmpty(cipherText))
             return string.Empty;
 
-        var key = DeriveKey(keyMaterial ?? DefaultKeyMaterial);
+        var key = DeriveKey(string.IsNullOrWhiteSpace(keyMaterial) ? DefaultKeyMaterial : keyMaterial);
         var fullCipher = Convert.FromBase64String(cipherText);
 
         using var aes = Aes.Create();

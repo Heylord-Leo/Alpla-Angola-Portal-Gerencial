@@ -1,0 +1,1309 @@
+using AlplaPortal.Application.DTOs.Integration;
+using AlplaPortal.Application.Interfaces.Integration;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
+
+namespace AlplaPortal.Infrastructure.Services.Integration;
+
+/// <summary>
+/// Innux processed attendance data — read-only.
+///
+/// Queries dbo.Alteracoes (daily attendance summary) and dbo.AlteracoesPeriodos
+/// (period breakdown) with schedule enrichment from dbo.Horarios.
+///
+/// This service is scope-agnostic: it accepts pre-scoped Innux employee IDs
+/// and does NOT apply Portal ACL. Scoping is resolved at the controller layer.
+///
+/// Query strategy:
+/// - All transactional queries require date-range filtering
+/// - All reference joins use LEFT JOIN (no FK constraints in Innux)
+/// - Time values are converted from Innux datetime-as-duration via InnuxTimeHelper
+/// - Results are cached with 5-minute TTL for calendar queries
+///
+/// Raw punches (TerminaisMarcacoes) for drill-down are also handled here
+/// to keep the day-detail query cohesive.
+///
+/// Read-only: SELECT only, parameterized queries. No writes to Innux.
+/// </summary>
+public class InnuxAttendanceService : IInnuxAttendanceService
+{
+    private readonly InnuxConnectionFactory _connectionFactory;
+    private readonly IMemoryCache _cache;
+    private readonly ILogger<InnuxAttendanceService> _logger;
+
+    private static readonly TimeSpan CalendarCacheDuration = TimeSpan.FromMinutes(5);
+
+    public InnuxAttendanceService(
+        InnuxConnectionFactory connectionFactory,
+        IMemoryCache cache,
+        ILogger<InnuxAttendanceService> logger)
+    {
+        _connectionFactory = connectionFactory;
+        _cache = cache;
+        _logger = logger;
+    }
+
+    /// <inheritdoc />
+    public async Task<IEnumerable<AttendanceDaySummaryDto>> GetDailyAttendanceAsync(
+        IEnumerable<int> innuxEmployeeIds,
+        DateTime startDate,
+        DateTime endDate)
+    {
+        var idList = innuxEmployeeIds.ToList();
+        if (idList.Count == 0)
+            return Enumerable.Empty<AttendanceDaySummaryDto>();
+
+        // Enforce reasonable date range (max 90 days) to prevent full-table scans
+        if ((endDate - startDate).TotalDays > 90)
+            throw new ArgumentException("Date range cannot exceed 90 days.");
+
+        // Cache key based on sorted IDs + date range
+        var idHash = string.Join(",", idList.OrderBy(x => x));
+        var cacheKey = $"innux:attendance:{idHash}:{startDate:yyyyMMdd}:{endDate:yyyyMMdd}";
+
+        if (_cache.TryGetValue(cacheKey, out IEnumerable<AttendanceDaySummaryDto>? cached) && cached != null)
+        {
+            _logger.LogDebug("InnuxAttendanceService: cache hit for {CacheKey}", cacheKey);
+            return cached;
+        }
+
+        try
+        {
+            await using var connection = await _connectionFactory.CreateConnectionAsync();
+
+            // Build parameterised IN clause
+            var (inClause, parameters) = BuildInClause(idList, "empId");
+            parameters.Add(new SqlParameter("@StartDate", startDate.Date));
+            parameters.Add(new SqlParameter("@EndDate", endDate.Date));
+
+            var query = $@"
+                SELECT
+                    a.IDFuncionario,
+                    a.Data,
+                    h.Codigo       AS ScheduleCode,
+                    h.Descricao    AS ScheduleDescription,
+                    h.Sigla        AS ScheduleSigla,
+                    ISNULL(h.DiaFolga, 0) AS IsRestDay,
+                    -- Overnight: mandatory period crosses midnight, schedule is NOT a rest day
+                    CASE WHEN ISNULL(h.DiaFolga, 0) = 0 AND EXISTS (
+                        SELECT 1 FROM dbo.HorariosPeriodos hp2
+                        WHERE hp2.IDHorario = h.IDHorario
+                          AND hp2.Tipo = 'Obrigatório'
+                          AND hp2.Fim IS NOT NULL
+                          AND CAST(hp2.Fim AS DATE) > '1900-01-01'
+                    ) THEN 1 ELSE 0 END AS IsOvernightShift,
+                    -- Earliest mandatory period start
+                    (SELECT TOP 1 hp3.Inicio FROM dbo.HorariosPeriodos hp3
+                     WHERE hp3.IDHorario = h.IDHorario AND hp3.Tipo = 'Obrigatório'
+                     ORDER BY hp3.Inicio) AS ScheduleStart,
+                    -- Latest period end
+                    (SELECT TOP 1 hp4.Fim FROM dbo.HorariosPeriodos hp4
+                     WHERE hp4.IDHorario = h.IDHorario AND hp4.Tipo = 'Obrigatório'
+                     ORDER BY hp4.Fim DESC) AS ScheduleEnd,
+                    a.Entrada1     AS Entrada,
+                    a.Saida1       AS Saida,
+                    a.Falta,
+                    a.Ausencia,
+                    a.Objectivo,
+                    (SELECT SUM(DATEDIFF(MINUTE, hp.Inicio, hp.Fim)) FROM dbo.HorariosPeriodos hp WHERE hp.IDHorario = h.IDHorario AND hp.Tipo LIKE 'Obrigat%') AS ExpectedMinutesCalc,
+                    a.Saldo,
+                    a.Marcacao,
+                    a.Validado,
+                    a.FaltouPeriodosObrigatorios,
+                    a.TipoAnomalia,
+                    a.Justificacao,
+                    -- Live count of raw terminal punches (for anomaly detection).
+                    -- For overnight shifts, also count early-morning punches from the next
+                    -- calendar date (the exit punch is stored under Date+1 in Innux).
+                    (SELECT COUNT(*) FROM dbo.TerminaisMarcacoes tm
+                     WHERE tm.IDFuncionario = a.IDFuncionario
+                       AND (
+                           tm.Data = a.Data
+                           OR (
+                               -- Include next-day early-morning punches for overnight shifts
+                               ISNULL(h.DiaFolga, 0) = 0
+                               AND EXISTS (
+                                   SELECT 1 FROM dbo.HorariosPeriodos hp5
+                                   WHERE hp5.IDHorario = h.IDHorario
+                                     AND hp5.Tipo LIKE 'Obrigat%'
+                                     AND hp5.Fim IS NOT NULL
+                                     AND CAST(hp5.Fim AS DATE) > '1900-01-01'
+                               )
+                               AND tm.Data = DATEADD(DAY, 1, a.Data)
+                               AND tm.Hora < '1900-01-01 12:00:00'
+                           )
+                       )
+                    ) AS RawTerminalCount,
+                    c17.Code17Count,
+                    c17.MinCode17,
+                    c17.MaxCode17,
+                    noDir.NoDirCount,
+                    noDir.MinNoDir,
+                    noDir.MaxNoDir,
+                    entryDir.EntryDirCount,
+                    entryDir.MinEntryDir,
+                    entryDir.MaxEntryDir
+                FROM dbo.Alteracoes a
+                LEFT JOIN dbo.Horarios h ON a.IDHorario = h.IDHorario
+                OUTER APPLY (
+                    SELECT 
+                        COUNT(*) AS Code17Count,
+                        MIN(tm.Hora) AS MinCode17,
+                        MAX(tm.Hora) AS MaxCode17
+                    FROM dbo.TerminaisMarcacoes tm
+                    WHERE tm.IDFuncionario = a.IDFuncionario
+                      AND tm.TipoProcessado = '17'
+                      AND (
+                          tm.Data = a.Data
+                          OR (
+                              ISNULL(h.DiaFolga, 0) = 0
+                              AND EXISTS (
+                                  SELECT 1 FROM dbo.HorariosPeriodos hp5
+                                  WHERE hp5.IDHorario = h.IDHorario
+                                    AND hp5.Tipo LIKE 'Obrigat%'
+                                    AND hp5.Fim IS NOT NULL
+                                    AND CAST(hp5.Fim AS DATE) > '1900-01-01'
+                              )
+                              AND tm.Data = DATEADD(DAY, 1, a.Data)
+                              AND tm.Hora < '1900-01-01 12:00:00'
+                          )
+                      )
+                ) c17
+                OUTER APPLY (
+                    SELECT 
+                        COUNT(*) AS NoDirCount,
+                        MIN(tm.Hora) AS MinNoDir,
+                        MAX(tm.Hora) AS MaxNoDir
+                    FROM dbo.TerminaisMarcacoes tm
+                    WHERE tm.IDFuncionario = a.IDFuncionario
+                      AND (tm.TipoProcessado IS NULL OR LTRIM(RTRIM(tm.TipoProcessado)) = '')
+                      AND (
+                          tm.Data = a.Data
+                          OR (
+                              ISNULL(h.DiaFolga, 0) = 0
+                              AND EXISTS (
+                                  SELECT 1 FROM dbo.HorariosPeriodos hp5
+                                  WHERE hp5.IDHorario = h.IDHorario
+                                    AND hp5.Tipo LIKE 'Obrigat%'
+                                    AND hp5.Fim IS NOT NULL
+                                    AND CAST(hp5.Fim AS DATE) > '1900-01-01'
+                              )
+                              AND tm.Data = DATEADD(DAY, 1, a.Data)
+                              AND tm.Hora < '1900-01-01 12:00:00'
+                          )
+                      )
+                ) noDir
+                OUTER APPLY (
+                    SELECT 
+                        COUNT(*) AS EntryDirCount,
+                        MIN(tm.Hora) AS MinEntryDir,
+                        MAX(tm.Hora) AS MaxEntryDir
+                    FROM dbo.TerminaisMarcacoes tm
+                    WHERE tm.IDFuncionario = a.IDFuncionario
+                      AND LTRIM(RTRIM(ISNULL(tm.TipoProcessado, ''))) IN ('EN', '17')
+                      AND (
+                          tm.Data = a.Data
+                          OR (
+                              ISNULL(h.DiaFolga, 0) = 0
+                              AND EXISTS (
+                                  SELECT 1 FROM dbo.HorariosPeriodos hp5
+                                  WHERE hp5.IDHorario = h.IDHorario
+                                    AND hp5.Tipo LIKE 'Obrigat%'
+                                    AND hp5.Fim IS NOT NULL
+                                    AND CAST(hp5.Fim AS DATE) > '1900-01-01'
+                              )
+                              AND tm.Data = DATEADD(DAY, 1, a.Data)
+                              AND tm.Hora < '1900-01-01 12:00:00'
+                          )
+                      )
+                ) entryDir
+                WHERE a.IDFuncionario IN ({inClause})
+                  AND a.Data >= @StartDate
+                  AND a.Data <= @EndDate
+                ORDER BY a.IDFuncionario, a.Data";
+
+            await using var command = new SqlCommand(query, connection);
+            command.Parameters.AddRange(parameters.ToArray());
+            command.CommandTimeout = 30;
+
+            var results = new List<AttendanceDaySummaryDto>();
+            await using var reader = await command.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                results.Add(MapToSummaryDto(reader));
+            }
+
+            _cache.Set(cacheKey, (IEnumerable<AttendanceDaySummaryDto>)results, CalendarCacheDuration);
+            _logger.LogDebug(
+                "InnuxAttendanceService: loaded {Count} attendance rows for {EmployeeCount} employees, {Start} to {End}",
+                results.Count, idList.Count, startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
+
+            return results;
+        }
+        catch (InvalidOperationException)
+        {
+            throw; // Configuration errors — rethrow for controller
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to fetch attendance for {Count} employees between {Start} and {End}",
+                idList.Count, startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<AttendanceDayDetailDto?> GetDayDetailAsync(int innuxEmployeeId, DateTime date)
+    {
+        try
+        {
+            await using var connection = await _connectionFactory.CreateConnectionAsync();
+
+            // 1. Get the summary row (uses Alteracoes.Marcacao as official processed punch count)
+            var summary = await GetSingleSummaryAsync(connection, innuxEmployeeId, date);
+            if (summary == null)
+                return null;
+
+            // 2. Get period breakdown (AlteracoesPeriodos)
+            var periods = await GetPeriodsAsync(connection, innuxEmployeeId, date);
+
+            // 3. Get raw punches (TerminaisMarcacoes) — supporting/debug evidence
+            //    For overnight shifts, also fetch next-day early-morning punches.
+            var punches = await GetPunchesAsync(connection, innuxEmployeeId, date, summary.IsOvernightShift);
+
+            // 4. Set raw punch count on summary for transparency
+            //    This is the live terminal count, may differ from processed Alteracoes.Marcacao
+            summary.RawPunchCount = punches.Count;
+
+            // 5. Re-classify attendance status with the ACTUAL raw punch count.
+            //    MapToSummaryDto classified with rawPunchCount=-1 because GetSingleSummaryAsync
+            //    does not include the RawTerminalCount subquery. Now that we know the true
+            //    punch count from GetPunchesAsync, re-run classification for accuracy.
+            bool isPortalInterpreted = punches.Any(p => p.IsPortalInterpreted);
+            summary.AttendanceStatus = ClassifyAttendance(
+                summary.AbsenceMinutes, summary.JustifiedAbsenceMinutes, summary.ExpectedMinutes,
+                summary.PunchCount, punches.Count, summary.AnomalyDescription,
+                summary.MissedMandatoryPeriods, summary.IsValidated,
+                summary.FirstEntry, summary.FirstExit, summary.Justification,
+                isPortalInterpreted);
+
+            // 5b. Portal Conflict Detection Injection
+            // If the portal interpreted presence but Innux still processed an absence (e.g. F03)
+            if (isPortalInterpreted)
+            {
+                foreach (var period in periods.Where(p => !string.IsNullOrEmpty(p.AbsenceCode)))
+                {
+                    period.HasPortalConflict = true;
+                    period.PortalConflictMessage = $"Conflito: o Innux processou este período como {period.AbsenceCode} - {period.AbsenceDescription}, mas existem marcações brutas no terminal que o Portal interpretou como Entrada e Saída.";
+                    
+                    // Apply generic correction for Portal view
+                    // We DO NOT nullify AbsenceCode/Description so the frontend can still display the audit info
+                    period.WorkCode = "PORTAL";
+                    period.WorkDescription = "Presença interpretada pelo Portal";
+                }
+            }
+
+            // 6. Build debug metadata for HR/IT transparency
+            var debugSource = summary.PunchCount > 0 && punches.Count == 0
+                ? "Processado Innux (sem marcações brutas de terminal)"
+                : summary.PunchCount == punches.Count
+                    ? "Processado Innux (consistente com marcações brutas)"
+                    : $"Processado Innux (Marcação={summary.PunchCount}, Terminal={punches.Count})";
+
+            return new AttendanceDayDetailDto
+            {
+                Summary = summary,
+                RawPunches = punches,
+                Periods = periods,
+                DebugProcessedPunchCount = summary.PunchCount,
+                DebugRawTerminalPunchCount = punches.Count,
+                DebugIsValidated = summary.IsValidated,
+                DebugScheduleCode = summary.ScheduleCode,
+                DebugScheduleDescription = summary.ScheduleDescription,
+                DebugStatusSource = debugSource
+            };
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to fetch attendance detail for employee {EmployeeId} on {Date}",
+                innuxEmployeeId, date.ToString("yyyy-MM-dd"));
+            throw;
+        }
+    }
+
+    // ─── Private query methods ───
+
+    /// <inheritdoc />
+    public async Task<Dictionary<(int EmployeeId, DateTime Date), WorkedHoursDto>> GetWorkedHoursAsync(
+        IEnumerable<int> innuxEmployeeIds,
+        DateTime startDate,
+        DateTime endDate)
+    {
+        var idList = innuxEmployeeIds.ToList();
+        if (idList.Count == 0)
+            return new Dictionary<(int, DateTime), WorkedHoursDto>();
+
+        try
+        {
+            await using var connection = await _connectionFactory.CreateConnectionAsync();
+
+            var (inClause, parameters) = BuildInClause(idList, "empId");
+            parameters.Add(new SqlParameter("@StartDate", startDate.Date));
+            parameters.Add(new SqlParameter("@EndDate", endDate.Date));
+
+            // Aggregate non-dispensed periods by employee, date, and work type.
+            // CodigosTrabalho.Codigo values observed in Innux:
+            //   'Basico' → basic work, 'Extra' → overtime 150%, 'Extra 2' → overtime 200%,
+            //   'Não Pago' → unpaid work, 'Total' → totals column (skip).
+            // Duration = DATEDIFF(MINUTE, Inicio, Fim) using Innux's 1900-01-01 base encoding.
+            var query = $@"
+                SELECT
+                    a.IDFuncionario,
+                    a.Data,
+                    ct.Codigo AS WorkCode,
+                    SUM(DATEDIFF(MINUTE, ap.Inicio, ap.Fim)) AS TotalMinutes
+                FROM dbo.AlteracoesPeriodos ap
+                INNER JOIN dbo.Alteracoes a ON ap.IDAlteracao = a.IDAlteracao
+                LEFT JOIN dbo.CodigosTrabalho ct ON ap.IDCodigoTrabalho = ct.IDCodigoTrabalho
+                WHERE a.IDFuncionario IN ({inClause})
+                  AND a.Data >= @StartDate
+                  AND a.Data <= @EndDate
+                  AND ISNULL(ap.Dispensa, 0) = 0
+                  AND ap.IDCodigoAusencia IS NULL
+                GROUP BY a.IDFuncionario, a.Data, ct.Codigo";
+
+            await using var command = new SqlCommand(query, connection);
+            command.Parameters.AddRange(parameters.ToArray());
+            command.CommandTimeout = 30;
+
+            var result = new Dictionary<(int, DateTime), WorkedHoursDto>();
+            await using var reader = await command.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                var empId = InnuxTimeHelper.SafeInt(reader["IDFuncionario"]);
+                var date = reader["Data"] is DateTime d ? d.Date : DateTime.MinValue;
+                var workCode = (reader["WorkCode"] as string)?.Trim() ?? "";
+                var minutes = InnuxTimeHelper.SafeInt(reader["TotalMinutes"]);
+
+                if (minutes <= 0) continue;
+
+                // Skip the "Total" aggregation row — it's a display-only column in Innux
+                if (workCode.Equals("Total", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var key = (empId, date);
+                if (!result.TryGetValue(key, out var dto))
+                {
+                    dto = new WorkedHoursDto();
+                    result[key] = dto;
+                }
+
+                // Classify by Innux CodigosTrabalho.Codigo:
+                //   "Extra", "Extra 2" → Overtime
+                //   "Não Pago" / "Nao Pago" → Unpaid (separate column in Innux report)
+                //   "Basico", NULL, and anything else → Basic hours
+                var normalizedWorkCode = workCode
+                    .Trim()
+                    .Replace("ã", "a")
+                    .Replace("Ã", "A");
+
+                if (workCode.StartsWith("Extra", StringComparison.OrdinalIgnoreCase))
+                {
+                    dto.OvertimeMinutes += minutes;
+                }
+                else if (
+                    workCode.Equals("Não Pago", StringComparison.OrdinalIgnoreCase) ||
+                    workCode.Equals("Nao Pago", StringComparison.OrdinalIgnoreCase) ||
+                    normalizedWorkCode.Equals("Nao Pago", StringComparison.OrdinalIgnoreCase)
+                )
+                {
+                    dto.UnpaidMinutes += minutes;
+                }
+                else
+                {
+                    dto.BasicMinutes += minutes;
+                }
+            }
+
+            _logger.LogDebug(
+                "InnuxAttendanceService: computed worked hours for {Count} employee-day pairs, {Start} to {End}",
+                result.Count, startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
+
+            return result;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to compute worked hours for {Count} employees between {Start} and {End}",
+                idList.Count, startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<IEnumerable<AttendancePunchDto>> GetRawPunchesAsync(
+        IEnumerable<int> innuxEmployeeIds,
+        DateTime startDate,
+        DateTime endDate)
+    {
+        var idList = innuxEmployeeIds.ToList();
+        if (idList.Count == 0)
+            return Enumerable.Empty<AttendancePunchDto>();
+
+        try
+        {
+            await using var connection = await _connectionFactory.CreateConnectionAsync();
+
+            var (inClause, parameters) = BuildInClause(idList, "empId");
+            // Add an extra day to end date to fetch next-day early-morning punches for overnight shifts
+            parameters.Add(new SqlParameter("@StartDate", startDate.Date));
+            parameters.Add(new SqlParameter("@EndDate", endDate.Date.AddDays(1)));
+
+            var query = $@"
+                SELECT
+                    tm.IDFuncionario,
+                    tm.Data,
+                    tm.Hora,
+                    tm.TipoProcessado,
+                    tm.Gerada,
+                    t.Nome AS TerminalName
+                FROM dbo.TerminaisMarcacoes tm
+                LEFT JOIN dbo.Terminais t ON tm.IDTerminal = t.IDTerminal
+                WHERE tm.IDFuncionario IN ({inClause})
+                  AND tm.Data >= @StartDate
+                  AND tm.Data <= @EndDate
+                ORDER BY tm.IDFuncionario, tm.Data, tm.Hora";
+
+            await using var command = new SqlCommand(query, connection);
+            command.Parameters.AddRange(parameters.ToArray());
+            command.CommandTimeout = 30;
+
+            var results = new List<AttendancePunchDto>();
+            await using var reader = await command.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                var direction = (reader["TipoProcessado"] as string)?.Trim() ?? "";
+                var isAuto = InnuxTimeHelper.SafeBool(reader["Gerada"]);
+                var timeStr = InnuxTimeHelper.ToTimeString(reader["Hora"]);
+
+                results.Add(new AttendancePunchDto
+                {
+                    InnuxEmployeeId = InnuxTimeHelper.SafeInt(reader["IDFuncionario"]),
+                    Date = reader["Data"] is DateTime d ? d.Date : DateTime.MinValue,
+                    Time = timeStr ?? "",
+                    Direction = direction,
+                    DirectionLabel = MapDirectionLabel(direction),
+                    TerminalName = reader["TerminalName"] as string,
+                    IsAutoGenerated = isAuto
+                });
+            }
+
+            // Apply unified Portal interpretation to each employee-day group
+            // This ensures the monthly report gets the same direction logic as the day-detail drawer
+            var groups = results.GroupBy(p => (p.InnuxEmployeeId, p.Date));
+            foreach (var group in groups)
+            {
+                ApplyPortalPunchInterpretation(group.ToList());
+            }
+
+            return results;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to fetch raw punches for {Count} employees between {Start} and {End}",
+                idList.Count, startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
+            throw;
+        }
+    }
+
+    private async Task<AttendanceDaySummaryDto?> GetSingleSummaryAsync(
+        SqlConnection connection, int innuxEmployeeId, DateTime date)
+    {
+        var query = @"
+            SELECT TOP 1
+                a.IDFuncionario,
+                a.Data,
+                h.Codigo       AS ScheduleCode,
+                h.Descricao    AS ScheduleDescription,
+                h.Sigla        AS ScheduleSigla,
+                ISNULL(h.DiaFolga, 0) AS IsRestDay,
+                CASE WHEN ISNULL(h.DiaFolga, 0) = 0 AND EXISTS (
+                    SELECT 1 FROM dbo.HorariosPeriodos hp2
+                    WHERE hp2.IDHorario = h.IDHorario
+                      AND hp2.Tipo = 'Obrigatório'
+                      AND hp2.Fim IS NOT NULL
+                      AND CAST(hp2.Fim AS DATE) > '1900-01-01'
+                ) THEN 1 ELSE 0 END AS IsOvernightShift,
+                (SELECT TOP 1 hp3.Inicio FROM dbo.HorariosPeriodos hp3
+                 WHERE hp3.IDHorario = h.IDHorario AND hp3.Tipo = 'Obrigatório'
+                 ORDER BY hp3.Inicio) AS ScheduleStart,
+                (SELECT TOP 1 hp4.Fim FROM dbo.HorariosPeriodos hp4
+                 WHERE hp4.IDHorario = h.IDHorario AND hp4.Tipo = 'Obrigatório'
+                 ORDER BY hp4.Fim DESC) AS ScheduleEnd,
+                a.Entrada1     AS Entrada,
+                a.Saida1       AS Saida,
+                a.Falta,
+                a.Ausencia,
+                a.Objectivo,
+                (SELECT SUM(DATEDIFF(MINUTE, hp.Inicio, hp.Fim)) FROM dbo.HorariosPeriodos hp WHERE hp.IDHorario = h.IDHorario AND hp.Tipo LIKE 'Obrigat%') AS ExpectedMinutesCalc,
+                a.Saldo,
+                a.Marcacao,
+                a.Validado,
+                a.FaltouPeriodosObrigatorios,
+                a.TipoAnomalia,
+                a.Justificacao,
+                c17.Code17Count,
+                c17.MinCode17,
+                c17.MaxCode17,
+                noDir.NoDirCount,
+                noDir.MinNoDir,
+                noDir.MaxNoDir
+            FROM dbo.Alteracoes a
+            LEFT JOIN dbo.Horarios h ON a.IDHorario = h.IDHorario
+            OUTER APPLY (
+                SELECT 
+                    COUNT(*) AS Code17Count,
+                    MIN(tm.Hora) AS MinCode17,
+                    MAX(tm.Hora) AS MaxCode17
+                FROM dbo.TerminaisMarcacoes tm
+                WHERE tm.IDFuncionario = a.IDFuncionario
+                  AND tm.TipoProcessado = '17'
+                  AND (
+                      tm.Data = a.Data
+                      OR (
+                          ISNULL(h.DiaFolga, 0) = 0
+                          AND EXISTS (
+                              SELECT 1 FROM dbo.HorariosPeriodos hp5
+                              WHERE hp5.IDHorario = h.IDHorario
+                                AND hp5.Tipo = 'Obrigatório'
+                                AND hp5.Fim IS NOT NULL
+                                AND CAST(hp5.Fim AS DATE) > '1900-01-01'
+                          )
+                          AND tm.Data = DATEADD(DAY, 1, a.Data)
+                          AND tm.Hora < '1900-01-01 12:00:00'
+                      )
+                  )
+            ) c17
+            OUTER APPLY (
+                SELECT 
+                    COUNT(*) AS NoDirCount,
+                    MIN(tm.Hora) AS MinNoDir,
+                    MAX(tm.Hora) AS MaxNoDir
+                FROM dbo.TerminaisMarcacoes tm
+                WHERE tm.IDFuncionario = a.IDFuncionario
+                  AND (tm.TipoProcessado IS NULL OR LTRIM(RTRIM(tm.TipoProcessado)) = '')
+                  AND (
+                      tm.Data = a.Data
+                      OR (
+                          ISNULL(h.DiaFolga, 0) = 0
+                          AND EXISTS (
+                              SELECT 1 FROM dbo.HorariosPeriodos hp5
+                              WHERE hp5.IDHorario = h.IDHorario
+                                AND hp5.Tipo LIKE 'Obrigat%'
+                                AND hp5.Fim IS NOT NULL
+                                AND CAST(hp5.Fim AS DATE) > '1900-01-01'
+                          )
+                          AND tm.Data = DATEADD(DAY, 1, a.Data)
+                          AND tm.Hora < '1900-01-01 12:00:00'
+                      )
+                  )
+            ) noDir
+            WHERE a.IDFuncionario = @EmployeeId
+              AND a.Data = @Date";
+
+        await using var command = new SqlCommand(query, connection);
+        command.Parameters.AddWithValue("@EmployeeId", innuxEmployeeId);
+        command.Parameters.AddWithValue("@Date", date.Date);
+        command.CommandTimeout = 15;
+
+        await using var reader = await command.ExecuteReaderAsync();
+        if (await reader.ReadAsync())
+            return MapToSummaryDto(reader);
+
+        return null;
+    }
+
+    private async Task<List<AttendancePeriodDto>> GetPeriodsAsync(
+        SqlConnection connection, int innuxEmployeeId, DateTime date)
+    {
+        // AlteracoesPeriodos links to Alteracoes via IDAlteracao (not IDFuncionario+Data).
+        // Columns: Inicio (start), Fim (end), Dispensa (dispensed).
+        var query = @"
+            SELECT
+                ap.Inicio,
+                ap.Fim,
+                ct.Codigo      AS WorkCode,
+                ct.Descricao   AS WorkDescription,
+                ca.Codigo      AS AbsenceCode,
+                ca.Descricao   AS AbsenceDescription,
+                ap.Dispensa
+            FROM dbo.AlteracoesPeriodos ap
+            INNER JOIN dbo.Alteracoes a
+                ON ap.IDAlteracao = a.IDAlteracao
+            LEFT JOIN dbo.CodigosTrabalho ct ON ap.IDCodigoTrabalho = ct.IDCodigoTrabalho
+            LEFT JOIN dbo.CodigosAusencia ca ON ap.IDCodigoAusencia = ca.IDCodigoAusencia
+            WHERE a.IDFuncionario = @EmployeeId
+              AND a.Data = @Date
+            ORDER BY ap.Inicio";
+
+        await using var command = new SqlCommand(query, connection);
+        command.Parameters.AddWithValue("@EmployeeId", innuxEmployeeId);
+        command.Parameters.AddWithValue("@Date", date.Date);
+        command.CommandTimeout = 15;
+
+        var periods = new List<AttendancePeriodDto>();
+        await using var reader = await command.ExecuteReaderAsync();
+
+        while (await reader.ReadAsync())
+        {
+            periods.Add(new AttendancePeriodDto
+            {
+                StartTime = InnuxTimeHelper.ToTimeString(reader["Inicio"]),
+                EndTime = InnuxTimeHelper.ToTimeString(reader["Fim"]),
+                WorkCode = reader["WorkCode"] as string,
+                WorkDescription = reader["WorkDescription"] as string,
+                AbsenceCode = reader["AbsenceCode"] as string,
+                AbsenceDescription = reader["AbsenceDescription"] as string,
+                IsDispensed = InnuxTimeHelper.SafeBool(reader["Dispensa"])
+            });
+        }
+
+        return periods;
+    }
+
+    /// <summary>
+    /// Fetches raw terminal punches for an employee on a given date.
+    /// For overnight shifts, also fetches early-morning punches from the next calendar
+    /// date (before midday) — because Innux stores the cross-midnight exit punch under
+    /// the next date in TerminaisMarcacoes.
+    /// </summary>
+    private async Task<List<AttendancePunchDto>> GetPunchesAsync(
+        SqlConnection connection, int innuxEmployeeId, DateTime date,
+        bool isOvernightShift = false)
+    {
+        // TerminaisMarcacoes: Gerada (auto-generated), not Automatica.
+        // Terminais: Nome (terminal name), not Descricao.
+        //
+        // Cross-midnight logic:
+        //   For overnight shifts (e.g. 20:00-08:00), the exit punch is stored
+        //   under Date+1 in Innux. We include next-day punches before 12:00
+        //   so the drawer shows the complete shift picture.
+        var query = @"
+            SELECT
+                tm.IDFuncionario,
+                tm.Data,
+                tm.Hora,
+                tm.TipoProcessado,
+                tm.Gerada,
+                t.Nome AS TerminalName
+            FROM dbo.TerminaisMarcacoes tm
+            LEFT JOIN dbo.Terminais t ON tm.IDTerminal = t.IDTerminal
+            WHERE tm.IDFuncionario = @EmployeeId
+              AND (
+                  tm.Data = @Date
+                  OR (
+                      @IsOvernightShift = 1
+                      AND tm.Data = DATEADD(DAY, 1, @Date)
+                      AND tm.Hora < '1900-01-01 12:00:00'
+                  )
+              )
+            ORDER BY tm.Data, tm.Hora";
+
+        await using var command = new SqlCommand(query, connection);
+        command.Parameters.AddWithValue("@EmployeeId", innuxEmployeeId);
+        command.Parameters.AddWithValue("@Date", date.Date);
+        command.Parameters.AddWithValue("@IsOvernightShift", isOvernightShift ? 1 : 0);
+        command.CommandTimeout = 15;
+
+        var punches = new List<AttendancePunchDto>();
+        await using var reader = await command.ExecuteReaderAsync();
+
+        while (await reader.ReadAsync())
+        {
+            var direction = reader["TipoProcessado"]?.ToString()?.Trim() ?? "";
+            punches.Add(new AttendancePunchDto
+            {
+                InnuxEmployeeId = InnuxTimeHelper.SafeInt(reader["IDFuncionario"]),
+                Date = reader["Data"] is DateTime d ? d : date,
+                Time = InnuxTimeHelper.ToTimeStringFull(reader["Hora"]),
+                Direction = direction,
+                DirectionLabel = MapDirectionLabel(direction),
+                TerminalName = reader["TerminalName"] as string,
+                IsAutoGenerated = InnuxTimeHelper.SafeBool(reader["Gerada"])
+            });
+        }
+
+        // Apply unified Portal interpretation (shared with GetRawPunchesAsync)
+        ApplyPortalPunchInterpretation(punches, isOvernightShift);
+
+        return punches;
+    }
+
+    // ─── Mapping ───
+
+    private static AttendanceDaySummaryDto MapToSummaryDto(SqlDataReader reader)
+    {
+        var absenceMinutes = InnuxTimeHelper.ToMinutes(reader["Falta"]);
+        var justifiedMinutes = InnuxTimeHelper.ToMinutes(reader["Ausencia"]);
+        
+        var expectedMinutes = InnuxTimeHelper.ToMinutes(reader["Objectivo"]);
+        if (expectedMinutes == 0)
+        {
+            try { expectedMinutes = InnuxTimeHelper.SafeInt(reader["ExpectedMinutesCalc"]); } catch { }
+        }
+
+        var punchCount = InnuxTimeHelper.SafeInt(reader["Marcacao"]);
+        var anomaly = reader["TipoAnomalia"] as string;
+        var missedPeriods = InnuxTimeHelper.SafeBool(reader["FaltouPeriodosObrigatorios"]);
+
+        // Raw terminal count — populated from subquery in calendar query,
+        // or defaults to -1 (unavailable) for queries without the column.
+        int rawPunchCount = 0;
+        try { rawPunchCount = InnuxTimeHelper.SafeInt(reader["RawTerminalCount"]); }
+        catch (IndexOutOfRangeException) { rawPunchCount = -1; }
+
+        var firstEntry = InnuxTimeHelper.ToTimeString(reader["Entrada"]);
+        var firstExit = InnuxTimeHelper.ToTimeString(reader["Saida"]);
+        
+        bool isPortalInterpreted = false;
+        try 
+        {
+            int code17Count = InnuxTimeHelper.SafeInt(reader["Code17Count"]);
+            if (code17Count >= 2)
+            {
+                var min17 = InnuxTimeHelper.ToTimeString(reader["MinCode17"]);
+                var max17 = InnuxTimeHelper.ToTimeString(reader["MaxCode17"]);
+                
+                firstEntry = min17;
+                firstExit = max17;
+                isPortalInterpreted = true;
+                
+                var warning = "O Innux registrou múltiplas marcações com código 17. Conforme regra temporária definida para o Portal, a primeira marcação foi considerada Entrada e a última foi considerada Saída. Nenhuma alteração foi feita no Innux.";
+                anomaly = string.IsNullOrWhiteSpace(anomaly) ? warning : $"{anomaly} | {warning}";
+                
+                // Clear the absence minutes because we are interpreting this as a valid presence
+                if (TimeSpan.TryParse(min17, out var tEntry) && TimeSpan.TryParse(max17, out var tExit))
+                {
+                    var span = tExit - tEntry;
+                    if (span.TotalMinutes < 0) span = span.Add(TimeSpan.FromHours(24));
+                    if (span.TotalMinutes >= 60)
+                    {
+                        absenceMinutes = 0;
+                    }
+                }
+            }
+            else
+            {
+                // Rule 2b: Mixed entry-direction codes (e.g., Code 17 + EN both map to "Entrada")
+                // If ALL raw punches on this day have entry-direction codes, apply positional inference.
+                int entryDirCount = 0;
+                try { entryDirCount = InnuxTimeHelper.SafeInt(reader["EntryDirCount"]); } catch { }
+                int rawTerminalCount = rawPunchCount >= 0 ? rawPunchCount : 0;
+                
+                if (entryDirCount >= 2 && entryDirCount == rawTerminalCount)
+                {
+                    var minEntry = InnuxTimeHelper.ToTimeString(reader["MinEntryDir"]);
+                    var maxEntry = InnuxTimeHelper.ToTimeString(reader["MaxEntryDir"]);
+                    
+                    if (!string.IsNullOrWhiteSpace(minEntry) && !string.IsNullOrWhiteSpace(maxEntry) && minEntry != maxEntry)
+                    {
+                        firstEntry = minEntry;
+                        firstExit = maxEntry;
+                        isPortalInterpreted = true;
+                        
+                        var warning = "O Innux registou múltiplas marcações com códigos de entrada diferentes (ex: 17 e EN). Conforme regra do Portal, a primeira marcação foi considerada Entrada e a última foi considerada Saída. Nenhuma alteração foi feita no Innux.";
+                        anomaly = string.IsNullOrWhiteSpace(anomaly) ? warning : $"{anomaly} | {warning}";
+                        
+                        if (TimeSpan.TryParse(minEntry, out var tEntry) && TimeSpan.TryParse(maxEntry, out var tExit))
+                        {
+                            var span = tExit - tEntry;
+                            if (span.TotalMinutes < 0) span = span.Add(TimeSpan.FromHours(24));
+                            if (span.TotalMinutes >= 60)
+                            {
+                                absenceMinutes = 0;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    // Rule 3: Overnight shift with no-direction punches
+                    bool isOvernight = InnuxTimeHelper.SafeBool(reader["IsOvernightShift"]);
+                    int noDirCount = InnuxTimeHelper.SafeInt(reader["NoDirCount"]);
+                    if (isOvernight && noDirCount >= 2 && string.IsNullOrWhiteSpace(firstEntry) && string.IsNullOrWhiteSpace(firstExit))
+                    {
+                        var minNoDir = InnuxTimeHelper.ToTimeString(reader["MinNoDir"]);
+                        var maxNoDir = InnuxTimeHelper.ToTimeString(reader["MaxNoDir"]);
+                        
+                        firstEntry = minNoDir;
+                        firstExit = maxNoDir;
+                        isPortalInterpreted = true;
+                        
+                        var warning = "O Innux registou marcações sem direção para este turno noturno. Conforme regra temporária do Portal, a primeira marcação foi considerada Entrada e a última foi considerada Saída. Nenhuma alteração foi feita no Innux.";
+                        anomaly = string.IsNullOrWhiteSpace(anomaly) ? warning : $"{anomaly} | {warning}";
+                        
+                        if (TimeSpan.TryParse(minNoDir, out var tEntry) && TimeSpan.TryParse(maxNoDir, out var tExit))
+                        {
+                            var span = tExit - tEntry;
+                            if (span.TotalMinutes < 0) span = span.Add(TimeSpan.FromHours(24));
+                            if (span.TotalMinutes >= 60)
+                            {
+                                absenceMinutes = 0;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch (IndexOutOfRangeException) { } // In case the column wasn't fetched in some queries
+
+        return new AttendanceDaySummaryDto
+        {
+            InnuxEmployeeId = InnuxTimeHelper.SafeInt(reader["IDFuncionario"]),
+            Date = reader["Data"] is DateTime d ? d : DateTime.MinValue,
+            ScheduleCode = reader["ScheduleCode"] as string,
+            ScheduleDescription = reader["ScheduleDescription"] as string,
+            ScheduleSigla = reader["ScheduleSigla"] as string,
+            IsRestDay = InnuxTimeHelper.SafeBool(reader["IsRestDay"]),
+            IsOvernightShift = InnuxTimeHelper.SafeBool(reader["IsOvernightShift"]),
+            ScheduleStartTime = InnuxTimeHelper.ToTimeString(reader["ScheduleStart"]),
+            ScheduleEndTime = InnuxTimeHelper.ToTimeString(reader["ScheduleEnd"]),
+            FirstEntry = firstEntry,
+            FirstExit = firstExit,
+            AbsenceMinutes = absenceMinutes,
+            JustifiedAbsenceMinutes = justifiedMinutes,
+            ExpectedMinutes = expectedMinutes,
+            BalanceMinutes = InnuxTimeHelper.ToMinutes(reader["Saldo"]),
+            PunchCount = punchCount,
+            RawPunchCount = rawPunchCount >= 0 ? rawPunchCount : 0,
+            IsValidated = InnuxTimeHelper.SafeBool(reader["Validado"]),
+            MissedMandatoryPeriods = missedPeriods,
+            AnomalyDescription = string.IsNullOrWhiteSpace(anomaly) ? null : anomaly,
+            Justification = reader["Justificacao"] as string,
+            AttendanceStatus = ClassifyAttendance(
+                absenceMinutes, justifiedMinutes, expectedMinutes,
+                punchCount, rawPunchCount, anomaly, missedPeriods,
+                InnuxTimeHelper.SafeBool(reader["Validado"]),
+                firstEntry,
+                firstExit,
+                reader["Justificacao"] as string,
+                isPortalInterpreted)
+        };
+    }
+
+    /// <summary>
+    /// Derives a Portal-friendly attendance classification from Innux fields.
+    /// This is a best-effort classification — edge cases may require refinement
+    /// as we learn more about Innux processing conventions.
+    ///
+    /// Status values:
+    ///   "Present"          — Employee was at work (confirmed by raw terminal punches
+    ///                        or by validated entry/exit on Escala-Intercalada days).
+    ///   "Absent"           — Full unjustified absence (no raw terminal records).
+    ///   "JustifiedAbsence" — Full justified absence (generic, e.g. sick leave).
+    ///   "Vacation"         — Justified absence with "Gozo de Férias" justification.
+    ///   "Holiday"          — Justified absence with "Feriado" justification.
+    ///   "DayOff"           — No expected time (rest day / schedule off).
+    ///   "Anomaly"          — Innux flagged a processing anomaly, OR processed punch
+    ///                        exists without raw terminal records (e.g. Escala auto-processing),
+    ///                        OR absence was declared but raw terminal events exist that were
+    ///                        not recognised as valid Entry/Exit punches.
+    ///   "Unknown"          — Cannot determine status.
+    ///
+    /// Key Innux conventions:
+    ///   - Marcacao (punchCount) is a PENDING counter: Innux resets it to 0 after
+    ///     full validation for Escala-Intercalada patterns. Marcacao=0 + Validado=True
+    ///     does NOT mean "absent" — it means "fully processed".
+    ///   - For overnight shifts, raw terminal punches may be split across two
+    ///     calendar dates (entry on Day N, exit on Day N+1).
+    /// </summary>
+    private static string ClassifyAttendance(
+        int absenceMinutes, int justifiedMinutes, int expectedMinutes,
+        int punchCount, int rawPunchCount, string? anomaly, bool missedPeriods,
+        bool isValidated,
+        string? firstEntry, string? firstExit, string? justification,
+        bool isPortalInterpreted = false)
+    {
+        if (isPortalInterpreted)
+            return "PortalInterpreted";
+
+        var justNorm = justification?.Trim() ?? "";
+        var hasEntry = !string.IsNullOrWhiteSpace(firstEntry);
+        var hasExit = !string.IsNullOrWhiteSpace(firstExit);
+
+        // 1. Explicitly check justification text first.
+        // Innux often marks vacations, holidays, and days off by writing text in the justification
+        // without necessarily updating expected or absence minutes correctly.
+        if (justNorm.Contains("Gozo de Férias", StringComparison.OrdinalIgnoreCase) || 
+            justNorm.Contains("Ferias", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Vacation";
+        }
+
+        if (justNorm.Contains("Feriado", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Holiday";
+        }
+
+        if (justNorm.Contains("Folga", StringComparison.OrdinalIgnoreCase))
+        {
+            return "DayOff";
+        }
+
+        // 2. Day off based on expected time
+        if (expectedMinutes == 0)
+        {
+            return "DayOff";
+        }
+
+        // 3. Anomaly flagged by Innux
+        if (!string.IsNullOrWhiteSpace(anomaly))
+            return "Anomaly";
+
+        // 4. Full unjustified absence
+        if (absenceMinutes > 0 && absenceMinutes >= expectedMinutes)
+        {
+            // 4a. Portal interpreted presence override
+            if (rawPunchCount > 0 && hasEntry && hasExit)
+            {
+                if (TimeSpan.TryParse(firstEntry, out var tEntry) && TimeSpan.TryParse(firstExit, out var tExit))
+                {
+                    var span = tExit - tEntry;
+                    if (span.TotalMinutes < 0) span = span.Add(TimeSpan.FromHours(24));
+
+                    if (span.TotalMinutes >= 60)
+                        return "Present";
+                    else
+                        return "Anomaly"; // Span is too short to be considered valid presence
+                }
+                return "Present";
+            }
+
+            // 4b. Absence-with-raw-terminal-events contradiction:
+            // Innux declared the day as absence (F03 / Falta Injustificada),
+            // but raw terminal punches exist that were NOT recognised as valid
+            // Entry/Exit. This typically happens when the terminal code/direction
+            // is unknown to Innux processing. The employee was
+            // physically at a terminal — HR must review.
+            if (rawPunchCount > 0 && !hasEntry && !hasExit && punchCount == 0)
+                return "Anomaly";
+
+            return "Absent";
+        }
+
+        // 5. Full justified absence
+        if (justifiedMinutes > 0 && justifiedMinutes >= expectedMinutes)
+            return "JustifiedAbsence";
+
+        // 6. Present — confirmed by raw terminal punches
+        if (punchCount > 0 && rawPunchCount > 0)
+            return "Present";
+
+        // 6b. Present confirmed by entry/exit times with raw punches
+        if (rawPunchCount > 0 && (hasEntry || hasExit))
+            return "Present";
+
+        // 6c. Validated day with entry/exit = Present.
+        //     Innux resets Marcacao to 0 after full validation for Escala-Intercalada
+        //     patterns. A validated day with confirmed entry/exit times is Present
+        //     even when Marcacao=0 — it means "fully processed", not "absent".
+        if (isValidated && (hasEntry || hasExit) && rawPunchCount > 0)
+            return "Present";
+
+        // 7. Anomaly: processed punch exists but NO raw terminal records.
+        // This typically occurs with Escala (rotation) auto-processing or manual HR
+        // validation in Innux that sets Marcacao without creating terminal records.
+        // Surfaced as Anomaly so HR can review and confirm.
+        if (punchCount > 0 && rawPunchCount == 0)
+            return "Anomaly";
+
+        // 8. If entry/exit exists but no raw punches, still surface for review.
+        //    This covers validated Escala days where Innux set entry/exit from rotation
+        //    logic but no physical terminal record exists.
+        if ((hasEntry || hasExit) && rawPunchCount == 0)
+            return "Anomaly";
+
+        // 9. If expected > 0 and no absence/justification, but no punches,
+        // it means either it was validated manually or hasn't been processed.
+        return "Unknown";
+    }
+
+    // ─── Unified Portal Punch Interpretation ───
+
+    /// <summary>
+    /// Shared Portal punch interpretation logic applied to a group of punches
+    /// for a single employee on a single day.
+    ///
+    /// Rules (in priority order):
+    ///   1. If the day has BOTH Code 17 AND Code 18 punches → respect direction
+    ///      codes (17=Entrada, 18=Saída). No Portal override needed.
+    ///   2. If the day has ONLY Code 17 punches (≥2) → first chronological = Entrada,
+    ///      last = Saída (Portal positional inference).
+    ///   3. If the day has ONLY Code 18 punches (≥2) → same positional inference.
+    ///   4. Standard EN/SA codes → already mapped correctly by MapDirectionLabel.
+    ///      HOWEVER, if all punches in the day have the SAME mapped DirectionLabel
+    ///      (e.g., Code 17→"Entrada" + EN→"Entrada"), apply positional inference.
+    ///   5. Missing direction on overnight shifts → positional inference.
+    ///   6. Single ambiguous punch → no inference, warning flag only.
+    ///
+    /// This method is called by both GetPunchesAsync (single-day detail) and
+    /// GetRawPunchesAsync (bulk monthly report) to ensure consistent behavior.
+    ///
+    /// Read-only: modifies DirectionLabel and IsPortalInterpreted on the DTO objects.
+    /// Does NOT write to Innux.
+    /// </summary>
+    internal static void ApplyPortalPunchInterpretation(
+        List<AttendancePunchDto> punches, bool isOvernightShift = false)
+    {
+        if (punches.Count < 2)
+            return;
+
+        var code17Punches = punches.Where(p => p.Direction == "17").OrderBy(p => p.Time).ToList();
+        var code18Punches = punches.Where(p => p.Direction == "18").OrderBy(p => p.Time).ToList();
+        var hasBothCodes = code17Punches.Count > 0 && code18Punches.Count > 0;
+
+        // Rule 1: If both Code 17 and Code 18 exist, the terminal sent real directions.
+        // MapDirectionLabel already mapped them correctly (17→Entrada, 18→Saída).
+        // No Portal override needed.
+        if (hasBothCodes)
+            return;
+
+        // Rule 2: Only Code 17 punches (≥2) — terminal sent same code for entry and exit.
+        // Infer first = Entrada, last = Saída.
+        if (code17Punches.Count >= 2)
+        {
+            var first = code17Punches.First();
+            var last = code17Punches.Last();
+
+            first.DirectionLabel = "Entrada";
+            first.IsPortalInterpreted = true;
+
+            last.DirectionLabel = "Saída";
+            last.IsPortalInterpreted = true;
+
+            // Middle punches alternate
+            for (int i = 1; i < code17Punches.Count - 1; i++)
+            {
+                code17Punches[i].DirectionLabel = (i % 2 == 0) ? "Entrada" : "Saída";
+                code17Punches[i].IsPortalInterpreted = true;
+            }
+            return;
+        }
+
+        // Rule 3: Only Code 18 punches (≥2) — same positional inference.
+        if (code18Punches.Count >= 2)
+        {
+            var first = code18Punches.First();
+            var last = code18Punches.Last();
+
+            first.DirectionLabel = "Entrada";
+            first.IsPortalInterpreted = true;
+
+            last.DirectionLabel = "Saída";
+            last.IsPortalInterpreted = true;
+
+            for (int i = 1; i < code18Punches.Count - 1; i++)
+            {
+                code18Punches[i].DirectionLabel = (i % 2 == 0) ? "Entrada" : "Saída";
+                code18Punches[i].IsPortalInterpreted = true;
+            }
+            return;
+        }
+
+        // Rule 4: Mixed raw codes but ALL punches resolved to the same DirectionLabel
+        // (e.g., Code 17→"Entrada" + EN→"Entrada"). Terminal used different codes but
+        // MapDirectionLabel interpreted them all the same way. Apply positional inference.
+        var distinctLabels = punches.Select(p => p.DirectionLabel).Distinct().ToList();
+        if (distinctLabels.Count == 1 && (distinctLabels[0] == "Entrada" || distinctLabels[0] == "Saída"))
+        {
+            var ordered = punches.OrderBy(p => p.Time).ToList();
+            var first = ordered.First();
+            var last = ordered.Last();
+
+            first.DirectionLabel = "Entrada";
+            first.IsPortalInterpreted = true;
+
+            last.DirectionLabel = "Saída";
+            last.IsPortalInterpreted = true;
+
+            // Middle punches alternate
+            for (int i = 1; i < ordered.Count - 1; i++)
+            {
+                ordered[i].DirectionLabel = (i % 2 == 0) ? "Entrada" : "Saída";
+                ordered[i].IsPortalInterpreted = true;
+            }
+            return;
+        }
+
+        // Rule 5: Overnight shift with no direction — positional inference for "Sem direção" punches.
+        if (isOvernightShift && !punches.Any(p => p.Direction == "1" || p.Direction == "17" || p.Direction == "2"))
+        {
+            var noDirPunches = punches.Where(p => string.IsNullOrWhiteSpace(p.Direction)).OrderBy(p => p.Time).ToList();
+            if (noDirPunches.Count >= 2)
+            {
+                var first = noDirPunches.First();
+                var last = noDirPunches.Last();
+
+                first.DirectionLabel = "Entrada";
+                first.IsPortalInterpreted = true;
+
+                last.DirectionLabel = "Saída";
+                last.IsPortalInterpreted = true;
+            }
+        }
+    }
+
+    // ─── Direction label mapping ───
+
+    /// <summary>
+    /// Maps Innux TerminaisMarcacoes.TipoProcessado values to human-readable labels.
+    ///
+    /// Known direction codes:
+    ///   "EN" = Entrada (standard entry code)
+    ///   "SA" = Saída   (standard exit code)
+    ///   "17" = Entrada (alternate terminal entry code — business decision 2026-04-28)
+    ///   "18" = Saída   (alternate terminal exit code  — business decision 2026-04-28)
+    ///
+    /// Truly unknown numeric codes are displayed as "Código XX".
+    /// </summary>
+    private static string MapDirectionLabel(string direction)
+    {
+        if (string.IsNullOrWhiteSpace(direction))
+            return "Sem direção";
+
+        // Standard Innux direction codes
+        if (direction.Equals("EN", StringComparison.OrdinalIgnoreCase))
+            return "Entrada";
+        if (direction.Equals("SA", StringComparison.OrdinalIgnoreCase))
+            return "Saída";
+
+        // Alternate terminal direction codes (business decision 2026-04-28):
+        // Code 17 = Entrada, Code 18 = Saída.
+        // These are emitted by certain Innux terminals instead of the standard EN/SA.
+        if (direction == "17")
+            return "Entrada";
+        if (direction == "18")
+            return "Saída";
+
+        // Truly unknown numeric codes — display as raw code for HR review.
+        if (int.TryParse(direction, out _))
+            return $"Código {direction}";
+
+        // Unknown text — show as-is
+        return direction;
+    }
+
+
+    // ─── Last Attendance Date (30-day activity filter) ───
+
+    /// <inheritdoc />
+    public async Task<Dictionary<int, DateTime>> GetLastAttendanceDatesAsync(
+        IEnumerable<int> innuxEmployeeIds)
+    {
+        var idList = innuxEmployeeIds.ToList();
+        if (idList.Count == 0)
+            return new Dictionary<int, DateTime>();
+
+        // Cache key based on sorted IDs
+        var idHash = string.Join(",", idList.OrderBy(x => x));
+        var cacheKey = $"innux:lastAttendance:{idHash}";
+
+        if (_cache.TryGetValue(cacheKey, out Dictionary<int, DateTime>? cached) && cached != null)
+        {
+            _logger.LogDebug("InnuxAttendanceService: last-attendance cache hit");
+            return cached;
+        }
+
+        try
+        {
+            await using var connection = await _connectionFactory.CreateConnectionAsync();
+
+            var (inClause, parameters) = BuildInClause(idList, "empId");
+
+            // Use TerminaisMarcacoes (real terminal punches) instead of Alteracoes.
+            // Alteracoes contains pre-generated scheduled records (rest days, planned shifts)
+            // which inflate MAX(Data) for employees who left but still have active schedules.
+            // TerminaisMarcacoes only contains actual clock-in/clock-out events,
+            // which is the correct signal for the 30-day activity filter.
+            var query = $@"
+                SELECT IDFuncionario, MAX(Data) AS LastDate
+                FROM dbo.TerminaisMarcacoes
+                WHERE IDFuncionario IN ({inClause})
+                GROUP BY IDFuncionario";
+
+            await using var command = new SqlCommand(query, connection);
+            command.Parameters.AddRange(parameters.ToArray());
+            command.CommandTimeout = 15;
+
+            var result = new Dictionary<int, DateTime>();
+            await using var reader = await command.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                var empId = InnuxTimeHelper.SafeInt(reader["IDFuncionario"]);
+                if (reader["LastDate"] is DateTime lastDate)
+                {
+                    result[empId] = lastDate.Date;
+                }
+            }
+
+            _cache.Set(cacheKey, result, CalendarCacheDuration);
+            _logger.LogDebug(
+                "InnuxAttendanceService: fetched last punch dates for {Count}/{Total} employees",
+                result.Count, idList.Count);
+
+            return result;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to fetch last attendance dates for {Count} employees", idList.Count);
+            throw;
+        }
+    }
+
+    // ─── SQL IN clause builder ───
+
+    /// <summary>
+    /// Builds a parameterised SQL IN clause to prevent SQL injection.
+    /// Returns the clause string and the list of SqlParameter objects.
+    /// </summary>
+    private static (string clause, List<SqlParameter> parameters) BuildInClause(
+        List<int> ids, string prefix)
+    {
+        var parameters = new List<SqlParameter>();
+        var names = new List<string>();
+
+        for (var i = 0; i < ids.Count; i++)
+        {
+            var name = $"@{prefix}{i}";
+            names.Add(name);
+            parameters.Add(new SqlParameter(name, ids[i]));
+        }
+
+        return (string.Join(", ", names), parameters);
+    }
+}

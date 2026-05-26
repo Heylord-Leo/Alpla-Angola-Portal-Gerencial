@@ -44,7 +44,7 @@ The portal uses a provider-agnostic abstraction for extracting structured data f
 - **Abstraction**: `IDocumentExtractionService` (Orchestrator) and `IDocumentExtractionProvider` (Engine).
 - **Internal Model**: `ExtractionResultDto` (Stable canonical model).
 - **Field Propagation**: All extracted fields must follow the [Document Extraction Field Propagation Standard](DOCUMENT_EXTRACTION_FIELD_PROPAGATION_STANDARD.md) to ensure front-to-back integrity.
-- **Provider Selection**: Driven by configuration key `DocumentExtraction:Provider` (e.g., `LOCAL_OCR`). Defaults to `LOCAL_OCR` if missing or invalid.
+- **Provider Selection**: Driven by configuration key `DocumentExtraction:DefaultProvider`. Defaults to `OPENAI`. The `LOCAL_OCR` provider was removed in v2.128.0 (DEC-130). The abstraction supports future providers (e.g., Azure Document Intelligence).
 - **Legacy Support**: `RequestsController` utilizes a dedicated mapper to bridge the internal stable model to the legacy JSON shape expected by the current frontend.
 
 ## Authentication / Credentials
@@ -83,6 +83,19 @@ The portal uses a **dedicated admin audit log** separate from the main applicati
 - Semantic Versioning (MAJOR.MINOR.PATCH) / [Other]
 - Changelog location: `docs/CHANGELOG.md`
 - Version file: `docs/VERSION.md`
+
+## Frontend Architecture
+
+### Route-Level Code Splitting (v2.57.0)
+
+The React SPA uses `React.lazy()` and `Suspense` in `App.tsx` to split page-level components into separate webpack chunks. This reduces the initial core bundle and defers loading of heavy pages until navigation.
+
+- **Eagerly Loaded (Critical Path)**: `LoginPage`, `ResetPasswordPage`, `ChangePasswordPage`, `Dashboard`. These are loaded in the main bundle because they are the first screens users encounter.
+- **Lazy Loaded**: All other page components (~20 routes). Each generates its own chunk file at build time.
+- **Fallback**: A shared `LoadingSkeleton` component (`src/frontend/src/components/ui/LoadingSkeleton.tsx`) renders a layout-aware shimmer animation during chunk retrieval, preventing layout jank.
+- **Auth Guard Ordering**: `ProtectedRoute` wrappers are placed **outside** the `Suspense` boundary, ensuring authentication checks execute before any lazy chunk is downloaded.
+
+**Rule for new pages**: New page components must be added as `React.lazy()` imports unless they are part of the authentication critical path.
 
 ## Open Technical Questions
 

@@ -11,6 +11,8 @@ public class LineItemDetailsDto
     public decimal UnitPrice { get; set; }
     public decimal Total { get; set; }
     public string? Notes { get; set; }
+    public int? ItemCatalogId { get; set; }
+    
     public DateTime? DueDate { get; set; }
     public DateTime? UpdatedAtUtc { get; set; }
 
@@ -20,6 +22,7 @@ public class LineItemDetailsDto
     public string RequestTitle { get; set; } = string.Empty;
     public string? RequestDescription { get; set; }
     public string RequesterName { get; set; } = string.Empty;
+    public string? RequesterEmail { get; set; }
     public DateTime? NeedByDateUtc { get; set; }
     
     // Request State/Type
@@ -31,6 +34,13 @@ public class LineItemDetailsDto
     public int? CompanyId { get; set; }
     public Guid? BuyerId { get; set; }
     public string? BuyerName { get; set; }
+    public string? BuyerEmail { get; set; }
+    public Guid? AreaApproverId { get; set; }
+    public string? AreaApproverName { get; set; }
+    public string? AreaApproverEmail { get; set; }
+    public Guid? FinalApproverId { get; set; }
+    public string? FinalApproverName { get; set; }
+    public string? FinalApproverEmail { get; set; }
 
     // Proforma Info (Group-level) - supports multiple files
     public Guid? ProformaId { get; set; }         // kept for backward compatibility (first/latest)

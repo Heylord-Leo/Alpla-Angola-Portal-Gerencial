@@ -62,6 +62,48 @@ The project has been modernized to support the Shell 2.0 architecture:
 3. **Inline CSS Variables**: Strict deprecation of third-party utility class frameworks (like Tailwind). Styling must be implemented deterministically via `style={{ }}` bound to global `tokens.css`. 
 4. **Motion**: Transitioned from `framer-motion` to the modular `motion/react` package.
 5. **Sonner**: Introduced as the primary toast notification system, replacing ad-hoc feedback banners where appropriate.
+6. **Route-Level Code Splitting (v2.57.0)**: All non-critical page components are lazy-loaded via `React.lazy()` + `Suspense` in `App.tsx`. Eagerly loaded pages are limited to the critical authentication path (`LoginPage`, `ResetPasswordPage`, `ChangePasswordPage`) and the `Dashboard`. A shared `LoadingSkeleton` component provides layout-aware fallback during chunk retrieval. New pages must follow this pattern unless they are part of the critical authentication path.
+
+## RequestEdit Component Architecture (v2.57.0)
+
+The `RequestEdit.tsx` component was decomposed into a parent-child architecture to reduce complexity while preserving all existing workflow behavior.
+
+### Parent as Orchestrator
+
+`RequestEdit.tsx` (~660 lines) retains full ownership of:
+- State management (via `useRequestDetail` hook)
+- Event handlers and mutation calls
+- Permission/role evaluation booleans (e.g., `isDraftEditable`, `canExecuteOperationalAction`)
+- Workflow conditional logic and redirects
+- Coordination between child sections
+
+The parent is **not** a thin wrapper. It remains the single source of truth for all business logic within the request detail screen.
+
+### Extracted Presentational Children
+
+Four child components live in `src/frontend/src/pages/Requests/components/`:
+
+| Component | Responsibility |
+|---|---|
+| `RequestGeneralDataSection` | Header fields (Title, Type, Company, Plant, Department, Dates, Supplier) |
+| `RequestFinancialSummary` | Currency, Estimated Total, IVA fields |
+| `RequestStatusActionPanels` | Approval banners, operational action bars, quotation action bar |
+| `RequestLineItemsSection` | Line items table, inline add/edit form, quotation-linked items |
+
+**Rules for child components:**
+1. Children receive all data and handlers via props — they do not call hooks, fetch data, or manage workflow state.
+2. Children render UI sections and delegate actions upward via callback props.
+3. Adding new fields or visual elements to a section should be done in the corresponding child component.
+4. Workflow conditions (e.g., "show this button only when status is X and role is Y") remain in the parent and are passed as boolean props.
+
+### CSS Module (`request-edit.module.css`)
+
+Shared visual styles for the RequestEdit form (labels, inputs, section titles, field errors) are centralized in `src/frontend/src/pages/Requests/request-edit.module.css`.
+
+- **Scope**: Used only by `RequestEdit` and its direct children. Not global.
+- **Pattern**: Semantic class names (`sectionTitle`, `formLabel`, `formInput`, `formInputError`, `fieldError`) replacing previously duplicated inline style objects.
+- **Inline Overrides**: Conditional styles (e.g., disabled background, error borders) remain as targeted inline `style={{ }}` overrides where the condition is dynamic.
+- **DateInput Exception**: `DateInput` applies `className` to its container div, not the inner `<input>`. It handles its own error styling internally through `hasError` prop.
 
 ## Global UI Layering and Z-Index Standardization (v2.13.0)
 
@@ -104,23 +146,55 @@ The "Copy Request" feature allows a user to create a new request using an existi
    - **Secondary Action**: `CANCELAR` is replaced by `DESCARTAR CÓPIA` to clarify that no persisted record is being deleted.
    - **Navigation Protection**: Standard `beforeunload` protection applies if the form has been touched.
 
-## Modern Dashboard Workspace (v2.40.0)
+## Dashboard — Operational Cockpit (DEC-129)
 
-The Modern Dashboard is the unified entry point. It has been completely redesigned around the `ActionCarouselWidget` to maximize real-estate and guide immediate action focus.
+The Dashboard (`/`) is the unified entry point, redesigned as an operational cockpit focused on action, priorities, exceptions, bottlenecks, and financial visibility.
 
-### Operational Overview Segment
+### Data Source
 
-1. **Action Carousel ("Para Minha Ação")**:
-    - A dynamic, fluidly scrolling horizontal container displaying high-urgency requests.
-    - Clickable action cards using the Modern Corporate soft-elevation standard and integrated Kebab Menus.
-2. **Status Grouping & Filter Dropdowns**:
-    - Custom `<FilterDropdown />` wrappers now group isolated statuses into user-friendly semantic modules: `INICIAL`, `APROVAÇÃO & COTAÇÃO`, `FINANCEIRO & RECEBIMENTO`, and `FINALIZADOS`.
-    - This eliminates cognitive overload when filtering standard queues.
-3. **Floating UI & Pagination Centralization**:
-    - "Total Filtrado" trackers and secondary actions are rendered as "Floating Widgets" (absolute/fixed position anchoring bottom-right).
-    - **Pagination rules**: All table pagination controls must be strictly centered at the bottom of the table to prevent `z-index` clashing with the floating summary cards. 
-4. **Attention Highlighting**:
-    - Automatic Urgency categorization (`needByDateUtc`) maps into priority highlights utilizing `var(--color-status-amber)` or `var(--color-status-rose)`.
+A dedicated `GET /api/v1/requests/cockpit-summary` endpoint returns all data in a single call (`CockpitSummaryDto`). It reuses `GetScopedRequestsQuery()` and the existing `myTasksCriteria` expression for role-based filtering. The old `GET /api/v1/requests/summary` endpoint is untouched (used by the Requests page).
+
+### Layout Sections (top to bottom)
+
+1. **Minha Fila de Trabalho** (`MyWorkQueue.tsx`):
+    - 5 role-contextual KPI cards: Aguardando Minha Ação, Urgentes (today/tomorrow), Em Reajuste, Atrasados, Próximos da Data (3 days).
+    - Cards with value=0 are hidden (except the main "pending" card which always shows).
+    - Counters are derived from the backend `myTasksCriteria` expression — see `task.md` for exact role-based status mapping.
+
+2. **Visão do Pipeline** (inline in `Dashboard.tsx`):
+    - 10 compact status counter cards: Activos, Ag. Cotação, Aprov. Área, Aprov. Final, Reajuste, Ag. PO, Ag. Pagamento, Pago, Recebimento, Concluídos.
+    - Each card links to the corresponding filtered Requests list.
+    - Color-coded accent bars and hover elevation effects.
+
+3. **Ações Rápidas** (`QuickActions.tsx`):
+    - 6 role-aware action buttons: Novo Pedido, Ver Pedidos, Gestão de Cotações (Buyer), Centro de Aprovações (Approvers), Pagamentos (Finance), Recebimentos (Receiving).
+    - Each action is visible only if the user has the required role.
+
+4. **Atenção Requerida** (`AlertList.tsx`):
+    - Always visible. Empty state: "Nenhuma atenção crítica no momento."
+    - Alerts sorted by severity: CRITICAL → WARNING → INFO.
+    - Types: OVERDUE (>7 days = CRITICAL), NEAR_DEADLINE, ADJUSTMENT.
+    - Each alert is clickable and navigates to the request detail.
+
+5. **Gargalos do Processo** (`BottleneckTable.tsx`):
+    - Table showing workflow stages ordered by stuck request count.
+    - Visual distribution bars (proportional to max count).
+    - Age column with color-coded badges: >14d red, >7d orange, >3d yellow, ≤3d green.
+    - Empty state: "Nenhum gargalo significativo no momento."
+
+6. **Resumo Financeiro** (`FinancialSummary.tsx`):
+    - Financial cards grouped by status: Em Aprovação, Aprovado / Ag. PO, Pendente Pagamento, Pago / Finalizado.
+    - Uses selected quotation amount when available, falls back to estimated total.
+    - Multi-currency aware: shows "Multi-moeda" label when currencies differ.
+    - Empty state when no financial metrics are available — no fake data.
+
+7. **Como funciona o processo** (collapsible `<details>`, collapsed by default):
+    - Preserves the existing `WorkflowInteractive` and `WorkflowStageDetails` components.
+    - Educational/onboarding content, not operational.
+
+### V2 Filter Readiness
+
+The `cockpit-summary` endpoint and frontend state are structured to accept optional query params (`companyId`, `plantId`, `departmentId`, `periodStart`, `periodEnd`) in a future V2 without requiring layout changes.
 
 ### Status and Action Badges
 
@@ -146,9 +220,9 @@ For `QUOTATION` requests, the `RequestEdit.tsx` component implements a **UI Pivo
 - **Identity Selection**: For COTAÇÃO requests, the "Winning Quotation" is the source of truth for the receiving operations.
 
 ---
-### Interactive Workflow (Educational Segment)
+### Interactive Workflow (Educational Segment — Collapsible)
 
-A non-operational, instructional guide to the purchasing process.
+A non-operational, instructional guide to the purchasing process, now rendered inside a `<details>` element at the bottom of the Dashboard, collapsed by default.
 
 1. **Main Path Dominance**: The workflow emphasizes the primary linear path (Rascunho to Execução) with clean connectors and explicit stage labels. Selected stages are clearly dominant, while non-selected stages maintain enough visual presence for readability.
 2. **Role Identification**: Each stage includes a short, clean role label (`Solicitante`, `Comprador`, `Aprovador Área`, `Aprovador Final`, `Processo`) for immediate clarity on responsibility.
@@ -435,8 +509,21 @@ For fields requiring selection from large datasets (e.g., Suppliers, Materials),
 7. **Portal Overlay (Required)**: To ensure the dropdown is never clipped by scroll containers or parents with `overflow: hidden`, use **React Portals** via `ReactDOM.createPortal` (or the shared `DropdownPortal.tsx` component).
    - The panel must use `position: fixed` with dynamic coordinate calculation.
    - Use the `useDropdownPosition` hook to automatically track scroll-parent events and ensure viewport safety (automatic flipping and horizontal containment).
+## Print Media and Official Document Layouts (v2.118.2)
+
+To ensure that analytical reports and documents can be cleanly printed or exported directly from the browser without visual artifacts:
+
+1. **Global AppShell Override**: The global AppShell components (Sidebar, Topbar) are hidden during print media execution (`@media print`) via standard layout classes: `.app-shell > header`, `.app-shell-sidebar` are set to `display: none !important`.
+2. **Flattened Grid Layout**: The main workspace is converted from a grid layout to a simple block layout via `.app-shell` and `.app-shell-grid` styles in print media to ensure the printable report fills the full width of the paper without being crushed.
+3. **Visibility Utilities**: Explicitly use the utility classes `.no-print` and `.screen-only` to target and hide components that should not appear on paper (e.g., page-level headers, tab navigations, actions, and filters).
+4. **Scoped Report Print Styles**: Report-specific styling must be enclosed in localized `@media print` rules within the component's own CSS (e.g., `hr-attendance-monthly-report.css`), covering:
+   - **Official Document Header**: Render a professional header indicating the portal origin, document title, generation date, and metadata.
+   - **Compact Tables**: Apply compact padding, smaller fonts (6-7pt), absolute column widths, and table borders suited for print.
+   - **Page Break Control**: Avoid breaking in the middle of employee data blocks or sections using `break-inside: avoid` and `page-break-inside: avoid`.
+   - **A4 Layout Orientation**: Enforce landscape or portrait settings with controlled margins (e.g., `margin: 8mm` or `@page { size: A4 landscape; margin: 8mm; }`).
 
 ## List State Preservation
+
 
 To ensure users never lose their place within deeply paginated or filtered datasets when navigating away to Detail or Edit screens, all primary Lists (like the Requests List) must enforce the following pattern:
 
@@ -651,3 +738,132 @@ The Finance Workspace (`FinanceLandingPage.tsx`) acts as the dedicated operation
     - *Comprovativo*: Flagged for requests marked as paid but lacking a physical receipt upload.
 2. **Action Handlers**: Permitted actions (Agendar, Pagar, Notas, Devolver) are accessible directly from the payment list via the portal standard `<KebabMenu />` component, optimizing bulk processing velocity. 
 3. **Contextual Modals**: All explicit UI actions trigger the strictly native `<FinanceActionModal />` (`DropdownPortal`). No `window.prompt` or `window.confirm` dialogues are ever used in the business system. "Mark as Paid" executes a full (not partial) payment workflow transition.
+4. **Payment Divergence Highlighting (v2.93.2)**: Any payment history entry marked with `PAYMENT_DIVERGENCE_DETECTED` must be visually highlighted to draw attention. This highlight uses a light-yellow background (`var(--color-status-yellow)` / `#fefce8`), an amber border (`#fde047`), and dark text.
+
+## I.T Equipment Module (v2.123.0)
+
+The I.T Equipment Module (`ITEquipmentPage.tsx`) provides a complete inventory management workspace for the IT department, accessible at `/it/equipment`.
+
+### Access Control
+
+1. **Role Gate**: The module is accessible only to users with `IT` or `System Administrator` roles, controlled by `hasITAccess` in `AuthContext.tsx`.
+2. **Route Guard**: `ITRoute` component in `App.tsx` wraps the lazy-loaded page. Unauthorized users are redirected to `/dashboard`.
+3. **Navigation**: The "T.I" sidebar group (Monitor icon) is only rendered for users with IT access.
+
+### Page Architecture
+
+1. **KPI Summary Cards**: 8 status-based counters (Total, Disponível, Em Uso, Em Reparação, Perdido, Reservado, Aposentado, Desconhecido) using the shared `KPICard` component. Each card shows the count for its equipment status.
+2. **Search + Filter Bar**: Global text search (debounced 300ms) combined with collapsible multi-filter panel (Status, Type, Plant, Manufacturer). Active filters shown as removable chips.
+3. **Sortable Table**: `EquipmentTable` component with column-header sorting (AssetTag, Hostname, Type, Status, AssignedTo, Plant, LastUpdated). Follows the existing sort pattern with `ArrowUp`/`ArrowDown` indicators.
+4. **Pagination**: Standard page-size selector (10/25/50/100) with prev/next navigation, centered below the table.
+
+### Quick View Drawer
+
+The `EquipmentQuickViewDrawer` slides in from the right, following the existing drawer pattern used in the Approval Center.
+
+1. **4-Tab Layout**: Informações (equipment details + acquisition), Atribuições (assignment history), Movimentações (movement audit log), Documentos (attached files).
+2. **Context-Sensitive Actions**: Action buttons in the drawer header adapt based on equipment status:
+   - `AVAILABLE`: Assign, Edit, Send to Repair, Lost, Reserve, Retire
+   - `IN_USE`: Return, Edit, Send to Repair, Lost
+   - `IN_REPAIR`: Return from Repair, Lost
+   - `RESERVED`: Assign, Cancel Reserve
+   - Other statuses: Edit only
+3. **Data Fetching**: Detail data is loaded on-demand when the drawer opens (not prefetched in the list).
+
+### Action Modals
+
+All lifecycle transitions use dedicated modal components following the `EquipmentFormModal` shared UI helpers pattern:
+
+| Modal | Action | Key Fields |
+|---|---|---|
+| `EquipmentFormModal` | Create/Edit | All equipment fields + optional acquisition section |
+| `AssignEquipmentModal` | Assign to user | Assigned To, Approver, Expected Return Date, Notes |
+| `ReturnEquipmentModal` | Return from assignment | Return Condition (OK/DAMAGED/NEEDS_REPAIR), Notes |
+| `RepairEquipmentModal` | Send to / Return from repair | Repair Provider, Estimated Cost, Repair Result |
+| `LostEquipmentModal` | Mark as lost | Notes |
+| `RetireEquipmentModal` | Retire equipment | Notes |
+| `ReserveEquipmentModal` | Reserve for future use | Reserved For, Expected Date, Notes |
+| `ImportEquipmentModal` | CSV import | File upload with result preview |
+
+### CSV Import Flow
+
+1. **Upload**: Drag-and-drop or click-to-browse file selection. Accepts `.csv` files only.
+2. **Processing**: Backend parses the CSV with flexible column mapping (English + Portuguese headers).
+3. **Result Preview**: Modal displays categorized results (Created, Skipped, Errors, Duplicate Hostnames) with expandable detail sections.
+4. **Error Transparency**: Each failed row shows the specific error message, not a generic failure.
+
+### Type System (`itEquipment.ts`)
+
+- `EQUIPMENT_STATUS_CONFIG`: Maps status codes to Portuguese labels, colors, and icons.
+- `EQUIPMENT_TYPE_CONFIG`: Maps equipment type codes to Portuguese labels and icons.
+- `MOVEMENT_TYPE_LABELS`: Portuguese labels for all movement log event types.
+- `ASSIGNMENT_STATUS_CONFIG`: Display config for assignment statuses (ACTIVE/RETURNED/TRANSFERRED).
+- `DOCUMENT_TYPE_LABELS`: Portuguese labels for document types (Invoice, Warranty, PO, etc.).
+
+### Styling
+
+The module uses inline CSS styles with design tokens from `tokens.css`, consistent with the Modern Corporate standard. No module-specific CSS file — all styling is computed inline using the established pattern.
+
+## Guided Tour / Onboarding
+
+The portal includes a guided onboarding system using **React Joyride** with a registry-based multi-tour architecture supporting portal, module, page, and drawer-level tours.
+
+For complete documentation on the Guided Tour system architecture, levels, definition structure, registry rules, scroll behaviors, and maintenance guidelines, refer to the dedicated documentation:
+
+👉 [GUIDED_TOUR_SYSTEM.md](GUIDED_TOUR_SYSTEM.md)
+| `/requests` | `module-purchasing-logistics` | `page-requests` |
+| `/buyer/items` | `module-purchasing-logistics` | `page-buyer-items` |
+| `/receiving/workspace` | `module-purchasing-logistics` | `page-receiving-workspace` |
+
+The `portal-main` tour is always available regardless of route.
+
+### `data-tour` Attribute Convention
+
+Tour steps target UI elements via `[data-tour="..."]` CSS selectors. Attributes are placed on:
+
+- **Topbar.tsx**: `topbar`, `module-search`, `notifications`, `user-profile`
+- **Sidebar.tsx**: `main-menu`, `dashboard`, `purchase-requests`, `approvals`, `purchasing-logistics`, `contracts`, `finance`, `it-module`, `hr`, `configuration-module`, `administration-module`, `buyer-items-menu`, `receiving-menu`
+- **GuidedTourButton.tsx**: `guided-help-button`
+- **PurchasingLandingPage.tsx**: `purchasing-overview`
+- **RequestsDashboard.tsx**: `requests-header`, `requests-action-carousel`, `requests-explorer`, `requests-filter-tabs`
+- **BuyerItemsList.tsx**: `buyer-items-header`, `buyer-items-search`, `buyer-items-list`
+- **ReceivingWorkspace.tsx**: `receiving-header`, `receiving-pending`, `receiving-completed`
+
+The Sidebar uses a lookup map (`TOUR_ATTR_MAP`) to assign `data-tour` values based on `item.id` from the navigation config.
+
+### Help Button Dropdown (v2.130.0)
+
+The GuidedTourButton in the Topbar opens a **dropdown menu** showing available tours:
+1. **Tour inicial do Portal** — always visible
+2. **Tour deste módulo** — visible if a module tour exists for the current route
+3. **Tour desta tela** — visible if a page tour exists for the current route
+
+Pages also include `GuidedTourContextButton` inline for direct page-level tour access.
+
+### Step Filtering (RBAC Safety)
+
+Before starting any tour, `filterActiveSteps()` checks each step's target selector against the DOM. Steps whose targets don't exist (because the user lacks permissions for that module/page area) are silently excluded. If zero valid steps remain, a transient toast message appears instead of starting Joyride.
+
+### Persistence
+
+- **Key format**: `guided-tour:{tourId}:v1:{userId}`
+- **Storage**: `localStorage` (v1 — no backend persistence)
+- **States**: `not-started` (default), `completed`, `skipped`
+- **Separate per tour**: Completing `page-requests` does not affect `module-purchasing-logistics` or `portal-main`
+- **No anonymous keys**: State is never written without a valid `userId`
+- **Manual restart**: The help dropdown and inline buttons reset state and restart the tour
+
+### Layout Readiness
+
+The portal-main tour does NOT rely on a fixed delay. It polls for layout readiness:
+1. Waits for the authenticated `userId` to be available
+2. Polls the DOM every 200ms for `[data-tour="topbar"]` and `[data-tour="main-menu"]`
+3. Only shows the welcome modal after both conditions are met (max 8s timeout)
+
+### Adding a New Tour
+
+1. Create a tour file in `tours/` (e.g., `financeModuleTour.ts`) exporting a `TourDefinition`
+2. Add the tour ID to the `TourId` union type in `guidedTourTypes.ts`
+3. Register the tour in `guidedTourRegistry.ts` (`TOUR_REGISTRY` map + route mappings)
+4. Add `data-tour` attributes to the target page components
+5. Optionally add a `GuidedTourContextButton` to the page header

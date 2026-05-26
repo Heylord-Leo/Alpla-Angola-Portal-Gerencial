@@ -2,7 +2,7 @@ import { API_BASE_URL } from './api';
 
 export type LogLevel = 'Information' | 'Warning' | 'Error';
 
-export type FrontendComponentKey = 'Global' | 'OcrSettings' | 'AdminApi';
+export type FrontendComponentKey = 'Global' | 'OcrSettings' | 'AdminApi' | 'SyncApi';
 
 export type FrontendEventType = 
     | 'RUNTIME_ERROR' 

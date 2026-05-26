@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
+using AlplaPortal.Infrastructure.Logging;
 
 namespace AlplaPortal.Infrastructure.Services;
 
@@ -18,16 +19,18 @@ public class EmailService : IEmailService
     private readonly ILogger<EmailService> _logger;
     private readonly IWebHostEnvironment _env;
     private readonly ISmtpSettingsService _smtpSettingsService;
+    private readonly AdminLogWriter _adminLog;
 
     private const string LogoContentId = "alpla-logo";
     private const string LogoFileName = "logo-v2.png";
 
-    public EmailService(IConfiguration config, ILogger<EmailService> logger, IWebHostEnvironment env, ISmtpSettingsService smtpSettingsService)
+    public EmailService(IConfiguration config, ILogger<EmailService> logger, IWebHostEnvironment env, ISmtpSettingsService smtpSettingsService, AdminLogWriter adminLog)
     {
         _config = config;
         _logger = logger;
         _env = env;
         _smtpSettingsService = smtpSettingsService;
+        _adminLog = adminLog;
     }
 
     public async Task<bool> SendPasswordResetEmailAsync(string toEmail, string resetLink)
@@ -140,7 +143,15 @@ public class EmailService : IEmailService
             if (string.IsNullOrEmpty(smtp.Server) || string.IsNullOrEmpty(smtp.SenderEmail) || string.IsNullOrEmpty(smtp.Password))
             {
                 _logger.LogError("SMTP configuration is missing or incomplete for workflow notification. Skipping email to {Email}.", toEmail);
-                return false;
+                await _adminLog.WriteAsync(
+                    "Error",
+                    "EmailService",
+                    "SMTP_DISPATCH_FAILED",
+                    $"Erro Crítico: O servidor SMTP não está configurado para tentar enviar a notificação a {toEmail}.",
+                    payload: "A configuração de SMTP não possui senha ou host."
+                );
+                // Cannot proceed, throw clear exception
+                throw new InvalidOperationException("SMTP configuration is missing or incomplete for workflow notification.");
             }
 
             var fromAddress = new MailAddress(smtp.SenderEmail, smtp.SenderName);
@@ -209,11 +220,145 @@ public class EmailService : IEmailService
 
             await smtpClient.SendMailAsync(message);
             _logger.LogInformation("Workflow notification email dispatched to {Email} (Subject: {Subject})", toEmail, subject);
+            
+            await _adminLog.WriteAsync(
+                "Info",
+                "EmailService",
+                "SMTP_DISPATCH_SUCCESS",
+                $"E-mail despachado para {toEmail}. Assunto: {subject}",
+                payload: $"Host: {smtp.Server}:{smtp.Port}. TLS: {smtp.EnableSsl}"
+            );
+            
             return true;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to deliver workflow notification email to {Email} (Subject: {Subject})", toEmail, subject);
+            await _adminLog.WriteAsync(
+                "Error",
+                "EmailService",
+                "SMTP_DISPATCH_FAILED",
+                $"Falha crítica ao enviar notificação por E-mail para {toEmail}",
+                exceptionDetail: ex.Message
+            );
+            
+            // Re-throw so orchestrator captures the true failure
+            throw;
+        }
+    }
+
+    public async Task<bool> SendWithAttachmentAsync(string toEmail, string recipientName, string subject, string headline, string bodyHtml, string attachmentPath, string attachmentFileName)
+    {
+        try
+        {
+            var smtp = await _smtpSettingsService.GetEffectiveSettingsAsync();
+
+            if (string.IsNullOrEmpty(smtp.Server) || string.IsNullOrEmpty(smtp.SenderEmail) || string.IsNullOrEmpty(smtp.Password))
+            {
+                _logger.LogError("SMTP configuration is missing for attachment email to {Email}.", toEmail);
+                throw new InvalidOperationException("SMTP configuration is missing or incomplete.");
+            }
+
+            var fromAddress = new MailAddress(smtp.SenderEmail, smtp.SenderName);
+            var toAddress = new MailAddress(toEmail);
+
+            using var smtpClient = new SmtpClient(smtp.Server, smtp.Port)
+            {
+                Credentials = new NetworkCredential(smtp.SenderEmail, smtp.Password),
+                EnableSsl = smtp.EnableSsl
+            };
+
+            // Build branded template (same pattern as workflow notification)
+            var logoPath = ResolveLogoPath();
+            var hasLogo = logoPath != null;
+            var logoHtml = hasLogo
+                ? $"<img src='cid:{LogoContentId}' alt='ALPLA Portal' style='max-width: 150px; margin-bottom: 20px;' />"
+                : "<h2 style='color: #002D72; margin-bottom: 20px;'>ALPLA Portal</h2>";
+
+            var greetingName = !string.IsNullOrWhiteSpace(recipientName) ? recipientName.Split(' ')[0] : "Utilizador";
+
+            var body = $@"
+                <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;'>
+                    {logoHtml}
+                    <h3 style='color: #002D72; margin-bottom: 8px;'>{headline}</h3>
+                    <p>Olá {greetingName},</p>
+                    <div style='margin: 16px 0; line-height: 1.6;'>{bodyHtml}</div>
+                    <p style='margin-top: 16px; padding: 12px; background-color: #f0f4f8; border-radius: 6px; font-size: 13px; color: #555;'>
+                        📎 O documento <strong>{attachmentFileName}</strong> encontra-se em anexo a este e-mail.
+                    </p>
+                    <hr style='border: none; border-top: 1px solid #eee; margin: 30px 0;' />
+                    <p style='font-size: 12px; color: #999;'>
+                        ALPLA Portal Gerencial — Notificação de Workflow<br/>
+                        Não responda a este e-mail.
+                    </p>
+                </div>
+            ";
+
+            using var message = new MailMessage(fromAddress, toAddress)
+            {
+                Subject = subject
+            };
+
+            // Attach the file
+            if (!string.IsNullOrEmpty(attachmentPath) && File.Exists(attachmentPath))
+            {
+                // Auto-detect MIME type from extension for correct email client handling
+                var ext = Path.GetExtension(attachmentPath).ToLowerInvariant();
+                var mimeType = ext switch
+                {
+                    ".pdf" => MediaTypeNames.Application.Pdf,
+                    ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    _ => MediaTypeNames.Application.Octet
+                };
+                var attachment = new Attachment(attachmentPath, mimeType);
+                attachment.ContentDisposition!.FileName = attachmentFileName;
+                message.Attachments.Add(attachment);
+            }
+            else
+            {
+                _logger.LogWarning("Attachment file not found at {Path} for email to {Email}. Sending without attachment.", attachmentPath, toEmail);
+            }
+
+            if (hasLogo)
+            {
+                var htmlView = AlternateView.CreateAlternateViewFromString(body, null, MediaTypeNames.Text.Html);
+                var logoResource = new LinkedResource(logoPath!, MediaTypeNames.Image.Png)
+                {
+                    ContentId = LogoContentId,
+                    TransferEncoding = TransferEncoding.Base64
+                };
+                htmlView.LinkedResources.Add(logoResource);
+                message.AlternateViews.Add(htmlView);
+            }
+            else
+            {
+                message.Body = body;
+                message.IsBodyHtml = true;
+            }
+
+            await smtpClient.SendMailAsync(message);
+            _logger.LogInformation("Email with attachment dispatched to {Email} (Subject: {Subject}, File: {File})", toEmail, subject, attachmentFileName);
+
+            await _adminLog.WriteAsync(
+                "Info",
+                "EmailService",
+                "SMTP_ATTACHMENT_DISPATCH_SUCCESS",
+                $"E-mail com anexo despachado para {toEmail}. Assunto: {subject}. Ficheiro: {attachmentFileName}",
+                payload: $"Host: {smtp.Server}:{smtp.Port}. TLS: {smtp.EnableSsl}"
+            );
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to deliver email with attachment to {Email} (Subject: {Subject})", toEmail, subject);
+            await _adminLog.WriteAsync(
+                "Error",
+                "EmailService",
+                "SMTP_ATTACHMENT_DISPATCH_FAILED",
+                $"Falha ao enviar e-mail com anexo para {toEmail}",
+                exceptionDetail: ex.Message
+            );
             return false;
         }
     }

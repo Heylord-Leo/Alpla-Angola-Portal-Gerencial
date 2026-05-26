@@ -1,6 +1,2355 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
+
+## [v2.155.0] - 2026-05-26
+
+### Added — GitHub Actions TEST Deployment Workflow (CI/CD)
+- First automated CI/CD pipeline for deploying the Alpla Angola Portal Gerencial to the TEST environment on `AOVIA1VMS011`.
+- Workflow: `.github/workflows/deploy-test.yml` — manual trigger (`workflow_dispatch`) with version input.
+- Build job on `windows-latest`: .NET 8 restore → build → publish, Node.js 20 npm ci → tsc → vite build.
+- Deploy job on self-hosted runner: timestamped backups, IIS App Pool stop/start, file deployment with config preservation, smoke test.
+- Environment-specific `appsettings.*.json` files preserved on the server during deployment.
+- Documentation: `docs/GITHUB_ACTIONS_TEST_DEPLOYMENT.md` — full deployment guide with prerequisites, IIS config, certificate info, rollback, and troubleshooting.
+- No secrets committed, no production touched, port 5000 never used, EF migrations intentionally not automated.
+
+## [v2.154.0] - 2026-05-25
+
+### Added — Primavera ERP Connection Validation & Health Consistency Corrections
+
+**Summary**: Resolved the connection testing validation messages and state discrepancies for the Primavera ERP integration in the **Gestão de Integrações (Integration Management)** module. Implemented 6 strict sequential validation checks in Portuguese before executing SQL connections, returning exact user-friendly diagnostics. Aligned the DTO enabled state directly with `provider.IsEnabled` in the database, resolving configuration button inconsistencies. Updated display status calculations to dynamically evaluate Primavera based on company-specific configurations (showing `"Inativo"` when disabled, `"Não Configurado"` if company database/credentials are missing, and fallback health states). Added a visual warning badge reading `"Senha não configurada."` next to the status badge on active company cards.
+
+**Key Updates**:
+- **Sequential Validation Pipeline**: Integrated 6 sequential connection validations in Portuguese (`PrimaveraIntegrationProvider.cs`) before attempting SQL connections. Returns exact diagnostic warnings (e.g. database missing, username missing, password missing) directly.
+- **Enabled State Alignment**: Refactored DTO mappings (`IntegrationSettingsService.cs` and `IntegrationHealthService.cs`) to strictly check `provider.IsEnabled` from the database directly, ensuring toggles and health cards reflect true database states.
+- **Dynamic Display Status**: Updated the health state calculator (`IntegrationHealthService.cs`) to dynamically check all active Primavera companies and their database/credential completeness, returning `"Inativo"` or `"Não Configurado"` as appropriate.
+- **UI Warning Badge**: Added a warning badge reading `"Senha não configurada."` next to the status badge on active company rows in `IntegrationSettings.tsx` to highlight missing credentials.
+
+**Files Changed**:
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/PrimaveraConnectionFactory.cs` — Exposed company configuration state safely via `GetCompanySettingsAsync`.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/PrimaveraIntegrationProvider.cs` — Integrated the 6 Portuguese validation checks.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/IntegrationHealthService.cs` — Aligned health statuses and bypassed early connection test exits for Primavera.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/IntegrationSettingsService.cs` — Removed enabled state configuration fallback in `MapToDto`.
+- `src/frontend/src/pages/Admin/IntegrationSettings.tsx` — Rendered `"Senha não configurada."` warning badge on active company cards.
+
+### Added — Security Incident Response & Unified SMTP Integration Consolidation (DEC-135)
+
+**Summary**: Addressed the GitGuardian alert by staging a security incident report (`docs/SECURITY_INCIDENT_GITGUARDIAN_SMTP_SECRET_LEAK.md`), confirming that development configuration secrets are untracked and gitignored, and removing hardcoded passwords from scripts (`scripts/query_innux.ps1`). Consolidated the SMTP configuration strictly inside the **Gestão de Integrações (Integration Management)** module, completely removing it from the legacy **Dados Mestres (Master Data)** tab. Refactored the C# backend to route provider `"SMTP"` CRUD operations to the existing database-backed `SmtpSettings` table, preventing duplicate databases or configurations. Implemented scoped `IIntegrationProvider` health check providers (`SmtpIntegrationProvider.cs` and `OpenAiIntegrationProvider.cs`) and deleted the obsolete `SmtpSettingsController.cs`. Developed an administrative modal (`ConnectionConfigureModal`) in the frontend to securely modify non-secret connection parameters in real time.
+
+**Key Updates**:
+- **Immediate Security Incident Response**: Created the detailed incident report outlining historical exposure context, credential rotation requirements for Leonardo, and git history scrubbing procedures via `git-filter-repo`. Removed the plaintext database password `ad#56&Hfe` from the tracked `scripts/query_innux.ps1` script, resolving it dynamically from the `INNUX_DB_PASSWORD` environment variable. Confirmed active HEAD cleanliness, `.gitignore` rules, and absence of active hardcoded secrets.
+- **Dados Mestres SMTP Removal**: Stripped the SMTP tab from the sidebar menu, state hooks, and `<SmtpSettingsPanel>` render block out of `MasterData.tsx` to prevent duplicate configuration areas.
+- **Unified SMTP Configuration Routing**: Refactored `IntegrationSettingsService.cs` to map read/write and password rotation operations for provider `"SMTP"` securely to the legacy `SmtpSettings` database table, preserving database-backed single-row constraints and AES encryption keys.
+- **New Integration Health Providers**: Created `SmtpIntegrationProvider.cs` and `OpenAiIntegrationProvider.cs` implementing the `IIntegrationProvider` connection test contract. Registered them in the DI pipeline (`Program.cs`) and deleted `SmtpSettingsController.cs`.
+- **Administrative Configuration UI**: Implemented `ConnectionConfigureModal` inside `IntegrationSettings.tsx` to support editing non-secret connection parameters (Primavera, Innux, OpenAI, SMTP) in a clean, responsive modal form, keeping secret inputs securely masked.
+- **Guided Tour & Type Verification**: Confirmed that guided tours are unaffected by the SMTP master data removal, and verified type-safety compilation on backend (`dotnet build`) and frontend (`npx tsc --noEmit`) with 0 errors.
+
+**Files Changed**:
+- `docs/SECURITY_INCIDENT_GITGUARDIAN_SMTP_SECRET_LEAK.md` — [NEW] Security incident report document.
+- `scripts/query_innux.ps1` — Replaced hardcoded plaintext password with environment variable.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/SmtpIntegrationProvider.cs` — [NEW] Unified SMTP test connection provider.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/OpenAiIntegrationProvider.cs` — [NEW] Unified OpenAI test connection provider.
+- `src/backend/AlplaPortal.Api/Controllers/Admin/SmtpSettingsController.cs` — [DELETE] Obsolete legacy controller.
+- `src/backend/AlplaPortal.Api/Program.cs` — Registered new integration health providers.
+- `src/backend/AlplaPortal.Application/DTOs/Integration/IntegrationSettingsDtos.cs` — Added SMTP transport properties.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/IntegrationSettingsService.cs` — Routed SMTP settings securely to `SmtpSettings` table.
+- `src/frontend/src/pages/Settings/MasterData.tsx` — Stripped legacy SMTP settings UI panel.
+- `src/frontend/src/pages/Admin/IntegrationSettings.tsx` — Added expandable SMTP cards and administrative configuration modal.
+- `src/frontend/src/lib/api.ts` — Cleaned up old SMTP API definitions.
+- `src/frontend/src/types/index.ts` — Updated types for integration parameters.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.154.0".
+- `docs/VERSION.md` — Updated to v2.154.0.
+- `docs/CHANGELOG.md` — This entry.
+- `docs/DECISIONS.md` — DEC-135.
+
+## [v2.153.0] - 2026-05-25
+
+### Added — Integration Management Module: CRUD UI, Factory Refactoring & Frontend Type Safety (DEC-134)
+
+**Summary**: Implemented a complete Integration Management module enabling System Administrators to view, configure, test, and manage all integration provider settings (Primavera, Innux, OpenAI, SMTP) from a unified admin UI. Refactored all runtime services to resolve configuration from database-backed `IntegrationProviderSettings` first, with `IConfiguration`/environment variable fallback, and a safe disabled state when neither source is available. Performed comprehensive frontend type safety cleanup eliminating all `any` types from the integration API layer.
+
+**Phase A — Architecture Review**:
+- Comprehensive analysis of the existing 4-layer configuration cascade (IIS env vars → appsettings → DB rows).
+- Identified 3 services requiring refactoring: `PrimaveraConnectionFactory`, `InnuxConnectionFactory`, `DocumentExtractionSettingsService`.
+- Documented security findings: plaintext credentials in `appsettings.Development.json`, hardcoded AES fallback key.
+- Architecture review saved to `docs/INTEGRATION_MANAGEMENT_ARCHITECTURE_REVIEW.md`.
+
+**Phase B — CRUD API & Frontend UI**:
+- **New Controller**: `IntegrationSettingsController` under `/api/admin/integration-settings` with 7 endpoints (GET all, GET by code, PUT settings, POST secret, POST test, POST enable, POST disable).
+- **New Service**: `IntegrationSettingsService` — full CRUD orchestration with AES encryption for secrets, admin log audit trail, and `IntegrationHealthService` delegation for test connections.
+- **New DTOs**: `IntegrationSettingsDto`, `UpdateIntegrationSettingsRequest`, `ReplaceIntegrationSecretRequest` with `[JsonPropertyName]` serialization.
+- **Database Migration**: `AddIntegrationManagementUI` — seeds OPENAI and SMTP providers + `IntegrationProviderSettings` rows with default config.
+- **Frontend Page**: `IntegrationSettings.tsx` at `/admin/integrations` — expandable provider cards, inline field editing, masked secret management (`SecretManager` component), real-time connection testing, enable/disable toggle.
+- **Admin Tile**: Added "Configurar Integrações" tile to `AdministratorWorkspace.tsx`.
+- **Route**: Registered `/admin/integrations` in `App.tsx` with `System Administrator` role guard.
+
+**Phase C — Factory Refactoring (DB-First Configuration)**:
+- **New Service**: `IntegrationConfigResolver` — scoped DI service implementing the 3-tier cascade: DB (`IntegrationProviderSettings` with `AesEncryptionHelper` decryption) → `IConfiguration` fallback → Safe disabled state.
+- **PrimaveraConnectionFactory**: Now resolves Server, InstanceName, Username, and Password from `IntegrationConfigResolver.ResolveAsync("PRIMAVERA")` before falling back to `Integrations:Primavera` config section.
+- **InnuxConnectionFactory**: Same DB-first resolution via `IntegrationConfigResolver.ResolveAsync("INNUX")`.
+- **OpenAiDocumentExtractionProvider**: API key now resolved via `IntegrationConfigResolver.ResolveApiKeyAsync("OPENAI")` with `OPENAI_API_KEY` environment variable fallback.
+- **DocumentExtractionSettingsService**: Test connection method also uses the resolver cascade.
+- **DI Registration**: `IntegrationConfigResolver` registered as scoped in `Program.cs`.
+
+**Phase D — Frontend Type Safety Cleanup**:
+- Moved inline `IntegrationSettingsDto` from `IntegrationSettings.tsx` to shared `types/index.ts`.
+- Added `UpdateIntegrationSettingsDto`, `ReplaceIntegrationSecretDto`, `IntegrationConnectionTestResultDto` to shared types.
+- Replaced all `Promise<any>` return types in `api.ts` integration methods with strongly-typed DTOs.
+- Replaced all `catch (err: any)` with `catch (err: unknown)` and safe `instanceof Error` message extraction.
+- **Bug Fix**: Test connection handler was reading `result.currentStatus` and `result.lastResponseTimeMs` (properties from `IntegrationProviderStatusDto`) instead of `result.success` and `result.responseTimeMs` (from `IntegrationConnectionTestResultDto`). This would have caused all test results to display as failures.
+- Added `data-tour="integrations-configure-btn"` anchor to provider card header for guided tour integration.
+
+**Files Changed**:
+- `src/backend/AlplaPortal.Api/Controllers/Admin/IntegrationSettingsController.cs` — [NEW] CRUD + secret rotation + test + enable/disable.
+- `src/backend/AlplaPortal.Application/DTOs/Integration/IntegrationSettingsDtos.cs` — [NEW] GET/PUT/POST DTOs.
+- `src/backend/AlplaPortal.Application/Interfaces/IIntegrationSettingsService.cs` — [NEW] Service interface.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/IntegrationSettingsService.cs` — [NEW] Service implementation.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/IntegrationConfigResolver.cs` — [NEW] DB-first config resolver.
+- `src/backend/AlplaPortal.Infrastructure/Persistence/Migrations/AddIntegrationManagementUI.cs` — [NEW] Migration.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/PrimaveraConnectionFactory.cs` — Refactored to use resolver.
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/InnuxConnectionFactory.cs` — Refactored to use resolver.
+- `src/backend/AlplaPortal.Infrastructure/Services/Extraction/OpenAiDocumentExtractionProvider.cs` — Refactored to use resolver.
+- `src/backend/AlplaPortal.Api/Program.cs` — DI registration for `IntegrationSettingsService` and `IntegrationConfigResolver`.
+- `src/frontend/src/pages/Admin/IntegrationSettings.tsx` — [NEW] Integration management UI.
+- `src/frontend/src/pages/Admin/AdministratorWorkspace.tsx` — Added integration tile.
+- `src/frontend/src/App.tsx` — Route registration.
+- `src/frontend/src/types/index.ts` — Added 4 integration DTO types.
+- `src/frontend/src/lib/api.ts` — Typed integration API methods.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.153.0".
+- `docs/INTEGRATION_MANAGEMENT_ARCHITECTURE_REVIEW.md` — [NEW] Phase A architecture review.
+- `docs/VERSION.md` — v2.153.0.
+- `docs/CHANGELOG.md` — This entry.
+- `docs/DECISIONS.md` — DEC-134.
+
+## [v2.152.0] - 2026-05-25
+
+### Fixed — AOVIA1VMS011 Staging IIS Connection String Mismatch & Hardening (DEC-133)
+
+**Summary**: Resolved the staging login connection failure (`HTTP 500` error) by diagnosing a mismatch between the environment variable written by the secure configuration script (`ConnectionStrings__PortalDatabase`) and the configuration key expected by the .NET 8 backend API (`builder.Configuration.GetConnectionString("DefaultConnection")` in `Program.cs`). Patched the secure local PowerShell configuration script to map the correct `ConnectionStrings__DefaultConnection` variable in IIS using `Microsoft.Web.Administration` and recycle the target app pool `PortalGerencialTestApiPool` successfully. Documented the intentional double `/api` path prefix (`/api/api/auth/login`) arising from IIS virtual directories, and analyzed ephemeral in-memory DataProtection keys warnings with hardening recommendations for subsequent production releases.
+
+**Key Updates**:
+- **Staging Connection String Key Correction**: Patched the secure local PowerShell configuration script (`AOVIA1VMS011_PHASE3_SECURE_CONFIGURATION.ps1`) to set the `ConnectionStrings__DefaultConnection` environment variable on `PortalGerencialTestApiPool`, resolving the `System.InvalidOperationException: The ConnectionString property has not been initialized` exception.
+- **IIS Secure Script Overwrite**: Transferred the updated configuration script over SMB to remote server temp path `\\AOVIA1VMS011\C$\temp\AOVIA1VMS011_PHASE3_SECURE_CONFIGURATION.ps1` for local execution.
+- **IIS Virtual Path Routing Audit**: Documented the double `/api` prefix in request paths (IIS virtual path `/api` + controller routing prefix `/api/...`) showing it is intentional and functional under relative same-origin routing.
+- **DataProtection Key Ring Analysis**: Analyzed IIS Event Viewer warnings regarding ephemeral in-memory key repository and provided actionable persistent DPAPI/registry key ring blueprints for future production security hardening.
+
+### Fixed — SQL Login Password Mismatch (Error 18456)
+
+**Summary**: Resolved SQL Server authentication failure (`Error 18456: Login failed for user 'usr_portalgerencial_test'`) caused by password mismatch between Phase 2 SQL login provisioning and Phase 3 IIS connection string configuration. Created and deployed a unified password reset script that atomically sets both the SQL login password and IIS AppPool environment variables.
+
+**Key Updates**:
+- **Root Cause Diagnosis**: Enabled ANCM stdout logging temporarily, triggered a login request, and captured the exact `SqlException` from the stdout log confirming `Error 18456, State 1, Class 14`.
+- **Health Check Limitation Identified**: Documented that `/api/health` returns `Healthy` even with broken database authentication because `AddHealthChecks()` lacks `.AddSqlServer()`.
+- **Unified Password Reset Script**: Created `AOVIA1VMS011_PHASE3_SQL_PASSWORD_RESET.ps1` to atomically `ALTER LOGIN` and update both `ConnectionStrings__DefaultConnection` and `ConnectionStrings__PortalDatabase` IIS environment variables in a single execution.
+- **PowerShell Parser Fix**: Fixed Unicode em-dash (`U+2014`) corruption in PowerShell 5.1 by replacing with ASCII double-dashes and saving with UTF-8 BOM.
+
+### Fixed — Stale Frontend Bundle Purge & Redeployment
+
+**Summary**: Resolved stale v2.150.0 frontend assets being served despite v2.151.0 deployment by performing a full directory purge and clean redeployment of v2.152.0 bundle.
+
+**Key Updates**:
+- **Full Directory Purge**: Purged all files from `D:\PortalGerencial-Test\Frontend\*` before copying fresh v2.152.0 dist assets.
+- **Bundle Verification**: Confirmed deployed `index.html` references `index-2C6NsQze.js` (v2.152.0), zero `localhost:5000` occurrences, zero stale chunk files.
+- **Deployment Checklist**: Documented mandatory Vite deployment procedure requiring full directory purge before copy.
+- **Browser Cache**: Identified browser-level cache as secondary cause; documented InPrivate/site data clear as validation procedure.
+
+### Validated — Final Staging Operational State
+
+- Login via `https://portal-gerencial-test.alpla.net/login` confirmed working.
+- Frontend v2.152.0 bundle active (`index-2C6NsQze.js`).
+- API calls route to same-origin `/api` (no `localhost:5000`).
+- Production database `[Portal-Gerencial]` and frontend directory remain untouched.
+- ANCM stdout logging restored to `false`.
+- No secrets committed to source control.
+- Ports 5000/5001 remain unused.
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_PHASE3_STAGING_ADMIN_ACCESS_RECOVERY.md` — Updated with SQL login fix, health check limitation, and comprehensive issue resolution table.
+- `docs/DECISIONS.md` — Updated DEC-133 choices for the `DefaultConnection` environment variable and DataProtection persistence.
+- `docs/VERSION.md` — Bumped to v2.152.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — Updated `APP_VERSION` to "2.152.0".
+
+
+## [v2.151.0] - 2026-05-25
+
+### Added — AOVIA1VMS011 Phase 3 Staging Access Recovery & same-origin API Routing (DEC-133)
+
+**Summary**: Successfully executed administrative staging access recovery on `AOVIA1VMS011` for target database `[Portal-Gerencial-Test]` using a dedicated compiled .NET 8 console utility `StagingAccessRecovery.exe` (which resolved Windows PowerShell .NET Core assembly loading blockers). Performed automated database schema sweeps to confirm `dbo.Users` and `dbo.UserRoleAssignments` structures and Role ID 1 mapping. Idempotently inserted/updated Leonardo's account state (`IsActive = 1`, `MustChangePassword = 1`, `AccessFailedCount = 0`, `LockoutEndUtc = NULL`) and assigned `System Administrator` role. Resolved frontend base URL connection blockers (`localhost:5000` failures) by refactoring Vite default API base path fallback in `api.ts` to same-origin relative `/api`, completely eliminating CORS and port binding complexities. Saved secure redacted logs on staging server, redeployed static frontend assets, and validated isolation from Production environment.
+
+**Key Updates**:
+- **Staging Access Recovery .NET 8 Utility**: Compiled a dedicated C# console utility and copied it over SMB to `C:\temp\StagingAccessRecovery\` to execute native BCrypt hashing and ADO.NET SQL updates locally on `AOVIA1VMS011`.
+- **Database Schema Validation**: Automated column sweeps confirming expected properties on `dbo.Users` and role mappings on `dbo.UserRoleAssignments` and `dbo.Roles`.
+- **Same-Origin Relative API Routing**: Refactored Vite API client base URL to relative `/api`, ensuring same-domain routing through IIS to bypass CORS preflights and remove direct Kestrel port 5000/5001 dependencies.
+- **Frontend redeployment**: Built and redeployed clean static assets to `D:\PortalGerencial-Test\Frontend` with zero hardcoded `localhost:5000` occurrences in the dist bundle.
+- **Strict Production Isolation**: Audited and confirmed that the Production database `[Portal-Gerencial]` and folders remain 100% clean and untouched.
+- **Exposed temporary password remediation**: Safely recommended Leonardo rerun the recovery utility to reset his temporary credentials following screenshot exposure.
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_PHASE3_STAGING_ADMIN_ACCESS_RECOVERY.md` — [NEW] Detailed staging recovery report.
+- `docs/DECISIONS.md` — Updated DEC-133 to record recovery utility architecture and same-origin relative API path choice.
+- `docs/VERSION.md` — Bumped to v2.151.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — Updated `APP_VERSION` to "2.151.0".
+- `src/frontend/src/lib/api.ts` — Changed API client fallback URL to `/api`.
+
+## [v2.150.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 Phase 3 Test/Staging Deployment Staged & Configured (DEC-133)
+
+**Summary**: Packaged the Release backend API and Vite frontend static assets locally, transferred them over SMB to remote server `AOVIA1VMS011` staging directories (`D:\PortalGerencial-Test\Api` and `D:\PortalGerencial-Test\Frontend`), pre-placed Express backup scripts, created the secure IIS environment variable script `AOVIA1VMS011_PHASE3_SECURE_CONFIGURATION.ps1`, identified and documented connection string plaintext storage inside `C:\Windows\System32\inetsrv\config\applicationHost.config` (with Windows ACL protection) as a staging tradeoff, generated the idempotent SQL migrations script `migration.sql`, and established a controlled explicit database execution strategy against `[Portal-Gerencial-Test]` using `sqlcmd` with Windows Authentication, completely bypassing automatic health endpoint triggers.
+
+**Key Updates**:
+- **Controlled Binary Deployments**: Packaged Release backend API and Vite frontend static assets; copied them over SMB to remote server staging folders.
+- **IIS Secure Configuration Script**: Configured secure environment variables configuration script utilizing interactive prompt and redacting all passwords in reports/logs.
+- **IIS applicationHost.config Secret tradeoff defined**: Explicitly identified and documented connection string plaintext persistence in IIS applicationHost.config and recommended Windows Authentication for Phase 4 to eliminate passwords entirely.
+- **Explicit migrations strategy**: Pre-placed idempotent migrations SQL script `migration.sql` and established explicit controlled database execution against `[Portal-Gerencial-Test]` using `sqlcmd` with Windows Authentication, bypassing automatic triggers.
+- **Automated Express backups wrapper**: Staged PowerShell daily backup wrapper script and SQL scripts on remote server to bypass Express Edition SQL Agent limitations.
+
+## [v2.149.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 SQL Portal Databases & Logins Provisioned (DEC-133)
+
+**Summary**: Created and copied the local database provisioning PowerShell wrapper script `AOVIA1VMS011_PHASE2_CREATE_PORTAL_DATABASES_AND_LOGINS.ps1` to server `AOVIA1VMS011` over SMB. Provisioned dedicated databases `[Portal-Gerencial]` and `[Portal-Gerencial-Test]`, SQL Authentication logins (`adm_portalgerencial`, `usr_portalgerencial`, `usr_portalgerencial_test`), mapped roles and permissions (including temporary `db_owner` mappings to support EF migrations), verified cross-database isolation, and formulated the daily backup strategy using Windows Task Scheduler to address SQL Express Agent unavailability.
+
+**Key Updates**:
+- **Local provisioning wrapper created**: Created the PowerShell wrapper with secure dynamic in-memory password generation, zero password storage on disk, and copied it over SMB.
+- **Portal databases provisioned**: Created dedicated databases `[Portal-Gerencial]` and `[Portal-Gerencial-Test]` using proper bracket notation.
+- **SQL Server logins provisioned**: Created SQL Authentication logins `adm_portalgerencial` (DB Owner on both databases), `usr_portalgerencial` (DB Owner temporarily on production database), and `usr_portalgerencial_test` (DB Owner temporarily on test database).
+- **Strict cross-database isolation verified**: Verified zero user mapping exposure in default system databases and complete isolation between Production and Test/Staging runtime sessions.
+- **SQL Express backup blueprint**: Prepared the recommended automated daily backup strategy using Windows Task Scheduler and PowerShell/SQLCMD scripts.
+- **Documentation and alignment**: Created `docs/AOVIA1VMS011_PHASE2_DATABASE_AND_LOGIN_CREATION_REPORT.md`, updated the database prep report, and bumped version to **v2.149.0**.
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_PHASE2_DATABASE_AND_LOGIN_CREATION_REPORT.md` — [NEW] Detailed report detailing database/login creation, permissions, secure password handling, and backup strategies.
+- `docs/AOVIA1VMS011_PHASE2_DATABASE_PREPARATION_REPORT.md` — Updated status and summary sections to document active provisioning outcomes.
+- `docs/DECISIONS.md` — Updated DEC-133 to add database and login provisioning decisions (item 10).
+- `docs/VERSION.md` — Bumped to v2.149.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — Updated `APP_VERSION` to "2.149.0".
+
+## [v2.148.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 SQL Sysadmin Recovery Validation (DEC-133)
+
+**Summary**: Verified and validated the controlled **SQL Server Single-User Mode Sysadmin Recovery** executed on default instance **`MSSQLSERVER`** locally on server `AOVIA1VMS011`. Analyzed the validation sweep report under Leonardo's administrative context (`ALPLA\adm_cintra01`) and confirmed that the administrative blocker has been completely resolved. The SQL Server instance has been successfully restored to **normal multi-user mode** and accepts normal Windows Authentication connections, Leonardo's account has been verified with **`sysadmin`** server role privileges, the instance remains completely clean, and no existing attendance databases were touched.
+
+**Key Updates**:
+- **Local validation script execution**: Authored and copied the read-only validation script `AOVIA1VMS011_PHASE2_SQL_SYSADMIN_RECOVERY_VALIDATION.ps1` to the server over SMB.
+- **Service multi-user mode verified**: Checked default service status and verified that SQL Server `MSSQLSERVER` is running and is restored to normal multi-user mode with no active Single-User `/m` parameters.
+- **Windows Login sysadmin validation**: Executed connection catalog queries showing that `ALPLA\adm_cintra01` successfully connects via local Windows Authentication and has full database catalog access (`IS_SRVROLEMEMBER('sysadmin') = 1`).
+- **Pristine instance integrity verified**: Checked `sys.databases` and `sys.server_principals`, confirming that **no** Portal databases or SQL application logins have been created yet, and all system databases remain intact and healthy.
+- **Operational safety sweeps**: Confirmed that `INNUX`, `INNUXTIME`, and `INUTIME` remain completely untouched, no secrets were stored, and no binaries have been deployed.
+- **Documentation and alignment**: Created `docs/AOVIA1VMS011_PHASE2_SQL_SYSADMIN_RECOVERY_VALIDATION.md`, updated the database preparation report, and bumped version to **v2.148.0**.
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_PHASE2_SQL_SYSADMIN_RECOVERY_VALIDATION.md` — [NEW] Comprehensive validation report detailing service state, sysadmin logins, catalog visibility, and integrity checks.
+- `docs/AOVIA1VMS011_PHASE2_DATABASE_PREPARATION_REPORT.md` — Aligned status, resolved administrative blocker resolution, and linked to the new validation report.
+- `docs/DECISIONS.md` — Updated DEC-133 item #2 to reflect successful recovery execution and validation.
+- `docs/VERSION.md` — Bumped to v2.148.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — Updated `APP_VERSION` to "2.148.0".
+
+## [v2.147.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 SQL Instance Reuse Assessment: Decommission Verified (DEC-133)
+
+**Summary**: Successfully executed and completed the decommission and readiness validation of the local SQL Server default instance **`MSSQLSERVER`** on `AOVIA1VMS011`. Retargeted our Phase 2 SQL strategy based on Leonardo's confirmation that the previous workload has been successfully migrated to `AOVIA1VMS012`. Analyzed the verified local script execution report over SMB and physically confirmed that the default instance contains **zero user databases**, **zero active connections**, and is **100% safe to repurpose and reuse** for the Portal Gerencial databases. Prepared a detailed, controlled 9-step single-user mode recovery procedure to bypass the SQL sysadmin access blocker for `ALPLA\adm_cintra01`.
+
+**Key Updates**:
+- **Local service state audit**: Verified that default instance service `MSSQLSERVER` is running under virtual account `NT Service\MSSQLSERVER` with startup type `Automatic`.
+- **Physical DATA directories scan**: Performed filesystem scanning on default DATA folder and recursively drive D:, verifying **0 user databases** exist on disk. All files represent standard clean system database templates.
+- **Active network and process connections check**: Audited local port 1433 and netstat connections, confirming **0 active connections** exist on port 1433 or Named Pipes/Shared Memory for `MSSQLSERVER` process PID 3980.
+- **SQL Agent validation**: Verified that SQL Server Agent `SQLSERVERAGENT` is stopped and disabled, and is functionally unavailable due to Express Edition limitations.
+- **Controlled SQL sysadmin recovery blueprint**: Authored a step-by-step recovery plan using SQL Server Single-User Mode (`net start MSSQLSERVER /m"SQLCMD"`) to add `ALPLA\adm_cintra01` as a `sysadmin` login with zero risk of operational disruption.
+- **Approved instance reuse recommendation**: Formally recommended keeping `MSSQLSERVER` installed, leaving system databases untouched, and provisioning only the new Portal databases (`[Portal-Gerencial]` and `[Portal-Gerencial-Test]`) and Portal logins (`adm_portalgerencial`, `usr_portalgerencial`, `usr_portalgerencial_test`).
+- **Changelog & Documentation Alignment**: Created `docs/AOVIA1VMS011_SQL_INSTANCE_REUSE_ASSESSMENT.md` and integrated the decommission findings in `docs/AOVIA1VMS011_PHASE2_DATABASE_PREPARATION_REPORT.md` and amended `docs/DECISIONS.md` DEC-133.
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_SQL_INSTANCE_REUSE_ASSESSMENT.md` — [NEW] Detailed SQL decommission, physical/network validation, Express feature analysis, and single-user recovery procedure.
+- `docs/AOVIA1VMS011_PHASE2_DATABASE_PREPARATION_REPORT.md` — Updated Executive Summary to integrate decommission outcomes and link to the dedicated assessment report.
+- `docs/DECISIONS.md` — Amended DEC-133 item #2 to record formal decommission validation and single-user recovery approvals.
+- `docs/VERSION.md` — Bumped to v2.147.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION bumped to "2.147.0".
+
+## [v2.146.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 Phase 2 Database Prep: AD & SQL Server Logins Discovery (DEC-133)
+
+**Summary**: Successfully completed Phase 2 read-only Active Directory (AD) sweeps and local SQL Server logins discovery on server `AOVIA1VMS011`. Analyzed the generated discovery report over SMB Administrative Share (`\\AOVIA1VMS011\C$`) and uncovered a critical infrastructure finding concerning SQL Server Metadata Visibility Restrictions. Mapped the corporate AD group prefix standards (`SQ-`), audited local IT support group memberships, and formulated a robust least-privilege security recommendation to create a dedicated group before database provisioning in Phase 2.
+
+**Key Updates**:
+- **Active Directory sweeps & corporate standards**: Completed domain-wide group discovery and verified that SQL Server database administration groups at ALPLA are formatted with the **`SQ-`** prefix (e.g. `SQ-<ServerName>-<DatabaseName>_DBOwner`).
+- **Leonardo Group membership audit**: Verified that Leonardo belongs to candidate IT support groups `ALPLA\SD-AOVIA1-IT-Systems` (local Viana IT support) and `ALPLA\SD-AO0001-IT-Systems` (Angola IT support).
+- **SQL Logins discovery script execution**: Verified the successful execution of the pre-placed script `C:\temp\AOVIA1VMS011_PHASE2_DISCOVERY.ps1` locally under Leonardo's active administrative Windows context (`ALPLA\adm_cintra01`) on default instance `MSSQLSERVER`.
+- **Metadata Visibility diagnosis**: Discovered that Leonardo's account successfully connected but queries returned 0 rows. Diagnosed this as an SQL Server Metadata Visibility Restriction, confirming that Leonardo's account `ALPLA\adm_cintra01` is NOT individually registered as an SQL login or member of the `sysadmin` role, and `BUILTIN\Administradores` is not configured as `sysadmin` on `MSSQLSERVER`.
+- **SQL Portal DBAdmin group recommendation**: Formulated the official recommendation to request the Active Directory team to create a dedicated security group: **`ALPLA\SQ-AOVIA1VMS011-PortalGerencial-DBAdmins`** to align with corporate standards and least-privilege principles.
+- **Critical database creation requirements**: Outlined that because `ALPLA\adm_cintra01` lacks SQL sysadmin rights, Leonardo must connect as a `sysadmin` (e.g., using `sa` or the default SQL Server service account) to create the Portal databases and assign logins in Phase 2.
+- **Safe discovery policies**: Confirmed that no databases, logins, or users were created, no secrets were stored, and no changes were made to SQL security or Innux databases.
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_PHASE2_DATABASE_PREPARATION_REPORT.md` — Updated Status to "SUCCESSFULLY COMPLETED", added verified script outputs, documented metadata visibility analysis, and detailed the official dedicated group recommendation.
+- `docs/VERSION.md` — Bumped to v2.146.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION bumped to "2.146.0".
+
+## [v2.145.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 Post-Remediation Validation: ANCM Blocker Resolved (DEC-133)
+
+**Summary**: Conducted a highly successful post-remediation validation sweep on server `AOVIA1VMS011` following Leonardo's local RDP-based execution of the Hosting Bundle 8.0.8 Repair and `iisreset`. Confirmed that the ASP.NET Core IIS Module (ANCM) `aspnetcorev2.dll` is now present on the server, and `AspNetCoreModuleV2` is successfully registered in IIS global modules. Swept all sites, app pools, folders, permissions, cert SNI bindings, and closed ports to confirm absolute environment readiness for Phase 2.
+
+**Key Updates**:
+- **ANCM Blocker Resolved**: Remote sweep successfully verified that `aspnetcorev2.dll` is present in `C:\Program Files\IIS\Asp.Net Core Module\V2\aspnetcorev2.dll` and that the global module `AspNetCoreModuleV2` is registered and active in IIS.
+- **IIS Sites & App Pools Verified**: Confirmed that the IIS Web Server service is running, both sites (`PortalGerencial.Production` and `PortalGerencial.Test`) exist, and all 4 app pools remain intact and properly configured.
+- **Isolated Directory Layouts & Permissions**: Re-validated all 14 folders under drive `D:` and confirmed that NTFS ACL rules are mapped to dynamic App Pool identities (`IIS APPPOOL\PortalGerencialApiPool` and `IIS APPPOOL\PortalGerencialTestApiPool`).
+- **HTTPS & Certificates Binding Integrity**: Verified that `CN=portal-gerencial.alpla.net` and `CN=portal-gerencial-test.alpla.net` SSL certificates are correctly bound to port 443 with SNI enabled.
+- **Secure Port and Database Enforcements**: Verified that ports `5000` and `5001` remain completely closed and unused, no databases were created, and no application binaries have been deployed. No credentials or passwords were stored.
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_PHASE1_SERVER_PREPARATION_REPORT.md` — Updated Status to "SUCCESSFULLY COMPLETED", marked the ANCM blocker as "RESOLVED ✅", and updated the Phase 2 roadmap next steps.
+- `docs/VERSION.md` — Bumped to v2.145.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION bumped to "2.145.0".
+
+## [v2.144.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 Backend Deployment Blocker Remediation: ANCM Repair Plan (DEC-133)
+
+**Summary**: Prepared the concrete remediation steps to resolve the missing ASP.NET Core IIS Module (ANCM) `aspnetcorev2.dll` blocker before backend deployment on `AOVIA1VMS011`. Conducted thorough recursive searches on the server and workstation over SMB and confirmed that the `dotnet-hosting-8.0.8-win.exe` offline installer is not pre-cached on disk and proxy gateway rules block direct command-line downloads. Documented a clear, step-by-step remediation guide with secure CDN links for Leonardo to perform a local RDP Repair of the Hosting Bundle and run `iisreset`.
+
+**Key Updates**:
+- **Workstation & Server Installer Audit**: Verified that `dotnet-hosting-8.0.8-win.exe` is not available in the remote downloads, temp, or package cache folders, nor locally on the developer machine downloads.
+- **Remediation Integration in Phase 1 Report**: Fully updated `docs/AOVIA1VMS011_PHASE1_SERVER_PREPARATION_REPORT.md` with step-by-step repair and verification guidelines.
+- **Secure Installer Reference**: Documented the exact, secure Microsoft CDN download link for the offline installer `dotnet-hosting-8.0.8-win.exe`.
+- **Validation After Remediation Checklist**: Detailed the post-repair checklists covering IIS status, SNI site integrity, URL Rewrite, closed ports 5000/5001, and zero databases/binaries deployed.
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_PHASE1_SERVER_PREPARATION_REPORT.md` — Updated with local targeted search audits, secure download link, and RDP repair guidelines.
+- `docs/VERSION.md` — Bumped to v2.144.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION bumped to "2.144.0".
+
+## [v2.143.0] - 2026-05-23
+
+### Added — AOVIA1VMS011 Phase 1 Server Preparation Completed (DEC-133)
+
+**Summary**: Completed Phase 1 server provisioning and setup on Windows Server `AOVIA1VMS011` for a secure, isolated dual-environment deployment. Provisioned all folder hierarchies, copied certificates, set up local orchestration scripts, enabled IIS features, installed URL Rewrite module offline, securely bound PFX SSL certificates with SNI on HTTPS port 443, assigned NTFS folder security permissions, and opened firewall rules. Identified a critical Global IIS Module ANCM DLL blocker for Phase 2 backend deployment.
+
+**Key Updates**:
+- **Isolated Directory Layouts**: Created all 14 subfolders under drive `D:\PortalGerencial` and `D:\PortalGerencial-Test` remotely over SMB share.
+- **IIS Enabled & URL Rewrite Installed**: Web Server role activated locally via PowerShell. URL Rewrite module successfully installed offline from the pre-placed `rewrite_amd64_en-US.msi`.
+- **NTFS ACL Folder Permissions**: Mapped exact Modify/Read rules specifically for `IIS APPPOOL\PortalGerencialApiPool` and `IIS APPPOOL\PortalGerencialTestApiPool`.
+- **Secure Certificate bindings**: Securely imported Production (`portal-gerencial.alpla.net`) and Test (`portal-gerencial-test.alpla.net`) SSL certificates (prompting passwords securely via SecureStrings) and bound them via SNI on HTTPS Port 443.
+- **Firewall Exceptions**: Created HTTP 80 and HTTPS 443 inbound firewall rules. Confirmed ports 5000 and 5001 remain closed and unused.
+- **ANCM Blocker Warning**: Discovered and validated that `aspnetcorev2.dll` is missing from registry and folders (due to Hosting Bundle pre-installation before IIS enablement). Documented this remaining blocker and recommended Repair in Phase 2.
+- **SQL Instance Confirmed**: Instance `MSSQLSERVER` approved and documented. No databases created yet.
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_PHASE1_SERVER_PREPARATION_REPORT.md` — [NEW] Detailed Phase 1 execution, validation, and readiness report.
+- `docs/DECISIONS.md` — DEC-133 item #2 amended with approved `MSSQLSERVER` instance decision.
+- `docs/VERSION.md` — Bumped to v2.143.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION bumped to "2.143.0".
+
+## [v2.142.0] - 2026-05-22
+
+### Added — AOVIA1VMS011 Dual-Environment Strategy: Test/Staging Environment (DEC-133)
+
+**Summary**: Updated all AOVIA1VMS011 deployment documentation to include a completely isolated Test/Staging environment alongside Production. Each environment has its own database, folder tree, IIS site, application pools, SSL certificate, and configuration file. An integration write-safety classification and a Test→Promote→Production release workflow were added.
+
+**Key Updates**:
+- **Dual-Environment Architecture**: Both Production (`D:\PortalGerencial`) and Test/Staging (`D:\PortalGerencial-Test`) documented with complete isolation rules.
+- **Separate SSL Certificates**: Production uses `82460ec13b4d0f90a349c960c5e45ac8.pfx`; Test/Staging uses `334ad6893b414f90a349c960c5e45af4.pfx`. Certificate passwords never stored.
+- **Test Database**: `[Portal-Gerencial-Test]` with separate SQL login `usr_portalgerencial_test`. Bracket notation enforced.
+- **Integration Write-Safety Matrix**: Primavera/Innux read-only in Test/Staging. Email disabled. Write-capable integrations blocked until approved.
+- **Release Promotion Workflow**: Build → Deploy to Test → Validate → Promote to Production.
+- **Temp Folders**: Added `Temp` subfolder to both environment folder structures.
+- **DEC-133 Expanded**: Added items #8 (Dual-Environment Isolation) and #9 (Integration Write-Safety Policy).
+
+**Files Changed**:
+- `docs/AOVIA1VMS011_DEPLOYMENT_IMPLEMENTATION_PLAN.md` — Restructured for dual-environment with full Test/Staging IIS, SQL, config, and smoke test sections.
+- `docs/SERVER_AOVIA1VMS011_READINESS_ANALYSIS.md` — Updated executive summary, architecture diagram, folder layout, and open decisions.
+- `docs/DECISIONS.md` — DEC-133 amended with items #8 and #9.
+- `docs/VERSION.md` — Bumped to v2.142.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION bumped to "2.142.0".
+
+## [v2.140.0] - 2026-05-22
+
+### Changed — AOVIA1VMS011 Infrastructure Corrections: Database Rename & Port Restriction (DEC-133)
+
+**Summary**: Applied two critical infrastructure corrections from Leonardo to the deployment documentation: (1) production database renamed from `AlplaPortal` to `[Portal-Gerencial]`, and (2) backend port 5000 restricted (reserved by another service), with IIS in-process hosting (`hostingModel="InProcess"`) now preferred to eliminate exposed Kestrel ports entirely.
+
+**Key Updates**:
+- **Database Renamed**: All references updated from `AlplaPortal` to `[Portal-Gerencial]` across readiness analysis, implementation plan, decisions log, SQL scripts, and connection strings. Bracket notation enforced due to hyphen.
+- **Port 5000 Restricted**: Port 5000 marked as reserved/unavailable. Port 5001 also excluded. Backend must never bind to these ports.
+- **IIS In-Process Hosting**: Deployment model changed from Kestrel-on-port reverse-proxy to ANCM in-process hosting. The .NET process runs inside `w3wp.exe` directly — no separate Kestrel port is exposed.
+- **Folder Root Renamed**: Application root folder renamed from `D:\AlplaPortal` to `D:\PortalGerencial` across all documents and scripts.
+- **IIS Pool/Site Names Renamed**: `AlplaPortalAppPool`/`AlplaPortalApiPool` → `PortalGerencialAppPool`/`PortalGerencialApiPool`. Site name → `PortalGerencial.Production`.
+- **Validation Checklist Expanded**: Added smoke test step #8 verifying port 5000 is NOT bound on the server.
+
+**Files Changed**:
+- `docs/SERVER_AOVIA1VMS011_READINESS_ANALYSIS.md` — Database name, folder paths, pool names, port restrictions, hosting model.
+- `docs/AOVIA1VMS011_DEPLOYMENT_IMPLEMENTATION_PLAN.md` — SQL scripts (bracket notation), connection strings, folder paths, pool names, IIS scripts, validation checklist.
+- `docs/DECISIONS.md` — Amended DEC-133 with decisions #7 (port restriction) and updated #1, #2, #5, #6.
+- `docs/VERSION.md` — Bumped version to `v2.140.0`.
+- `docs/CHANGELOG.md` — This changelog entry.
+
+---
+
+## [v2.139.0] - 2026-05-22
+
+### Added — AOVIA1VMS011 Deployment Architecture Updates & Implementation Plan (DEC-133)
+
+**Summary**: Updated the technical assessment to reflect Leonardo's finalized deployment choices for server `AOVIA1VMS011` and authored a comprehensive, step-by-step deployment preparation roadmap (`docs/AOVIA1VMS011_DEPLOYMENT_IMPLEMENTATION_PLAN.md`).
+
+**Key Updates**:
+- **Local Database Strategy**: Formally accepted local isolation (Option A) with dedicated `AlplaPortal` database on general SQL Server instances (e.g. `MSSQLSERVER` / `MSSQLSERVER01`) on `AOVIA1VMS011`. Excluded any reuse or modification of existing Innux/Innuxtime databases.
+- **HTTPS & SSL Certificate Binding**: Confirmed HTTPS planned from the start using local PFX file `C:\dev\alpla-portal\82460ec13b4d0f90a349c960c5e45ac8.pfx`. Mandated that certificate passwords must not be saved in any markdown, script, or configuration file.
+- **Deployment Implementation Plan**: Authored `docs/AOVIA1VMS011_DEPLOYMENT_IMPLEMENTATION_PLAN.md` outlining controlled preparation steps across Phases A through G, covering controller path-traversal remediation, IIS URL Rewrite, SQL database creation, secure PFX import, production configuration templates, build publishing workflows, and a validation checklist.
+- **Architectural Decision DEC-133**: Registered the finalized deployment choices, security rules, and code mitigation policies in the central `docs/DECISIONS.md` log.
+
+**Files Changed**:
+- `docs/SERVER_AOVIA1VMS011_READINESS_ANALYSIS.md` — Updated database strategy and decisions checklist.
+- `docs/AOVIA1VMS011_DEPLOYMENT_IMPLEMENTATION_PLAN.md` — [NEW] Detailed multi-phase deployment roadmap.
+- `docs/DECISIONS.md` — Registered `DEC-133` decision log.
+- `docs/VERSION.md` — Bumped version to `v2.139.0`.
+- `docs/CHANGELOG.md` — This changelog entry.
+
+---
+
+## [v2.138.0] - 2026-05-22
+
+### Added — Server Deployment Readiness Analysis: AOVIA1VMS011 (DEC-133)
+
+**Summary**: A comprehensive, read-only technical assessment and deployment readiness analysis of Windows Server `AOVIA1VMS011` for hosting the Portal Gerencial, culminating in a detailed 15-section markdown report under `docs/SERVER_AOVIA1VMS011_READINESS_ANALYSIS.md`.
+
+**Key Assessment Points**:
+- **Environment Inventory**: Running Windows Server 2022 Standard on `alpla.net`, with a dedicated system C: drive (61.98 GB free) and empty data D: drive (199.88 GB free). Hosts five local active SQL Server 2019 instances for Innux/InnuxTime employee attendance databases.
+- **IIS Web Server Readiness**: Identified missing `Web-Server (IIS)` role and **IIS URL Rewrite Module v2.1** as critical blockers on the server.
+- **Database Centralization Strategy**: Formally recommended hosting the portal database on ERP server `AOVIA1VMS012\SQLALPLA` (Option B) for optimal Primavera proximity and automatic backups.
+- **Path Traversal Security Fix**: Audited `AttachmentsController.cs` and discovered a hardcoded relative path traversal vulnerability resolving to `C:\data\attachments`. Formulated a code correction loading from `appsettings.Production.json` to map to `D:\AlplaPortal\Attachments`.
+- **Production Architecture**: Designed a single-site Unified Reverse Proxy configuration mapping Port 80/443 traffic to the static frontend and reverse-proxying `/api` requests back to the .NET Kestrel backend, bypassing all CORS issues.
+- **Backup & Telemetry Recommendations**: Outlined database backups, incremental attachment logs, Serilog rotation on `D:\AlplaPortal\Logs`, and Event Viewer logging.
+
+**Files Changed**:
+- `docs/SERVER_AOVIA1VMS011_READINESS_ANALYSIS.md` — [NEW] detailed 15-section report
+- `docs/VERSION.md` — v2.138.0
+- `docs/CHANGELOG.md` — this entry
+
+---
+
+## [v2.137.0] - 2026-05-22
+
+### Added — Guided Tour: Approval Drawer Tours (DEC-132)
+
+**Summary**: Two new drawer-level guided tours for the Approval Quick Overview Drawer, with drawer-aware scroll handling and contextual tour selection based on approval stage.
+
+**New Tours**:
+- `drawer-approval-area` (8 steps): Operational validation focus — request need, allocation, CC/plant, items, quotation, alerts.
+- `drawer-approval-final` (8 steps): Decision validation focus — financial impact, risks, documents, supplier choice, workflow history, final decision.
+
+**Architecture**:
+- New `'drawer'` tour level added to `TourLevel` type.
+- New `scrollContainerSelector` property on `TourDefinition` — routes scroll handling to drawer container instead of window.
+- `scrollTargetIntoView()` extended with drawer-aware branch: detects scroll container, compensates for sticky footer (72px), uses `container.scrollTo()`.
+- Joyride config: `disableScrolling: true`, `scrollToFirstStep: false`, `overlayClickAction: false` for drawer tours.
+
+**UI**:
+- "Tour da Aprovação" button added to drawer action bar (next to "Manual de Aprovação").
+- Auto-selects correct tour based on `approvalStage` (AREA → area tour, FINAL → final tour).
+
+**Anchors Added**: `approval-drawer-header`, `approval-drawer-alerts`, `approval-drawer-request-info`, `approval-drawer-financial-allocation`, `approval-drawer-financial-context`, `approval-drawer-quotations`, `approval-drawer-documents`, `approval-drawer-items`, `approval-drawer-workflow`, `approval-drawer-actions`.
+
+**Scroll Container**: `data-tour-scroll-container="approval-drawer"` on drawer scrollable div.
+
+**Graceful Degradation**: All steps skipped when targets are absent (no alerts, no quotations, no documents, etc.).
+
+**Files Changed**:
+- `src/frontend/src/features/guided-tour/guidedTourTypes.ts` — drawer TourLevel, TourIds, scrollContainerSelector
+- `src/frontend/src/features/guided-tour/tours/approvalDrawerAreaTour.ts` — [NEW] area tour definition
+- `src/frontend/src/features/guided-tour/tours/approvalDrawerFinalTour.ts` — [NEW] final tour definition
+- `src/frontend/src/features/guided-tour/guidedTourRegistry.ts` — registered both drawer tours
+- `src/frontend/src/features/guided-tour/useGuidedTour.ts` — drawer-aware scroll, activeTourDef tracking
+- `src/frontend/src/features/guided-tour/GuidedTourProvider.tsx` — Joyride config for drawer tours
+- `src/frontend/src/pages/Approvals/ApprovalDetailPanel.tsx` — data-tour anchors, tour button
+- `src/frontend/src/pages/Approvals/ApprovalCenter.tsx` — scroll container attribute
+- `docs/VERSION.md` — v2.137.0
+- `docs/CHANGELOG.md` — this entry
+
+---
+
+## [v2.136.0] - 2026-05-22
+
+### Added — Guided Tour: Centro de Aprovações Page Tour (DEC-132)
+
+**Summary**: New `page-approvals-center` tour added to the Guided Tour system, covering the full operational approval workflow with 7 conditional steps.
+
+**Tour Steps**:
+1. **Page Header** (`approvals-header`): Introduces the centralized approval workspace.
+2. **KPI Cards** (`approvals-kpi-cards`): Explains pending counts, total value, urgency, and alerts.
+3. **Filter Tabs** (`approvals-filter-tabs`): Covers triage controls for prioritizing the approval queue.
+4. **Area Queue** (`approvals-area-queue`): Area-level approval decisions (conditional — area approvers only).
+5. **Final Queue** (`approvals-final-queue`): Final-level approval decisions (conditional — final approvers only).
+6. **Request Card** (`approvals-request-card`): Individual pending request card with key details (conditional — only if cards exist).
+7. **Empty State** (`approvals-empty-state`): Shown when no approvals are pending (conditional — only when queues empty).
+
+**Files Changed**:
+- `[NEW] approvalsCenterTour.ts` — Tour step definitions.
+- `[MODIFY] guidedTourTypes.ts` — Added `'page-approvals-center'` to `TourId`.
+- `[MODIFY] guidedTourRegistry.ts` — Registered tour for `/approvals` route.
+- `[MODIFY] ApprovalCenter.tsx` — Added `data-tour` anchors, `GuidedTourContextButton`, and `isFirstQueue` prop to `ApprovalQueueSection`.
+
+**Notes**:
+- DEV seed/debug area is explicitly excluded from the tour.
+- All conditional steps leverage the existing `filterActiveSteps()` mechanism for graceful skipping.
+
+## [v2.131.0] - 2026-05-22
+
+### Improved — Guided Tour UX: Scroll Fix, Module & Page Tour Expansion (DEC-132)
+
+**Summary**: Fixed Joyride scroll alignment issue where tour targets were hidden behind the 64px sticky topbar. Expanded module and page tour content with new targeted steps and data-tour anchor attributes.
+
+**Scroll Fix** (`useGuidedTour.ts`, `GuidedTourProvider.tsx`):
+- Joyride `scrollOffset: 80` (64px header + 16px breathing) and `scrollDuration: 350`
+- `scrollToFirstStep` enabled
+- `scrollTargetIntoView()` helper: compensates header on `STEP_BEFORE` using `requestAnimationFrame` + 80ms delay
+- `HEADER_OFFSET_PX` reads CSS `--header-height` variable at load time
+
+**Module Tour** (`purchasingLogisticsTour.ts`):
+- Expanded from 5 → 9 steps: sidebar entry, cockpit overview, Pedidos, KPI cards, Pontos de Atenção, Ações Rápidas, Manual de Operação, Gestão de Cotações, Recebimento
+
+**Page Tour** (`requestsPageTour.ts`):
+- Expanded from 3 → 5 steps: action carousel + KPIs, filter tabs, filter button, table, row click/workflow
+
+**Data Anchors**:
+- `PurchasingLandingPage.tsx`: `purchasing-kpi-cards`, `purchasing-attention-points`, `purchasing-quick-actions`, `purchasing-operation-manual`
+- `RequestsDashboard.tsx`: `requests-filter-button`, `requests-table`
+
+## [v2.130.0] - 2026-05-22
+
+### Added — Guided Tour Evolution: Multi-Tour Architecture (DEC-132)
+
+**Summary**: Evolved the single "portal-main" guided tour into a registry-based multi-tier architecture supporting portal, module, and page-level tours. Initial target: Compras & Logística module with 3 page-level tours (Requests, Buyer Items, Receiving).
+
+**Architecture**:
+- `guidedTourRegistry.ts`: Central registry mapping `TourId` → `TourDefinition` with `getToursForRoute()` route-prefix resolution
+- `guidedTourTypes.ts`: Expanded `TourId` union type and `GuidedTourContextValue` multi-tour API
+- `useGuidedTour.ts`: Full refactor for registry-based tour selection and per-tour persistence
+
+**New Tour Content** (`tours/` directory):
+- `purchasingLogisticsTour.ts`: 5 steps (cockpit overview, pedidos, cotações, recebimento, module workflow)
+- `requestsPageTour.ts`: 4 steps (header, action carousel, explorer, filter tabs)
+- `buyerItemsPageTour.ts`: 3 steps (header, search bar, items list)
+- `receivingWorkspaceTour.ts`: 3 steps (header, pending queue, completed section)
+
+**UI Components**:
+- `GuidedTourButton.tsx`: Transformed from single-click to dropdown menu with up to 3 contextual options (Portal / Module / Page)
+- `GuidedTourContextButton.tsx`: Inline page-header button for direct page-level tour launch
+- `GuidedTourProvider.tsx`: Updated context API + "no steps" toast notification
+
+**Page Integration**:
+- `PageHeader.tsx`: Added `data-tour` prop support
+- `Sidebar.tsx`: Added `data-tour` attributes for sub-items (`buyer-items-menu`, `receiving-menu`)
+- `PurchasingLandingPage.tsx`: data-tour + GuidedTourContextButton
+- `RequestsDashboard.tsx`: data-tour on header, carousel, explorer, filter tabs + GuidedTourContextButton
+- `BuyerItemsList.tsx`: data-tour on header, search bar, items list + GuidedTourContextButton
+- `ReceivingWorkspace.tsx`: data-tour on header, pending, completed sections + GuidedTourContextButton
+
+**Key Behaviors**:
+- Separate localStorage persistence per tour (`guided-tour:{tourId}:v1:{userId}`)
+- `filterActiveSteps()` prevents runtime errors from missing DOM targets
+- Transient toast if no valid steps exist for a tour
+- Existing `portal-main` tour preserved (backward compatible)
+
+## [v2.129.0] - 2026-05-22
+
+### Added — Guided Tour / Onboarding (DEC-131)
+
+**Summary**: Implemented a guided onboarding tour using React Joyride v3 for first-time users. The tour introduces the portal's main structure (Topbar, Search, Notifications, Profile, Help, Sidebar modules) with RBAC-aware step filtering — modules the user cannot see are automatically skipped. Persistence via versioned localStorage keys scoped to user ID.
+
+**New Feature Module**: `src/frontend/src/features/guided-tour/` (6 files: types, storage, steps, hook, provider, button).
+
+**Layout Integration**:
+- `AppShell.tsx` wrapped with `GuidedTourProvider`
+- `Topbar.tsx`: `data-tour` attributes on topbar, search, notifications, profile + new `GuidedTourButton` (help icon)
+- `Sidebar.tsx`: `data-tour` attributes on main menu and individual modules via `TOUR_ATTR_MAP` lookup
+
+**Tour Steps (16 steps, PT content)**:
+- Topbar → Search → Notifications → Profile → Help Button → Main Menu → Dashboard → Purchase Requests → Approvals → Compras & Logística → Finanças → Contratos → T.I. → R.H. → Configurações → Administração
+- Each module (T.I., Configurações, Administração, Contratos) has its own dedicated step with distinct explanatory content
+- Modules not visible to the user (due to RBAC) are silently skipped via DOM presence check
+
+**Welcome Modal**: Animated overlay on first login ("Bem-vindo ao Portal Gerencial!") with "Iniciar Tour" / "Agora Não" options.
+**Layout Readiness**: DOM polling (200ms intervals, 8s max) for authenticated user + topbar/menu presence instead of a fixed delay.
+**Persistence**: `guided-tour:portal-main:v1:{userId}` — no anonymous keys.
+**Help Button**: Permanent topbar button allows manual restart after completion/skip.
+**Dependency**: `react-joyride` (~35KB gzipped).
+
+## [v2.128.0] - 2026-05-22
+
+### Changed — Remove LOCAL_OCR Provider, Consolidate OpenAI (DEC-130)
+
+**Summary**: The local OCR provider (PaddleOCR/Tesseract) has been fully removed from the system. OpenAI Vision is now the sole active document extraction provider. The provider abstraction (`IDocumentExtractionProvider`) is preserved for future Azure Document Intelligence integration.
+
+**Backend — Deleted Files**
+- `AlplaPortal.Infrastructure/Services/Extraction/LocalOcrExtractionProvider.cs` — [DELETE] Provider implementation.
+- `AlplaPortal.Infrastructure/Services/OcrService.cs` — [DELETE] Legacy dead-code service (referenced localhost:5005).
+- `AlplaPortal.Application/Interfaces/IOcrService.cs` — [DELETE] Legacy dead-code interface (never registered in DI).
+
+**Backend — Modified Files**
+- `AlplaPortal.Api/Program.cs` — Removed `LocalOcrExtractionProvider` DI registration. OpenAI provider now registered unconditionally (removed Windows-only guard).
+- `AlplaPortal.Api/appsettings.json` — `DefaultProvider` → `OPENAI`, removed `LocalOcr` config block, `OpenAi.Enabled` → `true`.
+- `AlplaPortal.Application/Models/Configuration/DocumentExtractionOptions.cs` — Removed `LocalOcr` property, default → `OPENAI`.
+- `AlplaPortal.Application/DTOs/Extraction/DocumentExtractionSettingsDto.cs` — Removed `LocalOcr*` fields, default → `OPENAI`.
+- `AlplaPortal.Infrastructure/Services/Extraction/DocumentExtractionService.cs` — Removed LOCAL_OCR fallback and switch cases. Added explicit guard: legacy `LOCAL_OCR` DB value → warns and falls back to `OPENAI`.
+- `AlplaPortal.Infrastructure/Services/Extraction/DocumentExtractionSettingsService.cs` — Removed all LOCAL_OCR logic, `TestLocalOcrConnectionAsync`, and LOCAL_OCR validation. Added LOCAL_OCR→OPENAI guard. LocalOcr DB fields cleared on save.
+- `AlplaPortal.Api/Controllers/Admin/AdminDiagnosticsController.cs` — Removed `LocalOcr` from `ServiceHealthDto` and health check block.
+- `AlplaPortal.Domain/Entities/DocumentExtractionSettings.cs` — `[Obsolete]` attributes on `LocalOcr*` fields.
+- `AlplaPortal.Application/Interfaces/Extraction/IDocumentExtractionProvider.cs` — Updated `Name` doc comment.
+
+**Frontend — Modified Files**
+- `pages/Settings/DocumentExtractionSettings.tsx` — Removed LOCAL_OCR dropdown option and entire Local OCR config section. Removed `Cpu` icon import. Updated OpenAI label.
+- `pages/Admin/ServiceDiagnosis.tsx` — Removed `localOcr` from `DiagnosisData` interface, removed "Serviço OCR" card, updated skeleton count and diagnostic notes.
+- `pages/Admin/IntegrationHealth.tsx` — Updated OcrServiceCard description (removed "Local OCR e" text), updated status logic to check only OpenAI.
+- `types/index.ts` — Removed `localOcr*` fields from `DocumentExtractionSettingsDto`.
+
+**Documentation**
+- `docs/DECISIONS.md` — Added DEC-130.
+- `docs/VERSION.md` — Version bumped to v2.128.0.
+- `docs/ARCHITECTURE.md` — Updated provider selection note.
+- `docs/ui/ADMIN_MENUS_REFERENCE.md` — Updated code snippets.
+
+## [v2.127.0] - 2026-05-21
+
+### Changed — Dashboard Redesign: Operational Cockpit (DEC-129)
+
+**Summary**: The Dashboard has been completely redesigned from a generic overview/training page into an operational management cockpit focused on action, priorities, exceptions, bottlenecks, and financial visibility.
+
+**Backend — New Endpoint**
+- **`GET /api/v1/requests/cockpit-summary`**: Dedicated Dashboard endpoint returning all cockpit data in a single call. Uses `GetScopedRequestsQuery()` for role-based filtering and the existing `myTasksCriteria` expression for "My Work Queue" counters. The existing `GET /api/v1/requests/summary` endpoint is unchanged.
+- **`CockpitSummaryDto`**: Comprehensive DTO with my-work counters (pending, urgent, adjustment, overdue, near-deadline), pipeline KPIs (10 status counters), bottleneck analysis (stage distribution + oldest request age), financial aggregation (by status group, multi-currency aware), and severity-sorted attention alerts.
+
+**Frontend — New Layout (7 sections)**
+1. **Minha Fila de Trabalho** (`MyWorkQueue.tsx`): 5 role-contextual KPI cards. Cards with value=0 auto-hide (except the main "pending" card).
+2. **Visão do Pipeline**: 10 compact status counter cards with click-through to filtered Requests lists. Color-coded accent bars and hover effects.
+3. **Ações Rápidas** (`QuickActions.tsx`): Expanded from 3 to 6 role-aware actions (Novo Pedido, Ver Pedidos, Cotações, Aprovações, Pagamentos, Recebimentos).
+4. **Atenção Requerida** (`AlertList.tsx`): Always visible. Severity-sorted alerts (CRITICAL → WARNING → INFO) with click-through. Professional empty state.
+5. **Gargalos do Processo** (`BottleneckTable.tsx`): Visual distribution bars showing request concentration by workflow stage, with color-coded age badges.
+6. **Resumo Financeiro** (`FinancialSummary.tsx`): Financial cards by status group. Multi-currency aware. No fake data — proper empty state.
+7. **Como funciona o processo**: Workflow guide moved to collapsible `<details>` at bottom, collapsed by default.
+
+### Files Changed
+- `backend/AlplaPortal.Application/DTOs/Requests/CockpitSummaryDto.cs` — [NEW] DTO definitions.
+- `backend/AlplaPortal.Api/Controllers/RequestsController.cs` — Added `GetCockpitSummary` endpoint.
+- `frontend/src/types/index.ts` — Added cockpit TypeScript interfaces.
+- `frontend/src/lib/api.ts` — Added `getCockpitSummary` API method.
+- `frontend/src/pages/Dashboard/Dashboard.tsx` — Complete rewrite (cockpit layout).
+- `frontend/src/pages/Dashboard/components/MyWorkQueue.tsx` — [NEW] My work queue component.
+- `frontend/src/pages/Dashboard/components/AlertList.tsx` — [NEW] Attention alerts component.
+- `frontend/src/pages/Dashboard/components/BottleneckTable.tsx` — [NEW] Bottleneck analysis component.
+- `frontend/src/pages/Dashboard/components/FinancialSummary.tsx` — [NEW] Financial summary component.
+- `frontend/src/pages/Dashboard/components/QuickActions.tsx` — Rewritten with role-aware actions.
+- `docs/DECISIONS.md` — DEC-129.
+- `docs/FRONTEND_FOUNDATION.md` — Updated Dashboard section.
+
+---
+
+## [v2.126.0] - 2026-05-21
+
+### Fixed — HR Attendance: "Falta" Status Despite Valid Punches (DEC-128)
+
+**Root Cause**: Days with valid raw terminal Entry + Exit punches still displayed as "Falta" (Absent) with H.Totais=00:00. Two issues contributed:
+
+1. **Absence periods counted as worked**: `GetWorkedHoursAsync` included `AlteracoesPeriodos` rows with absence codes (e.g., F03 Falta Injustificada) in the BasicMinutes total. When the mixed-code portal interpreter cleared `AbsenceMinutes` to 0, the formula `Max(0, worked - absence)` no longer cancelled out, blocking PunchWithoutPeriod detection.
+
+2. **No fallback status**: The monthly report had no mechanism to flag days where the Portal shows valid Entry/Exit but Innux has no processed work period.
+
+**Backend — PunchWithoutPeriod Detection**
+- **New check** in `BuildSingleDepartmentReportAsync`: After punch pairing, if Portal has valid Entry + Exit pair AND Innux status is "Absent"/"PortalInterpreted" AND `dayWorked.TotalMinutes == 0` AND span ≥ 60 minutes → set status to `PunchWithoutPeriod`.
+- **Portal estimated time**: Calculates entry→exit span and includes it in the warning message: "Tempo estimado pelo Portal: HH:mm".
+- **No H.Totais override**: H.Totais stays from Innux (00:00). Only the status display changes.
+- **New DTO field**: `PortalEstimatedMinutes` on `AttendanceDailyRecordDto`.
+
+**Backend — GetWorkedHoursAsync Fix**
+- Added `AND ap.IDCodigoAusencia IS NULL` filter to exclude absence periods from worked hours calculation. Absence periods have time spans but represent scheduled absence, not actual work.
+
+**Frontend — "Verificar" Status**
+- Status column shows "Verificar" label with `AlertCircle` icon (orange/amber).
+- Tooltip shows Portuguese warning message including Portal-estimated hours.
+- Pulse animation on the warning icon for visual attention.
+- Print-safe styles (no animation, visible text).
+
+**Diagnostic Scan — May 2026**: 448 PunchWithoutPeriod day-records across 95 employees. This indicates a systemic Innux processing gap where raw terminal punches exist but Innux didn't generate work periods.
+
+### Files Changed
+- `backend/AlplaPortal.Infrastructure/Services/Integration/InnuxAttendanceService.cs` — `GetWorkedHoursAsync`: Added absence period filter (`IDCodigoAusencia IS NULL`).
+- `backend/AlplaPortal.Application/DTOs/HR/AttendanceReportDtos.cs` — Added `PortalEstimatedMinutes`.
+- `backend/AlplaPortal.Api/Controllers/HRAttendanceController.cs` — PunchWithoutPeriod detection in `BuildSingleDepartmentReportAsync`.
+- `frontend/src/pages/HR/AttendanceMonthlyReport/HRAttendanceMonthlyReport.tsx` — "Verificar" label, icon, tooltip.
+- `frontend/src/pages/HR/AttendanceMonthlyReport/hr-attendance-monthly-report.css` — Status badge and indicator styling.
+
+---
+
+## [v2.125.0] - 2026-05-21
+
+### Fixed — HR Attendance: Punch Classification in Monthly Report
+
+**Root Cause**: Innux biometric terminals can send mixed direction codes on the same day — e.g., Code `17` (alternate entry code) for the first punch and `EN` (standard entry code) for the second. Since `MapDirectionLabel` maps both `17` and `EN` to "Entrada", all punches ended up classified as entries. Exit punches (e.g., 17:32, 17:38) appeared in the wrong report column (ENT.2 instead of SAÍ.1). This affected both `GetRawPunchesAsync` (monthly report) and `GetPunchesAsync` (day-detail).
+
+**Backend — Shared Interpretation Logic**
+- **Extracted** `ApplyPortalPunchInterpretation` shared method in `InnuxAttendanceService.cs` — now applied to both `GetRawPunchesAsync` and `GetPunchesAsync` to ensure consistent direction interpretation.
+- **Rule 4 (Mixed Codes)**: If all punches in a day resolve to the same `DirectionLabel` after `MapDirectionLabel` (regardless of raw code differences), the first chronological punch is classified as Entrada and the last as Saída. Single ambiguous punches are not inferred — they trigger a warning instead.
+- **Tracking**: `IsPortalInterpreted` flag set on reinterpreted punches for audit transparency.
+
+**Backend — Direction Warnings**
+- **New DTO fields**: `HasDirectionWarning` and `DirectionWarningMessage` on `AttendanceDailyRecordDto`.
+- **Controller detection**: Three warning scenarios detected: Portal-interpreted punches, single ambiguous punches, and multiple punches all with same ambiguous direction code.
+
+**Frontend — Warning Indicators**
+- **New indicator**: Compass icon (🧭) rendered next to the status column for days with direction warnings. Distinct from the existing anomaly triangle and Portal "P" badge.
+- **Tooltip**: Hover shows the specific warning message in Portuguese.
+- **CSS**: Print-compatible styling added.
+
+### Files Changed
+- `backend/AlplaPortal.Infrastructure/Services/Integration/InnuxAttendanceService.cs` — Extracted `ApplyPortalPunchInterpretation`, applied to both bulk and detail methods.
+- `backend/AlplaPortal.Application/DTOs/HR/AttendanceReportDtos.cs` — Added `HasDirectionWarning`, `DirectionWarningMessage`.
+- `backend/AlplaPortal.Api/Controllers/HRAttendanceController.cs` — Direction warning detection in `BuildSingleDepartmentReportAsync`.
+- `frontend/src/pages/HR/AttendanceMonthlyReport/HRAttendanceMonthlyReport.tsx` — Direction warning rendering with Compass icon.
+- `frontend/src/pages/HR/AttendanceMonthlyReport/hr-attendance-monthly-report.css` — Warning indicator styling (screen + print).
+
+---
+
+## [v2.124.0] - 2026-05-21
+
+### Changed — I.T Equipment Documents: DOCX → PDF Migration with Branding
+
+**Summary**: All official I.T Equipment documents (Termo de Responsabilidade / Entrega, Termo de Devolução) are now generated and emailed as branded PDF files instead of DOCX, using PdfSharpCore (MIT license).
+
+**Backend — PDF Generation**
+- **New Service**: `ITEquipmentPdfService` — generates branded A4 PDF documents via PdfSharpCore with: company logo in header (from `data/templates/branding/portal-logo.png`), two-column info table, policy text (from `data/templates/it-equipment/policy-text.txt`), signature lines, and automatic page-break management.
+- **Logo Fallback**: If the logo file is missing, documents generate with a text-only header and a warning is logged — document generation does not fail.
+- **Policy Text Required**: For Assignment Agreements, `policy-text.txt` is mandatory — generation fails with a clear Portuguese error message if missing. For Return Agreements, policy text is not needed.
+- **MIME Detection**: Email attachments and download endpoint now auto-detect MIME type from file extension (`.pdf` / `.docx`), ensuring correct handling for both new PDFs and legacy DOCX files.
+- **Legacy Compatibility**: Old DOCX documents remain downloadable. `ITEquipmentAgreementService` methods marked `[Obsolete]`.
+
+**Frontend — UI Updates**
+- ReturnEquipmentModal and ChangeEquipmentUserModal notice texts updated to mention "PDF" format.
+
+**Affected Flows**: Assignment (Atribuir), Return (Devolver), and Change User (Trocar Utilizador) — all three now generate PDF.
+
+### Files Changed
+- `backend/AlplaPortal.Infrastructure/Services/ITEquipmentPdfService.cs` — [NEW] PDF generation service.
+- `backend/AlplaPortal.Infrastructure/Services/ITEquipmentAgreementService.cs` — Marked `GenerateAsync` and `GenerateReturnDocumentAsync` as `[Obsolete]`.
+- `backend/AlplaPortal.Infrastructure/Services/EmailService.cs` — Auto-detect MIME type for attachments.
+- `backend/AlplaPortal.Infrastructure/AlplaPortal.Infrastructure.csproj` — Added PdfSharpCore package.
+- `backend/AlplaPortal.Api/Program.cs` — Registered `ITEquipmentPdfService` in DI.
+- `backend/AlplaPortal.Api/Controllers/ITEquipmentController.cs` — Inject `ITEquipmentPdfService`; route all document generation to PDF service.
+- `backend/AlplaPortal.Api/Controllers/ITEquipmentDocumentsController.cs` — Auto-detect MIME type in download endpoint.
+- `frontend/src/components/it/ReturnEquipmentModal.tsx` — Updated notice text to mention PDF.
+- `frontend/src/components/it/ChangeEquipmentUserModal.tsx` — Updated notice text to mention PDF.
+- `data/templates/it-equipment/policy-text.txt` — [NEW] Extracted equipment usage policy text.
+- `data/templates/branding/portal-logo.png` — [NEW] Portal Gerencial logo for document branding.
+- `docs/DECISIONS.md` — DEC-126.
+- `docs/VERSION.md` — Bumped to v2.124.0.
+
+---
+
+## [v2.123.0] - 2026-05-20
+
+### Added — I.T Equipment Inventory Management Module
+
+**New Module**: Complete I.T equipment inventory management system. The IT department can now register, track, assign, return, repair, lose, reserve, and retire all company IT assets — with a full audit trail of every movement.
+
+**Backend — Domain & API**
+- **5 New Entities**: `ITEquipment`, `ITEquipmentAssignment`, `ITEquipmentMovementLog`, `ITEquipmentAcquisition`, `ITEquipmentDocument`.
+- **Role-Based Access**: New `IT` role (seeded via migration). Only IT and System Administrator roles can access the module.
+- **API Route**: `api/it/equipment` with endpoints for CRUD, lifecycle actions, and CSV import.
+- **Equipment CRUD**: Create, update, list (search + 5 filters + sort + pagination), and detail (with assignments, movements, documents, acquisition).
+- **Lifecycle Actions**: Assign → Return (OK/DAMAGED/NEEDS_REPAIR) → Send to Repair → Return from Repair (REPAIRED/NOT_REPAIRABLE) → Mark Lost → Reserve → Retire.
+- **Movement Audit Log**: Every action creates an `ITEquipmentMovementLog` entry with previous/new status, owner changes, and operator notes.
+- **CSV Import**: `POST /api/it/equipment/import` — multipart upload with flexible column mapping (supports English/Portuguese headers), duplicate detection (exact Asset Tag + conditional Hostname), and per-line error reporting. Empty status defaults to `UNKNOWN` (not `AVAILABLE`).
+- **Document Management**: `ITEquipmentDocumentsController` — upload (SHA256-named), download, list, soft-delete. Document types: Invoice, Warranty, PO, Receipt, Delivery Note, Proforma, Payment Proof, Other.
+- **Acquisition Tracking**: Optional 1:1 `ITEquipmentAcquisition` record per equipment (purchase order, invoice, payment, warranty dates/amounts). Future Primavera/Portal integration fields left nullable.
+
+**Frontend — React SPA**
+- **Navigation**: New "T.I" sidebar group (Monitor icon), visible only to IT/Admin roles. Lazy-loaded route at `/it/equipment`.
+- **ITEquipmentPage**: KPI summary cards (8 status counters), global search, collapsible filter bar (Status, Type, Plant, Manufacturer), sortable table, pagination.
+- **EquipmentQuickViewDrawer**: Slide-in detail view with 4 tabs (Informações, Atribuições, Movimentações, Documentos) and context-sensitive action buttons.
+- **EquipmentFormModal**: Create/edit form with conditional acquisition section (shown when sourceType = ManualPurchase), field validation, and shared UI helpers.
+- **Action Modals**: AssignEquipmentModal, ReturnEquipmentModal, RepairEquipmentModal (send/return), LostEquipmentModal, RetireEquipmentModal, ReserveEquipmentModal.
+- **ImportEquipmentModal**: Drag-and-drop CSV upload with result preview (created/skipped/errors/duplicate hostnames).
+- **Type System**: `itEquipment.ts` with status/type display configs, movement type labels, assignment status config, document type labels — all in Portuguese.
+
+**Database Migration**: `AddITEquipmentModule`
+- 5 tables: `ITEquipments`, `ITEquipmentAssignments`, `ITEquipmentMovementLogs`, `ITEquipmentAcquisitions`, `ITEquipmentDocuments`.
+- Unique indexes on `AssetTag` and `SerialNumber` (conditional, non-null).
+- FK cascade: `Restrict` on Equipment→Documents to avoid SQL Server multiple cascade path error.
+- IT role seeded into `Roles` table.
+
+### Files Changed
+- `backend/AlplaPortal.Domain/Entities/ITEquipment*.cs` — [NEW] 5 entity files.
+- `backend/AlplaPortal.Domain/Constants/ITEquipmentConstants.cs` — [NEW] Status/type/movement enums + CSV normalizers.
+- `backend/AlplaPortal.Domain/Constants/RoleConstants.cs` — Added `IT` role.
+- `backend/AlplaPortal.Infrastructure/Data/ApplicationDbContext.cs` — 5 DbSets + Fluent API configs + IT role seed.
+- `backend/AlplaPortal.Infrastructure/Data/Migrations/AddITEquipmentModule.cs` — [NEW] Migration.
+- `backend/AlplaPortal.Api/Controllers/ITEquipmentController.cs` — [NEW] Full equipment lifecycle API.
+- `backend/AlplaPortal.Api/Controllers/ITEquipmentDocumentsController.cs` — [NEW] Document management API.
+- `frontend/src/types/itEquipment.ts` — [NEW] TypeScript interfaces + display configs.
+- `frontend/src/lib/itEquipmentApi.ts` — [NEW] API client module.
+- `frontend/src/pages/IT/ITEquipmentPage.tsx` — [NEW] Main page.
+- `frontend/src/components/it/EquipmentSummaryCards.tsx` — [NEW] KPI cards.
+- `frontend/src/components/it/EquipmentTable.tsx` — [NEW] Sortable table.
+- `frontend/src/components/it/EquipmentQuickViewDrawer.tsx` — [NEW] Detail drawer with 4 tabs.
+- `frontend/src/components/it/EquipmentFormModal.tsx` — [NEW] Create/edit form + shared helpers.
+- `frontend/src/components/it/AssignEquipmentModal.tsx` — [NEW] Assignment modal.
+- `frontend/src/components/it/ReturnEquipmentModal.tsx` — [NEW] Return modal.
+- `frontend/src/components/it/RepairEquipmentModal.tsx` — [NEW] Repair send/return modal.
+- `frontend/src/components/it/LostEquipmentModal.tsx` — [NEW] Lost modal.
+- `frontend/src/components/it/RetireEquipmentModal.tsx` — [NEW] Retire modal.
+- `frontend/src/components/it/ReserveEquipmentModal.tsx` — [NEW] Reserve modal.
+- `frontend/src/components/it/ImportEquipmentModal.tsx` — [NEW] CSV import modal.
+- `frontend/src/constants/roles.ts` — Added IT role + description.
+- `frontend/src/constants/navigation.tsx` — Added T.I sidebar group.
+- `frontend/src/features/auth/AuthContext.tsx` — Added `hasITAccess`.
+- `frontend/src/App.tsx` — Added `/it/equipment` route with ITRoute guard.
+- `docs/VERSION.md` — Bumped to v2.123.0.
+
+---
+
+## [v2.122.0] - 2026-05-20
+
+### Fixed — HR Monthly Attendance Report: Saldo (Balance) Always 00:00
+
+**Problem**: The `Saldo` (balance) column in the HR Monthly Attendance Report always displayed `00:00`, even for employees with unjustified absences. Root cause: Innux stores balance as a `datetime-as-duration` value with base date `1900-01-01`. Negative balances (values before the base date) were silently truncated to 0 by `InnuxTimeHelper.ToMinutes()`.
+
+**Solution**: Portal-computed balance replaces the Innux-sourced value.
+
+| Column | Meaning | Source |
+|---|---|---|
+| H.Básicas | Planned/scheduled working hours | `AttendanceDaySummaryDto.ExpectedMinutes` |
+| H.Falta | Unjustified absence hours | `AttendanceDaySummaryDto.AbsenceMinutes` (unchanged) |
+| H.Totais | Positive counted hours (worked + justified) | Portal formula: `max(0, WorkedMinutes - AbsenceMinutes) + JustifiedMinutes` |
+| Saldo | Time balance | Portal formula: `H.Totais - H.Básicas` |
+
+**Exempt categories** (Vacation, Holiday, JustifiedAbsence): `H.Totais = H.Básicas`, `Saldo = 00:00`.
+
+**Visual indicators**: Negative saldo in red/bold, positive saldo in green. Applied to daily records, monthly summaries, employee grand totals, and department totals — screen and print.
+
+### Files Changed
+- `backend/AlplaPortal.Api/Controllers/HRAttendanceController.cs` — Portal-computed `BasicMinutes`, `TotalMinutes`, `DailyBalance`; new `ComputePositiveCountedMinutes` helper; `AbsenceMinutes` accumulation fix.
+- `frontend/src/pages/HR/AttendanceMonthlyReport/HRAttendanceMonthlyReport.tsx` — Balance color classes on all saldo display elements.
+- `frontend/src/pages/HR/AttendanceMonthlyReport/hr-attendance-monthly-report.css` — `.balance-negative`, `.balance-positive` styles (screen + print).
+- `docs/VERSION.md` — Bumped to v2.122.0.
+- `docs/DECISIONS.md` — DEC-124.
+
+---
+
+## [v2.121.0] - 2026-05-20
+
+### Added — HR Monthly Attendance Report: Consolidated & 30-Day Activity Filter
+- **Consolidated Report ("Todos os Departamentos")**: Added a special option to the department selector to generate a single consolidated PDF report for all departments at once. The report groups employees by department, sorting departments and employees alphabetically.
+- **30-Day Activity Filter**: Injected the same 30-day "real terminal punch" activity filter into the Monthly Report (for both single and consolidated flows). Employees without biometric punches in the last 30 days are automatically excluded to prevent ghost employees from polluting the report.
+- **Segmented Filter UI**: Added a three-button segmented control (Com ponto recente, Sem ponto há +30 dias, Todos) to the Monthly Report UI.
+- **Print Notices**: Added visual and print-only notices explaining the default filter behavior in the PDF header.
+
+## [v2.120.1] - 2026-05-20
+
+### Fixed — HR Attendance: 30-Day Activity Filter Using Wrong Data Source
+- **Root Cause**: `GetLastAttendanceDatesAsync` queried `MAX(Data) FROM dbo.Alteracoes`, which includes pre-generated scheduled records (rest days, planned shifts). Innux auto-generates `Alteracoes` rows for employees with active work schedules, even after they leave the company. This caused `MAX(Data)` to return recent or future dates for inactive employees, making them incorrectly appear in the "Com ponto recente" default view.
+- **Fix**: Changed the query to use `dbo.TerminaisMarcacoes` (real terminal clock punches) instead. This table only contains actual physical clock-in/clock-out events, providing an accurate signal for real employee attendance activity.
+- **Employee Affected**: ABENECO MANUEL PEDRO (and similar former employees still scheduled in Innux) will now correctly appear only under "Sem ponto há +30 dias" or "Todos".
+- **Diagnostic Logging**: Added temporary classification logging in `HRAttendanceController.GetCalendar` to trace employee activity filter decisions (ABENECO-specific debug logging included).
+- **No Data Changes**: Read-only fix. No writes to Innux, Primavera, or Portal employee records.
+
+## [v2.120.0] - 2026-05-20
+
+### Added — HR Attendance: 30-Day Activity Filter
+- **Inactive Employee Hiding**: Employees without any attendance/punch data for more than 30 days are now hidden by default from the HR Attendance Calendar. This prevents former employees (still active in Primavera) from polluting the attendance grid.
+- **Backend Activity Detection**: New `GetLastAttendanceDatesAsync` method in `InnuxAttendanceService` queries `MAX(Data) FROM dbo.TerminaisMarcacoes` (real terminal punches) grouped by employee ID. The 30-day cutoff is calculated from today's date (not the viewed calendar month).
+- **`attendanceActivity` API Parameter**: `GET /api/hr/attendance/calendar` accepts `attendanceActivity` (`active`|`noRecent`|`all`). Default: `active`. Backend filters employee IDs before querying the daily attendance grid (performance optimization).
+- **Activity Summary**: API response includes `activitySummary` with `activeCount`, `noRecentCount`, and `totalCount`. Employees with `lastAttendanceDate == null` are categorized as `noRecent`.
+- **`lastAttendanceDate` Field**: Each employee object in the response now includes `lastAttendanceDate` (nullable ISO string).
+- **Segmented Filter UI**: Three-button segmented control above the existing filter bar: "Com ponto recente" (default), "Sem ponto há +30 dias", "Todos". Each button shows the employee count badge.
+- **Explanatory Hint**: When in default "active" view, an informational message explains why employees are hidden: "Funcionários sem ponto há mais de 30 dias são ocultados por padrão, pois podem não ter sido desativados no Primavera."
+- **"Último ponto" Display**: In "noRecent" view, each employee row shows their last attendance date in amber text, or "Não encontrado" if null.
+- **Non-Destructive**: This is purely a UI visibility filter. No employee status changes, no writes to Primavera or Innux, no HR mapping changes.
+
+## [v2.119.1] - 2026-05-20
+
+### Fixed — HR Directory Sync: Missing EF Core Migration
+- **Root Cause**: The v2.119.0 implementation added the `SuggestedPlantSource`, `SuggestedPlantReason`, `SuggestedPlantConfidence`, and `SuggestedPlantResolvedAtUtc` fields to the `HREmployee` domain entity, but the corresponding EF Core migration was not generated and applied to the database. This caused a runtime `SqlException: Invalid column name` when triggering the HR Directory synchronization.
+- **Fix**: Created and applied the missing EF Core migration (`20260520092813_AddPlantSuggestionFields.cs`), successfully adding the nullable columns to the `HREmployees` table and restoring sync functionality.
+
+## [v2.119.0] - 2026-05-20 - HR Directory: Primavera Plant Suggestion & Advanced Filters
+
+### Added
+- **Primavera Plant Suggestion Service** (`PrimaveraPlantSuggestionService`): New read-only advisory service that queries Primavera databases (ALPLASOPRO / ALPLAPLASTICO) to identify which Primavera company each unmapped HR employee belongs to. Does not write to Primavera.
+  - **ALPLASOPRO → High Confidence**: Employee found in ALPLASOPRO maps to Viana 3 with High confidence. Pre-fills plant selection on accept.
+  - **ALPLAPLASTICO → Ambiguous**: Employee found in ALPLAPLASTICO maps to Viana 1 or Viana 2. Requires manual selection.
+  - **Not Found**: Employee not found in either database. Displayed as "Não encontrada".
+  - **No Cost Center Logic**: Deliberately excluded per business decision — will be analyzed separately.
+- **Suggestion Domain Fields**: Added `SuggestedPlantSource`, `SuggestedPlantReason`, `SuggestedPlantConfidence`, and `SuggestedPlantResolvedAtUtc` to `HREmployee` entity. EF Core migration applied.
+- **Resolve Suggestions Endpoint**: `POST /api/hr/leave/employees/resolve-suggestions` triggers batch Primavera lookup for all active unmapped employees. Returns counts by confidence level (highConfidence, ambiguous, notFound).
+- **Advanced Filtering (Backend)**: `GET /api/hr/leave/employees` now supports `mappingStatus` (mapped/unmapped), `missingField` (plant/department/manager), `hasSuggestion`, `plantId`, `departmentMasterId`, and `innuxDepartment` query parameters.
+- **KPI Summary**: Backend returns a `summary` object with total, fullyMapped, unmapped, withoutPlant, withoutDepartment, withoutManager, and withSuggestion counts.
+- **Frontend Filter Bar**: Collapsible filter panel with chip buttons (Todos, Mapeados, Não Mapeados, Sem Planta, Sem Departamento, Sem Responsável, Com Sugestão), plant dropdown, and Innux department text filter.
+- **KPI Summary Cards**: Interactive clickable cards displaying mapping status metrics. Clicking a card applies the corresponding filter.
+- **Suggestion Hints**: Unmapped employee rows display inline Primavera suggestion badges with confidence level, source database, and accept/map button.
+- **Accept Suggestion Workflow**: "Aceitar Sugestão" button pre-fills Viana 3 for High-confidence suggestions; "Mapear Manualmente" opens edit mode for ambiguous suggestions.
+- **Sync Integration**: The "Sincronizar" action now includes suggestion resolution as step 3 after department and employee sync, reporting suggestion counts in the success message.
+
+### Security
+- Primavera queries are strictly read-only SELECT operations. No writes to Primavera databases.
+- No existing Portal mappings are overwritten — suggestions are advisory only.
+- Suggestion resolution restricted to `System Administrator` and `HR` roles (inherits from `IsAdminOrHR`).
+
+---
+
+
+
+## [v2.118.2] - 2026-05-19 - HR Report Print Document Layout
+
+### Fixed
+- **Print Document Layout**: Replaced screen-capture-style print output with a proper official document layout. Report starts with "ALPLA Angola | Portal Gerencial / Relatório Mensal de Presenças" header and immediately shows employee data.
+- **HR Module Chrome Hidden**: PageHeader ("RECURSOS HUMANOS") and navigation tabs (Visão Geral, Férias, Presenças, etc.) are now hidden during print via `screen-only` class in `HRLandingPage.tsx`.
+- **Scoped Print CSS**: Complete rewrite of `@media print` in `hr-attendance-monthly-report.css` with document header styling, compact table layout, employee section `break-inside: avoid`, repeating `thead`, and A4 landscape 8mm margins.
+- **Global Print CSS Simplified**: Reduced `globals.css` print rules to minimal AppShell override to avoid cross-page interference.
+
+---
+
+## [v2.118.1] - 2026-05-19 - HR Monthly Attendance Report Print Fix
+
+### Fixed
+- **Global Print CSS**: Added `@media print` rules to `globals.css` that hide the AppShell chrome (Topbar, Sidebar) and flatten the grid layout, resolving blank page output when printing the HR Monthly Attendance Report.
+- **AppShell CSS Classes**: Added semantic class names (`app-shell`, `app-shell-grid`, `app-shell-sidebar`, `app-shell-main`) to `AppShell.tsx` for print-media targeting.
+- **TypeScript Fix**: Removed unused `React` import in `HRAttendanceMonthlyReport.tsx` (TS6133).
+
+---
+
+## [v2.118.0] - 2026-05-19 - Catalog Sync Conflict Resolution
+
+### Added
+- **Catalog Sync Conflict Resolution Backend**: New `POST /api/v1/sync/catalog/resolve-conflict` endpoint with 4 resolution strategies: `UpdatePortal` (field-level selection for Description, Category, Unit, PrimaveraCode), `ConfirmAssociation` (link PrimaveraCode only), `CreateNew` (auto-generates ITM-NNNNN), and `AssociateManually` (link to a user-selected Portal item).
+- **Data Integrity Enforcement**: PrimaveraCode validation (rejects null/empty/whitespace/"0"/all-zeros). Duplicate PrimaveraCode-to-Portal association prevention with descriptive error messages.
+- **Conflict Resolver Modal**: New `CatalogConflictResolverModal.tsx` component with side-by-side Primavera vs Portal comparison, field-level checkbox selection for UpdatePortal strategy, manual item search for AssociateManually, and preview-before-confirm summary panel.
+- **Table Integration**: "Resolver" action button in the catalog sync table for conflict-status rows. Immediate visual feedback and UI refresh on successful resolution.
+- **Audit Logging**: All resolution actions logged via `AdminLogWriter` with action code `SYNC_CATALOG_RESOLVE_CONFLICT`, capturing strategy, codes, and timestamps.
+
+---
+
+## [v2.117.3] - 2026-05-19 - EF Core Warning Cleanup
+
+### Fixed
+- **Database Schema**: Explicitly configured `HasPrecision(18, 2)` for `AnnualBudget.TotalAmount` to resolve EF Core `Validation[30000]` silent truncation warning. Applied schema migration.
+
+---
+
+## [v2.117.2] - 2026-05-19 - Backend Warning Cleanup
+
+### Fixed
+- **Backend Refactor**: Resolved `CS1998` compiler warning in `MonthlyChangesOrchestrator` by removing unnecessary `async` modifier from `LogEventAsync` and returning `Task.CompletedTask`.
+
+---
+
+## [v2.117.1] - 2026-05-18 - HR Monthly Attendance Reporting Corrections
+
+### Fixed
+- **Backend Refactor**: Corrected `CS0103` build error by referencing `MapDirectionLabel` instead of `ClassifyDirection` in `InnuxAttendanceService`.
+- **Access Control**: Hardened `/api/hr/attendance/reports/monthly-by-department` with `[Authorize(Roles = "System Administrator,HR")]`.
+- **Punch Pairing**: Refactored logic to be direction-aware, prioritizing `DirectionLabel` over positional indices to handle anomalous codes `17` and `18`.
+- **DTO Realignment**: Fixed frontend DTO property mapping to strictly match backend JSON keys (`employeeCode`, `employeeName`, etc.) and updated `EmployeeId` typing.
+- **Frontend Refactor**: Replaced `<select>` with `DepartmentMasterAutocomplete` for scalable department picking, introduced an explicit read-only disclaimer, and improved warning UI.
+- **Print Optimization**: Rewrote `hr-attendance-monthly-report.css` to force A4 landscape density, include dark-themed department grand totals, and explicitly show the Portal-Interpreted badge upon PDF print.
+
+---
+
+## [v2.117.0] - 2026-05-18 - HR Monthly Attendance Reporting
+
+### Added
+- **Backend API**: `GetMonthlyByDepartmentReport` generating aggregated, grouped daily attendance data from `TerminaisMarcacoes` and `Alteracoes`.
+- **Frontend UI**: `HRAttendanceMonthlyReport` with print-ready styling matching Innux "Resultados mensais por departamento" layout.
+- **Controls**: Department selection using `DepartmentMasterAutocomplete`, 62-day interval restriction, and "all/business/weekends" day filters.
+- **Access Control**: Limited to `System Administrator` and `HR` roles, integrating safely into the HR workspace.
+
+---
+
+## [v2.116.0] - 2026-05-15 - Proforma Deadline Expiration Alerts
+
+### Added
+- **Proforma Deadline Alert Service** (`ProformaDeadlineAlertService`): New daily `BackgroundService` that scans PAYMENT requests in approval stages (`WAITING_AREA_APPROVAL`, `WAITING_FINAL_APPROVAL`) and sends Proforma expiration alerts to the responsible approver.
+  - **Alert Levels**: `WARNING_3D` (3 days before), `WARNING_1D` (1 day before), `CRITICAL_0D` (same day), `EXPIRED` (past due).
+  - **Deduplication**: Global composite unique index `(RequestId, AlertLevel, RecipientUserId)` — each recipient receives at most one alert per level per request. When a request moves to a new approval stage with a different approver, the new recipient can still receive the alert.
+  - **Email Notifications**: Branded Portuguese email via `IEmailService.SendWorkflowNotificationAsync()` with urgency-colored details box, request context (number, requester, department, company/plant, supplier, total, deadline, days remaining), and CTA deep link.
+  - **In-App Notifications**: Bell notification via `INotificationService.CreateNotificationAsync()` under category `PROFORMA_DEADLINE`.
+  - **Approver Resolution**: Reuses `WorkflowNotificationOrchestrator` patterns — explicit `AreaApproverId`/`FinalApproverId` preferred, falls back to department-scoped fan-out for Area Approvers.
+  - **Configuration** (`appsettings.json → AppConfig:ProformaDeadlineAlerts`): `Enabled`, `CheckIntervalHours` (default 24), `ThresholdDays` (default [3, 1, 0]), `CheckTimeUtcHour` (default 7 = 08:00 Angola).
+  - **Audit Trail**: `ProformaDeadlineAlerts` table persists all sent alerts with email/in-app delivery status and error tracking. Admin log entry written per cycle via `AdminLogWriter`.
+- **Database Migration**: `AddProformaDeadlineAlerts` — new `ProformaDeadlineAlerts` table with dedup index, recipient FK, and request FK.
+- **Notification Category**: Added `PROFORMA_DEADLINE` to `NotificationConstants.NotificationCategories`.
+
+---
+
+## [v2.115.2] - 2026-05-15 - OCR Quotation Total Calculation Fix
+
+### Fixed
+- **OCR Quotation Total Missing VAT**: After OCR extraction with global VAT inference, the "Valor Total da Cotação" displayed the net subtotal (without VAT) instead of the final payable total. Root cause: `draft.totalAmount` was calculated in `useOcrProcessor.ts` **before** the Global VAT Inference pass applied `ivaRateId` to items. Added post-inference recalculation of both item totals and draft total when `globalVatInferred` is true.
+- **Item Removal Total Inconsistency**: Replaced inline `reduce` in `handleRemoveQuotationItem` with `calculateDraftTotal()` for consistent total calculation including global discount and proportional IVA adjustment.
+
+---
+
+## [v2.115.1] - 2026-05-15 - Area Approval Rejection Fix
+
+### Fixed
+- **Area Approval Rejection Blocked by Allocation Validation**: Rejecting or requesting adjustment on a purchase request at the Area Approval stage was incorrectly blocked when items had missing Plant or Cost Center assignments. The frontend was sending `itemAssignments` with `null` int values during rejection, causing ASP.NET ModelState deserialization to fail before the controller logic ran.
+  - **Frontend**: Stopped sending `itemAssignments` payload on `REJECT` and `REQUEST_ADJUSTMENT` actions (only sent on `APPROVE` where allocation validation is required).
+  - **Backend**: Made `ItemApprovalAssignmentDto.PlantId` and `CostCenterId` nullable as defensive hardening. Updated `ProcessAreaApproval` validation to use nullable-safe comparisons.
+  - **Error Handling**: Improved `ApprovalDetailPanel` error catch to extract detailed field-level validation messages from ASP.NET `ProblemDetails`, replacing the generic "One or more validation errors occurred" banner.
+
+---
+
+## [v2.115.0] - 2026-05-15 - OCR Global VAT Inference
+
+### Added
+- **OCR Global VAT Inference**: When a supplier quotation/proforma specifies VAT only at the document summary level (Subtotal + IVA + Total) but not per line item, the system now automatically infers the global VAT rate and applies it to all items.
+  - **Inference Algorithm**: Calculates `(GrandTotal - Subtotal) / Subtotal` to derive the implied VAT percentage. Matches against active `ivaRates` with ±0.30 percentage point tolerance (e.g., 13.90% → 14%, but 13.00% ≠ 14%). Validates recalculated total within 2% of OCR grand total before applying.
+  - **Priority Rule**: Explicit item-level VAT always takes priority. Global inference only triggers when **all** items have uncertain or missing VAT.
+  - **Auditability Flags**: New `globalVatInferred` (draft-level), `inferredVatRatePercent` (draft-level), and `ivaGlobalInferred` (item-level) fields distinguish inferred VAT from OCR-extracted VAT.
+  - **UI Feedback**: Green success banner ("IVA global de {rate}% identificado no resumo do documento e aplicado automaticamente a todos os itens.") replaces the red "IVA não identificado" warning when inference succeeds. Red warning preserved as fallback when inference fails.
+  - **Manual Override**: Users can still manually change any item's VAT rate after inference.
+  - **Dual Path**: Logic applied in both `useOcrProcessor.ts` (Buyer workspace) and `QuotationEntry.tsx` (legacy quotation entry).
+
+---
+
+## [v2.114.0] - 2026-05-14 - Approvals Intelligence & Notification Fixes
+
+### Added
+- **Approvals & Budget Insights**: Integrated budget health analytics into the approval flow.
+  - Added `ApprovalIntelligenceService` to calculate utilization metrics (OK, WARNING, CRITICAL, EXCEEDED).
+  - Added `DecisionInsightsPanel` and `DecisionQuotationCard` to `ApprovalDetailPanel`.
+
+### Fixed
+- **Backend Routing & Notification Remediation**: Remediated purchase request notification failures (as per `PURCHASE_REQUEST_NOTIFICATIONS_AUDIT.md`).
+  - `FinanceController`: Propagated `DepartmentId` to `PAYMENT_SCHEDULED` and `PAYMENT_COMPLETED` events for correct fan-out.
+  - `RequestsController`: Added `DepartmentId` to `QUOTATION_COMPLETED` and fixed `RESUBMIT` event mapping to route correctly to the Final Approver.
+  - `WorkflowNotificationOrchestrator`: Updated `FinalApproved` logic to include Requester and Buyer.
+- **TypeScript Linting Cleanup**: Addressed multiple `TS6133` (unused variables/imports) warnings across the codebase to ensure a clean `npm run build`. Affected components include `BuyerItemsList`, `ContractsAlerts`, `ActionCarouselWidget`, `FinanceHistory`, `GuideModal`, `HRLandingPage`, and `ModernRequestTimeline`.
+
+---
+
+## [v2.113.0] - 2026-05-14 - Dark Mode Contrast Fix### Fixed
+- **Dark Mode Visibility**: Improved contrast for text and status indicators in `UserDropdown` and `NotificationBell` components when dark mode is active.
+- **Semantic Tokens**: Introduced `--color-status-red-surface` in `tokens.css` to provide accessible, theme-aware tinted backgrounds for status elements.
+
+---
+
+## [v2.111.0] - 2026-05-14 - HR Team Calendar Scope Fix (Local Manager)
+
+### Problem
+Local Manager "Andre Vale" could not see any employees in the HR Team Calendar (`/hr/calendar`), despite having 10+ employees explicitly mapped to him via `ManagerUserId` (Responsável/Chefe). The calendar displayed "Nenhum funcionário mapeado no seu escopo de hierarquia."
+
+### Root Cause
+`GetScopedEmployeesQuery()` in `HRLeaveController.cs` — the Local Manager branch filtered employees using `PortalDepartmentId IN (user's dept scope)`. All employees assigned to Andre Vale had `PortalDepartmentId = NULL` (unmapped), causing the filter to return zero results. The `ManagerUserId` relationship was only checked in the Department Manager path, not in the Local Manager path.
+
+### Solution
+
+| Scope Case | Before (v2.110.0) | After (v2.111.0) |
+|---|---|---|
+| Plants + Depts | `PlantId AND PortalDeptId` | `ManagerUserId OR (PlantId AND PortalDeptId)` |
+| Depts only | `PortalDeptId` | `ManagerUserId OR PortalDeptId` |
+| Plants only | `PlantId` | `ManagerUserId OR PlantId` |
+| No scopes | `WHERE false` (empty) | `ManagerUserId == userId` (manager-only) |
+
+### Frontend UX
+- Added info banner: "Não existem férias ou ausências registadas para a equipa neste período" when employees exist but no leave records match the selected period.
+- Improved empty-state text with actionable guidance when no employees are in scope.
+
+### Files Changed
+- `backend/AlplaPortal.Api/Controllers/HRLeaveController.cs` — Added `e.ManagerUserId == userId` as OR condition in all Local Manager scope branches of `GetScopedEmployeesQuery()`.
+- `frontend/src/pages/HR/HRTeamCalendar.tsx` — Added `cal-info-banner` component for the "no records" case; refined empty-state messaging.
+- `frontend/src/pages/HR/hr-team-calendar.css` — Added `.cal-info-banner` styles.
+- `docs/VERSION.md` — Bumped to v2.111.0.
+
+### Security
+No broadening of access. `ManagerUserId` is an admin-assigned FK — only HR/Admin can set it via the mapping endpoints. The change makes the Local Manager scope consistent with the existing Department Manager scope (line 183), which already uses `ManagerUserId`.
+
+---
+
+## [v2.110.0] - 2026-05-14 - HR Navigation UX Refinement
+
+### Problem
+After the v2.109.0 security fix, user "Andre Vale" (Local Manager) no longer sees HR administration screens. However, the sidebar still showed the group labeled "R.H." — misleadingly suggesting full HR module access. The page header inside `/hr/calendar` also showed "Recursos Humanos", reinforcing the confusion. Additionally, the tab bar inside the HR landing page still displayed admin-only tabs (Presenças, Escalas, Directório, Gestão de Crachás) to Local Managers even though route guards blocked access.
+
+### Solution: Two Distinct Navigation Groups
+
+| User Profile | Sidebar Group | Group Label | Visible Children |
+|---|---|---|---|
+| HR / System Administrator | `rh` | **R.H.** | Visão Geral, Calendário, Férias, Funcionários, Layouts, Histórico |
+| Local Manager / Dept Manager / Viewer | `equipa` | **Gestão da Equipa** | Calendário da Equipa, Férias e Ausências |
+| Requester only | *none* | — | — |
+
+### HR Landing Page (Dynamic)
+
+| Context | Page Title | Subtitle | Visible Tabs |
+|---|---|---|---|
+| HR / System Administrator | Recursos Humanos | Gestão de funcionários, férias, ausências e calendário da equipa | All tabs |
+| Non-admin team user | Gestão da Equipa | Calendário da equipa, férias e ausências | Visão Geral, Férias, Calendário |
+
+### Files Changed
+- `constants/navigation.tsx` — Split `rh` group into two: `rh` (isHrAdmin) and `equipa` (isTeamModule). Added `CalendarCheck` icon. Updated `getNavigationConfig` signature to accept `hasHRAdminAccess`. Added `isHrAdmin` and `isTeamModule` to `NavItem` interface.
+- `components/layout/Sidebar.tsx` — Passes `hasHRAdminAccess` to `getNavigationConfig`.
+- `components/layout/GlobalSearch.tsx` — Passes `hasHRAdminAccess` to `getNavigationConfig`.
+- `pages/HR/HRLandingPage.tsx` — Dynamic title/subtitle/icon based on `hasHRAdminAccess`. Tab filtering now uses `hasHRAdminAccess` instead of the previous `isViewerManagement`-only check, ensuring Local Managers see only team-level tabs.
+
+## [v2.109.0] - 2026-05-14 - HR Module Access Control Fix
+
+### Security Fix
+- **HR Module Access Control**: User "Andre Vale" (Local Manager, Area Approver, Requester — no HR role) could see and access the full R.H. module in the sidebar, including employee badge administration at `/hr/badges/employees`. Root cause: `hasHRModuleAccess` in `AuthContext.tsx` included `isLocalManager`, granting all Local Managers access to the full HR module, including administration screens. The old `HRAdvancedRoute` guard only blocked `Viewer/Management` users — Local Managers passed through.
+
+### Access Model (After Fix)
+| HR Feature Category | Allowed Roles |
+|---|---|
+| **Administration** (badges, layouts, history, attendance, schedules, directory, monthly-changes) | `HR`, `System Administrator` |
+| **Team-level** (overview, calendar, leave) | `HR`, `System Administrator`, `Local Manager`, `Department Manager`, `Viewer/Management` |
+| **Backend write operations** (mapping, sync, bulk-update) | `HR`, `System Administrator` (unchanged — already enforced via `IsAdminOrHR`) |
+| **Backend badge API** | `HR`, `System Administrator` (unchanged — `[Authorize(Roles = "System Administrator,HR")]`) |
+
+### Files Changed
+- `frontend/src/features/auth/AuthContext.tsx` — Added `hasHRAdminAccess` (HR + Admin only) alongside existing `hasHRModuleAccess` (team-level).
+- `frontend/src/App.tsx` — Replaced `HRAdvancedRoute` with `HRAdminRoute` using `hasHRAdminAccess`; redirects unauthorized users to `/hr/calendar`.
+- `frontend/src/constants/navigation.tsx` — Removed `LOCAL_MANAGER` from admin children (`rh-badges-employees`, `rh-badges-layouts`, `rh-badges-history`).
+
+## [v2.108.0] - 2026-05-14 - Request Number Sort Fix & Column Sort Completeness
+
+### Fixed
+- **Request Number Column Sort (Backend)**: The "Número" column (`sortBy=requestNumber`) was sorted as a plain string via `ORDER BY RequestNumber`. Since the format is `REQ-DD/MM/YYYY-NNN`, lexicographic ordering compared the day portion first (`28` vs `14`), completely breaking chronological order. Now sorts by `CreatedAtUtc.Date` (primary) + `RequestNumber` (tiebreaker), producing correct date-then-sequence ordering.
+
+### Added
+- **Missing Backend Sort Cases**: The following frontend column keys were not handled in the backend sort switch and silently fell through to the `createdAtUtc` default:
+  - `statusCode` → now sorts by `Status.DisplayOrder` (workflow-meaningful order, not alphabetical)
+  - `requestTypeCode` → now sorts by `RequestType.Name`
+  - `companyName` → now sorts by `Company.Name`
+  - `needByDateUtc` → now sorts by `NeedByDateUtc`
+  - `estimatedTotalAmount` → now sorts by the effective amount (selected quotation total or estimated amount)
+
+### Files Changed
+- `backend/AlplaPortal.Api/Controllers/RequestsController.cs` — Fixed `requestnumber` sort case; added 5 new sort cases.
+
+## [v2.107.0] - 2026-05-14 - Persistent Table Preferences
+
+### Added
+- **`useTablePreferences` Hook** (`src/frontend/src/hooks/useTablePreferences.ts`): New reusable React hook that persists table filter, sort, and view state to `localStorage`, scoped by user ID and screen key. Features schema versioning, debounced writes (300ms), corrupt JSON resilience, and automatic empty-value cleanup.
+  - Key format: `portal:prefs:{userId}:{screenKey}`
+  - API: `preferences`, `setPreference`, `setPreferences`, `resetPreferences`, `isHydrated`
+- **RequestsDashboard Persistence**: Search, filter type, status/company/plant/department filters, sort, page size, and advanced filter visibility now persist across navigation and refresh. "Limpar Filtros" resets UI + localStorage.
+- **ApprovalCenter Persistence**: Sort mode and active triage filters now persist. New "Restaurar Padrão" button when non-default triage is active.
+- **FinancePaymentsList Persistence** (URL-sync): Status codes, currency, and supplier search persist to localStorage and hydrate URL on mount. Deep-linking preserved. "Limpar" clears localStorage.
+- **BuyerItemsList Persistence** (URL-sync): Search, item status, request status, and owner persist and URL-hydrate. Clear buttons also clear localStorage.
+
+### Design Decisions
+- URL-driven screens retain `useSearchParams` for deep-linking; localStorage hydrates URL only on mount when no URL params exist.
+- `page` is never persisted (always starts at page 1).
+- Unrelated localStorage keys (`approvalDrawerWidth`, `floatingMode.enabled`) are NOT migrated.
+
+### Files Changed
+- `frontend/src/hooks/useTablePreferences.ts` — [NEW] Core persistence hook.
+- `frontend/src/pages/Requests/components/modern/RequestsDashboard.tsx` — Integrated preference persistence.
+- `frontend/src/pages/Approvals/ApprovalCenter.tsx` — Integrated preference persistence + "Restaurar Padrão" button.
+- `frontend/src/pages/Finance/FinancePaymentsList.tsx` — Integrated URL-sync preference persistence.
+- `frontend/src/pages/Buyer/BuyerItemsList.tsx` — Integrated URL-sync preference persistence.
+
+## [v2.106.0] - 2026-05-14 - Purchase Request Notification Priority Fixes
+
+### Fixed
+- **Finance Events — Missing DepartmentId**: `PAYMENT_SCHEDULED` and `PAYMENT_COMPLETED` events emitted from `FinanceController` were missing the `DepartmentId` field in the `WorkflowEvent` payload. This caused `HandlePaymentFanningOverridesAsync` (which resolves area approvers by department) to silently skip fan-out, resulting in area approvers never receiving payment lifecycle notifications for their departments.
+  - **Fix**: Added `DepartmentId = r.DepartmentId` to both `WorkflowEvent` initializations in `SchedulePayment` and `MarkAsPaid` actions.
+- **Quotation Completed — Missing DepartmentId**: `QUOTATION_COMPLETED` event in `RequestsController.CompleteQuotation` was missing `DepartmentId`, preventing correct department-scoped area approver resolution during the `HandlePendingAreaApprovalFanningAsync` fan-out.
+  - **Fix**: Added `DepartmentId = r.DepartmentId` to the `WorkflowEvent` initialization.
+- **FINAL_APPROVED Recipients Incomplete**: The `FINAL_APPROVED` event only notified the actor (Final Approver). The Requester and assigned Buyer — who need to know the request is ready for P.O. generation — were excluded from the notification.
+  - **Fix**: Updated `ResolveRecipientsAsync` in `WorkflowNotificationOrchestrator` to resolve and include the Requester (`evt.RequesterId`) and the assigned Buyer (`Request.BuyerUserId`) as additional recipients.
+- **RESUBMIT Routing to Wrong Approver**: When a request was resubmitted from `WAITING_FINAL_APPROVAL` status (after the Final Approver requested adjustments), `ResolveEventCode` incorrectly mapped the transition to `REQUEST_SUBMITTED`, which triggers area approver notification. The correct mapping is `AREA_APPROVED`, which triggers final approver notification.
+  - **Fix**: Changed the `Resubmit` + `WaitingFinalApproval` case in `ResolveEventCode` from `WorkflowEventCodes.RequestSubmitted` to `WorkflowEventCodes.AreaApproved`.
+
+### Documentation
+- **`docs/PURCHASE_REQUEST_NOTIFICATIONS_AUDIT.md`**: Updated all 4 priority issues to "✅ FIXED in v2.106.0" status. Updated the notification matrix to reflect the corrected recipient lists.
+
+### Files Changed
+- `backend/AlplaPortal.Api/Controllers/FinanceController.cs` — Added `DepartmentId` to 2 `WorkflowEvent` initializations.
+- `backend/AlplaPortal.Api/Controllers/RequestsController.cs` — Added `DepartmentId` to `QUOTATION_COMPLETED` event; fixed `ResolveEventCode` mapping for RESUBMIT.
+- `backend/AlplaPortal.Infrastructure/Services/WorkflowNotificationOrchestrator.cs` — Added Requester + Buyer to `FINAL_APPROVED` recipients.
+- `docs/PURCHASE_REQUEST_NOTIFICATIONS_AUDIT.md` — Marked fixes as applied.
+
+## [v2.104.0] - 2026-05-14 - Buyer Requested Items Section
+
+### Added
+- **Buyer Requested Items Section ("Itens Solicitados no Pedido")**: Added a new read-only section within the Buyer Quotation Management expanded request view (`/buyer/items`). This section displays all items originally requested in the purchase request, giving buyers essential context before processing supplier quotations.
+  - **Placement**: Appears between the request metadata (Plant, Department, Title, Description) and SEÇÃO A (Documentos e Cotações Registradas).
+  - **Table Columns**: Line number (#), Description, Quantity, Unit, Estimated Unit Price, Estimated Total, Priority (Alta/Média/Baixa badges), and Type badge (✓ Catálogo / ✎ Manual).
+  - **Catalog vs Manual Detection**: Items linked to the Portal item catalog (`ItemCatalogId`) display a green "Catálogo" badge. Free-text/manually entered items display an amber "Manual" badge.
+  - **Cost Center Sub-detail**: When a cost center is assigned to an item, it is displayed as a secondary line below the description.
+  - **Item Count Badge**: Header shows the total item count (e.g., "3 itens").
+  - **Empty State**: Requests without detailed line items show an informational message: "Este pedido não possui itens detalhados."
+  - **Backend**: Added `ItemCatalogId` to `LineItemDetailsDto` and `LineItemsController` query projection for catalog linkage detection.
+  - **No disruption**: Section is purely informational. No edit/delete actions. Existing OCR import, manual quotation insertion, and quotation workflows remain unaffected.
+
+## [v2.103.0] - 2026-05-14 - Requests Floating Mode Persistence
+
+### Fixed
+- **Requests Floating Mode Persistence**: The "Flutuante Ativo / Inativo" UI toggle on the Requests dashboard (`/requests`) now correctly saves its state to `localStorage`. The chosen view mode for the "New Request" button and summary footer persists across page navigation, browser reloads, and new sessions using the `alpla-portal.requests.floatingMode.enabled` key.
+
+## [v2.102.0] - 2026-05-14 - Route-Level Access Control Hardening
+
+### Security
+- **Route-Level Access Control Hardening**: System-wide access-control audit conducted to eliminate gaps where UI-hidden resources remained accessible via direct URL manipulation.
+  - Implemented `HRAdvancedRoute` to restrict HR diagnostic endpoints (attendance, schedules, directory, badges, monthly changes) strictly to users with `SYSTEM_ADMINISTRATOR` or `HR` roles, blocking `VIEWER/MANAGEMENT`.
+  - Added `AdminRoute` guards to `/approvals` (AREA_APPROVER, FINAL_APPROVER), `/purchasing` and `/buyer/items` (BUYER), `/receiving` (RECEIVING, LOCAL_MANAGER), `/finance` (FINANCE), and `/contracts` (CONTRACTS, FINANCE).
+- **Access Control Documentation**: Created `docs/ACCESS_CONTROL_AUDIT.md` mapping the security matrix and documenting required backend verification steps.
+
+## [v2.101.0] - 2026-05-14 - HR Navigation: Finance-Style Tab Alignment
+
+### Changed
+- **HR Tab Navigation Pattern**: Replaced the pill-style horizontal tab bar (with `overflow-x: auto` causing horizontal scrolling) with the same inline bottom-border tab pattern used in `FinanceLandingPage`. Primary tabs are directly visible; secondary tabs are collapsed into a "Mais" dropdown. No horizontal scroll.
+- **Primary Tabs (always visible)**: Visão Geral, Férias e Ausências, Calendário da Equipa, Presenças.
+- **Secondary Tabs ("Mais" dropdown)**: Escalas & Horários, Directório & Mapeamento, Gestão de Crachás, Revisão de Presenças (Admin/HR only).
+- **"Mais" active state**: The "Mais" button displays as an active tab when the current route belongs to a secondary tab.
+- **Dropdown behavior**: Click-to-toggle, outside-click dismiss, Escape key dismiss, animated entry.
+- **Role-aware visibility preserved**: Viewer/Management sees only primary subset (overview, calendar, leave) — no "Mais" button. Admin/HR sees all tabs including diagnostic.
+- **Removed `framer-motion`** dependency from `HRLandingPage.tsx` (was used only for the old animated pill indicator).
+
+### Files Changed
+- `frontend/src/pages/HR/HRLandingPage.tsx` — Full rewrite to Finance-style NavLink pattern with "Mais" dropdown.
+- `frontend/src/pages/HR/hr-landing.css` — Replaced pill styles with dropdown panel styles. Removed `overflow-x: auto`.
+
+## [v2.100.0] - 2026-05-13 - HR Command Center: Scope-Enforced KPI Cards
+
+### Changed
+- **HR Command Center KPI Scope**: Dashboard endpoint now uses `GetTeamScopedEmployeesQuery()` (shared with calendar) instead of `GetScopedEmployeesQuery()`. KPI values (Ausentes Hoje, Em Férias, Aguardando Análise, Efetivo Ativo Mapeado) are calculated only over the user's scoped employee base.
+
+### Added
+- **`GetTeamScopedEmployeesQuery()`**: Refactored from `GetCalendarScopedEmployeesQuery()`. Shared by calendar and dashboard endpoints. Viewer/Management resolves to department-level; privileged roles delegate to standard scope.
+- **Dashboard scope metadata**: `scopeType` and `scopeDescription` returned to frontend for contextual display.
+- **Overview tab access**: Viewer/Management users now see the "Visão Geral" tab.
+- **Role-filtered admin sections**: "Ação Necessária" and sync badge restricted to HR/System Administrator.
+- **Scoped click targets**: KPI card navigation adapted per role (Viewer/Management → calendar instead of restricted employee pages).
+
+### Security
+- Leave management scope unchanged — self-only for Viewer/Management.
+- KPI data remains aggregate-only — no employee-level PII exposed.
+- Admin operational indicators hidden from non-admin users.
+
+## [v2.99.9] - 2026-05-13 - HR Leave Notification System
+
+### Added
+- **HR Leave In-App Notifications**: Notification bar alerts for HR leave/absence request lifecycle events using existing `InformationalNotification` infrastructure.
+  - **SUBMITTED → Approver notification**: Resolves via `HREmployee.ManagerUserId` → `Department.ResponsibleUserId` fallback. Warning type.
+  - **APPROVED → Requester notification**: Success type.
+  - **REJECTED → Requester notification**: Error type. No rejection reasons exposed.
+  - **CANCELLED → Requester notification**: Only when cancelled by a different actor. Self-cancel is silent.
+- **`NotificationCategories.HRLeave`**: New `"HR_LEAVE"` category in `NotificationConstants.cs`.
+- **`INotificationService` injection**: `HRLeaveController` now receives notification service + logger for non-blocking dispatch.
+- **Dedup via `LeaveStatusHistory.Id`**: Each notification uses the status history entry ID as `EventCorrelationId`, preventing duplicates from auto-submit or retries.
+
+### Security
+- Notifications contain only: employee name, leave type, date range.
+- No notes, medical details, rejection reasons, approval comments, or attachments exposed.
+- Self-notification suppressed: actors do not receive notifications for their own actions.
+
+### Not Included
+- No email notifications (deferred to future HR evaluation).
+- No frontend changes (existing `NotificationBell.tsx` handles new notifications automatically).
+
+## [v2.99.8] - 2026-05-13 - HR Calendar: Department Visibility for Viewer / Management
+
+### Changed
+- **HR Calendar Scope**: Viewer / Management users now see the team/department calendar instead of self-only. The backend resolves the user's linked HREmployee → `PortalDepartmentId` and returns all active employees from that department. Falls back to self-only if no department, or empty if unlinked/inactive.
+
+### Added
+- **`GetCalendarScopedEmployeesQuery()`**: Calendar-specific scope method in `HRLeaveController`. Only affects `GET /api/hr/leave/calendar`. Privileged roles delegate to unchanged `GetScopedEmployeesQuery()`. Leave management remains self-only.
+- **`scopeType = "team"`**: New scope metadata for Viewer / Management with department access.
+- **Frontend `"team"` scope**: `HRTeamCalendar.tsx` shows "Calendário da Equipa" with informational subtitle for team scope.
+
+### Security
+- `GetScopedEmployeesQuery()` unchanged — leave endpoints remain self-only for Viewer / Management.
+- Calendar projection excludes sensitive fields (notes, reasons, attachments, medical details, approval comments).
+- Only active employees returned (`IsActive == true`).
+
+## [v2.99.7] - 2026-05-13 - HR Self-Service Leave Management for Viewer / Management
+
+### Changed
+- **HR Sidebar — "Férias e Ausências" Access**: Removed role restriction from sidebar item. Now visible to all HR-accessing roles including Viewer / Management. Backend `GetScopedEmployeesQuery()` remains the data scope boundary.
+- **HR Tabs — Self-Service Extended**: `VIEWER_ONLY_TABS` expanded to `['calendar', 'leave']`. Viewer / Management users see both Calendar and Leave tabs.
+
+### Added
+- **Self-Service Leave UI (`HRLeaveList.tsx`)**: Role-aware `isSelfServiceOnly` mode:
+  - Auto-resolves the user's linked HREmployee from the scoped backend API on mount.
+  - New request drawer: read-only employee display replaces `EmployeeAutocomplete` for self-service.
+  - Helper text: "Esta solicitação será registada automaticamente em seu nome."
+  - Unlinked user warning with disabled creation when no HREmployee is linked.
+  - Approve/Reject action buttons hidden for self-service users.
+  - Cancel restricted to DRAFT/SUBMITTED for self-service (APPROVED requires HR intervention).
+  - Context-appropriate subtitle for self-service mode.
+- **Backend verified as secure** — no backend changes required:
+  - `CreateLeaveRecord` validates `EmployeeId` via `GetScopedEmployeesQuery()`.
+  - `ApproveLeaveRecord` / `RejectLeaveRecord` gated by `IsAdminOrHR`.
+  - `CancelLeaveRecord` validates scope for non-admin users.
+
+## [v2.99.6] - 2026-05-13 - HR Sidebar: Role-Aware Navigation for Viewer / Management
+
+### Changed
+- **HR Sidebar — Role-Aware Filtering**: Viewer / Management users now see only "Calendário da Equipa" in the sidebar R.H. group. Previously, all HR links (Visão Geral, Férias e Ausências, Funcionários, Layouts, Histórico de Impressão) were visible to any user with HR module access, regardless of their actual role permissions.
+- **New sidebar item**: "Calendário da Equipa" (`/hr/calendar`) added to the HR sidebar navigation. Visible to all HR-accessing roles including Viewer / Management. Uses `CalendarDays` icon matching the HRLandingPage tab.
+- **Restricted items**: Visão Geral, Férias e Ausências, Funcionários, Layouts, and Histórico de Impressão now require `HR`, `System Administrator`, or `Local Manager` roles.
+- **No backend changes**. This is purely navigation cleanup — backend scope enforcement remains the source of truth.
+
+## [v2.99.5] - 2026-05-13 - Self-Calendar Mapping Fix & Sync-Safety
+
+### Fixed
+- **Self-Calendar Mapping — Sync-Safety**: `HREmployeeSyncService.cs` now preserves manually-linked corporate emails when Innux provides NULL/empty. Previously, every sync cycle would erase `HREmployee.Email` because Innux has no email data, breaking self-calendar for Portal users.
+- **Self-Calendar Empty-State Message**: Both `HRTeamCalendar.tsx` and `HRAttendanceCalendar.tsx` now display an actionable message when no employee is linked to the user, guiding them to contact HR for user-employee linking instead of the previous ambiguous "no records found" message.
+
+### Changed
+- **HREmployee.Email — Business Rule Documentation**: Clarified that `HREmployee.Email = NULL` is valid and expected for employees who do not use Portal self-service. Only employees with corporate email / Portal user accounts require this mapping. Non-self-service employees are managed by their direct manager, Local Manager, or authorized HR user.
+
+### Data
+- **Abel Domingos (EmployeeCode: 21000184)**: Set `HREmployee.Email = 'abel.domingos@alpla.com'` for self-service test user. Targeted correction — no other employee records were modified.
+
+## [v2.99.4] - 2026-05-13 - UX Fix: HR Default Route for Viewer / Management
+
+### Fixed
+- **HR Default Route — Viewer / Management Redirect**: Viewer/Management users navigating to `/hr` are now redirected to `/hr/calendar` (the only tab they have access to) instead of `/hr/overview`. All other HR roles (System Administrator, HR, Local Manager, Department Manager) continue landing on `/hr/overview` as before.
+- **Implementation**: New `HRIndexRedirect` component in `App.tsx` checks `isViewerManagement && !hasHRAccess` to determine the appropriate default route. This matches the existing tab-filtering logic in `HRLandingPage.tsx`.
+- **No backend changes**. Sidebar role-filtering remains a documented future improvement.
+
+## [v2.99.3] - 2026-05-13 - HR Module Access — Frontend Route Guard Alignment
+
+### Changed
+- **Frontend HR route guard**: Expanded `hasHRModuleAccess` in `AuthContext.tsx` to include `Local Manager` and `Viewer / Management` roles, matching the backend's `HasHRModuleAccess()` scope.
+- **Role-aware tab visibility**: `HRLandingPage.tsx` now filters HR tabs by role. Viewer/Management sees only "Calendário da Equipa" (self-calendar). All other roles see the full tab set.
+- **No backend changes**: Backend `GetScopedEmployeesQuery()` remains the source of truth for data scope.
+
+## [v2.99.2] - 2026-05-12 - Diagnostic Review — Onboarding & Help UX
+
+### Added
+- **Help Drawer**: "Como usar esta tela?" button in the diagnostic banner opens a full guide drawer with page purpose, step-by-step instructions, field glossary, and severity level explanations. All in Portuguese. Follows existing `PurchasingHelpDrawer` pattern.
+- **Severity Legend**: Inline legend strip above results table (Alta/Média/Baixa/Nenhuma with descriptions).
+- **Column Tooltips**: Info icons on 6 key table headers with `ModernTooltip` explanations on hover.
+- **Initial Guidance**: Improved empty-state before first search with structured guidance and hint to help button.
+- **Scope**: Purely visual/UX. No backend or comparison logic changes. Page remains diagnostic/read-only.
+
+## [v2.99.1] - 2026-05-12 - Diagnostic Review — Employee Search Autocomplete
+
+### Changed
+- **Employee Search Filter**: Replaced the technical "ID Funcionário (Innux)" number input with a name-based autocomplete in the `/hr/attendance-review` filter bar.
+  - Debounced search (300ms) via `GET /api/hr/leave/employees?search=`. Dropdown shows employee name, department, and Innux ID.
+  - Selected employee displayed as `Name (#InnuxID)` with clear button to revert to unfiltered view.
+  - Keyboard navigation (↑/↓/Enter/Escape) and outside-click dismiss fully supported.
+  - Backend: Added `InnuxEmployeeId` to `GetEmployees` projection (additive, backwards-compatible).
+
+### Files Changed
+- `backend/AlplaPortal.Api/Controllers/HRLeaveController.cs` — Added `InnuxEmployeeId` to employees projection.
+- `frontend/src/pages/HR/HRAttendanceDiagnostics.tsx` — New `EmployeeAutocomplete` sub-component replacing numeric input.
+- `frontend/src/pages/HR/hr-attendance-diagnostics.css` — Added autocomplete dropdown styles.
+- `docs/VERSION.md` — Bumped to v2.99.1.
+- `docs/CHANGELOG.md` — This entry.
+
+---
+
+## [v2.99.0] - 2026-05-12 - Portal Attendance Engine — Phase 4: Diagnostic Review UI
+
+### Added
+- **Attendance Diagnostic Review UI**: New read-only diagnostic page at `/hr/attendance-review` for HR/Admin users to visually inspect attendance discrepancies between Innux processed data and Portal raw-punch interpretation.
+  - Filter bar with date range, employee ID, severity filter, and "Apenas divergências" toggle. Client-side 31-day validation.
+  - Summary KPI cards: total days, severity breakdown (None/Low/Medium/High), execution time.
+  - 13-column results table with severity badges, confidence indicators, and clickable rows.
+  - Detail drawer with Innux vs Portal side-by-side comparison, discrepancy messages, warnings, recommended action, raw punches timeline, and punch pairs (on-demand from `interpret-punches`).
+  - Diagnostic banner: "Esta tela é apenas diagnóstica. Nenhuma informação é gravada no Innux ou Primavera."
+  - Access restricted to System Administrator and HR roles. Department Managers blocked by both tab visibility and page-level role guard.
+  - Severity visual style: High=red, Medium=orange, Low=blue/informational, None=neutral gray.
+
+### Files Changed
+- `frontend/src/lib/api.ts` — Added `hrAttendanceDiagnostics` namespace with `compareRange` and `interpretPunches`.
+- `frontend/src/pages/HR/HRAttendanceDiagnostics.tsx` — New diagnostic page component.
+- `frontend/src/pages/HR/hr-attendance-diagnostics.css` — Scoped CSS for diagnostic UI.
+- `frontend/src/pages/HR/HRLandingPage.tsx` — Added conditional "Revisão de Presenças" tab.
+- `frontend/src/App.tsx` — Added lazy-loaded route with AdminRoute guard.
+- `docs/VERSION.md` — Bumped to v2.99.0.
+- `docs/CHANGELOG.md` — This entry.
+- `docs/innux-operational-model.md` — Added Phase 4 documentation.
+
+---
+
+## [v2.98.1] - 2026-05-12 - Comparison Engine Hardening: Worked-Minutes Enrichment
+
+### Fixed
+- **Innux Worked-Minutes Enrichment**: Comparison engine now enriches `InnuxWorkedMinutes` from `AlteracoesPeriodos` (via `GetWorkedHoursAsync`) when the calendar summary returns 0 for a present employee. Eliminates false Medium discrepancies.
+  - Triggered only when `InnuxWorkedMinutes == 0` and `InnuxStatus ∈ {Present, PortalInterpreted, Anomaly}`.
+  - New DTO fields: `InnuxWorkedMinutesSource` (`CalendarSummary` | `DayDetail` | `NotAvailable`), `InnuxWorkedMinutesEnriched` (bool).
+  - If enrichment yields `NotAvailable`, severity drops from Medium→Low with a clear Portuguese message.
+  - `PortalInterpreted` status now included in the present-family check for worked-minutes comparison.
+
+### Files Changed
+- `backend/AlplaPortal.Application/DTOs/Integration/PortalAttendanceEngineDtos.cs` — Added `InnuxWorkedMinutesSource`, `InnuxWorkedMinutesEnriched` fields.
+- `backend/AlplaPortal.Infrastructure/Services/Integration/AttendanceComparisonService.cs` — Enrichment step (1b), updated M2/L1 rules for `PortalInterpreted` + `NotAvailable` handling.
+- `docs/VERSION.md` — Bumped to v2.98.1.
+- `docs/CHANGELOG.md` — This entry.
+- `docs/innux-operational-model.md` — Updated enrichment documentation.
+
+---
+
+## [v2.98.0] - 2026-05-12 - Portal Attendance Engine — Phase 3: Comparison Engine
+
+### Added
+- **Attendance Comparison Engine**: Backend-only diagnostic service that contrasts Innux processed attendance against Portal raw-punch interpretation. Does not replace the current HR Attendance Calendar behavior.
+  - **AttendanceComparisonService**: Orchestrates `IInnuxAttendanceService`, `IPortalPunchInterpreter`, and `IPortalScheduleResolver` without new SQL queries. Compares presence status, entry/exit times, and worked minutes.
+  - **Portal Status Derivation**: Derives attendance status from raw punches: `Present` (complete pairs, worked > 0), `NoPunches`, `Incomplete`, `DayOff` (rest day, no punches), `PresentOnRestDay`.
+  - **Discrepancy Rules** (explicit, no ambiguous logic):
+    - **HIGH**: Innux Absent/DayOff/Vacation/Holiday/JustifiedAbsence + Portal Present. Innux Present + Portal NoPunches.
+    - **MEDIUM**: Both present but worked diff > 30min. Entry/exit time drift > 30min. Innux Present + Portal Incomplete. Duplicates detected.
+    - **LOW**: Worked diff 1-30min. Schedule fallback via Alteracoes.IDHorario. Low Portal confidence.
+  - **Portuguese Messages**: All `DiscrepancyMessages` and `RecommendedReviewAction` in Portuguese for HR users.
+  - **Diagnostic Endpoints** (SystemAdministrator + HR roles):
+    - `GET /api/hr/attendance/portal/compare/{innuxEmployeeId}/{date}` — single-day comparison.
+    - `GET /api/hr/attendance/portal/compare-range?startDate=&endDate=&innuxEmployeeId=&departmentId=&onlyDiscrepancies=true` — range comparison (max 31 days).
+  - **Range Safeguards**: 31-day maximum, clear 400 validation error, execution time logging.
+  - **DTOs**: `AttendanceComparisonResultDto`, `DateRangeComparisonResultDto`. Replaces unused `AttendanceComparisonReadyDto` placeholder.
+  - **Design Decision**: Schedule fallback (Alteracoes.IDHorario) is context only, NOT proof of attendance. Portal attendance evidence comes exclusively from raw punches.
+
+### Files Changed
+- `backend/AlplaPortal.Application/DTOs/Integration/PortalAttendanceEngineDtos.cs` — Phase 3 DTOs.
+- `backend/AlplaPortal.Application/Interfaces/Integration/IAttendanceComparisonService.cs` — New interface.
+- `backend/AlplaPortal.Infrastructure/Services/Integration/AttendanceComparisonService.cs` — Phase 3 implementation.
+- `backend/AlplaPortal.Api/Controllers/HRAttendanceController.cs` — 2 new diagnostic comparison endpoints.
+- `backend/AlplaPortal.Api/Program.cs` — DI registration for `IAttendanceComparisonService`.
+- `docs/VERSION.md` — Bumped to v2.98.0.
+- `docs/CHANGELOG.md` — This entry.
+
+---
+
+## [v2.97.0] - 2026-05-12 - Foundation: Portal-Side Attendance Interpretation Engine (Phases 1 & 2)
+
+### Added
+- **Portal-Side Attendance Interpretation Engine**: Backend-only, read-only foundation for an independent Portal-side attendance engine. This lays the groundwork for comparing Portal-computed attendance against Innux-processed results in a future Phase 3 (Comparison Engine).
+  - **Phase 1 — Schedule Day Resolver (`PortalScheduleResolver`)**: Resolves the expected schedule for an employee on any date by computing cycle day offsets from `PlanosTrabalho`, mapping to `PlanosTrabalhoHorarios`, then hydrating from `HorariosPeriodos`. Handles overnight shift detection (entry > exit), expected entry/exit calculation, expected working minutes, and rest day identification.
+  - **Phase 2 — Raw Punch Interpreter (`PortalPunchInterpreter`)**: Reads raw `TerminaisMarcacoes` records and performs full interpretation. Supports three direction inference strategies: standard EN/SA, alternate codes 17→Entry/18→Exit, and position-based inference for empty directions. Flags duplicate punches (`IsDuplicateCandidate`) without removing them. Builds Entry/Exit pairs, calculates worked minutes per pair and total, and assigns confidence scores (`High`/`Medium`/`Low`/`None`). Handles overnight shifts with schedule-bounded cutoffs for next-day punch collection.
+  - **Diagnostic Endpoints**: Two new investigative-only endpoints in `HRAttendanceController`, restricted to `SystemAdministrator` and `HR` roles:
+    - `GET /api/hr/attendance/portal/resolve-schedule/{innuxEmployeeId}/{date}` — Returns the resolved schedule with periods, expected times, and overnight flag.
+    - `GET /api/hr/attendance/portal/interpret-punches/{innuxEmployeeId}/{date}` — Returns interpreted punches with direction, confidence, pairs, worked minutes, and warnings.
+  - **DTOs**: `PortalAttendanceEngineDtos.cs` — `ResolvedScheduleDayDto`, `SchedulePeriodDto`, `PunchInterpretationResultDto`, `InterpretedPunchDto`, `PunchPairDto`.
+  - **Interfaces**: `IPortalScheduleResolver`, `IPortalPunchInterpreter` — clean abstractions for testability.
+
+### Architecture Notes
+- All services use strictly read-only parameterized SQL queries (`SELECT` only). Zero writes to Innux or Primavera.
+- Every interpretation decision is captured via `InterpretationReason` and `InterpretationRule` fields for full audit transparency.
+- Duplicate punches are preserved and flagged, not deleted — HR can inspect them in the diagnostic output.
+- Existing production HR Attendance Calendar remains unchanged. These endpoints are for diagnostic/investigative use only.
+
+### Files Changed
+- `backend/AlplaPortal.Application/DTOs/Integration/PortalAttendanceEngineDtos.cs` — New DTOs.
+- `backend/AlplaPortal.Application/Interfaces/Integration/IPortalScheduleResolver.cs` — New interface.
+- `backend/AlplaPortal.Application/Interfaces/Integration/IPortalPunchInterpreter.cs` — New interface.
+- `backend/AlplaPortal.Infrastructure/Services/Integration/PortalScheduleResolver.cs` — Phase 1 implementation.
+- `backend/AlplaPortal.Infrastructure/Services/Integration/PortalPunchInterpreter.cs` — Phase 2 implementation.
+- `backend/AlplaPortal.Api/Controllers/HRAttendanceController.cs` — 2 new diagnostic endpoints.
+- `backend/AlplaPortal.Api/Program.cs` — DI registrations for `IPortalScheduleResolver` and `IPortalPunchInterpreter`.
+
+---
+
+## [v2.96.3] - 2026-04-28 - Fix: HR Attendance — False Absences (F03) due to Code 17 Anomalies
+
+### Fixed
+- **Global Portal Override**: When the Portal detects a valid presence (e.g., multiple "Code 17" terminal punches spanning > 60 minutes) but Innux incorrectly classifies the day as a "Falta Injustificada" (F03), the Portal now overrides this display. It zeroes out the `absenceMinutes` and flags the period with a "PORTAL" work description.
+- **Data Integrity**: This interpretation is strictly presentation-level within the Portal. No actual modification is made to the source Innux or Primavera databases.
+
+### Files Changed
+- `backend/AlplaPortal.Infrastructure/Services/Integration/InnuxAttendanceService.cs`
+- `backend/AlplaPortal.Application/DTOs/Integration/InnuxAttendanceDtos.cs`
+- `frontend/src/features/hr/components/HRAttendanceCalendar.tsx`
+
+## [v2.96.2] - 2026-04-28 - Fix: HR Attendance — Innux Direction Codes 17/18 Mapping
+
+### Fixed
+- **Innux Direction Code 17 → Entrada**: Terminal punch records with direction code `17` are now correctly interpreted as entry punches instead of being labelled as "Código 17" (unknown).
+- **Innux Direction Code 18 → Saída**: Terminal punch records with direction code `18` are now correctly interpreted as exit punches instead of being labelled as "Código 18" (unknown).
+- **Anomaly False Positives**: Attendance days where employees punched using terminals emitting codes 17/18 are no longer incorrectly classified as anomalies solely due to the direction code being unrecognised. True anomalies (missing pair, shift conflict, duplicate punch, impossible sequence) continue to be flagged normally.
+
+### Technical Details
+- Centralised fix in `MapDirectionLabel()` — the single source of truth for Innux direction-code interpretation.
+- DTO documentation updated to reflect the expanded set of known direction codes.
+- No data was written to Innux or Primavera — this is a display/interpretation-only change.
+
+### Files Changed
+- `backend/AlplaPortal.Infrastructure/Services/Integration/InnuxAttendanceService.cs` — Added code 17/18 mappings to `MapDirectionLabel()`; updated anomaly comment.
+- `backend/AlplaPortal.Application/DTOs/Integration/InnuxAttendanceDtos.cs` — Updated `Direction` and `DirectionLabel` xmldoc comments.
+
+---
+
+## [v2.96.1] - 2026-04-28 - Fix: Approval Price Analysis Banner — Remove Misleading "Preços Favoráveis"
+
+### Changed
+- **Approval Detail Panel — Price Analysis Banner**: Removed the misleading green "Preços Favoráveis" success banner that appeared when all items were within the historical average range. "Not above average" does not equal "favorable" — the previous presentation created a false sense of positive pricing when the system could only confirm prices were not above the mean.
+- **Warning-Only Policy**: The price analysis banner now follows a warning-only policy:
+  - **Items above average**: Amber warning banner with count of affected items (e.g., "2 itens deste pedido estão com preço acima da média histórica.").
+  - **Items within/below average**: No banner displayed. The detailed per-item intelligence panel (already present in the "Inteligência para Decisão" section) provides granular price analysis with variation percentages.
+- **Count Precision**: The warning banner now displays the exact count of items above average instead of a generic "um ou mais itens" message.
+
+### Files Changed
+- `frontend/src/pages/Approvals/ApprovalDetailPanel.tsx` — Replaced binary banner (warning vs. success) with conditional warning-only banner. Removed `hasHistoricalItems` guard; banner now gated exclusively on `hasItemAboveAvg`.
+
+---
+
+## [v2.96.0] - 2026-04-28 - Feature: OCR Catalog Item Auto-Match (DEC-123)
+
+### Added
+- **Backend Batch-Match Endpoint**: `POST /api/v1/catalog-items/batch-match` accepts an array of OCR-extracted item descriptions and returns index-keyed matches against the active item catalog. Uses in-memory normalized exact matching (trim, lowercase, diacritic removal, whitespace collapse, trailing punctuation strip) applied identically to both incoming descriptions and stored catalog records. Only 100% normalized exact matches are accepted — no fuzzy/partial matching.
+- **Frontend Auto-Match Integration (Request Flow)**: `useOcrProcessor.ts` now calls the batch-match endpoint after OCR item mapping. Matched items are automatically linked to their catalog entry (`itemCatalogId`, `itemCatalogCode`) with `autoMatchStatus = 'AUTO_MATCHED'`. Unmatched items receive `autoMatchStatus = 'NEEDS_REVIEW'`.
+- **Frontend Auto-Match Integration (Quotation Flow)**: `QuotationEntry.tsx` OCR processing includes the same batch-match step, ensuring consistent behavior across both Request and Quotation creation flows.
+- **UX Badges**: Green "Correspondência automática" badge (with catalog code) for auto-matched items. Amber "Item não catalogado — verifique manualmente" badge for unmatched items. Badges render in both Request and Quotation item tables.
+- **Manual Override Behavior**: When a user edits the item description or manually selects a catalog item via autocomplete, the `autoMatchStatus` is cleared to prevent misleading badge display. User intent always takes precedence over auto-match.
+- **API Client**: Added `api.catalogItems.batchMatch()` method to the frontend API client.
+- **Type Model**: Added `autoMatchStatus` field to both `OcrDraftItem` and `QuotationDraftItem` types.
+
+### Design Decisions
+- **Non-Blocking**: Auto-match failure (API error, timeout) does not block the OCR flow. Items remain in their default state and users can still manually link via the autocomplete.
+- **No Auto-Creation**: Items that do not match the catalog are never automatically created. They stay as free-text descriptions for manual reconciliation.
+- **Catalog Default Unit Inheritance**: When an auto-match is found and the OCR item has no resolved unit, the catalog item's default unit is automatically applied.
+
+### Files Changed
+- `backend/AlplaPortal.Api/Controllers/CatalogItemsController.cs` — New `BatchMatch` endpoint with `BatchMatchRequest`/`BatchMatchResponse` DTOs and `NormalizeDescription` helper.
+- `frontend/src/lib/api.ts` — Added `batchMatch` method to `catalogItems` namespace.
+- `frontend/src/types/index.ts` — Added `autoMatchStatus` to `OcrDraftItem`.
+- `frontend/src/types/quotation.ts` — Added `autoMatchStatus` to `QuotationDraftItem`.
+- `frontend/src/hooks/useOcrProcessor.ts` — Added catalog auto-match step (Part C) with diagnostic logging.
+- `frontend/src/pages/Requests/RequestCreate.tsx` — Manual override logic in `handleUpdateOcrItem` and `handleCatalogSelectOcrItem`; UX badges in payment items table.
+- `frontend/src/components/QuotationEntry.tsx` — Auto-match step in `_processUpload`; manual override in catalog select; UX badges in quotation items table.
+
+---
+
+## [v2.95.0] - 2026-04-27 - Workflow: Decouple Operational Receiving from Financial Receipt (DEC-122)
+
+### Changed
+- **Receiving Workspace — Semantic Decoupling**: The Receiving workspace no longer finalizes requests. The "FINALIZAR PEDIDO" button has been renamed to "CONFIRMAR RECEBIMENTO" and now calls a dedicated `confirmReceiving` API endpoint. This enforces the business distinction between physical item receiving (Receiving role) and financial receipt closure (Finance role).
+- **ApprovalModal — New Action Type**: Added `CONFIRM_RECEIVING` action type with dedicated labels and descriptions. The Receiving workspace modal now uses this type instead of `FINALIZE`.
+- **getRequestGuidance — Split Guidance**: `PAYMENT_COMPLETED` now shows "Mover para fase de recebimento operacional" (for Receiving role), while `WAITING_RECEIPT` shows "Anexar recibo do fornecedor e finalizar pedido" (for Finance role). Previously both shared the same generic guidance.
+- **isFinalizedStatus — Lifecycle Fix**: Removed `PAYMENT_COMPLETED` from the finalized status list, as it is an active operational status requiring Receiving action.
+
+### Added
+- **Backend Endpoint**: `POST /api/v1/requests/{id}/operational/confirm-receiving` — exclusively for the Receiving role. Confirms physical item/service receipt. Transitions to `WAITING_RECEIPT` (all received) or `IN_FOLLOWUP` (partial). Never transitions to `COMPLETED`.
+- **FinalizeRequest Guard**: Finance-only terminal action (`WAITING_RECEIPT` → `COMPLETED`). Requires `TYPE_RECEIPT` attachment. Receiving role is explicitly blocked.
+
+### Documentation
+- **WORKFLOW_ARCHITECTURE.md**: Updated status tables, state machine, and permission matrix to reflect the decoupled workflow.
+- **DECISIONS.md**: Added DEC-122 — Decoupling Physical Item Receiving from Supplier Financial Receipt.
+- **CHANGELOG.md**: This entry.
+
+### Files Changed
+- `backend/AlplaPortal.Api/Controllers/RequestsController.cs` — New `ConfirmReceiving` endpoint, refactored `FinalizeRequest` with Finance-only guard.
+- `backend/AlplaPortal.Application/Helpers/RequestWorkflowHelper.cs` — `AreAllItemsReceived` status check, auto-completion prevention.
+- `frontend/src/pages/Receiving/ReceivingOperation.tsx` — Button label, API call, modal type changes.
+- `frontend/src/components/ApprovalModal.tsx` — Added `CONFIRM_RECEIVING` action type.
+- `frontend/src/lib/utils.ts` — Split guidance, updated `isFinalizedStatus`.
+- `docs/WORKFLOW_ARCHITECTURE.md` — Updated status and permission documentation.
+- `docs/DECISIONS.md` — DEC-121 extended, DEC-122 added.
+
+---
+
+## [v2.94.0] - 2026-04-27 - Catalog Item Reconciliation Engine
+
+
+### Fixed
+- **Payment Request Autocomplete Bug**: Replaced plain `<input>` with `CatalogItemAutocomplete` in the Payment Request manual invoice flow. Items now searchable against the master catalog. (Phase 1)
+
+### Added
+- **Shared Reconciliation Hook (`useCatalogItemReconciliation`)**: Classifies items as MATCHED, UNMATCHED, CREATED_PENDING, LINKED_MANUALLY, or FREE_TEXT. Reusable across all item-entry flows.
+- **Reconciliation Types**: Added `ReconcilableItem`, `ItemResolution`, `ClassifiedItem`, and `ReconciliationItemStatus` to shared types.
+- **Backend Reconciliation-Create Endpoint**: `POST /api/v1/catalog-items/reconciliation-create` creates catalog items with `Origin = CREATED_PENDING_VALIDATION`. Includes duplicate detection.
+- **Batch Reconciliation Modal (`CatalogItemReconciliationModal`)**: Shows all unresolved items in a single table with per-row actions: link to catalog, create new, or keep as free text.
+- **Submission Warning Dialog (`ReconciliationWarningDialog`)**: Non-blocking guardrail shown before save/submit when unresolved catalog items exist. Offers review, override, or cancel.
+- **QuotationEntry Integration**: Same reconciliation engine wired into quotation management flow.
+
+### Files Changed
+- `frontend/src/types/index.ts` — Added reconciliation types and `itemCatalogCode` to `OcrDraftItem`.
+- `frontend/src/hooks/useCatalogItemReconciliation.ts` — New shared hook.
+- `frontend/src/components/CatalogItemReconciliationModal.tsx` — New batch modal.
+- `frontend/src/components/ReconciliationWarningDialog.tsx` — New warning dialog.
+- `frontend/src/pages/Requests/RequestCreate.tsx` — Autocomplete fix + reconciliation integration.
+- `frontend/src/components/QuotationEntry.tsx` — Reconciliation integration.
+- `frontend/src/lib/api.ts` — Added `reconciliationCreate` method.
+- `backend/AlplaPortal.Api/Controllers/CatalogItemsController.cs` — Added `ReconciliationCreate` endpoint and DTO.
+- `docs/DECISIONS.md` — Logged DEC-120.
+
+---
+
+## [v2.93.5] - 2026-04-26 - Backend & Frontend: Hierarchical Budget Configuration
+
+### Added
+- **Hierarchical Budget Model**: Replaced flat department-based budget configuration with a granular hierarchy: Company → Plant → Department → (Optional) Cost Center.
+- **Budget Matrix UI**: Created `FinanceBudgetConfig.tsx` to provide a filterable, editable matrix for managing hierarchical budgets, supporting real-time currency formatting and active/inactive toggles.
+- **Backend Uniqueness Validation**: Enforced composite key validation `(FiscalYear, CompanyId, PlantId, DepartmentId, CostCenterId, CurrencyId)` during budget upserts instead of a database-level index to safely handle optional Cost Centers.
+- **Granular Attribution**: Refactored `FinanceBudgetController` to calculate budget consumption at the line-item Cost Center level, gracefully falling back to general department budgets when no specific cost center is assigned.
+
+### Changed
+- **Database Schema**: Added `CompanyId`, `PlantId`, `CostCenterId`, and `IsActive` to the `AnnualBudget` entity. Dropped the unique index in favor of a covering index.
+- **Data Reset**: Executed migration `AddHierarchicalBudgetScope`, applying a deliberate destructive reset of existing `AnnualBudget` records to allow manual reconfiguration using the new hierarchy.
+
+### Files Changed
+- `backend/AlplaPortal.Domain/Entities/AnnualBudget.cs` — Added hierarchical fields.
+- `backend/AlplaPortal.Infrastructure/Data/ApplicationDbContext.cs` — Updated EF Core relationships and indexes.
+- `backend/AlplaPortal.Infrastructure/Migrations/*_AddHierarchicalBudgetScope.cs` — Added schema migration and `DELETE` operation.
+- `backend/AlplaPortal.Application/DTOs/Finance/BudgetDTOs.cs` — Updated DTOs.
+- `backend/AlplaPortal.Api/Controllers/FinanceBudgetController.cs` — Refactored configuration and consumption logic.
+- `frontend/src/pages/Finance/FinanceBudgetConfig.tsx` — Created new budget configuration UI.
+- `docs/DECISIONS.md` — Logged DEC-118 detailing the shift to hierarchical budgets.
+
+## [v2.93.4] - 2026-04-26 - UX: Budget Contextual Help for Comprometido/Pago
+
+### Added
+- **Budget Help Tooltips**: Added reusable contextual help icon (ℹ) to the Finance > Orçamento page explaining the difference between "Comprometido" and "Pago" for business users.
+  - Help appears in two key locations: **Síntese Global** header and **Centros de Custo** section title.
+  - Hover to reveal a rich tooltip with definitions, color-coded terms, and a practical example (508.906,26 Kz / 508.000,00 Kz).
+  - Uses existing `ModernTooltip` component for consistency with Portal UX.
+  - Reusable `BudgetHelpContent` and `BudgetHelpIcon` components for future use.
+
+### Files Changed
+- `frontend/src/pages/Finance/FinanceBudget.tsx` — Added `BudgetHelpContent`, `BudgetHelpIcon` components; placed help icons in KPI header and CC section title.
+
+## [v2.93.3] - 2026-04-26 - Feature: Monthly Budget Evolution Chart by Cost Center
+
+### Added
+- **Monthly Budget Evolution Chart**: New stacked bar chart on the Finance > Orçamento page showing the monthly distribution of committed and paid values by cost center for the selected department and year.
+  - Chart renders below the existing cost center summary in the right panel.
+  - Segmented toggle control with three modes: **Comprometido**, **Pago**, **Ambos**.
+  - In "Ambos" mode, uses grouped stacked bars (committed at full opacity, paid at 45% opacity) for clear visual separation.
+  - Top 5 cost centers are named with distinct colors; remaining CCs are grouped as "Outros".
+  - Empty state shows: "Sem movimentações orçamentais para os critérios selecionados."
+  - Chart reacts to department selection, year change, and mode toggle.
+
+### Technical Details
+- **New Backend Endpoint**: `GET /api/v1/finance/budget/department/{departmentId}/monthly/{year}` — returns 12 months (Jan–Dec) with per-cost-center committed/paid breakdown.
+- **Monthly Aggregation Logic**:
+  - Comprometido: grouped by `CreatedAtUtc.Month` (consistent with existing yearly filter).
+  - Pago: grouped by `ActualPaidAtUtc.Month` (fallback to `CreatedAtUtc.Month`).
+- **New DTOs**: `BudgetMonthlyDataDto`, `BudgetMonthlyCostCenterDto`.
+- **Frontend**: Uses existing `recharts` library (BarChart, stacked bars, responsive container).
+
+### Files Changed
+- `AlplaPortal.Application/DTOs/Finance/BudgetDTOs.cs` — 2 new DTO classes
+- `AlplaPortal.Api/Controllers/FinanceBudgetController.cs` — New endpoint
+- `frontend/src/lib/api.ts` — New API method `getMonthlyBreakdown`
+- `frontend/src/pages/Finance/FinanceBudget.tsx` — Chart state, effects, toggle, and chart rendering
+
+## [v2.93.2] - 2026-04-26 - Fix: Finance Workspace COMPLETED Status Visibility & Budget Status Include
+
+### Fixed
+- **Finance COMPLETED Status Visibility**: Requests reaching `COMPLETED` status (terminal state after all items received) were invisible in the Finance workspace — not appearing in Resumo Operacional, Pagamentos, or Orçamento. Root cause: `"COMPLETED"` was not defined in `RequestConstants.Statuses` and was absent from all Finance controller filter arrays.
+  - Added `RequestConstants.Statuses.Completed = "COMPLETED"`.
+  - Injected `Completed` into 3 `financeStatuses` arrays in `FinanceController` (summary, overview, payments).
+  - Injected `Completed` into 2 `IsPaid` checks and the `completedThisMonth` filter in `FinanceController`.
+  - Injected `Completed` into `CommittedStatuses` and 2 `IsPaid` checks in `FinanceBudgetController`.
+- **Budget Committed/Paid Calculation Always Zero (Pre-existing Bug)**: Both budget overview and cost center detail queries in `FinanceBudgetController` were missing `.Include(r => r.Status)`. Without this, `req.Status?.Code` was always `null`, causing `CommittedStatuses.Contains(null)` to always be false. All budget committed/paid values returned 0 regardless of request status.
+
+### Files Changed
+- `AlplaPortal.Domain/Constants/RequestConstants.cs` — New constant
+- `AlplaPortal.Api/Controllers/FinanceController.cs` — 6 filter locations updated
+- `AlplaPortal.Api/Controllers/FinanceBudgetController.cs` — 5 locations updated + 2 Include fixes
+
+### Verified
+- Finance Summary: `completedThisMonth: 2`, `paidThisMonth: AOA 688,092.64` ✅
+- Finance Budget: `committed: 688,998.90`, `paid: 688,998.90`, `usage: 3.44%` ✅
+- Finance Payments: 2 items visible with COMPLETED status ✅
+- Finance History: unchanged (11 entries) ✅
+
+## [v2.93.1] - 2026-04-26 - Change: Payment Divergence — Zero-Tolerance Detection (DEC-110 Update)
+
+### Changed
+- **Payment Divergence Detection**: Removed the 1% relative tolerance (with 1.00 absolute floor) that previously suppressed small divergence warnings. Any non-zero difference between `ActualPaidAmount` and `ApprovedTotalAmount` (after standard 2-decimal currency rounding via `Math.Round(value, 2)`) now creates a `PAYMENT_DIVERGENCE_DETECTED` audit entry.
+- **Directional Divergence Messages**: Audit entries now indicate whether the payment was "abaixo do valor aprovado" (below) or "acima do valor aprovado" (above), with absolute difference and percentage.
+- **HasPaymentDivergence DTO Flag**: Updated to use `Math.Round` equality check instead of tolerance-gated comparison.
+
+### Documentation
+- **WORKFLOW_ARCHITECTURE.md**: Updated §6 Divergence Detection with zero-tolerance rule and revised scenario matrix.
+- **DECISIONS.md**: Updated both DEC-110 instances to reflect the removal of the tolerance gate.
+- **MANUAL_TEST_GUIDE.md**: Updated payment validation references to reflect zero-tolerance policy.
+
+### Technical Notes
+- OCR Financial Integrity tolerance (`RequestConstants.FinancialIntegrity`) is unchanged — it is a separate concern for OCR-vs-quotation comparison.
+- No frontend changes required — divergence is computed server-side and recorded in audit history.
+
+## [v2.93.0] - 2026-04-25 - Performance: Optimized Portal Backend Performance (Requests & Receiving)
+
+### Changed
+- **Backend N+1 Query Refactoring**: Optimized `RequestsController.GetRequests` and `ProjectToListItem`. Replaced inefficient per-row subqueries (`Quotations`, `StatusHistories`, `LineItems`) with a projection pattern using anonymous objects. This collapses multiple database trips into a single optimized query execution, significantly improving throughput for large datasets.
+- **Database Indexing**: Identified and applied missing indexes required for high-frequency filtering operations in the `GetScopedRequestsQuery` logic. Added indexes to `Request` table for: `RequestTypeId`, `DepartmentId`, `PlantId`, `CompanyId`, `NeedLevelId`, and `SelectedQuotationId` via EF Core migration (`AddRequestPerformanceIndexes`).
+
+### Technical Notes
+- Applied EF Core migration to the LocalDB database to resolve index-related latency and timeouts observed with the seeded 50-request [DEMO] dataset.
+- Loading times for the Requests list and Receiving workspace improved from timing out to under 2-3 seconds.
+
+## [v2.90.0] - 2026-04-25 - Feature: Supplier Ficha Module, Approval Center Integration & P.O. Emission Guards
+
+### Added
+- **Supplier Ficha Module (Phase 2A)**: Full-stack delivery of the Supplier Registration (Ficha de Fornecedor) workflow within the Contracts module.
+  - Backend: 11 new endpoints in `LookupsController` — CRUD, completeness engine, registration-check, submit-for-approval, DG-approve, DG-return, status history.
+  - Frontend: `SupplierFichaList.tsx` (master list with search/filter), `SupplierFichaDetail.tsx` (editable detail page with document upload, completeness tracker, history timeline).
+  - Status model: `DRAFT → PENDING_COMPLETION → PENDING_APPROVAL → ACTIVE / ADJUSTMENT_REQUESTED / SUSPENDED / BLOCKED`.
+  - Single Final Approver workflow visible to users (DAF auto-stamped at submission for backend compatibility — invisible in UI).
+  - Domain entities: Extended `Supplier` with 15+ registration fields, new `SupplierStatusHistory` audit entity, `SupplierConstants` status constants.
+  - Two EF Core migrations: `AddSupplierRegistrationFields`, `AddSupplierApprovalWorkflow`.
+- **Approval Center — Supplier Fichas Section (Phase 2B)**: Centralized supplier approval into the standard Approval Center drawer workflow.
+  - New `SupplierApprovalPanel.tsx` drawer-content component matching the `ContractApprovalPanel` pattern (InfoCard grid, SectionBlocks, sticky action footer).
+  - `ApprovalCenter.tsx` extended with supplier card queue (amber theme), click-to-open drawer, parallel data loading.
+  - Supplier approval actions (Approve/Return) exclusively in the Approval Center — removed from `SupplierFichaDetail`.
+  - Detail page approval tracker is now read-only: "Aguardando aprovação no Centro de Aprovações".
+- **P.O. Emission Supplier Registration Guard**: `RegisterPoModal` calls `GET /suppliers/{id}/registration-check` on open.
+  - ACTIVE: normal flow. PENDING_APPROVAL: amber warning banner. DRAFT/PENDING_COMPLETION/ADJUSTMENT_REQUESTED/SUSPENDED/BLOCKED: red blocking panel with disabled submit.
+  - Supplier ID resolved from winning quotation (QUOTATION flow) or `formData.supplierId` (PAYMENT flow).
+- **HR Attendance — Anomaly Detection Enhancement**: Days with raw terminal punches using unrecognised direction codes (e.g., code 17/18) while Innux reports "Falta Injustificada" are now classified as `Anomaly` instead of `Absent`. New `MapDirectionLabel` helper centralises direction code mapping.
+
+### Changed
+- **Approval Center Layout**: Supplier Fichas section uses compact card rows with selection highlighting, consistent with the contract approval queue visual pattern.
+- **SupplierFichaDetail**: Stripped of all manual approval buttons (Aprovar, Solicitar Reajuste) and return modal — approval decisions are drawer-only in the Approval Center.
+
+### Technical Notes
+- Backend build: 0 errors. Frontend TypeScript: 0 new errors (25 pre-existing TS6133 in unrelated files).
+- Architectural decision: All supplier approval actions centralized in Approval Center drawer (DEC-119).
+
+## [v2.89.5] - 2026-04-25 - Feature: P.O. Emission Supplier Registration Guard (Phase 2A Completion)
+
+### Added
+- **P.O. Modal Registration Guard**: The `RegisterPoModal` now calls `GET /api/v1/lookups/suppliers/{id}/registration-check?operation=po` when opened, evaluating the supplier's registration status before allowing P.O. emission.
+  - **ACTIVE**: No restrictions. Normal P.O. emission flow.
+  - **PENDING_APPROVAL**: Amber warning banner displayed ("Fornecedor em Aprovação"), but P.O. emission is allowed. Users are advised to wait for approval.
+  - **DRAFT / PENDING_COMPLETION / ADJUSTMENT_REQUESTED / SUSPENDED / BLOCKED**: Red blocking panel displayed ("Emissão de P.O Bloqueada") with supplier status badge. The "REGISTRAR P.O" button is disabled and grayed out.
+- **Supplier ID Propagation**: `RequestEdit.tsx` now resolves the active `supplierId` from the winning quotation (QUOTATION flow) or from the request's `formData.supplierId` (PAYMENT flow) and passes it to `RegisterPoModal`.
+- **Loading State**: A subtle spinner with "A verificar estado do fornecedor..." message appears while the registration check is in progress.
+
+### Technical Notes
+- Backend endpoint already existed from Phase 2A — this change is frontend-only.
+- Guard resets cleanly on modal close/reopen.
+- No impact on `CorrectPoModal` (PO correction flow uses same supplier, which has already been validated).
+
+## [v2.89.4] - 2026-04-25 - Enhancement: HR Attendance — Absence-with-Raw-Punches Anomaly Detection
+
+### Changed
+- **Absence-with-Raw-Punches → Anomaly**: Days where Innux processed the official period as "Falta Injustificada" (F03) but raw terminal events exist with unrecognised direction codes (e.g., code 17) are now classified as `Anomaly` instead of `Absent`. This surfaces the contradiction for HR review without converting the day to "Present". Clean absences (no raw punches) remain classified as `Absent`.
+- **Direction Label Mapping**: Raw punch direction codes now map to Portuguese labels (`EN` → "Entrada", `SA` → "Saída"). Numeric codes (e.g., "17") display as "Código 17" instead of the raw number, making it clear these are unrecognised terminal event types. Empty codes show "Sem direção".
+- **Anomaly Description Broadened**: The Anomaly status description now covers both sub-types: (1) processed-without-raw-terminal-records, and (2) absence-declared-with-unrecognised-terminal-events. Updated across legend, guide modal, and drawer.
+
+### Added
+- **Absence-with-Raw-Punches Warning Banner**: New explanatory banner in the detail drawer for this specific anomaly type: "Existem marcações brutas no terminal, mas o Innux processou o período como Falta Injustificada. Verifique se as marcações foram feitas com código/direção não reconhecida ou se há necessidade de correção pelo R.H."
+- **`MapDirectionLabel` Method**: New static helper in `InnuxAttendanceService` that centralises TipoProcessado → label mapping, replacing inline ternary logic.
+
+### Technical Notes
+- Classification rule 4b added to `ClassifyAttendance`: triggers when `absenceMinutes >= expectedMinutes AND rawPunchCount > 0 AND !hasEntry AND !hasExit AND punchCount == 0`.
+- Investigated employee: APAULANTE DA CONCEIÇÃO FRANCISCO PAULO — 2026-04-06 (F03 / Falta Injustificada with 2 raw terminal events using code 17).
+- Raw punch table column header changed from "Direcção" to "Direção / Código" for clarity.
+
+## [v2.89.3] - 2026-04-25 - Fix: HR Attendance — Night Shift Cross-Midnight & Classification Accuracy
+
+### Fixed
+- **Detail Drawer Classification Mismatch**: The detail drawer computed attendance status before the actual raw punch count was known (using `rawPunchCount=-1` fallback), causing validated days to show "Desconhecido" even when entry/exit and raw punches existed. The drawer now re-classifies status after loading real raw punch data from `GetPunchesAsync`, ensuring calendar grid and drawer always agree.
+- **Night Shift Cross-Midnight Punches**: `GetPunchesAsync` previously only fetched same-calendar-day punches (`tm.Data = @Date`), missing the exit punch for overnight shifts (e.g., 20:00–08:00+1). Now includes next-day early-morning punches (before 12:00) when `IsOvernightShift=true`.
+- **Calendar `RawTerminalCount` for Night Shifts**: The correlated subquery in the calendar SQL now counts cross-midnight punches for overnight schedules, preventing false anomaly classification on night shift start days.
+- **Validated Day with `Marcacao=0`**: For Escala-Intercalada patterns, Innux resets `Marcacao` to 0 after full validation. `ClassifyAttendance` now accepts `isValidated` and classifies validated days with entry/exit and raw punches as "Present" instead of "Unknown".
+
+### Technical Notes
+- `ClassifyAttendance` signature now includes `bool isValidated` — enables step 6c: validated + entry/exit + rawPunches > 0 = Present.
+- `GetPunchesAsync` signature now includes `bool isOvernightShift` — triggers cross-midnight SQL date expansion.
+- Anomaly preservation: processed days with zero raw terminal punches (e.g., Escala auto-processing without physical terminal records) remain classified as "Anomaly".
+- Investigated employee: ANDERSON CLÁUDIO DOS SANTOS AZEVEDO (IDFuncionario 1626), Escala-Intercalada rotation (TN/FG/TM/FG cycle).
+- Root cause confirmed as Portal query/classification issue, not Innux data inconsistency.
+
+
+## [v2.89.2] - 2026-04-25 - Enhancement: HR Attendance — Icon-First Status System & Anomaly Reclassification
+### Changed
+- **Icon-First Status System**: Replaced all colored-dot status indicators in the calendar grid, legend, and guide modal with semantic Lucide icons. Each status now uses a meaningful icon (e.g., `CircleCheck` for Present, `CircleX` for Absent, `Palmtree` for Vacation, `ShieldAlert` for Anomaly). Legend and guide modal now render the exact same icon as the calendar cell — eliminating the previous mismatch where the legend showed colored dots but the calendar showed icons.
+- **Anomaly Reclassification**: Days with processed Innux attendance (Alteracoes.Marcacao > 0) but zero raw terminal punches (TerminaisMarcacoes COUNT = 0) are now classified as `Anomaly` instead of `Present`. This surfaces Escala/rotation auto-processed days for HR review, since no physical terminal confirmation exists.
+- **Unified Visual Config**: Created `STATUS_VISUAL_MAP` — a single source of truth for icon, label, CSS class, and description — shared across calendar cells, footer legend, and guide modal. Eliminated duplicated status→visual mappings.
+
+### Added
+- **Raw Punch Count in Calendar Query**: The calendar SQL query now includes a `RawTerminalCount` subquery (correlated `COUNT(*)` on `TerminaisMarcacoes`), enabling anomaly detection at the calendar level, not just in the detail drawer.
+- **Anomaly Info Banner**: The detail drawer now shows a purple anomaly-themed banner (instead of the generic blue info banner) when a day has processed punches but no raw terminal records, with an explicit recommendation for HR review.
+
+### Technical Notes
+- The `ClassifyAttendance` method now accepts `rawPunchCount` as a parameter. "Present" status requires both `punchCount > 0` AND `rawPunchCount > 0`.
+- New Lucide icons imported: `CircleCheck`, `CircleX`, `ShieldAlert`, `MinusCircle`.
+- Old CSS classes (`att-status__dot`, `att-legend__swatch`) replaced with icon-based equivalents (`att-status__icon-wrap`, `att-legend__icon`).
+
+## [v2.89.1] - 2026-04-25 - Fix: HR Attendance Calendar — Unified PunchCount Source
+### Fixed
+- **Calendar/Drawer Status Inconsistency**: Resolved a data source conflict where the calendar grid used a live `COUNT(TerminaisMarcacoes)` (raw terminal punches) while the detail drawer used `Alteracoes.Marcacao` (Innux-processed count). This divergence caused the same employee/date to show conflicting statuses (e.g., "?" on calendar vs "Presente" in drawer).
+- **Unified PunchCount Source**: Both calendar grid and detail drawer now use `Alteracoes.Marcacao` as the canonical processed punch count for attendance status classification. The live `COUNT(TerminaisMarcacoes)` subquery has been removed from the calendar query.
+
+### Added
+- **Raw Punch Count Separation**: New `RawPunchCount` field on `AttendanceDaySummaryDto` exposing the live `COUNT(TerminaisMarcacoes)` as debug/audit data, separate from the official `PunchCount`.
+- **Debug Metadata (Detail Drawer)**: The detail drawer now includes a collapsible "Dados Técnicos Innux" section exposing: `debugProcessedPunchCount`, `debugRawPunchCount`, `debugIsValidated`, `debugScheduleCode`, and `debugStatusSource` for HR/IT troubleshooting.
+- **Informational Banner**: When `Alteracoes.Marcacao > 0` but zero raw terminal punches exist, the drawer displays a blue info banner explaining the discrepancy (manual validation, import, or purged records).
+
+### Documentation
+- **innux-operational-model.md**: Added formal implementation note under Assumptions §7 documenting the Portal's "processed-is-canonical" data source strategy.
+
+## [v2.89.0] - 2026-04-25 - Feature: HR Attendance Calendar Modernization (Status, Metrics & Justifications)
+### Fixed
+- **Calendar Timezone Bug**: Resolved a -1 day rendering offset caused by `toISOString()` UTC conversion in the WAT (UTC+1) timezone. Replaced with local date component formatting (`YYYY-MM-DD`) across query parameters and React keys.
+
+### Added
+- **Vacation & Holiday Status Classification**: Extended the `ClassifyAttendance` engine to sub-classify justified absences into `Vacation` (🌴 "Gozo de Férias") and `Holiday` (⭐ "Feriado") statuses by parsing the Innux `Justificacao` text field. Added corresponding CSS styles, legend entries, and cell icons.
+- **Worked Hours Metrics (Basic/Overtime)**: Implemented `GetWorkedHoursAsync` calculation engine that aggregates non-dispensed periods from `dbo.AlteracoesPeriodos` joined with `dbo.CodigosTrabalho`. Maps `Tipo = 'Normal'` → Basic and `Tipo LIKE 'Extra%'` → Overtime. Results merged into the calendar API response with graceful fallback on failure.
+- **Drawer Metrics Display**: The employee day-detail drawer now shows "Básico", "Extra", and "Total Trab." metrics when worked hours data is available.
+- **Justification Table (Structural)**: Created `HRAttendanceJustifications` database migration with FKs to `HREmployees` (Cascade) and `Users` (Restrict), indexes on `(HREmployeeId, Date)` and `Status`. Table supports future manager/employee justification workflow.
+
+### Technical Notes
+- Worked hours merge is non-blocking — if the calculation query fails, the calendar renders normally with zero values.
+- Justification migration created but NOT yet applied. Entity class and DbSet registration pending Phase 4 functional work.
+
+## [v2.88.0] - 2026-04-23 - Feature: HR Monthly Changes First Frontend Slice
+### Added
+- **HR Monthly Changes UI**: First frontend slice for the Innux-to-Primavera workflow.
+  - Implemented `MonthlyChangesList` for viewing and creating processing runs.
+  - Implemented `MonthlyChangesRunDetail` with tabs for Review Items, Anomalies, and Processing Logs.
+  - Added support for filtering items by status and occurrence type.
+  - Added visual anomaly flags and badging aligned with project design conventions.
+
+## [v2.87.0] - 2026-04-23 - Hardening: HR Monthly Changes Detection Engine
+### Fixed
+- **Detection Overlap**: Resolved a potential overlapping logging defect in `OccurrenceDetectionEngine.cs` where both `UNJUSTIFIED_ABSENCE` and `LATENESS` could be generated for the exact same duration. Lateness is now evaluated first, and Unjustified Absence skips duplicated reporting.
+- **Partial Justified Absences**: Fixed a bug where a day with both `AbsenceMinutes` and `JustifiedAbsenceMinutes` > 0 would fail to log the unjustified portion due to a strict `JustifiedAbsenceMinutes == 0` constraint in Rule 1.
+- **Anomaly Escalation**: Improved the anomaly rule (Rule 4) to correctly upgrade all existing occurrences on a day to `NEEDS_REVIEW` with `IsAnomaly = true`, rather than only absence items.
+### Added
+- **Diagnostic Logging**: Added explicit occurrence type distribution counts and no-op snapshot counts to detection orchestrator logs to improve run quality tracking.
+- **Data Validation Insight**: Confirmed via SQL analysis that `dbo.Alteracoes` (the Innux source) already pre-filters for exceptional attendance records (Falta, Ausencia, Anomalia). Thus, the 1147 synced snapshot rows legitimately produced 1147 actual occurrences, proving the 1:1 mapping was an expected behavior of the source table, rather than a detection overproduction bug.
+
+## [v2.86.0] - 2026-04-23 - Foundation: HR Monthly Changes Middleware (Innux → Primavera)
+### Added
+- **HR Monthly Changes Middleware — Persistence Foundation**: 8 domain entities for the Innux-to-Primavera HR monthly export workflow:
+  - `MCProcessingRun` — aggregate root, one per entity+month, full lifecycle state machine (DRAFT → SYNCING → NEEDS_REVIEW → READY_FOR_EXPORT → EXPORTED → CLOSED)
+  - `MCAttendanceSnapshot` — immutable daily attendance data from Innux `Alteracoes` with unique constraint on (Run, Employee, Date)
+  - `MCMonthlyChangeItem` — detected occurrence with lifecycle states (AUTO_CODED → APPROVED/ADJUSTED/EXCLUDED → EXPORTED)
+  - `MCPrimaveraCodeMapping` — admin-configurable occurrence-to-Primavera-code rules with priority ranking
+  - `MCDetectionThreshold` — admin-configurable lateness/detection thresholds per schedule/entity
+  - `MCExportBatch` — export record with config audit snapshot (ConfigSnapshotJson + ConfigSnapshotHash per Amendment §5)
+  - `MCExportRow` — denormalized export row mirroring Excel structure with source traceability
+  - `MCProcessingLog` — pipeline diagnostic log entries for technical audit
+- **EF Core Configuration**: Dedicated `IEntityTypeConfiguration<T>` classes with 15+ indexes, filtered anomaly index, unique snapshot constraint, and strict FK cascade policies (NoAction for Users, Restrict for audit-critical paths, Cascade for parent-child).
+- **Migration**: `20260423143831_AddMonthlyChangesMiddleware` — creates all 8 tables. Stabilized ContractDocuments model snapshot drift from orphan migration.
+### Technical Notes
+- `CostCenter` is nullable across all entities (Amendment §4 — awaiting Primavera template confirmation)
+- `TerminaisMarcacoes` (raw punches) NOT persisted in V1 — drill-down uses live Innux query (Amendment §3)
+- `AUTO_CODED` items are NOT directly exportable — require explicit approval (Amendment §1)
+
+## [v2.85.0] - 2026-04-22 - Feature: HR Attendance Calendar (Innux Integration)
+### Added
+- **HR Attendance Calendar Page**: New `HRAttendanceCalendar.tsx` component rendering an Innux-integrated attendance grid with employees in rows and days in columns. Cell colors and icons indicate attendance status (present, absent, rest day, overnight shift, anomaly).
+- **Detail Drawer**: Clicking any attendance cell opens a slide-out drawer displaying full schedule details, punch times, balance minutes, justifications, and anomaly descriptions.
+- **Backend Attendance API**: `HRAttendanceController` with endpoints for calendar data retrieval (`GetCalendar`), leveraging `IInnuxAttendanceService` and `IInnuxLookupService` for read-only Innux data access. Scope enforcement via `GetScopedEmployeesQuery()` ensures role-based data visibility.
+- **Pagination**: 15 employees per page with navigation controls, displaying current page and total page count.
+- **Alphabetical Sorting**: Employee list sorted alphabetically using locale-aware comparison (`pt-AO`).
+- **Multi-Level Filters**: Dynamic dropdown filters for **Company**, **Plant**, and **Department** — derived from loaded data and applied client-side for instant responsiveness. Filters reset automatically on data refresh.
+- **Employee Count Badge**: The "Funcionário" column header displays the total filtered employee count.
+- **Month/Week View Toggle**: Segmented control for switching between full-month and ISO week-of-year calendar views.
+- **Scroll-Contained Layout**: Flexbox-driven grid shell with native horizontal/vertical scrolling, sticky day header, and sticky first column — single scrollbar architecture with no mirror scrollbar.
+### Backend
+- **New Services**: `InnuxAttendanceService`, `InnuxLookupService`, `InnuxTimeHelper` — read-only Innux attendance data retrieval with schedule/department/shift lookups.
+- **New DTOs**: `InnuxAttendanceDtos`, `InnuxLookupDtos` — typed contracts for attendance summary and lookup data.
+- **Backend Data Projection**: `GetCalendar` endpoint exposes `plantName` and `companyName` through navigation properties to support frontend filtering.
+
+## [v2.84.0] - 2026-04-22 - Feature: HR Team Calendar Modernization (Access Control + Week View)
+### Added
+- **Backend-Enforced Calendar Access Control**: `GetScopedEmployeesQuery()` now handles four distinct access tiers:
+  - **System Admin**: full visibility.
+  - **HR**: plant/department scope (OR logic — broad HR visibility).
+  - **Local Manager**: plant/department scope (AND intersection logic — restrictive team visibility).
+  - **Department Manager**: managed employees + managed department employees.
+  - **Self-Calendar**: any authenticated user with a matching `HREmployee` record (email-based identity matching) sees only their own row.
+- **`HasHRModuleAccess()` Broadened**: Now includes Local Manager role and self-calendar users. Safe because all HR endpoints also apply `GetScopedEmployeesQuery()` internally, limiting data to the user's scope.
+- **Scope Metadata**: `GetCalendarData()` API response now includes a `scopeType` field (`all` | `hr` | `department` | `self`) for frontend header/mode adaptation.
+- **Week View Mode**: ISO 8601 week-of-year visualization with week badge, 7-day horizontal navigation, and wider day columns.
+- **Frozen Employee Column**: Sticky left column with scroll-aware shadow indicator and right-edge gradient hint.
+- **Dedicated CSS**: `hr-team-calendar.css` using portal design tokens (`--color-*`, `--radius-*`, `--shadow-*`).
+- **Scope-Aware UI**: Header adapts between "Meu Calendário" (self) and "Calendário da Equipa" (team). Legend footer shows context-appropriate scope description.
+### Fixed
+- **Local Manager Over-Broad Calendar Scope**: Fixed a critical scoping bug where the Local Manager branch used `OR` logic for plant/department filters, causing managers scoped to department TI to see all employees from all departments in their plant (Compras, Manutenção, Produção, etc.). Changed to `AND` intersection logic when both plant and department scopes exist. Also hardened the no-scope fallback to fail-safe (empty result) instead of broad visibility.
+### Changed
+- **View Mode Toggle**: Calendar now offers a segmented control (Mês / Semana) for switching between month and week views.
+- **Navigation**: Replaced chevron arrows with standard ChevronLeft/ChevronRight icons and responsive prev/next labels.
+
+## [v2.83.3] - 2026-04-21 - Feature: HR Employee Workspace Session Persistence
+### Added
+- **Session State Persistence**: The Funcionários (Employee Registration) screen now preserves its working state in `sessionStorage` when the user navigates to other submenus (Layouts, Histórico de Impressão) and restores it automatically upon return.
+- **Persisted fields**: company, search query, search results, selected employee, unified profile, badge category, RFID card number, manual mode + manual fields, and selected layout.
+- **Innux Photo Re-Fetch**: If the restored session had an Innux photo, it is automatically re-fetched from the server on mount (blob URLs are not restorable).
+- **Local Upload Photo Handling**: Locally uploaded photos are explicitly NOT restored (blob URLs don't survive component unmount); the user simply re-uploads.
+### Changed
+- **Layout Restore**: The layout loading effect now checks for a previously-selected layout ID from the restored session and selects it instead of always defaulting to the first layout.
+- **Reset Integration**: `handleCompanyChange`, `handleToggleManualMode` now clear the persisted session state in addition to clearing component state.
+
+## [v2.83.2] - 2026-04-21 - Fix: HR Employee Search Reliability (Race Condition & State Management)
+### Fixed
+- **Race Condition in Employee Search**: Added `AbortController` to cancel in-flight search requests when a new search is triggered. A request sequence counter (`searchSeqRef`) ensures only the latest response updates the UI, preventing stale results from overwriting correct ones.
+- **Silent Error Swallowing**: Added `res.ok` verification before reading search results. HTTP 502/503 backend errors previously bypassed the `catch` block and silently produced empty results; they now route through proper error handling with user-visible messages.
+- **Stale State on Company Change**: Company dropdown (`onChange`) now invokes a dedicated `handleCompanyChange` handler that explicitly clears all search results, selected employee, loaded profile, photo, badge configuration, error state, and print results. Also cancels any in-flight search request to prevent cross-company data leakage.
+### Added
+- **Diagnostic Logging**: `HRController.SearchEmployees` now logs company, query, and result count at `Information` level for operational traceability.
+
+## [v2.83.1] - 2026-04-20 - Refactor: UI Modernization — Legacy Brutalist → Modern Corporate (Final Pass)
+### Changed
+- **Full Brutalist Remediation (31 files)**: Systematic elimination of all remaining "Industrial Brutalist" design patterns. Zero occurrences of `var(--shadow-brutal)`, `4px/6px offset shadows`, `translate(-2px,-2px)` hover effects, or `2px/4px solid border-heavy` borders remain in the codebase.
+  - **globals.css**: Removed `.btn-primary:active` translate/shadow offset; buttons now use `opacity:0.9` active state.
+  - **Shared Components (12)**: `ApprovalModal`, `CorrectPoModal`, `RegisterPoModal`, `RequestLineItemForm`, `RequestAttachments`, `Feedback`, `Tooltip`, `CostCenterAutocomplete`, `DepartmentMasterAutocomplete`, `EmployeeAutocomplete`, `SupplierAutocomplete`, `QuotationEntry` — heavy borders and offset shadows replaced with `var(--shadow-sm/md)` and `1px solid var(--color-border)`.
+  - **Layout / Modais (7)**: `UserProfileDrawer`, `UserDropdown`, `QuickSupplierModal`, `HRActionModal`, `ReceivingModal`, `FinanceActionModal`, `PurchasingHelpDrawer` — modal containers and action buttons fully aligned to Modern Corporate tokens.
+  - **Páginas (10)**: `RequestCreate`, `RequestGeneralDataSection`, `RequestActionHeader`, `PurchasingLandingPage`, `Purchasing/QuickActions`, `BuyerItemsList`, `SystemLogs`, `FinanceHistory`, `ChangePasswordPage`, `AttentionList` — interactive hover states migrated from `translate(-2px,-2px) + 6px offset` to `translateY(-2px/3px) + var(--shadow-md/lg)`.
+- **Token Standards established**: shadows → `var(--shadow-sm/md/lg)` · borders → `1px solid var(--color-border)` · interactive lift → `translateY(-Npx)` · radii → `var(--radius-md/lg)`.
+- **Accepted exceptions** (2, consciously retained): `DecisionTimeline` `borderLeft: 4px` (semantic timeline indicator) · `RequestLineItemForm` spinner border-top (CSS loading circle).
+
+## [v2.82.0] - 2026-04-20 - Feature: Payment Deadline Rules — Frontend & Documentation (DEC-117)
+### Added
+- **"Regras de Pagamento" Section in Contract Create/Edit**: Collapsible form section with progressive disclosure. Hidden by default; auto-opens when editing a contract with an existing rule. Driven by two new lookup endpoints (`/payment-term-types`, `/reference-event-types`).
+- **Payment Term Type Selector**: Dropdown loads all supported rule types (`FIXED_DAYS_AFTER_REFERENCE`, `FIXED_DAY_OF_MONTH`, `NEXT_MONTH_FIXED_DAY`, `ON_RECEIPT`, `ADVANCE_PAYMENT`, `MANUAL`, `CUSTOM_TEXT`). Subsequent fields appear conditionally based on the selected type.
+- **Reference Event Type Selector**: Appears only for rule types that require a reference date. Drives `InvoiceReceivedDate` visibility in the obligation form via `requiresInvoiceDate` flag.
+- **Grace Period & Late Penalty/Interest Fields**: `GracePeriodDays`, `HasLatePenalty`, `LatePenaltyValue`, `LatePenaltyTypeCode`, `HasLateInterest`, `LateInterestValue`, `LateInterestTypeCode` — all wired to the save payload.
+- **Manual Override Toggle**: `AllowsManualDueDateOverride` checkbox controlling per-obligation due date override permission.
+- **Free-Text Rule Summary & Notes**: `PaymentRuleSummary`, `FinancialNotes`, `PenaltyNotes` — text areas available for any rule type.
+- **Due Date Source Badge**: Obligation rows in the detail view now show `🔄 Auto (Contrato)` or `✏️ Manual` badges, color-coded to distinguish automatic calculation from manual override.
+- **Obligation Deadline Metadata Panel**: Expandable sub-row under each obligation showing `ReferenceDateUtc`, `CalculatedDueDateUtc`, `GraceDateUtc`, `PenaltyStartDateUtc`. Visible when the contract has a payment rule and the obligation has a source badge.
+- **Active Payment Rule Summary Panel**: New panel in ContractDetail "Geral" tab showing the summarized rule, financial notes, and penalty notes when a structured rule is configured.
+- **Obligation Context Note**: Duration-aware guidance note in the obligation add/edit form. Prompts the user to supply `InvoiceReceivedDate` (or other required reference date) when the contract rule requires it.
+- **Context-Aware Obligation Form Fields**: `InvoiceReceivedDate` field appears in obligation add/edit only when `ReferenceEventTypeCode` = `INVOICE_RECEIVED_DATE` (or similar user-supplied types).
+### Documentation
+- **CONTRACTS_WORKFLOW.md §11**: Added complete Payment Deadline Rules reference section covering all payment term types, reference event types, calculation logic, grace period formulas, manual override behavior, request generation impact, backward compatibility, and the UI source badge system.
+- **DECISIONS.md DEC-117**: Added full decision record for structured payment deadline rules — context, all 9 sub-decisions, 4 alternatives considered, and consequences.
+
+## [v2.81.1] - 2026-04-20 - Fix: Payment Request Generation Units
+
+### Fixed
+- **Contract Payment Generation**: Resolved an issue where payment requests generated from contract obligations were inappropriately adopting an inactive "EA" default unit by ensuring the `UnitId` drops to `null`.
+- **Request Draft Default Unit Fallback**: Eliminated the legacy hardcoded "EA" UI fallback from `RequestsController` to allow items with undefined units to be properly surfaced without forced defaults.
+
+## [v2.81.0] - 2026-04-19 - Feature: Contracts Management Module (First Vertical Slice)
+### Added
+- **Contract Domain Model**: Introduced 6 new entities — `Contract` (aggregate root), `ContractType`, `ContractDocument`, `ContractHistory`, `ContractAlert`, and `ContractPaymentObligation` — forming a complete contract lifecycle domain.
+- **Contract Number Generation**: Automated sequential contract numbering via `SystemCounter` (`CTR-{year}-{sequence}`), following the same atomic counter pattern established for Request numbers.
+- **Scoped Data Access**: `GetScopedContractsQuery` in `BaseController` derives company scope from user plant assignments, supports company-wide contracts (`PlantId = NULL`), and respects plant + department visibility rules.
+- **Full REST API**: `ContractsController` with 18 endpoints covering list (filtered, paged, with summary KPIs), detail, create, update, 5 status transitions, obligation CRUD, payment request generation, document upload/download, alerts, and type lookups.
+- **Generate Payment Request**: Core business action creating a `Request` (type=PAYMENT) from a `ContractPaymentObligation`, inheriting all organizational context and linking via unidirectional FKs (`Request.ContractId`, `Request.ContractPaymentObligationId`).
+- **Contract Lifecycle State Machine**: 6 statuses (`DRAFT → UNDER_REVIEW → ACTIVE → SUSPENDED → TERMINATED → EXPIRED`) with enforced transition rules and full audit history.
+- **Frontend Workspace**: New `/contracts` workspace with landing page shell, tabbed navigation, contracts list with summary cards, contract creation form (4 sections), and contract detail page with obligations, documents, history, and alerts tabs.
+- **Obligation Management UI**: Inline obligation creation, status badges, and the "Gerar Pedido" action button directly in the obligations table for pending items on active contracts.
+- **Sidebar Navigation**: `Contratos` group added with `FileSignature` icon, scoped to `Contracts`, `Finance`, and `System Administrator` roles.
+- **Seed Data**: 4 contract types seeded — Service (`SERVICE`), Lease (`LEASE`), Supply (`SUPPLY`), Maintenance (`MAINTENANCE`).
+### Changed
+- **Proforma Validation UX**: Improved the Payment Request submission flow. When proforma validation fails, the system now automatically expands the attachments section and smooth-scrolls it into view to immediately guide the user's attention.
+### Database
+- **Migration**: `AddContractsModule` — creates 6 tables (`Contracts`, `ContractTypes`, `ContractDocuments`, `ContractHistories`, `ContractAlerts`, `ContractPaymentObligations`), adds `ContractId` and `ContractPaymentObligationId` nullable FKs to `Requests` table with `RESTRICT` delete behavior.
+### Documentation
+- **CONTRACTS_WORKFLOW.md**: Full BPM reference document with state machines, obligation lifecycle, payment request generation flow, scope rules, ERD, API endpoint catalog, history event types, and alert types.
+
+## [v2.80.0] - 2026-04-18 - Feature: Finance Budget Tracking MVP (Phase 1)
+### Added
+- **Annual Budget Domain**: Introduced the `AnnualBudget` entity to manage distinct yearly budgets for departments based on a native currency, preventing duplicate budget definitions via `Year + DepartmentId + CurrencyId` constraints.
+- **Budget Setup Interface**: Created `FinanceBudgetConfig.tsx` to enable users with `Finance` or `SystemAdministrator` roles to maintain annual departmental limits seamlessly.
+- **Committed Spend Engine**: Configured the new `FinanceBudgetController` to calculate "Committed" vs "Paid" spend continuously in real-time, leveraging active request statuses while actively excluding any cancelled workloads.
+- **Executive Overview Tracking**: Integrated an 'Acompanhamento Orçamental' panel into `FinanceOverview.tsx`. This view delivers a macro synthesis across currencies, highlights the top 5 departments at risk of breaching limits, and provides contextual drill-down into cost-center execution.
+
+## [v2.79.0] - 2026-04-18 - Feature: Manual Badge Creation (Visitor Workflow)
+### Added
+- **Manual Badge Entry**: Added a new "Entrada Manual" toggle in the HR Employee Workspace. When activated, it seamlessly replaces the Primavera API search with a manual data entry form.
+- **Visitor Badge Lifecycle**: The system can now issue badges for visitors or temporary staff without requiring them to be pre-registered in the Primavera ERP. These badges are logged into `BadgePrintHistory` utilizing a specialized `MANUAL-[timestamp]` employee code to maintain audit traceability.
+- **Resilient Badge Rendering**: Upgraded the `BadgePreview` engine and `BadgeLayoutEditorV3` configurations to robustly handle multi-line text wrapping. Names that exceed container constraints now gracefully wrap to a newly allocated second text box, preventing truncation.
+- **Contextual Form Validation**: Added visual validation logic blocking manual badge printing if requisite parameters (Name, Category, missing RFID card) aren't satisfied, ensuring blank or malformed visitor badges are not dispatched.
+
+## [v2.78.0] - 2026-04-17 - Feature: Financial Snapshot & Payment Divergence Detection (Phase 1 — DEC-110)
+### Added
+- **Financial Snapshot at Approval**: `ApprovedTotalAmount`, `ApprovedCurrencyCode`, and `ApprovedAtUtc` are now captured immutably on the `Request` entity at the moment of final approval. QUOTATION flow sources the winning quotation total; PAYMENT flow sources `EstimatedTotalAmount`.
+- **Mandatory Payment Amount Capture**: `ActualPaidAmount` and `ActualPaidAtUtc` are now required inputs when confirming payment via `MarkAsPaid`. The `FinanceActionModal` includes a new "Montante Efetivamente Pago" input field.
+- **Payment Divergence Detection**: *(Superseded by v2.93.1 — tolerance removed, now zero-tolerance.)* Originally implemented automated comparison of `ActualPaidAmount` vs `ApprovedTotalAmount` using a 1% relative tolerance (with 1.00 absolute floor). When divergence exceeded tolerance, a `PAYMENT_DIVERGENCE_DETECTED` audit entry was created in `RequestStatusHistory` with detailed variance data.
+- **Finance Status Guards**: `SchedulePayment` and `MarkAsPaid` endpoints now enforce explicit source-status validation. Actions from invalid workflow states return HTTP 400 with descriptive error messages listing allowed statuses.
+- **Finance List Enrichment**: `FinanceListItemDto` now exposes `ApprovedTotalAmount`, `ActualPaidAmount`, `ApprovedCurrencyCode`, `ApprovedAtUtc`, `ActualPaidAtUtc`, and a computed `HasPaymentDivergence` flag.
+### Documentation
+- **WORKFLOW_ARCHITECTURE.md**: Added §6 — Financial Lifecycle covering value source by stage, snapshot rules, actor responsibilities, payment validation rules, divergence detection algorithm, and Phase 2 intent.
+- **DECISIONS.md**: Added DEC-110 — Financial Snapshot & Payment Divergence Detection phased delivery rationale.
+
+## [v2.77.3] - 2026-04-16 - Performance: Master Data Page Load Optimization (50s → 2s)
+### Performance
+- **GetUsers Cartesian Explosion Fix**: Replaced 4 eager-loading Include/ThenInclude chains with direct SQL projection in `UsersController.GetUsers`. The cartesian join was taking 25s+ for 10 users; now resolves in <200ms.
+- **Frontend Sequential Loading**: Replaced `Promise.allSettled` (9 parallel API calls causing LocalDB connection pool contention at 44s) with sequential loading that completes in <1s.
+
+## [v2.77.2] - 2026-04-16 - Backend: EF Core Decimal Precision Standardization
+### Fixed
+- **EF Core Decimal Precision**: Added explicit `HasColumnType` precision/scale for 16 decimal properties across 5 entities (`OcrExtractedItem`, `ReconciliationRecord`, `QuotationItem`, `RequestLineItem`, `Request`). Eliminates all model validation warnings at startup and prevents silent financial data truncation. Convention: money `decimal(18,2)`, percentages `decimal(9,4)`, quantities `decimal(18,4)`.
+### Documentation
+- **DECISIONS.md**: Added DEC-108 establishing mandatory decimal precision as a permanent backend architecture rule.
+
+## [v2.77.0] - 2026-04-15 - Security: Dedicated HR Role & Scope Model
+### Added
+- **Dedicated HR Role**: Introduced `HR` as a standalone role (`RoleConstants.HR` / `ROLES.HR`) to decouple HR workspace access from the `Local Manager` privilege.
+- **Backend Authorization**: `HRController` now enforces `[Authorize(Roles = "System Administrator,HR")]`. All other roles receive HTTP 403.
+- **Login Scope Data**: `UserProfileDto` now includes `Plants` and `Departments` fields, populated directly from scope tables during login — eliminates the need for an extra `/api/v1/users/me` call.
+- **Frontend Auth Context**: Added `hasHRAccess` derived boolean to `AuthContext`, combining `HR` role membership and `System Administrator` bypass.
+- **User Management HR Warning**: When `HR` role is selected during user creation/editing, a contextual warning appears if no plants or departments are assigned, preventing creation of scopeless HR users.
+### Changed
+- **Navigation Visibility**: R.H. sidebar group and `Cadastro de Funcionários` submenu now require `ROLES.HR` or `ROLES.SYSTEM_ADMINISTRATOR` (previously required `ROLES.LOCAL_MANAGER`).
+- **Route Protection**: `/hr/employees` route guard updated from `LOCAL_MANAGER` to `HR` role.
+- **Manager Role Assignment**: Local Managers can now assign the `HR` role to users within their organizational scope.
+### Breaking
+- **`Local Manager` users no longer have implicit HR access.** Existing Local Managers who need continued access to the Employee Workspace must be explicitly assigned the `HR` role.
+### Documentation
+- **DECISIONS.md**: Added DEC-107 — Dedicated HR role architecture with explicit future-evolution constraints.
+- **ACCESS_MODEL.md**: Updated to reflect HR role, scope model, and breaking change from Local Manager decoupling.
+
+## [v2.76.1] - 2026-04-15 - Search Functionality Expansion
+### Added
+- **Global Search Scope**: Expanded the main Requests Dashboard search capabilities. The system now seamlessly searches by Requester Name (`Solicitante`) in addition to Request Number and Title.
+- **Contextual Help Search Glossary**: Updated the contextual help (the "i" icon) in the "Explorador de Pedidos" modal to precisely reflect all actively indexable search parameters.
+
+## [v2.76.0] - 2026-04-15 - UI: Buyer Portal Header Modernization
+### Added
+- **Buyer Portal Header Modernization**: Refactored the request card header into a clean 3-zone architecture (ID/Status, People/Approvers, Date/Actions) with improved visual hierarchy and scannability.
+- **Action Kebab Menu (⋮)**: Replaced legacy "Cancelar" and "Detalhes" buttons with a unified, motion-animated dropdown menu to increase workspace density and reduce visual noise.
+- **Teams Status Presence**: Integrated discrete Teams chat triggers next to requester, buyer, and approver names for immediate operational communication.
+### Changed
+- **Multi-Stage Approver Logic**: Updated the Area Approver visibility logic. The "Aprovador da Área" now remains visible throughout all initial stages (including Aguardando Cotação) until the request reaches "Aguardando Aprovação Final", providing consistent departmental context.
+- **Card Layout Resilience**: Removed overflow constraints on quotation request cards to accommodate floating dropdown menus without clipping regressions.
+- **Dark Mode Hospitality**: Standardized the new kebab menu components with semantic CSS variables (`var(--color-bg-surface)` and `var(--color-bg-neutral)`) for seamless theme switching.
+
+## [v2.75.0] - 2026-04-15 - UX Feedback: Gestão de Cotações
+### Added
+- **Context-Aware Empty States**: Upgraded the "Gestão de Cotações" empty state to structurally depend on the active filter context. When the user has an active text search or status filter that yields zero results, contextual actionable buttons ("Limpar Busca" / "Limpar Filtros") are displayed directly in the empty state.
+- **Structural Loading Skeletons**: Replaced the static "Carregando..." text with a custom `RequestGroupSkeleton` component utilizing pulsing CSS animations (mimicking the exact height and column metrics of the collapsed quotation groups) to eliminate layout shift post-data-fetch.
+- **Localized Error Recovery**: Implemented localized boundaries for data fetching errors inside the Buyer Workspace. Failed fetches gracefully exit into an encapsulated "Falha ao Carregar" state containing an explicit and isolated "Tentar Novamente" recovery button mapped directly to the `loadData()` handler, preserving the shell structure visually.
+- **Form Interactivity Preservation**: Extended all primary backend-bound mutation actions (Save Quotations, Re-assignments) to implicitly clear nested frontend list error contexts upon success, enhancing user resilience logic.
+
+## [v2.74.0] - 2026-04-15 - Feature: Catalog Linkage in Manual Quotation Entry
+### Added
+- **Catalog Linkage in Manual Quotation Entry**: Integrated `CatalogItemAutocomplete` into the manual quotation entry mode within `BuyerItemsList.tsx`. This allows buyers to link manual entries directly to official Portal catalog items, ensuring data consistency for inventory and receiving.
+- **Backend Catalog Traceability**: Updated `SavedQuotationItemDto` and `RequestsController` projections to persist and retrieve `ItemCatalogId` and `ItemCatalogCode` for quotation line items.
+
+## [v2.73.0] - 2026-04-15 - Fix: Status Filter Pagination Architecture
+### Fixed
+- **Root cause**: Status is computed *after* matching Primavera items against the Portal catalog — it does not exist in the Primavera source system. The previous implementation paginated at the Primavera SQL level (`OFFSET/FETCH NEXT`), then applied the status filter post-match on each page. This caused pages to contain random numbers of matching items (e.g., page 2 = 0 items, page 4 = 13 items when filtering by "New").
+- **Architecture change**: When `statusFilter` is active, the backend now fetches ALL Primavera records via `ListAllArticlesAsync` / `ListAllSuppliersAsync` (batched in pages of 200), performs matching on the full dataset, filters by status, then paginates the **filtered result** in-memory. This guarantees every page contains exactly `pageSize` items (except the last page).
+- **Pagination accuracy**: `TotalPrimaveraRecords` now reflects the **filtered count** when a status filter is active, ensuring the frontend pagination ("Page X of Y") is correct for the filtered dataset.
+- **Summary counts**: `NewCount`, `ExistsCount`, `ConflictCount` are now computed from the full matched dataset (not just the current Primavera page), providing accurate global counts regardless of which page is displayed.
+- **Performance path preserved**: Without `statusFilter`, the original efficient per-page Primavera SQL pagination is still used — no behavioral change for unfiltered browsing.
+### Added
+- `ListAllArticlesAsync` on `IPrimaveraArticleService` / `PrimaveraArticleService` — sequential batch fetch (200 items/batch) for full dataset access.
+- `ListAllSuppliersAsync` on `IPrimaveraSupplierService` / `PrimaveraSupplierService` — same pattern for suppliers.
+### Changed (Frontend — v2.72.1)
+- Status header filter drives `statusFilter` state (server query param) instead of client-side `columnFilters`.
+- Header ↔ top dropdown are bidirectionally synced.
+- "Limpar tudo" resets both client-side column filters and server-side status filter.
+
+## [v2.72.0] - 2026-04-15 - Sync Workspace: Excel-Like Column Headers
+### Added
+- **Column Sorting**: Click any sortable column header to toggle ascending → descending → clear. Visual arrow indicators (▲/▼) show active sort direction.
+- **Column Filtering**: Filter icon on each header opens a compact popover:
+  - **Text columns** (Código, Descrição, Família, Unidade, Nome, NIF): case-insensitive, accent-insensitive "contains" search.
+  - **Status column**: multi-select checkbox filter with localized labels (Novo, Existente, Conflito).
+- **Reusable `SortableFilterHeader` component** (`components/shared/SortableFilterHeader.tsx`): shared by both Catalog and Supplier sync tables.
+- **Page-scope banner**: Visible info banner when column filters/sort are active, explicitly stating: "Ordenação e filtros de coluna aplicados apenas aos itens visíveis nesta página." Shows active filter count, sort direction, and items visible vs total.
+- **Global reset**: "Limpar tudo" button clears all column filters and sorting in one action.
+- **Filter persistence**: Column filters and sort state persist across page changes and are reapplied to each newly loaded page.
+- **Empty state**: Friendly message when column filters exclude all items on the current page.
+### Technical Notes
+- Client-side only: sorting and column filtering operate on the current page (up to 50 items) returned from the server. This is consistent with the existing post-match status filter behavior and does not mislead the user about cross-page effects.
+- Stacking: top-level server controls (company, search, status) narrow the Primavera result; column header filters further refine the visible page; sort applies last.
+- Columns supported — Catalog: Status, Código Primavera, Descrição (Primavera), Família, Unidade, Código Portal, Descrição (Portal). Supplier: Status, Código Primavera, Nome (Primavera), NIF (Primavera), Nome (Portal), NIF (Portal).
+
+## [v2.71.0] - 2026-04-15 - Catalog Sync: Description-Based Matching (V2.1)
+### Changed
+- **Catalog Sync Matching Strategy (V2.1)**: Replaced PrimaveraCode-based matching with description-based comparison for the Item Catalog sync preview, with duplicate detection on both sides.
+  - `Exists` → exact normalized description match between Primavera and Portal
+  - `Conflict` → similar description (one contains the other, min 5 chars) — requires manual review
+  - `Conflict` → duplicate description detected in Primavera result set (source ambiguity)
+  - `Conflict` → duplicate description detected in Portal catalog (target ambiguity)
+  - `New` → no relevant description match **and** no ambiguity on either side
+- **Normalization Rules**: Descriptions are normalized before comparison: trim, uppercase, strip accents/diacritics, remove simple punctuation (`.` `,` `;` `:` `/` `-`), collapse repeated spaces.
+- **Import Dedup Check**: Now uses normalized description matching instead of PrimaveraCode to prevent importing items that already exist in the Portal under a different code.
+- **CatalogTable UI**: Added "Detalhe" column to display `conflictDetail` for Conflict-status catalog items.
+
+### Fixed
+- **Catalog Import 500 Error**: Added missing EF Core migration `AddItemCatalogSyncTraceabilityFields` for `SourceCompany` and `LastSyncedAtUtc` columns on `ItemCatalogItems` (and `Suppliers`). The entity model had these fields but the database schema did not, causing `SqlException: Invalid column name` on every import attempt.
+
+## [v2.70.0] - 2026-04-15 - Authorization Hardening: Centralized Role Constants
+### Fixed
+- **SyncController 403 Regression**: Corrected `[Authorize(Roles = "Admin")]` to `[Authorize(Roles = RoleConstants.SystemAdministrator)]`. The `Admin` role does not exist in the system; the correct administrative role key is `System Administrator`.
+
+### Changed
+- **Backend Role Constant Enforcement**: Replaced all 7 hardcoded `"System Administrator"` string literals in `NotificationService.cs` with `RoleConstants.SystemAdministrator`.
+- **Frontend Role Constant Enforcement**: Replaced all hardcoded role string literals with `ROLES.*` constants across:
+  - `AuthContext.tsx` (central `isAdmin` and `isLocalManager` checks)
+  - `ReceivingWorkspace.tsx` (scope filtering)
+  - `QuickActions.tsx` (Purchasing — role-based action visibility)
+  - `QuickActions.tsx` (Dashboard — role-based action visibility)
+  - `UserManagement.tsx` (admin/manager role checks and role filtering)
+
+### Documentation
+- **ACCESS_MODEL.md**: Updated role label from "Admin" to "System Administrator" with explicit authorization key clarification warning.
+- **DECISIONS.md**: Added DEC-105 — mandatory use of centralized role constants for all authorization checks.
+
+## [v2.69.0] - 2026-04-14 - Phase 5A Primavera Request Validation Against Master Data (Read-Only)
+### Added
+- **PrimaveraRequestValidationDtos**: Input (`PrimaveraRequestValidationInputDto`) and result (`PrimaveraRequestValidationResultDto`) DTOs for structured validation:
+  - Input: `Company`, `ArticleCode`, `SupplierCode` (optional)
+  - Result: `ArticleExists`, `SupplierExists`, `RelationshipChecked`, `RelationshipExists`, `ValidationStatus`, `Messages[]`, enriched descriptions
+- **IPrimaveraRequestValidationService / PrimaveraRequestValidationService**: Composition/validation layer above existing Primavera services:
+  - Reuses `IPrimaveraArticleService` (article existence)
+  - Reuses `IPrimaveraSupplierService` (supplier existence)
+  - Reuses `IPrimaveraArticleSupplierService` (relationship existence)
+  - No direct SQL — pure service composition
+- **PrimaveraRequestValidationController**: Admin-internal API:
+  - `POST /api/admin/integrations/primavera/request-validation/validate-line`
+  - `POST /api/admin/integrations/primavera/request-validation/validate-batch` (max 50 lines)
+
+### Validation Status Model
+- **VALID**: article + supplier exist, relationship confirmed
+- **WARNING**: article exists but no supplier provided (partial), or both exist but no relationship
+- **INVALID**: article not found, or supplier provided but not found, or missing required inputs
+- **ERROR**: technical failure (SQL timeout, provider misconfigured) — distinct from business INVALID
+
+### Architecture Notes
+- **Pure composition**: No new SQL queries — all validation done by calling existing read services
+- **HTTP semantics**: Business validation results are always 200 (validation op succeeded); ValidationStatus field carries the business outcome
+- **Batch support**: Up to 50 lines validated independently per call
+
+### Decisions Recorded
+- **DEC-117**: Validation is 200-based — business INVALID is in the response body, not 4xx HTTP status
+- **DEC-118**: No-supplier = WARNING (partial validation), not INVALID
+- **DEC-119**: No-relationship = WARNING (unlinked pair), not INVALID — allows new vendor relationships
+
+## [v2.68.0] - 2026-04-14 - Phase 4C Primavera Article-Supplier Contextual Linkage (Read-Only)
+### Added
+- **PrimaveraArticleSupplierDtos**: Directional response DTOs for article-supplier relationships:
+  - `PrimaveraArticleSuppliersDto` — wraps article identity with linked suppliers enriched from `Fornecedores`
+  - `PrimaveraSupplierArticlesDto` — wraps supplier identity with linked articles enriched from `Artigo`
+  - `ArticleSupplierItemDto` / `SupplierArticleItemDto` — enriched relationship items with identity + relationship fields
+  - `PrimaveraArticleSupplierLinkDto` — raw relationship row DTO (8 fields from 25-column table)
+- **IPrimaveraArticleSupplierService / PrimaveraArticleSupplierService**: Read-only, company-aware article-supplier relationship service. Two-step approach: verifies parent entity exists, then queries enriched relationships with LEFT JOIN to identity tables. Bounded to 100 results.
+- **PrimaveraArticleSupplierController**: Admin-internal API:
+  - `GET /api/admin/integrations/primavera/articles/{code}/suppliers?company=...`
+  - `GET /api/admin/integrations/primavera/suppliers/{code}/articles?company=...`
+
+### Architecture Notes
+- **Source object**: `ArtigoFornecedor` table (25 columns; consistent across both companies)
+- **Join keys**: `ArtigoFornecedor.Artigo → Artigo.Artigo`, `ArtigoFornecedor.Fornecedor → Fornecedores.Fornecedor`
+- **Schema consistency**: Both ALPLAPLASTICO (319 rows) and ALPLASOPRO (256 rows) have identical column sets including `CDU_CodBarrasEntidade`
+- **Scope**: Read-only, relationship visibility only. No pricing/ranking/sourcing logic.
+
+### Decisions Recorded
+- **DEC-114**: `ArtigoFornecedor` is the authoritative article-supplier relationship table
+- **DEC-115**: Pricing fields (PrCustoUltimo, DescFor, PrecoUltEncomenda) excluded from first DTO — relationship visibility only
+- **DEC-116**: Supplier enrichment via LEFT JOIN to Fornecedores (Nome, NumContrib); article enrichment via LEFT JOIN to Artigo (Descricao, UnidadeBase)
+
+## [v2.67.0] - 2026-04-14 - Phase 4B Primavera Supplier Master Data Lookup (Read-Only)
+### Added
+- **PrimaveraSupplierDto**: ~15-field DTO for supplier master data. Source: Primavera `Fornecedores` table (116 columns; ~15 exposed). Fields: `Code`, `Name`, `FiscalName`, `TaxId`, `Email`, `Phone`, `Fax`, `Address`, `Address2`, `City`, `PostalCode`, `Country`, `SupplierType`, `IsCancelled`, `Currency`, `CreatedAt`, `SourceCompany`, `Source`.
+- **IPrimaveraSupplierService / PrimaveraSupplierService**: Read-only, company-aware supplier lookup and search. Uses existing `PrimaveraConnectionFactory`. Search covers code, name, fiscal name, and tax ID (NIF).
+- **PrimaveraSuppliersController**: Admin-internal API at `api/admin/integrations/primavera/suppliers`. Endpoints: `GET /{code}?company=...` (lookup) and `GET /search?company=...&q=...&limit=...` (search). Error semantics aligned with existing employee/article endpoints.
+
+### Architecture Notes
+- **Source object**: Primavera `Fornecedores` table (116 columns; consistent across both companies)
+- **No CDU mismatch**: Unlike `Artigo`, both ALPLAPLASTICO and ALPLASOPRO have the same CDU columns for `Fornecedores` — no adaptive detection needed.
+- **Search**: Bounded (max 50), min 2 chars, searches across `Fornecedor`, `Nome`, `NomeFiscal`, and `NumContrib`. Stable ordering by `Fornecedor` code.
+- **Scope**: Read-only, multi-database aware. No financial/banking/credit/transactional fields.
+
+### Decisions Recorded
+- **DEC-111**: `Fornecedores` is the authoritative supplier source table. No joins needed for first version.
+- **DEC-112**: Financial fields (CondPag, ModoPag, TotalDeb, LimiteCred, bank details) intentionally excluded — not relevant for initial lookup.
+- **DEC-113**: Supplier-article relationship logic deferred to future phase.
+
+## [v2.66.0] - 2026-04-14 - Phase 4A Primavera Article/Material Lookup (Read-Only)
+### Added
+- **PrimaveraArticleDto**: Focused ~13-field DTO for article/material master data. Source: Primavera `Artigo` table with `LEFT JOIN Familias`. Fields: `Code`, `Description`, `BaseUnit`, `PurchaseUnit`, `Family`, `FamilyDescription`, `SubFamily`, `ArticleType`, `Brand`, `IsCancelled`, `SupplierCode`, `InternalCode`, `SourceCompany`, `Source`.
+- **IPrimaveraArticleService / PrimaveraArticleService**: Read-only, company-aware article lookup and search. Uses existing `PrimaveraConnectionFactory`. Adaptive CDU column detection — gracefully omits `CDU_codforneced` / `CDU_codinterno` when absent in target database (e.g., ALPLASOPRO).
+- **PrimaveraArticlesController**: Admin-internal API at `api/admin/integrations/primavera/articles`. Endpoints: `GET /{code}?company=...` (lookup) and `GET /search?company=...&q=...&limit=...` (search). Error semantics aligned with existing Primavera employee endpoints.
+
+### Architecture Notes
+- **Source object**: Primavera `Artigo` table (154 columns; only ~13 exposed in DTO)
+- **Enrichment join**: `LEFT JOIN Familias` for `FamilyDescription`
+- **SubFamilias join**: Intentionally deferred
+- **Remarks (Observacoes)**: Intentionally deferred from first DTO version
+- **CDU fields**: `CDU_codforneced` (SupplierCode) and `CDU_codinterno` (InternalCode) are environment-specific custom fields. Present in ALPLAPLASTICO, absent in ALPLASOPRO. Detected at runtime via `INFORMATION_SCHEMA.COLUMNS`.
+- **Search**: Bounded (max 50), minimum 2 chars, parameterized SQL, stable ordering by `Artigo` code
+- **Scope**: Read-only, multi-database aware, no stock/pricing/sync/writeback
+
+### Decisions Recorded
+- **DEC-108**: CDU columns handled via runtime detection, not hardcoded per-company. Future-proof for schema changes.
+- **DEC-109**: Remarks (Observacoes) deferred from first DTO — large ntext field, not essential for initial article lookup.
+- **DEC-110**: SubFamilias enrichment deferred to keep first version simple and reduce composite-key assumptions.
+
+## [v2.65.0] - 2026-04-14 - Phase 3B Unified Employee Profile (Read-Only)
+### Added
+- **UnifiedEmployeeProfileDto**: Cross-system profile composition with separated source sections (`PrimaveraProfileSection`, `InnuxProfileSection`). Match diagnostics at top level: `HasInnuxMatch`, `InnuxMatchStrategy`, `InnuxLookupStatus`, `InnuxLookupMessage`.
+- **IUnifiedEmployeeProfileService / UnifiedEmployeeProfileService**: Read-only composition layer above both domain services. Primavera lookup first, then Innux enrichment by employee code. No direct SQL access.
+- **UnifiedEmployeesController**: Admin-internal endpoint at `api/admin/integrations/employees/{code}?company=...`. Returns unified profile with both source sections.
+
+### Architecture Notes
+- **Match key**: `Primavera.Codigo` ↔ `Innux.Numero` (deterministic, code-based)
+- **Source hierarchy**: Primavera is master; Innux is optional operational complement
+- **Graceful degradation**: Innux failure does NOT fail the unified profile — Primavera profile is always returned if Primavera succeeds. Innux status is explicit via `InnuxLookupStatus` (`MATCHED`, `NOT_FOUND`, `ERROR`).
+- **No flattening**: Source sections remain separated for clear provenance
+- **Scope**: Lookup by code only. Unified search intentionally deferred.
+
+### Decisions Recorded
+- **DEC-106**: Innux failure degrades gracefully — Primavera profile returned with `InnuxLookupStatus = "ERROR"`, not HTTP error.
+- **DEC-107**: Unified search deferred from Phase 3B to reduce composition complexity. Lookup by code is the first stable cross-system operation.
+
+## [v2.64.0] - 2026-04-14 - Phase 3A Innux Employee Lookup (Read-Only)
+### Added
+- **InnuxConnectionFactory**: Shared, domain-neutral connection factory for Innux SQL connections. Single database (no company routing). Reusable by future Innux domain services (attendance, terminals, etc.).
+- **IInnuxEmployeeService / InnuxEmployeeService**: Read-only Innux employee operational identity lookup. Queries `dbo.Funcionarios` with `LEFT JOIN dbo.Departamentos` for department enrichment. Supports lookup by employee number and search by name (bounded, max 50 results).
+- **InnuxEmployeeDto**: Operational identity DTO with 17 mapped fields. Key naming: `IsActiveOperational` (explicitly Innux operational state, not unified cross-system status), `HasPhoto` (boolean presence indicator, never exposes blob data), `Source` (always `"INNUX"`).
+- **InnuxEmployeesController**: Admin-internal API at `api/admin/integrations/innux/employees`. Error semantics aligned with Primavera controller (400/404/502/503/500).
+
+### Changed
+- **InnuxIntegrationProvider**: Refactored to delegate connection-string resolution to `InnuxConnectionFactory`, removing duplicated `BuildConnectionString()`. Single source of truth for Innux connection configuration.
+- **DI Registration**: Added `InnuxConnectionFactory` and `IInnuxEmployeeService` registrations in `Program.cs`.
+
+### Architecture Notes
+- Innux has a single database target — no company parameter needed (unlike Primavera multi-database).
+- Department JOIN key: `f.IDDepartamento = d.IDDepartamento` (runtime-validated assumption from schema discovery).
+- Phase intentionally deferred: attendance events, terminal reads, biometric reconciliation, Primavera merge logic.
+
+## [v2.63.0] - 2026-04-14 - Phase 2D Primavera Multi-Database Support
+### Added
+- **PrimaveraConnectionFactory**: Shared, domain-neutral connection factory that resolves SQL connections for any configured Primavera company/database target. Reusable by all future Primavera domain services (employees, materials, suppliers, departments, cost centers).
+- **PrimaveraCompany enum**: Strongly typed selector for Primavera business databases (`ALPLAPLASTICO`, `ALPLASOPRO`). Stable internal codes — display labels resolved separately.
+- **Multi-company configuration**: `Integrations:Primavera:Companies` section in appsettings supporting per-company `DatabaseName` and `Enabled` flags. Shared connection settings (Server, Instance, Auth, Timeout) remain at the Primavera level.
+- **SourceCompany field**: `PrimaveraEmployeeDto.SourceCompany` identifies which Primavera database each record was read from.
+
+### Changed
+- **PrimaveraEmployeeService**: Refactored to accept `PrimaveraCompany` as explicit target. Delegates all connection resolution to `PrimaveraConnectionFactory`. Removed private `BuildConnectionString()`.
+- **PrimaveraIntegrationProvider**: Refactored to use `PrimaveraConnectionFactory`. Health check uses Option A strategy: tests the first configured company (default target). Diagnostic logs include health target and configured companies list.
+- **PrimaveraEmployeesController**: Employee lookup/search endpoints now require `company` query parameter (`?company=ALPLAPLASTICO`). Returns 400 for missing/invalid company, 503 for configuration errors, 502 for SQL failures.
+- **DI Registration**: Added `PrimaveraConnectionFactory` registration in `Program.cs`.
+
+### Decisions Recorded
+- **DEC-103**: One Primavera provider, multiple business database targets. Database selection handled in domain services, not by duplicating providers.
+- **DEC-104**: Option A health strategy — provider tests first configured company only. DEGRADED status deferred to future phase.
+- **DEC-105**: Company selection via query parameter (`?company=<CODE>`). Route-segment style deferred.
+
+## [v2.62.0] - 2026-04-14 - Phase 2B Innux Connection Health
+### Added
+- **Innux Integration**: Implemented `InnuxIntegrationProvider` mapping to `TIME_ATTENDANCE`, extending the generic integration framework to its second established real provider.
+- **Provider Integrity Check**: Hooked runtime diagnostic test routines (`@@SERVERNAME`, `DB_NAME()`) to the Innux instance ensuring isolated SQL validations decoupled from existing biometric metadata pipelines. Enforced strict explicit credential validation reflecting real-world error constraints in the diagnostics UI.
+
+## [v2.61.0] - 2026-04-14 - Phase 2A Primavera Employee Master Data
+### Added
+- **Primavera Integration**: Added read-only `PrimaveraEmployeeService` exposing the `IPrimaveraEmployeeService` contract to interact cleanly with `dbo.Funcionarios` joined with `dbo.Departamentos`.
+- **Admin Endpoints**: Introduced `PrimaveraEmployeesController` (`/api/admin/integrations/primavera/employees`) to execute strict parameterized query matching.
+
+### Changed
+- Standardized cross-boundary response formats. DTO layers now map exact data states, allowing calling methods to interpret `TerminationDate` explicitly instead of risking implicit `IsActive` heuristics.
+
+## [2.60.0] - 2026-04-14
+
+### Changed
+- **Primavera Integration Provider (Phase 1B)**: Stabilized runtime diagnostic connectivity to real Primavera infrastructure.
+  - Replaced `Encrypt=false` (default) with `Encrypt=Optional` during SNI connection negotiation to gracefully downgrade on legacy SQL nodes without triggering 21-second timeouts.
+  - Removed `ApplicationIntent.ReadOnly` flag as standalone environments drop the connection if no readable secondary is explicitly configured via routing.
+  - Confirmed and applied **explicit SQL Authentication** as the canonical path. Desktop/session UI identity proxying is disallowed to prevent pipeline drops.
+  - Provider connection response time verified at ~35ms.
+
+### Decisions Recorded
+- **DEC-102**: Explicit configured credentials required for real integrations; desktop session proxying disabled.
+
+## [2.59.0] - 2026-04-14
+
+### Added
+- **Primavera Connection Health (Phase 1A)**: First concrete `IIntegrationProvider` implementation on the generic integration platform.
+  - `PrimaveraIntegrationProvider`: validates SQL connectivity to Primavera ERP SQL Server. Uses diagnostic query (`SELECT @@SERVERNAME, DB_NAME()`) for identity confirmation. Read-only, no business-domain queries.
+  - Supports both **SQL Server Authentication** and **Windows Authentication** modes — no default assumed.
+  - Connection string built with `ApplicationIntent.ReadOnly` to enforce read-only at the transport level.
+  - Integration logs emitted for connection test lifecycle (`STARTED`, `OK`, `FAILED`) via existing `IntegrationLogEventTypes`.
+  - DI registration in `Program.cs`: `IIntegrationProvider → PrimaveraIntegrationProvider`.
+
+### Changed
+- **Primavera seed data**: Transitioned from `IsPlanned = true` (roadmap) to `IsPlanned = false` (real implementation exists). `IsEnabled` remains `false` — activation depends on explicit environment configuration, not provider existence.
+- **Primavera connection status seed**: Updated from `PLANNED` to `NOT_CONFIGURED`.
+- **Integration Playbook**: Added Phase 1A reference section, updated step 5 guidance (activation requires configuration), added activation lifecycle table.
+- **appsettings.json**: Added `Username` and `Password` fields to Primavera config template for SQL auth mode support.
+
+### Decisions Recorded
+- **DEC-101**: Primavera provider activation lifecycle — implementation ≠ activation.
+
+## [2.58.0] - 2026-04-14
+
+### Added
+- **Generic Integration Foundation (Phase 0)**: Implemented a provider-agnostic integration platform foundation supporting multiple external systems and business domains.
+  - **Domain Entities**: `IntegrationProvider` (registry), `IntegrationConnectionStatus` (runtime health), `IntegrationProviderSettings` (connection config). All entities are generic — no coupling to specific providers or business domains.
+  - **Application Layer**: `IIntegrationProvider` (minimal base contract: identity + connection test), `IIntegrationHealthService` (provider-agnostic aggregation), standardized DTOs (`IntegrationHealthSummaryDto`, `IntegrationProviderStatusDto`, `IntegrationConnectionTestResultDto`).
+  - **Constants**: `IntegrationStatusCodes` (stable machine-readable: `HEALTHY`, `UNHEALTHY`, `UNREACHABLE`, `NOT_CONFIGURED`, `PLANNED`), `IntegrationLogEventTypes` (standardized `AdminLogWriter` event types).
+  - **Infrastructure**: `IntegrationHealthService` — resolves providers from DI, aggregates status, executes connection tests, persists results, and logs events.
+  - **API**: `IntegrationHealthController` — separate from `AdminDiagnosticsController`. `GET /api/admin/integrations/health` (summary), `POST /api/admin/integrations/{code}/test-connection` (manual test).
+  - **Database**: EF Core migration `AddIntegrationFoundation` creating 3 tables with seed data for `PRIMAVERA` (ERP/SQL) and `INNUX` (Biometric/SQL) — both planned/disabled.
+  - **Frontend**: Fully data-driven `IntegrationHealth.tsx` — renders provider cards dynamically from API. OCR explicitly separated as "internal service" from external providers. Test Connection button guarded (disabled for planned/unconfigured/unimplemented providers).
+  - **Configuration**: `Integrations` section in `appsettings.json` with Primavera + Innux connection templates (disabled by default).
+  - **Documentation**: Created `docs/INTEGRATION_PLAYBOOK.md` — comprehensive step-by-step guide for adding new providers.
+
+### Decisions Recorded
+- **DEC-100**: Generic integration foundation architecture — provider-agnostic, capabilities-as-metadata, strict settings separation.
+
+## [2.57.0] - 2026-04-14
+
+### Changed
+- **RequestEdit Component Decomposition (DEC-096)**: Decomposed the monolithic `RequestEdit.tsx` (~1,274 lines) into a parent-child architecture (~660 lines in parent + 4 presentational children).
+  - **Extracted Components**: `RequestGeneralDataSection`, `RequestFinancialSummary`, `RequestStatusActionPanels`, `RequestLineItemsSection` in `src/frontend/src/pages/Requests/components/`.
+  - **Architecture**: Parent retains all state, handlers, permissions, and workflow logic. Children are strictly presentational, receiving data and callbacks via props.
+- **CSS Module Migration**: Replaced five shared inline style helpers (`inputStyle`, `sectionTitleStyle`, `labelStyle`, `getInputStyle`, `renderFieldError`) with semantic CSS classes in `request-edit.module.css`.
+- **Route-Level Code Splitting (DEC-099)**: Implemented `React.lazy()` + `Suspense` for ~20 page components in `App.tsx`. Eagerly loaded: `LoginPage`, `ResetPasswordPage`, `ChangePasswordPage`, `Dashboard`. Core JS bundle reduced from ~1,509 kB to ~446 kB (~70%).
+- **LoadingSkeleton Fallback**: Introduced `LoadingSkeleton` component (`src/frontend/src/components/ui/LoadingSkeleton.tsx`) as the layout-aware fallback for lazy-loaded routes.
+- **Dead Import Cleanup**: Removed 13 dead imports (10 Lucide icons, 3 components) from `RequestEdit.tsx` post-extraction.
+
+### Decisions Recorded
+- **DEC-096**: Incremental decomposition of `RequestEdit.tsx` with parent-orchestrator pattern.
+- **DEC-097**: Explicit skip of generic `FormField` abstraction due to high field-type variation.
+- **DEC-098**: Deferred accessibility/focus and motion-polish work to a future dedicated cycle.
+- **DEC-099**: Route-level code splitting strategy with eager/lazy classification.
+
+## [2.56.0] - 2026-04-13
+
+### Added
+- **PO Correction Forward Exit**: Completed the existing `WAITING_PO_CORRECTION` operational loop, which was previously a dead-end status.
+  - **Backend**: `RegisterPo` endpoint now accepts `WAITING_PO_CORRECTION` as a valid source status, enabling the Buyer to re-register a corrected PO after Finance return.
+  - **Conditional Action Codes**: Uses `REGISTER_PO` for initial registration (from `APPROVED`) and `REREGISTER_PO` for correction flow (from `WAITING_PO_CORRECTION`), preserving distinct audit history.
+  - **Source-Status Guard (Finance Return)**: `ReturnForAdjustment` now validates that the request is in `PO_ISSUED` or `PAYMENT_SCHEDULED` before allowing a return. Returns from `PAYMENT_COMPLETED` or `WAITING_PO_CORRECTION` are blocked.
+  - **Notification**: New `PO_CORRECTION_COMPLETED` event code notifies plant-scoped Finance users when a Buyer completes the correction.
+  - **Frontend**: Added `CORRIGIR P.O` button (orange, visually distinct from `REGISTRAR P.O`) to the operational panel for `WAITING_PO_CORRECTION` status. Integrated `CorrectPoModal` in `RequestEdit.tsx`.
+  - **Guidance**: Added `WAITING_PO_CORRECTION` to `getRequestGuidance()` — Responsible: Comprador, Action: Corrigir P.O devolvida por Finanças.
+  - **Line Item Sync**: `WAITING_PO_CORRECTION` syncs items to `WAITING_ORDER` (idempotent — items are already in this state from prior `PO_ISSUED`).
+  - **Business Decision**: Returning from `PAYMENT_SCHEDULED` intentionally invalidates the prior scheduling. After correction, Finance must re-evaluate from `PO_ISSUED`.
+
+### Changed
+- **WORKFLOW_ARCHITECTURE.md**: Added Section 6 (Finance Return / PO Correction Loop) and updated state machine tables, permission matrix, and attachment deletion rules.
+
+## [2.55.0] - 2026-04-13
+
+### Added
+- **Financial Integrity Gate**: Implemented a server-side financial checkpoint at the quotation completion stage (`CompleteQuotation`).
+  - Persists the OCR-extracted grand total (`OcrOriginalGrandTotal`) on the `Request` entity during OCR extraction as the integrity baseline.
+  - Validates the completing quotation total against the OCR baseline using centralized tolerance (`max(1.0, 0.1% of original)`, configurable in `RequestConstants.FinancialIntegrity`).
+  - Blocks progression (`409 Conflict`) with structured variance data when mismatch exceeds tolerance or unresolved reconciliation records exist.
+  - Supports explicit buyer override with mandatory written justification.
+  - Full audit trail: logs detection (`FINANCIAL_INTEGRITY_BLOCKED`), override acceptance (`FINANCIAL_INTEGRITY_OVERRIDE`) in `RequestStatusHistory` and `AdminLog`.
+  - Frontend: Added Financial Integrity Modal in Quotation Management workspace (`BuyerItemsList.tsx`) with OCR vs Quotation comparison table, variance display, and override justification flow.
+  - RequestEdit path surfaces integrity failures as modal feedback, directing buyers to the Quotation Management workspace for the override flow.
+
+## [2.54.0] - 2026-04-13
+
+### Added
+- **Enriched Area Approver Notifications**: The `WorkflowNotificationOrchestrator` now intercepts payment events (`SCHEDULED`/`PAID`) and overrides the recipient footprint. Area Approvers now receive real-time financial transparency emails detailing the specific request amount, total monthly departmental spend, and percentage impact of the request on the department's monthly activity.
+- **Approval Decision Guide**: Deployed a "Manual de Aprovação" helper to the `ApprovalDetailPanel.tsx` component, introducing an interactive, styled HTML modal containing step-by-step checklists, financial definition clarity, and guidance on required cost center bulk allocations.
+- **Quotation Management UX**: Replaced the previous standalone `Link` page routing in `BuyerItemsList` with a frictionless, localized Quick View `RequestDrawerPresentation`, eliminating context loss during quote inspection.
+
+## [2.53.0] - 2026-04-13
+
+### Added
+- **Workflow Notification Role-Casting**: Expanded the Orchestrator to dispatch role-specific email subjects, headlines, and contextual comments based cleanly on the actor's jurisdiction (Requester, Next Approver, or Buyer).
+- **Self-Notification Lift**: Removed the `BypassSelfNotifyRule` suppression wall, allowing users to universally retain an email trail of requests they submitted onto their own governed departments. 
+- **Admin System Logs Enhancement**: The `UsersController` backend now natively integrates `_adminLogWriter`, projecting explicit diagnostic telemetry trails on HTTP 400 violations caused by duplicate user/email registrations.
+
+### Fixed
+- **In-App Duplicate Handlers**: Removed obsolete `window.alert()` from identical user collisions inside `UserManagement.tsx`. Errors are now parsed and channeled into an organic top-bound red banner mapped with React local state.
 
 ## [2.52.0] - 2026-04-12
 
@@ -936,3 +3285,4 @@ All notable changes to this project will be documented in this file.
 ### Notes
 
 - Initial baseline version for project documentation structure
+

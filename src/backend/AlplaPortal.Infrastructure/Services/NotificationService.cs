@@ -36,19 +36,19 @@ public class NotificationService : INotificationService
             var opCounts = new Dictionary<string, (int Count, string Title, string Description, string TargetPath, string Type)>();
 
             // 2.1 Approvals
-            bool isAdmin = roles.Contains("System Administrator");
+            bool isAdmin = roles.Contains(RoleConstants.SystemAdministrator);
             bool isAreaApprover = roles.Contains("Area Approver");
             bool isFinalApprover = roles.Contains("Final Approver");
             var pendingApprovals = await query.CountAsync(r => 
                 (r.Status!.Code == "WAITING_AREA_APPROVAL" && (r.AreaApproverId == userId || roles.Contains("Area Approver"))) ||
                 ((r.Status.Code == "WAITING_FINAL_APPROVAL" || r.Status.Code == "WAITING_COST_CENTER") && (r.FinalApproverId == userId || roles.Contains("Final Approver"))) ||
-                (roles.Contains("System Administrator") && (r.Status.Code == "WAITING_AREA_APPROVAL" || r.Status.Code == "WAITING_FINAL_APPROVAL" || r.Status.Code == "WAITING_COST_CENTER"))
+                (roles.Contains(RoleConstants.SystemAdministrator) && (r.Status.Code == "WAITING_AREA_APPROVAL" || r.Status.Code == "WAITING_FINAL_APPROVAL" || r.Status.Code == "WAITING_COST_CENTER"))
             );
             if (pendingApprovals > 0)
                 opCounts[NotificationCategories.Approval] = (pendingApprovals, "Aprovações Pendentes", $"Tens {pendingApprovals} pedidos aguardando a tua decisão.", "/requests?statusCodes=WAITING_AREA_APPROVAL,WAITING_FINAL_APPROVAL,WAITING_COST_CENTER", NotificationTypes.Warning);
 
             // 2.2 Quotations
-            if (roles.Contains("Buyer") || roles.Contains("System Administrator"))
+            if (roles.Contains("Buyer") || roles.Contains(RoleConstants.SystemAdministrator))
             {
                 var waitingQuotation = await query.CountAsync(r => r.Status!.Code == "WAITING_QUOTATION");
                 if (waitingQuotation > 0)
@@ -61,7 +61,7 @@ public class NotificationService : INotificationService
                 opCounts[NotificationCategories.Receipt] = (waitingReceipt, "Pronto para Receção", $"{waitingReceipt} pedidos estão com receção pendente de mercadoria.", "/receiving/workspace", NotificationTypes.Success);
 
             // 2.4 Finance
-            if (roles.Contains("Finance") || roles.Contains("System Administrator"))
+            if (roles.Contains("Finance") || roles.Contains(RoleConstants.SystemAdministrator))
             {
                 var waitingPayment = await query.CountAsync(r => r.Status!.Code == "PO_ISSUED");
                 if (waitingPayment > 0)
@@ -164,7 +164,7 @@ public class NotificationService : INotificationService
                         currentCount = await query.CountAsync(r => 
                             (r.Status!.Code == "WAITING_AREA_APPROVAL" && (r.AreaApproverId == userId || roles.Contains("Area Approver"))) ||
                             ((r.Status.Code == "WAITING_FINAL_APPROVAL" || r.Status.Code == "WAITING_COST_CENTER") && (r.FinalApproverId == userId || roles.Contains("Final Approver"))) ||
-                            (roles.Contains("System Administrator") && (r.Status.Code == "WAITING_AREA_APPROVAL" || r.Status.Code == "WAITING_FINAL_APPROVAL" || r.Status.Code == "WAITING_COST_CENTER"))
+                            (roles.Contains(RoleConstants.SystemAdministrator) && (r.Status.Code == "WAITING_AREA_APPROVAL" || r.Status.Code == "WAITING_FINAL_APPROVAL" || r.Status.Code == "WAITING_COST_CENTER"))
                         );
                         break;
                     case NotificationCategories.Quotation:
@@ -232,7 +232,7 @@ public class NotificationService : INotificationService
                     NotificationCategories.Approval => await query.CountAsync(r => 
                         (r.Status!.Code == "WAITING_AREA_APPROVAL" && (r.AreaApproverId == userId || roles.Contains("Area Approver"))) ||
                         ((r.Status.Code == "WAITING_FINAL_APPROVAL" || r.Status.Code == "WAITING_COST_CENTER") && (r.FinalApproverId == userId || roles.Contains("Final Approver"))) ||
-                        (roles.Contains("System Administrator") && (r.Status.Code == "WAITING_AREA_APPROVAL" || r.Status.Code == "WAITING_FINAL_APPROVAL" || r.Status.Code == "WAITING_COST_CENTER"))
+                        (roles.Contains(RoleConstants.SystemAdministrator) && (r.Status.Code == "WAITING_AREA_APPROVAL" || r.Status.Code == "WAITING_FINAL_APPROVAL" || r.Status.Code == "WAITING_COST_CENTER"))
                     ),
                     NotificationCategories.Quotation => await query.CountAsync(r => r.Status!.Code == "WAITING_QUOTATION"),
                     NotificationCategories.Receipt => await query.CountAsync(r => r.Status!.Code == "WAITING_RECEIPT" || r.Status.Code == "PARTIALLY_RECEIVED"),
@@ -370,7 +370,7 @@ public class NotificationService : INotificationService
     }
     private async Task<IQueryable<Request>> GetScopedRequestsQueryInternal(Guid userId, List<string> roles)
     {
-        if (roles.Contains("System Administrator"))
+        if (roles.Contains(RoleConstants.SystemAdministrator))
         {
             return _context.Requests.AsNoTracking();
         }

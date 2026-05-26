@@ -7,6 +7,8 @@ public static class NotificationCategories
     public const string Receipt = "RECEIPT";
     public const string Payment = "PAYMENT";
     public const string Info = "INFO";
+    public const string HRLeave = "HR_LEAVE";
+    public const string ProformaDeadline = "PROFORMA_DEADLINE";
 }
 
 public static class NotificationTypes

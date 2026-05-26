@@ -1,0 +1,124 @@
+﻿
+============================================
+=== FIX-0: Horarios table actual columns ===
+============================================
+COLUMN_NAME | DATA_TYPE
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+IDHorario | int
+Codigo | nvarchar
+Descricao | nvarchar
+HorasMinimas | datetime
+HorasNormais | datetime
+InicioDia | datetime
+FimDia | datetime
+IDEntidade | int
+Coluna1 | int
+Coluna2 | int
+Coluna3 | int
+Coluna4 | int
+MaxColuna1 | datetime
+MaxColuna2 | datetime
+MaxColuna3 | datetime
+MaxColuna4 | datetime
+ArredColuna1 | datetime
+ArredColuna2 | datetime
+ArredColuna3 | datetime
+ArredColuna4 | datetime
+Marcacao1Ini | datetime
+Marcacao1Fim | datetime
+Marcacao2Ini | datetime
+Marcacao2Fim | datetime
+PrimeiraParteIni | datetime
+PrimeiraParteFim | datetime
+SegundaParteIni | datetime
+SegundaParteFim | datetime
+Coluna5 | int
+Coluna6 | int
+Coluna7 | int
+MaxColuna5 | datetime
+MaxColuna6 | datetime
+MaxColuna7 | datetime
+ArredColuna5 | datetime
+ArredColuna6 | datetime
+ArredColuna7 | datetime
+MA1Ini | datetime
+MA1Fim | datetime
+MA1Hora | datetime
+MA2Ini | datetime
+MA2Fim | datetime
+MA2Hora | datetime
+MA3Ini | datetime
+MA3Fim | datetime
+MA3Hora | datetime
+MA4Ini | datetime
+MA4Fim | datetime
+MA4Hora | datetime
+MAGerarSempre | bit
+Cor | nvarchar
+Sigla | nvarchar
+DiaAnterior | bit
+Red | int
+Green | int
+Blue | int
+FlexibilidadePeriodosFixos | int
+FlexibilidadePeriodosFixosArredondar | int
+CompletarPeriodos | bit
+NumeroMarcacoes | int
+PeriodoOpcionalEntradaServico | bit
+DividirAusencias | bit
+ToleranciaParagem | bit
+OcultarIndefinidoParagens | bit
+IgnorarMarcacoes | bit
+ToleranciaMaximaDiaria | datetime
+Inativo | bit
+ToleranciaGeraDBH | bit
+ToleranciaDBH | datetime
+AmpliarPeriodosObrigatorios | bit
+PrimeiraUltimaMarcacao | bit
+PrimeiraUltimaMarcacaoComSS | bit
+FaltaNaoCumpreNumeroMarcacoes | bit
+HorasBancoFolgas | datetime
+ExtrasNaoContamParaHorasMinimas | bit
+HorasMinimasIgualHorasNormais | bit
+HoraInicioIncidencias | datetime
+HoraFimIncidencias | datetime
+ScriptMarcacoesAutomaticas | nvarchar
+ScriptPreTolerancia | nvarchar
+ParagemMaximaDiaria | datetime
+ParagemDepoisPrimeiraMarcacao | bit
+PodeMarcarPrevencao | bit
+NumeroMinimoMarcacoes | int
+NumeroMaximoMarcacoes | int
+DiaFolga | bit
+HorarioComoFolga | bit
+DuracaoEmHorariosSemHorasNormais | datetime
+HorarioDeInsencao | bit
+TempoMinimoParagemComTempoTolerancia | bit
+(Rows: 90)
+
+============================================
+=== Q2-FIXED: Alteracoes + Schedule for 17->EN days ===
+============================================
+IDFuncionario | EmployeeName | AttDate | Entrada1 | Saida1 | Entrada2 | Saida2 | Marcacao | Objectivo | Falta | Ausencia | Validado | TipoAnomalia | IDHorario | HorarioCodigo | HorarioDescricao | HorasNormais
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+1411 |  | 2024-06-17 | 17:21:00 |  |  |  | 2 | 08:00:00 | 08:00:00 | 00:00:00 | True |  | 1 | DIASEM | Dia de Semana | 08:00:00
+1519 | ANDRE JOSE FRANCISCO | 2024-07-09 | 08:00:00 |  |  |  | 2 | 09:30:00 | 00:00:00 | 00:00:00 | True |  | 20 |  |  | 
+1570 | ABEL BEIRÃO DOMINGOS | 2024-07-01 | 08:04:00 | 11:49:00 |  | 17:38:00 | 2 | 08:00:00 | 09:30:00 | 00:00:00 | True |  | 21 | 08 as 17:30 | 08 as 17:30 | 08:00:00
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-06 | 07:43:00 | 17:41:00 |  |  | 0 | 08:00:00 | 00:00:00 | 00:00:00 | True |  | 21 | 08 as 17:30 | 08 as 17:30 | 08:00:00
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-08 | 07:53:00 | 17:36:00 |  |  | 0 | 08:00:00 | 00:00:00 | 00:00:00 | True |  | 21 | 08 as 17:30 | 08 as 17:30 | 08:00:00
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-13 | 08:09:00 | 17:32:00 |  |  | 0 | 08:00:00 | 00:00:00 | 00:00:00 | True |  | 21 | 08 as 17:30 | 08 as 17:30 | 08:00:00
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-14 | 08:08:00 | 17:56:00 |  |  | 0 | 08:00:00 | 00:00:00 | 00:00:00 | True |  | 21 | 08 as 17:30 | 08 as 17:30 | 08:00:00
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-15 | 07:54:00 | 18:02:00 |  |  | 0 | 08:00:00 | 00:00:00 | 00:00:00 | True |  | 21 | 08 as 17:30 | 08 as 17:30 | 08:00:00
+1570 | ABEL BEIRÃO DOMINGOS | 2026-04-16 | 08:14:00 |  |  |  | 2 | 08:00:00 | 09:30:00 | 00:00:00 | True |  | 21 | 08 as 17:30 | 08 as 17:30 | 08:00:00
+(Rows: 9)
+
+============================================
+=== Q4-FIXED: Schedule period details for affected schedules ===
+============================================
+IDHorario | Codigo | Descricao | HorasNormais | PeriodType | PeriodInicio | PeriodFim | TolEntrada | TolSaida
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+1 | DIASEM | Dia de Semana | 08:00:00 | Obrigatório | 08:30:00 | 17:00:00 | 00:10:00 | 00:00:00
+21 | 08 as 17:30 | 08 as 17:30 | 08:00:00 | Obrigatório | 08:00:00 | 17:30:00 | 00:15:00 | 00:45:00
+(Rows: 2)
+
+=== Fix queries complete ===

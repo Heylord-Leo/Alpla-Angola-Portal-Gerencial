@@ -1,0 +1,75 @@
+using AlplaPortal.Application.DTOs.Integration;
+
+namespace AlplaPortal.Application.Interfaces.Integration;
+
+/// <summary>
+/// Innux processed attendance data — read-only.
+///
+/// Queries dbo.Alteracoes (processed daily attendance) and related tables.
+/// All methods accept pre-scoped Innux employee IDs — this service does NOT
+/// apply Portal ACL or scope filtering. Scoping is resolved at the controller
+/// layer using GetScopedEmployeesQuery() → InnuxEmployeeId extraction.
+///
+/// Scope constraints:
+/// - Read-only: SELECT only, parameterized queries
+/// - Date-range filtering required for all transactional queries
+/// - LEFT JOIN for all Innux reference tables (no FK constraints exist)
+/// - Time values converted from Innux datetime-as-duration in the service layer
+/// </summary>
+public interface IInnuxAttendanceService
+{
+    /// <summary>
+    /// Retrieves daily attendance summaries for a set of employees within a date range.
+    /// Returns one AttendanceDaySummaryDto per employee per day.
+    /// Used for calendar grid rendering.
+    /// </summary>
+    /// <param name="innuxEmployeeIds">Pre-scoped Innux employee IDs.</param>
+    /// <param name="startDate">Inclusive start date.</param>
+    /// <param name="endDate">Inclusive end date.</param>
+    Task<IEnumerable<AttendanceDaySummaryDto>> GetDailyAttendanceAsync(
+        IEnumerable<int> innuxEmployeeIds,
+        DateTime startDate,
+        DateTime endDate);
+
+    /// <summary>
+    /// Retrieves full drill-down detail for one employee on one day.
+    /// Includes the processed summary, raw punches, and period breakdown.
+    /// </summary>
+    /// <param name="innuxEmployeeId">Single Innux employee ID.</param>
+    /// <param name="date">Target date.</param>
+    Task<AttendanceDayDetailDto?> GetDayDetailAsync(int innuxEmployeeId, DateTime date);
+
+    /// <summary>
+    /// Computes basic and overtime worked minutes per employee per day from AlteracoesPeriodos.
+    /// Groups non-dispensed periods by CodigosTrabalho type (Normal → Basic, Extra → Overtime).
+    /// Returns a dictionary keyed by (InnuxEmployeeId, Date) for efficient calendar merging.
+    /// </summary>
+    /// <param name="innuxEmployeeIds">Pre-scoped Innux employee IDs.</param>
+    /// <param name="startDate">Inclusive start date.</param>
+    /// <param name="endDate">Inclusive end date.</param>
+    Task<Dictionary<(int EmployeeId, DateTime Date), WorkedHoursDto>> GetWorkedHoursAsync(
+        IEnumerable<int> innuxEmployeeIds,
+        DateTime startDate,
+        DateTime endDate);
+
+    /// <summary>
+    /// Retrieves raw punch data from TerminaisMarcacoes for a set of employees over a date range.
+    /// This is used to build the up to 4 pairs of Entry/Exit records dynamically for the monthly report.
+    /// </summary>
+    Task<IEnumerable<AttendancePunchDto>> GetRawPunchesAsync(
+        IEnumerable<int> innuxEmployeeIds,
+        DateTime startDate,
+        DateTime endDate);
+
+    /// <summary>
+    /// Returns the last real punch date (MAX(Data) from dbo.TerminaisMarcacoes) for each employee.
+    /// Uses terminal punches (not Alteracoes, which includes pre-generated scheduled records)
+    /// to accurately determine physical attendance activity.
+    /// Used by the 30-day attendance activity filter to classify employees.
+    /// Employees not returned have no Innux terminal punch records.
+    /// Read-only: SELECT only.
+    /// </summary>
+    /// <param name="innuxEmployeeIds">Pre-scoped Innux employee IDs.</param>
+    Task<Dictionary<int, DateTime>> GetLastAttendanceDatesAsync(
+        IEnumerable<int> innuxEmployeeIds);
+}

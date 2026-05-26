@@ -285,15 +285,42 @@ export function RequestsTableWidget({
                                             </td>
                                             {/* Data Limite */}
                                             <td style={{ padding: '12px 20px', border: 'none' }}>
-                                                {['COMPLETED', 'QUOTATION_COMPLETED', 'PAID', 'PAYMENT_COMPLETED'].includes(req.statusCode) ? (
-                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
-                                                        <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-status-emerald)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                                            {isPayment ? 'Pagamento Realizado em' : 'Recebido em'}
-                                                        </span>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--color-text-main)', fontWeight: 600 }}>
-                                                            <CalendarClock size={12} style={{ color: 'var(--color-status-emerald)' }} />
-                                                            {req.completedAtUtc ? new Date(req.completedAtUtc).toLocaleDateString('pt-BR') : 'Data não disponível'}
+                                                {['CANCELLED', 'REJECTED'].includes(req.statusCode) ? (
+                                                    <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>-----</span>
+                                                ) : ['WAITING_RECEIPT', 'COMPLETED', 'QUOTATION_COMPLETED', 'PAID', 'PAYMENT_COMPLETED'].includes(req.statusCode) ? (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '3px' }}>
+                                                        {/* Original request deadline */}
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                            <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '42px' }}>
+                                                                Pedido:
+                                                            </span>
+                                                            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 500 }}>
+                                                                {deadline ? deadline.toLocaleDateString('pt-BR') : 'N/A'}
+                                                            </span>
                                                         </div>
+                                                        {/* Payment date */}
+                                                        {req.paymentCompletedAtUtc ? (
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                <span style={{ fontSize: '0.6rem', fontWeight: 800, color: 'var(--color-status-emerald)', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '42px' }}>
+                                                                    Pago em:
+                                                                </span>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                    <CreditCard size={10} style={{ color: 'var(--color-status-emerald)' }} />
+                                                                    <span style={{ fontSize: '0.75rem', color: 'var(--color-status-emerald)', fontWeight: 700 }}>
+                                                                        {new Date(req.paymentCompletedAtUtc).toLocaleDateString('pt-BR')}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                <span style={{ fontSize: '0.6rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '42px' }}>
+                                                                    Pago em:
+                                                                </span>
+                                                                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 600, fontStyle: 'italic' }}>
+                                                                    não informado
+                                                                </span>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 ) : deadline ? (
                                                     <ModernTooltip content={urgency ? urgency.description : 'Data limite'} side="top">
@@ -326,15 +353,19 @@ export function RequestsTableWidget({
                                             </td>
                                             {/* Valor */}
                                             <td style={{ padding: '12px 20px', textAlign: 'right', border: 'none' }}>
-                                                <p style={{
-                                                    fontSize: '0.85rem',
-                                                    fontWeight: 800,
-                                                    color: 'var(--color-text-main)',
-                                                    margin: 0,
-                                                    whiteSpace: 'nowrap',
-                                                }}>
-                                                    {req.currencyCode || 'AOA'} {(req.estimatedTotalAmount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                                </p>
+                                                {['CANCELLED', 'REJECTED'].includes(req.statusCode) ? (
+                                                    <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>-----</span>
+                                                ) : (
+                                                    <p style={{
+                                                        fontSize: '0.85rem',
+                                                        fontWeight: 800,
+                                                        color: 'var(--color-text-main)',
+                                                        margin: 0,
+                                                        whiteSpace: 'nowrap',
+                                                    }}>
+                                                        {req.currencyCode || 'AOA'} {(req.estimatedTotalAmount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                    </p>
+                                                )}
                                             </td>
                                             {/* Ações */}
                                             <td style={{ padding: '12px 20px', textAlign: 'center', border: 'none' }} onClick={(e) => e.stopPropagation()}>

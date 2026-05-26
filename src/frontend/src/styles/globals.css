@@ -1,4 +1,5 @@
 @import './tokens.css';
+@import './sync-workspace.css';
 @import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&family=Space+Grotesk:wght@300..700&display=swap');
 
 * {
@@ -96,13 +97,8 @@ a:hover {
 }
 
 .btn-primary:active:not(:disabled) {
-    transform: translateY(0);
+    transform: translateY(1px);
     box-shadow: var(--shadow-sm);
-}
-
-.btn-primary:active:not(:disabled) {
-    transform: translate(2px, 2px);
-    box-shadow: 2px 2px 0px var(--color-border-heavy);
 }
 
 .btn-primary:disabled {
@@ -410,6 +406,12 @@ tr:hover td {
     to { transform: rotate(360deg); }
 }
 
+@keyframes slideInFromRight {
+    from { transform: translateX(100%); opacity: 0; }
+    to   { transform: translateX(0);    opacity: 1; }
+}
+
+
 /* Section Highlighting */
 .pulse-highlight {
     animation: section-pulse 2s ease-in-out;
@@ -428,5 +430,57 @@ tr:hover td {
     100% {
         box-shadow: var(--shadow-brutal);
         transform: scale(1);
+    }
+}
+
+/* ─────────────────────────────────────────────────────── */
+/*  Global Print Rules — Minimal App Shell Override        */
+/*  Hides sidebar, topbar, and flattens the grid layout    */
+/*  so printable content fills the entire page.            */
+/*  Report-specific print styles live in their own CSS.    */
+/* ─────────────────────────────────────────────────────── */
+
+@media print {
+    html, body {
+        background: white !important;
+        color: black !important;
+    }
+
+    /* Hide app chrome */
+    .app-shell > header,
+    .app-shell-sidebar {
+        display: none !important;
+    }
+
+    /* Flatten layout */
+    .app-shell {
+        display: block !important;
+        min-height: auto !important;
+        background: white !important;
+    }
+
+    .app-shell-grid {
+        display: block !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        gap: 0 !important;
+    }
+
+    .app-shell-main {
+        opacity: 1 !important;
+        background: white !important;
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        min-height: auto !important;
+        transform: none !important;
+    }
+
+    /* Visibility utilities */
+    .no-print,
+    .screen-only {
+        display: none !important;
     }
 }

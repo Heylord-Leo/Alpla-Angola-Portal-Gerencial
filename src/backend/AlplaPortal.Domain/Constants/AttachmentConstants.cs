@@ -8,5 +8,6 @@ public static class AttachmentConstants
         public const string PurchaseOrder = "PO";
         public const string PaymentSchedule = "PAYMENT_SCHEDULE";
         public const string PaymentProof = "PAYMENT_PROOF";
+        public const string Receipt = "RECEIPT";
     }
 }

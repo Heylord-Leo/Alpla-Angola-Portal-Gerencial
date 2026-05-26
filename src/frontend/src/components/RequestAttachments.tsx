@@ -29,6 +29,7 @@ const TYPE_LABELS: Record<string, string> = {
     'PO': 'P.O',
     'PAYMENT_SCHEDULE': 'Cronograma de Pagamento',
     'PAYMENT_PROOF': 'Comprovante de Pagamento',
+    'RECEIPT': 'Recibo',
     'SUPPORTING': 'Documentos de Apoio'
 };
 
@@ -59,6 +60,8 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
                 return ['PO_ISSUED', 'PAYMENT_SCHEDULED'].includes(status);
             case 'PAYMENT_PROOF':
                 return ['PO_ISSUED', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT'].includes(status);
+            case 'RECEIPT':
+                return ['WAITING_RECEIPT'].includes(status);
             default:
                 return false;
         }
@@ -76,6 +79,8 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
                 return ['PO_ISSUED', 'PAYMENT_SCHEDULED'].includes(status);
             case 'PAYMENT_PROOF':
                 return ['PO_ISSUED', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT'].includes(status);
+            case 'RECEIPT':
+                return ['WAITING_RECEIPT'].includes(status);
             default:
                 return ['DRAFT', 'AREA_ADJUSTMENT', 'FINAL_ADJUSTMENT', 'WAITING_QUOTATION'].includes(status);
         }
@@ -127,8 +132,8 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
             backgroundColor: 'var(--color-bg-surface)',
             padding: '32px',
             borderRadius: 'var(--radius-md)',
-            boxShadow: highlight ? '0 0 0 4px #EF4444, var(--shadow-brutal)' : 'var(--shadow-brutal)',
-            border: '2px solid var(--color-border-heavy)',
+            boxShadow: highlight ? '0 0 0 3px rgba(239,68,68,0.35), var(--shadow-md)' : 'var(--shadow-md)',
+            border: '1px solid var(--color-border)',
             display: 'flex',
             flexDirection: 'column',
             gap: '24px',
@@ -160,7 +165,7 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
 
                     // Logic: Some sections shouldn't even be shown if they don't apply to the request type
                     // After PO_ISSUED, both types follow the financial flow, so they stay visible
-                    const isFinancialType = ['PAYMENT_SCHEDULE', 'PAYMENT_PROOF'].includes(code);
+                    const isFinancialType = ['PAYMENT_SCHEDULE', 'PAYMENT_PROOF', 'RECEIPT'].includes(code);
                     if (isFinancialType && !['PO_ISSUED', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'COMPLETED', 'QUOTATION_COMPLETED'].includes(status || '')) {
                         return null;
                     }

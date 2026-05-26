@@ -31,6 +31,7 @@ public class SaveQuotationItemDto
     public decimal DiscountAmount { get; set; }
     public decimal? DiscountPercent { get; set; }
     public int? IvaRateId { get; set; }
+    public int? ItemCatalogId { get; set; } // Optional catalog item linkage
 }
 
 public class SavedQuotationDto
@@ -76,8 +77,12 @@ public class SavedQuotationItemDto
     public decimal? DiscountPercent { get; set; }
 
     public decimal GrossSubtotal { get; set; }
+    public decimal TaxableBase { get; set; }
     public decimal IvaAmount { get; set; }
     public decimal LineTotal { get; set; }
+
+    public int? ItemCatalogId { get; set; }
+    public string? ItemCatalogCode { get; set; }
 
     // Receiving Fields
     public decimal ReceivedQuantity { get; set; }

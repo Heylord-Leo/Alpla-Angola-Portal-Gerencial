@@ -12,6 +12,9 @@ public class QuotationItem
     public int? UnitId { get; set; }
     public Unit? Unit { get; set; }
     
+    public int? ItemCatalogId { get; set; }
+    public ItemCatalog? ItemCatalog { get; set; }
+    
     // Deterministic ordering
     public decimal Quantity { get; set; }
     public decimal UnitPrice { get; set; }

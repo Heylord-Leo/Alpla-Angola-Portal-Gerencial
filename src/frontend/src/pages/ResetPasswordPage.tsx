@@ -173,7 +173,7 @@ const ResetPasswordPage: React.FC = () => {
                             boxShadow: 'var(--shadow-md)'
                         }}
                     >
-                        {isLoading ? <Loader2 className="animate-spin" size={20} /> : "Finalizar Acesso Restrito"}
+                        {isLoading ? <Loader2 style={{ animation: 'spin 1s linear infinite' }} size={20} /> : "Finalizar Acesso Restrito"}
                     </button>
                     
                     <button 

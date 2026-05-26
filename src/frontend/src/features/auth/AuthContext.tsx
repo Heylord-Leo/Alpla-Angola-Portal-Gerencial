@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ROLES } from '../../constants/roles';
 
 interface User {
   id: string;
@@ -8,6 +9,7 @@ interface User {
   roles: string[];
   plants: string[];
   departments: string[];
+  managedDepartmentIds: number[];
   mustChangePassword: boolean;
 }
 
@@ -19,6 +21,23 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isAdmin: boolean;
   isLocalManager: boolean;
+  isDepartmentManager: boolean;
+  isViewerManagement: boolean;
+  hasHRAccess: boolean;
+  /**
+   * True if user can access the HR module (at least team-level features).
+   * Includes HR role, admin, Local Manager, Department Manager, or Viewer/Management.
+   * Backend remains the source of truth for data scope (GetScopedEmployeesQuery).
+   */
+  hasHRModuleAccess: boolean;
+  /**
+   * True if user can access HR administration screens (badges, layouts, history,
+   * attendance, schedules, directory, monthly-changes).
+   * Restricted to HR role and System Administrator only.
+   */
+  hasHRAdminAccess: boolean;
+  /** True if user can access the I.T Equipment module. */
+  hasITAccess: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -60,8 +79,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     navigate('/login');
   };
 
-  const isAdmin = user?.roles.includes('System Administrator') || false;
-  const isLocalManager = user?.roles.includes('Local Manager') || false;
+  const isAdmin = user?.roles.includes(ROLES.SYSTEM_ADMINISTRATOR) || false;
+  const isLocalManager = user?.roles.includes(ROLES.LOCAL_MANAGER) || false;
+  const isDepartmentManager = (user?.managedDepartmentIds?.length ?? 0) > 0;
+  const isViewerManagement = user?.roles.includes(ROLES.VIEWER_MANAGEMENT) || false;
+  const hasHRAccess = user?.roles.includes(ROLES.HR) || isAdmin;
+  // HR Admin access: only HR role or System Administrator.
+  // Gates administration screens (badges, layouts, history, attendance, schedules, directory, monthly-changes).
+  const hasHRAdminAccess = hasHRAccess;
+  // HR Module access (team-level features: overview, calendar, leave).
+  // Broader access: HR, admin, Local Manager, Department Manager, Viewer/Management.
+  // Backend GetScopedEmployeesQuery() remains the source of truth for data scope.
+  const hasHRModuleAccess = hasHRAccess || isDepartmentManager || isLocalManager || isViewerManagement;
+  const hasITAccess = user?.roles.includes(ROLES.IT) || isAdmin;
 
   if (isLoading) {
     return null; // Or a loading spinner
@@ -75,7 +105,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       logout, 
       isAuthenticated: !!token,
       isAdmin,
-      isLocalManager
+      isLocalManager,
+      isDepartmentManager,
+      isViewerManagement,
+      hasHRAccess,
+      hasHRModuleAccess,
+      hasHRAdminAccess,
+      hasITAccess
     }}>
       {children}
     </AuthContext.Provider>

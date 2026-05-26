@@ -46,5 +46,6 @@ public record WorkflowEvent
     public Guid? BuyerId { get; init; }
     public Guid? AreaApproverId { get; init; }
     public Guid? FinalApproverId { get; init; }
+    public int? DepartmentId { get; init; }
     public int? PlantId { get; init; }
 }

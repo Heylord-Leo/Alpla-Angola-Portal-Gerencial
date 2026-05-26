@@ -156,6 +156,25 @@ public class AuthService : IAuthService
             .Select(ura => ura.Role.RoleName)
             .ToListAsync();
 
+        // Fetch organizational scope for immediate frontend availability
+        var plantCodes = await _context.UserPlantScopes
+            .Where(ups => ups.UserId == user.Id)
+            .Include(ups => ups.Plant)
+            .Select(ups => ups.Plant.Code ?? string.Empty)
+            .ToListAsync();
+
+        var departmentCodes = await _context.UserDepartmentScopes
+            .Where(uds => uds.UserId == user.Id)
+            .Include(uds => uds.Department)
+            .Select(uds => uds.Department.Code ?? string.Empty)
+            .ToListAsync();
+
+        // HR Module: Fetch departments where this user is the ResponsibleUser (Department Manager)
+        var managedDepartmentIds = await _context.Departments
+            .Where(d => d.ResponsibleUserId == user.Id)
+            .Select(d => d.Id)
+            .ToListAsync();
+
         var token = _jwtService.GenerateToken(user, roles);
         
         await _context.SaveChangesAsync();
@@ -169,6 +188,9 @@ public class AuthService : IAuthService
                 Email = user.Email,
                 FullName = user.FullName,
                 Roles = roles,
+                Plants = plantCodes,
+                Departments = departmentCodes,
+                ManagedDepartmentIds = managedDepartmentIds,
                 MustChangePassword = user.MustChangePassword
             }
         };

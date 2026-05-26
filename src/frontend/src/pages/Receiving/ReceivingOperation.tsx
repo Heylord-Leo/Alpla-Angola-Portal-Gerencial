@@ -118,7 +118,7 @@ const ReceivingOperation: React.FC = () => {
   }, [request, winningQuotation]);
 
   const allReceived = operationalItems.every((item: any) => item.statusCode === 'RECEIVED');
-  const isReadOnly = request?.statusCode === 'COMPLETED';
+  const isReadOnly = request?.statusCode === 'COMPLETED' || request?.statusCode === 'CANCELLED';
 
   const handleOpenModal = (item: any) => {
     setSelectedItem(item);
@@ -149,12 +149,12 @@ const ReceivingOperation: React.FC = () => {
   const handleConfirmFinalize = async () => {
     try {
         setFinalizeProcessing(true);
-        await api.requests.finalize(request!.id, finalizeComment);
+        await api.requests.confirmReceiving(request!.id, finalizeComment);
         setFinalizeModalOpen(false);
-        navigate('/receiving/workspace', { state: { successMessage: 'Pedido finalizado com sucesso.' } });
+        navigate('/receiving/workspace', { state: { successMessage: 'Recebimento confirmado com sucesso.' } });
     } catch (err: any) {
-        console.error('Error finalizing request:', err);
-        setFinalizeFeedback({ type: 'error', message: err.message || 'Falha ao finalizar o pedido.' });
+        console.error('Error confirming receiving:', err);
+        setFinalizeFeedback({ type: 'error', message: err.message || 'Falha ao confirmar recebimento.' });
     } finally {
         setFinalizeProcessing(false);
     }
@@ -212,7 +212,7 @@ const ReceivingOperation: React.FC = () => {
                     style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
                 >
                     <CheckCircle size={18} />
-                    FINALIZAR PEDIDO
+                    CONFIRMAR RECEBIMENTO
                 </button>
             )
         }
@@ -419,7 +419,7 @@ const ReceivingOperation: React.FC = () => {
 
       <ApprovalModal
         show={finalizeModalOpen}
-        type="FINALIZE"
+        type="CONFIRM_RECEIVING"
         onClose={() => {
             setFinalizeModalOpen(false);
             setFinalizeFeedback({ type: 'success', message: null });

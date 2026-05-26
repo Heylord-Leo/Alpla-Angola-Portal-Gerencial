@@ -1,12 +1,18 @@
 using AlplaPortal.Application.Interfaces;
+using AlplaPortal.Application.Interfaces.Contracts;
 using AlplaPortal.Application.Interfaces.Extraction;
+using AlplaPortal.Application.Interfaces.Integration;
 using AlplaPortal.Application.Models.Configuration;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Logging;
 using AlplaPortal.Infrastructure.Services;
+using AlplaPortal.Infrastructure.Services.Contracts;
 using AlplaPortal.Infrastructure.Services.Extraction;
+using AlplaPortal.Infrastructure.Services.Integration;
 using AlplaPortal.Infrastructure.Services.Auth;
 using AlplaPortal.Infrastructure.Services.Approvals;
+using AlplaPortal.Application.Interfaces.MonthlyChanges;
+using AlplaPortal.Infrastructure.Services.MonthlyChanges;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -23,8 +29,8 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHttpClient();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddMemoryCache();
 
-builder.Services.AddHttpClient<IDocumentExtractionProvider, LocalOcrExtractionProvider>();
 builder.Services.AddHttpClient<IDocumentExtractionProvider, OpenAiDocumentExtractionProvider>();
 builder.Services.AddScoped<IDocumentExtractionService, DocumentExtractionService>();
 builder.Services.Configure<DocumentExtractionOptions>(builder.Configuration.GetSection("DocumentExtraction"));
@@ -33,12 +39,56 @@ builder.Services.AddScoped<IDocumentExtractionSettingsService, DocumentExtractio
 // Admin audit log writer — dedicated, best-effort persistence (not a generic ILoggerProvider).
 builder.Services.AddScoped<AdminLogWriter>();
 
+// Integration Foundation — settings cascade resolver + health service + concrete providers.
+builder.Services.AddScoped<IntegrationConfigResolver>();
+builder.Services.AddScoped<IIntegrationProvider, PrimaveraIntegrationProvider>();
+builder.Services.AddScoped<IIntegrationProvider, InnuxIntegrationProvider>();
+builder.Services.AddScoped<IIntegrationProvider, SmtpIntegrationProvider>();
+builder.Services.AddScoped<IIntegrationProvider, OpenAiIntegrationProvider>();
+builder.Services.AddScoped<IIntegrationHealthService, IntegrationHealthService>();
+builder.Services.AddScoped<IIntegrationSettingsService, IntegrationSettingsService>();
+builder.Services.AddScoped<PrimaveraConnectionFactory>();
+builder.Services.AddScoped<IPrimaveraEmployeeService, PrimaveraEmployeeService>();
+builder.Services.AddScoped<IPrimaveraArticleService, PrimaveraArticleService>();
+builder.Services.AddScoped<IPrimaveraSupplierService, PrimaveraSupplierService>();
+builder.Services.AddScoped<IPrimaveraArticleSupplierService, PrimaveraArticleSupplierService>();
+builder.Services.AddScoped<IPrimaveraRequestValidationService, PrimaveraRequestValidationService>();
+builder.Services.AddScoped<IPrimaveraDepartmentSyncService, PrimaveraDepartmentSyncService>();
+builder.Services.AddScoped<IPrimaveraPlantSuggestionService, PrimaveraPlantSuggestionService>();
+builder.Services.AddScoped<InnuxConnectionFactory>();
+builder.Services.AddScoped<IInnuxEmployeeService, InnuxEmployeeService>();
+builder.Services.AddScoped<IInnuxEmployeePhotoService, InnuxEmployeePhotoService>();
+builder.Services.AddScoped<IInnuxAttendanceService, InnuxAttendanceService>();
+builder.Services.AddScoped<IInnuxLookupService, InnuxLookupService>();
+builder.Services.AddScoped<IInnuxScheduleService, InnuxScheduleService>();
+builder.Services.AddScoped<IUnifiedEmployeeProfileService, UnifiedEmployeeProfileService>();
+builder.Services.AddScoped<IHREmployeeSyncService, HREmployeeSyncService>();
+
+// Portal-Side Attendance Interpretation — Phase 1 & 2 (diagnostic, read-only)
+builder.Services.AddScoped<IPortalScheduleResolver, PortalScheduleResolver>();
+builder.Services.AddScoped<IPortalPunchInterpreter, PortalPunchInterpreter>();
+
+// Portal-Side Attendance Interpretation — Phase 3 (diagnostic comparison, read-only)
+builder.Services.AddScoped<IAttendanceComparisonService, AttendanceComparisonService>();
+
+// Monthly Changes Middleware — Innux → Portal → Primavera pipeline
+builder.Services.AddScoped<IMonthlyChangesSyncService, MonthlyChangesSyncService>();
+builder.Services.AddScoped<IOccurrenceDetectionEngine, OccurrenceDetectionEngine>();
+builder.Services.AddScoped<IMonthlyChangesOrchestrator, MonthlyChangesOrchestrator>();
+
 // Notification Service
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IWorkflowNotificationOrchestrator, WorkflowNotificationOrchestrator>();
 
 // Approval Intelligence
 builder.Services.AddScoped<IApprovalIntelligenceService, ApprovalIntelligenceService>();
+
+// Proforma Deadline Alerts — daily background check (first BackgroundService in the project)
+builder.Services.AddHostedService<ProformaDeadlineAlertService>();
+
+// Contract OCR Services
+builder.Services.AddScoped<IContractOcrNormalisationService, ContractOcrNormalisationService>();
+builder.Services.AddScoped<ContractOcrBackgroundProcessor>();
 
 // Auth Services
 builder.Services.Configure<SecurityOptions>(builder.Configuration.GetSection("Security"));
@@ -48,6 +98,8 @@ builder.Services.AddScoped<IJwtService, JwtService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<ISmtpSettingsService, SmtpSettingsService>();
+builder.Services.AddScoped<ITEquipmentAgreementService>();
+builder.Services.AddScoped<ITEquipmentPdfService>();
 
 // Authentication
 var jwtOptions = builder.Configuration.GetSection("Jwt").Get<JwtOptions>();

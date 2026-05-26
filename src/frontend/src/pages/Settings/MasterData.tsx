@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
-import { LookupDto, CurrencyDto, UserDto, SmtpSettingsDto } from '../../types';
+import { LookupDto, CurrencyDto, UserDto } from '../../types';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { KebabMenu } from '../../components/ui/KebabMenu';
 import { ROLES } from '../../constants/roles';
-import { Edit2, Power, PowerOff, Database, Mail, Server, Globe, Shield, Save } from 'lucide-react';
+import { Edit2, Power, PowerOff, Database, Search } from 'lucide-react';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { CatalogItemsPanel } from './CatalogItemsPanel';
@@ -18,6 +19,7 @@ function debounce<T extends (...args: any[]) => void>(fn: T, delay: number) {
 }
 
 export function MasterData() {
+    const navigate = useNavigate();
     const [units, setUnits] = useState<LookupDto[]>([]);
     const [currencies, setCurrencies] = useState<CurrencyDto[]>([]);
     const [needLevels, setNeedLevels] = useState<LookupDto[]>([]);
@@ -27,20 +29,22 @@ export function MasterData() {
     const [costCenters, setCostCenters] = useState<LookupDto[]>([]);
     const [companies, setCompanies] = useState<LookupDto[]>([]);
     const [ivaRates, setIvaRates] = useState<any[]>([]);
+    const [contractTypes, setContractTypes] = useState<LookupDto[]>([]);
     const [users, setUsers] = useState<UserDto[]>([]);
     const [loading, setLoading] = useState(true);
 
     // Form states
-    const [activeTab, setActiveTab] = useState<'units' | 'currencies' | 'needLevels' | 'departments' | 'plants' | 'suppliers' | 'costCenters' | 'ivaRates' | 'companies' | 'catalogItems' | 'smtpSettings'>('units');
+    const [activeTab, setActiveTab] = useState<'units' | 'currencies' | 'needLevels' | 'departments' | 'plants' | 'suppliers' | 'costCenters' | 'ivaRates' | 'companies' | 'contractTypes' | 'catalogItems'>('units');
 
-    // SMTP Settings State
-    const [smtpSettings, setSmtpSettings] = useState<SmtpSettingsDto | null>(null);
-    const [smtpLoading, setSmtpLoading] = useState(false);
-    const [smtpSaving, setSmtpSaving] = useState(false);
-    const [smtpTesting, setSmtpTesting] = useState(false);
-    const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string; responseTimeMs?: number } | null>(null);
-    const [showPasswordField, setShowPasswordField] = useState(false);
-    const [editMode, setEditMode] = useState<{ type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company', id: number | null }>({ type: 'unit', id: null });
+    // Suppliers Search State
+    const [supplierSearchQuery, setSupplierSearchQuery] = useState('');
+    const [supplierCurrentPage, setSupplierCurrentPage] = useState(1);
+    const [supplierTotalCount, setSupplierTotalCount] = useState(0);
+    const SUPPLIERS_PER_PAGE = 15;
+
+    const supplierTotalPages = Math.ceil(supplierTotalCount / SUPPLIERS_PER_PAGE);
+
+    const [editMode, setEditMode] = useState<{ type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company' | 'contractType', id: number | null }>({ type: 'unit', id: null });
     const [formData, setFormData] = useState({
         code: '',
         name: '',
@@ -58,43 +62,58 @@ export function MasterData() {
     const [feedback, setFeedback] = useState<{ message: string, type: FeedbackType } | null>(null);
     const [validationErrors, setValidationErrors] = useState<{ name?: string, primaveraCode?: string }>({});
 
+    const loadSuppliers = useCallback(async (query: string = '', page: number = 1) => {
+        try {
+            setLoading(true);
+            const res = await api.lookups.getSuppliers(true, query, page, SUPPLIERS_PER_PAGE);
+            setSuppliers(res.data);
+            setSupplierTotalCount(res.totalCount);
+        } catch (err) {
+            setFeedback({ message: 'Falha ao carregar fornecedores.', type: 'error' });
+        } finally {
+            setLoading(false);
+        }
+    }, [setFeedback]);
+
+    useEffect(() => {
+        if (activeTab === 'suppliers') {
+            const timer = setTimeout(() => {
+                loadSuppliers(supplierSearchQuery, supplierCurrentPage);
+            }, 500);
+            return () => clearTimeout(timer);
+        }
+    }, [activeTab, supplierSearchQuery, supplierCurrentPage, loadSuppliers]);
+
     const loadData = async () => {
         try {
             setLoading(true);
-            const results = await Promise.allSettled([
-                api.lookups.getUnits(true),
-                api.lookups.getCurrencies(true),
-                api.lookups.getNeedLevels(true),
-                api.lookups.getDepartments(true),
-                api.lookups.getPlants(undefined, true),
-                api.lookups.getSuppliers(true),
-                api.lookups.getCostCenters(true),
-                api.lookups.getCompanies(true),
-                api.lookups.getIvaRates(false),
-                api.users.list()
-            ]);
+            const failures: string[] = [];
+            const names = ['Unidades', 'Moedas', 'Níveis Necessidade', 'Departamentos', 'Plantas', 'Centros Custo', 'Empresas', 'IVA', 'Tipos de Contrato', 'Utilizadores'];
 
-            const [uRes, cRes, nRes, dRes, pRes, sRes, ccRes, coRes, ivaRes, usersRes] = results;
+            // Sequential loading to avoid LocalDB connection pool contention.
+            // Parallel Promise.allSettled caused ~44s delays due to connection queue starvation.
+            // Sequential execution completes all 9 requests in < 1s.
+            const loaders: { load: () => Promise<any>, apply: (data: any) => void }[] = [
+                { load: () => api.lookups.getUnits(true), apply: (d) => setUnits([...d].sort((a: any, b: any) => a.id - b.id)) },
+                { load: () => api.lookups.getCurrencies(true), apply: (d) => setCurrencies([...d].sort((a: any, b: any) => a.id - b.id)) },
+                { load: () => api.lookups.getNeedLevels(true), apply: (d) => setNeedLevels([...d].sort((a: any, b: any) => a.id - b.id)) },
+                { load: () => api.lookups.getDepartments(true), apply: (d) => setDepartments([...d].sort((a: any, b: any) => a.id - b.id)) },
+                { load: () => api.lookups.getPlants(undefined, true), apply: (d) => setPlants([...d].sort((a: any, b: any) => a.id - b.id)) },
+                { load: () => api.lookups.getCostCenters(true), apply: (d) => setCostCenters([...d].sort((a: any, b: any) => a.id - b.id)) },
+                { load: () => api.lookups.getCompanies(true), apply: (d) => setCompanies([...d].sort((a: any, b: any) => a.id - b.id)) },
+                { load: () => api.lookups.getIvaRates(false), apply: (d) => setIvaRates([...d].sort((a: any, b: any) => a.id - b.id)) },
+                { load: () => api.lookups.getContractTypes(true), apply: (d) => setContractTypes([...d].sort((a: any, b: any) => a.id - b.id)) },
+                { load: () => api.users.list(), apply: (d) => setUsers(d) },
+            ];
 
-            if (uRes.status === 'fulfilled') setUnits([...uRes.value].sort((a, b) => a.id - b.id));
-            if (cRes.status === 'fulfilled') setCurrencies([...cRes.value].sort((a, b) => a.id - b.id));
-            if (nRes.status === 'fulfilled') setNeedLevels([...nRes.value].sort((a, b) => a.id - b.id));
-            if (dRes.status === 'fulfilled') setDepartments([...dRes.value].sort((a, b) => a.id - b.id));
-            if (pRes.status === 'fulfilled') setPlants([...pRes.value].sort((a, b) => a.id - b.id));
-            if (sRes.status === 'fulfilled') setSuppliers([...sRes.value].sort((a, b) => a.id - b.id));
-            if (ccRes.status === 'fulfilled') setCostCenters([...ccRes.value].sort((a, b) => a.id - b.id));
-            if (coRes.status === 'fulfilled') setCompanies([...coRes.value].sort((a, b) => a.id - b.id));
-            if (ivaRes.status === 'fulfilled') setIvaRates([...ivaRes.value].sort((a, b) => a.id - b.id));
-            if (usersRes.status === 'fulfilled') setUsers(usersRes.value);
-
-            // Check for failures
-            const failures = results
-                .map((res, i) => ({ res, i }))
-                .filter(x => x.res.status === 'rejected')
-                .map(x => {
-                    const names = ['Unidades', 'Moedas', 'Níveis Necessidade', 'Departamentos', 'Plantas', 'Fornecedores', 'Centros Custo', 'Empresas', 'IVA', 'Utilizadores'];
-                    return names[x.i];
-                });
+            for (let i = 0; i < loaders.length; i++) {
+                try {
+                    const data = await loaders[i].load();
+                    loaders[i].apply(data);
+                } catch {
+                    failures.push(names[i]);
+                }
+            }
 
             if (failures.length > 0) {
                 setFeedback({ 
@@ -130,7 +149,7 @@ export function MasterData() {
         loadData();
     }, []);
 
-    const handleEdit = (item: any, type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company') => {
+    const handleEdit = (item: any, type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company' | 'contractType') => {
         setEditMode({ type, id: item.id });
         setValidationErrors({});
         setFormData({
@@ -150,7 +169,7 @@ export function MasterData() {
     };
 
     const handleCancel = () => {
-        let defaultType: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company' = 'unit';
+        let defaultType: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company' | 'contractType' = 'unit';
         if (activeTab === 'currencies') defaultType = 'currency';
         if (activeTab === 'needLevels') defaultType = 'needLevel';
         if (activeTab === 'departments') defaultType = 'department';
@@ -159,6 +178,7 @@ export function MasterData() {
         if (activeTab === 'costCenters') defaultType = 'costCenter';
         if (activeTab === 'ivaRates') defaultType = 'ivaRate';
         if (activeTab === 'companies') defaultType = 'company';
+        if (activeTab === 'contractTypes') defaultType = 'contractType';
 
         setEditMode({ type: defaultType, id: null });
         setValidationErrors({});
@@ -238,8 +258,18 @@ export function MasterData() {
                 } else {
                     await api.lookups.createCompany(companyPayload);
                 }
+            } else if (activeTab === 'contractTypes') {
+                if (editMode.id) {
+                    await api.lookups.updateContractType(editMode.id, { code: formData.code, name: formData.name });
+                } else {
+                    await api.lookups.createContractType({ code: formData.code, name: formData.name });
+                }
             }
-            await loadData();
+            if (activeTab === 'suppliers') {
+                loadSuppliers(supplierSearchQuery, supplierCurrentPage);
+            } else {
+                await loadData();
+            }
             setFeedback({ message: 'Registo salvo com sucesso.', type: 'success' });
             handleCancel();
         } catch (err: any) {
@@ -247,7 +277,7 @@ export function MasterData() {
         }
     };
 
-    const handleToggleActive = async (id: number, type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company') => {
+    const handleToggleActive = async (id: number, type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company' | 'contractType') => {
         try {
             setFeedback(null);
             if (type === 'unit') await api.lookups.toggleUnit(id);
@@ -258,19 +288,25 @@ export function MasterData() {
             else if (type === 'costCenter') await api.lookups.toggleCostCenter(id);
             else if (type === 'ivaRate') await api.lookups.toggleIvaRate(id);
             else if (type === 'company') await api.lookups.toggleCompany(id);
+            else if (type === 'contractType') await api.lookups.toggleContractType(id);
             else await api.lookups.toggleSupplier(id);
-            await loadData();
+
+            if (type === 'supplier') {
+                loadSuppliers(supplierSearchQuery, supplierCurrentPage);
+            } else {
+                await loadData();
+            }
             setFeedback({ message: 'Estado alterado com sucesso.', type: 'success' });
         } catch (err: any) {
             setFeedback({ message: err.message || 'Erro ao alterar estado.', type: 'error' });
         }
     };
 
-    if (loading && units.length === 0) return <div className="p-4">A carregar...</div>;
+    if (loading && units.length === 0) return <div style={{ padding: '16px' }}>A carregar...</div>;
 
     return (
         <PageContainer>
-            <div className="sticky top-0 z-50 mb-4 bg-white/80 backdrop-blur-sm -mx-6 px-6 pt-2" style={{ marginTop: '-1rem' }}>
+            <div style={{ position: 'sticky', top: 0, zIndex: 50, marginBottom: '16px', backgroundColor: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(8px)', marginLeft: '-24px', marginRight: '-24px', paddingLeft: '24px', paddingRight: '24px', paddingTop: '8px', marginTop: '-1rem' }}>
                 {feedback && (
                     <Feedback
                         message={feedback.message}
@@ -301,12 +337,14 @@ export function MasterData() {
                     { id: 'costCenters', label: 'Centros de Custo' },
                     { id: 'ivaRates', label: 'Taxas de IVA' },
                     { id: 'companies', label: 'Empresas' },
-                    { id: 'catalogItems', label: '📦 Catálogo de Itens' },
-                    { id: 'smtpSettings', label: '✉ SMTP' }
+                    { id: 'contractTypes', label: 'Tipos de Contrato' },
+                    { id: 'catalogItems', label: '📦 Catálogo de Itens' }
                 ].map((tab) => (
                     <button
                         key={tab.id}
-                        className={activeTab === tab.id ? '' : 'hover:text-primary'}
+                        className={undefined}
+                        onMouseOver={e => { if (activeTab !== tab.id) (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-primary)'; }}
+                        onMouseOut={e => { if (activeTab !== tab.id) (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-muted)'; }}
                         style={{
                             padding: '12px 20px',
                             backgroundColor: 'transparent',
@@ -329,24 +367,7 @@ export function MasterData() {
                 ))}
             </div>
 
-            {activeTab === 'smtpSettings' ? (
-                <SmtpSettingsPanel
-                    smtpSettings={smtpSettings}
-                    smtpLoading={smtpLoading}
-                    smtpSaving={smtpSaving}
-                    smtpTesting={smtpTesting}
-                    smtpTestResult={smtpTestResult}
-                    showPasswordField={showPasswordField}
-                    feedback={feedback}
-                    setSmtpSettings={setSmtpSettings}
-                    setSmtpLoading={setSmtpLoading}
-                    setSmtpSaving={setSmtpSaving}
-                    setSmtpTesting={setSmtpTesting}
-                    setSmtpTestResult={setSmtpTestResult}
-                    setShowPasswordField={setShowPasswordField}
-                    setFeedback={setFeedback}
-                />
-            ) : activeTab === 'catalogItems' ? (
+            {activeTab === 'catalogItems' ? (
                 <CatalogItemsPanel
                     feedback={feedback}
                     setFeedback={setFeedback}
@@ -354,15 +375,16 @@ export function MasterData() {
             ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(350px, 1fr) 2fr', gap: '32px', alignItems: 'start' }}>
 
-                {/* Form Column - Styled as a standard card */}
-                <div style={{
-                    backgroundColor: 'var(--color-bg-surface)',
-                    padding: '32px',
-                    borderRadius: 'var(--radius-lg)',
-                    border: '1px solid var(--color-border)',
-                    position: 'sticky',
-                    top: 'calc(var(--header-height) + 1rem)'
-                }}>
+                {/* Left Column Wrapper */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', position: 'sticky', top: 'calc(var(--header-height) + 1rem)' }}>
+
+                    {/* Form Column - Styled as a standard card */}
+                    <div style={{
+                        backgroundColor: 'var(--color-bg-surface)',
+                        padding: '32px',
+                        borderRadius: 'var(--radius-lg)',
+                        border: '1px solid var(--color-border)'
+                    }}>
                     <h2 style={{
                         marginTop: 0,
                         marginBottom: '24px',
@@ -694,13 +716,78 @@ export function MasterData() {
                     </form>
                 </div>
 
-                <div style={{
-                    backgroundColor: 'var(--color-bg-surface)',
-                    borderRadius: 'var(--radius-lg)',
-                    border: '1px solid var(--color-border)',
-                    overflow: 'hidden'
-                }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
+                {/* Primavera Sync Navigation — Suppliers */}
+                {activeTab === 'suppliers' && (
+                    <div style={{
+                        backgroundColor: 'var(--color-bg-surface)',
+                        padding: '16px 24px',
+                        borderRadius: 'var(--radius-lg)',
+                        border: '1px solid var(--color-border)',
+                    }}>
+                        <button
+                            type="button"
+                            onClick={() => navigate('/settings/sync/suppliers')}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                padding: '12px 16px',
+                                backgroundColor: 'rgba(var(--color-primary-rgb), 0.06)',
+                                border: '1px solid rgba(var(--color-primary-rgb), 0.15)',
+                                borderRadius: 'var(--radius-md)',
+                                fontWeight: 600,
+                                fontSize: '0.8rem',
+                                cursor: 'pointer',
+                                color: 'var(--color-primary)',
+                                width: '100%',
+                                justifyContent: 'center',
+                                transition: 'all 0.15s ease'
+                            }}
+                        >
+                            <Database size={16} />
+                            Sincronizar com Primavera
+                        </button>
+                        <p style={{ marginTop: '8px', fontSize: '0.7rem', color: 'var(--color-text-muted)', lineHeight: 1.4 }}>
+                            Compare e importe fornecedores do Primavera de forma controlada.
+                        </p>
+                    </div>
+                )}
+                </div> {/* End Left Column Wrapper */}
+
+                {/* Right Column (Table) */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                    <div style={{
+                        backgroundColor: 'var(--color-bg-surface)',
+                        borderRadius: 'var(--radius-lg)',
+                        border: '1px solid var(--color-border)',
+                        overflow: 'hidden'
+                    }}>
+                        {/* Search Bar for Suppliers */}
+                        {activeTab === 'suppliers' && (
+                            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--color-border)' }}>
+                                <div style={{ position: 'relative' }}>
+                                    <Search size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)', pointerEvents: 'none' }} />
+                                    <input
+                                        type="text"
+                                        placeholder="Pesquisar por NOME, CÓDIGO PRIMAVERA ou NIF..."
+                                        value={supplierSearchQuery}
+                                        onChange={e => { setSupplierSearchQuery(e.target.value); setSupplierCurrentPage(1); }}
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px 10px 10px 34px',
+                                            border: '1px solid var(--color-border)',
+                                            borderRadius: '6px',
+                                            fontSize: '0.85rem',
+                                            color: 'var(--color-text-main)',
+                                            backgroundColor: 'var(--color-bg-page)',
+                                            outline: 'none',
+                                            boxSizing: 'border-box'
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        )}
+                        <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
                         <thead>
                             <tr>
                                 <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>
@@ -997,399 +1084,95 @@ export function MasterData() {
                                     </td>
                                 </tr>
                             ))}
+                            {activeTab === 'contractTypes' && contractTypes.map((ct) => (
+                                <tr key={ct.id} style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: !ct.isActive ? 'rgba(var(--color-bg-page-rgb), 0.5)' : 'inherit' }}>
+                                    <td style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>{ct.id}</td>
+                                    <td style={{ padding: '16px', fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-primary)' }}>{ct.code}</td>
+                                    <td style={{ padding: '16px', fontSize: '0.85rem', fontWeight: 600 }}>{ct.name}</td>
+                                    <td style={{ padding: '16px', fontSize: '0.8rem' }}>
+                                        <span className={`badge ${ct.isActive ? 'badge-success' : 'badge-neutral'}`}>
+                                            {ct.isActive ? 'ATIVO' : 'INATIVO'}
+                                        </span>
+                                    </td>
+                                    <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                        <KebabMenu
+                                            options={[
+                                                {
+                                                    label: 'Editar',
+                                                    icon: <Edit2 size={16} />,
+                                                    onClick: () => handleEdit(ct, 'contractType')
+                                                },
+                                                {
+                                                    label: ct.isActive ? 'Desativar' : 'Ativar',
+                                                    icon: ct.isActive ? <PowerOff size={16} /> : <Power size={16} />,
+                                                    onClick: () => handleToggleActive(ct.id, 'contractType')
+                                                }
+                                            ]}
+                                        />
+                                    </td>
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
+
+                    {activeTab === 'suppliers' && supplierTotalPages > 1 && (
+                        <div style={{
+                            padding: '12px 20px',
+                            borderTop: '1px solid var(--color-border)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            backgroundColor: 'var(--color-bg-page)'
+                        }}>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                                Mostrando {(supplierCurrentPage - 1) * SUPPLIERS_PER_PAGE + 1} até {Math.min(supplierCurrentPage * SUPPLIERS_PER_PAGE, supplierTotalCount)} de {supplierTotalCount} registros
+                            </span>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button
+                                    onClick={() => setSupplierCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={supplierCurrentPage === 1}
+                                    style={{
+                                        padding: '6px 12px',
+                                        fontSize: '0.8rem',
+                                        fontWeight: 600,
+                                        backgroundColor: supplierCurrentPage === 1 ? 'transparent' : 'var(--color-bg-surface)',
+                                        color: supplierCurrentPage === 1 ? 'var(--color-text-muted)' : 'var(--color-text)',
+                                        border: `1px solid var(--color-border)`,
+                                        borderRadius: 'var(--radius-md)',
+                                        cursor: supplierCurrentPage === 1 ? 'not-allowed' : 'pointer',
+                                        opacity: supplierCurrentPage === 1 ? 0.5 : 1
+                                    }}
+                                >
+                                    Anterior
+                                </button>
+                                <span style={{ display: 'flex', alignItems: 'center', fontSize: '0.8rem', fontWeight: 600, padding: '0 8px' }}>
+                                    {supplierCurrentPage} / {supplierTotalPages}
+                                </span>
+                                <button
+                                    onClick={() => setSupplierCurrentPage(p => Math.min(supplierTotalPages, p + 1))}
+                                    disabled={supplierCurrentPage === supplierTotalPages}
+                                    style={{
+                                        padding: '6px 12px',
+                                        fontSize: '0.8rem',
+                                        fontWeight: 600,
+                                        backgroundColor: supplierCurrentPage === supplierTotalPages ? 'transparent' : 'var(--color-bg-surface)',
+                                        color: supplierCurrentPage === supplierTotalPages ? 'var(--color-text-muted)' : 'var(--color-text)',
+                                        border: `1px solid var(--color-border)`,
+                                        borderRadius: 'var(--radius-md)',
+                                        cursor: supplierCurrentPage === supplierTotalPages ? 'not-allowed' : 'pointer',
+                                        opacity: supplierCurrentPage === supplierTotalPages ? 0.5 : 1
+                                    }}
+                                >
+                                    Próxima
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
+                </div> {/* End Right Column Wrapper */}
             </div>
             )}
         </PageContainer>
     );
 }
 
-// =============================================
-//  SMTP Settings Panel (Internal Component)
-// =============================================
-interface SmtpSettingsPanelProps {
-    smtpSettings: SmtpSettingsDto | null;
-    smtpLoading: boolean;
-    smtpSaving: boolean;
-    smtpTesting: boolean;
-    smtpTestResult: { success: boolean; message: string; responseTimeMs?: number } | null;
-    showPasswordField: boolean;
-    feedback: { message: string; type: FeedbackType } | null;
-    setSmtpSettings: React.Dispatch<React.SetStateAction<SmtpSettingsDto | null>>;
-    setSmtpLoading: React.Dispatch<React.SetStateAction<boolean>>;
-    setSmtpSaving: React.Dispatch<React.SetStateAction<boolean>>;
-    setSmtpTesting: React.Dispatch<React.SetStateAction<boolean>>;
-    setSmtpTestResult: React.Dispatch<React.SetStateAction<{ success: boolean; message: string; responseTimeMs?: number } | null>>;
-    setShowPasswordField: React.Dispatch<React.SetStateAction<boolean>>;
-    setFeedback: React.Dispatch<React.SetStateAction<{ message: string; type: FeedbackType } | null>>;
-}
-
-function SmtpSettingsPanel({
-    smtpSettings, smtpLoading, smtpSaving, smtpTesting, smtpTestResult, showPasswordField,
-    setSmtpSettings, setSmtpLoading, setSmtpSaving, setSmtpTesting, setSmtpTestResult, setShowPasswordField, setFeedback
-}: SmtpSettingsPanelProps) {
-
-    useEffect(() => {
-        loadSmtpSettings();
-    }, []);
-
-    const loadSmtpSettings = async () => {
-        setSmtpLoading(true);
-        try {
-            const data = await api.admin.smtpSettings.get();
-            setSmtpSettings(data);
-        } catch (err: any) {
-            setFeedback({ message: err.message || 'Falha ao carregar configurações SMTP.', type: 'error' });
-        } finally {
-            setSmtpLoading(false);
-        }
-    };
-
-    const handleSaveSmtp = async () => {
-        if (!smtpSettings) return;
-        setSmtpSaving(true);
-        setFeedback(null);
-        try {
-            await api.admin.smtpSettings.update(smtpSettings);
-            setFeedback({ message: 'Configurações SMTP atualizadas com sucesso.', type: 'success' });
-            setShowPasswordField(false);
-            // Reload to get fresh state (e.g. hasPassword might have changed)
-            await loadSmtpSettings();
-        } catch (err: any) {
-            setFeedback({ message: err.message || 'Falha ao salvar configurações SMTP.', type: 'error' });
-        } finally {
-            setSmtpSaving(false);
-        }
-    };
-
-    const handleTestConnection = async () => {
-        setSmtpTesting(true);
-        setSmtpTestResult(null);
-        try {
-            const result = await api.admin.smtpSettings.testConnection();
-            setSmtpTestResult(result);
-        } catch (err: any) {
-            setSmtpTestResult({ success: false, message: err.message || 'Erro ao testar conexão.' });
-        } finally {
-            setSmtpTesting(false);
-        }
-    };
-
-    const updateField = (field: keyof SmtpSettingsDto, value: any) => {
-        setSmtpSettings(prev => prev ? { ...prev, [field]: value } : prev);
-    };
-
-    const labelStyle: React.CSSProperties = {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        fontSize: '0.75rem',
-        fontWeight: 800,
-        color: 'var(--color-text-muted)',
-        textTransform: 'uppercase',
-        letterSpacing: '0.05em',
-        marginBottom: '6px'
-    };
-
-    const inputStyle: React.CSSProperties = {
-        width: '100%',
-        padding: '12px 14px',
-        backgroundColor: 'var(--color-bg-page)',
-        border: '2px solid var(--color-border)',
-        borderRadius: 'var(--radius-sm)',
-        fontSize: '0.9rem',
-        fontWeight: 600,
-        color: 'var(--color-text)',
-        transition: 'border-color 0.15s ease',
-        outline: 'none',
-        boxSizing: 'border-box' as const
-    };
-
-    const cardStyle: React.CSSProperties = {
-        backgroundColor: 'var(--color-bg-surface)',
-        padding: '32px',
-        borderRadius: 'var(--radius-lg)',
-        border: '1px solid var(--color-border)',
-    };
-
-    if (smtpLoading) {
-        return (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '80px 0' }}>
-                <div style={{ textAlign: 'center' }}>
-                    <div style={{
-                        width: '40px', height: '40px', border: '4px solid var(--color-border)',
-                        borderTopColor: 'var(--color-primary)', borderRadius: '50%',
-                        animation: 'spin 0.8s linear infinite', margin: '0 auto 16px'
-                    }} />
-                    <p style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>A carregar configurações SMTP...</p>
-                </div>
-            </div>
-        );
-    }
-
-    if (!smtpSettings) {
-        return <div style={{ padding: '32px', color: 'var(--color-text-muted)' }}>Não foi possível carregar as configurações SMTP.</div>;
-    }
-
-    return (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', alignItems: 'start' }}>
-
-            {/* Left Card: Server Configuration */}
-            <div style={cardStyle}>
-                <h3 style={{
-                    marginTop: 0, marginBottom: '24px',
-                    fontSize: '1.1rem', fontWeight: 900, textTransform: 'uppercase',
-                    color: 'var(--color-primary)',
-                    borderBottom: '2px solid var(--color-border)', paddingBottom: '8px',
-                    display: 'flex', alignItems: 'center', gap: '10px'
-                }}>
-                    <Server size={20} /> Servidor SMTP
-                </h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    <div>
-                        <label style={labelStyle}><Globe size={14} /> Servidor (Host)</label>
-                        <input
-                            type="text"
-                            value={smtpSettings.server || ''}
-                            onChange={(e) => updateField('server', e.target.value)}
-                            placeholder="smtp.office365.com"
-                            style={inputStyle}
-                        />
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                        <div>
-                            <label style={labelStyle}>Porta</label>
-                            <input
-                                type="number"
-                                value={smtpSettings.port || 587}
-                                onChange={(e) => updateField('port', parseInt(e.target.value) || 587)}
-                                style={inputStyle}
-                            />
-                        </div>
-                        <div>
-                            <label style={labelStyle}><Shield size={14} /> SSL/TLS</label>
-                            <div style={{
-                                display: 'flex', alignItems: 'center', gap: '12px',
-                                padding: '12px 14px',
-                                backgroundColor: 'var(--color-bg-page)',
-                                border: '2px solid var(--color-border)',
-                                borderRadius: 'var(--radius-sm)',
-                                height: '47px', boxSizing: 'border-box'
-                            }}>
-                                <input
-                                    type="checkbox"
-                                    checked={smtpSettings.enableSsl}
-                                    onChange={(e) => updateField('enableSsl', e.target.checked)}
-                                    style={{ width: '18px', height: '18px', accentColor: 'var(--color-primary)', cursor: 'pointer' }}
-                                />
-                                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-text)' }}>
-                                    {smtpSettings.enableSsl ? 'Ativado' : 'Desativado'}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Right Card: Authentication */}
-            <div style={cardStyle}>
-                <h3 style={{
-                    marginTop: 0, marginBottom: '24px',
-                    fontSize: '1.1rem', fontWeight: 900, textTransform: 'uppercase',
-                    color: 'var(--color-primary)',
-                    borderBottom: '2px solid var(--color-border)', paddingBottom: '8px',
-                    display: 'flex', alignItems: 'center', gap: '10px'
-                }}>
-                    <Mail size={20} /> Remetente e Autenticação
-                </h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    <div>
-                        <label style={labelStyle}>E-mail do Remetente</label>
-                        <input
-                            type="email"
-                            value={smtpSettings.senderEmail || ''}
-                            onChange={(e) => updateField('senderEmail', e.target.value)}
-                            placeholder="portal@empresa.com"
-                            style={inputStyle}
-                        />
-                    </div>
-                    <div>
-                        <label style={labelStyle}>Nome do Remetente</label>
-                        <input
-                            type="text"
-                            value={smtpSettings.senderName || ''}
-                            onChange={(e) => updateField('senderName', e.target.value)}
-                            placeholder="ALPLA Portal"
-                            style={inputStyle}
-                        />
-                    </div>
-                    <div>
-                        <label style={labelStyle}>Senha SMTP</label>
-                        {!showPasswordField ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <div style={{
-                                    ...inputStyle,
-                                    display: 'flex', alignItems: 'center', gap: '8px',
-                                    color: smtpSettings.hasPassword ? 'var(--color-text-muted)' : 'var(--color-danger, #E53E3E)',
-                                    fontWeight: 700,
-                                    flex: 1
-                                }}>
-                                    {smtpSettings.hasPassword ? '••••••••••••' : 'Não configurada'}
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowPasswordField(true)}
-                                    style={{
-                                        padding: '12px 18px',
-                                        backgroundColor: 'var(--color-bg-page)',
-                                        border: '2px solid var(--color-border)',
-                                        borderRadius: 'var(--radius-sm)',
-                                        fontWeight: 800,
-                                        fontSize: '0.75rem',
-                                        textTransform: 'uppercase',
-                                        cursor: 'pointer',
-                                        color: 'var(--color-text)',
-                                        whiteSpace: 'nowrap',
-                                        transition: 'all 0.15s ease'
-                                    }}
-                                >
-                                    Alterar
-                                </button>
-                            </div>
-                        ) : (
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                <input
-                                    type="password"
-                                    value={smtpSettings.password || ''}
-                                    onChange={(e) => updateField('password', e.target.value)}
-                                    placeholder="Digite a nova senha..."
-                                    autoFocus
-                                    style={{ ...inputStyle, flex: 1 }}
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setShowPasswordField(false);
-                                        updateField('password', undefined);
-                                    }}
-                                    style={{
-                                        padding: '12px 16px',
-                                        backgroundColor: 'transparent',
-                                        border: '2px solid var(--color-border)',
-                                        borderRadius: 'var(--radius-sm)',
-                                        fontWeight: 800,
-                                        fontSize: '0.75rem',
-                                        cursor: 'pointer',
-                                        color: 'var(--color-text-muted)'
-                                    }}
-                                >
-                                    Cancelar
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
-
-            {/* Bottom Actions Strip — spans 2 columns */}
-            <div style={{
-                gridColumn: '1 / -1',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '16px'
-            }}>
-                {/* Left: Test Connection */}
-                <button
-                    type="button"
-                    onClick={handleTestConnection}
-                    disabled={smtpTesting}
-                    style={{
-                        display: 'inline-flex', alignItems: 'center', gap: '8px',
-                        padding: '14px 28px',
-                        backgroundColor: 'var(--color-bg-surface)',
-                        border: '2px solid var(--color-border)',
-                        borderRadius: 'var(--radius-sm)',
-                        fontWeight: 900,
-                        fontSize: '0.8rem',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        cursor: smtpTesting ? 'wait' : 'pointer',
-                        color: 'var(--color-text)',
-                        opacity: smtpTesting ? 0.6 : 1,
-                        transition: 'all 0.15s ease'
-                    }}
-                >
-                    <Mail size={16} />
-                    {smtpTesting ? 'A Testar...' : 'Testar Conexão SMTP'}
-                </button>
-
-                {/* Right: Save */}
-                <button
-                    type="button"
-                    onClick={handleSaveSmtp}
-                    disabled={smtpSaving}
-                    style={{
-                        display: 'inline-flex', alignItems: 'center', gap: '8px',
-                        padding: '14px 32px',
-                        backgroundColor: 'var(--color-primary)',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: 'var(--radius-sm)',
-                        fontWeight: 900,
-                        fontSize: '0.85rem',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        cursor: smtpSaving ? 'wait' : 'pointer',
-                        opacity: smtpSaving ? 0.7 : 1,
-                        transition: 'all 0.15s ease'
-                    }}
-                >
-                    <Save size={16} />
-                    {smtpSaving ? 'A Guardar...' : 'Guardar Alterações'}
-                </button>
-            </div>
-
-            {/* Test Result Banner */}
-            {smtpTestResult && (
-                <div style={{
-                    gridColumn: '1 / -1',
-                    padding: '18px 24px',
-                    borderRadius: 'var(--radius-md)',
-                    border: `2px solid ${smtpTestResult.success ? '#38A169' : '#E53E3E'}`,
-                    backgroundColor: smtpTestResult.success ? 'rgba(56, 161, 105, 0.06)' : 'rgba(229, 62, 62, 0.06)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    gap: '16px',
-                    animation: 'fadeIn 0.3s ease'
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{
-                            width: '10px', height: '10px', borderRadius: '50%',
-                            backgroundColor: smtpTestResult.success ? '#38A169' : '#E53E3E'
-                        }} />
-                        <span style={{
-                            fontWeight: 700, fontSize: '0.9rem',
-                            color: smtpTestResult.success ? '#38A169' : '#E53E3E'
-                        }}>
-                            {smtpTestResult.message}
-                        </span>
-                    </div>
-                    {smtpTestResult.responseTimeMs !== undefined && (
-                        <span style={{
-                            fontWeight: 800, fontSize: '0.75rem',
-                            color: 'var(--color-text-muted)',
-                            backgroundColor: 'var(--color-bg-page)',
-                            padding: '4px 12px',
-                            borderRadius: '999px'
-                        }}>
-                            {smtpTestResult.responseTimeMs}ms
-                        </span>
-                    )}
-                </div>
-            )}
-        </div>
-    );
-}

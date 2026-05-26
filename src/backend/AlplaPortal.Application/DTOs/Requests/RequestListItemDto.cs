@@ -63,4 +63,11 @@ public class RequestListItemDto
     public string? CostCenterName { get; set; }
     
     public DateTime? CompletedAtUtc { get; set; }
+    
+    /// <summary>
+    /// Date when payment was completed (transition to PAYMENT_COMPLETED status).
+    /// Available for WAITING_RECEIPT and COMPLETED requests so the list can show both
+    /// the original deadline and the actual payment date.
+    /// </summary>
+    public DateTime? PaymentCompletedAtUtc { get; set; }
 }

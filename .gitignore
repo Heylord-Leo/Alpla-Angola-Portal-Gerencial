@@ -27,6 +27,10 @@ redesign-temp/
 *.certificate
 *.cert
 
+# .NET development secrets — NEVER track credentials in Git
+appsettings.Development.json
+secrets.json
+
 # .NET Specific
 *.user
 *.suo
@@ -52,3 +56,7 @@ desktop.ini
 # Project-specific ignores
 build_*.txt
 data/attachments/
+scratch/
+backend.err
+
+tsconfig.tsbuildinfo

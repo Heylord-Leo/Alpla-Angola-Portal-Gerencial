@@ -46,7 +46,8 @@ export function UserDropdown() {
                         transition: 'all 0.2s',
                         borderRadius: '4px'
                     }}
-                    className="hover:bg-primary-hover"
+                    onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)')}
+                    onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                 >
                     <div style={{
                         width: '36px',
@@ -84,9 +85,9 @@ export function UserDropdown() {
                                 top: 'calc(100% + 8px)',
                                 right: 0,
                                 width: '240px',
-                                backgroundColor: 'white',
-                                border: '2px solid var(--color-primary)',
-                                boxShadow: 'var(--shadow-brutal)',
+                                backgroundColor: 'var(--color-bg-surface)',
+                                border: '1px solid var(--color-border)',
+                                boxShadow: 'var(--shadow-lg)',
                                 zIndex: 100,
                                 padding: '8px 0'
                             }}
@@ -139,7 +140,8 @@ export function UserDropdown() {
                                         color: item.danger ? 'var(--color-status-red)' : 'var(--color-text-main)',
                                         transition: 'all 0.1s'
                                     }}
-                                    className="hover:bg-slate-50"
+                                    onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-bg-page)')}
+                                    onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                                 >
                                     {item.icon}
                                     <span>{item.label}</span>

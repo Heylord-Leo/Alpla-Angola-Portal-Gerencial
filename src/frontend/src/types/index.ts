@@ -46,6 +46,7 @@ export interface RequestListItemDto {
     
     // Virtual
     completedAtUtc?: string;
+    paymentCompletedAtUtc?: string;
 }
 
 export interface PendingApprovalsResponseDto {
@@ -106,6 +107,10 @@ export interface SavedQuotationItemDto {
     unitId: number | null;
     unitName: string | null;
     unitCode: string | null;
+    
+    // Catalog linkage
+    itemCatalogId?: number | null;
+    itemCatalogCode?: string | null;
     
     // Receiving Fields
     receivedQuantity?: number;
@@ -196,6 +201,10 @@ export interface OcrDraftItem {
     totalPrice: number; // Front-end calculated preview
     isChecked?: boolean; // UI tracking variable for visual checklist
     itemCatalogId?: number | null; // Optional catalog reference
+    itemCatalogCode?: string | null; // Optional catalog code for display/traceability
+    ivaUncertain?: boolean; // True when OCR could not confidently identify item-level IVA
+    ivaGlobalInferred?: boolean; // True when IVA was inferred from document summary, not extracted per item
+    autoMatchStatus?: 'AUTO_MATCHED' | 'NEEDS_REVIEW' | null; // Catalog auto-match result from OCR
 }
 
 export interface OcrDraft {
@@ -215,6 +224,9 @@ export interface OcrDraft {
     totalAmount: number; // Front-end calculated preview
     proformaAttachmentId?: string; // Links attachment implicitly
     items: OcrDraftItem[];
+    headerHasIva?: boolean; // True when the document header/totals indicate IVA exists
+    globalVatInferred?: boolean; // True when global VAT was inferred from document summary and applied to all items
+    inferredVatRatePercent?: number; // The inferred VAT rate percentage for display in UI banner
 }
 
 export interface LookupDto {
@@ -381,6 +393,67 @@ export interface DashboardSummaryDto {
     filteredTotalTrendLabel: string | null;
 }
 
+// ── Cockpit Summary (Dashboard Operational Cockpit) ──
+
+export interface CockpitSummaryDto {
+    // My Work Queue
+    myPendingActions: number;
+    myUrgentItems: number;
+    myAdjustmentItems: number;
+    myOverdueItems: number;
+    myNearDeadlineItems: number;
+
+    // Pipeline counters
+    totalActiveRequests: number;
+    draft: number;
+    waitingQuotation: number;
+    waitingAreaApproval: number;
+    waitingFinalApproval: number;
+    inAdjustment: number;
+    awaitingPo: number;
+    awaitingPayment: number;
+    paymentCompleted: number;
+    waitingReceipt: number;
+    completed: number;
+
+    // Bottlenecks
+    bottlenecks: StageBottleneckDto[];
+
+    // Financial
+    financialByStatus: FinancialByStatusDto[];
+
+    // Alerts
+    alerts: AttentionAlertDto[];
+}
+
+export interface StageBottleneckDto {
+    stageCode: string;
+    stageName: string;
+    count: number;
+    oldestCreatedAtUtc: string | null;
+}
+
+export interface FinancialByStatusDto {
+    groupLabel: string;
+    totalAmount: number;
+    currencyCodes: string[];
+    count: number;
+}
+
+export interface AttentionAlertDto {
+    id: string;
+    requestId: string;
+    requestNumber: string;
+    title: string;
+    reason: string;
+    responsibleArea: string;
+    alertType: string;  // OVERDUE | NEAR_DEADLINE | STUCK | ADJUSTMENT
+    severity: string;   // CRITICAL | WARNING | INFO
+    createdAtUtc: string;
+    targetPath: string;
+}
+
+
 export interface PagedResult<T> {
     items: T[];
     totalCount: number;
@@ -397,9 +470,6 @@ export interface DocumentExtractionSettingsDto {
     defaultProvider: string;
     isEnabled: boolean;
     globalTimeoutSeconds: number;
-    localOcrEnabled: boolean;
-    localOcrBaseUrl?: string;
-    localOcrTimeoutSeconds?: number;
     openAiEnabled: boolean;
     openAiModel?: string;
     openAiTimeoutSeconds?: number;
@@ -471,6 +541,39 @@ export interface ApprovalIntelligenceDto {
     items: ItemIntelligenceDto[];
     departmentContext: DepartmentIntelligenceDto;
     overallAlerts: DecisionAlertDto[];
+    budgetAvailability?: BudgetAvailabilityDto;
+}
+
+export interface BudgetAvailabilityDto {
+    hasBudgetConfig: boolean;
+    matchLevel: string;
+    annualBudget: number;
+    committedAmount: number;
+    availableBefore: number;
+    currentRequestAmount: number;
+    availableAfter: number;
+    currencyCode: string;
+    departmentName?: string;
+    costCenterName?: string;
+    plantName?: string;
+    companyName?: string;
+    fiscalYear: number;
+    status: string;
+    utilizationPercent: number;
+    infoMessage?: string;
+    costCenterBreakdown?: BudgetCostCenterBreakdownDto[];
+}
+
+export interface BudgetCostCenterBreakdownDto {
+    costCenterId?: number;
+    costCenterName: string;
+    hasBudgetLine: boolean;
+    annualBudget: number;
+    committedAmount: number;
+    requestAmountInCC: number;
+    availableAfter: number;
+    status: string;
+    utilizationPercent: number;
 }
 
 export interface HistoricalPurchaseRecordDto {
@@ -487,6 +590,11 @@ export interface HistoricalPurchaseRecordDto {
     departmentName?: string;
 }
 
+export interface FinanceCurrencyValueDto {
+    totalAmount: number;
+    currencyCode: string;
+}
+
 export interface FinanceAttentionPointDto {
     id: string;
     title: string;
@@ -501,10 +609,10 @@ export interface FinanceSummaryDto {
     scheduledPayments: number;
     overduePayments: number;
     completedThisMonth: number;
-    pendingValue: number;
-    scheduledValue: number;
-    overdueValue: number;
-    paidThisMonthValue: number;
+    pendingValues: FinanceCurrencyValueDto[];
+    scheduledValues: FinanceCurrencyValueDto[];
+    overdueValues: FinanceCurrencyValueDto[];
+    paidThisMonthValues: FinanceCurrencyValueDto[];
     currencyCodes: string[];
     attentionPoints: FinanceAttentionPointDto[];
     cashFlowProjections: FinanceCashFlowProjectionDto[];
@@ -578,5 +686,259 @@ export interface FinanceHistoryItemDto {
     actorName: string;
     newStatusCode: string | null;
     newStatusName: string | null;
+}
+
+export type PrimaveraRequestValidationStatus = 'VALID' | 'WARNING' | 'INVALID' | 'ERROR';
+
+export interface PrimaveraRequestValidationResultDto {
+    status: PrimaveraRequestValidationStatus;
+    messages: string[];
+    isSupplierFound: boolean;
+    isArticleFound: boolean;
+    isRelationshipValid: boolean;
+}
+
+// ─── Primavera Synchronization Types ──────────────────────────────────────
+
+export type SyncMatchStatus = 'New' | 'Exists' | 'Conflict';
+
+export interface CatalogSyncPreviewItemDto {
+    primaveraCode: string;
+    primaveraDescription: string | null;
+    primaveraFamily: string | null;
+    primaveraBaseUnit: string | null;
+    primaveraIsCancelled: boolean;
+    portalItemId: number | null;
+    portalCode: string | null;
+    portalDescription: string | null;
+    status: SyncMatchStatus;
+    conflictDetail: string | null;
+}
+
+export interface CatalogSyncPreviewDto {
+    totalPrimaveraRecords: number;
+    newCount: number;
+    existsCount: number;
+    conflictCount: number;
+    items: CatalogSyncPreviewItemDto[];
+}
+
+export interface SupplierSyncPreviewItemDto {
+    primaveraCode: string;
+    primaveraName: string | null;
+    primaveraTaxId: string | null;
+    primaveraIsCancelled: boolean;
+    portalSupplierId: number | null;
+    portalName: string | null;
+    portalPrimaveraCode: string | null;
+    portalTaxId: string | null;
+    status: SyncMatchStatus;
+    conflictDetail: string | null;
+}
+
+export interface SupplierSyncPreviewDto {
+    totalPrimaveraRecords: number;
+    newCount: number;
+    existsCount: number;
+    conflictCount: number;
+    items: SupplierSyncPreviewItemDto[];
+}
+
+export interface SyncImportRequestDto {
+    selectedPrimaveraCodes: string[];
+}
+
+export interface SyncImportResultDto {
+    created: number;
+    skipped: number;
+    errors: string[];
+}
+
+// ── Reviewed Supplier Import (V2) ───────────────────────────────────────────
+
+export interface ReviewedSupplierItemDto {
+    primaveraCode: string;
+    name: string;
+    taxId: string | null;
+    notes: string | null;
+}
+
+export interface SyncSupplierReviewedImportRequestDto {
+    suppliers: ReviewedSupplierItemDto[];
+}
+
+// ── Catalog Conflict Resolution Types ─────────────────────────────────────
+
+export type CatalogConflictResolution =
+    | 'UpdatePortal'
+    | 'ConfirmAssociation'
+    | 'CreateNew'
+    | 'AssociateManually';
+
+export interface CatalogResolveConflictRequestDto {
+    primaveraCode: string;
+    resolution: CatalogConflictResolution;
+    portalItemId?: number | null;
+    targetPortalItemId?: number | null;
+    primaveraDescription?: string | null;
+    primaveraFamily?: string | null;
+    primaveraBaseUnit?: string | null;
+    updateFields?: string[] | null;
+}
+
+export interface CatalogResolveConflictResultDto {
+    success: boolean;
+    message: string;
+    affectedPortalItemId?: number | null;
+}
+
+export interface DepartmentMasterDto {
+    id: number;
+    departmentCode: string;
+    departmentName: string;
+    companyCode: string;
+    displayName: string;
+}
+
+// ─── Catalog Item Reconciliation Types ────────────────────────────────────────
+
+/** Internal status codes for catalog item reconciliation (English constants). */
+export type ReconciliationItemStatus =
+    | 'MATCHED'
+    | 'UNMATCHED'
+    | 'LOW_CONFIDENCE'
+    | 'CREATED_PENDING'
+    | 'LINKED_MANUALLY'
+    | 'FREE_TEXT';
+
+/** Any item array fed to the reconciliation hook must satisfy this interface. */
+export interface ReconcilableItem {
+    description: string;
+    itemCatalogId?: number | null;
+    itemCatalogCode?: string | null;
+    reconciliationStatus?: ReconciliationItemStatus;
+    reconciliationJustification?: string;
+}
+
+/** Per-item resolution outcome produced by the reconciliation modal. */
+export interface ItemResolution {
+    itemIndex: number;
+    status: ReconciliationItemStatus;
+    linkedCatalogId?: number | null;
+    linkedCatalogCode?: string | null;
+    linkedDescription?: string;
+    defaultUnitId?: number | null;
+    justification?: string;
+}
+
+/** Classified item returned by the reconciliation hook (original + computed status). */
+export interface ClassifiedItem<T extends ReconcilableItem = ReconcilableItem> {
+    item: T;
+    index: number;
+    status: ReconciliationItemStatus;
+    justification?: string;
+}
+
+// ─── Integration Management Types ─────────────────────────────────────────
+
+/** GET response DTO for integration provider settings. Never contains secrets. */
+export interface IntegrationSettingsDto {
+    code: string;
+    name: string;
+    providerType: string;
+    connectionType: string;
+    description?: string;
+    environment?: string;
+    isEnabled: boolean;
+    isPlanned: boolean;
+    isReadOnly: boolean;
+
+    // Connection settings (non-secret)
+    server?: string;
+    databaseName?: string;
+    instanceName?: string;
+    authenticationMode?: string;
+    username?: string;
+    apiBaseUrl?: string;
+    timeoutSeconds?: number;
+    additionalConfig?: string;
+
+    // SMTP-specific settings
+    port?: number;
+    enableSsl?: boolean;
+    senderEmail?: string;
+    senderName?: string;
+
+    // Secret presence indicators — NEVER actual secrets
+    hasPassword: boolean;
+    hasApiKey: boolean;
+    secretVersion: number;
+
+    // Last connection test status
+    lastTestStatus?: string;
+    lastTestAt?: string;
+    lastTestMessage?: string;
+    lastTestResponseTimeMs?: number;
+
+    // Company-specific settings for Primavera
+    primaveraCompanies?: PrimaveraCompanySettingsDto[];
+
+    // Audit
+    updatedByUserName?: string;
+    updatedAt?: string;
+}
+
+export interface PrimaveraCompanySettingsDto {
+    companyKey: string;
+    databaseName?: string;
+    enabled: boolean;
+    username?: string;
+    hasPassword: boolean;
+    secretVersion: number;
+}
+
+export interface UpdatePrimaveraCompanyDto {
+    companyKey: string;
+    databaseName?: string;
+    enabled: boolean;
+    username?: string;
+}
+
+export interface ReplacePrimaveraCompanySecretDto {
+    companyKey: string;
+    newPassword: string;
+}
+
+/** PUT request DTO for updating non-secret integration settings. */
+export interface UpdateIntegrationSettingsDto {
+    server?: string;
+    databaseName?: string;
+    instanceName?: string;
+    authenticationMode?: string;
+    username?: string;
+    apiBaseUrl?: string;
+    timeoutSeconds?: number;
+    additionalConfig?: string;
+
+    // SMTP-specific settings
+    port?: number;
+    enableSsl?: boolean;
+    senderEmail?: string;
+    senderName?: string;
+}
+
+/** POST request DTO for replacing an encrypted secret. */
+export interface ReplaceIntegrationSecretDto {
+    secretType: 'PASSWORD' | 'API_KEY';
+    newSecretValue: string;
+}
+
+/** POST response DTO from test-connection endpoint. */
+export interface IntegrationConnectionTestResultDto {
+    providerCode: string;
+    success: boolean;
+    message?: string;
+    responseTimeMs?: number;
+    testedAtUtc: string;
 }
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Building2, AlertCircle, RefreshCcw } from 'lucide-react';
+import { X, Save, Building2, AlertCircle, RefreshCcw, FileText, Info } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { Feedback, FeedbackType } from '../ui/Feedback';
 import { Z_INDEX } from '../../constants/ui';
@@ -20,6 +20,7 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
     const [isSaving, setIsSaving] = useState(false);
     const [feedback, setFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'error', message: null });
     const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
+    const [fichaToast, setFichaToast] = useState(false);
     
     // Sync name and taxId with initial props when modal opens or props change
     useEffect(() => {
@@ -28,6 +29,7 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
             setTaxId(initialTaxId);
             setFeedback({ type: 'error', message: null });
             setFieldErrors({});
+            setFichaToast(false);
         }
     }, [isOpen, initialName, initialTaxId]);
 
@@ -52,11 +54,26 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
                 taxId: taxId.trim() || undefined
             });
 
-            onSuccess({ id: newSupplier.id, name: newSupplier.name, portalCode: newSupplier.portalCode });
-            onClose();
+            // Show ficha toast notification before closing
+            setFichaToast(true);
+
+            // Allow the toast to be seen briefly, then proceed
+            setTimeout(() => {
+                onSuccess({ id: newSupplier.id, name: newSupplier.name, portalCode: newSupplier.portalCode });
+                onClose();
+            }, 300);
         } catch (err: any) {
-            if (err instanceof ApiError && err.fieldErrors) {
-                setFieldErrors(err.fieldErrors);
+            if (err instanceof ApiError) {
+                // Handle 409 Conflict — NIF duplicate
+                if (err.status === 409) {
+                    setFieldErrors({ TaxId: [err.message || 'NIF já registado no sistema.'] });
+                    setFeedback({ type: 'warning', message: err.message || 'Já existe um fornecedor com este NIF. Utilize o fornecedor existente.' });
+                    setIsSaving(false);
+                    return;
+                }
+                if (err.fieldErrors) {
+                    setFieldErrors(err.fieldErrors);
+                }
             }
             setFeedback({ type: 'error', message: err.message || 'Erro ao criar fornecedor.' });
         } finally {
@@ -108,8 +125,8 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
                             borderRadius: 'var(--radius-md)',
                             maxWidth: '500px',
                             width: '100%',
-                            border: '4px solid var(--color-border-heavy)',
-                            boxShadow: 'var(--shadow-brutal)',
+                            border: '1px solid var(--color-border)',
+                            boxShadow: 'var(--shadow-md)',
                             position: 'relative'
                         }}
                     >
@@ -125,7 +142,7 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
                             color: 'var(--color-text-muted)'
                         }}
                     >
-                        <X className="w-6 h-6" />
+                        <X size={24} />
                     </button>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
@@ -169,10 +186,45 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
                             <input
                                 type="text"
                                 value={taxId}
-                                onChange={(e) => setTaxId(e.target.value)}
+                                onChange={(e) => {
+                                    setTaxId(e.target.value);
+                                    // Clear NIF duplicate error when user types
+                                    if (fieldErrors.TaxId) {
+                                        setFieldErrors(prev => {
+                                            const next = { ...prev };
+                                            delete next.TaxId;
+                                            return next;
+                                        });
+                                        setFeedback({ type: 'error', message: null });
+                                    }
+                                }}
                                 placeholder="Ex: 501234567"
-                                style={inputStyle}
+                                style={{
+                                    ...inputStyle,
+                                    borderColor: fieldErrors.TaxId ? '#F59E0B' : 'var(--color-border)'
+                                }}
                             />
+                            {fieldErrors.TaxId && (
+                                <motion.div
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    style={{
+                                        marginTop: '8px',
+                                        padding: '10px 12px',
+                                        backgroundColor: '#FFFBEB',
+                                        border: '1px solid #F59E0B',
+                                        borderRadius: 'var(--radius-sm)',
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                        gap: '8px'
+                                    }}
+                                >
+                                    <AlertCircle size={16} style={{ color: '#D97706', flexShrink: 0, marginTop: '1px' }} />
+                                    <p style={{ color: '#92400E', fontSize: '0.75rem', fontWeight: 600, margin: 0, lineHeight: '1.4' }}>
+                                        {fieldErrors.TaxId[0]}
+                                    </p>
+                                </motion.div>
+                            )}
                         </div>
 
                         <div style={{ 
@@ -187,12 +239,28 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
                             </p>
                         </div>
 
+                        {/* Ficha guidance info box */}
+                        <div style={{
+                            backgroundColor: '#EFF6FF',
+                            border: '1px solid #BFDBFE',
+                            borderRadius: 'var(--radius-sm)',
+                            padding: '12px 14px',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '10px'
+                        }}>
+                            <FileText size={16} style={{ color: '#2563EB', flexShrink: 0, marginTop: '1px' }} />
+                            <p style={{ fontSize: '0.72rem', color: '#1E40AF', margin: 0, fontWeight: 600, lineHeight: 1.5 }}>
+                                O fornecedor será criado como <strong>rascunho</strong>. Complete a ficha de registo em <strong>Contratos → Fichas de Fornecedor</strong>.
+                            </p>
+                        </div>
+
                         <div style={{ display: 'flex', gap: '16px', marginTop: '12px' }}>
                             <button
                                 type="button"
                                 onClick={onClose}
                                 style={{
-                                    flex: 1, height: '48px', padding: '0 24px', background: 'none', border: '2px solid var(--color-border-heavy)',
+                                    flex: 1, height: '48px', padding: '0 24px', background: 'none', border: '1px solid var(--color-border)',
                                     cursor: 'pointer', fontWeight: 800, borderRadius: 'var(--radius-sm)',
                                     fontFamily: 'var(--font-family-display)', fontSize: '0.875rem'
                                 }}
@@ -205,19 +273,50 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
                                 style={{
                                     flex: 1, height: '48px', padding: '0 24px', backgroundColor: 'var(--color-primary)', color: '#fff',
                                     border: 'none', cursor: 'pointer', fontWeight: 800, borderRadius: 'var(--radius-sm)',
-                                    boxShadow: '4px 4px 0 var(--color-accent)', fontFamily: 'var(--font-family-display)',
+                                    boxShadow: 'var(--shadow-md)', fontFamily: 'var(--font-family-display)',
                                     fontSize: '0.875rem', opacity: isSaving ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
                                 }}
                             >
                                 {isSaving ? (
-                                    <RefreshCcw className="w-4 h-4 animate-spin" />
+                                    <RefreshCcw size={16} style={{ animation: 'spin 1s linear infinite' }} />
                                 ) : (
-                                    <Save className="w-4 h-4" />
+                                    <Save size={16} />
                                 )}
                                 SALVAR
                             </button>
                         </div>
                     </form>
+
+                    {/* Success toast overlay — shown briefly after creation */}
+                    <AnimatePresence>
+                        {fichaToast && (
+                            <motion.div
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                style={{
+                                    position: 'absolute',
+                                    bottom: '16px',
+                                    left: '16px',
+                                    right: '16px',
+                                    padding: '14px 16px',
+                                    backgroundColor: '#F0FDF4',
+                                    border: '1px solid #22C55E',
+                                    borderRadius: 'var(--radius-sm)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '10px',
+                                    boxShadow: 'var(--shadow-md)',
+                                    zIndex: 10
+                                }}
+                            >
+                                <Info size={18} style={{ color: '#15803D', flexShrink: 0 }} />
+                                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#15803D', lineHeight: 1.4 }}>
+                                    Fornecedor criado como rascunho. Complete a ficha de registo em Contratos → Fichas de Fornecedor.
+                                </span>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                     </motion.div>
                 </motion.div>
             </AnimatePresence>

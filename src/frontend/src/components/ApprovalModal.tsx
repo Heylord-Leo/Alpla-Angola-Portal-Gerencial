@@ -15,6 +15,7 @@ export type ApprovalActionType =
     | 'SCHEDULE_PAYMENT' 
     | 'COMPLETE_PAYMENT' 
     | 'MOVE_TO_RECEIPT' 
+    | 'CONFIRM_RECEIVING' 
     | 'FINALIZE' 
     | 'COMPLETE_QUOTATION'
     | 'ITEM_STATUS_CHANGE'
@@ -22,6 +23,9 @@ export type ApprovalActionType =
     | 'DUPLICATE_REQUEST'
     | 'SAVE_QUOTATION_OCR'
     | 'SAVE_QUOTATION_MANUAL'
+    | 'DELETE_OBLIGATION'
+    | 'GENERATE_PAYMENT'
+    | 'CHANGE_CONTRACT_STATUS'
     | null;
 
 interface ApprovalModalProps {
@@ -71,6 +75,7 @@ export function ApprovalModal({
             case 'SCHEDULE_PAYMENT': return 'Agendar Pagamento';
             case 'COMPLETE_PAYMENT': return 'Confirmar Pagamento';
             case 'MOVE_TO_RECEIPT': return 'Mover para Recibo';
+            case 'CONFIRM_RECEIVING': return 'Confirmar Recebimento';
             case 'FINALIZE': return 'Finalizar Pedido';
             case 'COMPLETE_QUOTATION': return 'Concluir Cotação';
             case 'ITEM_STATUS_CHANGE': return 'Confirmar Alteração de Status';
@@ -78,6 +83,9 @@ export function ApprovalModal({
             case 'DUPLICATE_REQUEST': return 'Duplicar Pedido';
             case 'SAVE_QUOTATION_OCR':
             case 'SAVE_QUOTATION_MANUAL': return 'Confirmar salvamento';
+            case 'DELETE_OBLIGATION': return 'Confirmar exclusão';
+            case 'GENERATE_PAYMENT': return 'Gerar Pedido de Pagamento';
+            case 'CHANGE_CONTRACT_STATUS': return 'Confirmar alteração de status';
             default: return '';
         }
     };
@@ -100,20 +108,25 @@ export function ApprovalModal({
             case 'SCHEDULE_PAYMENT': return 'Deseja confirmar que o pagamento deste pedido foi agendado?';
             case 'COMPLETE_PAYMENT': return 'Deseja confirmar que o pagamento deste pedido foi realizado?';
             case 'MOVE_TO_RECEIPT': return 'Deseja mover este pedido para a fase de aguardando recibo?';
-            case 'FINALIZE': 
+            case 'CONFIRM_RECEIVING': 
                 return isPartial 
-                    ? 'Atenção: Existem itens pendentes. Ao finalizar, o pedido será movido para o estágio de "Acompanhamento" operacional.'
-                    : 'Deseja confirmar o recebimento e finalizar este pedido permanentemente?';
+                    ? 'Atenção: Existem itens pendentes. Ao confirmar, o pedido será movido para acompanhamento até que todos os itens sejam recebidos.'
+                    : 'Deseja confirmar o recebimento de todos os itens deste pedido? O pedido permanecerá aguardando o recibo do fornecedor.';
+            case 'FINALIZE': 
+                return 'Deseja finalizar este pedido? O recibo do fornecedor será registrado e o pedido será encerrado permanentemente.';
             case 'COMPLETE_QUOTATION': return 'Deseja confirmar que o processo de cotação foi concluído e enviar para aprovação?';
             case 'REQUEST_ADJUSTMENT': return 'Informe o que precisa ser ajustado no pedido pelo solicitante.';
             case 'ITEM_STATUS_CHANGE': 
                 return isLastItem 
                     ? 'Este é o último item pendente do pedido. Ao confirmar, todos os itens estarão recebidos e o pedido será finalizado.' 
                     : 'Deseja confirmar a alteração de status deste item? Esta ação requer uma observação obrigatória.';
-            case 'CANCEL_REQUEST': return 'Tem certeza que deseja cancelar este pedido? Informe o motivo abaixo.';
+            case 'CANCEL_REQUEST': return 'Tem certeza que deseja cancelar este pedido? O solicitante será notificado automaticamente. Informe o motivo abaixo.';
             case 'DUPLICATE_REQUEST': return 'Deseja criar uma cópia deste pedido? Um novo rascunho será gerado com os mesmos dados básicos e itens, sem copiar o histórico ou anexos.';
             case 'SAVE_QUOTATION_OCR': return 'A extração de informações via OCR não é 100% precisa. Você verificou todas as informações?';
             case 'SAVE_QUOTATION_MANUAL': return 'Tem certeza de que todas as informações inseridas estão corretas?';
+            case 'DELETE_OBLIGATION': return 'Tem certeza que deseja apagar esta obrigação?';
+            case 'GENERATE_PAYMENT': return 'Tem certeza que deseja gerar um Pedido de Pagamento para esta obrigação?';
+            case 'CHANGE_CONTRACT_STATUS': return 'Tem certeza que deseja alterar o status deste contrato?';
             default: return '';
         }
     };
@@ -122,7 +135,7 @@ export function ApprovalModal({
     const showCommentField = [
         'APPROVE', 'REJECT', 'REQUEST_ADJUSTMENT', 
         'SCHEDULE_PAYMENT', 'COMPLETE_PAYMENT', 'MOVE_TO_RECEIPT', 
-        'FINALIZE', 'COMPLETE_QUOTATION', 'ITEM_STATUS_CHANGE', 'CANCEL_REQUEST'
+        'CONFIRM_RECEIVING', 'FINALIZE', 'COMPLETE_QUOTATION', 'ITEM_STATUS_CHANGE', 'CANCEL_REQUEST'
     ].includes(type || '');
 
     const inputStyle = {
@@ -169,8 +182,8 @@ export function ApprovalModal({
                             borderRadius: 'var(--radius-md)',
                             maxWidth: '600px',
                             width: '100%',
-                            border: '4px solid var(--color-border-heavy)',
-                            boxShadow: 'var(--shadow-brutal)'
+                            border: '1px solid var(--color-border)',
+                            boxShadow: 'var(--shadow-lg)'
                         }}
                     >
                         <h2 style={{ fontSize: '1.5rem', fontWeight: 900, marginBottom: '24px', color: 'var(--color-text-main)', textTransform: 'uppercase', letterSpacing: '-0.02em' }}>
@@ -211,7 +224,7 @@ export function ApprovalModal({
                             <button
                                 onClick={onClose}
                                 style={{
-                                    height: '48px', padding: '0 32px', background: 'none', border: '2px solid var(--color-border-heavy)',
+                                    height: '48px', padding: '0 32px', background: 'none', border: '1px solid var(--color-border)',
                                     cursor: 'pointer', fontWeight: 800, borderRadius: 'var(--radius-sm)',
                                     fontFamily: 'var(--font-family-display)', fontSize: '0.875rem'
                                 }}
@@ -224,13 +237,13 @@ export function ApprovalModal({
                                 style={{
                                     height: '48px',
                                     padding: '0 40px',
-                                    backgroundColor: (type === 'REJECT' || type === 'DELETE' || type === 'DELETE_ITEM' || type === 'DELETE_QUOTATION' || type === 'CANCEL_REQUEST') ? 'var(--color-status-red)' : 'var(--color-primary)',
+                                    backgroundColor: (type === 'REJECT' || type === 'DELETE' || type === 'DELETE_ITEM' || type === 'DELETE_QUOTATION' || type === 'CANCEL_REQUEST' || type === 'DELETE_OBLIGATION') ? 'var(--color-status-red)' : 'var(--color-primary)',
                                     color: '#fff',
                                     border: 'none',
                                     cursor: 'pointer',
                                     fontWeight: 800,
                                     borderRadius: 'var(--radius-sm)',
-                                    boxShadow: '4px 4px 0 var(--color-accent)',
+                                    boxShadow: 'var(--shadow-md)',
                                     fontFamily: 'var(--font-family-display)',
                                     fontSize: '0.875rem',
                                     opacity: processing ? 0.7 : 1

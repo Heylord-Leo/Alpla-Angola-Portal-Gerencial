@@ -5,13 +5,7 @@ import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { SearchFilterBar } from '../../components/ui/SearchFilterBar';
 
-// Icons mapping roughly
-const SearchIcon = () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square" strokeLinejoin="miter">
-        <circle cx="11" cy="11" r="8"></circle>
-        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-    </svg>
-);
+
 
 const DownloadIcon = () => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square" strokeLinejoin="miter">
@@ -55,7 +49,15 @@ export default function FinanceHistory() {
 
     const handleExport = async () => {
         try {
-            await api.finance.exportHistory(searchQuery, actionFilter);
+            const blob = await api.finance.exportHistory(searchQuery, actionFilter);
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `auditoria_financeira_${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
         } catch (e) {
             alert('Falha ao exportar auditoria');
         }
@@ -106,6 +108,7 @@ export default function FinanceHistory() {
             case 'DOCUMENTO ADICIONADO': return { label: 'Comprovativo', bg: '#fdf4ff', color: '#c026d3', border: '#f5d0fe' };
             case 'NOTA_FINANCEIRA': return { label: 'Observação', bg: '#f8fafc', color: '#475569', border: '#e2e8f0' };
             case 'FINANCE_RETURN_ADJUSTMENT': return { label: 'Devolvido', bg: '#fff7ed', color: '#ea580c', border: '#fed7aa' };
+            case 'PAYMENT_DIVERGENCE_DETECTED': return { label: 'Divergência', bg: '#fefce8', color: '#ca8a04', border: '#fde047' };
             default: return { label: action, bg: '#f3f4f6', color: '#374151', border: '#d1d5db' };
         }
     };
@@ -149,7 +152,8 @@ export default function FinanceHistory() {
                     { id: 'PAYMENT_COMPLETED', label: 'Pagos' },
                     { id: 'DOCUMENTO ADICIONADO', label: 'Comprovativos' },
                     { id: 'NOTA_FINANCEIRA', label: 'Observações' },
-                    { id: 'FINANCE_RETURN_ADJUSTMENT', label: 'Devoluções' }
+                    { id: 'FINANCE_RETURN_ADJUSTMENT', label: 'Devoluções' },
+                    { id: 'PAYMENT_DIVERGENCE_DETECTED', label: 'Divergências' }
                 ]}
                 activeTabId={actionFilter}
                 onTabChange={(id) => setActionFilter(id)}
@@ -158,7 +162,7 @@ export default function FinanceHistory() {
             <div style={{
                 backgroundColor: 'var(--color-bg-surface)',
                 border: '2px solid var(--color-border)',
-                boxShadow: 'var(--shadow-brutal)',
+                boxShadow: 'var(--shadow-md)',
                 padding: '32px',
                 width: '100%'
             }}>
@@ -190,13 +194,20 @@ export default function FinanceHistory() {
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingLeft: '8px', borderLeft: '3px solid #e2e8f0' }}>
                                     {items.map(item => {
                                         const action = getActionProps(item.actionTaken);
+                                        const isDivergence = item.actionTaken === 'PAYMENT_DIVERGENCE_DETECTED';
+                                        
+                                        const rowBg = isDivergence ? '#fefce8' : 'var(--color-bg-surface)';
+                                        const rowBorder = isDivergence ? '#fef08a' : 'var(--color-border)';
+                                        const rowBorderLeft = isDivergence ? 'var(--color-status-yellow)' : 'var(--color-border)';
+
                                         return (
                                             <div 
                                                 key={item.id} 
                                                 style={{ 
                                                     position: 'relative',
-                                                    backgroundColor: 'var(--color-bg-surface)', 
-                                                    border: '2px solid var(--color-border)', 
+                                                    backgroundColor: rowBg, 
+                                                    border: `2px solid ${rowBorder}`, 
+                                                    borderLeft: `4px solid ${rowBorderLeft}`,
                                                     padding: '20px',
                                                     marginLeft: '24px',
                                                     display: 'flex',
@@ -204,8 +215,15 @@ export default function FinanceHistory() {
                                                     alignItems: 'center',
                                                     transition: 'all 0.15s ease'
                                                 }}
-                                                onMouseOver={(e) => { e.currentTarget.style.transform = 'translateX(4px)'; e.currentTarget.style.borderColor = action.color; }}
-                                                onMouseOut={(e) => { e.currentTarget.style.transform = 'translateX(0)'; e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+                                                onMouseOver={(e) => { 
+                                                    e.currentTarget.style.transform = 'translateX(4px)'; 
+                                                    e.currentTarget.style.borderColor = action.color; 
+                                                }}
+                                                onMouseOut={(e) => { 
+                                                    e.currentTarget.style.transform = 'translateX(0)'; 
+                                                    e.currentTarget.style.borderColor = rowBorder; 
+                                                    e.currentTarget.style.borderLeftColor = rowBorderLeft;
+                                                }}
                                             >
                                                 {/* Connecting line dot */}
                                                 <div style={{ position: 'absolute', left: '-29px', top: '50%', transform: 'translateY(-50%)', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: action.color, border: '2px solid #fff' }}></div>

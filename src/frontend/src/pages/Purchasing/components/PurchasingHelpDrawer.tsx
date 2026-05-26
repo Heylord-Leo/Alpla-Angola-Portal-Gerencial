@@ -148,7 +148,8 @@ export function PurchasingHelpDrawer({ isOpen, onClose }: PurchasingHelpDrawerPr
                                     transition: 'all 0.2s',
                                     borderRadius: '2px'
                                 }}
-                                className="hover:bg-primary-hover"
+                                onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)')}
+                                onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)')}
                             >
                                 <X size={20} />
                             </button>
@@ -159,7 +160,7 @@ export function PurchasingHelpDrawer({ isOpen, onClose }: PurchasingHelpDrawerPr
                                     color: 'var(--color-primary)',
                                     padding: '12px',
                                     border: '3px solid var(--color-accent)',
-                                    boxShadow: '4px 4px 0 var(--color-accent)'
+                                    boxShadow: 'var(--shadow-md)'
                                 }}>
                                     <BookOpen size={24} strokeWidth={2.5} />
                                 </div>
@@ -265,10 +266,11 @@ export function PurchasingHelpDrawer({ isOpen, onClose }: PurchasingHelpDrawerPr
                                     textTransform: 'uppercase',
                                     fontSize: '0.85rem',
                                     cursor: 'pointer',
-                                    boxShadow: '4px 4px 0 var(--color-accent)',
+                                    boxShadow: 'var(--shadow-md)',
                                     transition: 'all 0.1s'
                                 }}
-                                className="hover:bg-primary-hover active:translate-y-1 active:shadow-none"
+                                onMouseOver={(e) => (e.currentTarget.style.opacity = '0.88')}
+                                onMouseOut={(e) => (e.currentTarget.style.opacity = '1')}
                             >
                                 Entendido
                             </button>

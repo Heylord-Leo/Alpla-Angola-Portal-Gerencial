@@ -1,0 +1,957 @@
+﻿
+============================================
+=== A1: All schedule/shift/config related tables ===
+============================================
+ERROR: Exception calling "ExecuteReader" with "0" argument(s): "Incorrect syntax near the keyword 'RowCount'."
+
+============================================
+=== B1a: Horarios schema ===
+============================================
+COLUMN_NAME | DATA_TYPE | CHARACTER_MAXIMUM_LENGTH
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+IDHorario | int | NULL
+Codigo | nvarchar | 15
+Descricao | nvarchar | 50
+HorasMinimas | datetime | NULL
+HorasNormais | datetime | NULL
+InicioDia | datetime | NULL
+FimDia | datetime | NULL
+IDEntidade | int | NULL
+Coluna1 | int | NULL
+Coluna2 | int | NULL
+Coluna3 | int | NULL
+Coluna4 | int | NULL
+MaxColuna1 | datetime | NULL
+MaxColuna2 | datetime | NULL
+MaxColuna3 | datetime | NULL
+MaxColuna4 | datetime | NULL
+ArredColuna1 | datetime | NULL
+ArredColuna2 | datetime | NULL
+ArredColuna3 | datetime | NULL
+ArredColuna4 | datetime | NULL
+Marcacao1Ini | datetime | NULL
+Marcacao1Fim | datetime | NULL
+Marcacao2Ini | datetime | NULL
+Marcacao2Fim | datetime | NULL
+PrimeiraParteIni | datetime | NULL
+PrimeiraParteFim | datetime | NULL
+SegundaParteIni | datetime | NULL
+SegundaParteFim | datetime | NULL
+Coluna5 | int | NULL
+Coluna6 | int | NULL
+Coluna7 | int | NULL
+MaxColuna5 | datetime | NULL
+MaxColuna6 | datetime | NULL
+MaxColuna7 | datetime | NULL
+ArredColuna5 | datetime | NULL
+ArredColuna6 | datetime | NULL
+ArredColuna7 | datetime | NULL
+MA1Ini | datetime | NULL
+MA1Fim | datetime | NULL
+MA1Hora | datetime | NULL
+MA2Ini | datetime | NULL
+MA2Fim | datetime | NULL
+MA2Hora | datetime | NULL
+MA3Ini | datetime | NULL
+MA3Fim | datetime | NULL
+MA3Hora | datetime | NULL
+MA4Ini | datetime | NULL
+MA4Fim | datetime | NULL
+MA4Hora | datetime | NULL
+MAGerarSempre | bit | NULL
+Cor | nvarchar | 50
+Sigla | nvarchar | 2
+DiaAnterior | bit | NULL
+Red | int | NULL
+Green | int | NULL
+Blue | int | NULL
+FlexibilidadePeriodosFixos | int | NULL
+FlexibilidadePeriodosFixosArredondar | int | NULL
+CompletarPeriodos | bit | NULL
+NumeroMarcacoes | int | NULL
+PeriodoOpcionalEntradaServico | bit | NULL
+DividirAusencias | bit | NULL
+ToleranciaParagem | bit | NULL
+OcultarIndefinidoParagens | bit | NULL
+IgnorarMarcacoes | bit | NULL
+ToleranciaMaximaDiaria | datetime | NULL
+Inativo | bit | NULL
+ToleranciaGeraDBH | bit | NULL
+ToleranciaDBH | datetime | NULL
+AmpliarPeriodosObrigatorios | bit | NULL
+PrimeiraUltimaMarcacao | bit | NULL
+PrimeiraUltimaMarcacaoComSS | bit | NULL
+FaltaNaoCumpreNumeroMarcacoes | bit | NULL
+HorasBancoFolgas | datetime | NULL
+ExtrasNaoContamParaHorasMinimas | bit | NULL
+HorasMinimasIgualHorasNormais | bit | NULL
+HoraInicioIncidencias | datetime | NULL
+HoraFimIncidencias | datetime | NULL
+ScriptMarcacoesAutomaticas | nvarchar | -1
+ScriptPreTolerancia | nvarchar | -1
+ParagemMaximaDiaria | datetime | NULL
+ParagemDepoisPrimeiraMarcacao | bit | NULL
+PodeMarcarPrevencao | bit | NULL
+NumeroMinimoMarcacoes | int | NULL
+NumeroMaximoMarcacoes | int | NULL
+DiaFolga | bit | NULL
+HorarioComoFolga | bit | NULL
+DuracaoEmHorariosSemHorasNormais | datetime | NULL
+HorarioDeInsencao | bit | NULL
+TempoMinimoParagemComTempoTolerancia | bit | NULL
+(Rows: 90)
+
+============================================
+=== B1b: Horarios ALL rows (core fields) ===
+============================================
+IDHorario | Codigo | Descricao | Sigla | HorasNormais | HorasMinimas | InicioDia | FimDia | Marcacao1Ini | Marcacao1Fim | Marcacao2Ini | Marcacao2Fim | PrimeiraParteIni | PrimeiraParteFim | SegundaParteIni | SegundaParteFim | NumeroMarcacoes | DiaFolga | HorarioComoFolga | DiaAnterior | Inativo | DividirAusencias | CompletarPeriodos
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+1 | DIASEM | Dia de Semana | NULL | 08:00:00 | 08:00:00 | 00:00:00 | 00:00:00 | 10:00:00 | 20:00:00 | 06:00:00 | 16:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | NULL | NULL | NULL | NULL | NULL | NULL
+2 | FIMSEM | Fim de Semana | FS | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 07:00:00 | 08:00:00 | 00:00:00 | NULL | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | False | False | False | False | False | False
+3 | FPUB | Função Publica | NULL | 07:00:00 | 02:00:00 | 00:00:00 | 00:00:00 | NULL | NULL | NULL | NULL | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | NULL | NULL | NULL | NULL | NULL | NULL
+12 | Descanso | Dia de descanso | DC | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | True | True | False | False | False | False
+13 | Manha | Trabalho durante a manhã | NULL | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 06:00:00 | 10:00:00 | 12:00:00 | 16:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | False | False | False | False | False | False
+14 | Tarde | Trabalho durante a tarde | NULL | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 16:00:00 | 18:00:00 | 22:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | NULL | NULL | NULL | NULL | NULL | NULL
+15 | Noite | Trabalho durante a noite | NULL | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 18:00:00 | 22:00:00 | 06:00:00 | 10:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | False | False | False | False | False | False
+21 | 08 as 17:30 | 08 as 17:30 | NULL | 08:00:00 | 08:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | False | False | False | False | False | False
+22 | FOLGA | FOLGA | FG | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | True | True | False | False | False | False
+23 | 08 as 14:00 | sexta feira-08 as 14:00 | SX | 06:00:00 | 06:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | False | False | False | False | False | False
+24 | T.Manha 8h-20h | Turno Manhã 8h-20h | TM | 12:00:00 | 12:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | 2 | False | False | False | False | False | False
+25 | T.Noite 20h-8h | Turno Noite 20h-8h | TN | 12:00:00 | 12:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | 2 | False | False | False | False | False | False
+26 | DIASEM | Dia de semana | A | 08:00:00 | 08:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | False | False | False | False | False | False
+27 | FIMSEM | Fim de Semana | FS | 08:00:00 | 08:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | False | False | False | False | False | False
+28 | Descanso | Dia de Descanso | NULL | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | True | True | False | False | False | False
+29 | 08 as 17:30 | 8h00 as 17h30 | NULL | 08:00:00 | 08:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | False | False | False | False | False | False
+30 | FOLGA | FOLGA | FG | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | True | True | False | False | False | False
+31 | 08 AS 12:30 | Sexta feira 08: as 12:30 | SX | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | False | False | False | False | False | False
+32 | T.Manha 08h:20h | Turno Manhã 08h:20h | TM | 12:00:00 | 12:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | False | False | False | False | False | False
+33 | T.Noite 20h-8h | Turno Noite 20h-8h | TN | 12:00:00 | 12:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | False | False | False | False | False | False
+34 | FPUP | Função Publica | NULL | 07:00:00 | 02:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | False | False | False | False | False | False
+35 | 6h as 15h | 2ª / 4ª e 6ª, das 6h às 15h  | SQ | 08:00:00 | 08:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | False | False | False | False | False | False
+36 | Escala 06h-14h | Escala 06h-14h | M | 08:00:00 | 08:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | 2 | False | False | False | False | False | False
+37 | Escala 14h-22h | Escala 14h30-22h30 | T | 08:00:00 | 08:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | 2 | False | False | False | False | False | False
+38 | Escala 22h-06h | Escala 22h30-06h30 | N | 08:00:00 | 08:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | 2 | False | False | False | False | False | False
+39 | Ferias | Ferias | FR | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 12:00:00 | 12:00:00 | 00:00:00 | NULL | True | False | False | False | False | False
+(Rows: 26)
+
+============================================
+=== B1c: Horarios config flags ===
+============================================
+IDHorario | Codigo | TolMaxDiaria | HorasBancoFolgas | NumeroMinimoMarcacoes | NumeroMaximoMarcacoes | PrimeiraUltimaMarcacao | PrimeiraUltimaMarcacaoComSS | FaltaNaoCumpreNumeroMarcacoes | HorarioDeInsencao | IgnorarMarcacoes | FlexibilidadePeriodosFixos | AmpliarPeriodosObrigatorios
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+1 | DIASEM | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL
+2 | FIMSEM | 00:00:00 | 00:00:00 | NULL | NULL | False | False | False | NULL | False | NULL | False
+3 | FPUB | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL
+12 | Descanso | 00:00:00 | 00:00:00 | NULL | NULL | False | False | False | False | False | NULL | False
+13 | Manha | 00:00:00 | 00:00:00 | NULL | NULL | False | False | False | NULL | False | NULL | False
+14 | Tarde | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL
+15 | Noite | 00:00:00 | 00:00:00 | NULL | NULL | False | False | False | NULL | False | NULL | False
+21 | 08 as 17:30 | 00:00:00 | 00:00:00 | 2 | 2 | False | False | False | False | False | NULL | False
+22 | FOLGA | 00:00:00 | 00:00:00 | NULL | NULL | False | False | False | False | False | NULL | False
+23 | 08 as 14:00 | 00:00:00 | 00:00:00 | 2 | 2 | False | False | False | False | False | NULL | False
+24 | T.Manha 8h-20h | 00:00:00 | 00:00:00 | 2 | 2 | False | True | False | False | False | NULL | False
+25 | T.Noite 20h-8h | 00:00:00 | 00:00:00 | 2 | 2 | False | True | False | False | False | NULL | False
+26 | DIASEM | 00:00:00 | 00:00:00 | 2 | 2 | False | False | False | NULL | False | NULL | False
+27 | FIMSEM | 00:00:00 | 00:00:00 | NULL | NULL | False | False | False | NULL | False | NULL | False
+28 | Descanso | 00:00:00 | 00:00:00 | NULL | NULL | False | False | False | False | False | NULL | False
+29 | 08 as 17:30 | 00:00:00 | 00:00:00 | NULL | NULL | False | False | False | NULL | False | NULL | False
+30 | FOLGA | 00:00:00 | 00:00:00 | NULL | NULL | False | False | False | False | False | NULL | False
+31 | 08 AS 12:30 | 00:00:00 | 00:00:00 | 2 | 4 | False | False | False | False | False | NULL | False
+32 | T.Manha 08h:20h | 00:00:00 | 00:00:00 | 2 | 4 | False | False | False | False | False | NULL | False
+33 | T.Noite 20h-8h | 00:00:00 | 00:00:00 | 2 | 4 | False | False | False | False | False | NULL | False
+34 | FPUP | 00:00:00 | 00:00:00 | NULL | NULL | False | False | False | NULL | False | NULL | False
+35 | 6h as 15h | 00:00:00 | 00:00:00 | NULL | NULL | False | False | False | NULL | False | NULL | False
+36 | Escala 06h-14h | 00:15:00 | 00:00:00 | 2 | 4 | False | False | False | False | False | NULL | False
+37 | Escala 14h-22h | 00:15:00 | 00:00:00 | 2 | 4 | False | False | False | False | False | NULL | False
+38 | Escala 22h-06h | 00:15:00 | 00:00:00 | 2 | 4 | False | False | False | False | False | NULL | False
+39 | Ferias | 00:00:00 | 00:00:00 | NULL | NULL | False | False | False | False | False | NULL | False
+(Rows: 26)
+
+============================================
+=== B2a: HorariosPeriodos schema ===
+============================================
+COLUMN_NAME | DATA_TYPE | CHARACTER_MAXIMUM_LENGTH
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+IDHorarioPeriodos | int | NULL
+IDHorario | int | NULL
+Tipo | nvarchar | 15
+Inicio | datetime | NULL
+Fim | datetime | NULL
+ToleranciaEntrada | datetime | NULL
+ToleranciaSaida | datetime | NULL
+Arredondar | datetime | NULL
+IDCodigoTrabalho | int | NULL
+TipoPagamento | nvarchar | 2
+Substituicoes | nvarchar | 3
+(Rows: 11)
+
+============================================
+=== B2b: HorariosPeriodos ALL rows with schedule + work code ===
+============================================
+IDHorarioPeriodos | IDHorario | HorarioCodigo | Tipo | Inicio | Fim | TolEntrada | TolSaida | Arredondar | IDCodigoTrabalho | CodigoTrabalho | DescTrabalho
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+183 | 1 | DIASEM | Obrigatório | 08:30:00 | 17:00:00 | 00:10:00 | 00:00:00 | 00:01:00 | 1 | Basico | Trabalho Basico
+144 | 2 | FIMSEM | Opcional | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:01:00 | 4 | Hora Extra | Trabalho Hora Extra
+132 | 3 | FPUB | Obrigatório | 10:00:00 | 11:00:00 | 00:10:00 | 00:00:00 | 00:01:00 | 1 | Basico | Trabalho Basico
+133 | 3 | FPUB | Obrigatório | 15:00:00 | 16:00:00 | 00:10:00 | 00:00:00 | 00:01:00 | 1 | Basico | Trabalho Basico
+184 | 13 | Manha | Obrigatório | 08:00:00 | 20:00:00 | 00:15:00 | 00:00:00 | 00:01:00 | 1 | Basico | Trabalho Basico
+187 | 14 | Tarde | Obrigatório | 14:00:00 | 20:00:00 | 00:00:00 | 00:00:00 | 00:01:00 | 1 | Basico | Trabalho Basico
+186 | 15 | Noite | Obrigatório | 20:00:00 | 08:00:00 | 00:15:00 | 00:00:00 | 00:01:00 | 1 | Basico | Trabalho Basico
+188 | 16 | NULL | Opcional | 00:00:00 | 07:00:00 | 00:00:00 | 00:00:00 | 00:01:00 | 4 | Hora Extra | Trabalho Hora Extra
+189 | 16 | NULL | Obrigatório | 08:00:00 | 17:30:00 | 00:15:00 | 00:15:00 | 00:01:00 | 1 | Basico | Trabalho Basico
+190 | 16 | NULL | Opcional | 18:00:00 | 23:59:00 | 00:00:00 | 00:00:00 | 00:01:00 | 2 | Extra | Trabalho Extra 150%
+202 | 19 | NULL | Opcional | 00:00:00 | 08:00:00 | NULL | NULL | NULL | 4 | Hora Extra | Trabalho Hora Extra
+199 | 19 | NULL | Obrigatório | 08:00:00 | 12:30:00 | 00:15:00 | 00:59:00 | 00:01:00 | 1 | Basico | Trabalho Basico
+204 | 19 | NULL | Opcional | 12:30:00 | 08:00:00 | NULL | NULL | NULL | 4 | Hora Extra | Trabalho Hora Extra
+197 | 20 | NULL | Obrigatório | 08:00:00 | 12:00:00 | 00:15:00 | 00:05:00 | 00:01:00 | 1 | Basico | Trabalho Basico
+198 | 20 | NULL | Opcional | 12:00:00 | 14:00:00 | 00:00:00 | 00:00:00 | 00:01:00 | 4 | Hora Extra | Trabalho Hora Extra
+200 | 20 | NULL | Obrigatório | 14:00:00 | 17:30:00 | 00:05:00 | 00:30:00 | 01:00:00 | 1 | Basico | Trabalho Basico
+205 | 20 | NULL | Opcional | 17:30:00 | 18:30:00 | 00:00:00 | 00:00:00 | 00:01:00 | 2 | Extra | Trabalho Extra 150%
+207 | 21 | 08 as 17:30 | Obrigatório | 08:00:00 | 17:30:00 | 00:15:00 | 00:45:00 | 00:01:00 | 1 | Basico | Trabalho Basico
+208 | 23 | 08 as 14:00 | Obrigatório | 08:00:00 | 14:00:00 | 00:15:00 | 00:50:00 | 00:01:00 | 1 | Basico | Trabalho Basico
+209 | 24 | T.Manha 8h-20h | Obrigatório | 08:00:00 | 20:00:00 | 00:15:00 | 00:30:00 | 00:01:00 | 1 | Basico | Trabalho Basico
+210 | 25 | T.Noite 20h-8h | Obrigatório | 20:00:00 | 08:00:00 | 00:15:00 | 00:30:00 | 00:01:00 | 1 | Basico | Trabalho Basico
+212 | 26 | DIASEM | Obrigatório | 08:30:00 | 17:00:00 | 00:10:00 | 00:00:00 | 00:01:00 | 201 | Basico | trabalho Basico
+213 | 27 | FIMSEM | Opcional | 00:00:00 | 00:00:00 | 00:00:00 | 00:00:00 | 00:01:00 | 203 | Não Pago | Trabalho Não Pago
+211 | 29 | 08 as 17:30 | Obrigatório | 08:00:00 | 17:30:00 | 00:15:00 | 00:45:00 | 00:01:00 | 201 | Basico | trabalho Basico
+214 | 31 | 08 AS 12:30 | Obrigatório | 08:00:00 | 14:00:00 | 00:15:00 | 00:59:00 | 00:01:00 | 201 | Basico | trabalho Basico
+215 | 32 | T.Manha 08h:20h | Obrigatório | 08:00:00 | 20:00:00 | 00:15:00 | 00:45:00 | 00:01:00 | 201 | Basico | trabalho Basico
+216 | 33 | T.Noite 20h-8h | Obrigatório | 20:00:00 | 08:00:00 | 00:15:00 | 00:50:00 | 00:01:00 | 201 | Basico | trabalho Basico
+217 | 34 | FPUP | Obrigatório | 10:00:00 | 11:00:00 | 00:10:00 | 00:00:00 | 00:01:00 | 201 | Basico | trabalho Basico
+218 | 34 | FPUP | Obrigatório | 15:00:00 | 16:00:00 | 00:10:00 | 00:00:00 | 00:01:00 | 201 | Basico | trabalho Basico
+219 | 35 | 6h as 15h | Obrigatório | 06:00:00 | 15:00:00 | 00:15:00 | 00:40:00 | 00:01:00 | 201 | Basico | trabalho Basico
+220 | 36 | Escala 06h-14h | Obrigatório | 06:30:00 | 14:30:00 | 00:15:00 | 00:30:00 | 00:01:00 | 1 | Basico | Trabalho Basico
+221 | 37 | Escala 14h-22h | Obrigatório | 14:30:00 | 22:30:00 | 00:15:00 | 00:30:00 | 00:01:00 | 1 | Basico | Trabalho Basico
+222 | 38 | Escala 22h-06h | Obrigatório | 22:30:00 | 06:30:00 | 00:15:00 | 00:30:00 | 00:01:00 | 1 | Basico | Trabalho Basico
+(Rows: 33)
+
+============================================
+=== B3a: PlanosTrabalho schema ===
+============================================
+COLUMN_NAME | DATA_TYPE | CHARACTER_MAXIMUM_LENGTH
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+IDPlanoTrabalho | int | NULL
+Codigo | nvarchar | 15
+Descricao | nvarchar | 50
+Tipo | nvarchar | 15
+NumeroDias | int | NULL
+DataInicio | datetime | NULL
+IDAusencia | int | NULL
+IDFeriados | int | NULL
+IDNaoPago | int | NULL
+IDEntidade | int | NULL
+DiaSub1 | int | NULL
+DiaSub2 | int | NULL
+DiaSub3 | int | NULL
+DiaSub4 | int | NULL
+DiaSub5 | int | NULL
+IDHorarioSub1 | int | NULL
+IDHorarioSub2 | int | NULL
+IDHorarioSub3 | int | NULL
+IDHorarioSub4 | int | NULL
+IDHorarioSub5 | int | NULL
+IDFolgas | int | NULL
+ArredondaFalta | bit | NULL
+CompActivar | bit | NULL
+CompPeriodo | int | NULL
+CompPeriodosObrigatorios | bit | NULL
+CompCreditoInicial | datetime | NULL
+CompTransportar | bit | NULL
+CompLimiteTransporte | datetime | NULL
+CompIDCodigoComp | int | NULL
+CompIDCodigoCompAut | int | NULL
+CompIDCodigoTrab | int | NULL
+CompTransportarDebitos | bit | NULL
+CompLimiteTransporteDebitos | datetime | NULL
+CompHorasDispensa | datetime | NULL
+CompIDCodigoDispensa | int | NULL
+CompCreditosAutorizados | bit | NULL
+CompIDCreditoAutorizado | int | NULL
+MostrarFaltaNaJustificacao | bit | NULL
+ContabilizarTolerancia | bit | NULL
+IDCodigoTolerancia | int | NULL
+LimiteTolerancia | int | NULL
+MaxOcorrenciasTolerancia | int | NULL
+CompDispensaSaldoNegativo | bit | NULL
+CompDispensaNaoCompensadaFalta | bit | NULL
+CompSaldoNegativoFalta | bit | NULL
+ToleranciaDescontaDispensa | bit | NULL
+CompUsadaMesSeguinte | bit | NULL
+CompUsadaApenasMesSeguinte | bit | NULL
+CompUsadaApenas3MesesSeguintes | bit | NULL
+CalculoSaldo | int | NULL
+ScriptSaldo | nvarchar | -1
+ScriptPeriodo | nvarchar | -1
+CompCaducarSaldo | bit | NULL
+CompCaducarSaldoMeses | int | NULL
+Autorizada | bit | NULL
+AutorizadaWebTime | bit | NULL
+ProcFimMes | bit | NULL
+ProcFimSemana | bit | NULL
+DistOrigem1 | int | NULL
+DistLimite1 | datetime | NULL
+DistDestino1 | int | NULL
+DistRestante1 | int | NULL
+DistOrigem2 | int | NULL
+DistLimite2 | datetime | NULL
+DistDestino2 | int | NULL
+DistRestante2 | int | NULL
+CompLimiteAnual | int | NULL
+Inativo | bit | NULL
+CompDiasCiclo | int | NULL
+CompInicioCiclo | datetime | NULL
+LancarAusencia | bit | NULL
+PodeMarcarFeriasFimSemana | bit | NULL
+PreAutorizacaoExtras | bit | NULL
+CompLimitePeriodo | datetime | NULL
+PassarSaldoPositivoExtra | bit | NULL
+ExtraCod1 | int | NULL
+ExtraCod2 | int | NULL
+ExtraCod3 | int | NULL
+ExtLimite1 | datetime | NULL
+ExtLimite2 | datetime | NULL
+ExtLimite3 | datetime | NULL
+InicioAno | datetime | NULL
+AplicarLimites | bit | NULL
+(Rows: 83)
+
+============================================
+=== B3b: PlanosTrabalho ALL rows ===
+============================================
+IDPlanoTrabalho | Codigo | Descricao | Tipo | NumeroDias | DataInicio | IDAusencia | IDFeriados | IDNaoPago | IDEntidade | DiaSub1 | DiaSub2 | DiaSub3 | DiaSub4 | DiaSub5 | IDHorarioSub1 | IDHorarioSub2 | IDHorarioSub3 | IDHorarioSub4 | IDHorarioSub5 | IDFolgas | ArredondaFalta | CompActivar | CompPeriodo | CompPeriodosObrigatorios | CompCreditoInicial | CompTransportar | CompLimiteTransporte | CompIDCodigoComp | CompIDCodigoCompAut | CompIDCodigoTrab | CompTransportarDebitos | CompLimiteTransporteDebitos | CompHorasDispensa | CompIDCodigoDispensa | CompCreditosAutorizados | CompIDCreditoAutorizado | MostrarFaltaNaJustificacao | ContabilizarTolerancia | IDCodigoTolerancia | LimiteTolerancia | MaxOcorrenciasTolerancia | CompDispensaSaldoNegativo | CompDispensaNaoCompensadaFalta | CompSaldoNegativoFalta | ToleranciaDescontaDispensa | CompUsadaMesSeguinte | CompUsadaApenasMesSeguinte | CompUsadaApenas3MesesSeguintes | CalculoSaldo | ScriptSaldo | ScriptPeriodo | CompCaducarSaldo | CompCaducarSaldoMeses | Autorizada | AutorizadaWebTime | ProcFimMes | ProcFimSemana | DistOrigem1 | DistLimite1 | DistDestino1 | DistRestante1 | DistOrigem2 | DistLimite2 | DistDestino2 | DistRestante2 | CompLimiteAnual | Inativo | CompDiasCiclo | CompInicioCiclo | LancarAusencia | PodeMarcarFeriasFimSemana | PreAutorizacaoExtras | CompLimitePeriodo | PassarSaldoPositivoExtra | ExtraCod1 | ExtraCod2 | ExtraCod3 | ExtLimite1 | ExtLimite2 | ExtLimite3 | InicioAno | AplicarLimites | DataInicioFmt | AusenciaCodigo | AusenciaDesc
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+1 | STRD | Plano Semanal Standard | Padrão | 7 | 2005-05-02 11:08:32 | 29 | 22 | 4 | 1 | 0 | NULL | NULL | NULL | NULL | 3 | NULL | NULL | NULL | NULL | 12 | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL |  |  | False | 0 | False | False | False | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | False | True | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | 2005-05-02 | F03 | Falta Injustificada
+2 | AUT | Plano atribuição automática | Automático | 0 | 2005-03-21 11:08:40 | 1 | 2 | 4 | 1 | NULL | 6 | NULL | NULL | NULL | 2 | 3 | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | 2005-03-21 | FLTINJ | Falta Injustificada
+5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | 0 | 2025-10-01 00:00:00 | NULL | NULL | NULL | 1 | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | 22 | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL |  |  | False | 0 | False | False | False | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | False | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | 2025-10-01 | NULL | NULL
+6 | STRD | PlanoAdministrativo | Padrão | 7 | 2005-05-02 00:00:00 | 49 | 30 | 203 | 6 | 0 | NULL | NULL | NULL | NULL | 34 | NULL | NULL | NULL | NULL | 28 | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL |  |  | False | 0 | False | False | False | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | False | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | 2005-05-02 | F03 | Falta Injustificada
+7 | Escala-08h-20h | Escala-08h-20h Manhã | Escala | 0 | 2025-10-01 00:00:00 | NULL | NULL | NULL | 6 | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | 28 | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL |  |  | False | 0 | False | False | False | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | False | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | 2025-10-01 | NULL | NULL
+8 | MND | MANDELE | Padrão | 7 | 2005-05-02 00:00:00 | 49 | 27 | 203 | 6 | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | 28 | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL |  |  | False | 0 | False | False | False | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | False | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | 2005-05-02 | F03 | Falta Injustificada
+9 | DTI | DTI | Calendar | 0 | 2025-12-01 00:00:00 | NULL | NULL | NULL | 1 | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | 2 | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL |  |  | False | 0 | False | False | False | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | False | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | 2025-12-01 | NULL | NULL
+10 | ADMINISTRATIVO | Administrativo | Padrão | 7 | 2025-06-02 00:00:00 | 29 | 22 | 2 | 1 | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | 12 | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL |  |  | False | 0 | False | False | False | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | False | True | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | 2025-06-02 | F03 | Falta Injustificada
+11 | Escala-20h-08h | Escala-20h-08h-Noite | Escala | 0 | 2025-11-01 00:00:00 | NULL | NULL | NULL | 1 | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | 22 | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL |  |  | False | 0 | False | False | False | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | False | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | 2025-11-01 | NULL | NULL
+12 | Escala-20h-08h | Escala-20h-08h -Noite | Escala | 0 | 2025-10-01 00:00:00 | NULL | NULL | NULL | 6 | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | 28 | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL |  |  | False | 0 | False | False | False | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | False | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | 2025-10-01 | NULL | NULL
+13 | Escala-Intercal | Escala-Intercalada | Escala | 0 | 2025-10-01 00:00:00 | NULL | NULL | NULL | 6 | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | 28 | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL |  |  | False | 0 | False | False | False | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | NULL | NULL | False | False | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | NULL | False | 2025-10-01 | NULL | NULL
+(Rows: 11)
+
+============================================
+=== B4a: PlanosTrabalhoHorarios schema ===
+============================================
+COLUMN_NAME | DATA_TYPE | CHARACTER_MAXIMUM_LENGTH
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+IDPlanoTrabalhoHorario | int | NULL
+IDPlanoTrabalho | int | NULL
+IDHorario | int | NULL
+Dia | int | NULL
+(Rows: 4)
+
+============================================
+=== B4b: PlanosTrabalhoHorarios sample (first 50) ===
+============================================
+IDPlanoTrabalhoHorario | IDPlanoTrabalho | PlanoCodigo | PlanoDesc | Dia | IDHorario | HorarioCodigo | HorarioDesc | DiaFolga | HorarioComoFolga
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+12272 | 1 | STRD | Plano Semanal Standard | 0 | 21 | 08 as 17:30 | 08 as 17:30 | False | False
+12273 | 1 | STRD | Plano Semanal Standard | 1 | 21 | 08 as 17:30 | 08 as 17:30 | False | False
+12274 | 1 | STRD | Plano Semanal Standard | 2 | 21 | 08 as 17:30 | 08 as 17:30 | False | False
+12275 | 1 | STRD | Plano Semanal Standard | 3 | 21 | 08 as 17:30 | 08 as 17:30 | False | False
+12276 | 1 | STRD | Plano Semanal Standard | 4 | 23 | 08 as 14:00 | sexta feira-08 as 14:00 | False | False
+12277 | 1 | STRD | Plano Semanal Standard | 5 | 12 | Descanso | Dia de descanso | True | True
+12278 | 1 | STRD | Plano Semanal Standard | 6 | 12 | Descanso | Dia de descanso | True | True
+12279 | 1 | STRD | Plano Semanal Standard | 7 | 2 | FIMSEM | Fim de Semana | False | False
+12280 | 1 | STRD | Plano Semanal Standard | 8 | 2 | FIMSEM | Fim de Semana | False | False
+12281 | 1 | STRD | Plano Semanal Standard | 9 | 2 | FIMSEM | Fim de Semana | False | False
+12282 | 1 | STRD | Plano Semanal Standard | 10 | 2 | FIMSEM | Fim de Semana | False | False
+12283 | 1 | STRD | Plano Semanal Standard | 11 | 2 | FIMSEM | Fim de Semana | False | False
+12284 | 1 | STRD | Plano Semanal Standard | 12 | 2 | FIMSEM | Fim de Semana | False | False
+12285 | 1 | STRD | Plano Semanal Standard | 13 | 2 | FIMSEM | Fim de Semana | False | False
+12286 | 1 | STRD | Plano Semanal Standard | 14 | 3 | FPUB | Função Publica | NULL | NULL
+12287 | 1 | STRD | Plano Semanal Standard | 15 | 3 | FPUB | Função Publica | NULL | NULL
+12288 | 1 | STRD | Plano Semanal Standard | 16 | 3 | FPUB | Função Publica | NULL | NULL
+12289 | 1 | STRD | Plano Semanal Standard | 17 | 3 | FPUB | Função Publica | NULL | NULL
+12290 | 1 | STRD | Plano Semanal Standard | 18 | 3 | FPUB | Função Publica | NULL | NULL
+12291 | 1 | STRD | Plano Semanal Standard | 19 | 3 | FPUB | Função Publica | NULL | NULL
+12292 | 1 | STRD | Plano Semanal Standard | 20 | 3 | FPUB | Função Publica | NULL | NULL
+12293 | 1 | STRD | Plano Semanal Standard | 21 | 4 | NULL | NULL | NULL | NULL
+12294 | 1 | STRD | Plano Semanal Standard | 22 | 4 | NULL | NULL | NULL | NULL
+12295 | 1 | STRD | Plano Semanal Standard | 23 | 4 | NULL | NULL | NULL | NULL
+12296 | 1 | STRD | Plano Semanal Standard | 24 | 4 | NULL | NULL | NULL | NULL
+12297 | 1 | STRD | Plano Semanal Standard | 25 | 4 | NULL | NULL | NULL | NULL
+12298 | 1 | STRD | Plano Semanal Standard | 26 | 4 | NULL | NULL | NULL | NULL
+12299 | 1 | STRD | Plano Semanal Standard | 27 | 4 | NULL | NULL | NULL | NULL
+12300 | 1 | STRD | Plano Semanal Standard | 28 | 1 | DIASEM | Dia de Semana | NULL | NULL
+12301 | 1 | STRD | Plano Semanal Standard | 29 | 1 | DIASEM | Dia de Semana | NULL | NULL
+12302 | 1 | STRD | Plano Semanal Standard | 30 | 1 | DIASEM | Dia de Semana | NULL | NULL
+12303 | 1 | STRD | Plano Semanal Standard | 31 | 1 | DIASEM | Dia de Semana | NULL | NULL
+12304 | 1 | STRD | Plano Semanal Standard | 32 | 1 | DIASEM | Dia de Semana | NULL | NULL
+12305 | 1 | STRD | Plano Semanal Standard | 33 | 1 | DIASEM | Dia de Semana | NULL | NULL
+12306 | 1 | STRD | Plano Semanal Standard | 34 | 1 | DIASEM | Dia de Semana | NULL | NULL
+12307 | 1 | STRD | Plano Semanal Standard | 35 | 2 | FIMSEM | Fim de Semana | False | False
+12308 | 1 | STRD | Plano Semanal Standard | 36 | 2 | FIMSEM | Fim de Semana | False | False
+12309 | 1 | STRD | Plano Semanal Standard | 37 | 2 | FIMSEM | Fim de Semana | False | False
+12310 | 1 | STRD | Plano Semanal Standard | 38 | 2 | FIMSEM | Fim de Semana | False | False
+12311 | 1 | STRD | Plano Semanal Standard | 39 | 2 | FIMSEM | Fim de Semana | False | False
+12312 | 1 | STRD | Plano Semanal Standard | 40 | 2 | FIMSEM | Fim de Semana | False | False
+12313 | 1 | STRD | Plano Semanal Standard | 41 | 2 | FIMSEM | Fim de Semana | False | False
+12314 | 1 | STRD | Plano Semanal Standard | 42 | 3 | FPUB | Função Publica | NULL | NULL
+12315 | 1 | STRD | Plano Semanal Standard | 43 | 3 | FPUB | Função Publica | NULL | NULL
+12316 | 1 | STRD | Plano Semanal Standard | 44 | 3 | FPUB | Função Publica | NULL | NULL
+12317 | 1 | STRD | Plano Semanal Standard | 45 | 3 | FPUB | Função Publica | NULL | NULL
+12318 | 1 | STRD | Plano Semanal Standard | 46 | 3 | FPUB | Função Publica | NULL | NULL
+12319 | 1 | STRD | Plano Semanal Standard | 47 | 3 | FPUB | Função Publica | NULL | NULL
+12320 | 1 | STRD | Plano Semanal Standard | 48 | 3 | FPUB | Função Publica | NULL | NULL
+12321 | 1 | STRD | Plano Semanal Standard | 49 | 4 | NULL | NULL | NULL | NULL
+(Rows: 50)
+
+============================================
+=== B4c: PlanosTrabalhoHorarios summary per plan ===
+============================================
+IDPlanoTrabalho | Codigo | Descricao | Tipo | DaysInCycle | DistinctSchedules
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+1 | STRD | Plano Semanal Standard | Padrão | 245 | 7
+2 | AUT | Plano atribuição automática | Automático | 56 | 4
+5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | 245 | 0
+6 | STRD | PlanoAdministrativo | Padrão | 245 | 3
+7 | Escala-08h-20h | Escala-08h-20h Manhã | Escala | 245 | 0
+8 | MND | MANDELE | Padrão | 245 | 3
+9 | DTI | DTI | Calendar | 245 | 1
+10 | ADMINISTRATIVO | Administrativo | Padrão | 245 | 3
+11 | Escala-20h-08h | Escala-20h-08h-Noite | Escala | 245 | 0
+12 | Escala-20h-08h | Escala-20h-08h -Noite | Escala | 245 | 0
+13 | Escala-Intercal | Escala-Intercalada | Escala | 245 | 0
+(Rows: 11)
+
+============================================
+=== B5a: PlanosFolgas schema ===
+============================================
+COLUMN_NAME | DATA_TYPE | CHARACTER_MAXIMUM_LENGTH
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+IDPlanoFolga | int | NULL
+IDFuncionario | int | NULL
+Data | datetime | NULL
+(Rows: 3)
+
+============================================
+=== B5b: PlanosFolgas recent samples ===
+============================================
+IDPlanoFolga | IDFuncionario | Nome | DataFolga
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+74 | 1716 | JOEL DA CRUZ BERNARDO | 2026-01-31
+73 | 1716 | JOEL DA CRUZ BERNARDO | 2026-01-30
+72 | 1716 | JOEL DA CRUZ BERNARDO | 2026-01-29
+71 | 1716 | JOEL DA CRUZ BERNARDO | 2026-01-28
+70 | 1716 | JOEL DA CRUZ BERNARDO | 2026-01-27
+69 | 1716 | JOEL DA CRUZ BERNARDO | 2026-01-26
+68 | 1716 | JOEL DA CRUZ BERNARDO | 2026-01-25
+67 | 1716 | JOEL DA CRUZ BERNARDO | 2026-01-24
+66 | 1716 | JOEL DA CRUZ BERNARDO | 2026-01-23
+65 | 1716 | JOEL DA CRUZ BERNARDO | 2026-01-22
+64 | 1716 | JOEL DA CRUZ BERNARDO | 2026-01-21
+63 | 1716 | JOEL DA CRUZ BERNARDO | 2026-01-20
+62 | 1716 | JOEL DA CRUZ BERNARDO | 2026-01-19
+60 | 1555 | FRANCISCO CELESTINO LUÍS PEDRO | 2025-12-31
+31 | 1529 | ANTONIO JOÃO SALVADOR DAVID | 2025-12-31
+30 | 1529 | ANTONIO JOÃO SALVADOR DAVID | 2025-12-30
+59 | 1555 | FRANCISCO CELESTINO LUÍS PEDRO | 2025-12-30
+58 | 1555 | FRANCISCO CELESTINO LUÍS PEDRO | 2025-12-29
+29 | 1529 | ANTONIO JOÃO SALVADOR DAVID | 2025-12-29
+28 | 1529 | ANTONIO JOÃO SALVADOR DAVID | 2025-12-28
+(Rows: 20)
+
+============================================
+=== C1: Escala/Servico tables ===
+============================================
+TABLE_NAME
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ConfiguracoesNovosServicos
+EscalasFuncoes
+EscalasModelos
+EscalasModelosDias
+EscalasModelosTurnos
+FuncionariosServicosAlterados
+MarcacoesSaidasServico
+MarcacoesSaidasServicoLog
+Servicos
+ServicosChefes
+ServicosEscalasDia
+ServicosFuncionarios
+ServicosHorariosEscalas
+ServicosHorariosEscalasTipos
+TiposSaidaServico
+UtilizadoresServicos
+(Rows: 16)
+
+============================================
+=== C2a: ServicosHorariosEscalas schema ===
+============================================
+COLUMN_NAME | DATA_TYPE
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+IDServico | int
+Codigo | nvarchar
+Descricao | nvarchar
+HorasNormais | datetime
+InicioDia | datetime
+FimDia | datetime
+Cor | nvarchar
+Red | int
+Green | int
+Blue | int
+Sigla | nvarchar
+IDHorarioTime | int
+IDHorario | int
+Feriado | bit
+HorasSemanais | bit
+(Rows: 15)
+
+============================================
+=== C2b: ServicosHorariosEscalas sample ===
+============================================
+IDServico | Codigo | Descricao | HorasNormais | InicioDia | FimDia | Cor | Red | Green | Blue | Sigla | IDHorarioTime | IDHorario | Feriado | HorasSemanais
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+(Rows: 0)
+
+============================================
+=== C3: ServicosHorariosEscalasTipos ===
+============================================
+IDTipoHorario | Descricao | Sigla | Red | Green | Blue | PermitirPrevencaoFisica
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+(Rows: 0)
+
+============================================
+=== C4: TiposSaidaServico ===
+============================================
+IDTipoSaidaServico | DescricaoTipo
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+(Rows: 0)
+
+============================================
+=== C5a: SaidasServico schema ===
+============================================
+Info
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+N/A
+(Rows: 1)
+
+============================================
+=== C5b: SaidasServico row count ===
+============================================
+ERROR: Exception calling "ExecuteReader" with "0" argument(s): "Incorrect syntax near the keyword 'RowCount'."
+
+============================================
+=== D1: Active employees with their work plan assignment ===
+============================================
+IDFuncionario | Nome | Numero | Activo | IDPlanoTrabalho | PlanoCodigo | PlanoDesc | PlanoTipo | Departamento | Entidade
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+1525 | ABENECO MANUEL PEDRO | 21000033 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | COMPRAS | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1741 | ADILSON ANTONIO MANGO | 21000000 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | COMPRAS | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1595 | ADRIANO DA SILVA | 21000080 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | OPERAÇÕES | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1751 | ALCIDES PEDRO FILIPE | 21000243 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | FINANÇAS | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1752 | ALEIDITE XAVIER CUSTODIO SIMÃO | 21000244 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | RECURSOS HUMANOS | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1706 | ANDERSAN DA SILVA EUSÉBIO BOTELHO | 21000217 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | RECURSOS HUMANOS | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1759 | ANDRE BARREIRA VALE | 21000027 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | OPERAÇÕES | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1519 | ANDRE JOSE FRANCISCO | 21000008 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1679 | ANTERO DUVAL DE SOUSA | 21000206 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | OPERAÇÕES | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1765 | ANTONIO CATONDO JULIO | 21000259 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | MANUTENÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1527 | ANTONIO MUSSOLE CHITALI  | 21000038 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | TRANSPORTE AOVIA1 | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1541 | ANTÓNIO ULICA NAPOLONGA CANGUTO  | 21000072 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | RECURSOS HUMANOS | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1677 | APAULANTE DA CONCEIÇÃO FRANCISCO PAULO | 21000203 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | FINANÇAS | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1725 | ARISTOTELES FERNANDO CRISTOVAO PASCOAL | 21000232 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | FINANÇAS | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1756 | BIAVANGA NELSON JOÃO | 21000252 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | QUALIDADE | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1726 | CAROLINA MORGADO DE FIGUEIREDO BENTO MODESTO | 21000233 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | RECURSOS HUMANOS | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1594 | CECILIA LUENA ADÃO RIBEIRO | 21000074 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | QUALIDADE | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1746 | CELESTINA ANDRADE ERNESTO BERNARDO | 21000240 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | COMPRAS | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1597 | CLEMENTE JORGE ANTÓNIO | 21000128 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1753 | DIANINGAMA JOÃO ANTÓNIO ALVARO | 21000247 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | MANUTENÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1745 | DIONISIO DE JESUS GUERREIRO CHIQUENGUE | 21000242 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | COMPRAS | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1724 | EDNILSON MOLDOVAN CUSSUMUA PEREIRA | 21000231 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | FINANÇAS | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1518 | FERREIRA TEIXEIRA ERNESTO | 21000004 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | QUALIDADE | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1517 | INOCENCIO LUVANGUE VAN-DUNEM | 21000002 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | RECURSOS HUMANOS | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1754 | ISABEL MIRREIA QUISASA DUNDO | 21000250 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | FINANÇAS | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1599 | JOÃO FERNANDO PEDRO MANUEL | 21000066 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | QUALIDADE | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1600 | JOAQUIM GARRIDO FRAGOSO | 21000086 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | TRANSPORTE AOVIA1 | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1580 | JOSE CELIO DA SILVA DOS SANTOS | 21000118 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | MANUTENÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1579 | KLEBER BARRERIA DO VALE | 21000090 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1578 | LEANDERSON RODRIGO NAZATTO | 21000089 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1758 | LEONARDO BRITO CINTRA | 21000087 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | INFORMÁTICA | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1757 | LUIZ CARLOS LOPES | 21000022 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | MANUTENÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1740 | MADALENA FERNANDO GOMBO | 21999993 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | RECURSOS HUMANOS | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1546 | MÁRIO YONGO MUSSANGA | 21000079 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | OPERAÇÕES | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1755 | MAYIMONA MATONDO GARCIA | 21000251 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | MANUTENÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1732 | MIQUEIAS PAULO | 21000236 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | QUALIDADE | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1539 | MIRIÃ PATRICIA LEMOS FERNANDES  | 21000069 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | RECURSOS HUMANOS | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1764 | NACATCH ALEXANDRA CHIHILUCA JOSÉ | 21000258 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | FINANÇAS | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1532 | NAZÁRIO BULA DA SILVA MANUEL | 21000055 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | MANUTENÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1591 | PAULO DA SILVA | 21000036 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | QUALIDADE | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1598 | TOMISSON CAETANO DOS SANTOS PEDRO | 21000070 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | MANUTENÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1723 | ZEFERINO FERNANDO KENGUE | 21000225 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1548 | ZINEDINE ZIDANE DOS S | 21000082 | True | 10 | ADMINISTRATIVO | Administrativo | Padrão | MANUTENÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1744 | ANTONIO FRANCISCO JERONIMO | 21000241 | True | 7 | Escala-08h-20h | Escala-08h-20h Manhã | Escala | MANUTENÇÃO | AOVIA3- SOPROS
+1675 | CRISTALINO JOSÉ PAIVA | 21000192 | True | 7 | Escala-08h-20h | Escala-08h-20h Manhã | Escala | MANUTENÇÃO | AOVIA3- SOPROS
+1644 | DOMINGOS JOSÉ GANGA | 21000151 | True | 7 | Escala-08h-20h | Escala-08h-20h Manhã | Escala | MANUTENÇÃO | AOVIA3- SOPROS
+1729 | FIRMONE S. CANJULUCA FIGUEIREDO | 21000234 | True | 7 | Escala-08h-20h | Escala-08h-20h Manhã | Escala | MANUTENÇÃO | AOVIA3- SOPROS
+1705 | IVAILTON MENDES | 00007 | True | 7 | Escala-08h-20h | Escala-08h-20h Manhã | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1668 | JOAQUIM GOMES MANUEL | 21000176 | True | 7 | Escala-08h-20h | Escala-08h-20h Manhã | Escala | MANUTENÇÃO | AOVIA3- SOPROS
+1649 | JOSÉ GARCIA CAMBAMBE | 21000156 | True | 7 | Escala-08h-20h | Escala-08h-20h Manhã | Escala | MANUTENÇÃO | AOVIA3- SOPROS
+1763 | MÁRIO MIGUEL JÚNIOR | 21000255 | True | 7 | Escala-08h-20h | Escala-08h-20h Manhã | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1617 | NELSON DO ROSÁRIO PEDRO MANUEL | 21000113 | True | 7 | Escala-08h-20h | Escala-08h-20h Manhã | Escala | MANUTENÇÃO | AOVIA3- SOPROS
+1651 | PEDRO ALBERTO CAIANGO | 21000158 | True | 7 | Escala-08h-20h | Escala-08h-20h Manhã | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1711 | Pedro teste | 20005555 | True | 7 | Escala-08h-20h | Escala-08h-20h Manhã | Escala | RECURSOS HUMANOS | AOVIA3- SOPROS
+1693 | ROGÉRIO SIMÃO JOSÉ | 21000205 | True | 7 | Escala-08h-20h | Escala-08h-20h Manhã | Escala | MANUTENÇÃO | AOVIA3- SOPROS
+1692 | WILSON MANUEL JOÃO | 21000204 | True | 7 | Escala-08h-20h | Escala-08h-20h Manhã | Escala | MANUTENÇÃO | AOVIA3- SOPROS
+1625 | YURI GASPAR LUÍS | 21000129 | True | 7 | Escala-08h-20h | Escala-08h-20h Manhã | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1576 | ADALBERTO LEANDRO DA SILVA | 21000073 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1581 | ALBERTO CHOSSANGA LUCAS | 21000178 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1586 | AMILTON DOMINGOS SANDAMBONGO CACUPA | 21000185 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1562 | AMORIM JOSÉ TOMÃS | 21000124 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | OPERAÇÕES | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1761 | ANASTÁCIO DE MATOS NUNGUNO PINTO | 21000253 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | MANUTENÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1530 | ANDRÉ CONCEIÇÃO FIGUEIRA  | 21000048 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1568 | ANDRÉ JOAQUIM FELICIANO | 21000174 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1564 | ANTÓNIO CHIVINDA KATENDA | 21000126 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | OPERAÇÕES | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1529 | ANTONIO JOÃO SALVADOR DAVID | 21000045 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1535 | ANTONIO MIGUEL TOMAS MENDES - caps  | 21000061 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1728 | AZARIAS JOSE JOAO CANZENZE | 21000235 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1560 | BENJAMIM KINABACUNA | 21000116 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | OPERAÇÕES | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1556 | BERNARDO ANTÓNIO MANUEL | 21000095 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | OPERAÇÕES | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1540 | BROGNAN DA SILVA FERNANDES  | 21000071 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1557 | DANIEL HILÁRIO TEODORO | 21000096 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | OPERAÇÕES | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1678 | DOMINGOS LUIS SACATOMONA | 21000197 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1545 | EDMUNDO DOMINGOS DOS PRAZEEES  | 21000078 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1534 | EDMUNDO MANUEL GASPAR  - CAPS  | 21000060 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1567 | EUFRAZINO AVELINO MANUEL DA SILVA | 21000138 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | OPERAÇÕES | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1558 | FELIZARDO JOSÉ SEBASTIÃO | 21000097 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | OPERAÇÕES | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1585 | FERNANDO DINIS PEDRO | 21000183 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1714 | FERREIRA JOÃO AUGUSTO ADRIANO | 21000218 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1555 | FRANCISCO CELESTINO LUÍS PEDRO | 21000094 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | OPERAÇÕES | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1533 | FRANCISCO NASSASOMA JOAO - CAPS  | 21000058 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1552 | ISAAC CABENDA FRANCISCO | 21000088 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | OPERAÇÕES | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1538 | JOÃO JAIME MIGUEL CASSULE | 21000068 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1531 | JOAQUIM PATO VIEGAS | 21000049 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1716 | JOEL DA CRUZ BERNARDO | 21000220 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1760 | JORGE AUGUSTO KUNJI | 21000254 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | LOGISTICA | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1521 | MANUEL ANTONIO PEDRO | 21000016 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1719 | MARCO DA CUNHA ESTEVES | 21999992 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1559 | MIACA BATUVENE GABRIEL FILIPE | 21000115 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | OPERAÇÕES | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1721 | PAULO KANDULO ALBINO | 21000222 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | OPERAÇÕES | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1563 | QUINDUMBO MENESES MANUEL | 21000125 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | OPERAÇÕES | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1565 | SANTOS JOSÉ DOMINGOS | 21000127 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1589 | VALENTINO CAPOCO CHIPA | 21000001 | True | 5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1605 | NELSON DE OLIVEIRA RAFAEL | 21000098 | True | 12 | Escala-20h-08h | Escala-20h-08h -Noite | Escala | MANUTENÇÃO | AOVIA3- SOPROS
+1592 | AIRES WALTER MINA NARCISO | 21000042 | True | 11 | Escala-20h-08h | Escala-20h-08h-Noite | Escala | OPERAÇÕES | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1590 | BERNANRDO PAULO COMESSA | 21000005 | True | 11 | Escala-20h-08h | Escala-20h-08h-Noite | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1520 | BERNARDO GOUVEIA ARMANDO | 21000015 | True | 11 | Escala-20h-08h | Escala-20h-08h-Noite | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1537 | DOMINGOS FRANCISCO SIMÃO PEDRO | 21000067 | True | 11 | Escala-20h-08h | Escala-20h-08h-Noite | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1681 | HELDER MANUEL FERNANDO | 21000213 | True | 11 | Escala-20h-08h | Escala-20h-08h-Noite | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1536 | JOAO MUHANDA SINGOMBE | 21000062 | True | 11 | Escala-20h-08h | Escala-20h-08h-Noite | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1584 | JOSE DOMINGOS DOS SANTOS | 21000182 | True | 11 | Escala-20h-08h | Escala-20h-08h-Noite | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1588 | LUIS GOMES LIMA DE MELO | 21000187 | True | 11 | Escala-20h-08h | Escala-20h-08h-Noite | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1526 | NARCISO DOS SANTOS PINTO | 21000037 | True | 11 | Escala-20h-08h | Escala-20h-08h-Noite | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1707 | REIS DOMINGOS CASSULE COMESSA | 21000215 | True | 11 | Escala-20h-08h | Escala-20h-08h-Noite | Escala | PRODUÇÃO | AOVIA1 - ALPLA PLASTICOS ANGOLA
+1626 | ANDERSON CLAÚDIO DOS SANTOS AZEVEDO | 21000130 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1629 | ANTÓNIO CAMEKE TCHIPALANGA | 21000134 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1734 | ARMINDO JOÃO MATEUS | 21000237 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1662 | BELARMINO HENRIQUE JOÃO | 21000169 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1647 | BENVINDO ALBERTO MATICA | 21000154 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1696 | CARLOS ADÃO KIZEMBE | 21000211 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1661 | DOMINGOS BAPTISTA C. KINDUMBO | 21000168 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1686 | DOMINGOS DA FONSECA | 21000196 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1632 | DOMINGOS INÁCIO LUCIANO PALANCA | 21000137 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1656 | DOMINGOS JEREMIAS MORAIS | 21000163 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1733 | DOMINGOS MIGUEL DE FREITAS DIOGO | 21000238 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1633 | EDGAR ERNESTO DA SILVA | 21000139 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1654 | EDIR FERNADES MATOSO | 21000161 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1636 | ELIAS ARMANDO FERREIRA | 21000142 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1645 | ELISEU SOLINO SANGUEVE | 21000152 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1627 | EUCLIDES SAMPAIO FRANCISCO DOMINGOS | 21000131 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1630 | FELISON BELMIRO LOURENÇO LEITÃO | 21000135 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1685 | GARITO LEONARDO LUCIANO | 21000194 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1659 | HENRIQUE QUINTAS SASSOMA TOMÃS | 21000166 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1657 | JOÃO AUGUSTO SALOIA | 21000164 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1634 | JOAQUIM PEDRO JOSÉ | 21000140 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1684 | JOB CUNHA TIAMBULO | 21000193 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1690 | JOSÉ DOMINGOS JOVETA SIMÃO | 21000201 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1665 | JOSÉ HORÁCIO CHITECULO | 21000172 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1635 | JUSTINO LOPES BENTO | 21000141 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1612 | LISBOA ARMANDO QUIPANDA | 21000106 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1655 | MANUEL FERNANDO BARROSO GRANEIRA | 21000162 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1615 | MANUEL FRANCISCO PEDRO | 21000111 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1663 | MANUEL NICOLAU ALEXANDRE DOMINGOS | 21000170 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1650 | MANUEL VENÂNCIO GALVINO | 21000157 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1722 | MANUEL ZUA ZEMBA | 21000223 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1610 | MARTINHO GOMES MUHONGO | 21000103 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1691 | MAURICIO MARCELINO CHIPENDE | 21000202 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1653 | MELQUIZEDEQUEC GASPAR DE CARVALHO | 21000160 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1694 | PATRICK DOMINGOS MANDELE BOAL | 21000208 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1613 | SAULO JOSÉ FRANCISCO | 21000107 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1646 | SILVIO MUHONGO | 21000153 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1695 | TOMBA SALOMÃO PEDRO DOMINGOS | 21000210 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1652 | VALDMIRO SIMÃO BENTO | 21000159 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1648 | VALENTINO ECUMBI | 21000155 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1642 | VALENTINO JAMBA CAPOCO TCHIPILICA | 21000149 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1631 | VANILDO CELESTINO LOURENÇO LEITÃO | 21000136 | True | 13 | Escala-Intercal | Escala-Intercalada | Escala | PRODUÇÃO | AOVIA3- SOPROS
+1673 | AFONSO CASSENGUE ABEL ELIZEU | 21000190 | True | 6 | STRD | PlanoAdministrativo | Padrão | TRANSPORTE | AOVIA3- SOPROS
+1735 | ANDUME PAIXÃO | 21000239 | True | 6 | STRD | PlanoAdministrativo | Padrão | QUALIDADE | AOVIA3- SOPROS
+1750 | ARIANO DOMINGOS MANUEL | 21000245 | True | 6 | STRD | PlanoAdministrativo | Padrão | MANUTENÇÃO | AOVIA3- SOPROS
+1618 | EMANUEL EDUARDO VIEIRA | 21000114 | True | 6 | STRD | PlanoAdministrativo | Padrão | OPERAÇÕES | AOVIA3- SOPROS
+1699 | EMERSONS FARIAS | 00002 | True | 6 | STRD | PlanoAdministrativo | Padrão | PRODUÇÃO | AOVIA3- SOPROS
+1713 | FERNANDO FRANCISCO | 21000214 | True | 6 | STRD | PlanoAdministrativo | Padrão | QUALIDADE | AOVIA3- SOPROS
+1667 | ISÍLDO DE AMARAL LUÍS | 21000175 | True | 6 | STRD | PlanoAdministrativo | Padrão | MANUTENÇÃO | AOVIA3- SOPROS
+1639 | JOSÉ BRINCO CHILOLA | 21000146 | True | 6 | STRD | PlanoAdministrativo | Padrão | QUALIDADE | AOVIA3- SOPROS
+1643 | JOSÉ LUCIANO MUANA MUATA | 21000150 | True | 6 | STRD | PlanoAdministrativo | Padrão | MANUTENÇÃO | AOVIA3- SOPROS
+1731 | JUDITE VANESSA DOS SANTOS | 00000004 | True | 6 | STRD | PlanoAdministrativo | Padrão | QUALIDADE | AOVIA3- SOPROS
+1671 | JULIÃO ABEL DE SOUSA | 21000188 | True | 6 | STRD | PlanoAdministrativo | Padrão | MANUTENÇÃO | AOVIA3- SOPROS
+1669 | MENDONÇA DA SILVA BEBECA | 21000177 | True | 6 | STRD | PlanoAdministrativo | Padrão | QUALIDADE | AOVIA3- SOPROS
+1637 | MILTON FRANCISCO DA SILVA AGOSTINHO | 21000143 | True | 6 | STRD | PlanoAdministrativo | Padrão | QUALIDADE | AOVIA3- SOPROS
+1608 | SAMUEL MIGUEL MPOCO | 21000101 | True | 6 | STRD | PlanoAdministrativo | Padrão | TRANSPORTE | AOVIA3- SOPROS
+(Rows: 160)
+
+============================================
+=== D2: Employees per work plan ===
+============================================
+IDPlanoTrabalho | Codigo | Descricao | Tipo | ActiveEmployees
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+10 | ADMINISTRATIVO | Administrativo | Padrão | 43
+13 | Escala-Intercal | Escala-Intercalada | Escala | 42
+5 | Escala-08h-20h | Escala-08h-20h-Manhã | Escala | 36
+6 | STRD | PlanoAdministrativo | Padrão | 14
+7 | Escala-08h-20h | Escala-08h-20h Manhã | Escala | 14
+11 | Escala-20h-08h | Escala-20h-08h-Noite | Escala | 10
+12 | Escala-20h-08h | Escala-20h-08h -Noite | Escala | 1
+(Rows: 7)
+
+============================================
+=== E1a: Schedule '08 as 17:30' header ===
+============================================
+IDHorario | Codigo | Descricao | Sigla | HorasNormais | InicioDia | FimDia | DiaFolga | HorarioComoFolga | NumeroMarcacoes | PrimeiraUltimaMarcacao
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+21 | 08 as 17:30 | 08 as 17:30 | NULL | 08:00:00 | 00:00:00 | 00:00:00 | False | False | NULL | False
+29 | 08 as 17:30 | 8h00 as 17h30 | NULL | 08:00:00 | 00:00:00 | 00:00:00 | False | False | NULL | False
+(Rows: 2)
+
+============================================
+=== E1b: Schedule '08 as 17:30' periods ===
+============================================
+Tipo | Inicio | Fim | TolEntrada | TolSaida | WorkCode | WorkCodeDesc
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Obrigatório | 08:00:00 | 17:30:00 | 00:15:00 | 00:45:00 | Basico | Trabalho Basico
+(Rows: 1)
+
+============================================
+=== E1c: Which plans use schedule '08 as 17:30' ===
+============================================
+PlanoCodigo | PlanoDesc
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ADMINISTRATIVO | Administrativo
+STRD | Plano Semanal Standard
+(Rows: 2)
+
+============================================
+=== E2a: Schedule 'DIASEM' header ===
+============================================
+IDHorario | Codigo | Descricao | Sigla | HorasNormais | InicioDia | FimDia | DiaFolga | HorarioComoFolga | NumeroMarcacoes
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+1 | DIASEM | Dia de Semana | NULL | 08:00:00 | 00:00:00 | 00:00:00 | NULL | NULL | NULL
+26 | DIASEM | Dia de semana | A | 08:00:00 | 00:00:00 | 00:00:00 | False | False | NULL
+(Rows: 2)
+
+============================================
+=== E2b: Schedule 'DIASEM' periods ===
+============================================
+Tipo | Inicio | Fim | TolEntrada | TolSaida | WorkCode | WorkCodeDesc
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Obrigatório | 08:30:00 | 17:00:00 | 00:10:00 | 00:00:00 | Basico | Trabalho Basico
+(Rows: 1)
+
+============================================
+=== E3: All schedules with Sigla ===
+============================================
+IDHorario | Codigo | Descricao | Sigla | HorasNormais | DiaFolga | HorarioComoFolga
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+26 | DIASEM | Dia de semana | A | 08:00:00 | False | False
+12 | Descanso | Dia de descanso | DC | 00:00:00 | True | True
+22 | FOLGA | FOLGA | FG | 00:00:00 | True | True
+30 | FOLGA | FOLGA | FG | 00:00:00 | True | True
+39 | Ferias | Ferias | FR | 00:00:00 | True | False
+27 | FIMSEM | Fim de Semana | FS | 08:00:00 | False | False
+2 | FIMSEM | Fim de Semana | FS | 00:00:00 | False | False
+36 | Escala 06h-14h | Escala 06h-14h | M | 08:00:00 | False | False
+38 | Escala 22h-06h | Escala 22h30-06h30 | N | 08:00:00 | False | False
+35 | 6h as 15h | 2ª / 4ª e 6ª, das 6h às 15h  | SQ | 08:00:00 | False | False
+31 | 08 AS 12:30 | Sexta feira 08: as 12:30 | SX | 00:00:00 | False | False
+23 | 08 as 14:00 | sexta feira-08 as 14:00 | SX | 06:00:00 | False | False
+37 | Escala 14h-22h | Escala 14h30-22h30 | T | 08:00:00 | False | False
+24 | T.Manha 8h-20h | Turno Manhã 8h-20h | TM | 12:00:00 | False | False
+32 | T.Manha 08h:20h | Turno Manhã 08h:20h | TM | 12:00:00 | False | False
+33 | T.Noite 20h-8h | Turno Noite 20h-8h | TN | 12:00:00 | False | False
+25 | T.Noite 20h-8h | Turno Noite 20h-8h | TN | 12:00:00 | False | False
+(Rows: 17)
+
+============================================
+=== E4: Work plan 'Administrativo' full cycle ===
+============================================
+Dia | IDHorario | HorarioCodigo | HorarioDesc | DiaFolga | HorarioComoFolga | HorasNormais
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+0 | 21 | 08 as 17:30 | 08 as 17:30 | False | False | 08:00:00
+0 | 29 | 08 as 17:30 | 8h00 as 17h30 | False | False | 08:00:00
+1 | 29 | 08 as 17:30 | 8h00 as 17h30 | False | False | 08:00:00
+1 | 21 | 08 as 17:30 | 08 as 17:30 | False | False | 08:00:00
+2 | 21 | 08 as 17:30 | 08 as 17:30 | False | False | 08:00:00
+2 | 29 | 08 as 17:30 | 8h00 as 17h30 | False | False | 08:00:00
+3 | 29 | 08 as 17:30 | 8h00 as 17h30 | False | False | 08:00:00
+3 | 21 | 08 as 17:30 | 08 as 17:30 | False | False | 08:00:00
+4 | 23 | 08 as 14:00 | sexta feira-08 as 14:00 | False | False | 06:00:00
+4 | 31 | 08 AS 12:30 | Sexta feira 08: as 12:30 | False | False | 00:00:00
+5 | 28 | Descanso | Dia de Descanso | True | True | 00:00:00
+5 | 12 | Descanso | Dia de descanso | True | True | 00:00:00
+6 | 12 | Descanso | Dia de descanso | True | True | 00:00:00
+6 | 28 | Descanso | Dia de Descanso | True | True | 00:00:00
+(Rows: 14)
+
+============================================
+=== E5: Rest-day / Folga schedules ===
+============================================
+IDHorario | Codigo | Descricao | Sigla | DiaFolga | HorarioComoFolga
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+12 | Descanso | Dia de descanso | DC | True | True
+22 | FOLGA | FOLGA | FG | True | True
+28 | Descanso | Dia de Descanso | NULL | True | True
+30 | FOLGA | FOLGA | FG | True | True
+39 | Ferias | Ferias | FR | True | False
+(Rows: 5)
+
+============================================
+=== E6: Night/overnight schedules ===
+============================================
+IDHorario | Codigo | Descricao | Sigla | DiaAnterior | InicioDia | FimDia | HorasNormais
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+(Rows: 0)
+
+============================================
+=== F1a: Feriados schema ===
+============================================
+COLUMN_NAME | DATA_TYPE
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Data | datetime
+IDMunicipio | int
+IDEntidade | int
+(Rows: 3)
+
+============================================
+=== F1b: Feriados ALL rows ===
+============================================
+Data | IDMunicipio | IDEntidade
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+2025-12-25 00:00:00 | 0 | 1
+2025-12-26 00:00:00 | 0 | 1
+2026-01-01 00:00:00 | NULL | NULL
+2026-02-04 00:00:00 | NULL | NULL
+2026-02-12 00:00:00 | NULL | NULL
+2026-02-13 00:00:00 | NULL | NULL
+2026-03-08 00:00:00 | NULL | NULL
+2026-03-23 00:00:00 | NULL | NULL
+2026-04-04 00:00:00 | NULL | NULL
+2026-04-05 00:00:00 | NULL | NULL
+2026-05-01 00:00:00 | NULL | NULL
+2026-09-16 00:00:00 | NULL | NULL
+2026-09-17 00:00:00 | NULL | NULL
+2026-11-02 00:00:00 | NULL | NULL
+2026-11-11 00:00:00 | NULL | NULL
+2026-12-25 00:00:00 | 0 | 1
+2027-01-01 00:00:00 | 0 | 1
+2027-01-02 00:00:00 | 0 | 1
+(Rows: 18)
+
+============================================
+=== F2a: ConfiguracoesEntidade schema ===
+============================================
+COLUMN_NAME | DATA_TYPE
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+IDConfiguracaoEntidade | int
+IDEntidade | int
+Nome | nvarchar
+ValorChar | nvarchar
+ValorInt | int
+ValorBit | bit
+(Rows: 6)
+
+============================================
+=== F2b: ConfiguracoesEntidade ALL rows ===
+============================================
+IDConfiguracaoEntidade | IDEntidade | Nome | ValorChar | ValorInt | ValorBit
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+(Rows: 0)
+
+============================================
+=== F3a: FechosMes schema ===
+============================================
+COLUMN_NAME | DATA_TYPE
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+IDEntidade | int
+Mes01 | int
+Mes02 | int
+Mes03 | int
+Mes04 | int
+Mes05 | int
+Mes06 | int
+Mes07 | int
+Mes08 | int
+Mes09 | int
+Mes10 | int
+Mes11 | int
+Mes12 | int
+(Rows: 13)
+
+============================================
+=== F3b: FechosMes ALL rows ===
+============================================
+IDEntidade | Mes01 | Mes02 | Mes03 | Mes04 | Mes05 | Mes06 | Mes07 | Mes08 | Mes09 | Mes10 | Mes11 | Mes12
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+1 | 31 | 29 | 31 | 30 | 31 | 30 | 31 | 31 | 30 | 31 | 30 | 31
+6 | 31 | 29 | 31 | 30 | 31 | 30 | 31 | 31 | 30 | 31 | 30 | 31
+(Rows: 2)
+
+============================================
+=== G1: Schedule usage in Alteracoes (attendance) ===
+============================================
+IDHorario | Codigo | Descricao | DaysUsed | FirstUsed | LastUsed
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+30 | FOLGA | FOLGA | 21886 | 2024-10-03 | 2028-01-31
+21 | 08 as 17:30 | 08 as 17:30 | 15373 | 2024-01-01 | 2026-04-16
+22 | FOLGA | FOLGA | 12901 | 2024-07-31 | 2027-09-28
+32 | T.Manha 08h:20h | Turno Manhã 08h:20h | 12428 | 2024-10-01 | 2028-01-26
+33 | T.Noite 20h-8h | Turno Noite 20h-8h | 10834 | 2025-01-01 | 2028-01-30
+24 | T.Manha 8h-20h | Turno Manhã 8h-20h | 7512 | 2024-07-29 | 2027-09-30
+25 | T.Noite 20h-8h | Turno Noite 20h-8h | 5750 | 2024-08-01 | 2026-12-31
+18 | NULL | NULL | 5575 | 2024-01-01 | 2024-07-01
+12 | Descanso | Dia de descanso | 5480 | 2024-01-03 | 2026-04-12
+23 | 08 as 14:00 | sexta feira-08 as 14:00 | 3657 | 2024-01-05 | 2026-04-10
+2 | FIMSEM | Fim de Semana | 3302 | 2024-01-06 | 2025-11-11
+29 | 08 as 17:30 | 8h00 as 17h30 | 2758 | 2025-01-01 | 2026-04-22
+0 | NULL | NULL | 1431 | 2024-01-02 | 2025-11-30
+19 | NULL | NULL | 1428 | 2024-01-05 | 2024-07-12
+27 | FIMSEM | Fim de Semana | 579 | 2025-01-04 | 2025-12-28
+28 | Descanso | Dia de Descanso | 519 | 2025-01-01 | 2026-04-12
+31 | 08 AS 12:30 | Sexta feira 08: as 12:30 | 515 | 2025-01-03 | 2026-04-10
+20 | NULL | NULL | 407 | 2024-07-02 | 2024-07-15
+35 | 6h as 15h | 2ª / 4ª e 6ª, das 6h às 15h  | 113 | 2025-01-01 | 2025-12-12
+1 | DIASEM | Dia de Semana | 112 | 2024-06-03 | 2024-06-17
+13 | Manha | Trabalho durante a manhã | 1 | 2024-01-01 | 2024-01-01
+39 | Ferias | Ferias | 1 | 2026-01-01 | 2026-01-01
+(Rows: 22)
+
+============================================
+=== G2: Work plan usage in Alteracoes ===
+============================================
+IDPlanoTrabalho | Codigo | Descricao | DaysUsed
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+NULL | NULL | NULL | 35041
+7 | Escala-08h-20h | Escala-08h-20h Manhã | 18361
+10 | ADMINISTRATIVO | Administrativo | 15467
+5 | Escala-08h-20h | Escala-08h-20h-Manhã | 10475
+1 | STRD | Plano Semanal Standard | 10227
+3 | NULL | NULL | 9577
+13 | Escala-Intercal | Escala-Intercalada | 7519
+6 | STRD | PlanoAdministrativo | 2790
+11 | Escala-20h-08h | Escala-20h-08h-Noite | 2683
+8 | MND | MANDELE | 247
+12 | Escala-20h-08h | Escala-20h-08h -Noite | 175
+(Rows: 11)
+
+=== Schedule/Shift investigation complete ===

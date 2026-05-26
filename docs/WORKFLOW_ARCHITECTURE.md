@@ -16,11 +16,12 @@ The `PAYMENT` workflow is the primary lifecycle for direct purchasing and paymen
 | `WAITING_FINAL_APPROVAL` | Aguardando Aprovação Final | Aprovador Final | Aprovar, Rejeitar ou Ajuste |
 | `FINAL_ADJUSTMENT` | Reajuste Necessário (A.F) | Solicitante | Revisar e Reenviar |
 | `APPROVED` | Aprovado | Comprador | Registrar P.O (Operational) |
-| `PO_ISSUED` | P.O Emitida | Financeiro | Pagar ou Agendar (Operational) |
+| `PO_ISSUED` | P.O Emitida | Financeiro | Pagar, Agendar ou Devolver P.O |
+| `WAITING_PO_CORRECTION` | Aguardando Correção P.O | Comprador | Corrigir e re-registrar P.O |
 | `PAYMENT_SCHEDULED` | Pagamento Agendado | Financeiro | Finalizar Pagamento (Operational) |
-| `PAYMENT_COMPLETED` | Pagamento Realizado | Recebimento | Mover p/ Recibo (Operacional) |
-| `WAITING_RECEIPT` | Aguardando Recibo | Recebimento | Operação de Recebimento (Operacional) |
-| `IN_FOLLOWUP` | Em Acompanhamento | Recebimento | Finalizar Recebimento (Operacional) |
+| `PAYMENT_COMPLETED` | Pagamento Realizado | Recebimento | Mover p/ Recebimento e conferir itens |
+| `WAITING_RECEIPT` | Aguardando Recibo do Fornecedor | Financeiro | Anexar Recibo do Fornecedor e Finalizar |
+| `IN_FOLLOWUP` | Em Acompanhamento | Recebimento | Resolver itens pendentes e confirmar recebimento |
 | `COMPLETED` | Finalizado | - | - |
 | `REJECTED` | Rejeitado | - | - |
 | `CANCELLED` | Cancelado | - | - |
@@ -49,11 +50,12 @@ The `QUOTATION` workflow is a streamlined lifecycle for price research and quota
 | `WAITING_AREA_APPROVAL` | Aguardando Aprovação da Área | Aprovador da Área | Aprovar, Rejeitar, Reajuste ou **Editar CC** |
 | `WAITING_FINAL_APPROVAL` | Aguardando Aprovação Final | Aprovador Final | Aprovar, Rejeitar, Reajuste ou **Selecionar Vencedor** |
 | `APPROVED` | Aprovado | Comprador | Registrar P.O (Operational) |
-| `PO_ISSUED` | P.O Emitida | Financeiro | Pagar ou Agendar (Operational) |
+| `PO_ISSUED` | P.O Emitida | Financeiro | Pagar, Agendar ou Devolver P.O |
+| `WAITING_PO_CORRECTION` | Aguardando Correção P.O | Comprador | Corrigir e re-registrar P.O |
 | `PAYMENT_SCHEDULED` | Pagamento Agendado | Financeiro | Finalizar Pagamento (Operational) |
-| `PAYMENT_COMPLETED` | Pagamento Realizado | Recebimento | Mover p/ Recibo (Operacional) |
-| `WAITING_RECEIPT` | Aguardando Recibo | Recebimento | Operação de Recebimento (Operacional) |
-| `IN_FOLLOWUP` | Em Acompanhamento | Recebimento | Finalizar Recebimento (Operacional) |
+| `PAYMENT_COMPLETED` | Pagamento Realizado | Recebimento | Mover p/ Recebimento e conferir itens |
+| `WAITING_RECEIPT` | Aguardando Recibo do Fornecedor | Financeiro | Anexar Recibo do Fornecedor e Finalizar |
+| `IN_FOLLOWUP` | Em Acompanhamento | Recebimento | Resolver itens pendentes e confirmar recebimento |
 | `COMPLETED` | Finalizado | - | - |
 
 ### Special Rules (QUOTATION)
@@ -89,20 +91,41 @@ Stages from `APPROVED` to `WAITING_RECEIPT` are classified as **Operational**. T
 | Status | Header | Items | Attachments | Action Buttons |
 | :--- | :--- | :--- | :--- | :--- |
 | `APPROVED` | Locked | Locked | **Editable (P.O)** | Registrar P.O |
-| `PO_ISSUED` | Locked | Locked | **Editable (Schedule)** | Agendar / Pagar |
-| `PAYMENT_SCHEDULED` | Locked | Locked | **Editable (Proof)** | Confirmar Pagamento |
-| `PAYMENT_COMPLETED` | Locked | Locked | **Editable (Proof)** | Mover p/ Recibo |
-| `WAITING_RECEIPT` | Locked | **Conferência (Items)** | **Editable (Receipt)** | Registrar Recebimento |
-| `IN_FOLLOWUP` | Locked | **Conferência (Items)** | **Editable (Receipt)** | Finalizar Pedido |
+| `WAITING_PO_CORRECTION` | Locked | Locked | **Editable (P.O)** | Corrigir P.O |
+| `PO_ISSUED` | Locked | Locked | **Editable (Schedule)** | Agendar / Pagar / Devolver |
+| `PAYMENT_SCHEDULED` | Locked | Locked | **Editable (Proof)** | Confirmar Pagamento / Devolver |
+| `PAYMENT_COMPLETED` | Locked | Locked | **Editable (Proof)** | Mover p/ Recebimento (Recebimento) |
+| `WAITING_RECEIPT` | Locked | **Conferência (Items)** | **Editable (Receipt - Finance)** | Confirmar Recebimento (Recebimento) / Finalizar Pedido (Financeiro, Bloqueado s/ Recibo) |
+| `IN_FOLLOWUP` | Locked | **Conferência (Items)** | **Editable (Receipt - Finance)** | Confirmar Recebimento (Recebimento) → retorna a WAITING_RECEIPT |
 
 ### Attachment Deletion Rules
 
 Deletion is restricted by document type and status to preserve audit integrity:
 
 - **PROFORMA**: Locked once submitted for approval.
-- **PO**: Deletable only in `APPROVED`.
+- **PO**: Deletable in `APPROVED` or `WAITING_PO_CORRECTION`.
 - **PAYMENT_SCHEDULE**: Deletable in `PO_ISSUED` or `PAYMENT_SCHEDULED`.
 - **PAYMENT_PROOF**: Deletable in `PAYMENT_SCHEDULED`, `PAYMENT_COMPLETED`, or `WAITING_RECEIPT`.
+- **RECEIPT**: Uploadable/Deletable exclusively by Finance in `WAITING_RECEIPT`. Mandatory for finalization.
+
+### Supplier Registration Guard (P.O. Emission)
+
+Before a P.O. can be emitted via `RegisterPoModal`, the system validates the supplier's registration status using `GET /api/v1/lookups/suppliers/{id}/registration-check?operation=po`. The guard is enforced at the **frontend modal level**; the backend endpoint provides the decision.
+
+| Supplier Status | P.O. Emission | UI Behavior |
+| :--- | :--- | :--- |
+| `ACTIVE` | ✅ Allowed | Normal flow, no banner |
+| `PENDING_APPROVAL` | ⚠️ Allowed with warning | Amber warning banner; user can proceed |
+| `DRAFT` | ❌ Blocked | Red blocking panel; button disabled |
+| `PENDING_COMPLETION` | ❌ Blocked | Red blocking panel; button disabled |
+| `ADJUSTMENT_REQUESTED` | ❌ Blocked | Red blocking panel; button disabled |
+| `SUSPENDED` | ❌ Blocked | Red blocking panel; button disabled |
+| `BLOCKED` | ❌ Blocked | Red blocking panel; button disabled |
+
+**Supplier ID resolution:**
+- **QUOTATION flow**: `supplierId` is sourced from the winning quotation's `supplierId`.
+- **PAYMENT flow**: `supplierId` is sourced from the request's `formData.supplierId`.
+- **No supplier**: If no supplier ID is available, the guard is skipped (graceful fallback).
 
 ---
 
@@ -130,8 +153,37 @@ To prevent role confusion, action bars in `RequestEdit.tsx` are strictly partiti
 
 - **Approval Actions**: Only visible in `WAITING_AREA_APPROVAL` and `WAITING_FINAL_APPROVAL`.
 - **Rework Actions**: (Reenviar) Only visible in adjustment statuses.
-- **AÇÕES OPERACIONAIS**: Only visible in `APPROVED` and subsequent operational stages.
+- **AÇÕES OPERACIONAIS**: Only visible in `APPROVED`, `WAITING_PO_CORRECTION`, and subsequent operational stages.
 - **Quotation Action Bar**: Strictly isolated to `QUOTATION` requests and stages.
+
+---
+
+## 6. Finance Return / PO Correction Loop
+
+When Finance identifies an issue with a registered PO, they can return the request to the Buyer for correction.
+
+### Transition Flow
+
+```
+PO_ISSUED ──[FINANCE_RETURN]──> WAITING_PO_CORRECTION ──[REREGISTER_PO]──> PO_ISSUED
+PAYMENT_SCHEDULED ──[FINANCE_RETURN]──> WAITING_PO_CORRECTION ──[REREGISTER_PO]──> PO_ISSUED
+```
+
+### Business Rules
+
+- **Source-Status Guard**: Finance can only return from `PO_ISSUED` or `PAYMENT_SCHEDULED`. Returns from `PAYMENT_COMPLETED` or any other status are blocked.
+- **Scheduling Invalidation**: When returning from `PAYMENT_SCHEDULED`, the prior payment scheduling is intentionally invalidated. After correction, Finance must re-evaluate and re-schedule from `PO_ISSUED`.
+- **Approval Preservation**: The correction loop does NOT reset approvals. The request returns to `PO_ISSUED` (not `APPROVED`) after correction.
+- **Distinct Action Codes**: History entries use `REGISTER_PO` for initial registration and `REREGISTER_PO` for correction, ensuring clear auditability.
+- **Notification**: `PO_CORRECTION_COMPLETED` event notifies plant-scoped Finance users when the Buyer completes the correction.
+
+### Audit Trail
+
+A correction cycle produces the following history entries:
+1. `FINANCE_RETURN_ADJUSTMENT` (PO_ISSUED → WAITING_PO_CORRECTION) with Finance justification
+2. `REREGISTER_PO` (WAITING_PO_CORRECTION → PO_ISSUED) with Buyer correction comment
+
+Both old and new PO attachments are preserved in the attachment history for traceability.
 
 ### Urgency & Sorting
 
@@ -141,3 +193,117 @@ To prevent role confusion, action bars in `RequestEdit.tsx` are strictly partiti
 
 > **Finalized statuses** (`REJECTED`, `CANCELLED`, `COMPLETED`, `QUOTATION_COMPLETED`) receive score **-1** and always rank below all active items, including active items with no deadline (score 0).
 > `APPROVED` is an active operational status and receives a date-based score like any other working status.
+
+---
+
+## 6. Financial Lifecycle (DEC-110)
+
+> **Phase 1 — Implemented.** This section documents the financial snapshot, payment capture, and divergence detection mechanisms introduced in DEC-110. Phase 2 (exception workflow statuses) is documented but not yet implemented.
+
+### Overview
+
+The financial lifecycle tracks three critical monetary values across a request's journey:
+
+1. **Estimated Amount** (`EstimatedTotalAmount`) — The initial value set by the requester or calculated from quotation items. Mutable during draft and quotation phases.
+2. **Approved Amount** (`ApprovedTotalAmount`) — An immutable snapshot captured at the moment of final approval. This is the amount the organization committed to pay.
+3. **Actual Paid Amount** (`ActualPaidAmount`) — The actual amount disbursed by Finance, captured at payment confirmation. This is the amount that left the bank account.
+
+### Value Source by Stage
+
+| Stage | Active Financial Value | Source | Mutable? |
+|:---|:---|:---|:---|
+| `DRAFT` | `EstimatedTotalAmount` | Requester line items sum | ✅ Yes |
+| `WAITING_QUOTATION` | `Quotation.TotalAmount` | Buyer's quotation items | ✅ Yes |
+| `WAITING_AREA_APPROVAL` | `Quotation.TotalAmount` or `EstimatedTotalAmount` | Financial Integrity Gate validated | ❌ No |
+| `WAITING_FINAL_APPROVAL` | Same as above | Carried forward | ❌ No |
+| `APPROVED` | **`ApprovedTotalAmount`** (snapshot) | Captured from winner quotation (QUOTATION) or `EstimatedTotalAmount` (PAYMENT) | ❌ Immutable |
+| `PO_ISSUED` | `ApprovedTotalAmount` | Reference for Finance | ❌ Immutable |
+| `PAYMENT_SCHEDULED` | `ApprovedTotalAmount` | Reference for Finance | ❌ Immutable |
+| `PAYMENT_COMPLETED` | `ApprovedTotalAmount` + **`ActualPaidAmount`** | Both preserved for comparison | ❌ Immutable |
+
+### Financial Snapshot Rules
+
+| Rule | Description |
+|:---|:---|
+| **Trigger** | Final Approval action (`ProcessFinalApproval` with action `APPROVE`) |
+| **QUOTATION flow** | `ApprovedTotalAmount` = `SelectedQuotation.TotalAmount`; `ApprovedCurrencyCode` = `SelectedQuotation.Currency` |
+| **PAYMENT flow** | `ApprovedTotalAmount` = `Request.EstimatedTotalAmount`; `ApprovedCurrencyCode` = `Request.Currency.Code` |
+| **Timestamp** | `ApprovedAtUtc` = `DateTime.UtcNow` at approval moment |
+| **Immutability** | Once set, these fields are **never** updated by any subsequent action |
+| **Legacy requests** | Requests approved before this feature have `null` snapshot fields. All downstream logic handles `null` gracefully. |
+
+### Actor Responsibilities
+
+| Actor | Stage | Financial Responsibility |
+|:---|:---|:---|
+| **Requester** | `DRAFT` | Enters estimated values via line items |
+| **Buyer** | `WAITING_QUOTATION` | Completes quotation with itemized pricing; OCR validation |
+| **Area Approver** | `WAITING_AREA_APPROVAL` | Reviews financial values; selects winner (QUOTATION) |
+| **Final Approver** | `WAITING_FINAL_APPROVAL` | Approves commitment → **system captures snapshot automatically** |
+| **Buyer** | `APPROVED` → `PO_ISSUED` | Registers PO document; OCR divergence check against approved amount |
+| **Finance** | `PO_ISSUED` → `PAYMENT_COMPLETED` | Enters mandatory `ActualPaidAmount`; system runs divergence detection |
+
+### Payment Stage Validation Rules
+
+#### SchedulePayment — Status Guards
+
+| Rule | Value |
+|:---|:---|
+| **Allowed source statuses** | `PO_ISSUED`, `PAYMENT_REQUEST_SENT`, `APPROVED` (PAYMENT flow) |
+| **Required inputs** | `ActionDateUtc` (scheduling date) |
+| **Optional inputs** | `Notes`, scheduling proof attachment |
+| **Rejection** | HTTP 400 with explicit error listing allowed statuses |
+
+#### MarkAsPaid — Status Guards + Payment Capture
+
+| Rule | Value |
+|:---|:---|
+| **Allowed source statuses** | `PO_ISSUED`, `PAYMENT_REQUEST_SENT`, `PAYMENT_SCHEDULED`, `APPROVED` (PAYMENT flow) |
+| **Required inputs** | `ActualPaidAmount` (mandatory, must be > 0), payment proof attachment |
+| **Optional inputs** | `Notes` |
+| **Post-save** | Divergence detection runs automatically |
+
+### Divergence Detection
+
+**Zero-tolerance rule (updated 2026-04-26):**
+```
+roundedPaid    = Math.Round(ActualPaidAmount, 2)
+roundedApproved = Math.Round(ApprovedTotalAmount, 2)
+divergence_detected = roundedPaid ≠ roundedApproved
+```
+
+Any non-zero difference between the actual paid amount and the approved amount (after standard 2-decimal currency rounding) triggers a `PAYMENT_DIVERGENCE_DETECTED` audit entry. There is no tolerance threshold — the system reports all payment differences for financial auditability.
+
+> **Note:** The OCR Financial Integrity tolerance (`RequestConstants.FinancialIntegrity`) is a separate concern used at quotation completion. It is NOT related to payment divergence detection.
+
+**Scenario matrix:**
+
+| Scenario | Trigger | Behavior |
+|:---|:---|:---|
+| **No divergence** | Paid == Approved (after 2dp rounding) | Normal flow. No additional audit entry. |
+| **Divergence (below)** | Paid < Approved | Payment proceeds. `PAYMENT_DIVERGENCE_DETECTED` entry created. Message indicates "abaixo do valor aprovado". |
+| **Divergence (above)** | Paid > Approved | Payment proceeds. `PAYMENT_DIVERGENCE_DETECTED` entry created. Message indicates "acima do valor aprovado". |
+| **Complementary payment** | Partial payment, remainder due later | Record partial as `ActualPaidAmount`; add `NOTA_FINANCEIRA` for remainder. Divergence entry created for the difference. |
+
+**Audit action codes:**
+
+| Action Code | Trigger | Actor |
+|:---|:---|:---|
+| `PAYMENT_DIVERGENCE_DETECTED` | `MarkAsPaid` detects any difference after 2dp rounding | System (automatic) |
+| `PAYMENT_COMPLETED` | Payment confirmed (existing) | Finance user |
+
+**History entry format for divergence:**
+```
+[SISTEMA] Pagamento realizado abaixo do valor aprovado.
+Montante Aprovado=508,906.26, Montante Pago=508,000.00,
+Diferença=906.26 (0.18%).
+```
+
+### Phase 2 Intent (Documented, Not Implemented)
+
+| Condition | Phase 2 Action |
+|:---|:---|
+| Pre-payment: commercial value changed by >5% | → `COMMERCIAL_CHANGE_REVIEW` → `REAPPROVAL_REQUIRED` |
+| Pre-payment: commercial value changed by ≤5% | → `COMMERCIAL_CHANGE_REVIEW` → Finance proceeds with acknowledgment |
+| Post-payment: divergence >1% | → `POST_PAYMENT_REGULARIZATION` → requires manager sign-off |
+| Post-payment: complementary needed | → Complementary payment endpoint → cumulative `TotalPaidAmount` |

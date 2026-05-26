@@ -1,7 +1,8 @@
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { PlusCircle, LayoutList, Package } from 'lucide-react';
+import { PlusCircle, LayoutList, Package, CheckSquare, CreditCard, Truck } from 'lucide-react';
 import { useAuth } from '../../../features/auth/AuthContext';
+import { ROLES } from '../../../constants/roles';
 
 interface QuickActionItemProps {
     label: string;
@@ -22,10 +23,10 @@ function QuickActionItem({ label, icon, description, onClick, color = 'var(--col
                 border: '1px solid var(--color-border)',
                 boxShadow: 'var(--shadow-sm)',
                 borderRadius: 'var(--radius-lg)',
-                padding: '1.25rem',
+                padding: '1rem',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '1.25rem',
+                gap: '1rem',
                 textAlign: 'left',
                 cursor: 'pointer',
                 width: '100%',
@@ -35,7 +36,7 @@ function QuickActionItem({ label, icon, description, onClick, color = 'var(--col
         >
             <div style={{ 
                 backgroundColor: `${color}15`, 
-                padding: '0.75rem', 
+                padding: '0.6rem', 
                 color: color,
                 display: 'flex',
                 borderRadius: '4px'
@@ -44,9 +45,8 @@ function QuickActionItem({ label, icon, description, onClick, color = 'var(--col
             </div>
             <div style={{ flex: 1 }}>
                 <div style={{ 
-                    fontSize: '1rem', 
-                    fontWeight: 900, 
-                    textTransform: 'uppercase', 
+                    fontSize: '0.85rem', 
+                    fontWeight: 700, 
                     color: 'var(--color-text-main)',
                     letterSpacing: '-0.01em',
                     lineHeight: 1.2
@@ -54,7 +54,7 @@ function QuickActionItem({ label, icon, description, onClick, color = 'var(--col
                     {label}
                 </div>
                 <div style={{ 
-                    fontSize: '0.75rem', 
+                    fontSize: '0.7rem', 
                     color: 'var(--color-text-muted)',
                     fontWeight: 500,
                     marginTop: '2px'
@@ -62,8 +62,6 @@ function QuickActionItem({ label, icon, description, onClick, color = 'var(--col
                     {description}
                 </div>
             </div>
-            
-            {/* Removed corner clip-path for premium clean look */}
         </motion.button>
     );
 }
@@ -72,59 +70,75 @@ export function QuickActions() {
     const navigate = useNavigate();
     const { user } = useAuth();
 
-    const actions = [
+    const hasRole = (role: string) => user?.roles?.includes(role) || user?.roles?.includes(ROLES.SYSTEM_ADMINISTRATOR);
+
+    const allActions = [
         {
             label: 'Novo Pedido',
             description: 'Criar uma nova solicitação',
-            icon: <PlusCircle size={24} />,
+            icon: <PlusCircle size={20} />,
             color: 'var(--color-primary)',
-            onClick: () => navigate('/requests/create')
+            onClick: () => navigate('/requests/new'),
+            visible: true
         },
         {
             label: 'Ver Pedidos',
-            description: 'Acompanhar lista de pedidos',
-            icon: <LayoutList size={24} />,
+            description: 'Lista de pedidos',
+            icon: <LayoutList size={20} />,
             color: 'var(--color-status-blue)',
-            onClick: () => navigate('/requests')
+            onClick: () => navigate('/requests'),
+            visible: true
         },
         {
             label: 'Gestão de Cotações',
-            description: 'Gerencie itens solicitados e processe cotações de fornecedores',
-            icon: <Package size={24} />,
+            description: 'Cotações e fornecedores',
+            icon: <Package size={20} />,
             color: 'var(--color-status-indigo)',
-            onClick: () => navigate('/buyer/items')
+            onClick: () => navigate('/buyer/items'),
+            visible: hasRole(ROLES.BUYER)
+        },
+        {
+            label: 'Centro de Aprovações',
+            description: 'Aprovar pedidos pendentes',
+            icon: <CheckSquare size={20} />,
+            color: '#10b981',
+            onClick: () => navigate('/approvals'),
+            visible: hasRole(ROLES.AREA_APPROVER) || hasRole(ROLES.FINAL_APPROVER)
+        },
+        {
+            label: 'Pagamentos',
+            description: 'Gestão financeira',
+            icon: <CreditCard size={20} />,
+            color: '#f97316',
+            onClick: () => navigate('/finance'),
+            visible: hasRole(ROLES.FINANCE)
+        },
+        {
+            label: 'Recebimentos',
+            description: 'Conferir entregas',
+            icon: <Truck size={20} />,
+            color: '#8b5cf6',
+            onClick: () => navigate('/receiving/workspace'),
+            visible: hasRole(ROLES.RECEIVING)
         }
-    ].filter(action => {
-        if (action.label === 'Gestão de Cotações') {
-            return user?.roles?.includes('Buyer') || user?.roles?.includes('System Administrator');
-        }
-        return true;
-    });
+    ];
+
+    const actions = allActions.filter(a => a.visible);
 
     return (
-        <section style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <header>
-                <h2 style={{ 
-                    margin: 0, 
-                    fontSize: '1.25rem', 
-                    fontWeight: 900, 
-                    textTransform: 'uppercase',
-                    borderLeft: '4px solid var(--color-primary)',
-                    paddingLeft: '1rem',
-                    letterSpacing: '-0.01em'
-                }}>
-                    Ações Rápidas
-                </h2>
-                <p style={{ margin: '0.25rem 0 0 1.25rem', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-                    Atalhos para as operações mais comuns do dia a dia
-                </p>
-            </header>
-
+        <section>
+            <h2 style={{
+                fontSize: '1.1rem',
+                fontWeight: 700,
+                color: 'var(--color-text)',
+                margin: '0 0 12px 0'
+            }}>
+                Ações Rápidas
+            </h2>
             <div style={{ 
                 display: 'grid', 
-                gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
-                gap: '1rem',
-                marginTop: '0.5rem'
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+                gap: '10px'
             }}>
                 {actions.map((action, index) => (
                     <QuickActionItem key={index} {...action} />

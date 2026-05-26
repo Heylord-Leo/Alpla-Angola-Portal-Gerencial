@@ -9,7 +9,6 @@ public class ServiceHealthDto
 {
     public ServiceStatusItem Backend { get; set; } = new();
     public ServiceStatusItem Database { get; set; } = new();
-    public ServiceStatusItem LocalOcr { get; set; } = new();
     public ServiceStatusItem OpenAi { get; set; } = new();
 }
 
@@ -70,25 +69,8 @@ public class AdminDiagnosticsController : ControllerBase
             health.Database = new ServiceStatusItem { Status = "Unhealthy", Configured = true, Healthy = false, Message = ex.Message };
         }
 
-        // 3. Extraction Settings (for LocalOcr and OpenAI status)
+        // 3. Extraction Settings (for OpenAI status)
         var settings = await _extractionSettingsService.GetSettingsAsync(ct);
-
-        // Local OCR
-        health.LocalOcr = new ServiceStatusItem
-        {
-            Configured = !string.IsNullOrEmpty(settings.LocalOcrBaseUrl),
-            Status = string.IsNullOrEmpty(settings.LocalOcrBaseUrl) ? "NotConfigured" : "Configured"
-        };
-        
-        // If configured, check reachability via the test connection (simplified here)
-        if (health.LocalOcr.Configured && settings.DefaultProvider == "LOCAL_OCR")
-        {
-            var test = await _extractionSettingsService.TestConnectionAsync(ct);
-            health.LocalOcr.Reachable = test.Success;
-            health.LocalOcr.Healthy = test.Success;
-            health.LocalOcr.Status = test.Success ? "Healthy" : "Unreachable";
-            health.LocalOcr.Message = test.Message;
-        }
 
         // OpenAI
         health.OpenAi = new ServiceStatusItem

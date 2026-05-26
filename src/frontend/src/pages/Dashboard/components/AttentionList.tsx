@@ -74,7 +74,7 @@ export function AttentionList() {
             <div style={{ 
                 backgroundColor: 'var(--color-bg-surface)', 
                 border: '2px solid var(--color-primary)', 
-                boxShadow: 'var(--shadow-brutal)',
+                boxShadow: 'var(--shadow-md)',
                 overflow: 'hidden'
             }}>
                 {requests.map((req) => {

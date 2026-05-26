@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
     Users, 
-    Search, 
+    
     Plus, 
     Edit2, 
     Key, 
@@ -21,7 +21,7 @@ import { useAuth } from '../../features/auth/AuthContext';
 import { Link } from 'react-router-dom';
 import { DropdownPortal } from '../../components/ui/DropdownPortal';
 import { Tooltip } from '../../components/ui/Tooltip';
-import { ROLE_DESCRIPTIONS } from '../../constants/roles';
+import { ROLES, ROLE_DESCRIPTIONS } from '../../constants/roles';
 import { Z_INDEX } from '../../constants/ui';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -54,6 +54,7 @@ export default function UserManagement() {
 
     // Drawer State
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+    const [drawerError, setDrawerError] = useState<string | null>(null);
     const [editingUser, setEditingUser] = useState<any>(null);
     const [formData, setFormData] = useState({
         fullName: '',
@@ -67,8 +68,8 @@ export default function UserManagement() {
     // Result Password Modal
     const [resultPassword, setResultPassword] = useState<string | null>(null);
 
-    const isSystemAdmin = currentUser?.roles.includes('System Administrator');
-    const isLocalManager = currentUser?.roles.includes('Local Manager');
+    const isSystemAdmin = currentUser?.roles.includes(ROLES.SYSTEM_ADMINISTRATOR);
+    const isLocalManager = currentUser?.roles.includes(ROLES.LOCAL_MANAGER);
 
     useEffect(() => {
         loadData();
@@ -106,14 +107,15 @@ export default function UserManagement() {
                 'Receiving', 
                 'Viewer / Management', 
                 'Import', 
-                'Area Approver'
+                'Area Approver',
+                'HR'
             ];
 
             const filteredRoles = isSystemAdmin
                 ? roles
                 : isLocalManager
                 ? roles.filter((r: any) => managerAssignableRoles.includes(r.roleName))
-                : roles.filter((r: any) => ![ 'System Administrator', 'Local Manager' ].includes(r.roleName));
+                : roles.filter((r: any) => ![ ROLES.SYSTEM_ADMINISTRATOR, ROLES.LOCAL_MANAGER ].includes(r.roleName));
 
             // Filter plants and departments for Local Manager scope (Case-insensitive Code match)
             const filteredPlants = isSystemAdmin
@@ -174,6 +176,7 @@ export default function UserManagement() {
 
     async function handleOpenCreate() {
         setEditingUser(null);
+        setDrawerError(null);
         setFormData({
             fullName: '',
             email: '',
@@ -189,6 +192,7 @@ export default function UserManagement() {
         try {
             const userDetails = await api.users.get(userId);
             setEditingUser(userDetails);
+            setDrawerError(null);
             setFormData({
                 fullName: userDetails.fullName,
                 email: userDetails.email,
@@ -205,6 +209,7 @@ export default function UserManagement() {
 
     async function handleSave(e: React.FormEvent) {
         e.preventDefault();
+        setDrawerError(null);
         try {
             if (editingUser) {
                 await api.users.update(editingUser.id, formData);
@@ -217,7 +222,7 @@ export default function UserManagement() {
                 loadData();
             }
         } catch (err: any) {
-            alert('Erro ao guardar: ' + err.message);
+            setDrawerError(err.message);
         }
     }
 
@@ -283,7 +288,7 @@ export default function UserManagement() {
                 onTabChange={(id) => setStatusFilter(id as any)}
                 actions={
                     <button onClick={loadData} style={{ background: 'var(--color-bg-page)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', padding: '8px 12px', borderRadius: 'var(--radius-md)' }}>
-                        <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
+                        <RefreshCw size={18} style={isLoading ? { animation: 'spin 1s linear infinite' } : undefined} />
                     </button>
                 }
             />
@@ -390,7 +395,7 @@ export default function UserManagement() {
             {isDrawerOpen && (
                 <DropdownPortal>
                     <div style={s.drawerOverlay} onClick={e => e.target === e.currentTarget && setIsDrawerOpen(false)}>
-                        <div style={s.drawer} className="animate-in slide-in-from-right duration-300">
+                        <div style={{ ...s.drawer, animation: 'slideInFromRight 0.3s ease forwards' }}>
                             <div style={s.drawerHeader}>
                                 <h2 style={{ fontSize: '1.25rem', fontWeight: 900, textTransform: 'uppercase', margin: 0, color: 'var(--color-primary)' }}>
                                     {editingUser ? 'Editar Utilizador' : 'Novo Utilizador'}
@@ -399,6 +404,12 @@ export default function UserManagement() {
                             </div>
                             
                             <form style={s.drawerBody} onSubmit={handleSave}>
+                                {drawerError && (
+                                    <div style={{ background: 'var(--color-status-red)18', border: '2px solid var(--color-status-red)', padding: '12px 16px', color: 'var(--color-status-red)', fontSize: '0.85rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 12 }}>
+                                        <XCircle size={18} />
+                                        {drawerError}
+                                    </div>
+                                )}
                                 <section style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                                     <label style={s.labelSm}>Identificação Base</label>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
@@ -462,6 +473,26 @@ export default function UserManagement() {
                                     </div>
                                 </section>
 
+                                {/* HR Scope Validation Warning */}
+                                {allRoles.some((r: any) => r.roleName === 'HR' && formData.roleIds.includes(r.id)) && 
+                                 (formData.plantIds.length === 0 || formData.departmentIds.length === 0) && (
+                                    <div style={{ 
+                                        background: 'var(--color-status-orange)12', 
+                                        border: '2px solid var(--color-status-orange)', 
+                                        padding: '12px 16px', 
+                                        display: 'flex', 
+                                        alignItems: 'flex-start', 
+                                        gap: 10,
+                                        fontSize: '0.78rem',
+                                        fontWeight: 700,
+                                        color: 'var(--color-status-orange)',
+                                        lineHeight: 1.5
+                                    }}>
+                                        <Info size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+                                        <span>O perfil <strong>R.H.</strong> requer pelo menos uma planta e um departamento no escopo para funcionar corretamente. Sem escopo definido, o utilizador não poderá visualizar nenhum funcionário.</span>
+                                    </div>
+                                )}
+
                                 <section style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
                                     <div>
                                         <label style={s.labelSm}>Escopo: Plantas</label>
@@ -503,7 +534,7 @@ export default function UserManagement() {
             {resultPassword && (
                 <DropdownPortal>
                     <div style={{ ...s.drawerOverlay, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <div style={{ background: 'var(--color-bg-surface)', padding: 48, border: '4px solid var(--color-primary)', boxShadow: 'var(--shadow-brutal)', maxWidth: 440, textAlign: 'center' }}>
+                        <div style={{ background: 'var(--color-bg-surface)', padding: 48, border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-md)', maxWidth: 440, textAlign: 'center' }}>
                             <div style={{ color: 'var(--color-primary)', marginBottom: 24 }}><Key size={64} style={{ margin: '0 auto' }} /></div>
                             <h2 style={{ fontSize: '1.5rem', fontWeight: 900, marginBottom: 12 }}>AUTENTICAÇÃO GERADA</h2>
                             <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', fontWeight: 700, marginBottom: 24 }}>Copiue e guarde. Esta informação não será exibida novamente.</p>

@@ -19,6 +19,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Plant> Plants => Set<Plant>();
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<CostCenter> CostCenters => Set<CostCenter>();
+    public DbSet<AnnualBudget> AnnualBudgets => Set<AnnualBudget>();
 
     public DbSet<RequestType> RequestTypes => Set<RequestType>();
     public DbSet<RequestStatus> RequestStatuses => Set<RequestStatus>();
@@ -45,6 +46,60 @@ public class ApplicationDbContext : DbContext
     public DbSet<ItemCatalog> ItemCatalogItems => Set<ItemCatalog>();
     public DbSet<OcrExtractedItem> OcrExtractedItems => Set<OcrExtractedItem>();
     public DbSet<ReconciliationRecord> ReconciliationRecords => Set<ReconciliationRecord>();
+
+    // Integration Foundation (Phase 0)
+    public DbSet<IntegrationProvider> IntegrationProviders => Set<IntegrationProvider>();
+    public DbSet<IntegrationConnectionStatus> IntegrationConnectionStatuses => Set<IntegrationConnectionStatus>();
+    public DbSet<IntegrationProviderSettings> IntegrationProviderSettings => Set<IntegrationProviderSettings>();
+
+    // HR Leave Module (Phase 1)
+    public DbSet<HREmployee> HREmployees => Set<HREmployee>();
+    public DbSet<DepartmentMaster> DepartmentMasters => Set<DepartmentMaster>();
+    public DbSet<LeaveType> LeaveTypes => Set<LeaveType>();
+    public DbSet<LeaveRecord> LeaveRecords => Set<LeaveRecord>();
+    public DbSet<LeaveStatusHistory> LeaveStatusHistories => Set<LeaveStatusHistory>();
+    public DbSet<HRSyncLog> HRSyncLogs => Set<HRSyncLog>();
+
+    // Badge Management Module
+    public DbSet<BadgeLayout> BadgeLayouts => Set<BadgeLayout>();
+    public DbSet<BadgePrintHistory> BadgePrintHistories => Set<BadgePrintHistory>();
+    public DbSet<BadgePrintEvent> BadgePrintEvents => Set<BadgePrintEvent>();
+
+    // Contracts Management Module
+    public DbSet<ContractType> ContractTypes => Set<ContractType>();
+    public DbSet<Contract> Contracts => Set<Contract>();
+    public DbSet<ContractDocument> ContractDocuments => Set<ContractDocument>();
+    public DbSet<ContractHistory> ContractHistories => Set<ContractHistory>();
+    public DbSet<ContractAlert> ContractAlerts => Set<ContractAlert>();
+    public DbSet<ContractPaymentObligation> ContractPaymentObligations => Set<ContractPaymentObligation>();
+
+    // Contracts OCR (Phase 1)
+    public DbSet<ContractOcrExtractionRecord> ContractOcrExtractionRecords => Set<ContractOcrExtractionRecord>();
+    public DbSet<ContractOcrExtractedField> ContractOcrExtractedFields => Set<ContractOcrExtractedField>();
+
+    // HR Monthly Changes Middleware (Innux → Portal → Primavera)
+    public DbSet<MCProcessingRun> MCProcessingRuns => Set<MCProcessingRun>();
+    public DbSet<MCAttendanceSnapshot> MCAttendanceSnapshots => Set<MCAttendanceSnapshot>();
+    public DbSet<MCMonthlyChangeItem> MCMonthlyChangeItems => Set<MCMonthlyChangeItem>();
+    public DbSet<MCPrimaveraCodeMapping> MCPrimaveraCodeMappings => Set<MCPrimaveraCodeMapping>();
+    public DbSet<MCDetectionThreshold> MCDetectionThresholds => Set<MCDetectionThreshold>();
+    public DbSet<MCExportBatch> MCExportBatches => Set<MCExportBatch>();
+    public DbSet<MCExportRow> MCExportRows => Set<MCExportRow>();
+    public DbSet<MCProcessingLog> MCProcessingLogs => Set<MCProcessingLog>();
+
+    // Supplier Registration (Ficha de Fornecedor)
+    public DbSet<SupplierDocument> SupplierDocuments => Set<SupplierDocument>();
+    public DbSet<SupplierStatusHistory> SupplierStatusHistories => Set<SupplierStatusHistory>();
+
+    // Proforma Deadline Alerts (audit / dedup)
+    public DbSet<ProformaDeadlineAlert> ProformaDeadlineAlerts => Set<ProformaDeadlineAlert>();
+
+    // I.T Equipment Module
+    public DbSet<ITEquipment> ITEquipments => Set<ITEquipment>();
+    public DbSet<ITEquipmentAssignment> ITEquipmentAssignments => Set<ITEquipmentAssignment>();
+    public DbSet<ITEquipmentMovementLog> ITEquipmentMovementLogs => Set<ITEquipmentMovementLog>();
+    public DbSet<ITEquipmentAcquisition> ITEquipmentAcquisitions => Set<ITEquipmentAcquisition>();
+    public DbSet<ITEquipmentDocument> ITEquipmentDocuments => Set<ITEquipmentDocument>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -94,6 +149,47 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<UserPlantScope>().HasKey(ups => new { ups.UserId, ups.PlantId });
         modelBuilder.Entity<UserDepartmentScope>().HasKey(uds => new { uds.UserId, uds.DepartmentId });
 
+        // Annual Budget Constraints
+        // Note: Logical unique key is handled in application logic because CostCenterId can be NULL
+        // We will just create a non-unique covering index to speed up lookups
+        modelBuilder.Entity<AnnualBudget>()
+            .HasIndex(a => new { a.Year, a.CompanyId, a.PlantId, a.DepartmentId, a.CostCenterId, a.CurrencyId })
+            .HasDatabaseName("IX_AnnualBudget_Hierarchy");
+
+        modelBuilder.Entity<AnnualBudget>()
+            .Property(a => a.TotalAmount)
+            .HasPrecision(18, 2);
+
+        modelBuilder.Entity<AnnualBudget>()
+            .HasOne(a => a.Company)
+            .WithMany()
+            .HasForeignKey(a => a.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<AnnualBudget>()
+            .HasOne(a => a.Plant)
+            .WithMany()
+            .HasForeignKey(a => a.PlantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<AnnualBudget>()
+            .HasOne(a => a.Department)
+            .WithMany()
+            .HasForeignKey(a => a.DepartmentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<AnnualBudget>()
+            .HasOne(a => a.CostCenter)
+            .WithMany()
+            .HasForeignKey(a => a.CostCenterId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<AnnualBudget>()
+            .HasOne(a => a.Currency)
+            .WithMany()
+            .HasForeignKey(a => a.CurrencyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         // Department Responsible User mapping (ambiguity resolution)
         modelBuilder.Entity<Department>()
             .HasOne(d => d.ResponsibleUser)
@@ -108,6 +204,376 @@ public class ApplicationDbContext : DbContext
             .HasForeignKey(u => u.DepartmentId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        // ─── HR Leave Module Configuration ───
+
+        // DepartmentMaster
+        modelBuilder.Entity<DepartmentMaster>(entity =>
+        {
+            entity.HasIndex(d => new { d.SourceSystem, d.SourceDatabase, d.DepartmentCode }).IsUnique();
+        });
+
+        // HREmployee
+        modelBuilder.Entity<HREmployee>(entity =>
+        {
+            entity.HasIndex(e => e.InnuxEmployeeId).IsUnique();
+            entity.HasIndex(e => e.EmployeeCode).IsUnique();
+            entity.HasIndex(e => e.PlantId);
+            entity.HasIndex(e => e.PortalDepartmentId);
+            entity.HasIndex(e => e.DepartmentMasterId);
+            entity.HasIndex(e => e.ManagerUserId);
+            entity.HasIndex(e => e.IsActive);
+            entity.HasIndex(e => e.IsMapped);
+
+            entity.HasOne(e => e.Plant)
+                .WithMany()
+                .HasForeignKey(e => e.PlantId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.PortalDepartment)
+                .WithMany()
+                .HasForeignKey(e => e.PortalDepartmentId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.DepartmentMaster)
+                .WithMany(d => d.Employees)
+                .HasForeignKey(e => e.DepartmentMasterId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.ManagerUser)
+                .WithMany()
+                .HasForeignKey(e => e.ManagerUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // LeaveType
+        modelBuilder.Entity<LeaveType>(entity =>
+        {
+            entity.HasIndex(lt => lt.Code).IsUnique();
+        });
+
+        // LeaveRecord
+        modelBuilder.Entity<LeaveRecord>(entity =>
+        {
+            entity.HasIndex(lr => lr.EmployeeId);
+            entity.HasIndex(lr => lr.StatusCode);
+            entity.HasIndex(lr => lr.StartDate);
+            entity.HasIndex(lr => lr.EndDate);
+
+            entity.HasOne(lr => lr.Employee)
+                .WithMany()
+                .HasForeignKey(lr => lr.EmployeeId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(lr => lr.LeaveType)
+                .WithMany()
+                .HasForeignKey(lr => lr.LeaveTypeId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(lr => lr.RequestedByUser)
+                .WithMany()
+                .HasForeignKey(lr => lr.RequestedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(lr => lr.ApprovedByUser)
+                .WithMany()
+                .HasForeignKey(lr => lr.ApprovedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(lr => lr.StatusHistory)
+                .WithOne(sh => sh.LeaveRecord)
+                .HasForeignKey(sh => sh.LeaveRecordId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // LeaveStatusHistory
+        modelBuilder.Entity<LeaveStatusHistory>(entity =>
+        {
+            entity.HasOne(sh => sh.ActorUser)
+                .WithMany()
+                .HasForeignKey(sh => sh.ActorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // HRSyncLog
+        modelBuilder.Entity<HRSyncLog>(entity =>
+        {
+            entity.HasOne(sl => sl.TriggeredByUser)
+                .WithMany()
+                .HasForeignKey(sl => sl.TriggeredByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // ─── Badge Management Module Configuration ───
+
+        // BadgeLayout
+        modelBuilder.Entity<BadgeLayout>(entity =>
+        {
+            entity.HasIndex(bl => bl.Status);
+            entity.HasIndex(bl => new { bl.Name, bl.Version }).IsUnique();
+            entity.HasIndex(bl => new { bl.CompanyCode, bl.BadgeType, bl.Status });
+
+            entity.HasOne(bl => bl.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(bl => bl.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(bl => bl.UpdatedByUser)
+                .WithMany()
+                .HasForeignKey(bl => bl.UpdatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // BadgePrintHistory
+        modelBuilder.Entity<BadgePrintHistory>(entity =>
+        {
+            entity.HasIndex(bph => bph.EmployeeCode);
+            entity.HasIndex(bph => bph.PrintedAtUtc);
+            entity.HasIndex(bph => bph.PrintedByUserId);
+            entity.HasIndex(bph => bph.CompanyCode);
+
+            entity.HasOne(bph => bph.BadgeLayout)
+                .WithMany()
+                .HasForeignKey(bph => bph.BadgeLayoutId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(bph => bph.PrintedByUser)
+                .WithMany()
+                .HasForeignKey(bph => bph.PrintedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(bph => bph.ReprintEvents)
+                .WithOne(ev => ev.BadgePrintHistory)
+                .HasForeignKey(ev => ev.BadgePrintHistoryId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // BadgePrintEvent
+        modelBuilder.Entity<BadgePrintEvent>(entity =>
+        {
+            entity.HasIndex(ev => ev.BadgePrintHistoryId);
+            entity.HasIndex(ev => ev.ReprintedAtUtc);
+
+            entity.HasOne(ev => ev.ReprintedByUser)
+                .WithMany()
+                .HasForeignKey(ev => ev.ReprintedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ─── Contracts Management Module Configuration ───
+
+        modelBuilder.Entity<ContractType>(entity =>
+        {
+            entity.HasIndex(ct => ct.Code).IsUnique();
+        });
+
+        modelBuilder.Entity<Contract>(entity =>
+        {
+            entity.HasIndex(c => c.ContractNumber).IsUnique();
+            entity.HasIndex(c => c.StatusCode);
+            entity.HasIndex(c => c.CompanyId);
+            entity.HasIndex(c => c.PlantId);
+            entity.HasIndex(c => c.DepartmentId);
+            entity.HasIndex(c => c.SupplierId);
+            entity.HasIndex(c => c.ExpirationDateUtc);
+
+            entity.Property(c => c.TotalContractValue).HasColumnType("decimal(18,2)");
+            entity.Property(c => c.LatePenaltyValue).HasColumnType("decimal(18,4)");
+            entity.Property(c => c.LateInterestValue).HasColumnType("decimal(18,4)");
+
+            entity.HasOne(c => c.ContractType)
+                .WithMany()
+                .HasForeignKey(c => c.ContractTypeId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(c => c.Supplier)
+                .WithMany()
+                .HasForeignKey(c => c.SupplierId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(c => c.Department)
+                .WithMany()
+                .HasForeignKey(c => c.DepartmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(c => c.Company)
+                .WithMany()
+                .HasForeignKey(c => c.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(c => c.Plant)
+                .WithMany()
+                .HasForeignKey(c => c.PlantId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(c => c.Currency)
+                .WithMany()
+                .HasForeignKey(c => c.CurrencyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(c => c.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(c => c.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Two-step approval participants (DEC-118)
+            // NoAction: SQL Server cannot have multiple cascade paths to the same table (Users).
+            // Application layer ensures FKs are cleared before any user deletion.
+            entity.HasOne(c => c.TechnicalApprover)
+                .WithMany()
+                .HasForeignKey(c => c.TechnicalApproverId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            entity.HasOne(c => c.FinalApprover)
+                .WithMany()
+                .HasForeignKey(c => c.FinalApproverId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            entity.HasMany(c => c.Documents)
+                .WithOne(d => d.Contract)
+                .HasForeignKey(d => d.ContractId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(c => c.Histories)
+                .WithOne(h => h.Contract)
+                .HasForeignKey(h => h.ContractId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(c => c.PaymentObligations)
+                .WithOne(o => o.Contract)
+                .HasForeignKey(o => o.ContractId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(c => c.Alerts)
+                .WithOne(a => a.Contract)
+                .HasForeignKey(a => a.ContractId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Reverse navigation: Request.ContractId → Contract.LinkedRequests
+            // Restrict (not SetNull) to avoid SQL Server multiple cascade path conflict.
+            // Application layer guards against deleting contracts with linked requests.
+            entity.HasMany(c => c.LinkedRequests)
+                .WithOne(r => r.Contract)
+                .HasForeignKey(r => r.ContractId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ContractDocument>(entity =>
+        {
+            entity.HasIndex(cd => cd.ContractId);
+            entity.HasIndex(cd => cd.FileHash).HasFilter("[FileHash] IS NOT NULL");
+
+            entity.HasOne(cd => cd.UploadedByUser)
+                .WithMany()
+                .HasForeignKey(cd => cd.UploadedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ContractHistory>(entity =>
+        {
+            entity.HasIndex(ch => ch.ContractId);
+            entity.HasIndex(ch => ch.OccurredAtUtc);
+
+            entity.HasOne(ch => ch.ActorUser)
+                .WithMany()
+                .HasForeignKey(ch => ch.ActorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ContractAlert>(entity =>
+        {
+            entity.HasIndex(ca => ca.ContractId);
+            entity.HasIndex(ca => new { ca.IsDismissed, ca.TriggerDateUtc });
+        });
+
+        modelBuilder.Entity<ContractPaymentObligation>(entity =>
+        {
+            entity.HasIndex(o => o.ContractId);
+            entity.HasIndex(o => o.StatusCode);
+            entity.HasIndex(o => o.DueDateUtc);
+
+            entity.Property(o => o.ExpectedAmount).HasColumnType("decimal(18,2)");
+
+            entity.HasOne(o => o.Currency)
+                .WithMany()
+                .HasForeignKey(o => o.CurrencyId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ─── Contract OCR (Phase 1) ───────────────────────────────────────────
+
+        modelBuilder.Entity<ContractOcrExtractionRecord>(entity =>
+        {
+            // Quick status polling from frontend
+            entity.HasIndex(r => new { r.ContractId, r.Status });
+            entity.HasIndex(r => r.ContractDocumentId);
+
+            entity.Property(r => r.QualityScore).HasColumnType("decimal(9,4)");
+
+            // Record → Contract
+            // NoAction: avoids SQL Server multiple cascade path conflict.
+            // Contract → ContractDocuments already cascades; a second cascade path via
+            // OcrExtractionRecord → Contract → ContractDocuments triggers error 1785.
+            entity.HasOne(r => r.Contract)
+                .WithMany()
+                .HasForeignKey(r => r.ContractId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            // Record → ContractDocument (many-to-one)
+            // Restrict so the source document is always traceable from the record.
+            entity.HasOne(r => r.ContractDocument)
+                .WithMany()
+                .HasForeignKey(r => r.ContractDocumentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Record → TriggeredByUser
+            // NoAction: avoids SQL Server multiple cascade path conflict via Contract → User.
+            entity.HasOne(r => r.TriggeredByUser)
+                .WithMany()
+                .HasForeignKey(r => r.TriggeredByUserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            // Record → ExtractedFields (owned — cascade delete)
+            entity.HasMany(r => r.ExtractedFields)
+                .WithOne(f => f.ExtractionRecord)
+                .HasForeignKey(f => f.ExtractionRecordId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ContractOcrExtractedField>(entity =>
+        {
+            entity.HasIndex(f => f.ExtractionRecordId);
+            entity.HasIndex(f => new { f.ContractId, f.FieldName });
+
+            entity.Property(f => f.ConfidenceScore).HasColumnType("decimal(9,4)");
+        });
+
+        // ContractDocument → OcrExtractionRecord (nullable FK, reverse direction)
+        // NoAction: avoids SQL Server multiple cascade path error 1785.
+        // The document itself is never auto-deleted by OCR record deletion.
+        modelBuilder.Entity<ContractDocument>(entity =>
+        {
+            entity.HasOne(d => d.OcrExtractionRecord)
+                .WithMany()
+                .HasForeignKey(d => d.OcrExtractionRecordId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        // Request → ContractPaymentObligation FK (unidirectional, Restrict)
+        // Restrict to avoid SQL Server multiple cascade path conflict.
+        modelBuilder.Entity<Request>()
+            .HasOne(r => r.ContractPaymentObligation)
+            .WithMany()
+            .HasForeignKey(r => r.ContractPaymentObligationId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Request>()
+            .HasIndex(r => r.ContractPaymentObligationId)
+            .HasFilter("[ContractPaymentObligationId] IS NOT NULL");
+
+        modelBuilder.Entity<Request>()
+            .HasIndex(r => r.ContractId)
+            .HasFilter("[ContractId] IS NOT NULL");
+
         // Unique Constraints for Master Data
         modelBuilder.Entity<Unit>().HasIndex(u => u.Code).IsUnique();
         modelBuilder.Entity<Currency>().HasIndex(c => c.Code).IsUnique();
@@ -118,6 +584,81 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Supplier>().HasIndex(s => s.PortalCode).IsUnique();
         modelBuilder.Entity<Supplier>().HasIndex(s => s.Name).IsUnique();
         modelBuilder.Entity<Supplier>().HasIndex(s => s.PrimaveraCode).IsUnique().HasFilter("[PrimaveraCode] IS NOT NULL AND [PrimaveraCode] <> ''");
+        modelBuilder.Entity<Supplier>().HasIndex(s => s.RegistrationStatus);
+
+        // ─── Supplier Document Configuration (Ficha de Fornecedor) ───
+        modelBuilder.Entity<SupplierDocument>(entity =>
+        {
+            entity.HasIndex(sd => sd.SupplierId);
+            entity.HasIndex(sd => new { sd.SupplierId, sd.DocumentType });
+            entity.HasIndex(sd => sd.FileHash).HasFilter("[FileHash] IS NOT NULL");
+
+            entity.HasOne(sd => sd.Supplier)
+                .WithMany(s => s.Documents)
+                .HasForeignKey(sd => sd.SupplierId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(sd => sd.UploadedByUser)
+                .WithMany()
+                .HasForeignKey(sd => sd.UploadedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ─── Supplier Approval Workflow (Phase 2 — DAF/DG) ───
+
+        // Supplier → DAF/DG Approver FKs (NoAction: avoids SQL Server multiple cascade path)
+        modelBuilder.Entity<Supplier>(entity =>
+        {
+            entity.HasOne(s => s.DafApprover)
+                .WithMany()
+                .HasForeignKey(s => s.DafApproverId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            entity.HasOne(s => s.DgApprover)
+                .WithMany()
+                .HasForeignKey(s => s.DgApproverId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            entity.HasMany(s => s.StatusHistories)
+                .WithOne(h => h.Supplier)
+                .HasForeignKey(h => h.SupplierId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // SupplierStatusHistory
+        modelBuilder.Entity<SupplierStatusHistory>(entity =>
+        {
+            entity.HasIndex(h => h.SupplierId);
+            entity.HasIndex(h => h.OccurredAtUtc);
+
+            entity.HasOne(h => h.ActorUser)
+                .WithMany()
+                .HasForeignKey(h => h.ActorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ─── Proforma Deadline Alerts ───
+
+        modelBuilder.Entity<ProformaDeadlineAlert>(entity =>
+        {
+            // Dedup: one alert per (Request, Level, Recipient) — globally unique
+            entity.HasIndex(a => new { a.RequestId, a.AlertLevel, a.RecipientUserId })
+                .IsUnique()
+                .HasDatabaseName("IX_ProformaDeadlineAlerts_Dedup");
+
+            entity.HasIndex(a => a.RequestId);
+
+            entity.HasOne(a => a.Request)
+                .WithMany()
+                .HasForeignKey(a => a.RequestId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(a => a.RecipientUser)
+                .WithMany()
+                .HasForeignKey(a => a.RecipientUserId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
         modelBuilder.Entity<CostCenter>().HasIndex(c => c.Code).IsUnique();
 
         // Item Catalog configuration
@@ -146,6 +687,14 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Request>().HasIndex(r => r.CreatedAtUtc);
         modelBuilder.Entity<Request>().HasIndex(r => r.StatusId);
         modelBuilder.Entity<Request>().HasIndex(r => r.RequesterId);
+        
+        // Performance Indexes for List Filtering and Scoping
+        modelBuilder.Entity<Request>().HasIndex(r => r.RequestTypeId);
+        modelBuilder.Entity<Request>().HasIndex(r => r.DepartmentId);
+        modelBuilder.Entity<Request>().HasIndex(r => r.PlantId);
+        modelBuilder.Entity<Request>().HasIndex(r => r.CompanyId);
+        modelBuilder.Entity<Request>().HasIndex(r => r.NeedLevelId);
+        modelBuilder.Entity<Request>().HasIndex(r => r.SelectedQuotationId);
 
         modelBuilder.Entity<RequestLineItem>().HasIndex(r => r.RequestId);
         modelBuilder.Entity<RequestLineItem>().HasIndex(r => new { r.RequestId, r.IsDeleted });
@@ -172,39 +721,55 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<QuotationItem>().Property(q => q.ReceivedQuantity).HasColumnType("decimal(18,4)");
 
         // Phase 2: OCR Extracted Items configuration
-        modelBuilder.Entity<OcrExtractedItem>()
-            .HasOne(o => o.ResolvedUnit)
-            .WithMany()
-            .HasForeignKey(o => o.ResolvedUnitId)
-            .OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<OcrExtractedItem>().HasIndex(o => o.RequestId);
-        modelBuilder.Entity<OcrExtractedItem>().HasIndex(o => o.ExtractionBatchId);
-        modelBuilder.Entity<OcrExtractedItem>().HasIndex(o => new { o.RequestId, o.ExtractionBatchId });
+        modelBuilder.Entity<OcrExtractedItem>(entity =>
+        {
+            entity.HasOne(o => o.ResolvedUnit)
+                .WithMany()
+                .HasForeignKey(o => o.ResolvedUnitId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(o => o.RequestId);
+            entity.HasIndex(o => o.ExtractionBatchId);
+            entity.HasIndex(o => new { o.RequestId, o.ExtractionBatchId });
+
+            // Decimal precision — OCR extraction values
+            entity.Property(o => o.Quantity).HasColumnType("decimal(18,4)");
+            entity.Property(o => o.UnitPrice).HasColumnType("decimal(18,2)");
+            entity.Property(o => o.DiscountAmount).HasColumnType("decimal(18,2)");
+            entity.Property(o => o.DiscountPercent).HasColumnType("decimal(9,4)");
+            entity.Property(o => o.TaxRate).HasColumnType("decimal(9,4)");
+            entity.Property(o => o.LineTotal).HasColumnType("decimal(18,2)");
+            entity.Property(o => o.QualityScore).HasColumnType("decimal(9,4)");
+        });
 
         // Phase 2: Reconciliation Records configuration
-        modelBuilder.Entity<ReconciliationRecord>()
-            .HasOne(r => r.RequesterItem)
-            .WithMany()
-            .HasForeignKey(r => r.RequesterItemId)
-            .OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<ReconciliationRecord>()
-            .HasOne(r => r.OcrExtractedItem)
-            .WithMany()
-            .HasForeignKey(r => r.OcrExtractedItemId)
-            .OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<ReconciliationRecord>()
-            .HasOne(r => r.QuotationItem)
-            .WithMany()
-            .HasForeignKey(r => r.QuotationItemId)
-            .OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<ReconciliationRecord>()
-            .HasOne(r => r.ReviewedByUser)
-            .WithMany()
-            .HasForeignKey(r => r.ReviewedByUserId)
-            .OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<ReconciliationRecord>().HasIndex(r => r.RequestId);
-        modelBuilder.Entity<ReconciliationRecord>().HasIndex(r => r.ExtractionBatchId);
-        modelBuilder.Entity<ReconciliationRecord>().HasIndex(r => new { r.RequestId, r.ExtractionBatchId });
+        modelBuilder.Entity<ReconciliationRecord>(entity =>
+        {
+            entity.HasOne(r => r.RequesterItem)
+                .WithMany()
+                .HasForeignKey(r => r.RequesterItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.OcrExtractedItem)
+                .WithMany()
+                .HasForeignKey(r => r.OcrExtractedItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.QuotationItem)
+                .WithMany()
+                .HasForeignKey(r => r.QuotationItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.ReviewedByUser)
+                .WithMany()
+                .HasForeignKey(r => r.ReviewedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(r => r.RequestId);
+            entity.HasIndex(r => r.ExtractionBatchId);
+            entity.HasIndex(r => new { r.RequestId, r.ExtractionBatchId });
+
+            // Decimal precision — reconciliation analysis values
+            entity.Property(r => r.MatchConfidence).HasColumnType("decimal(9,4)");
+            entity.Property(r => r.QuantityDivergence).HasColumnType("decimal(18,4)");
+        });
 
         // Simple Lookup Seeding for V1 Minimums
         modelBuilder.Entity<RequestType>().HasData(
@@ -298,7 +863,9 @@ public class ApplicationDbContext : DbContext
             new Role { Id = 8, RoleName = "Receiving" },
             new Role { Id = 9, RoleName = "Contracts" },
             new Role { Id = 10, RoleName = "Import" },
-            new Role { Id = 11, RoleName = "Viewer / Management" }
+            new Role { Id = 11, RoleName = "Viewer / Management" },
+            new Role { Id = 12, RoleName = "HR" },
+            new Role { Id = 13, RoleName = "IT" }
         );
 
         // Initial Users & Roles Seed
@@ -345,8 +912,8 @@ public class ApplicationDbContext : DbContext
         );
 
         modelBuilder.Entity<Supplier>().HasData(
-            new Supplier { Id = 1, Name = "Alpla Global Services", PortalCode = "SUP-000001", IsActive = true },
-            new Supplier { Id = 2, Name = "Standard Supplier 01", PortalCode = "SUP-000002", IsActive = true }
+            new Supplier { Id = 1, Name = "Alpla Global Services", PortalCode = "SUP-000001", IsActive = true, Origin = "MANUAL", RegistrationStatus = "ACTIVE", CreatedAtUtc = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new Supplier { Id = 2, Name = "Standard Supplier 01", PortalCode = "SUP-000002", IsActive = true, Origin = "MANUAL", RegistrationStatus = "ACTIVE", CreatedAtUtc = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) }
         );
 
         // Real operational Cost Centers — linked to Plants per allocation rules (DEC-078)
@@ -357,5 +924,208 @@ public class ApplicationDbContext : DbContext
             new CostCenter { Id = 4, Code = "CAPS2", Name = "CAPS 2", PlantId = 2, IsActive = true }, // Viana 2
             new CostCenter { Id = 5, Code = "SBM",   Name = "SBM",    PlantId = 3, IsActive = true }  // Viana 3
         );
+
+        // ─── Integration Foundation (Phase 0) ───
+
+        // IntegrationProvider configuration
+        modelBuilder.Entity<IntegrationProvider>().HasIndex(p => p.Code).IsUnique();
+        modelBuilder.Entity<IntegrationProvider>()
+            .HasOne(p => p.ConnectionStatus)
+            .WithOne(s => s.Provider)
+            .HasForeignKey<IntegrationConnectionStatus>(s => s.IntegrationProviderId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<IntegrationProvider>()
+            .HasOne(p => p.Settings)
+            .WithOne(s => s.Provider)
+            .HasForeignKey<IntegrationProviderSettings>(s => s.IntegrationProviderId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Seed: Primavera + Innux (Phase 1A — Primavera has real implementation, Innux remains planned)
+        // Seed: OPENAI + SMTP (Phase 2 — Integration Management Module, DEC-135)
+        modelBuilder.Entity<IntegrationProvider>().HasData(
+            new IntegrationProvider
+            {
+                Id = 1,
+                Code = "PRIMAVERA",
+                Name = "Primavera ERP",
+                ProviderType = "ERP",
+                ConnectionType = "SQL",
+                Description = "Enterprise Resource Planning — master data source for employees, articles, suppliers, departments, and cost centers.",
+                Environment = "PRODUCTION",
+                IsEnabled = false,
+                IsPlanned = false,
+                DisplayOrder = 1,
+                Capabilities = "[\"EMPLOYEES\",\"MATERIALS\",\"SUPPLIERS\",\"DEPARTMENTS\",\"COST_CENTERS\"]",
+                CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new IntegrationProvider
+            {
+                Id = 2,
+                Code = "INNUX",
+                Name = "Innux Time & Attendance",
+                ProviderType = "TIME_ATTENDANCE",
+                ConnectionType = "SQL",
+                Description = "Biometric time and attendance system — complementary employee/attendance data source.",
+                Environment = "PRODUCTION",
+                IsEnabled = false,
+                IsPlanned = false,
+                DisplayOrder = 2,
+                Capabilities = "[\"EMPLOYEES\",\"ATTENDANCE\"]",
+                CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new IntegrationProvider
+            {
+                Id = 3,
+                Code = "OPENAI",
+                Name = "OpenAI / ChatGPT API",
+                ProviderType = "API",
+                ConnectionType = "REST_API",
+                Description = "AI-powered document extraction and analysis — OCR processing for proformas, invoices, and contracts.",
+                Environment = "PRODUCTION",
+                IsEnabled = true,
+                IsPlanned = false,
+                DisplayOrder = 3,
+                Capabilities = "[\"DOCUMENT_EXTRACTION\",\"OCR\"]",
+                CreatedAtUtc = new DateTime(2026, 5, 25, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new IntegrationProvider
+            {
+                Id = 4,
+                Code = "SMTP",
+                Name = "Email / SMTP Service",
+                ProviderType = "API",
+                ConnectionType = "SMTP",
+                Description = "Email notification service — sends workflow alerts, password resets, and proforma deadline reminders.",
+                Environment = "PRODUCTION",
+                IsEnabled = true,
+                IsPlanned = false,
+                DisplayOrder = 4,
+                Capabilities = "[\"EMAIL_NOTIFICATIONS\",\"ALERTS\"]",
+                CreatedAtUtc = new DateTime(2026, 5, 25, 0, 0, 0, DateTimeKind.Utc)
+            }
+        );
+
+        // Seed: initial connection status records
+        modelBuilder.Entity<IntegrationConnectionStatus>().HasData(
+            new IntegrationConnectionStatus { Id = 1, IntegrationProviderId = 1, CurrentStatus = IntegrationStatusCodes.NotConfigured },
+            new IntegrationConnectionStatus { Id = 2, IntegrationProviderId = 2, CurrentStatus = IntegrationStatusCodes.Planned },
+            new IntegrationConnectionStatus { Id = 3, IntegrationProviderId = 3, CurrentStatus = IntegrationStatusCodes.NotConfigured },
+            new IntegrationConnectionStatus { Id = 4, IntegrationProviderId = 4, CurrentStatus = IntegrationStatusCodes.NotConfigured }
+        );
+
+        // Seed: HR Leave Types
+        modelBuilder.Entity<LeaveType>().HasData(
+            new LeaveType { Id = 1, Code = "VACATION", DisplayNamePt = "Férias", Color = "#3b82f6", CountsAgainstBalance = true, DisplayOrder = 1 },
+            new LeaveType { Id = 2, Code = "SICK_LEAVE", DisplayNamePt = "Licença Médica", Color = "#ef4444", CountsAgainstBalance = false, DisplayOrder = 2 },
+            new LeaveType { Id = 3, Code = "JUSTIFIED_ABSENCE", DisplayNamePt = "Falta Justificada", Color = "#f59e0b", CountsAgainstBalance = false, DisplayOrder = 3 },
+            new LeaveType { Id = 4, Code = "UNJUSTIFIED_ABSENCE", DisplayNamePt = "Falta Injustificada", Color = "#dc2626", CountsAgainstBalance = false, DisplayOrder = 4 },
+            new LeaveType { Id = 5, Code = "PERSONAL_LEAVE", DisplayNamePt = "Licença Pessoal", Color = "#8b5cf6", CountsAgainstBalance = true, DisplayOrder = 5 },
+            new LeaveType { Id = 6, Code = "COMPENSATION_DAY", DisplayNamePt = "Dia de Compensação", Color = "#06b6d4", CountsAgainstBalance = false, DisplayOrder = 6 },
+            new LeaveType { Id = 7, Code = "OTHER", DisplayNamePt = "Outros", Color = "#6b7280", CountsAgainstBalance = false, DisplayOrder = 7 }
+        );
+
+        // Seed: Contract Types (Phase 1 — procurement-oriented only)
+        modelBuilder.Entity<ContractType>().HasData(
+            new ContractType { Id = 1, Code = "SERVICE", Name = "Serviço", IsActive = true, DisplayOrder = 1 },
+            new ContractType { Id = 2, Code = "LEASE", Name = "Locação", IsActive = true, DisplayOrder = 2 },
+            new ContractType { Id = 3, Code = "SUPPLY", Name = "Fornecimento", IsActive = true, DisplayOrder = 3 },
+            new ContractType { Id = 4, Code = "MAINTENANCE", Name = "Manutenção", IsActive = true, DisplayOrder = 4 }
+        );
+
+        // ─── I.T Equipment Module Configuration ───
+
+        // ITEquipment
+        modelBuilder.Entity<ITEquipment>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.AssetTag).IsUnique();
+            entity.HasIndex(e => e.SerialNumber)
+                  .IsUnique()
+                  .HasFilter("\"SerialNumber\" IS NOT NULL AND \"SerialNumber\" <> ''");
+            entity.HasIndex(e => e.MacAddress)
+                  .IsUnique()
+                  .HasFilter("\"MacAddress\" IS NOT NULL AND \"MacAddress\" <> ''");
+            entity.HasIndex(e => e.Hostname)
+                  .IsUnique()
+                  .HasFilter("\"Hostname\" IS NOT NULL AND \"Hostname\" <> ''");
+            entity.HasIndex(e => e.StatusCode);
+            entity.Property(e => e.AssetTag).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Hostname).HasMaxLength(200);
+            entity.Property(e => e.Plant).HasMaxLength(100);
+            entity.Property(e => e.EquipmentType).HasMaxLength(50);
+            entity.Property(e => e.StatusCode).HasMaxLength(50);
+            entity.Property(e => e.Manufacturer).HasMaxLength(200);
+            entity.Property(e => e.Model).HasMaxLength(200);
+            entity.Property(e => e.SerialNumber).HasMaxLength(200);
+            entity.Property(e => e.MacAddress).HasMaxLength(100);
+            entity.Property(e => e.Processor).HasMaxLength(200);
+            entity.Property(e => e.MemoryRam).HasMaxLength(100);
+            entity.Property(e => e.Color).HasMaxLength(50);
+            entity.Property(e => e.CurrentOwnerName).HasMaxLength(200);
+            entity.Property(e => e.CurrentOwnerEmployeeId).HasMaxLength(100);
+            entity.Property(e => e.SourceType).HasMaxLength(50);
+            entity.Property(e => e.IdCard).HasMaxLength(200);
+            entity.HasOne(e => e.CurrentOwnerUser).WithMany().HasForeignKey(e => e.CurrentOwnerUserId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.CreatedByUser).WithMany().HasForeignKey(e => e.CreatedByUserId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.UpdatedByUser).WithMany().HasForeignKey(e => e.UpdatedByUserId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        // ITEquipmentAssignment
+        modelBuilder.Entity<ITEquipmentAssignment>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.AssignedToName).HasMaxLength(200);
+            entity.Property(e => e.AssignedToEmail).HasMaxLength(300);
+            entity.Property(e => e.AssignedToDepartment).HasMaxLength(200);
+            entity.Property(e => e.AssignedToPlant).HasMaxLength(100);
+            entity.Property(e => e.AssignmentStatus).HasMaxLength(50);
+            entity.HasOne(e => e.Equipment).WithMany(eq => eq.Assignments).HasForeignKey(e => e.EquipmentId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.AssignedToUser).WithMany().HasForeignKey(e => e.AssignedToUserId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.CreatedByUser).WithMany().HasForeignKey(e => e.CreatedByUserId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        // ITEquipmentMovementLog
+        modelBuilder.Entity<ITEquipmentMovementLog>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.MovementType).HasMaxLength(100);
+            entity.Property(e => e.PreviousStatus).HasMaxLength(50);
+            entity.Property(e => e.NewStatus).HasMaxLength(50);
+            entity.Property(e => e.PreviousOwnerName).HasMaxLength(200);
+            entity.Property(e => e.NewOwnerName).HasMaxLength(200);
+            entity.HasOne(e => e.Equipment).WithMany(eq => eq.MovementLogs).HasForeignKey(e => e.EquipmentId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.CreatedByUser).WithMany().HasForeignKey(e => e.CreatedByUserId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        // ITEquipmentAcquisition (1:1 with ITEquipment)
+        modelBuilder.Entity<ITEquipmentAcquisition>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.EquipmentId).IsUnique();
+            entity.Property(e => e.SupplierName).HasMaxLength(300);
+            entity.Property(e => e.PurchaseRequestNumber).HasMaxLength(100);
+            entity.Property(e => e.PurchaseOrderNumber).HasMaxLength(100);
+            entity.Property(e => e.InvoiceNumber).HasMaxLength(100);
+            entity.Property(e => e.PaymentReference).HasMaxLength(200);
+            entity.Property(e => e.PurchaseAmount).HasPrecision(18, 2);
+            entity.Property(e => e.Currency).HasMaxLength(10);
+            entity.HasOne(e => e.Equipment).WithOne(eq => eq.Acquisition).HasForeignKey<ITEquipmentAcquisition>(e => e.EquipmentId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.CreatedByUser).WithMany().HasForeignKey(e => e.CreatedByUserId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.UpdatedByUser).WithMany().HasForeignKey(e => e.UpdatedByUserId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        // ITEquipmentDocument
+        modelBuilder.Entity<ITEquipmentDocument>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.DocumentType).HasMaxLength(50);
+            entity.Property(e => e.FileName).HasMaxLength(300);
+            entity.Property(e => e.StorageReference).HasMaxLength(300);
+            entity.Property(e => e.FileHash).HasMaxLength(128);
+            entity.HasOne(e => e.Equipment).WithMany(eq => eq.Documents).HasForeignKey(e => e.EquipmentId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.Acquisition).WithMany().HasForeignKey(e => e.AcquisitionId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.Assignment).WithMany().HasForeignKey(e => e.AssignmentId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.UploadedByUser).WithMany().HasForeignKey(e => e.UploadedByUserId).OnDelete(DeleteBehavior.NoAction);
+        });
     }
 }

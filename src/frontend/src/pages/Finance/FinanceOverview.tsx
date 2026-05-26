@@ -13,6 +13,7 @@ export default function FinanceOverview() {
     const [summary, setSummary] = useState<FinanceSummaryDto | null>(null);
     const [loading, setLoading] = useState(true);
     const [showHelp, setShowHelp] = useState(false);
+    const [isDetailedView, setIsDetailedView] = useState(false);
     
     // Independent state for cash flow projections to avoid heavy reloads
     const [projectionInterval, setProjectionInterval] = useState('15days');
@@ -52,11 +53,17 @@ export default function FinanceOverview() {
         });
     }, [selectedCompanyId, projectionInterval]);
 
+
     if (loading) return <div style={{ padding: '60px', textAlign: 'center', fontWeight: 'bold' }}>Carregando Dashboard Financeiro...</div>;
     if (!summary) return <div style={{ padding: '60px', textAlign: 'center', color: 'red' }}>Erro ao carregar dados.</div>;
 
     const formatCurrency = (val: number, currency: string = '') => {
         return new Intl.NumberFormat('pt-AO', { style: 'currency', currency: currency || 'AOA' }).format(val);
+    };
+
+    const formatCurrencyList = (values: any[]) => {
+        if (!values || values.length === 0) return '---';
+        return values.map(v => formatCurrency(v.totalAmount, v.currencyCode)).join(' / ');
     };
 
     // Recharts Data Prep
@@ -83,80 +90,123 @@ export default function FinanceOverview() {
         };
     });
 
-    // Process Aging
     const agingData = summary.agingAnalysis ? [
         { name: '0-2 Dias', items: summary.agingAnalysis.zeroToTwoDays, color: '#22c55e' },
         { name: '3-5 Dias', items: summary.agingAnalysis.threeToFiveDays, color: '#eab308' },
         { name: '+5 Dias', items: summary.agingAnalysis.moreThanFiveDays, color: '#ef4444' }
     ] : [];
 
+
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
             
             {/* Action Bar: Company Switcher + Help Button */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '-16px' }}>
-                <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
-                    <button
-                        onClick={() => setSelectedCompanyId(null)}
-                        style={{
-                            padding: '8px 16px',
-                            backgroundColor: selectedCompanyId === null ? 'var(--color-primary)' : 'var(--color-bg-surface)',
-                            color: selectedCompanyId === null ? '#fff' : 'var(--color-text-muted)',
-                            border: selectedCompanyId === null ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
-                            borderRadius: '8px',
-                            fontWeight: 600,
-                            fontSize: '14px',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s',
-                            boxShadow: selectedCompanyId === null ? '0 4px 6px rgba(0,0,0,0.1)' : '0 1px 2px rgba(0,0,0,0.05)',
-                        }}
-                    >
-                        Consolidado Global
-                    </button>
-                    {companies.map(c => (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '16px', marginBottom: '-16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Filtrar por Entidade</span>
+                    <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
                         <button
-                            key={c.id}
-                            onClick={() => setSelectedCompanyId(c.id)}
+                            onClick={() => setSelectedCompanyId(null)}
                             style={{
                                 padding: '8px 16px',
-                                backgroundColor: selectedCompanyId === c.id ? 'var(--color-primary)' : 'var(--color-bg-surface)',
-                                color: selectedCompanyId === c.id ? '#fff' : 'var(--color-text-muted)',
-                                border: selectedCompanyId === c.id ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                backgroundColor: selectedCompanyId === null ? 'var(--color-primary)' : 'var(--color-bg-surface)',
+                                color: selectedCompanyId === null ? '#fff' : 'var(--color-text-muted)',
+                                border: selectedCompanyId === null ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
                                 borderRadius: '8px',
                                 fontWeight: 600,
                                 fontSize: '14px',
                                 cursor: 'pointer',
                                 transition: 'all 0.2s',
-                                boxShadow: selectedCompanyId === c.id ? '0 4px 6px rgba(0,0,0,0.1)' : '0 1px 2px rgba(0,0,0,0.05)',
+                                boxShadow: selectedCompanyId === null ? '0 4px 6px rgba(0,0,0,0.1)' : '0 1px 2px rgba(0,0,0,0.05)',
                             }}
                         >
-                            {c.name}
+                            Consolidado Global
                         </button>
-                    ))}
+                        {companies.map(c => (
+                            <button
+                                key={c.id}
+                                onClick={() => setSelectedCompanyId(c.id)}
+                                style={{
+                                    padding: '8px 16px',
+                                    backgroundColor: selectedCompanyId === c.id ? 'var(--color-primary)' : 'var(--color-bg-surface)',
+                                    color: selectedCompanyId === c.id ? '#fff' : 'var(--color-text-muted)',
+                                    border: selectedCompanyId === c.id ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                    borderRadius: '8px',
+                                    fontWeight: 600,
+                                    fontSize: '14px',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s',
+                                    boxShadow: selectedCompanyId === c.id ? '0 4px 6px rgba(0,0,0,0.1)' : '0 1px 2px rgba(0,0,0,0.05)',
+                                }}
+                            >
+                                {c.name}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
-                <button
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ display: 'flex', backgroundColor: '#f1f5f9', borderRadius: '8px', padding: '4px' }}>
+                        <button
+                            onClick={() => setIsDetailedView(false)}
+                            style={{
+                                border: 'none',
+                                backgroundColor: !isDetailedView ? '#fff' : 'transparent',
+                                color: !isDetailedView ? '#0f172a' : '#64748b',
+                                padding: '6px 16px',
+                                fontSize: '13px',
+                                fontWeight: !isDetailedView ? 700 : 600,
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                boxShadow: !isDetailedView ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            Visão Simples
+                        </button>
+                        <button
+                            onClick={() => setIsDetailedView(true)}
+                            style={{
+                                border: 'none',
+                                backgroundColor: isDetailedView ? '#fff' : 'transparent',
+                                color: isDetailedView ? '#0f172a' : '#64748b',
+                                padding: '6px 16px',
+                                fontSize: '13px',
+                                fontWeight: isDetailedView ? 700 : 600,
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                boxShadow: isDetailedView ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            Visão Detalhada
+                        </button>
+                    </div>
+
+                    <button
                     onClick={() => setShowHelp(true)}
                     style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px',
                         padding: '8px 16px',
-                        backgroundColor: 'var(--color-bg-surface)',
-                        color: 'var(--color-text-muted)',
-                        border: '1px solid var(--color-border)',
+                        backgroundColor: '#eab308',
+                        color: '#ffffff',
+                        border: '1px solid #ca8a04',
                         borderRadius: '8px',
-                        fontWeight: 600,
+                        fontWeight: 700,
                         fontSize: '14px',
                         cursor: 'pointer',
                         boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                        transition: 'all 0.2s'
+                        transition: 'all 0.2s',
+                        height: 'fit-content'
                     }}
-                    onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'; e.currentTarget.style.color = 'var(--color-text)'; }}
-                    onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; e.currentTarget.style.color = 'var(--color-text-muted)'; }}
+                    onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#ca8a04'; }}
+                    onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#eab308'; }}
                 >
                     <BookOpen size={18} /> Guia Financeiro
                 </button>
+            </div>
             </div>
 
             {/* KPI Cards Row */}
@@ -166,30 +216,33 @@ export default function FinanceOverview() {
                     value={summary.waitingFinanceAction}
                     icon={<Clock size={20} />}
                     color="#0284c7"
-                    subtitle={formatCurrency(summary.pendingValue, summary.currencyCodes?.[0])}
+                    subtitle={formatCurrencyList(summary.pendingValues)}
+                    onClick={() => navigate('/finance/payments?filter=action')}
                 />
                 <KPICard
                     title="Agendados"
                     value={summary.scheduledPayments}
                     icon={<CheckCircle size={20} />}
                     color="#ea580c"
-                    subtitle={formatCurrency(summary.scheduledValue, summary.currencyCodes?.[0])}
+                    subtitle={formatCurrencyList(summary.scheduledValues)}
+                    onClick={() => navigate('/finance/payments?filter=scheduled')}
                 />
                 <KPICard
-                    title="Pagtos. Vencidos"
+                    title="Pagamentos Vencidos"
                     value={summary.overduePayments}
                     icon={<AlertCircle size={20} />}
                     color="#ef4444"
                     borderColor="#fca5a5"
-                    subtitle={formatCurrency(summary.overdueValue, summary.currencyCodes?.[0])}
+                    subtitle={formatCurrencyList(summary.overdueValues)}
                     onClick={() => navigate('/finance/payments?filter=overdue')}
                 />
                 <KPICard
-                    title="Pago no Mês"
+                    title="Pago no Mês Atual"
                     value={summary.completedThisMonth}
                     icon={<DollarSign size={20} />}
                     color="#16a34a"
-                    subtitle={formatCurrency(summary.paidThisMonthValue, summary.currencyCodes?.[0])}
+                    subtitle={formatCurrencyList(summary.paidThisMonthValues)}
+                    onClick={() => navigate('/finance/payments?filter=completedThisMonth')}
                 />
             </div>
 
@@ -264,85 +317,6 @@ export default function FinanceOverview() {
                     )}
                 </div>
 
-                {/* Exposição Cambial */}
-                <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Presentation size={20} color="#ea580c" /> Exposição Cambial
-                    </h3>
-                    <p style={{ margin: '0 0 24px 0', color: '#64748b', fontSize: '14px', fontWeight: 500 }}>Montantes pendentes fragmentados por moeda circulante.</p>
-                    
-                    {summary.currencyExposures && summary.currencyExposures.length > 0 ? (
-                        <div style={{ height: '250px', width: '100%' }}>
-                            <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                    <Pie data={summary.currencyExposures} dataKey="amount" nameKey="currencyCode" cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5}>
-                                        {summary.currencyExposures.map((_entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                                        ))}
-                                    </Pie>
-                                    <RechartsTooltip formatter={(value: any, name: any) => [formatCurrency(Number(value), String(name)), 'Montante']} />
-                                    <Legend verticalAlign="bottom" height={36} iconType="circle" />
-                                </PieChart>
-                            </ResponsiveContainer>
-                        </div>
-                    ) : (
-                        <div style={{ height: '250px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 600, border: '2px dashed #cbd5e1', padding: '24px', textAlign: 'center', backgroundColor: 'var(--color-bg-page)' }}>
-                            <Presentation size={36} color="#94a3b8" style={{ marginBottom: '16px' }} />
-                            <span style={{ fontSize: '15px', color: '#334155' }}>Nenhum valor em risco</span>
-                            <span style={{ marginTop: '8px', fontSize: '13px', maxWidth: '300px' }}>
-                                Tudo tranquilo. Quando entrarem faturas indexadas a Dólares (USD), Euros (EUR) ou outras moedas circulantes, segregaremos os volumes retidos em gráficos de fatias aqui.
-                            </span>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Analytics Row 2: Operational Data */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr)', gap: '24px' }}>
-                
-                {/* Aging */}
-                <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '24px' }}>Idade da Fila (Aging)</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        {agingData.map((d) => {
-                            const maxItems = Math.max(...agingData.map(x=>x.items), 1);
-                            return (
-                                <div key={d.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <span style={{ fontWeight: 700, fontSize: '14px', color: '#475569' }}>{d.name}</span>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                        <div style={{ height: '10px', width: `${Math.min((d.items / maxItems) * 100, 100)}px`, backgroundColor: d.color, borderRadius: '4px' }}></div>
-                                        <span style={{ fontWeight: 900, fontSize: '18px', color: d.color }}>{d.items}</span>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-
-                {/* Concentração de Pedidos (Top Fornecedores) */}
-                <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '24px' }}>Top 5 Fornecedores Pendentes</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {summary.topSuppliers && summary.topSuppliers.length > 0 ? summary.topSuppliers.map((supplier, idx) => (
-                            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8px', borderBottom: idx < summary.topSuppliers.length - 1 ? '1px dashed #e2e8f0' : 'none' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                    <span style={{ fontWeight: 800, fontSize: '13px', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '130px' }} title={supplier.supplierName}>{supplier.supplierName}</span>
-                                    <span style={{ fontWeight: 600, fontSize: '11px', color: '#94a3b8' }}>{supplier.requestCount} pedido(s)</span>
-                                </div>
-                                <span style={{ fontWeight: 800, fontSize: '14px', color: 'var(--color-primary)', textAlign: 'right' }}>
-                                    {formatCurrency(supplier.totalPendingAmount, supplier.currencyCode)}
-                                </span>
-                            </div>
-                        )) : (
-                            <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 600, textAlign: 'center', border: '2px dashed #cbd5e1', backgroundColor: 'var(--color-bg-page)', flex: 1 }}>
-                                <span style={{ fontSize: '13px' }}>
-                                    Sem dados nominais. O sistema elencará automaticamente as cinco entidades físicas perante as quais o grupo Alpla tem as mais pesadas dívidas a saldar no curto prazo.
-                                </span>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
                 {/* Atenção Imediata (Refactored to be narrower) */}
                 <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column' }}>
                     <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -383,8 +357,132 @@ export default function FinanceOverview() {
                         )}
                     </div>
                 </div>
+            </div>
 
+            {/* Analytics Row 2: Operational Data */}
+            {isDetailedView && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)', gap: '24px' }}>
+                    
+                    {/* Tempo em Aberto (Aging) */}
+                    <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+                        <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '24px' }}>Tempo em Aberto</h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            {agingData.map((d) => {
+                                const maxItems = Math.max(...agingData.map(x=>x.items), 1);
+                                return (
+                                    <div key={d.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <span style={{ fontWeight: 700, fontSize: '14px', color: '#475569' }}>{d.name}</span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                            <div style={{ height: '10px', width: `${Math.min((d.items / maxItems) * 100, 100)}px`, backgroundColor: d.color, borderRadius: '4px' }}></div>
+                                            <span style={{ fontWeight: 900, fontSize: '18px', color: d.color }}>{d.items}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
 
+                    {/* Concentração de Pedidos (Top Fornecedores) */}
+                    <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+                        <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '24px' }}>Principais Fornecedores Pendentes</h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            {summary.topSuppliers && summary.topSuppliers.length > 0 ? summary.topSuppliers.map((supplier, idx) => (
+                                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8px', borderBottom: idx < summary.topSuppliers.length - 1 ? '1px dashed #e2e8f0' : 'none' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                        <span style={{ fontWeight: 800, fontSize: '13px', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '130px' }} title={supplier.supplierName}>{supplier.supplierName}</span>
+                                        <span style={{ fontWeight: 600, fontSize: '11px', color: '#94a3b8' }}>{supplier.requestCount} pedido(s)</span>
+                                    </div>
+                                    <span style={{ fontWeight: 800, fontSize: '14px', color: 'var(--color-primary)', textAlign: 'right' }}>
+                                        {formatCurrency(supplier.totalPendingAmount, supplier.currencyCode)}
+                                    </span>
+                                </div>
+                            )) : (
+                                <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 600, textAlign: 'center', border: '2px dashed #cbd5e1', backgroundColor: 'var(--color-bg-page)', flex: 1 }}>
+                                    <span style={{ fontSize: '13px' }}>Sem dados nominais.</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Risco Cambial */}
+                    <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+                        <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Presentation size={20} color="#ea580c" /> Risco Cambial
+                        </h3>
+                        
+                        {summary.currencyExposures && summary.currencyExposures.length > 0 ? (
+                            <div style={{ height: '220px', width: '100%', marginTop: '16px' }}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie data={summary.currencyExposures} dataKey="amount" nameKey="currencyCode" cx="50%" cy="50%" innerRadius={50} outerRadius={70} paddingAngle={5}>
+                                            {summary.currencyExposures.map((_entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                                            ))}
+                                        </Pie>
+                                        <RechartsTooltip formatter={(value: any, name: any) => [formatCurrency(Number(value), String(name)), 'Montante']} />
+                                        <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                        ) : (
+                            <div style={{ height: '220px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 600, border: '2px dashed #cbd5e1', padding: '24px', textAlign: 'center', backgroundColor: 'var(--color-bg-page)', marginTop: '16px' }}>
+                                <Presentation size={36} color="#94a3b8" style={{ marginBottom: '16px' }} />
+                                <span style={{ fontSize: '15px', color: '#334155' }}>Nenhum valor em risco</span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Budget Summary Strip → links to /finance/budget */}
+            <div style={{
+                backgroundColor: 'var(--color-bg-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: '12px',
+                padding: '20px 24px',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '16px',
+                flexWrap: 'wrap',
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{
+                        width: 40, height: 40, borderRadius: '8px',
+                        backgroundColor: '#7c3aed1A',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: '#7c3aed',
+                    }}>
+                        <TrendingUp size={20} />
+                    </div>
+                    <div>
+                        <div style={{ fontWeight: 800, fontSize: '15px', color: 'var(--color-text)' }}>
+                            Acompanhamento Orçamental
+                        </div>
+                        <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                            Análise de consumo vs. orçamento aprovado por departamento e centro de custo.
+                        </div>
+                    </div>
+                </div>
+                <button
+                    onClick={() => navigate('/finance/budget')}
+                    style={{
+                        display: 'flex', alignItems: 'center', gap: '8px',
+                        padding: '10px 20px',
+                        backgroundColor: '#7c3aed',
+                        color: '#fff',
+                        borderRadius: '8px', fontWeight: 700,
+                        border: 'none', cursor: 'pointer',
+                        fontSize: '14px',
+                        transition: 'all 0.2s',
+                        whiteSpace: 'nowrap',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#6d28d9'}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = '#7c3aed'}
+                >
+                    Ver Orçamento →
+                </button>
             </div>
 
             {/* HELP OVERLAY (MODAL) */}

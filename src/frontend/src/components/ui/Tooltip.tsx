@@ -77,14 +77,14 @@ export function Tooltip({
                 transform,
                 backgroundColor: isDark ? '#0f172a' : 'var(--color-bg-surface)',
                 color: isDark ? '#ffffff' : 'inherit',
-                border: isDark ? 'none' : '2px solid var(--color-primary)',
-                boxShadow: 'var(--shadow-brutal)',
+                border: isDark ? 'none' : '1px solid var(--color-border)',
+                boxShadow: 'var(--shadow-md)',
                 padding: isDark ? '8px 12px' : '12px 16px',
                 zIndex: Z_INDEX.TOOLTIP as any,
                 pointerEvents: 'none',
                 minWidth: isDark ? 'auto' : '200px',
                 maxWidth: '350px',
-                borderRadius: isDark ? '4px' : '0'
+                borderRadius: isDark ? 'var(--radius-sm)' : 'var(--radius-md)'
             });
         }
     }, [isVisible, variant, side, align]);

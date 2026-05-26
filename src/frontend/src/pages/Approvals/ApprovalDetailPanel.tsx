@@ -4,7 +4,8 @@ import {
     Calendar, Landmark, Download,
     Paperclip, AlertCircle, List,
     MessageSquare, Users, History as HistoryIcon, DollarSign,
-    Target, TrendingUp, ArrowRightLeft, AlertTriangle, ShieldCheck
+    Target, TrendingUp, ArrowRightLeft, AlertTriangle, ShieldCheck,
+    BookOpen, X, Compass
 } from 'lucide-react';
 import { RequestDetailsDto, ApprovalIntelligenceDto } from '../../types';
 import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModal';
@@ -13,6 +14,8 @@ import { Tooltip } from '../../components/ui/Tooltip';
 import { api } from '../../lib/api';
 import { formatDate, formatCurrencyAO } from '../../lib/utils';
 import { motion } from 'framer-motion';
+import { useGuidedTourContext } from '../../features/guided-tour/GuidedTourProvider';
+import type { TourId } from '../../features/guided-tour/guidedTourTypes';
 
 // Decision specific components
 import { DecisionHeader } from './components/DecisionHeader';
@@ -69,6 +72,10 @@ export function ApprovalDetailPanel({
     totalCount
 }: ApprovalDetailPanelProps) {
 
+    // Guided tour context
+    const { startTour } = useGuidedTourContext();
+    const drawerTourId: TourId = approvalStage === 'FINAL' ? 'drawer-approval-final' : 'drawer-approval-area';
+
     // Approval modal state
     const [showApprovalModal, setShowApprovalModal] = useState<{
         show: boolean;
@@ -85,10 +92,12 @@ export function ApprovalDetailPanel({
     const [highlightSection, setHighlightSection] = useState(false);
     const [highlightFields, setHighlightFields] = useState(false);
     const [highlightQuotationSection, setHighlightQuotationSection] = useState(false);
+    const [expandedQuotationId, setExpandedQuotationId] = useState<string | null>(null);
 
     // Phase 3A: Intelligence
     const [intelligence, setIntelligence] = useState<ApprovalIntelligenceDto | null>(null);
     const [loadingIntelligence, setLoadingIntelligence] = useState(false);
+    const [showHelp, setShowHelp] = useState(false);
 
     // Business Control: Cost Center & Plant Selection (DEC-085/DEC-099/DEC-103)
     const [costCenters, setCostCenters] = useState<any[]>([]);
@@ -243,9 +252,9 @@ export function ApprovalDetailPanel({
 
     // Intelligence summary flags
     const intelItemsWithHistory = intelligence?.items?.filter(i => i.hasHistory) || [];
-    const hasHistoricalItems = intelItemsWithHistory.length > 0;
-    // Considered above if unit price is greater than historical average
-    const hasItemAboveAvg = intelItemsWithHistory.some(i => i.currentUnitPrice > (i.averageHistoricalPrice || 0));
+    // Show warning only when at least one item has price strictly above historical average
+    const itemsAboveAvg = intelItemsWithHistory.filter(i => i.currentUnitPrice > (i.averageHistoricalPrice || 0));
+    const hasItemAboveAvg = itemsAboveAvg.length > 0;
 
     // --- Handlers ---
 
@@ -338,12 +347,14 @@ export function ApprovalDetailPanel({
                     ? await api.requests.approveArea(data.id, approvalComment, data.quotations?.find(q => q.isSelected)?.id, itemAssignments)
                     : await api.requests.approveFinal(data.id, approvalComment);
             } else if (action === 'REJECT') {
+                // DEC-FIX: Rejection does not require item allocation — omit itemAssignments
                 result = isArea
-                    ? await api.requests.rejectArea(data.id, approvalComment, itemAssignments)
+                    ? await api.requests.rejectArea(data.id, approvalComment)
                     : await api.requests.rejectFinal(data.id, approvalComment);
             } else if (action === 'REQUEST_ADJUSTMENT') {
+                // DEC-FIX: Adjustment request does not require item allocation — omit itemAssignments
                 result = isArea
-                    ? await api.requests.requestAdjustmentArea(data.id, approvalComment, itemAssignments)
+                    ? await api.requests.requestAdjustmentArea(data.id, approvalComment)
                     : await api.requests.requestAdjustmentFinal(data.id, approvalComment);
             } else {
                 throw new Error('Ação inválida.');
@@ -354,7 +365,17 @@ export function ApprovalDetailPanel({
             setModalFeedback({ type: 'error', message: null });
             onActionCompleted(result.message || 'Ação concluída com sucesso.');
         } catch (err: any) {
-            setModalFeedback({ type: 'error', message: err.message || 'Não foi possível concluir a ação. Tente novamente.' });
+            // Extract detailed validation messages from ASP.NET field errors when available
+            let errorMsg = err.message || 'Não foi possível concluir a ação. Tente novamente.';
+            if (err.fieldErrors) {
+                const details = Object.entries(err.fieldErrors as Record<string, string[]>)
+                    .map(([, msgs]) => msgs.join(', '))
+                    .filter(Boolean);
+                if (details.length > 0) {
+                    errorMsg = details.join('. ');
+                }
+            }
+            setModalFeedback({ type: 'error', message: errorMsg });
         } finally {
             setApprovalProcessing(false);
         }
@@ -378,7 +399,7 @@ export function ApprovalDetailPanel({
         },
         { 
             label: 'Grau Necessidade', 
-            value: <span className="text-[#0a2540]">{data.needLevelName}</span> 
+            value: <span style={{ color: '#0a2540' }}>{data.needLevelName}</span> 
         }
     ];
 
@@ -393,48 +414,105 @@ export function ApprovalDetailPanel({
             }}
         >
             {/* 1. DECISION HEADER (Top Navigation & Hero) */}
-            <DecisionHeader 
-                requestNumber={data.requestNumber || ''}
-                requestTypeCode={data.requestTypeCode || ''}
-                statusCode={data.statusCode || ''}
-                statusName={data.statusName || ''}
-                statusBadgeColor={data.statusBadgeColor || ''}
-                totalAmount={data.estimatedTotalAmount}
-                currencyCode={data.currencyCode || ''}
-                approvalStage={approvalStage}
-                onClose={onClose}
-                onOpenRequest={() => window.open(`/requests/${data.id}`, '_blank')}
-                onNext={onNext}
-                onPrev={onPrev}
-                currentIndex={currentIndex}
-                totalCount={totalCount}
-            />
+            <div data-tour="approval-drawer-header">
+                <DecisionHeader 
+                    requestNumber={data.requestNumber || ''}
+                    requestTypeCode={data.requestTypeCode || ''}
+                    statusCode={data.statusCode || ''}
+                    statusName={data.statusName || ''}
+                    statusBadgeColor={data.statusBadgeColor || ''}
+                    totalAmount={data.estimatedTotalAmount}
+                    currencyCode={data.currencyCode || ''}
+                    approvalStage={approvalStage}
+                    onClose={onClose}
+                    onOpenRequest={() => window.open(`/requests/${data.id}`, '_blank')}
+                    onNext={onNext}
+                    onPrev={onPrev}
+                    currentIndex={currentIndex}
+                    totalCount={totalCount}
+                />
+            </div>
 
             {/* Content Container */}
             <div style={{ maxWidth: '80rem', margin: '0 auto', width: '100%', padding: '16px 24px 96px 24px' }}>
 
-                {/* --- INTELLIGENCE ALERTS --- */}
-                {hasHistoricalItems && (
+                {/* --- ACTION BAR --- */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginBottom: '16px' }}>
+                    <button
+                        data-tour="approval-drawer-tour-button"
+                        onClick={() => startTour(drawerTourId)}
+                        title="Tour da Aprovação"
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '8px 16px',
+                            backgroundColor: 'rgba(var(--color-primary-rgb), 0.06)',
+                            color: 'var(--color-primary)',
+                            border: '1px solid rgba(var(--color-primary-rgb), 0.15)',
+                            borderRadius: '8px',
+                            fontWeight: 700,
+                            fontSize: '13px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            fontFamily: 'var(--font-family-display)',
+                            whiteSpace: 'nowrap',
+                        }}
+                        onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'rgba(var(--color-primary-rgb), 0.12)'; e.currentTarget.style.borderColor = 'rgba(var(--color-primary-rgb), 0.25)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                        onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'rgba(var(--color-primary-rgb), 0.06)'; e.currentTarget.style.borderColor = 'rgba(var(--color-primary-rgb), 0.15)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                    >
+                        <Compass size={14} strokeWidth={2.5} /> Tour da Aprovação
+                    </button>
+                    <button
+                        data-tour="approval-drawer-manual-button"
+                        onClick={() => setShowHelp(true)}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '8px 16px',
+                            backgroundColor: '#FEF9C3',
+                            color: '#854D0E',
+                            border: '1px solid #FDE047',
+                            borderRadius: '8px',
+                            fontWeight: 700,
+                            fontSize: '13px',
+                            cursor: 'pointer',
+                            boxShadow: 'var(--shadow-sm)',
+                            transition: 'all 0.2s',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em'
+                        }}
+                        onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#FEF08A'; e.currentTarget.style.color = '#713F12'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                        onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#FEF9C3'; e.currentTarget.style.color = '#854D0E'; e.currentTarget.style.transform = 'none'; }}
+                    >
+                        <BookOpen size={16} /> Manual de Aprovação
+                    </button>
+                </div>
+
+                {/* --- INTELLIGENCE ALERTS (wrapper for tour) --- */}
+                {(hasItemAboveAvg || (isQuotation && !hasWinnerSelected) || (isAreaApprovalStage && !allAssigned)) && (
+                    <div data-tour="approval-drawer-alerts">
+                {/* Price warning banner: shown ONLY when items are above historical average */}
+                {hasItemAboveAvg && (
                     <div style={{
                         marginBottom: '24px', width: '100%', 
-                        backgroundColor: hasItemAboveAvg ? '#FEF9C3' : '#F0FDF4', 
-                        border: `1px solid ${hasItemAboveAvg ? '#FEF08A' : '#BBF7D0'}`, 
+                        backgroundColor: '#FEF9C3', 
+                        border: '1px solid #FEF08A', 
                         borderRadius: 'var(--radius-lg)', padding: '16px',
                         display: 'flex', gap: '16px', boxShadow: 'var(--shadow-sm)', alignItems: 'flex-start'
                     }}>
-                        {hasItemAboveAvg ? (
-                            <AlertTriangle color="#A16207" style={{ marginTop: '2px', flexShrink: 0 }} size={20} />
-                        ) : (
-                            <ShieldCheck color="#166534" style={{ marginTop: '2px', flexShrink: 0 }} size={20} />
-                        )}
+                        <AlertTriangle color="#A16207" style={{ marginTop: '2px', flexShrink: 0 }} size={20} />
                         <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ color: hasItemAboveAvg ? '#854D0E' : '#14532D', fontWeight: 700, marginBottom: '4px' }}>
-                                {hasItemAboveAvg ? 'Atenção ao Histórico de Preços' : 'Preços Favoráveis'}
+                            <span style={{ color: '#854D0E', fontWeight: 700, marginBottom: '4px' }}>
+                                Atenção ao Histórico de Preços
                             </span>
-                            <span style={{ color: hasItemAboveAvg ? '#A16207' : '#166534', fontSize: '0.875rem', lineHeight: 1.2 }}>
-                                {hasItemAboveAvg 
-                                    ? 'Um ou mais itens deste pedido estão com preço acima da média histórica.' 
-                                    : 'Nenhum item com histórico no pedido encontra-se com preços acima da média.'}
+                            <span style={{ color: '#A16207', fontSize: '0.875rem', lineHeight: 1.2 }}>
+                                {itemsAboveAvg.length === 1
+                                    ? '1 item deste pedido está com preço acima da média histórica.'
+                                    : `${itemsAboveAvg.length} itens deste pedido estão com preço acima da média histórica.`}
                             </span>
                         </div>
                     </div>
@@ -480,17 +558,19 @@ export function ApprovalDetailPanel({
                         </div>
                     </div>
                 )}
+                    </div>
+                )}
 
                 {/* 2. RESUMO PARA DECISÃO (Always Open Grid Context) */}
-                <div className="mb-8">
+                <div data-tour="approval-drawer-request-info" style={{ marginBottom: '32px' }}>
                     <DecisionSummaryGrid items={summaryItems} />
                 </div>
 
                 {/* 2.5. CONTEXTO FINANCEIRO (Gráfico de Tendência) */}
-                <div className="mb-8">
+                <div data-tour="approval-drawer-financial-context" style={{ marginBottom: '32px' }}>
                     <DecisionSection 
                         title="Contexto Financeiro Visual" 
-                        icon={<TrendingUp size={16} className="text-black" />}
+                        icon={<TrendingUp size={16} style={{ color: 'black' }} />}
                         isCollapsible={true}
                         defaultOpen={true}
                     >
@@ -500,10 +580,56 @@ export function ApprovalDetailPanel({
                     </DecisionSection>
                 </div>
 
+                {/* 2.6. COTAÇÕES SALVAS (Moved after Contexto Financeiro Visual) */}
+                {isQuotation && (
+                    <motion.div
+                        data-tour="approval-drawer-quotations"
+                        id="cotacoes-salvas-section"
+                        animate={
+                            highlightQuotationSection
+                                ? {
+                                      boxShadow: ['0 0 0px 0px transparent', '0 0 15px 5px rgba(239, 68, 68, 0.4)', '0 0 0px 0px transparent'],
+                                      transition: { duration: 1, repeat: 4 }
+                                  }
+                                : { boxShadow: '0 0 0px 0px transparent' }
+                        }
+                        style={{ borderRadius: 'var(--radius-lg)' }}
+                    >
+                        <DecisionSection 
+                            title="Cotações Salvas" 
+                            icon={<DollarSign size={16} />}
+                            count={data.quotations?.length || 0}
+                            isCollapsible={false}
+                        >
+                            {(data.quotations?.length || 0) === 0 ? (
+                                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-muted)', fontWeight: 700 }}>
+                                    Nenhuma cotação registrada.
+                                </div>
+                            ) : (
+                                <div>
+                                    {data.quotations?.map(q => (
+                                        <DecisionQuotationCard 
+                                            key={q.id}
+                                            quotation={q}
+                                            isLowest={data.quotations.length > 1 && q.totalAmount === lowestByCurrency[q.currency]}
+                                            canSelectWinner={canSelectWinner}
+                                            onSelectWinner={handleSelectWinner}
+                                            isProcessing={quotationProcessingId === q.id}
+                                            isExpanded={expandedQuotationId === q.id}
+                                            onToggleExpand={(id) => setExpandedQuotationId(prev => prev === id ? null : id)}
+                                        />
+                                    ))}
+                                </div>
+                            )}
+                        </DecisionSection>
+                    </motion.div>
+                )}
+
                 {/* 3. INTELIGÊNCIA PARA DECISÃO (Phase 4 - Horizontal Navigation) */}
+                <div data-tour="approval-drawer-financial-allocation">
                 <DecisionSection 
                     title="Inteligência para Decisão" 
-                    icon={<TrendingUp size={16} className="text-black" />}
+                    icon={<TrendingUp size={16} style={{ color: 'black' }} />}
                     isCollapsible={false}
                 >
                     {loadingIntelligence ? (
@@ -603,9 +729,11 @@ export function ApprovalDetailPanel({
                         </div>
                     )}
                 </DecisionSection>
+                </div>
 
                 {/* 4. ITENS DO PEDIDO (Adaptive Navigation) */}
                 <motion.div
+                    data-tour="approval-drawer-items"
                     id="itens-do-pedido-section"
                     animate={
                         highlightSection
@@ -876,47 +1004,6 @@ export function ApprovalDetailPanel({
                     </DecisionSection>
                 )}
 
-                {/* 6. COTAÇÕES SALVAS (Always Open for Quotation types) */}
-                {isQuotation && (
-                    <motion.div
-                        id="cotacoes-salvas-section"
-                        animate={
-                            highlightQuotationSection
-                                ? {
-                                      boxShadow: ['0 0 0px 0px transparent', '0 0 15px 5px rgba(239, 68, 68, 0.4)', '0 0 0px 0px transparent'],
-                                      transition: { duration: 1, repeat: 4 }
-                                  }
-                                : { boxShadow: '0 0 0px 0px transparent' }
-                        }
-                        style={{ borderRadius: 'var(--radius-lg)' }}
-                    >
-                        <DecisionSection 
-                            title="Cotações Salvas" 
-                            icon={<DollarSign size={16} />}
-                            count={data.quotations?.length || 0}
-                            isCollapsible={false}
-                        >
-                            {(data.quotations?.length || 0) === 0 ? (
-                                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-muted)', fontWeight: 700 }}>
-                                    Nenhuma cotação registrada.
-                                </div>
-                            ) : (
-                                <div>
-                                    {data.quotations?.map(q => (
-                                        <DecisionQuotationCard 
-                                            key={q.id}
-                                            quotation={q}
-                                            isLowest={data.quotations.length > 1 && q.totalAmount === lowestByCurrency[q.currency]}
-                                            canSelectWinner={canSelectWinner}
-                                            onSelectWinner={handleSelectWinner}
-                                            isProcessing={quotationProcessingId === q.id}
-                                        />
-                                    ))}
-                                </div>
-                            )}
-                        </DecisionSection>
-                    </motion.div>
-                )}
 
                 {/* 7. RESUMO FINANCEIRO (Collapsible) */}
                 <DecisionSection 
@@ -942,6 +1029,7 @@ export function ApprovalDetailPanel({
                 </DecisionSection>
 
                 {/* 8. ANEXOS (Collapsible) */}
+                <div data-tour="approval-drawer-documents">
                 <DecisionSection 
                     title="Anexos" 
                     icon={<Paperclip size={16} />}
@@ -982,6 +1070,7 @@ export function ApprovalDetailPanel({
                         </div>
                     )}
                 </DecisionSection>
+                </div>
 
                 {/* 9. PARTICIPANTES DO FLUXO (Collapsible) */}
                 <DecisionSection 
@@ -1011,6 +1100,7 @@ export function ApprovalDetailPanel({
                 </DecisionSection>
 
                 {/* 10. HISTÓRICO DO PEDIDO (Collapsible) */}
+                <div data-tour="approval-drawer-workflow">
                 <DecisionSection 
                     title="Histórico do pedido" 
                     icon={<HistoryIcon size={16} />}
@@ -1020,25 +1110,56 @@ export function ApprovalDetailPanel({
                 >
                     <DecisionTimeline entries={data.statusHistory} />
                 </DecisionSection>
+                </div>
             </div>
 
             {/* Sticky Action Footer */}
-            <div style={{ position: 'sticky', bottom: 0, zIndex: 50, backgroundColor: 'var(--color-bg-page)', borderTop: '1px solid var(--color-border)', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', boxShadow: '0 -4px 6px -1px rgba(0,0,0,0.05)', width: '100%' }}>
+            <div data-tour="approval-drawer-actions" style={{ position: 'sticky', bottom: 0, zIndex: 50, backgroundColor: 'var(--color-bg-page)', borderTop: '1px solid var(--color-border)', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', boxShadow: '0 -4px 12px -2px rgba(0,0,0,0.08)', width: '100%' }}>
                 {showAdjustmentAction && (
                     <button
                         onClick={() => setShowApprovalModal({ show: true, type: 'REQUEST_ADJUSTMENT' })}
-                        style={{ padding: '12px 24px', backgroundColor: 'var(--color-bg-page)', color: 'var(--color-text-main)', fontWeight: 700, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.75rem', cursor: 'pointer', transition: 'background-color 0.2s' }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-page)'}
+                        style={{
+                            padding: '12px 24px',
+                            backgroundColor: 'rgba(217, 119, 6, 0.06)',
+                            color: '#92400E',
+                            fontWeight: 800,
+                            border: '1.5px solid rgba(217, 119, 6, 0.3)',
+                            borderRadius: 'var(--radius-lg)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            fontSize: '0.75rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(217, 119, 6, 0.12)'; e.currentTarget.style.borderColor = 'rgba(217, 119, 6, 0.5)'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(217, 119, 6, 0.15)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(217, 119, 6, 0.06)'; e.currentTarget.style.borderColor = 'rgba(217, 119, 6, 0.3)'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}
                     >
                         <ArrowRightLeft size={16} /> Reajuste
                     </button>
                 )}
                 <button
                     onClick={() => setShowApprovalModal({ show: true, type: 'REJECT' })}
-                    style={{ padding: '12px 24px', backgroundColor: 'var(--color-bg-page)', color: 'var(--color-status-red)', fontWeight: 700, border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.75rem', cursor: 'pointer', transition: 'background-color 0.2s' }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.05)'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-page)'}
+                    style={{
+                        padding: '12px 24px',
+                        backgroundColor: 'rgba(239, 68, 68, 0.06)',
+                        color: '#991B1B',
+                        fontWeight: 800,
+                        border: '1.5px solid rgba(239, 68, 68, 0.25)',
+                        borderRadius: 'var(--radius-lg)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        fontSize: '0.75rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.12)'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.45)'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(239, 68, 68, 0.15)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.06)'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.25)'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}
                 >
                     <AlertTriangle size={16} /> Rejeitar
                 </button>
@@ -1046,11 +1167,23 @@ export function ApprovalDetailPanel({
                     onClick={() => setShowApprovalModal({ show: true, type: 'APPROVE' })}
                     disabled={isApproveBlocked}
                     style={{
-                        padding: '12px 32px', borderRadius: 'var(--radius-lg)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.75rem', transition: 'colors 0.2s', border: 'none',
+                        padding: '12px 32px',
+                        borderRadius: 'var(--radius-lg)',
+                        fontWeight: 800,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        fontSize: '0.75rem',
+                        transition: 'all 0.2s ease',
+                        border: 'none',
                         ...(isApproveBlocked 
-                            ? { backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-muted)', cursor: 'not-allowed' } 
-                            : { backgroundColor: 'var(--color-text-main)', color: 'white', cursor: 'pointer' })
+                            ? { backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-muted)', cursor: 'not-allowed', boxShadow: 'none' } 
+                            : { backgroundColor: '#16A34A', color: 'white', cursor: 'pointer', boxShadow: '0 2px 8px rgba(22, 163, 74, 0.3)' })
                     }}
+                    onMouseEnter={(e) => { if (!isApproveBlocked) { e.currentTarget.style.backgroundColor = '#15803D'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(22, 163, 74, 0.4)'; }}}
+                    onMouseLeave={(e) => { if (!isApproveBlocked) { e.currentTarget.style.backgroundColor = '#16A34A'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(22, 163, 74, 0.3)'; }}}
                 >
                     <ShieldCheck size={16} /> Aprovar
                 </button>
@@ -1074,6 +1207,106 @@ export function ApprovalDetailPanel({
                 onCloseFeedback={() => setModalFeedback({ type: 'error', message: null })}
                 selectedQuotationName={selectedQuotation?.supplierNameSnapshot || null}
             />
+
+            {/* HELP OVERLAY (MODAL) */}
+            {showHelp && (
+                <div 
+                    onClick={() => setShowHelp(false)}
+                    style={{ 
+                    position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', 
+                    backgroundColor: 'rgba(15, 23, 42, 0.7)', zIndex: 9999, 
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    backdropFilter: 'blur(4px)'
+                }}>
+                    <div 
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                        backgroundColor: 'var(--color-bg-page)', border: '4px solid #0f172a',
+                        width: '90%', maxWidth: '750px', maxHeight: '90vh', overflowY: 'auto',
+                        boxShadow: '16px 16px 0 #0f172a', padding: '32px', position: 'relative'
+                    }}>
+                        <button 
+                            onClick={() => setShowHelp(false)}
+                            style={{
+                                position: 'absolute', top: '16px', right: '16px', backgroundColor: 'transparent',
+                                border: 'none', cursor: 'pointer', color: '#64748b'
+                            }}
+                            onMouseOver={(e) => e.currentTarget.style.color = '#0f172a'}
+                            onMouseOut={(e) => e.currentTarget.style.color = '#64748b'}
+                        >
+                            <X size={32} />
+                        </button>
+                        
+                        <h2 style={{ fontSize: '1.75em', fontWeight: 900, textTransform: 'uppercase', marginBottom: '8px', borderBottom: '4px solid #e2e8f0', paddingBottom: '16px' }}>
+                            Manual de Decisão
+                        </h2>
+                        <p style={{ fontWeight: 500, fontSize: '15px', color: '#475569', marginBottom: '32px' }}>
+                            Este guia esclarece os componentes analíticos do Centro de Aprovações para agilizar e padronizar sua tomada de decisão.
+                        </p>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                            
+                            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                                <div style={{ backgroundColor: '#e0f2fe', padding: '12px', color: '#0284c7', border: '2px solid #0284c7' }}><TrendingUp size={24} /></div>
+                                <div>
+                                    <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>Contexto Financeiro Visual</h4>
+                                    <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                                        <strong>O que é:</strong> O gráfico de tendência avalia o fluxo de caixa histórico do <strong>departamento solicitante</strong> para o <strong>mesmo fornecedor</strong> nos últimos meses e semanas.
+                                    </p>
+                                    <p style={{ margin: 0, fontSize: '14px', backgroundColor: '#f1f5f9', padding: '8px', borderLeft: '4px solid #94a3b8' }}>
+                                        <em>Por que é importante:</em> Permite visualizar picos anormais de gastos ou compras recorrentes, ajudando a identificar se este departamento já comprou demais desta mesma entidade recentemente ou se há um possível fracionamento orçamentário.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                                <div style={{ backgroundColor: '#fce7f3', padding: '12px', color: '#db2777', border: '2px solid #db2777' }}><Target size={24} /></div>
+                                <div>
+                                    <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>Inteligência para Decisão</h4>
+                                    <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                                        <strong>O que é:</strong> Um motor preditivo que cruza os itens sendo comprados neste exato pedido contra o nosso banco de dados unificado de histórico de aquisições do sistema Primavera ERP.
+                                    </p>
+                                    <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                                        <strong>Como funciona:</strong> Ao trocar de "Item" na régua de cima, o painel muda para lhe mostrar as estatísticas globais e departamentais do item alvo. Se a bolinha ao lado do item estiver <strong>vermelha</strong>, isto indica que o preço deste fornecedor está consideravelmente acima do histórico que pagamos nos últimos meses, exigindo forte questionamento.
+                                    </p>
+                                    <p style={{ margin: 0, fontSize: '14px', backgroundColor: '#f1f5f9', padding: '8px', borderLeft: '4px solid #94a3b8' }}>
+                                        <em>Abas Disponíveis:</em> Você pode alternar entre a <strong>Visão Financeira</strong> (para ver o preço médio histórico por toda a Alpla) e <strong>Visão Departamental</strong> (para ver o impacto isolado no seu departamento ou orçamento local).
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                                <div style={{ backgroundColor: '#fef3c7', padding: '12px', color: '#d97706', border: '2px solid #d97706' }}><Factory size={24} /></div>
+                                <div>
+                                    <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>Alocação de Centro de Custo</h4>
+                                    <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                                        <strong>O que é:</strong> Como aprovador da área, é a sua responsabilidade garantir que os custos da requisição sejam imputados ao local orçamentário correto. Para isso, vá à secção "Itens do pedido" e atribua uma <strong>Planta (Fábrica)</strong> e um <strong>Centro de Custo</strong> por cada linha do pedido.
+                                    </p>
+                                    <p style={{ margin: 0, fontSize: '14px', backgroundColor: '#f1f5f9', padding: '8px', borderLeft: '4px solid #94a3b8' }}>
+                                        <em>Distribuição Rápida (Bulk):</em> Para não selecionar individualmente todas as dezenas de itens que possam vir no pedido, defina o centro de custo apenas no primeiro item e cliquem no recém botão <strong>Aplicar aos X compatíveis</strong> que saltará no próprio cartão. Ele preencherá magicamente todos os itens vazios com essa exata parametrização de uma vez só!
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                                <div style={{ backgroundColor: '#f3f4f6', padding: '12px', color: '#4b5563', border: '2px solid #4b5563' }}><ShieldCheck size={24} /></div>
+                                <div>
+                                    <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>Passo a Passo da Aprovação (Checklist)</h4>
+                                    <ol style={{ margin: '8px 0', paddingLeft: '20px', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                                        <li style={{ marginBottom: '8px' }}><strong>1. Resumo e Entendimento:</strong> Revise acima quem solicitou, os níveis de urgência e leia atentamente a secção de Justificativas.</li>
+                                        <li style={{ marginBottom: '8px' }}><strong>2. Verificação de Alertas:</strong> Certifique-se de que não há caixas de aviso vermelhas ou amarelas no topo da tela sugerindo anomalias de preços ou pendência de alocação.</li>
+                                        <li style={{ marginBottom: '8px' }}><strong>3. Cotação e Valores:</strong> Para compras, analise a cotação selecionada. O valor está aderente? Verifique o Resumo Financeiro total.</li>
+                                        <li style={{ marginBottom: '8px' }}><strong>4. Mitigação de Riscos:</strong> Se houver gráfico de Contexto Visual, busque padrões anormais (ex: três pedidos iguais nos últimos 10 dias de um fornecedor).</li>
+                                        <li style={{ marginBottom: '8px' }}><strong>5. Alocação Obrigatória (Aprovadores de Filial):</strong> Certifique-se de alocar cada item listado à sua respetiva Fábrica (Planta) e Centro de Custo usando os seletivos por item.</li>
+                                        <li><strong>6. Decisão:</strong> Encontre as opções de encerramento na barra flutuante inferior. Para "Rejeitar" ou "Solicitar Ajuste", um comentário será mandatório.</li>
+                                    </ol>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            )}
         </motion.div>
     );
 }

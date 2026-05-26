@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-import { Link, useLocation, useSearchParams, useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, Search, Filter, FileText, CheckCircle2, X, Pencil, Trash2, ArrowLeft, AlertCircle, RefreshCcw, Hash, Calendar, UserPlus, AlertTriangle } from 'lucide-react';
+import { useLocation, useSearchParams } from 'react-router-dom';
+import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, FileText, CheckCircle2, X, Pencil, Trash2, ArrowLeft, AlertCircle, RefreshCcw, Hash, Calendar, UserPlus, AlertTriangle, BookOpen, MoreVertical, Package } from 'lucide-react';
 import { useAuth } from '../../features/auth/AuthContext';
 import { api } from '../../lib/api';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
@@ -12,21 +12,26 @@ import { completeQuotationAction } from '../../lib/workflow';
 import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModal';
 import { QuickSupplierModal } from '../../components/Buyer/QuickSupplierModal';
 import { QuickCurrencyModal } from '../../components/Buyer/QuickCurrencyModal';
+import { CatalogItemAutocomplete } from '../../components/CatalogItemAutocomplete';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { Z_INDEX } from '../../constants/ui';
 import { DropdownPortal } from '../../components/ui/DropdownPortal';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { SearchFilterBar } from '../../components/ui/SearchFilterBar';
+import { GuidedTourContextButton } from '../../features/guided-tour/GuidedTourContextButton';
 import { SavedQuotationDto, IvaRate, Unit, OcrDraft, OcrDraftItem, ReconciliationBatchDto } from '../../types';
 import { useOcrProcessor } from '../../hooks/useOcrProcessor';
 import { ReconciliationPanel } from '../../components/Buyer/ReconciliationPanel';
+import { RequestDrawerPresentation } from '../Requests/components/modern/RequestDrawerPresentation';
+import { useTablePreferences } from '../../hooks/useTablePreferences';
+
 
 const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
 const ALLOWED_EXTENSIONS_MSG = "PDF, JPG, JPEG, PNG, DOC, DOCX, XLS e XLSX";
- 
- // Step 9: Highlight animation
- const highlightStyles = `
+
+// Step 9: Highlight animation
+const highlightStyles = `
  @keyframes sectionHighlight {
    0% { outline: 2px solid transparent; background-color: transparent; }
    15% { outline: 3px solid #ef4444; background-color: #fef2f2; }
@@ -37,26 +42,137 @@ const ALLOWED_EXTENSIONS_MSG = "PDF, JPG, JPEG, PNG, DOC, DOCX, XLS e XLSX";
  }
  `;
 
+// Teams Chat inline button — compact icon to open a 1:1 chat with a user
+const TeamsChatButton: React.FC<{ email?: string | null }> = ({ email }) => {
+    if (!email) return null;
+    const teamsUrl = `https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(email)}`;
+    return (
+        <a
+            href={teamsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Abrir chat no Teams"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginLeft: '4px',
+                width: '18px',
+                height: '18px',
+                borderRadius: '3px',
+                opacity: 0.55,
+                transition: 'opacity 0.15s ease, background-color 0.15s ease',
+                verticalAlign: 'middle',
+                flexShrink: 0,
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.backgroundColor = 'var(--color-bg-hover, rgba(0,0,0,0.06))'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.55'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+        >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M16.5 3C17.88 3 19 4.12 19 5.5C19 6.88 17.88 8 16.5 8C16.21 8 15.93 7.95 15.67 7.87C16.14 7.21 16.42 6.39 16.42 5.5C16.42 4.61 16.14 3.79 15.67 3.13C15.93 3.05 16.21 3 16.5 3ZM12 3C13.38 3 14.5 4.12 14.5 5.5C14.5 6.88 13.38 8 12 8C10.62 8 9.5 6.88 9.5 5.5C9.5 4.12 10.62 3 12 3Z" fill="#464EB8" />
+                <path d="M20 12V16.5C20 17.88 18.88 19 17.5 19H17V13C17 12.45 16.55 12 16 12H20Z" fill="#464EB8" opacity="0.6" />
+                <path d="M16 13V19.5C16 20.33 15.33 21 14.5 21H5.5C4.67 21 4 20.33 4 19.5V13C4 12.45 4.45 12 5 12H15C15.55 12 16 12.45 16 13Z" fill="#464EB8" />
+                <path d="M8.5 15.5H11.5" stroke="white" strokeWidth="1.2" strokeLinecap="round" />
+                <path d="M10 14V17" stroke="white" strokeWidth="1.2" strokeLinecap="round" />
+            </svg>
+        </a>
+    );
+};
+
+// Person Avatar — color-coded initials circle
+const AVATAR_COLORS = [
+    { bg: '#dbeafe', text: '#1d4ed8' },  // blue
+    { bg: '#d1fae5', text: '#047857' },  // emerald
+    { bg: '#ede9fe', text: '#6d28d9' },  // purple
+    { bg: '#fef3c7', text: '#b45309' },  // amber
+];
+const PersonAvatar: React.FC<{ name?: string | null }> = ({ name }) => {
+    if (!name) return null;
+    const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+    const colorIdx = name.length % AVATAR_COLORS.length;
+    const palette = AVATAR_COLORS[colorIdx];
+    return (
+        <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: '24px', height: '24px', borderRadius: '50%', flexShrink: 0,
+            backgroundColor: palette.bg, color: palette.text,
+            fontSize: '10px', fontWeight: 700, lineHeight: 1,
+        }} title={name}>
+            {initials}
+        </div>
+    );
+};
+
 // Interfaces for Lookups moved to types/index.ts
 
 type QuotationDraftItem = OcrDraftItem;
 type QuotationDraft = OcrDraft;
 
+const RequestGroupSkeleton: React.FC = () => {
+    return (
+        <div style={{
+            backgroundColor: 'var(--color-bg-surface)',
+            border: '1px solid var(--color-border)',
+            borderRadius: '16px',
+            boxShadow: 'var(--shadow-sm)',
+            overflow: 'hidden'
+        }}>
+            <div style={{
+                cursor: 'default',
+                padding: '24px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '24px',
+                animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+            }}>
+                <div style={{ flex: '1' }}>
+                    <div style={{ width: '40%', height: '28px', marginBottom: '8px', backgroundColor: 'var(--color-border)', borderRadius: '4px' }}></div>
+                    <div style={{ width: '50%', height: '20px', backgroundColor: 'var(--color-border)', borderRadius: '4px' }}></div>
+                </div>
+                <div style={{ flex: '2', display: 'flex', gap: '32px' }}>
+                    <div>
+                        <div style={{ width: '80px', height: '12px', marginBottom: '8px', backgroundColor: 'var(--color-border)', borderRadius: '4px' }}></div>
+                        <div style={{ width: '120px', height: '24px', backgroundColor: 'var(--color-border)', borderRadius: '4px' }}></div>
+                    </div>
+                    <div>
+                        <div style={{ width: '80px', height: '12px', marginBottom: '8px', backgroundColor: 'var(--color-border)', borderRadius: '4px' }}></div>
+                        <div style={{ width: '120px', height: '24px', backgroundColor: 'var(--color-border)', borderRadius: '4px' }}></div>
+                    </div>
+                    <div>
+                        <div style={{ width: '80px', height: '12px', marginBottom: '8px', backgroundColor: 'var(--color-border)', borderRadius: '4px' }}></div>
+                        <div style={{ width: '120px', height: '24px', backgroundColor: 'var(--color-border)', borderRadius: '4px' }}></div>
+                    </div>
+                </div>
+                <div style={{ flex: '0 0 auto', width: '24px', height: '24px', backgroundColor: 'var(--color-border)', borderRadius: '4px' }}></div>
+            </div>
+            <style>{`
+                @keyframes pulse {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.5; }
+                }
+            `}</style>
+        </div>
+    );
+};
+
 
 export function BuyerItemsList() {
     const [searchParams, setSearchParams] = useSearchParams();
-    const navigate = useNavigate();
+
 
     const [items, setItems] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [feedback, setFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'success', message: null });
     const [statuses, setStatuses] = useState<any[]>([]);
     const mode = 'BUYER'; // Standardized as Buyer-only Workspace
 
     const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set());
+    const [kebabMenuOpen, setKebabMenuOpen] = useState<string | null>(null);
     const [deleteConfirm, setDeleteConfirm] = useState<{ attachmentId: string; fileName: string } | null>(null);
     const [addQuotationMode, setAddQuotationMode] = useState<Record<string, 'UPLOAD' | 'MANUAL' | null>>({});
-    
+
     // Step 2 & 3: Quotation Flow States
     const [importSelectedFiles, setImportSelectedFiles] = useState<Record<string, File[]>>({});
     const [quotationFlowStep, setQuotationFlowStep] = useState<Record<string, 'SELECT_MODE' | 'EDIT_QUOTATION'>>({});
@@ -70,7 +186,7 @@ export function BuyerItemsList() {
     const [editingQuotationId, setEditingQuotationId] = useState<Record<string, string | null>>({});
     const [highlightedRequestId, setHighlightedRequestId] = useState<string | null>(null);
     const [formErrors, setFormErrors] = useState<Record<string, Record<string, string>>>({});
-    
+
 
     // Approval Modal State
     const [showApprovalModal, setShowApprovalModal] = useState<{
@@ -86,15 +202,15 @@ export function BuyerItemsList() {
         isLastItem: boolean,
         quotationCount: number,
         hasCompleteQuotation: boolean
-    }>({ 
-        show: false, 
-        type: null, 
-        requestId: null, 
-        itemId: null, 
-        itemDescription: null, 
-        newStatusCode: null, 
-        hasProforma: false, 
-        hasSupplier: false, 
+    }>({
+        show: false,
+        type: null,
+        requestId: null,
+        itemId: null,
+        itemDescription: null,
+        newStatusCode: null,
+        hasProforma: false,
+        hasSupplier: false,
         itemsCount: 0,
         isLastItem: false,
         quotationCount: 0,
@@ -105,7 +221,7 @@ export function BuyerItemsList() {
 
     // Quick Supplier Modal State
     const [quickSupplierModal, setQuickSupplierModal] = useState<{ show: boolean; requestId: string | null; initialName: string; initialTaxId: string }>({ show: false, requestId: null, initialName: '', initialTaxId: '' });
-    
+
     // Quick Currency Modal State
     const [quickCurrencyModal, setQuickCurrencyModal] = useState<{ show: boolean; requestId: string | null; initialCode: string }>({ show: false, requestId: null, initialCode: '' });
 
@@ -114,6 +230,8 @@ export function BuyerItemsList() {
         show: false, requestId: '', draft: null, duplicate: null
     });
     const [expandedQuotations, setExpandedQuotations] = useState<Record<string, boolean>>({});
+    const [drawerRequestId, setDrawerRequestId] = useState<string | null>(null);
+    const [showHelpModal, setShowHelpModal] = useState(false);
     const [fileDuplicateWarning, setFileDuplicateWarning] = useState<{
         isOpen: boolean;
         requestId: string;
@@ -124,11 +242,60 @@ export function BuyerItemsList() {
         uploadCallback: () => void;
     } | null>(null);
 
+    // Financial Integrity Gate Modal State
+    const [integrityModal, setIntegrityModal] = useState<{
+        show: boolean;
+        requestId: string;
+        itemsCount: number;
+        ocrOriginalTotal: number;
+        quotationTotal: number;
+        varianceAmount: number;
+        variancePercent: number;
+        toleranceApplied: number;
+        unresolvedReconciliationCount: number;
+        detail: string;
+    } | null>(null);
+    const [integrityJustification, setIntegrityJustification] = useState('');
+    const [integrityOverrideLoading, setIntegrityOverrideLoading] = useState(false);
+
     // Lookups
     const [ivaRates, setIvaRates] = useState<IvaRate[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
     const [currencies, setCurrencies] = useState<any[]>([]);
     const [plants, setPlants] = useState<any[]>([]);
+
+    // --- Persistent Preferences (URL-sync pattern) ---
+    const { preferences: savedPrefs, setPreferences: persistPrefs, resetPreferences } = useTablePreferences('buyer-items', {
+        pageSize: 20,
+    });
+
+    // On mount: if URL has no filter params but we have saved preferences, hydrate URL
+    const hasHydratedUrl = useRef(false);
+    useEffect(() => {
+        if (hasHydratedUrl.current) return;
+        hasHydratedUrl.current = true;
+
+        const hasExistingUrlFilters =
+            searchParams.has('search') ||
+            searchParams.has('itemStatus') ||
+            searchParams.has('requestStatus') ||
+            searchParams.has('owner') ||
+            searchParams.has('pageSize');
+
+        if (!hasExistingUrlFilters && savedPrefs.filters) {
+            const p = new URLSearchParams(searchParams);
+            let anySet = false;
+            if (savedPrefs.search) { p.set('search', savedPrefs.search); anySet = true; }
+            if (savedPrefs.filters.itemStatus) { p.set('itemStatus', savedPrefs.filters.itemStatus); anySet = true; }
+            if (savedPrefs.filters.requestStatus) { p.set('requestStatus', savedPrefs.filters.requestStatus); anySet = true; }
+            if (savedPrefs.filters.owner && savedPrefs.filters.owner !== 'todos') { p.set('owner', savedPrefs.filters.owner); anySet = true; }
+            if (savedPrefs.pageSize && savedPrefs.pageSize !== 20) { p.set('pageSize', savedPrefs.pageSize.toString()); anySet = true; }
+            if (anySet) {
+                p.set('page', '1');
+                setSearchParams(p, { replace: true });
+            }
+        }
+    }, []); // Only on mount
 
     // Bind state to URL parameters
     const searchTerm = searchParams.get('search') || '';
@@ -181,8 +348,22 @@ export function BuyerItemsList() {
                     next.set(key, String(value));
                 }
             });
+            // Sync to localStorage
+            syncParamsToPrefs(next);
             return next;
         }, { replace: true });
+    };
+
+    const syncParamsToPrefs = (params: URLSearchParams) => {
+        persistPrefs({
+            search: params.get('search') || undefined,
+            pageSize: Number(params.get('pageSize')) || 20,
+            filters: {
+                itemStatus: params.get('itemStatus') || undefined,
+                requestStatus: params.get('requestStatus') || undefined,
+                owner: (params.get('owner') && params.get('owner') !== 'todos') ? params.get('owner')! : undefined,
+            },
+        });
     };
 
     // Debounce search input and update URL
@@ -196,7 +377,7 @@ export function BuyerItemsList() {
     }, [searchInput, searchTerm]);
 
     const handleRequestStatusChange = (val: string) => updateParams({ requestStatus: val || null, page: 1 });
- 
+
     // Initial Lookups (Request Statuses only)
     useEffect(() => {
         async function fetchLookups() {
@@ -223,21 +404,22 @@ export function BuyerItemsList() {
 
     const loadData = async () => {
         try {
+            setError(null);
             setLoading(true);
             const response = await api.lineItems.list(
-                searchTerm, 
-                itemStatus, 
-                requestStatus, 
-                undefined, 
-                undefined, 
-                { owner: owner === 'todos' ? undefined : owner }, 
-                page, 
+                searchTerm,
+                itemStatus,
+                requestStatus,
+                undefined,
+                undefined,
+                { owner: owner === 'todos' ? undefined : owner },
+                page,
                 pageSize
             );
             setItems(response.data || []);
             setTotalCount(response.totalCount || 0);
         } catch (err: any) {
-            setFeedback({ type: 'error', message: err.message || 'Erro desconhecido' });
+            setError(err.message || 'Falha ao carregar as cotações. Por favor, tente novamente.');
         } finally {
             setLoading(false);
         }
@@ -260,6 +442,7 @@ export function BuyerItemsList() {
                     requestStatusName: item.requestStatusName,
                     requestStatusCode: item.requestStatusCode,
                     requesterName: item.requesterName,
+                    requesterEmail: item.requesterEmail,
                     plantId: item.plantId || item.requestPlantId,
                     plantName: item.plantName || item.requestPlantName,
                     departmentName: item.departmentName,
@@ -281,6 +464,11 @@ export function BuyerItemsList() {
                     requestStatusBadgeColor: item.requestStatusBadgeColor,
                     buyerId: item.buyerId,
                     buyerName: item.buyerName,
+                    buyerEmail: item.buyerEmail,
+                    areaApproverName: item.areaApproverName,
+                    areaApproverEmail: item.areaApproverEmail,
+                    finalApproverName: item.finalApproverName,
+                    finalApproverEmail: item.finalApproverEmail,
                     requestTitle: item.requestTitle,
                     requestDescription: item.requestDescription,
                     quotations: item.quotations || [],
@@ -343,7 +531,7 @@ export function BuyerItemsList() {
         try {
             const hash = await computeFileHash(file);
             const dupCheck = await api.attachments.checkDuplicate(hash);
-            
+
             if (dupCheck.isDuplicate) {
                 hasDuplicateWarning = true;
                 setFileDuplicateWarning({
@@ -377,12 +565,27 @@ export function BuyerItemsList() {
         setOcrErrors(prev => ({ ...prev, [requestId]: null }));
         // Ensure we clear any edit session state when returning to selection
         setEditingQuotationId(prev => ({ ...prev, [requestId]: null }));
+
         setDraftProformaFiles(prev => {
             const next = { ...prev };
             delete next[requestId];
             return next;
         });
+
         setQuotationDrafts(prev => {
+            const next = { ...prev };
+            delete next[requestId];
+            return next;
+        });
+
+        // Important: Always clear OCR batches and form errors so they don't leak back if reopened.
+        setReconciliationBatches(prev => {
+            const next = { ...prev };
+            delete next[requestId];
+            return next;
+        });
+
+        setFormErrors(prev => {
             const next = { ...prev };
             delete next[requestId];
             return next;
@@ -396,13 +599,13 @@ export function BuyerItemsList() {
         const file = files[0];
         const ext = file.name.split('.').pop()?.toLowerCase() || '';
         if (!ALLOWED_EXTENSIONS.includes(ext)) {
-            setFeedback({ 
-                type: 'error', 
-                message: `Arquivo não permitido. Formatos aceitos: ${ALLOWED_EXTENSIONS_MSG}.` 
+            setFeedback({
+                type: 'error',
+                message: `Arquivo não permitido. Formatos aceitos: ${ALLOWED_EXTENSIONS_MSG}.`
             });
             return;
         }
-        
+
         setIsProcessingOcr(prev => ({ ...prev, [requestId]: true }));
         setOcrErrors(prev => ({ ...prev, [requestId]: null }));
         // Ensure any previous edit state is cleared for a new OCR flow
@@ -464,37 +667,46 @@ export function BuyerItemsList() {
         });
     };
 
-    const handleUpdateQuotationItem = (requestId: string, index: number, field: keyof QuotationDraftItem, value: any) => {
+    const handleUpdateQuotationItem = (requestId: string, index: number, fieldOrData: keyof QuotationDraftItem | Partial<QuotationDraftItem>, value?: any) => {
         setQuotationDrafts(prev => {
             const draft = { ...prev[requestId] };
             if (!draft.items) return prev;
 
             const updatedItems = [...draft.items];
-            
-            // If user manually changes the absolute discount amount, clear the reactive percentage
-            if (field === 'discountAmount') {
-                updatedItems[index] = { ...updatedItems[index], discountAmount: value, discountPercent: undefined };
+
+            if (typeof fieldOrData === 'object') {
+                updatedItems[index] = { ...updatedItems[index], ...fieldOrData };
             } else {
-                updatedItems[index] = { ...updatedItems[index], [field]: value };
+                const field = fieldOrData as keyof QuotationDraftItem;
+                // If user manually changes the absolute discount amount, clear the reactive percentage
+                if (field === 'discountAmount') {
+                    updatedItems[index] = { ...updatedItems[index], discountAmount: value, discountPercent: undefined };
+                } else if (field === 'ivaRateId') {
+                    // CRITICAL UX: When user manually selects an IVA rate, the "uncertainty" state must be cleared.
+                    updatedItems[index] = { ...updatedItems[index], ivaRateId: value, ivaUncertain: false };
+                } else {
+                    updatedItems[index] = { ...updatedItems[index], [field]: value };
+                }
             }
-            
+
             // Reactive discount recalculation if percentage is locked in
-            if ((field === 'quantity' || field === 'unitPrice') && updatedItems[index].discountPercent !== undefined) {
-                const qty = updatedItems[index].quantity || 0;
-                const price = updatedItems[index].unitPrice || 0;
-                const pct = updatedItems[index].discountPercent!;
+            const item = updatedItems[index];
+            if (item.discountPercent !== undefined) {
+                const qty = item.quantity || 0;
+                const price = item.unitPrice || 0;
+                const pct = item.discountPercent!;
                 const recalculatedDiscount = Math.round(qty * price * (pct / 100) * 100) / 100;
                 updatedItems[index].discountAmount = recalculatedDiscount;
             }
-            
+
             // Recalculate deterministic line logic using shared hook logic
             updatedItems[index].totalPrice = calculateItemTotal(updatedItems[index]);
 
             draft.items = updatedItems;
-            
+
             // Recalculate quotation total internally if needed
             draft.totalAmount = calculateDraftTotal(draft);
-            
+
             return {
                 ...prev,
                 [requestId]: draft
@@ -520,7 +732,7 @@ export function BuyerItemsList() {
             } as QuotationDraft;
 
             const nextLineNumber = (draft.items?.length || 0) + 1;
-            
+
             // Default unit from request line item if possible
             const group = items.find(i => i.requestId === requestId);
             const originalItem = group?.items?.find((i: any) => i.lineNumber === nextLineNumber);
@@ -546,8 +758,8 @@ export function BuyerItemsList() {
             if (!draft.items) return prev;
 
             const updatedItems = draft.items.filter((_, i) => i !== index);
-            draft.totalAmount = updatedItems.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
             draft.items = updatedItems;
+            draft.totalAmount = calculateDraftTotal(draft);
             return { ...prev, [requestId]: draft };
         });
     };
@@ -563,7 +775,7 @@ export function BuyerItemsList() {
     const handleSaveQuotation = async (requestId: string) => {
         const draft = quotationDrafts[requestId];
         if (!draft) return;
-        
+
         if (draft.items.length === 0) {
             setFeedback({ type: 'error', message: 'A cotação deve conter pelo menos um item.' });
             return;
@@ -586,7 +798,7 @@ export function BuyerItemsList() {
             setIsSaving(true);
             const sourceType = addQuotationMode[requestId]; // 'UPLOAD' or 'MANUAL'
             const editId = editingQuotationId[requestId];
-            
+
             // Step 5: Process Proforma Upload PRE-EMPTIVELY BEFORE SAVE
             let currentProformaId = draft.proformaAttachmentId;
             try {
@@ -603,9 +815,9 @@ export function BuyerItemsList() {
                     // Preemptive Client-side Extension Validation
                     const ext = fileToUpload.name.split('.').pop()?.toLowerCase() || '';
                     if (!ALLOWED_EXTENSIONS.includes(ext)) {
-                        setFeedback({ 
-                            type: 'error', 
-                            message: `Arquivo não permitido. Formatos aceitos: ${ALLOWED_EXTENSIONS_MSG}.` 
+                        setFeedback({
+                            type: 'error',
+                            message: `Arquivo não permitido. Formatos aceitos: ${ALLOWED_EXTENSIONS_MSG}.`
                         });
                         setIsSaving(false);
                         return;
@@ -642,18 +854,18 @@ export function BuyerItemsList() {
                 setIsSaving(false);
                 return;
             }
-            
+
             // If we reached here, validations passed and it's not a duplicate.
             // Trigger Confirmation Modal before real save
-            setShowApprovalModal({ 
-                show: true, 
-                type: sourceType === 'UPLOAD' ? 'SAVE_QUOTATION_OCR' : 'SAVE_QUOTATION_MANUAL', 
-                requestId, 
+            setShowApprovalModal({
+                show: true,
+                type: sourceType === 'UPLOAD' ? 'SAVE_QUOTATION_OCR' : 'SAVE_QUOTATION_MANUAL',
+                requestId,
                 itemId: null,
                 itemDescription: null,
                 newStatusCode: null,
-                hasProforma: false, 
-                hasSupplier: true, 
+                hasProforma: false,
+                hasSupplier: true,
                 itemsCount: draft.items.length,
                 isLastItem: false,
                 quotationCount: 0,
@@ -669,11 +881,11 @@ export function BuyerItemsList() {
     const executeSaveQuotation = async (requestId: string) => {
         try {
             setIsSaving(true);
-            const sourceType = addQuotationMode[requestId]; 
+            const sourceType = addQuotationMode[requestId];
             const editId = editingQuotationId[requestId];
             const draft = quotationDrafts[requestId];
-            const currentProformaId = draftProformaFiles[requestId] 
-                ? (await api.attachments.upload(requestId, [draftProformaFiles[requestId]], 'PROFORMA')).id 
+            const currentProformaId = draftProformaFiles[requestId]
+                ? (await api.attachments.upload(requestId, [draftProformaFiles[requestId]], 'PROFORMA')).id
                 : (draft.proformaAttachmentId || null);
 
             const payload = {
@@ -683,7 +895,7 @@ export function BuyerItemsList() {
                 documentDate: draft.documentDate ? new Date(draft.documentDate).toISOString() : null,
                 currency: draft.currency,
                 discountAmount: draft.discountAmount || 0,
-                totalAmount: draft.totalAmount, 
+                totalAmount: draft.totalAmount,
                 sourceType: editId ? undefined : (sourceType === 'UPLOAD' ? 'OCR' : 'MANUAL'),
                 sourceFileName: editId ? undefined : (sourceType === 'UPLOAD' ? (importSelectedFiles[requestId]?.[0]?.name || null) : null),
                 proformaAttachmentId: currentProformaId,
@@ -694,10 +906,11 @@ export function BuyerItemsList() {
                     unitId: item.unitId,
                     unitPrice: item.unitPrice,
                     discountAmount: item.discountAmount || 0,
-                    ivaRateId: item.ivaRateId
+                    ivaRateId: item.ivaRateId,
+                    itemCatalogId: item.itemCatalogId
                 }))
             };
-            
+
             // Clear errors before attempt
             setFormErrors(prev => ({ ...prev, [requestId]: {} }));
 
@@ -718,7 +931,7 @@ export function BuyerItemsList() {
             setDraftProformaFiles(prev => { const n = { ...prev }; delete n[requestId]; return n; });
             setImportSelectedFiles(prev => { const n = { ...prev }; delete n[requestId]; return n; });
             setReconciliationBatches(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            
+
             loadData();
         } catch (error: any) {
             setFeedback({ type: 'error', message: error.message || 'Erro ao salvar cotação.' });
@@ -732,7 +945,7 @@ export function BuyerItemsList() {
         try {
             const draft = quotationDrafts[requestId];
             const isEditing = !!editingQuotationId[requestId];
-            
+
             // If creating a NEW quotation from OCR, the attachment was pre-uploaded. Clean it up.
             if (!isEditing && draft?.proformaAttachmentId && addQuotationMode[requestId] === 'UPLOAD') {
                 setIsSaving(true);
@@ -767,7 +980,7 @@ export function BuyerItemsList() {
 
         try {
             setIsSaving(true);
-            const sourceType = addQuotationMode[requestId]; 
+            const sourceType = addQuotationMode[requestId];
             const editId = editingQuotationId[requestId];
 
             const payload = {
@@ -787,7 +1000,8 @@ export function BuyerItemsList() {
                     quantity: item.quantity,
                     unitId: item.unitId,
                     unitPrice: item.unitPrice,
-                    ivaRateId: item.ivaRateId
+                    ivaRateId: item.ivaRateId,
+                    itemCatalogId: item.itemCatalogId
                 }))
             };
 
@@ -805,10 +1019,10 @@ export function BuyerItemsList() {
             setImportSelectedFiles(prev => { const n = { ...prev }; delete n[requestId]; return n; });
             setReconciliationBatches(prev => { const n = { ...prev }; delete n[requestId]; return n; });
             setDuplicateSupplierModal({ show: false, requestId: '', draft: null, duplicate: null });
-            
+
             loadData();
         } catch (error: any) {
-             setFeedback({ type: 'error', message: error.message || 'Erro ao substituir cotação.' });
+            setFeedback({ type: 'error', message: error.message || 'Erro ao substituir cotação.' });
         } finally {
             setIsSaving(false);
         }
@@ -839,7 +1053,8 @@ export function BuyerItemsList() {
                 unitPrice: item.unitPrice,
                 ivaRateId: item.ivaRateId,
                 totalPrice: item.lineTotal,
-                discountAmount: 0
+                discountAmount: 0,
+                itemCatalogId: item.itemCatalogId
             }))
         };
 
@@ -847,7 +1062,7 @@ export function BuyerItemsList() {
         setEditingQuotationId(prev => ({ ...prev, [requestId]: quotation.id }));
         setQuotationFlowStep(prev => ({ ...prev, [requestId]: 'EDIT_QUOTATION' }));
         setAddQuotationMode(prev => ({ ...prev, [requestId]: 'MANUAL' })); // For layout purposes
-        
+
         // Scroll and highlight Section B (Step 9.2)
         setHighlightedRequestId(requestId);
         setTimeout(() => setHighlightedRequestId(null), 2500);
@@ -861,16 +1076,16 @@ export function BuyerItemsList() {
     const handleDeleteQuotation = async (requestId: string, quotationId: string) => {
         // Use ApprovalModal for confirmation
         const qRecord = items.find(i => i.requestId === requestId)?.quotations?.find((q: any) => q.id === quotationId);
-        
-        setShowApprovalModal({ 
-            show: true, 
+
+        setShowApprovalModal({
+            show: true,
             type: 'DELETE_QUOTATION' as any, // Ad-hoc type for this task
-            requestId, 
+            requestId,
             itemId: quotationId, // Use itemId to pass quotationId
             itemDescription: `Cotação ${qRecord?.supplierNameSnapshot || ''} (Doc: ${qRecord?.documentNumber || ''})`,
             newStatusCode: null,
-            hasProforma: false, 
-            hasSupplier: false, 
+            hasProforma: false,
+            hasSupplier: false,
             itemsCount: 0,
             isLastItem: false,
             quotationCount: 0,
@@ -918,10 +1133,10 @@ export function BuyerItemsList() {
         try {
             setIsSaving(true);
             await api.requests.updateSupplier(requestId, supplierId);
-            setItems(prev => prev.map(i => i.requestId === requestId ? { 
-                ...i, 
-                requestSupplierId: supplierId, 
-                requestSupplierName: supplierName 
+            setItems(prev => prev.map(i => i.requestId === requestId ? {
+                ...i,
+                requestSupplierId: supplierId,
+                requestSupplierName: supplierName
             } : i));
         } catch (err: any) {
             setFeedback({ type: 'error', message: err.message || 'Erro ao atualizar fornecedor do pedido.' });
@@ -931,15 +1146,15 @@ export function BuyerItemsList() {
     };
 
     const handleCompleteQuotation = (requestId: string, hasProforma: boolean, hasSupplier: boolean, itemsCount: number, quotationCount: number, hasCompleteQuotation: boolean) => {
-        setShowApprovalModal({ 
-            show: true, 
-            type: 'COMPLETE_QUOTATION', 
-            requestId, 
+        setShowApprovalModal({
+            show: true,
+            type: 'COMPLETE_QUOTATION',
+            requestId,
             itemId: null,
             itemDescription: null,
             newStatusCode: null,
-            hasProforma, 
-            hasSupplier, 
+            hasProforma,
+            hasSupplier,
             itemsCount,
             isLastItem: false,
             quotationCount,
@@ -956,7 +1171,28 @@ export function BuyerItemsList() {
             setModalFeedback({ type: 'error', message: null });
 
             if (type === 'COMPLETE_QUOTATION') {
-                await completeQuotationAction(requestId!, itemsCount, approvalComment);
+                const completionResult = await completeQuotationAction(requestId!, itemsCount, approvalComment);
+
+                // Financial Integrity Gate: check if backend returned integrity failure
+                if (completionResult && 'integrityCheckFailed' in completionResult && completionResult.integrityCheckFailed) {
+                    // Close the approval modal and show the integrity modal instead
+                    setShowApprovalModal({ show: false, type: null, requestId: null, itemId: null, itemDescription: null, newStatusCode: null, hasProforma: false, hasSupplier: false, itemsCount: 0, isLastItem: false, quotationCount: 0, hasCompleteQuotation: false });
+                    setApprovalComment('');
+                    setIntegrityModal({
+                        show: true,
+                        requestId: requestId!,
+                        itemsCount,
+                        ocrOriginalTotal: completionResult.ocrOriginalTotal,
+                        quotationTotal: completionResult.quotationTotal,
+                        varianceAmount: completionResult.varianceAmount,
+                        variancePercent: completionResult.variancePercent,
+                        toleranceApplied: completionResult.toleranceApplied,
+                        unresolvedReconciliationCount: completionResult.unresolvedReconciliationCount,
+                        detail: completionResult.detail
+                    });
+                    setIsSaving(false);
+                    return; // Do not proceed with normal flow
+                }
                 setFeedback({ type: 'success', message: 'Cotação concluída e enviada para aprovação.' });
             } else if (type === 'CANCEL_REQUEST' && requestId) {
                 await api.requests.cancel(requestId, approvalComment);
@@ -974,10 +1210,10 @@ export function BuyerItemsList() {
             } else if ((type === 'SAVE_QUOTATION_OCR' || type === 'SAVE_QUOTATION_MANUAL') && requestId) {
                 await executeSaveQuotation(requestId);
             }
-            
+
             setShowApprovalModal({ show: false, type: null, requestId: null, itemId: null, itemDescription: null, newStatusCode: null, hasProforma: false, hasSupplier: false, itemsCount: 0, isLastItem: false, quotationCount: 0, hasCompleteQuotation: false });
             setApprovalComment('');
-            
+
             // Refresh data
             const response = await api.lineItems.list(searchTerm, itemStatus, requestStatus, undefined, undefined, undefined, page, pageSize);
             setItems(response.data || []);
@@ -989,6 +1225,44 @@ export function BuyerItemsList() {
             }
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    // ═══════════════════════════════════════════════════════════════
+    // FINANCIAL INTEGRITY GATE — Override Handler
+    // ═══════════════════════════════════════════════════════════════
+    const handleIntegrityOverride = async () => {
+        if (!integrityModal || !integrityJustification.trim()) return;
+
+        try {
+            setIntegrityOverrideLoading(true);
+            const result = await completeQuotationAction(
+                integrityModal.requestId,
+                integrityModal.itemsCount,
+                '', // no additional comment
+                {
+                    financialIntegrityOverride: true,
+                    overrideJustification: integrityJustification.trim()
+                }
+            );
+
+            // Check if there's still an integrity failure (shouldn't happen with override, but safety check)
+            if (result && 'integrityCheckFailed' in result && result.integrityCheckFailed) {
+                setFeedback({ type: 'error', message: 'Override falhou. Verifique os dados e tente novamente.' });
+                return;
+            }
+
+            setFeedback({ type: 'success', message: 'Cotação concluída com override financeiro e enviada para aprovação.' });
+            setIntegrityModal(null);
+            setIntegrityJustification('');
+
+            // Refresh data
+            const response = await api.lineItems.list(searchTerm, itemStatus, requestStatus, undefined, undefined, undefined, page, pageSize);
+            setItems(response.data || []);
+        } catch (err: any) {
+            setFeedback({ type: 'error', message: err.message || 'Erro ao processar override financeiro.' });
+        } finally {
+            setIntegrityOverrideLoading(false);
         }
     };
 
@@ -1008,6 +1282,30 @@ export function BuyerItemsList() {
     // --- RENDER HELPERS ---
 
     const groupedRequests = groupItemsByRequest(items);
+
+    /**
+     * Pre-tour preparation: automatically expand the first request
+     * when the page tour starts and no request is currently expanded.
+     * Listens for the 'guided-tour:prepare' CustomEvent dispatched by useGuidedTour.
+     */
+    useEffect(() => {
+        const handleTourPrepare = (e: Event) => {
+            const tourId = (e as CustomEvent).detail?.tourId;
+            if (tourId !== 'page-buyer-items') return;
+
+            // If a request is already expanded, nothing to do
+            if (expandedRequests.size > 0) return;
+
+            // If there are grouped requests, expand the first one
+            if (groupedRequests.length > 0) {
+                const firstRequestId = groupedRequests[0].requestId;
+                setExpandedRequests(new Set([firstRequestId]));
+            }
+        };
+
+        window.addEventListener('guided-tour:prepare', handleTourPrepare);
+        return () => window.removeEventListener('guided-tour:prepare', handleTourPrepare);
+    }, [expandedRequests, groupedRequests]);
 
     return (
         <PageContainer>
@@ -1034,10 +1332,141 @@ export function BuyerItemsList() {
             )}
 
             <PageHeader
+                data-tour="buyer-items-header"
                 title="Gestão de Cotações"
                 subtitle="Visualize e gerencie os itens solicitados e suas cotações em um único workspace."
+                actions={
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <GuidedTourContextButton tourId="page-buyer-items" label="Tour da Tela" />
+                        <button
+                            onClick={() => setShowHelpModal(true)}
+                            style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            backgroundColor: '#FEF9C3',
+                            color: '#854D0E',
+                            border: '1px solid #FDE047',
+                            padding: '8px 16px',
+                            borderRadius: '6px',
+                            fontWeight: 800,
+                            fontSize: '0.8rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em'
+                        }}
+                        onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#FEF08A'; e.currentTarget.style.color = '#713F12'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                        onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#FEF9C3'; e.currentTarget.style.color = '#854D0E'; e.currentTarget.style.transform = 'none'; }}
+                    >
+                        <BookOpen size={16} /> Manual de Cotação
+                    </button>
+                    </div>
+                }
             />
 
+            <AnimatePresence>
+                {showHelpModal && (
+                    <DropdownPortal>
+                        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(4px)', zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                                style={{ backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', position: 'relative' }}
+                            >
+                                <div style={{ position: 'sticky', top: 0, backgroundColor: '#f8fafc', padding: '24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 1 }}>
+                                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                                        <div style={{ padding: '12px', backgroundColor: '#fef3c7', color: '#d97706', borderRadius: '12px' }}>
+                                            <BookOpen size={28} strokeWidth={2.5} />
+                                        </div>
+                                        <div>
+                                            <h2 style={{ fontSize: '1.5rem', fontWeight: 900, color: '#0f172a', margin: 0, letterSpacing: '-0.02em' }}>Manual de Gestão de Cotações</h2>
+                                            <p style={{ margin: '4px 0 0 0', color: '#64748b', fontSize: '0.95rem', fontWeight: 500 }}>Guia para processamento de faturas e reconciliação OCR.</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setShowHelpModal(false)} style={{ background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', color: '#64748b', padding: '8px', borderRadius: '8px', transition: 'all 0.2s', display: 'flex' }} onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#f1f5f9'; e.currentTarget.style.color = '#0f172a'; }} onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'white'; e.currentTarget.style.color = '#64748b'; }}>
+                                        <X size={20} strokeWidth={2.5} />
+                                    </button>
+                                </div>
+                                <div style={{ padding: '32px' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+                                        {/* Step 1 */}
+                                        <div style={{ display: 'flex', gap: '20px' }}>
+                                            <div style={{ flexShrink: 0, width: '40px', height: '40px', borderRadius: '20px', backgroundColor: '#e0e7ff', color: '#4f46e5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 900 }}>1</div>
+                                            <div>
+                                                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 8px 0' }}>Receção e Atribuição do Pedido</h3>
+                                                <p style={{ fontSize: '0.95rem', color: '#475569', lineHeight: '1.6', margin: 0 }}>Tudo começa quando um requisitante cria um pedido e este entra na fila de compras. O seu primeiro passo é abrir o pedido pendente e clicar no botão <strong>"Assumir Pedido"</strong> para se colocar como responsável pela tarefa. Certifique-se que os detalhes e quantidades solicitadas estão exatas antes de contactar o fornecedor.</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Step 2 */}
+                                        <div style={{ display: 'flex', gap: '20px' }}>
+                                            <div style={{ flexShrink: 0, width: '40px', height: '40px', borderRadius: '20px', backgroundColor: '#e0e7ff', color: '#4f46e5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 900 }}>2</div>
+                                            <div>
+                                                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 8px 0' }}>Anexar Cotação e Dados Financeiros</h3>
+                                                <p style={{ fontSize: '0.95rem', color: '#475569', lineHeight: '1.6', margin: '0 0 12px 0' }}>Após negociar, clique em "Nova Cotação" e anexe a fatura/proforma correspondente. O OCR tentará extrair os dados. No entanto, é <strong>rigorosamente necessário e importante</strong> confirmar sempre manualmente se os itens extraídos, os valores unitários e o valor total correspondem ao papel. Se for um documento complexo, é sempre preferível descartar a extração clicando para <strong>inserir a cotação manualmente</strong>.</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Step 3 */}
+                                        <div style={{ display: 'flex', gap: '20px' }}>
+                                            <div style={{ flexShrink: 0, width: '40px', height: '40px', borderRadius: '20px', backgroundColor: '#e0e7ff', color: '#4f46e5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 900 }}>3</div>
+                                            <div>
+                                                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 8px 0' }}>Reconciliação e Correspondência</h3>
+                                                <p style={{ fontSize: '0.95rem', color: '#475569', lineHeight: '1.6', margin: '0 0 12px 0' }}>O sistema cruza de imediato os itens originalmente solicitados com o ficheiro faturado, sendo possível 3 cenários:</p>
+                                                <div style={{ display: 'grid', gap: '12px' }}>
+                                                    <div style={{ padding: '12px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#059669' }}></div>
+                                                            <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#059669', textTransform: 'uppercase' }}>Exact Match (Perfeito)</span>
+                                                        </div>
+                                                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>O item faturado e suas quantidades coincidem na perfeição com o item listado pelo requisitante no sistema.</p>
+                                                    </div>
+                                                    <div style={{ padding: '12px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#6366f1' }}></div>
+                                                            <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#6366f1', textTransform: 'uppercase' }}>Item Extra (Fornecedor)</span>
+                                                        </div>
+                                                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>A fatura contém um item extra, como custos de frete adicionais. Como comprador, decide se elimina a linha extra ou permite a inclusão na despesa.</p>
+                                                    </div>
+                                                    <div style={{ padding: '12px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#eab308' }}></div>
+                                                            <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#eab308', textTransform: 'uppercase' }}>Item Faltante</span>
+                                                        </div>
+                                                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>O fornecedor não incluiu um item pedido na fatura. O sistema prevê que os itens faltantes aguardem por posteriores orçamentos de outros fornecedores ou numa cotação sequencial e separada.</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Step 4 */}
+                                        <div style={{ display: 'flex', gap: '20px' }}>
+                                            <div style={{ flexShrink: 0, width: '40px', height: '40px', borderRadius: '20px', backgroundColor: '#e0e7ff', color: '#4f46e5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 900 }}>4</div>
+                                            <div>
+                                                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 8px 0' }}>Progresso de Validação Visual</h3>
+                                                <p style={{ fontSize: '0.95rem', color: '#475569', lineHeight: '1.6', margin: '0 0 12px 0' }}>Ao preencher uma ordem com dezenas de linhas, clique na <strong>checkbox circular</strong> à esquerda no final da conferência de cada linha de valor revisto. A linha fica imediatamente colorida de verde e atesta que não se perderá antes de terminar todas as linhas.</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Step 5 */}
+                                        <div style={{ display: 'flex', gap: '20px' }}>
+                                            <div style={{ flexShrink: 0, width: '40px', height: '40px', borderRadius: '20px', backgroundColor: '#22c55e', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 900 }}>5</div>
+                                            <div>
+                                                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 8px 0' }}>Submeter para Aprovação</h3>
+                                                <p style={{ fontSize: '0.95rem', color: '#475569', lineHeight: '1.6', margin: 0 }}>Terminada a gravação e correção de todos os preços e totais, submeta para a hierarquia. Note que na condição de comprador <strong>não é exigida a atribuição de Centros de Custo</strong> finais de despesa, pois esta é processada e auditada pelo seu <strong>Aprovador de Área</strong> aquando da passagem do pedido.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        </div>
+                    </DropdownPortal>
+                )}
+            </AnimatePresence>
+
+            <div data-tour="buyer-items-search">
             <SearchFilterBar
                 searchPlaceholder="BUSCAR POR NÚMERO, TÍTULO, DESCRIÇÃO..."
                 searchValue={searchInput}
@@ -1051,7 +1480,7 @@ export function BuyerItemsList() {
                 onTabChange={(id) => updateParams({ owner: id, page: 1 })}
                 actions={
                     <select
-                        style={{ padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', outline: 'none', background: '#fff', fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}
+                        style={{ padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: '12px', outline: 'none', background: '#fff', fontSize: '0.85rem', fontWeight: 500, color: '#475569', cursor: 'pointer', transition: 'border-color 0.15s ease, box-shadow 0.15s ease' }}
                         value={requestStatus}
                         onChange={(e) => handleRequestStatusChange(e.target.value)}
                     >
@@ -1064,17 +1493,51 @@ export function BuyerItemsList() {
                     </select>
                 }
             />
+            </div>
 
             {/* Grouped Area */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+            <div data-tour="buyer-items-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {loading ? (
-                    <div style={{ padding: '60px', textAlign: 'center', color: 'var(--color-primary)', fontWeight: 700, fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '0.1em', border: '2px solid var(--color-primary)', backgroundColor: 'var(--color-bg-surface)' }}>
-                        Carregando Cotações...
+                    <>
+                        <RequestGroupSkeleton />
+                        <RequestGroupSkeleton />
+                        <RequestGroupSkeleton />
+                        <RequestGroupSkeleton />
+                    </>
+                ) : error ? (
+                    <div style={{ padding: '40px', textAlign: 'center', border: '1px solid var(--color-danger)', borderRadius: '16px', backgroundColor: 'var(--color-bg-surface)', boxShadow: 'var(--shadow-sm)' }}>
+                        <h3 style={{ color: 'var(--color-danger)', marginBottom: '16px', fontWeight: 700, fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Falha ao Carregar</h3>
+                        <p style={{ color: 'var(--color-text-secondary)', marginBottom: '24px' }}>{error}</p>
+                        <button className="btn btn-primary" onClick={() => loadData()}>
+                            TENTAR NOVAMENTE
+                        </button>
                     </div>
                 ) : groupedRequests.length === 0 ? (
-                    <div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--color-text-muted)', border: '4px dashed var(--color-border)', backgroundColor: 'var(--color-bg-surface)' }}>
-                        <FileText size={64} strokeWidth={1.5} style={{ opacity: 0.2, margin: '0 auto 24px', color: 'var(--color-primary)' }} />
-                        <p style={{ fontWeight: 700, fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-primary)' }}>Nenhuma cotação localizada.</p>
+                    <div data-tour="buyer-items-empty-state" style={{ padding: '80px 20px', textAlign: 'center', border: '1px dashed var(--color-border)', borderRadius: '16px', backgroundColor: 'var(--color-bg-surface)', boxShadow: 'var(--shadow-sm)' }}>
+                        <FileText size={64} strokeWidth={1.5} style={{ margin: '0 auto 24px', color: 'var(--color-primary)', opacity: 0.8 }} />
+                        <h3 style={{ fontWeight: 700, fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-primary)', marginBottom: '16px' }}>Nenhuma cotação localizada.</h3>
+
+                        {(searchInput || requestStatus || itemStatus || owner !== 'todos') ? (
+                            <>
+                                <p style={{ color: 'var(--color-text-secondary)', marginBottom: '24px' }}>Tente limpar seus filtros para ver mais resultados.</p>
+                                <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
+                                    {searchInput && (
+                                        <button className="btn btn-secondary" onClick={() => { setSearchInput(''); updateParams({ search: null, page: 1 }); resetPreferences(); }}>
+                                            LIMPAR BUSCA
+                                        </button>
+                                    )}
+                                    {(requestStatus || itemStatus || owner !== 'todos') && (
+                                        <button className="btn btn-secondary" onClick={() => { updateParams({ requestStatus: null, itemStatus: null, owner: null, page: 1 }); resetPreferences(); }}>
+                                            LIMPAR FILTROS
+                                        </button>
+                                    )}
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <p style={{ color: 'var(--color-text-secondary)', marginBottom: '24px' }}>Você não tem cotações pendentes ou atribuídas a você no momento.</p>
+                            </>
+                        )}
                     </div>
                 ) : (
                     groupedRequests.map((group) => {
@@ -1088,28 +1551,35 @@ export function BuyerItemsList() {
                         return (
                             <div key={group.requestId} id={`request-group-${group.requestId}`} className={highlightedRequestId === group.requestId ? 'section-attention-highlight' : ''} style={{
                                 backgroundColor: 'var(--color-bg-surface)',
-                                border: '2px solid var(--color-primary)',
-                                boxShadow: 'var(--shadow-brutal)',
-                                overflow: 'hidden'
-                            }}>
+                                border: '1px solid var(--color-border)',
+                                borderRadius: '16px',
+                                boxShadow: 'var(--shadow-sm)',
+                                transition: 'box-shadow 0.2s ease, border-color 0.2s ease'
+                            }}
+                                onMouseEnter={(e) => { e.currentTarget.style.boxShadow = 'var(--shadow-md)'; e.currentTarget.style.borderColor = 'rgba(var(--color-primary-rgb), 0.2)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+                            >
                                 {/* Request Header Row */}
                                 <div
                                     onClick={() => toggleGroup(group.requestId)}
                                     style={{
-                                        padding: '16px 24px',
-                                        backgroundColor: 'var(--color-bg-page)',
-                                        borderBottom: isExpanded ? '2px solid var(--color-primary)' : 'none',
+                                        padding: '16px 20px',
+                                        backgroundColor: isExpanded ? 'var(--color-bg-page)' : 'var(--color-bg-surface)',
+                                        borderBottom: isExpanded ? '1px solid var(--color-border)' : 'none',
                                         display: 'flex',
                                         justifyContent: 'space-between',
                                         alignItems: 'center',
                                         cursor: 'pointer',
-                                        userSelect: 'none'
+                                        userSelect: 'none',
+                                        borderRadius: isExpanded ? '16px 16px 0 0' : '16px',
+                                        transition: 'background-color 0.15s ease'
                                     }}
                                 >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                                    {/* === LEFT ZONE: Chevron + Pedido + Status === */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: '220px' }}>
                                         {urgency && (
-                                            <Tooltip 
-                                                variant="dark" 
+                                            <Tooltip
+                                                variant="dark"
                                                 content={
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
                                                         <div style={{ width: '10px', height: '10px', backgroundColor: urgency.indicatorColor }} />
@@ -1117,85 +1587,191 @@ export function BuyerItemsList() {
                                                     </div>
                                                 }
                                             >
-                                                <div style={{ width: '4px', height: '32px', backgroundColor: urgency.indicatorColor, borderRadius: '2px', marginRight: '-8px' }} />
+                                                <div style={{ width: '4px', height: '32px', backgroundColor: urgency.indicatorColor, borderRadius: '2px', marginRight: '-4px' }} />
                                             </Tooltip>
                                         )}
-                                        {isExpanded ? <ChevronDown size={24} /> : <ChevronRight size={24} />}
+                                        {isExpanded ? <ChevronDown size={20} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} /> : <ChevronRight size={20} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />}
                                         <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                            <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Pedido</span>
-                                            <span style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--color-primary)' }}>{group.requestNumber}</span>
-                                        </div>
-                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                            <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Status</span>
-                                            <span className={`badge badge-sm badge-${
-                                                 group.requestStatusBadgeColor === 'red' ? 'danger' :
-                                                 group.requestStatusBadgeColor === 'yellow' ? 'warning' :
-                                                 group.requestStatusBadgeColor === 'green' ? 'success' :
-                                                 group.requestStatusBadgeColor || 'neutral'
-                                             }`} style={{ alignSelf: 'flex-start', marginTop: '2px' }}>
-                                                 {group.requestStatusName}
-                                             </span>
-
+                                            <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Pedido</span>
+                                            <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>{group.requestNumber}</span>
+                                            <span className={`badge badge-sm badge-${group.requestStatusBadgeColor === 'red' ? 'danger' :
+                                                    group.requestStatusBadgeColor === 'yellow' ? 'warning' :
+                                                        group.requestStatusBadgeColor === 'green' ? 'success' :
+                                                            group.requestStatusBadgeColor || 'neutral'
+                                                }`} style={{ alignSelf: 'flex-start', marginTop: '4px' }}>
+                                                {group.requestStatusName}
+                                            </span>
                                         </div>
                                     </div>
 
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-                                            <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Solicitante</span>
-                                            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-text-main)' }}>{group.requesterName}</span>
+                                    {/* === CENTER ZONE: People (flex-1, spread) === */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flex: 1, justifyContent: 'center' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                            <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Solicitante</span>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <PersonAvatar name={group.requesterName} />
+                                                <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--color-text-main)', display: 'inline-flex', alignItems: 'center' }}>{group.requesterName}<TeamsChatButton email={group.requesterEmail} /></span>
+                                            </div>
                                         </div>
                                         {group.buyerName && (
-                                            <>
-                                                <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--color-border)' }}></div>
-                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-                                                    <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Comprador</span>
-                                                    <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-primary)' }}>{group.buyerName}</span>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Comprador</span>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <PersonAvatar name={group.buyerName} />
+                                                    <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--color-text-main)', display: 'inline-flex', alignItems: 'center' }}>{group.buyerName}<TeamsChatButton email={group.buyerEmail} /></span>
                                                 </div>
-                                            </>
+                                            </div>
                                         )}
-                                        <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--color-border)' }}></div>
-                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-                                            <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Data Necessária</span>
-                                            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: urgency?.indicatorColor || '#f59e0b' }}>
-                                                {formatDate(group.needByDateUtc)}
-                                            </span>
+                                        {group.requestStatusCode !== 'WAITING_FINAL_APPROVAL' && group.areaApproverName && (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Aprovador da Área</span>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <PersonAvatar name={group.areaApproverName} />
+                                                    <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--color-text-main)', display: 'inline-flex', alignItems: 'center' }}>{group.areaApproverName}<TeamsChatButton email={group.areaApproverEmail} /></span>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {group.requestStatusCode === 'WAITING_FINAL_APPROVAL' && group.finalApproverName && (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Aprovador Final</span>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <PersonAvatar name={group.finalApproverName} />
+                                                    <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--color-text-main)', display: 'inline-flex', alignItems: 'center' }}>{group.finalApproverName}<TeamsChatButton email={group.finalApproverEmail} /></span>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* === RIGHT ZONE: Date + Action + Cancel + ExternalLink === */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <Calendar size={16} style={{ color: urgency?.indicatorColor || '#f59e0b', flexShrink: 0 }} />
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Data Necessária</span>
+                                                <span style={{ fontSize: '0.85rem', fontWeight: 500, color: urgency?.indicatorColor || '#f59e0b', whiteSpace: 'nowrap' }}>
+                                                    {formatDate(group.needByDateUtc)}
+                                                </span>
+                                            </div>
                                         </div>
                                         {!group.buyerId && (
-                                            <span className="badge" style={{ backgroundColor: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', borderRadius: '4px', boxShadow: '2px 2px 0px rgba(0,0,0,0.05)' }}>
+                                            <span className="badge" style={{ backgroundColor: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 500, padding: '2px 10px' }}>
                                                 Não Atribuído
                                             </span>
                                         )}
                                         <span className={`badge ${actionBadge.className}`} style={{
-                                            borderRadius: '4px',
-                                            boxShadow: '2px 2px 0px rgba(0,0,0,0.1)'
+                                            borderRadius: '8px',
+                                            fontSize: '0.75rem',
+                                            fontWeight: 500,
+                                            padding: '4px 14px'
                                         }}>
                                             {actionBadge.label}
                                         </span>
                                         {group.buyerId !== currentUser?.id && (
-                                            <button 
+                                            <button
                                                 onClick={(e) => { e.stopPropagation(); handleAssignToMe(group.requestId); }}
                                                 disabled={isSaving}
-                                                style={{ 
-                                                    backgroundColor: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '4px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 800, cursor: isSaving ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '4px', textTransform: 'uppercase', boxShadow: '2px 2px 0px rgba(0,0,0,0.15)' 
+                                                style={{
+                                                    backgroundColor: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '8px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 600, cursor: isSaving ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '4px', textTransform: 'uppercase', boxShadow: 'var(--shadow-sm)', whiteSpace: 'nowrap'
                                                 }}
                                                 title={group.buyerId ? "Reatribuir este pedido para mim" : "Reivindicar pedido para mim"}
                                             >
                                                 <UserPlus size={14} /> {group.buyerId ? "Assumir Pedido" : "Atribuir a Mim"}
                                             </button>
                                         )}
-                                        <Link
-                                            to={`/requests/${group.requestId}`}
-                                            onClick={(e) => e.stopPropagation()}
-                                            style={{ color: 'var(--color-primary)', padding: '8px' }}
-                                            title="Ver Detalhes do Pedido"
-                                        >
-                                            <ExternalLink size={20} />
-                                        </Link>
+                                        {/* Kebab Menu */}
+                                        <div style={{ position: 'relative' }}>
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setKebabMenuOpen(kebabMenuOpen === group.requestId ? null : group.requestId);
+                                                }}
+                                                style={{
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    padding: '6px',
+                                                    backgroundColor: kebabMenuOpen === group.requestId ? 'rgba(var(--color-primary-rgb), 0.06)' : 'transparent',
+                                                    border: 'none',
+                                                    color: kebabMenuOpen === group.requestId ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                                                    borderRadius: '8px',
+                                                    cursor: 'pointer',
+                                                    transition: 'color 0.15s ease, background-color 0.15s ease'
+                                                }}
+                                                onMouseEnter={(e) => { if (kebabMenuOpen !== group.requestId) { e.currentTarget.style.color = 'var(--color-primary)'; e.currentTarget.style.backgroundColor = 'rgba(var(--color-primary-rgb), 0.06)'; } }}
+                                                onMouseLeave={(e) => { if (kebabMenuOpen !== group.requestId) { e.currentTarget.style.color = 'var(--color-text-muted)'; e.currentTarget.style.backgroundColor = 'transparent'; } }}
+                                                title="Mais opções"
+                                            >
+                                                <MoreVertical size={18} />
+                                            </button>
+                                            <AnimatePresence>
+                                                {kebabMenuOpen === group.requestId && (
+                                                    <>
+                                                        {/* Backdrop to close */}
+                                                        <div
+                                                            style={{ position: 'fixed', inset: 0, zIndex: 50 }}
+                                                            onClick={(e) => { e.stopPropagation(); setKebabMenuOpen(null); }}
+                                                        />
+                                                        <motion.div
+                                                            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                                                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                                                            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                                                            transition={{ duration: 0.12, ease: 'easeOut' }}
+                                                            style={{
+                                                                position: 'absolute', right: 0, top: '100%', marginTop: '4px',
+                                                                backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)',
+                                                                borderRadius: '10px', boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
+                                                                minWidth: '180px', zIndex: 51, overflow: 'hidden',
+                                                                padding: '4px 0'
+                                                            }}
+                                                        >
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setKebabMenuOpen(null);
+                                                                    setDrawerRequestId(group.requestId);
+                                                                }}
+                                                                style={{
+                                                                    display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
+                                                                    padding: '10px 14px', background: 'none', border: 'none',
+                                                                    fontSize: '0.85rem', fontWeight: 500, color: 'var(--color-text-main)',
+                                                                    cursor: 'pointer', transition: 'background-color 0.1s ease'
+                                                                }}
+                                                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-neutral)'}
+                                                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                                            >
+                                                                <ExternalLink size={15} style={{ color: 'var(--color-text-muted)' }} /> Ver Detalhes
+                                                            </button>
+                                                            {!group.proformaId &&
+                                                                !group.requestSupplierId &&
+                                                                !group.items.some((item: any) => item.supplierName || (item.lineItemStatusCode && item.lineItemStatusCode !== 'WAITING_QUOTATION' && item.lineItemStatusCode !== 'PENDING')) && (
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setKebabMenuOpen(null);
+                                                                            setShowApprovalModal({ show: true, type: 'CANCEL_REQUEST', requestId: group.requestId, itemId: null, itemDescription: null, newStatusCode: null, hasProforma: false, hasSupplier: false, itemsCount: 0, isLastItem: false, quotationCount: 0, hasCompleteQuotation: false });
+                                                                        }}
+                                                                        disabled={isSaving}
+                                                                        style={{
+                                                                            display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
+                                                                            padding: '10px 14px', background: 'none', border: 'none',
+                                                                            fontSize: '0.85rem', fontWeight: 500, color: '#ef4444',
+                                                                            cursor: isSaving ? 'wait' : 'pointer', transition: 'background-color 0.1s ease'
+                                                                        }}
+                                                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fef2f2'}
+                                                                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                                                    >
+                                                                        <X size={15} /> Cancelar Pedido
+                                                                    </button>
+                                                                )}
+                                                        </motion.div>
+                                                    </>
+                                                )}
+                                            </AnimatePresence>
+                                        </div>
                                     </div>
                                 </div>
 
                                 {isExpanded && (
-                                    <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                                    <div data-tour="buyer-open-request" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
                                         {isAdjustmentPhase && group.latestAdjustmentMessage && (
                                             <div style={{
@@ -1225,13 +1801,13 @@ export function BuyerItemsList() {
                                         )}
 
                                         {/* Row 1: Quotation Metadata Area */}
-                                        <div style={{ 
-                                            display: 'flex', 
+                                        <div style={{
+                                            display: 'flex',
                                             flexDirection: 'column',
-                                            gap: '16px', 
-                                            paddingBottom: '16px', 
-                                            marginBottom: '16px', 
-                                            borderBottom: '1px solid var(--color-border)' 
+                                            gap: '16px',
+                                            paddingBottom: '16px',
+                                            marginBottom: '16px',
+                                            borderBottom: '1px solid var(--color-border)'
                                         }}>
                                             <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -1260,7 +1836,7 @@ export function BuyerItemsList() {
                                                             </span>
                                                         </div>
                                                     )}
-                                                    
+
                                                     {group.supportingAttachments.length > 0 && (
                                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                                             <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Documentos de Apoio Anexados</span>
@@ -1304,11 +1880,147 @@ export function BuyerItemsList() {
                                             )}
                                         </div>
 
-                                        {/* SECTION A: Existing Quotations / Documents */}
-                                        <div style={{
+                                        {/* REQUESTED ITEMS SECTION */}
+                                        <div data-tour="buyer-open-request-items" style={{
                                             padding: '24px',
                                             backgroundColor: 'var(--color-bg-page)',
-                                            border: '2px solid var(--color-border-heavy)',
+                                            border: '1px solid var(--color-border)',
+                                            borderRadius: 'var(--radius-sm)',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '16px'
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#7c3aed', fontWeight: 800, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                    <Package size={18} /> ITENS SOLICITADOS NO PEDIDO
+                                                </div>
+                                                {group.items.length > 0 && (
+                                                    <span style={{
+                                                        backgroundColor: '#ede9fe',
+                                                        color: '#6d28d9',
+                                                        fontSize: '0.7rem',
+                                                        fontWeight: 800,
+                                                        padding: '3px 10px',
+                                                        borderRadius: '12px',
+                                                        letterSpacing: '0.03em'
+                                                    }}>
+                                                        {group.items.length} {group.items.length === 1 ? 'item' : 'itens'}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {group.items.length > 0 ? (
+                                                <div style={{ border: '1px solid var(--color-border)', borderRadius: '6px', overflow: 'hidden', backgroundColor: 'var(--color-bg-surface)' }}>
+                                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                                                        <thead>
+                                                            <tr style={{ backgroundColor: '#f5f3ff', borderBottom: '2px solid #e9d5ff' }}>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9', width: '40px' }}>#</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9' }}>Descrição</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9', width: '60px' }}>Qtd</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9', width: '60px' }}>Unid.</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9', width: '100px' }}>P. Unit. Est.</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9', width: '100px' }}>Total Est.</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9', width: '80px' }}>Prioridade</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9', width: '110px' }}>Tipo</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {group.items.map((item: any, idx: number) => {
+                                                                const isCatalog = !!item.itemCatalogId;
+                                                                const priorityColors: Record<string, { bg: string; text: string; label: string }> = {
+                                                                    'HIGH': { bg: '#fef2f2', text: '#dc2626', label: 'Alta' },
+                                                                    'MEDIUM': { bg: '#fffbeb', text: '#d97706', label: 'Média' },
+                                                                    'LOW': { bg: '#f0fdf4', text: '#16a34a', label: 'Baixa' }
+                                                                };
+                                                                const prio = priorityColors[item.itemPriority] || priorityColors['MEDIUM'];
+
+                                                                return (
+                                                                    <tr key={item.lineItemId || idx} style={{
+                                                                        borderBottom: idx < group.items.length - 1 ? '1px solid #f1f5f9' : 'none',
+                                                                        backgroundColor: idx % 2 === 0 ? 'var(--color-bg-surface)' : 'var(--color-bg-page)'
+                                                                    }}>
+                                                                        <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 800, color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>
+                                                                            {item.lineNumber}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--color-text-main)' }}>
+                                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                                                <span>{item.itemDescription || '---'}</span>
+                                                                                {item.costCenterName && (
+                                                                                    <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', fontWeight: 500 }}>
+                                                                                        CC: {item.costCenterCode ? `${item.costCenterCode} — ` : ''}{item.costCenterName}
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700 }}>
+                                                                            {item.quantity}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700, color: 'var(--color-text-muted)' }}>
+                                                                            {item.unitCode || '---'}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700 }}>
+                                                                            {item.unitPrice > 0 ? formatCurrencyAO(item.unitPrice) : '---'}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: 'var(--color-text-main)' }}>
+                                                                            {item.total > 0 ? formatCurrencyAO(item.total) : '---'}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                                                            <span style={{
+                                                                                display: 'inline-block',
+                                                                                backgroundColor: prio.bg,
+                                                                                color: prio.text,
+                                                                                fontSize: '0.65rem',
+                                                                                fontWeight: 800,
+                                                                                padding: '2px 8px',
+                                                                                borderRadius: '4px',
+                                                                                textTransform: 'uppercase'
+                                                                            }}>
+                                                                                {prio.label}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                                                            <span style={{
+                                                                                display: 'inline-flex',
+                                                                                alignItems: 'center',
+                                                                                gap: '4px',
+                                                                                backgroundColor: isCatalog ? '#ecfdf5' : '#fffbeb',
+                                                                                color: isCatalog ? '#059669' : '#d97706',
+                                                                                fontSize: '0.65rem',
+                                                                                fontWeight: 800,
+                                                                                padding: '2px 8px',
+                                                                                borderRadius: '4px',
+                                                                                textTransform: 'uppercase',
+                                                                                border: isCatalog ? '1px solid #a7f3d0' : '1px solid #fde68a'
+                                                                            }}>
+                                                                                {isCatalog ? '✓ Catálogo' : '✎ Manual'}
+                                                                            </span>
+                                                                        </td>
+                                                                    </tr>
+                                                                );
+                                                            })}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            ) : (
+                                                <div style={{
+                                                    padding: '24px',
+                                                    textAlign: 'center',
+                                                    border: '2px dashed var(--color-border)',
+                                                    borderRadius: '8px',
+                                                    backgroundColor: 'var(--color-bg-surface)'
+                                                }}>
+                                                    <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '0.85rem', fontWeight: 600 }}>
+                                                        Este pedido não possui itens detalhados (apenas dados de cabeçalho).
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* SECTION A: Existing Quotations / Documents */}
+                                        <div data-tour="buyer-open-request-quotations" style={{
+                                            padding: '24px',
+                                            backgroundColor: 'var(--color-bg-page)',
+                                            border: '1px solid var(--color-border)',
                                             borderRadius: 'var(--radius-sm)',
                                             display: 'flex',
                                             flexDirection: 'column',
@@ -1336,10 +2048,10 @@ export function BuyerItemsList() {
 
                                                             return (
                                                                 <div key={q.id} style={{
-                                                                    backgroundColor: q.isSelected ? '#eef2ff' : '#fff', 
-                                                                    border: q.isSelected ? '2px solid #4f46e5' : isLowest ? '2px solid #10b981' : '2px solid #bae6fd', 
+                                                                    backgroundColor: q.isSelected ? '#eef2ff' : '#fff',
+                                                                    border: q.isSelected ? '2px solid #4f46e5' : isLowest ? '2px solid #10b981' : '2px solid #bae6fd',
                                                                     borderRadius: '8px',
-                                                                    display: 'flex', 
+                                                                    display: 'flex',
                                                                     flexDirection: 'column',
                                                                     boxShadow: q.isSelected ? '0 4px 12px rgba(79, 70, 229, 0.15)' : isLowest ? '0 4px 12px rgba(16, 185, 129, 0.1)' : '0 1px 3px rgba(0,0,0,0.05)',
                                                                     overflow: 'hidden',
@@ -1347,12 +2059,12 @@ export function BuyerItemsList() {
                                                                     marginBottom: '12px'
                                                                 }}>
                                                                     {/* Card Summary Row */}
-                                                                    <div 
+                                                                    <div
                                                                         onClick={() => setExpandedQuotations(prev => ({ ...prev, [q.id]: !prev[q.id] }))}
                                                                         style={{
-                                                                            padding: '16px', 
-                                                                            display: 'flex', 
-                                                                            justifyContent: 'space-between', 
+                                                                            padding: '16px',
+                                                                            display: 'flex',
+                                                                            justifyContent: 'space-between',
                                                                             alignItems: 'center',
                                                                             cursor: 'pointer',
                                                                             backgroundColor: isExpanded ? '#f0f9ff' : 'transparent'
@@ -1394,38 +2106,38 @@ export function BuyerItemsList() {
                                                                             {/* Maintenance Actions (Step 8.1) */}
                                                                             {canMutateQuotation && mode === 'BUYER' && (
                                                                                 <div style={{ display: 'flex', gap: '8px' }} onClick={(e) => e.stopPropagation()}>
-                                                                                <button 
-                                                                                    onClick={() => handleEditQuotation(group.requestId, q)}
-                                                                                    style={{
-                                                                                        display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px',
-                                                                                        backgroundColor: 'var(--color-bg-surface)', border: '1px solid #bae6fd', borderRadius: '4px',
-                                                                                        color: '#0369a1', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer',
-                                                                                        textTransform: 'uppercase', transition: 'all 0.1s'
-                                                                                    }}
-                                                                                    onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#f0f9ff'; e.currentTarget.style.borderColor = '#0ea5e9'; }}
-                                                                                    onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#fff'; e.currentTarget.style.borderColor = '#bae6fd'; }}
-                                                                                >
-                                                                                    <Pencil size={12} /> Editar
-                                                                                </button>
-                                                                                <button 
-                                                                                    onClick={() => handleDeleteQuotation(group.requestId, q.id)}
-                                                                                    style={{
-                                                                                        display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px',
-                                                                                        backgroundColor: 'var(--color-bg-surface)', border: '1px solid #fecaca', borderRadius: '4px',
-                                                                                        color: '#dc2626', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer',
-                                                                                        textTransform: 'uppercase', transition: 'all 0.1s'
-                                                                                    }}
-                                                                                    onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#fef2f2'; e.currentTarget.style.borderColor = '#ef4444'; }}
-                                                                                    onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#fff'; e.currentTarget.style.borderColor = '#fecaca'; }}
-                                                                                >
-                                                                                    <Trash2 size={12} /> Excluir
-                                                                                </button>
-                                                                            </div>
-                                                                        )}
+                                                                                    <button
+                                                                                        onClick={() => handleEditQuotation(group.requestId, q)}
+                                                                                        style={{
+                                                                                            display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px',
+                                                                                            backgroundColor: 'var(--color-bg-surface)', border: '1px solid #bae6fd', borderRadius: '4px',
+                                                                                            color: '#0369a1', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer',
+                                                                                            textTransform: 'uppercase', transition: 'all 0.1s'
+                                                                                        }}
+                                                                                        onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#f0f9ff'; e.currentTarget.style.borderColor = '#0ea5e9'; }}
+                                                                                        onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#fff'; e.currentTarget.style.borderColor = '#bae6fd'; }}
+                                                                                    >
+                                                                                        <Pencil size={12} /> Editar
+                                                                                    </button>
+                                                                                    <button
+                                                                                        onClick={() => handleDeleteQuotation(group.requestId, q.id)}
+                                                                                        style={{
+                                                                                            display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px',
+                                                                                            backgroundColor: 'var(--color-bg-surface)', border: '1px solid #fecaca', borderRadius: '4px',
+                                                                                            color: '#dc2626', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer',
+                                                                                            textTransform: 'uppercase', transition: 'all 0.1s'
+                                                                                        }}
+                                                                                        onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#fef2f2'; e.currentTarget.style.borderColor = '#ef4444'; }}
+                                                                                        onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#fff'; e.currentTarget.style.borderColor = '#fecaca'; }}
+                                                                                    >
+                                                                                        <Trash2 size={12} /> Excluir
+                                                                                    </button>
+                                                                                </div>
+                                                                            )}
 
-                                                                        <div style={{ textAlign: 'right' }}>
-                                                                            <div style={{ fontSize: '1.25rem', fontWeight: 900, color: isLowest ? '#059669' : '#0369a1', display: 'baseline', gap: '4px' }}>
-                                                                                <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>{q.currency}</span>
+                                                                            <div style={{ textAlign: 'right' }}>
+                                                                                <div style={{ fontSize: '1.25rem', fontWeight: 900, color: isLowest ? '#059669' : '#0369a1', display: 'baseline', gap: '4px' }}>
+                                                                                    <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>{q.currency}</span>
                                                                                     {formatCurrencyAO(q.totalAmount)}
                                                                                 </div>
                                                                                 <div style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', fontWeight: 700 }}>{q.itemCount} ITENS • {formatDate(q.createdAtUtc)}</div>
@@ -1446,8 +2158,8 @@ export function BuyerItemsList() {
                                                                             <div style={{ marginTop: '32px', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden', backgroundColor: 'var(--color-bg-surface)' }}>
                                                                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                                                                                     <thead>
-                                                                                         <tr style={{ backgroundColor: 'var(--color-bg-page)', borderBottom: '2px solid var(--color-border)' }}>
-                                                                                             <th style={{ padding: '12px', textAlign: 'left', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em' }}>Descrição do Item</th>
+                                                                                        <tr style={{ backgroundColor: 'var(--color-bg-page)', borderBottom: '2px solid var(--color-border)' }}>
+                                                                                            <th style={{ padding: '12px', textAlign: 'left', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em' }}>Descrição do Item</th>
                                                                                             <th style={{ padding: '12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', width: '60px' }}>Qtd</th>
                                                                                             <th style={{ padding: '12px', textAlign: 'center', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', width: '60px' }}>Unid.</th>
                                                                                             <th style={{ padding: '12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', width: '100px' }}>P. Unit</th>
@@ -1563,10 +2275,10 @@ export function BuyerItemsList() {
 
                                                 </div>
                                             ) : (
-                                                <div style={{ 
-                                                    padding: '32px', 
-                                                    textAlign: 'center', 
-                                                    border: '2px dashed var(--color-border)', 
+                                                <div style={{
+                                                    padding: '32px',
+                                                    textAlign: 'center',
+                                                    border: '2px dashed var(--color-border)',
                                                     borderRadius: '8px',
                                                     backgroundColor: 'var(--color-bg-surface)'
                                                 }}>
@@ -1582,18 +2294,18 @@ export function BuyerItemsList() {
 
                                         {/* SECTION B: Add New Quotation */}
                                         {canMutateQuotation && mode === 'BUYER' && (
-                                            <div 
+                                            <div
                                                 id={`section-b-${group.requestId}`}
                                                 className={highlightedRequestId === group.requestId ? 'section-attention-highlight' : ''}
                                                 style={{
                                                     padding: '24px',
                                                     backgroundColor: 'var(--color-bg-surface)',
-                                                    border: '2px solid var(--color-primary)',
+                                                    border: '1px solid var(--color-border)',
                                                     borderRadius: 'var(--radius-sm)',
                                                     display: 'flex',
                                                     flexDirection: 'column',
                                                     gap: '20px',
-                                                    boxShadow: 'var(--shadow-brutal)',
+                                                    boxShadow: 'var(--shadow-md)',
                                                     transition: 'all 0.3s ease'
                                                 }}
                                             >
@@ -1602,14 +2314,14 @@ export function BuyerItemsList() {
                                                         <Plus size={18} /> SEÇÃO B: ADICIONAR NOVA COTAÇÃO
                                                     </div>
                                                     {addQuotationMode[group.requestId] && (
-                                                        <button 
+                                                        <button
                                                             onClick={() => {
                                                                 setAddQuotationMode(prev => ({ ...prev, [group.requestId]: null }));
                                                                 handleResetToSelect(group.requestId);
                                                             }}
-                                                            style={{ 
-                                                                display: 'flex', alignItems: 'center', gap: '6px', 
-                                                                backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', 
+                                                            style={{
+                                                                display: 'flex', alignItems: 'center', gap: '6px',
+                                                                backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1',
                                                                 color: 'var(--color-text-main)', fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer',
                                                                 textTransform: 'uppercase', padding: '6px 12px', borderRadius: '4px'
                                                             }}
@@ -1679,7 +2391,7 @@ export function BuyerItemsList() {
                                                 ) : (
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                                                         {addQuotationMode[group.requestId] === 'UPLOAD' && quotationFlowStep[group.requestId] !== 'EDIT_QUOTATION' && (
-                                                            <div style={{ 
+                                                            <div style={{
                                                                 padding: '24px', backgroundColor: '#f0f9ff', border: '2px dashed #0ea5e9', borderRadius: '8px',
                                                                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px'
                                                             }}>
@@ -1687,7 +2399,7 @@ export function BuyerItemsList() {
                                                                     <div style={{ fontWeight: 800, color: '#0369a1', fontSize: '0.90rem', textTransform: 'uppercase' }}>Importação de Documento (Proforma)</div>
                                                                     <p style={{ fontSize: '0.8rem', color: '#0c4a6e', margin: '4px 0 0' }}>Selecione o arquivo da cotação para iniciar.</p>
                                                                 </div>
-                                                                
+
                                                                 {!importSelectedFiles[group.requestId] || importSelectedFiles[group.requestId].length === 0 ? (
                                                                     <label style={{
                                                                         display: 'inline-flex', alignItems: 'center', gap: '10px', backgroundColor: '#0ea5e9', color: '#fff',
@@ -1699,8 +2411,8 @@ export function BuyerItemsList() {
                                                                     </label>
                                                                 ) : (
                                                                     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
-                                                                        <div style={{ 
-                                                                            display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', 
+                                                                        <div style={{
+                                                                            display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px',
                                                                             backgroundColor: 'var(--color-bg-surface)', border: '1px solid #bae6fd', borderRadius: '6px', width: '100%', maxWidth: '400px'
                                                                         }}>
                                                                             <FileText size={20} color="#0284c7" />
@@ -1718,12 +2430,12 @@ export function BuyerItemsList() {
                                                                             </div>
                                                                         </div>
 
-                                                                        <button 
+                                                                        <button
                                                                             onClick={() => handleContinueWithDocument(group.requestId)}
                                                                             disabled={isProcessingOcr[group.requestId]}
                                                                             style={{
-                                                                                backgroundColor: 'var(--color-primary)', color: '#fff', padding: '12px 32px', borderRadius: '6px', 
-                                                                                fontWeight: 900, fontSize: '0.9rem', border: 'none', cursor: isProcessingOcr[group.requestId] ? 'not-allowed' : 'pointer', 
+                                                                                backgroundColor: 'var(--color-primary)', color: '#fff', padding: '12px 32px', borderRadius: '6px',
+                                                                                fontWeight: 900, fontSize: '0.9rem', border: 'none', cursor: isProcessingOcr[group.requestId] ? 'not-allowed' : 'pointer',
                                                                                 textTransform: 'uppercase', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', marginTop: '8px',
                                                                                 display: 'flex', alignItems: 'center', gap: '8px', opacity: isProcessingOcr[group.requestId] ? 0.7 : 1
                                                                             }}
@@ -1744,7 +2456,7 @@ export function BuyerItemsList() {
                                                             <div className="quotation-review-area" style={{ border: '2px solid #e2e8f0', borderRadius: '8px', padding: '20px' }}>
                                                                 <div className="review-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '16px', borderBottom: '1px solid #e2e8f0' }}>
                                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                                        <div style={{ 
+                                                                        <div style={{
                                                                             backgroundColor: addQuotationMode[group.requestId] === 'MANUAL' ? '#d946ef' : '#0ea5e9',
                                                                             color: '#fff', padding: '6px 12px', borderRadius: '4px', fontWeight: 900, fontSize: '0.7rem', textTransform: 'uppercase'
                                                                         }}>
@@ -1754,19 +2466,19 @@ export function BuyerItemsList() {
                                                                             {editingQuotationId[group.requestId] ? 'Editar Cotação' : 'Registrar Nova Cotação'}
                                                                         </h3>
                                                                         {editingQuotationId[group.requestId] && (
-                                                                            <span style={{ 
-                                                                                backgroundColor: '#fef3c7', color: '#92400e', padding: '4px 10px', 
-                                                                                borderRadius: '4px', fontSize: '0.65rem', fontWeight: 900, 
+                                                                            <span style={{
+                                                                                backgroundColor: '#fef3c7', color: '#92400e', padding: '4px 10px',
+                                                                                borderRadius: '4px', fontSize: '0.65rem', fontWeight: 900,
                                                                                 border: '1px solid #fcd34d', textTransform: 'uppercase'
                                                                             }}>
                                                                                 Modo: Editando Cotação
                                                                             </span>
                                                                         )}
                                                                     </div>
-                                                                    
+
                                                                     <div className="review-actions" style={{ display: 'flex', gap: '12px' }}>
                                                                         {addQuotationMode[group.requestId] === 'UPLOAD' && (
-                                                                            <button 
+                                                                            <button
                                                                                 onClick={() => handleRestoreOcrOriginal(group.requestId)}
                                                                                 style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 700, backgroundColor: 'var(--color-bg-surface)', cursor: 'pointer' }}
                                                                                 title="Restaurar sugestões originais do OCR"
@@ -1785,13 +2497,44 @@ export function BuyerItemsList() {
 
                                                                 {!quotationDrafts[group.requestId] && isProcessingOcr[group.requestId] ? (
                                                                     <div style={{ padding: '40px', textAlign: 'center' }}>
-                                                                        <div className="animate-spin" style={{ width: '32px', height: '32px', border: '4px solid #f1f5f9', borderTopColor: 'var(--color-primary)', borderRadius: '50%', margin: '0 auto 16px' }}></div>
+                                                                        <div style={{ animation: 'spin 1s linear infinite', width: '32px', height: '32px', border: '4px solid #f1f5f9', borderTopColor: 'var(--color-primary)', borderRadius: '50%', margin: '0 auto 16px' }}></div>
                                                                         <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>Extraindo dados do documento...</span>
                                                                     </div>
                                                                 ) : quotationDrafts[group.requestId] ? (
                                                                     <div className="quotation-form-body">
+                                                                        {/* STEP 1: Draft Editor Status Bar */}
+                                                                        <div style={{
+                                                                            display: 'flex',
+                                                                            justifyContent: 'space-between',
+                                                                            alignItems: 'center',
+                                                                            padding: '16px 20px',
+                                                                            backgroundColor: 'var(--color-bg-page)',
+                                                                            border: '1px solid var(--color-border)',
+                                                                            borderRadius: '8px',
+                                                                            marginBottom: '20px',
+                                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+                                                                        }}>
+                                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                                                <div style={{
+                                                                                    backgroundColor: group.requestStatusCode === 'WAITING_QUOTATION' ? '#f59e0b' : '#64748b',
+                                                                                    color: '#fff',
+                                                                                    padding: '4px 10px',
+                                                                                    borderRadius: '4px',
+                                                                                    fontSize: '0.7rem',
+                                                                                    fontWeight: 900,
+                                                                                    textTransform: 'uppercase'
+                                                                                }}>
+                                                                                    {editingQuotationId[group.requestId] ? 'EDITANDO' : 'RASCUNHO'}
+                                                                                </div>
+                                                                                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-main)' }}>
+                                                                                    {editingQuotationId[group.requestId]
+                                                                                        ? 'Editando cotação existente — salve ou cancele para prosseguir.'
+                                                                                        : 'Registrando nova cotação — salve ou cancele para prosseguir.'}
+                                                                                </span>
+                                                                            </div>
+                                                                        </div>
                                                                         {/* Phase 2: Reconciliation Panel */}
-                                                                        {reconciliationBatches[group.requestId] && (
+                                                                        {reconciliationBatches[group.requestId] && group.items.length > 0 && (
                                                                             <ReconciliationPanel
                                                                                 requestId={group.requestId}
                                                                                 batch={reconciliationBatches[group.requestId]}
@@ -1836,8 +2579,8 @@ export function BuyerItemsList() {
                                                                                                 initialName: quotationDrafts[group.requestId].supplierNameSnapshot,
                                                                                                 initialTaxId: quotationDrafts[group.requestId].supplierTaxId || ''
                                                                                             })}
-                                                                                            style={{ 
-                                                                                                backgroundColor: '#f97316', color: '#fff', border: 'none', padding: '4px 10px', 
+                                                                                            style={{
+                                                                                                backgroundColor: '#f97316', color: '#fff', border: 'none', padding: '4px 10px',
                                                                                                 borderRadius: '4px', fontSize: '0.65rem', fontWeight: 800, cursor: 'pointer',
                                                                                                 textTransform: 'uppercase'
                                                                                             }}
@@ -1852,8 +2595,8 @@ export function BuyerItemsList() {
                                                                             </div>
                                                                             <div>
                                                                                 <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Nº Documento <span style={{ color: '#ef4444' }}>*</span></label>
-                                                                                <input 
-                                                                                    className="form-input" 
+                                                                                <input
+                                                                                    className="form-input"
                                                                                     value={quotationDrafts[group.requestId].documentNumber}
                                                                                     onChange={(e) => handleUpdateQuotationHeader(group.requestId, 'documentNumber', e.target.value)}
                                                                                     placeholder="Ex: INV-123"
@@ -1864,96 +2607,96 @@ export function BuyerItemsList() {
                                                                                 )}
                                                                             </div>
                                                                             <div style={{ gridColumn: 'span 2' }}>
-                                                                                 <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-primary)', textTransform: 'uppercase', marginBottom: '8px' }}>
-                                                                                     Documento da Cotação / Proforma
-                                                                                     <span style={{ color: '#ef4444', fontWeight: 800, textTransform: 'none', marginLeft: '6px' }}>(Obrigatório para Salvar e Concluir)</span>
-                                                                                 </label>
-                                                                                 
-                                                                                 {(() => {
-                                                                                     const newFile = draftProformaFiles[group.requestId];
-                                                                                     const existingId = quotationDrafts[group.requestId]?.proformaAttachmentId;
-                                                                                     
-                                                                                     // Case 1: New file selected (uploading)
-                                                                                     if (newFile) {
-                                                                                         return (
-                                                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px' }}>
-                                                                                                 <FileText size={18} color="#166534" />
-                                                                                                 <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#166534', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                                                     {newFile.name}
-                                                                                                 </span>
-                                                                                                 <button 
-                                                                                                     onClick={() => setDraftProformaFiles(prev => { const n = { ...prev }; delete n[group.requestId]; return n; })}
-                                                                                                     style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
-                                                                                                     title="Remover Arquivo"
-                                                                                                 >
-                                                                                                     <Trash2 size={16} />
-                                                                                                 </button>
-                                                                                             </div>
-                                                                                         );
-                                                                                     }
-                                                                                     
-                                                                                     // Case 2: Existing proforma from DB (edit mode)
-                                                                                     if (existingId) {
-                                                                                         // Map existingId to attachment info if available in group.quotations or proformaAttachments
-                                                                                         const attInfo = group.quotations.find((q: any) => q.proformaAttachmentId === existingId) || 
-                                                                                                       group.proformaAttachments.find((a: any) => a.id === existingId);
-                                                                                         
-                                                                                         return (
-                                                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px' }}>
-                                                                                                 <FileText size={18} color="#1e40af" />
-                                                                                                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                                                                                                     <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1e40af', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                                                         {attInfo?.fileName || 'Documento Vinculado'}
-                                                                                                     </span>
-                                                                                                     <a 
-                                                                                                         href={`/api/v1/attachments/download/${existingId}`} 
-                                                                                                         target="_blank" 
-                                                                                                         rel="noopener noreferrer"
-                                                                                                         style={{ fontSize: '0.65rem', color: '#2563eb', fontWeight: 700, textDecoration: 'underline' }}
-                                                                                                     >
-                                                                                                         Ver documento atual
-                                                                                                     </a>
-                                                                                                 </div>
-                                                                                                 <button 
-                                                                                                     onClick={() => handleUpdateQuotationHeader(group.requestId, 'proformaAttachmentId', null)}
-                                                                                                     style={{ display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid #fee2e2', backgroundColor: 'var(--color-bg-surface)', color: '#ef4444', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 800, fontSize: '0.65rem', textTransform: 'uppercase' }}
-                                                                                                 >
-                                                                                                     <Trash2 size={12} /> Remover e Trocar
-                                                                                                 </button>
-                                                                                             </div>
-                                                                                         );
-                                                                                     }
-                                                                                     
-                                                                                     // Case 3: No file (mandatory state)
-                                                                                     return (
-                                                                                         <label style={{
-                                                                                             display: 'inline-flex', alignItems: 'center', gap: '8px', 
-                                                                                             padding: '8px 16px', backgroundColor: '#fef2f2', color: '#b91c1c', 
-                                                                                             border: '1px dashed #f87171', borderRadius: '4px', cursor: 'pointer',
-                                                                                             fontSize: '0.8rem', fontWeight: 700
-                                                                                         }}>
-                                                                                             <Upload size={16} /> Selecionar Arquivo
-                                                                                             <input 
-                                                                                                 type="file" 
-                                                                                                 hidden 
-                                                                                                 onChange={(e) => { 
-                                                                                                     if (e.target.files && e.target.files.length > 0) { 
-                                                                                                         const file = e.target.files[0];
-                                                                                                         setDraftProformaFiles(prev => ({ ...prev, [group.requestId]: file })); 
-                                                                                                         e.target.value = ''; 
-                                                                                                     } 
-                                                                                                 }} 
-                                                                                             />
-                                                                                         </label>
-                                                                                     );
-                                                                                 })()}
+                                                                                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-primary)', textTransform: 'uppercase', marginBottom: '8px' }}>
+                                                                                    Documento da Cotação / Proforma
+                                                                                    <span style={{ color: '#ef4444', fontWeight: 800, textTransform: 'none', marginLeft: '6px' }}>(Obrigatório para Salvar e Concluir)</span>
+                                                                                </label>
+
+                                                                                {(() => {
+                                                                                    const newFile = draftProformaFiles[group.requestId];
+                                                                                    const existingId = quotationDrafts[group.requestId]?.proformaAttachmentId;
+
+                                                                                    // Case 1: New file selected (uploading)
+                                                                                    if (newFile) {
+                                                                                        return (
+                                                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px' }}>
+                                                                                                <FileText size={18} color="#166534" />
+                                                                                                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#166534', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                                                    {newFile.name}
+                                                                                                </span>
+                                                                                                <button
+                                                                                                    onClick={() => setDraftProformaFiles(prev => { const n = { ...prev }; delete n[group.requestId]; return n; })}
+                                                                                                    style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
+                                                                                                    title="Remover Arquivo"
+                                                                                                >
+                                                                                                    <Trash2 size={16} />
+                                                                                                </button>
+                                                                                            </div>
+                                                                                        );
+                                                                                    }
+
+                                                                                    // Case 2: Existing proforma from DB (edit mode)
+                                                                                    if (existingId) {
+                                                                                        // Map existingId to attachment info if available in group.quotations or proformaAttachments
+                                                                                        const attInfo = group.quotations.find((q: any) => q.proformaAttachmentId === existingId) ||
+                                                                                            group.proformaAttachments.find((a: any) => a.id === existingId);
+
+                                                                                        return (
+                                                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px' }}>
+                                                                                                <FileText size={18} color="#1e40af" />
+                                                                                                <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                                                                                                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1e40af', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                                                        {attInfo?.fileName || 'Documento Vinculado'}
+                                                                                                    </span>
+                                                                                                    <a
+                                                                                                        href={`/api/v1/attachments/download/${existingId}`}
+                                                                                                        target="_blank"
+                                                                                                        rel="noopener noreferrer"
+                                                                                                        style={{ fontSize: '0.65rem', color: '#2563eb', fontWeight: 700, textDecoration: 'underline' }}
+                                                                                                    >
+                                                                                                        Ver documento atual
+                                                                                                    </a>
+                                                                                                </div>
+                                                                                                <button
+                                                                                                    onClick={() => handleUpdateQuotationHeader(group.requestId, 'proformaAttachmentId', null)}
+                                                                                                    style={{ display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid #fee2e2', backgroundColor: 'var(--color-bg-surface)', color: '#ef4444', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 800, fontSize: '0.65rem', textTransform: 'uppercase' }}
+                                                                                                >
+                                                                                                    <Trash2 size={12} /> Remover e Trocar
+                                                                                                </button>
+                                                                                            </div>
+                                                                                        );
+                                                                                    }
+
+                                                                                    // Case 3: No file (mandatory state)
+                                                                                    return (
+                                                                                        <label style={{
+                                                                                            display: 'inline-flex', alignItems: 'center', gap: '8px',
+                                                                                            padding: '8px 16px', backgroundColor: '#fef2f2', color: '#b91c1c',
+                                                                                            border: '1px dashed #f87171', borderRadius: '4px', cursor: 'pointer',
+                                                                                            fontSize: '0.8rem', fontWeight: 700
+                                                                                        }}>
+                                                                                            <Upload size={16} /> Selecionar Arquivo
+                                                                                            <input
+                                                                                                type="file"
+                                                                                                hidden
+                                                                                                onChange={(e) => {
+                                                                                                    if (e.target.files && e.target.files.length > 0) {
+                                                                                                        const file = e.target.files[0];
+                                                                                                        setDraftProformaFiles(prev => ({ ...prev, [group.requestId]: file }));
+                                                                                                        e.target.value = '';
+                                                                                                    }
+                                                                                                }}
+                                                                                            />
+                                                                                        </label>
+                                                                                    );
+                                                                                })()}
                                                                             </div>
                                                                             <div style={{ gridColumn: '1 / -1', height: '1px', backgroundColor: 'var(--color-border)' }}></div>
                                                                             <div>
                                                                                 <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Data <span style={{ color: '#ef4444' }}>*</span></label>
-                                                                                <input 
+                                                                                <input
                                                                                     type="date"
-                                                                                    className="form-input" 
+                                                                                    className="form-input"
                                                                                     value={quotationDrafts[group.requestId].documentDate}
                                                                                     onChange={(e) => handleUpdateQuotationHeader(group.requestId, 'documentDate', e.target.value)}
                                                                                     style={{ width: '100%', padding: '9px', border: `1px solid ${formErrors[group.requestId]?.documentDate ? '#ef4444' : 'var(--color-border)'}`, borderRadius: '4px', fontSize: '0.85rem' }}
@@ -1963,59 +2706,59 @@ export function BuyerItemsList() {
                                                                                 )}
                                                                             </div>
                                                                             <div>
-                                                                                 <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Moeda <span style={{ color: '#ef4444' }}>*</span></label>
-                                                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                                                     <select 
-                                                                                         className="form-input"
-                                                                                         value={quotationDrafts[group.requestId].currency}
-                                                                                         onChange={(e) => handleUpdateQuotationHeader(group.requestId, 'currency', e.target.value)}
-                                                                                         style={{ 
-                                                                                             width: '100%', 
-                                                                                             padding: '10px', 
-                                                                                             border: (formErrors[group.requestId]?.currency) ? '1px solid #ef4444' : (quotationDrafts[group.requestId].extractedCurrency && !quotationDrafts[group.requestId].currency ? '2px solid #f97316' : '1px solid var(--color-border)'), 
-                                                                                             borderRadius: '4px', 
-                                                                                             fontSize: '0.85rem' 
-                                                                                         }}
-                                                                                     >
-                                                                                         <option value="">Selecione a moeda...</option>
-                                                                                         {currencies.map(c => (
-                                                                                             <option key={c.id} value={c.code}>{c.code} - {c.symbol}</option>
-                                                                                         ))}
-                                                                                     </select>
-                                                                                     {quotationDrafts[group.requestId].extractedCurrency && !quotationDrafts[group.requestId].currency && (
-                                                                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                                                                                             <span style={{ fontSize: '0.65rem', color: '#f97316', fontWeight: 700 }}>
-                                                                                                 Sugestão: {quotationDrafts[group.requestId].extractedCurrency}
-                                                                                             </span>
-                                                                                             <button 
-                                                                                                 onClick={() => setQuickCurrencyModal({ show: true, requestId: group.requestId, initialCode: quotationDrafts[group.requestId].extractedCurrency || '' })}
-                                                                                                 style={{ 
-                                                                                                     fontSize: '0.6rem', 
-                                                                                                     fontWeight: 900, 
-                                                                                                     color: '#fff', 
-                                                                                                     backgroundColor: '#f97316', 
-                                                                                                     border: 'none', 
-                                                                                                     padding: '2px 6px', 
-                                                                                                     borderRadius: '3px', 
-                                                                                                     cursor: 'pointer',
-                                                                                                     textTransform: 'uppercase'
-                                                                                                 }}
-                                                                                             >
-                                                                                                 CRIAR AGORA
-                                                                                             </button>
-                                                                                         </div>
-                                                                                     )}
-                                                                                 </div>
-                                                                                 {formErrors[group.requestId]?.currency && (
-                                                                                     <div style={{ color: '#ef4444', fontSize: '0.75rem', fontWeight: 700, marginTop: '4px' }}>{formErrors[group.requestId].currency}</div>
-                                                                                 )}
-                                                                             </div>
+                                                                                <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Moeda <span style={{ color: '#ef4444' }}>*</span></label>
+                                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                                                    <select
+                                                                                        className="form-input"
+                                                                                        value={quotationDrafts[group.requestId].currency}
+                                                                                        onChange={(e) => handleUpdateQuotationHeader(group.requestId, 'currency', e.target.value)}
+                                                                                        style={{
+                                                                                            width: '100%',
+                                                                                            padding: '10px',
+                                                                                            border: (formErrors[group.requestId]?.currency) ? '1px solid #ef4444' : (quotationDrafts[group.requestId].extractedCurrency && !quotationDrafts[group.requestId].currency ? '2px solid #f97316' : '1px solid var(--color-border)'),
+                                                                                            borderRadius: '4px',
+                                                                                            fontSize: '0.85rem'
+                                                                                        }}
+                                                                                    >
+                                                                                        <option value="">Selecione a moeda...</option>
+                                                                                        {currencies.map(c => (
+                                                                                            <option key={c.id} value={c.code}>{c.code} - {c.symbol}</option>
+                                                                                        ))}
+                                                                                    </select>
+                                                                                    {quotationDrafts[group.requestId].extractedCurrency && !quotationDrafts[group.requestId].currency && (
+                                                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                                                                            <span style={{ fontSize: '0.65rem', color: '#f97316', fontWeight: 700 }}>
+                                                                                                Sugestão: {quotationDrafts[group.requestId].extractedCurrency}
+                                                                                            </span>
+                                                                                            <button
+                                                                                                onClick={() => setQuickCurrencyModal({ show: true, requestId: group.requestId, initialCode: quotationDrafts[group.requestId].extractedCurrency || '' })}
+                                                                                                style={{
+                                                                                                    fontSize: '0.6rem',
+                                                                                                    fontWeight: 900,
+                                                                                                    color: '#fff',
+                                                                                                    backgroundColor: '#f97316',
+                                                                                                    border: 'none',
+                                                                                                    padding: '2px 6px',
+                                                                                                    borderRadius: '3px',
+                                                                                                    cursor: 'pointer',
+                                                                                                    textTransform: 'uppercase'
+                                                                                                }}
+                                                                                            >
+                                                                                                CRIAR AGORA
+                                                                                            </button>
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                                {formErrors[group.requestId]?.currency && (
+                                                                                    <div style={{ color: '#ef4444', fontSize: '0.75rem', fontWeight: 700, marginTop: '4px' }}>{formErrors[group.requestId].currency}</div>
+                                                                                )}
+                                                                            </div>
                                                                         </div>
 
                                                                         <div className="form-items-area" style={{ marginBottom: '24px' }}>
                                                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                                                                                 <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Itens da Cotação</h4>
-                                                                                <button 
+                                                                                <button
                                                                                     onClick={() => handleAddQuotationItem(group.requestId)}
                                                                                     style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-primary)', fontWeight: 800, fontSize: '0.75rem', background: 'none', border: 'none', cursor: 'pointer' }}
                                                                                 >
@@ -2028,7 +2771,7 @@ export function BuyerItemsList() {
                                                                                     <div style={{ padding: '32px', textAlign: 'center', backgroundColor: 'var(--color-bg-page)', border: '1px dashed #d1d5db', borderRadius: '8px' }}>
                                                                                         <Plus size={24} style={{ margin: '0 auto 8px', color: '#9ca3af' }} />
                                                                                         <p style={{ margin: 0, fontSize: '0.85rem', color: '#6b7280', fontWeight: 600 }}>Nenhum item adicionado à cotação.</p>
-                                                                                        <button 
+                                                                                        <button
                                                                                             onClick={() => handleAddQuotationItem(group.requestId)}
                                                                                             style={{ marginTop: '12px', fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
                                                                                         >
@@ -2050,29 +2793,42 @@ export function BuyerItemsList() {
                                                                                             <span></span>
                                                                                         </div>
                                                                                         {quotationDrafts[group.requestId].items.map((item, idx) => (
-                                                                                            <div key={idx} style={{ 
-                                                                                                display: 'grid', gridTemplateColumns: '32px 40px minmax(150px, 1fr) 60px 80px 100px 100px 110px 120px 40px', gap: '8px', alignItems: 'center', padding: '12px', 
-                                                                                                backgroundColor: item.isChecked ? '#ECFDF5' : 'var(--color-bg-surface)', 
-                                                                                                border: item.isChecked ? '1px solid #10B981' : '1px solid #e2e8f0', 
+                                                                                            <div key={idx} style={{
+                                                                                                display: 'grid', gridTemplateColumns: '32px 40px minmax(150px, 1fr) 60px 80px 100px 100px 110px 120px 40px', gap: '8px', alignItems: 'center', padding: '12px',
+                                                                                                backgroundColor: item.isChecked ? '#ECFDF5' : 'var(--color-bg-surface)',
+                                                                                                border: item.isChecked ? '1px solid #10B981' : '1px solid #e2e8f0',
                                                                                                 borderRadius: '6px',
                                                                                                 transition: 'all 0.2s ease'
                                                                                             }}>
                                                                                                 <div style={{ display: 'flex', justifyContent: 'center' }}>
-                                                                                                    <input 
+                                                                                                    <input
                                                                                                         type="checkbox"
                                                                                                         checked={item.isChecked || false}
                                                                                                         onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'isChecked', e.target.checked)}
+                                                                                                        title="Marque esta linha para sinalizar que você já validou este item contra o documento físico."
                                                                                                         style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#10B981' }}
                                                                                                     />
                                                                                                 </div>
                                                                                                 <div style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--color-text-muted)', textAlign: 'center' }}>{item.lineNumber}</div>
-                                                                                                <input 
+                                                                                                <CatalogItemAutocomplete
                                                                                                     value={item.description}
-                                                                                                    onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'description', e.target.value)}
-                                                                                                    placeholder="Ex: Item de Teste"
-                                                                                                    style={{ padding: '8px', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.8rem' }}
+                                                                                                    itemCatalogId={item.itemCatalogId || null}
+                                                                                                    onChange={(description, catalogId, _catalogCode, defaultUnitId) => handleUpdateQuotationItem(group.requestId, idx, {
+                                                                                                        description: description,
+                                                                                                        itemCatalogId: catalogId || undefined,
+                                                                                                        unitId: defaultUnitId || item.unitId
+                                                                                                    })}
+                                                                                                    placeholder="Buscar no catálogo..."
+                                                                                                    style={{
+                                                                                                        padding: '8px',
+                                                                                                        border: '1px solid #e2e8f0',
+                                                                                                        borderRadius: '4px',
+                                                                                                        fontSize: '0.8rem',
+                                                                                                        width: '100%',
+                                                                                                        backgroundColor: 'var(--color-bg-page)'
+                                                                                                    }}
                                                                                                 />
-                                                                                                <input 
+                                                                                                <input
                                                                                                     type="number"
                                                                                                     value={item.quantity || ''}
                                                                                                     onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'quantity', parseFloat(e.target.value) || 0)}
@@ -2095,39 +2851,55 @@ export function BuyerItemsList() {
                                                                                                         </span>
                                                                                                     )}
                                                                                                 </div>
-                                                                                                <input 
+                                                                                                <input
                                                                                                     type="number"
                                                                                                     value={item.unitPrice || ''}
                                                                                                     onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'unitPrice', parseFloat(e.target.value) || 0)}
                                                                                                     style={{ padding: '8px', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.8rem', textAlign: 'right', WebkitAppearance: 'none', MozAppearance: 'textfield' }}
                                                                                                 />
-                                                                                                <input 
+                                                                                                <input
                                                                                                     type="number"
                                                                                                     value={item.discountAmount || ''}
                                                                                                     onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'discountAmount', parseFloat(e.target.value) || 0)}
                                                                                                     style={{ padding: '8px', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.8rem', textAlign: 'right', WebkitAppearance: 'none', MozAppearance: 'textfield' }}
                                                                                                 />
                                                                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                                                                     <select
-                                                                                                         value={item.ivaRateId || ''}
-                                                                                                         onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'ivaRateId', e.target.value ? parseInt(e.target.value) : null)}
-                                                                                                         style={{ padding: '8px', border: item.taxRate !== undefined && !item.ivaRateId ? '2px solid #f97316' : '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.75rem', backgroundColor: 'var(--color-bg-page)', width: '100%' }}
-                                                                                                     >
-                                                                                                         <option value="">Selecione IVA...</option>
-                                                                                                         {ivaRates.filter(r => r.isActive).map(r => (
-                                                                                                             <option key={r.id} value={r.id}>{r.name} ({r.ratePercent}%)</option>
-                                                                                                         ))}
-                                                                                                     </select>
-                                                                                                     {item.taxRate !== undefined && !item.ivaRateId && (
-                                                                                                         <span style={{ fontSize: '0.6rem', color: '#f97316', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`Extraído: ${item.taxRate}%`}>
-                                                                                                             Sugestão: {item.taxRate}%
-                                                                                                         </span>
-                                                                                                     )}
-                                                                                                 </div>
+                                                                                                    <select
+                                                                                                        value={item.ivaRateId || ''}
+                                                                                                        onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'ivaRateId', e.target.value ? parseInt(e.target.value) : null)}
+                                                                                                        style={{
+                                                                                                            padding: '8px',
+                                                                                                            border: item.ivaUncertain
+                                                                                                                ? '2px solid #ef4444'
+                                                                                                                : (item.taxRate !== undefined && !item.ivaRateId ? '2px solid #f97316' : '1px solid #e2e8f0'),
+                                                                                                            borderRadius: '4px',
+                                                                                                            fontSize: '0.75rem',
+                                                                                                            backgroundColor: item.ivaUncertain ? 'rgba(239,68,68,0.06)' : 'var(--color-bg-page)',
+                                                                                                            width: '100%'
+                                                                                                        }}
+                                                                                                        title={item.ivaUncertain ? 'IVA não identificado pelo OCR. Verifique manualmente.' : undefined}
+                                                                                                    >
+                                                                                                        <option value="">Selecione IVA...</option>
+                                                                                                        {ivaRates.filter(r => r.isActive).map(r => (
+                                                                                                            <option key={r.id} value={r.id}>{r.name} ({r.ratePercent}%)</option>
+                                                                                                        ))}
+                                                                                                    </select>
+                                                                                                    {item.ivaUncertain && (
+                                                                                                        <span style={{ fontSize: '0.6rem', color: '#ef4444', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: '3px' }} title="O OCR não conseguiu identificar o IVA para este item. Verifique manualmente.">
+                                                                                                            <AlertCircle size={10} style={{ flexShrink: 0 }} />
+                                                                                                            IVA não identificado
+                                                                                                        </span>
+                                                                                                    )}
+                                                                                                    {!item.ivaUncertain && item.taxRate !== undefined && !item.ivaRateId && (
+                                                                                                        <span style={{ fontSize: '0.6rem', color: '#f97316', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`Extraído: ${item.taxRate}%`}>
+                                                                                                            Sugestão: {item.taxRate}%
+                                                                                                        </span>
+                                                                                                    )}
+                                                                                                </div>
                                                                                                 <div style={{ textAlign: 'right', fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-primary)' }}>
                                                                                                     {formatCurrencyAO(item.totalPrice)}
                                                                                                 </div>
-                                                                                                <button 
+                                                                                                <button
                                                                                                     onClick={() => handleRemoveQuotationItem(group.requestId, idx)}
                                                                                                     style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'center' }}
                                                                                                 >
@@ -2140,6 +2912,41 @@ export function BuyerItemsList() {
                                                                             </div>
                                                                         </div>
 
+                                                                        {/* IVA Global Inference Success Banner */}
+                                                                        {quotationDrafts[group.requestId]?.globalVatInferred && quotationDrafts[group.requestId]?.inferredVatRatePercent !== undefined && (
+                                                                            <div style={{
+                                                                                display: 'flex', alignItems: 'center', gap: '8px',
+                                                                                padding: '10px 16px', borderRadius: '8px',
+                                                                                background: 'rgba(22,163,74,0.06)',
+                                                                                border: '1px solid rgba(34,197,94,0.3)',
+                                                                                fontSize: '0.8rem', color: '#166534',
+                                                                                marginBottom: '8px'
+                                                                            }}>
+                                                                                <CheckCircle2 size={16} style={{ flexShrink: 0 }} />
+                                                                                <span>
+                                                                                    IVA global de {quotationDrafts[group.requestId]?.inferredVatRatePercent}% identificado no resumo do documento e aplicado automaticamente a todos os itens.
+                                                                                </span>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* IVA Uncertainty Contextual Banner (fallback when inference fails) */}
+                                                                        {!quotationDrafts[group.requestId]?.globalVatInferred && quotationDrafts[group.requestId]?.headerHasIva && quotationDrafts[group.requestId]?.items.some(i => i.ivaUncertain) && (
+                                                                            <div style={{
+                                                                                display: 'flex', alignItems: 'center', gap: '8px',
+                                                                                padding: '10px 16px', borderRadius: '8px',
+                                                                                background: 'rgba(239,68,68,0.06)',
+                                                                                border: '1px solid rgba(239,68,68,0.2)',
+                                                                                fontSize: '0.8rem', color: '#dc2626',
+                                                                                marginBottom: '8px'
+                                                                            }}>
+                                                                                <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+                                                                                <span>
+                                                                                    <strong>Atenção:</strong> O documento contém IVA nos totais, mas o IVA por item não foi identificado pelo OCR.
+                                                                                    Verifique e corrija manualmente o campo IVA de cada item antes de salvar.
+                                                                                </span>
+                                                                            </div>
+                                                                        )}
+
                                                                         <div className="form-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', backgroundColor: '#f0f9ff', borderRadius: '8px', border: '1px solid #bae6fd' }}>
                                                                             <div style={{ display: 'flex', gap: '32px', flex: 1 }}>
                                                                                 <div style={{ textAlign: 'left' }}>
@@ -2147,7 +2954,7 @@ export function BuyerItemsList() {
                                                                                     <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0c4a6e' }}>
                                                                                         {(() => {
                                                                                             const items = quotationDrafts[group.requestId]?.items || [];
-                                                                                            const gross = items.reduce((sum, item) => sum + ((item.quantity||0) * (item.unitPrice||0)), 0);
+                                                                                            const gross = items.reduce((sum, item) => sum + ((item.quantity || 0) * (item.unitPrice || 0)), 0);
                                                                                             return formatCurrencyAO(gross);
                                                                                         })()}
                                                                                     </div>
@@ -2164,8 +2971,8 @@ export function BuyerItemsList() {
                                                                                 </div>
                                                                                 <div style={{ textAlign: 'left' }}>
                                                                                     <div style={{ fontSize: '0.7rem', fontWeight: 900, color: '#0369a1', textTransform: 'uppercase', marginBottom: '4px' }}>Desconto Global</div>
-                                                                                    <input 
-                                                                                        type="number" 
+                                                                                    <input
+                                                                                        type="number"
                                                                                         min="0"
                                                                                         step="0.01"
                                                                                         value={quotationDrafts[group.requestId]?.discountAmount || 0}
@@ -2180,7 +2987,7 @@ export function BuyerItemsList() {
                                                                                             const draft = quotationDrafts[group.requestId];
                                                                                             const items = draft?.items || [];
                                                                                             const iva = items.reduce((sum, item) => {
-                                                                                                const itemGross = (item.quantity||0) * (item.unitPrice||0);
+                                                                                                const itemGross = (item.quantity || 0) * (item.unitPrice || 0);
                                                                                                 const itemDiscount = Number(item.discountAmount) || 0;
                                                                                                 const netSubtotal = Math.max(0, itemGross - itemDiscount);
                                                                                                 const selectedIva = ivaRates.find(r => r.id === item.ivaRateId);
@@ -2199,20 +3006,20 @@ export function BuyerItemsList() {
                                                                                 </div>
                                                                             </div>
                                                                             <div style={{ display: 'flex', gap: '12px', marginLeft: '40px' }}>
-                                                                                <button 
+                                                                                <button
                                                                                     onClick={() => handleCancelQuotation(group.requestId)}
                                                                                     disabled={isSaving}
-                                                                                    style={{ 
-                                                                                        display: 'flex', 
-                                                                                        alignItems: 'center', 
-                                                                                        gap: '8px', 
-                                                                                        backgroundColor: 'var(--color-bg-surface)', 
-                                                                                        color: '#64748b', 
-                                                                                        padding: '12px 24px', 
-                                                                                        borderRadius: '6px', 
-                                                                                        fontWeight: 800, 
-                                                                                        fontSize: '0.9rem', 
-                                                                                        border: '2px solid #e2e8f0', 
+                                                                                    style={{
+                                                                                        display: 'flex',
+                                                                                        alignItems: 'center',
+                                                                                        gap: '8px',
+                                                                                        backgroundColor: 'var(--color-bg-surface)',
+                                                                                        color: '#64748b',
+                                                                                        padding: '12px 24px',
+                                                                                        borderRadius: '6px',
+                                                                                        fontWeight: 800,
+                                                                                        fontSize: '0.9rem',
+                                                                                        border: '2px solid #e2e8f0',
                                                                                         cursor: isSaving ? 'not-allowed' : 'pointer',
                                                                                         opacity: isSaving ? 0.6 : 1,
                                                                                         transition: 'all 0.2s'
@@ -2220,37 +3027,37 @@ export function BuyerItemsList() {
                                                                                 >
                                                                                     <X size={20} /> CANCELAR
                                                                                 </button>
-                                                                                <button 
-                                                                                     onClick={() => handleSaveQuotation(group.requestId)}
-                                                                                     disabled={isSaving || !quotationDrafts[group.requestId].supplierId}
-                                                                                     style={{ 
-                                                                                         display: 'flex', 
-                                                                                         alignItems: 'center', 
-                                                                                         gap: '8px', 
-                                                                                         backgroundColor: editingQuotationId[group.requestId] ? '#f97316' : '#059669', // Orange for edit (Step 9.5)
-                                                                                         color: '#fff', 
-                                                                                         padding: '12px 32px', 
-                                                                                         borderRadius: '6px', 
-                                                                                         fontWeight: 900, 
-                                                                                         fontSize: '0.9rem', 
-                                                                                         border: 'none', 
-                                                                                         cursor: (isSaving || !quotationDrafts[group.requestId].supplierId) ? 'not-allowed' : 'pointer', 
-                                                                                         opacity: (isSaving || !quotationDrafts[group.requestId].supplierId) ? 0.6 : 1, 
-                                                                                         transition: 'all 0.2s',
-                                                                                         boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)'
-                                                                                     }}
-                                                                                 >
-                                                                                     {isSaving ? (
-                                                                                         <>Processando...</>
-                                                                                     ) : (
-                                                                                         <>
-                                                                                             <CheckCircle2 size={20} /> {editingQuotationId[group.requestId] ? 'ATUALIZAR COTAÇÃO' : 'SALVAR COTAÇÃO'}
-                                                                                         </>
-                                                                                     )}
-                                                                                 </button>
+                                                                                <button
+                                                                                    onClick={() => handleSaveQuotation(group.requestId)}
+                                                                                    disabled={isSaving || !quotationDrafts[group.requestId].supplierId}
+                                                                                    style={{
+                                                                                        display: 'flex',
+                                                                                        alignItems: 'center',
+                                                                                        gap: '8px',
+                                                                                        backgroundColor: editingQuotationId[group.requestId] ? '#f97316' : '#059669', // Orange for edit (Step 9.5)
+                                                                                        color: '#fff',
+                                                                                        padding: '12px 32px',
+                                                                                        borderRadius: '6px',
+                                                                                        fontWeight: 900,
+                                                                                        fontSize: '0.9rem',
+                                                                                        border: 'none',
+                                                                                        cursor: (isSaving || !quotationDrafts[group.requestId].supplierId) ? 'not-allowed' : 'pointer',
+                                                                                        opacity: (isSaving || !quotationDrafts[group.requestId].supplierId) ? 0.6 : 1,
+                                                                                        transition: 'all 0.2s',
+                                                                                        boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)'
+                                                                                    }}
+                                                                                >
+                                                                                    {isSaving ? (
+                                                                                        <>Processando...</>
+                                                                                    ) : (
+                                                                                        <>
+                                                                                            <CheckCircle2 size={20} /> {editingQuotationId[group.requestId] ? 'ATUALIZAR COTAÇÃO' : 'SALVAR COTAÇÃO'}
+                                                                                        </>
+                                                                                    )}
+                                                                                </button>
                                                                             </div>
                                                                         </div>
-                                                                        {!quotationDrafts[group.requestId].supplierId && (
+                                                                        {!quotationDrafts[group.requestId]?.supplierId && (
                                                                             <p style={{ textAlign: 'right', fontSize: '0.75rem', color: '#b91c1c', fontWeight: 700, marginTop: '8px' }}>
                                                                                 * Selecione um fornecedor para habilitar o salvamento.
                                                                             </p>
@@ -2259,158 +3066,115 @@ export function BuyerItemsList() {
                                                                 ) : null}
                                                             </div>
                                                         )}
+
+                                                        {/* Supplier Card - Only for PAYMENT or if not QUOTATION */}
+                                                        {group.requestTypeCode !== 'QUOTATION' && (
+                                                            <div style={{
+                                                                padding: '16px',
+                                                                backgroundColor: 'var(--color-bg-surface)',
+                                                                border: '1px solid var(--color-border)',
+                                                                borderRadius: '6px',
+                                                                display: 'flex',
+                                                                flexDirection: 'column',
+                                                                gap: '12px',
+                                                                marginTop: '24px'
+                                                            }}>
+                                                                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Fornecedor do Pedido (Geral)</div>
+                                                                <SupplierAutocomplete
+                                                                    onChange={(id, name) => handleUpdateGroupSupplier(group.requestId, id, name)}
+                                                                    initialName={group.requestSupplierName}
+                                                                    initialPortalCode={group.requestSupplierCode}
+                                                                    disabled={mode !== 'BUYER' || isSaving}
+                                                                />
+                                                                <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                                                                    Este fornecedor será o destinatário principal do pedido na aprovação.
+                                                                </p>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
                                             </div>
                                         )}
 
-                                        {/* Action Bar (Operational) */}
-                                        <div style={{ 
-                                            display: 'flex', 
-                                            justifyContent: 'space-between', 
-                                            alignItems: 'center',
-                                            padding: '16px 24px',
-                                            backgroundColor: group.requestStatusCode === 'WAITING_QUOTATION' ? '#fffbeb' : '#f1f5f9',
-                                            border: '1px solid',
-                                            borderColor: group.requestStatusCode === 'WAITING_QUOTATION' ? '#fef3c7' : 'var(--color-border)',
-                                            borderRadius: '6px'
-                                        }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                <div style={{ 
-                                                    backgroundColor: group.requestStatusCode === 'WAITING_QUOTATION' ? '#f59e0b' : '#64748b',
-                                                    color: '#fff',
-                                                    padding: '4px 10px',
-                                                    borderRadius: '4px',
-                                                    fontSize: '0.7rem',
-                                                    fontWeight: 900,
-                                                    textTransform: 'uppercase'
-                                                }}>
-                                                    AÇÕES DO PEDIDO
+                                        {/* PERSISTENT REQUEST-LEVEL ACTION: CONCLUIR COTAÇÃO */}
+                                        {group.requestStatusCode === 'WAITING_QUOTATION' && mode === 'BUYER' && isAssignedToMe && group.quotations.length > 0 && (
+                                            <div style={{
+                                                padding: '20px 24px',
+                                                backgroundColor: (!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]) ? '#fffbeb' : '#f0fdf4',
+                                                border: `2px solid ${(!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]) ? '#fcd34d' : '#86efac'}`,
+                                                borderRadius: '8px',
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
+                                                boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                                                marginTop: '8px'
+                                            }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                    <div style={{
+                                                        backgroundColor: (!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]) ? '#f59e0b' : '#059669',
+                                                        color: '#fff',
+                                                        padding: '4px 10px',
+                                                        borderRadius: '4px',
+                                                        fontSize: '0.7rem',
+                                                        fontWeight: 900,
+                                                        textTransform: 'uppercase' as const
+                                                    }}>
+                                                        FLUXO GLOBAL
+                                                    </div>
+                                                    <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-main)' }}>
+                                                        {(!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId])
+                                                            ? 'Salve ou cancele a cotação em edição para concluir esta etapa.'
+                                                            : 'Deseja finalizar a etapa de cotação para este pedido completo?'}
+                                                    </span>
                                                 </div>
-                                                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-main)' }}>
-                                                    {group.requestStatusCode === 'WAITING_QUOTATION' 
-                                                        ? 'Finalizar etapa de cotação?' 
-                                                        : 'Status atual: ' + group.requestStatusName}
-                                                </span>
-                                            </div>
-
-                                            <div style={{ display: 'flex', gap: '12px' }}>
-                                                {!isAssignedToMe && (
-                                                    <button 
-                                                        onClick={(e) => { e.stopPropagation(); handleAssignToMe(group.requestId); }}
-                                                        disabled={isSaving}
-                                                        style={{ 
-                                                            backgroundColor: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '4px', padding: '10px 24px', fontSize: '0.85rem', fontWeight: 800, cursor: isSaving ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', boxShadow: '2px 2px 0px rgba(0,0,0,0.15)' 
-                                                        }}
-                                                        title="Reivindicar pedido para mim para editá-lo"
-                                                    >
-                                                        <UserPlus size={18} /> {group.buyerId ? "Assumir Pedido" : "Atribuir a Mim"}
-                                                    </button>
-                                                )}
-
-                                                {group.requestStatusCode === 'WAITING_QUOTATION' && mode === 'BUYER' && isAssignedToMe && (
-                                                    <>
+                                                <div style={{ display: 'flex', gap: '12px' }}>
+                                                    {(!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]) ? (
+                                                        <div style={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '8px',
+                                                            padding: '10px 24px',
+                                                            fontSize: '0.8rem',
+                                                            backgroundColor: '#fef3c7',
+                                                            border: '1px solid #fcd34d',
+                                                            color: '#92400e',
+                                                            borderRadius: '6px',
+                                                            fontWeight: 700
+                                                        }}>
+                                                            <AlertCircle size={16} /> Edição em andamento
+                                                        </div>
+                                                    ) : (
                                                         <button
                                                             onClick={() => {
                                                                 const anySupplierSet = !!group.requestSupplierId || group.items.every((item: any) => item.supplierId || item.supplierName);
                                                                 const qCount = group.quotations.length;
-                                                                const hasCompQ = group.quotations.some((q: SavedQuotationDto) => 
+                                                                const hasCompQ = group.quotations.some((q: SavedQuotationDto) =>
                                                                     (q.itemCount > 0) && (!!q.proformaAttachmentId) && (!!q.supplierId)
                                                                 );
                                                                 const totalItemsCount = group.items.length + group.quotations.reduce((acc: number, q: SavedQuotationDto) => acc + q.itemCount, 0);
                                                                 handleCompleteQuotation(group.requestId, !!group.proformaId, anySupplierSet, totalItemsCount, qCount, hasCompQ);
                                                             }}
-                                                            disabled={isSaving || !!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]}
-                                                            className={!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? "" : "btn-primary"}
-                                                            style={{ 
-                                                                display: 'flex', 
-                                                                alignItems: 'center', 
-                                                                gap: '8px', 
-                                                                padding: '10px 24px', 
+                                                            disabled={isSaving}
+                                                            style={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: '8px',
+                                                                padding: '10px 24px',
                                                                 fontSize: '0.85rem',
-                                                                backgroundColor: !!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? '#e5e7eb' : '#059669',
-                                                                border: !!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? '2px solid #d1d5db' : '2px solid #047857',
-                                                                color: !!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? '#9ca3af' : '#ffffff',
-                                                                cursor: !!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? 'not-allowed' : 'pointer'
+                                                                backgroundColor: isSaving ? '#e5e7eb' : '#059669',
+                                                                border: '1px solid #047857',
+                                                                color: isSaving ? '#9ca3af' : '#ffffff',
+                                                                borderRadius: '6px',
+                                                                fontWeight: 900,
+                                                                cursor: isSaving ? 'not-allowed' : 'pointer',
+                                                                boxShadow: isSaving ? 'none' : '0 4px 0px #046c4e'
                                                             }}
-                                                            title={!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId] ? "Salve ou cancele a cotação em andamento antes de concluir" : "Concluir etapa de cotação"}
+                                                            title="Finalizar etapa de cotação"
                                                         >
                                                             <CheckCircle2 size={18} /> CONCLUIR COTAÇÃO
                                                         </button>
-
-                                                        {!group.proformaId && 
-                                                         !group.requestSupplierId && 
-                                                         !group.items.some((item: any) => item.supplierName || (item.lineItemStatusCode && item.lineItemStatusCode !== 'WAITING_QUOTATION' && item.lineItemStatusCode !== 'PENDING')) && (
-                                                            <button
-                                                                onClick={() => setShowApprovalModal({ show: true, type: 'CANCEL_REQUEST', requestId: group.requestId, itemId: null, itemDescription: null, newStatusCode: null, hasProforma: false, hasSupplier: false, itemsCount: 0, isLastItem: false, quotationCount: 0, hasCompleteQuotation: false })}
-                                                                disabled={isSaving}
-                                                                style={{
-                                                                    display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 24px', fontSize: '0.85rem',
-                                                                    backgroundColor: 'transparent',
-                                                                    border: '2px solid #ef4444',
-                                                                    color: '#ef4444',
-                                                                    borderRadius: 'var(--radius-sm)',
-                                                                    fontWeight: 800,
-                                                                    textTransform: 'uppercase',
-                                                                    fontFamily: 'var(--font-family-display)',
-                                                                    cursor: isSaving ? 'not-allowed' : 'pointer'
-                                                                }}
-                                                            >
-                                                                <X size={18} /> CANCELAR PEDIDO
-                                                            </button>
-                                                        )}
-                                                    </>
-                                                )}
-
-                                                {isAdjustmentPhase && mode === 'BUYER' && isAssignedToMe && (
-                                                    <button
-                                                        onClick={() => {
-                                                            const qCount = group.quotations.length;
-                                                            const hasCompQ = group.quotations.some((q: SavedQuotationDto) => 
-                                                                (q.itemCount > 0) && (!!q.proformaAttachmentId) && (!!q.supplierId)
-                                                            );
-                                                            const totalItemsCount = group.items.length + group.quotations.reduce((acc: number, q: SavedQuotationDto) => acc + q.itemCount, 0);
-                                                            handleCompleteQuotation(group.requestId, !!group.proformaId, !!group.requestSupplierId, totalItemsCount, qCount, hasCompQ);
-                                                        }}
-                                                        disabled={isSaving}
-                                                        className="btn-primary"
-                                                        style={{ 
-                                                            display: 'flex', 
-                                                            alignItems: 'center', 
-                                                            gap: '8px', 
-                                                            padding: '10px 24px', 
-                                                            fontSize: '0.85rem',
-                                                            backgroundColor: '#f59e0b',
-                                                            border: '2px solid #d97706'
-                                                        }}
-                                                    >
-                                                        <CheckCircle2 size={18} /> RESUBMETER PEDIDO
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Supplier Card - Only for PAYMENT or if not QUOTATION */}
-                                        {group.requestTypeCode !== 'QUOTATION' && (
-                                            <div style={{
-                                                padding: '16px',
-                                                backgroundColor: 'var(--color-bg-surface)',
-                                                border: '1px solid var(--color-border)',
-                                                borderRadius: '6px',
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                gap: '12px'
-                                            }}>
-                                                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Fornecedor do Pedido (Geral)</div>
-                                                <SupplierAutocomplete
-                                                    onChange={(id, name) => handleUpdateGroupSupplier(group.requestId, id, name)}
-                                                    initialName={group.requestSupplierName}
-                                                    initialPortalCode={group.requestSupplierCode}
-                                                    disabled={mode !== 'BUYER' || isSaving}
-                                                />
-                                                <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-                                                    Este fornecedor será o destinatário principal do pedido na aprovação.
-                                                </p>
+                                                    )}
+                                                </div>
                                             </div>
                                         )}
 
@@ -2435,7 +3199,7 @@ export function BuyerItemsList() {
                         border: '2px solid var(--color-border)',
                         width: '100%',
                         minWidth: 0,
-                        boxShadow: 'var(--shadow-brutal)'
+                        boxShadow: 'var(--shadow-md)'
                     }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <span style={{ fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.9rem', textTransform: 'uppercase' }}>Itens por página:</span>
@@ -2445,7 +3209,7 @@ export function BuyerItemsList() {
                                     updateParams({ pageSize: Number(e.target.value), page: 1 });
                                 }}
                                 style={{
-                                    padding: '8px 12px', border: '2px solid var(--color-primary)',
+                                    padding: '8px 12px', border: '1px solid var(--color-border)',
                                     backgroundColor: 'var(--color-bg-page)', outline: 'none',
                                     fontWeight: 700, color: 'var(--color-primary)', cursor: 'pointer'
                                 }}
@@ -2495,8 +3259,8 @@ export function BuyerItemsList() {
                 show={showApprovalModal.show}
                 type={showApprovalModal.type}
                 onClose={() => {
-                    setShowApprovalModal({ 
-                        show: false, type: null, requestId: null, itemId: null, itemDescription: null, 
+                    setShowApprovalModal({
+                        show: false, type: null, requestId: null, itemId: null, itemDescription: null,
                         newStatusCode: null, hasProforma: false, hasSupplier: false, itemsCount: 0, isLastItem: false,
                         quotationCount: 0, hasCompleteQuotation: false
                     });
@@ -2521,7 +3285,7 @@ export function BuyerItemsList() {
                     }}>
                         <div style={{
                             backgroundColor: 'var(--color-bg-surface)', borderRadius: 'var(--radius-md)',
-                            border: '2px solid var(--color-border-heavy)', boxShadow: 'var(--shadow-brutal)',
+                            border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-md)',
                             padding: '32px', maxWidth: '440px', width: '90%', display: 'flex', flexDirection: 'column', gap: '20px'
                         }}>
                             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
@@ -2542,7 +3306,7 @@ export function BuyerItemsList() {
                                 <button
                                     onClick={() => setDeleteConfirm(null)}
                                     disabled={isSaving}
-                                    style={{ padding: '10px 20px', border: '2px solid var(--color-border-heavy)', borderRadius: 'var(--radius-sm)', background: 'none', fontWeight: 700, cursor: 'pointer', fontSize: '0.875rem' }}
+                                    style={{ padding: '10px 20px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'none', fontWeight: 700, cursor: 'pointer', fontSize: '0.875rem' }}
                                 >
                                     Cancelar
                                 </button>
@@ -2594,113 +3358,113 @@ export function BuyerItemsList() {
                                 padding: '20px'
                             }}
                         >
-                        <motion.div
-                            initial={{ scale: 0.9, y: 20 }}
-                            animate={{ scale: 1, y: 0 }}
-                            style={{
-                                backgroundColor: 'var(--color-bg-surface)',
-                                padding: '40px',
-                                borderRadius: 'var(--radius-md)',
-                                maxWidth: '550px',
-                                width: '100%',
-                                border: '4px solid var(--color-border-heavy)',
-                                boxShadow: 'var(--shadow-brutal)',
-                                position: 'relative'
-                            }}
-                        >
-                            <button 
-                                onClick={cancelDuplicateFlow}
+                            <motion.div
+                                initial={{ scale: 0.9, y: 20 }}
+                                animate={{ scale: 1, y: 0 }}
                                 style={{
-                                    position: 'absolute',
-                                    top: '20px',
-                                    right: '20px',
-                                    background: 'none',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    color: 'var(--color-text-muted)'
+                                    backgroundColor: 'var(--color-bg-surface)',
+                                    padding: '40px',
+                                    borderRadius: 'var(--radius-md)',
+                                    maxWidth: '550px',
+                                    width: '100%',
+                                    border: '1px solid var(--color-border)',
+                                    boxShadow: 'var(--shadow-md)',
+                                    position: 'relative'
                                 }}
                             >
-                                <X className="w-6 h-6" />
-                            </button>
+                                <button
+                                    onClick={cancelDuplicateFlow}
+                                    style={{
+                                        position: 'absolute',
+                                        top: '20px',
+                                        right: '20px',
+                                        background: 'none',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        color: 'var(--color-text-muted)'
+                                    }}
+                                >
+                                    <X size={24} />
+                                </button>
 
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-                                <AlertCircle style={{ width: '32px', height: '32px', color: '#f59e0b' }} />
-                                <h2 style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--color-text-main)', textTransform: 'uppercase', margin: 0, letterSpacing: '-0.02em' }}>
-                                    Fornecedor Duplicado
-                                </h2>
-                            </div>
-
-                            <div style={{ marginBottom: '24px' }}>
-                                <p style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '16px', lineHeight: 1.4 }}>
-                                    Já existe uma cotação salva para <span style={{ color: 'var(--color-primary)' }}>{duplicateSupplierModal.draft?.supplierNameSnapshot || duplicateSupplierModal.duplicate?.supplierNameSnapshot}</span> neste pedido.
-                                </p>
-
-                                <div style={{ 
-                                    backgroundColor: '#fffbeb', 
-                                    border: '2px solid #fef3c7', 
-                                    borderRadius: 'var(--radius-sm)', 
-                                    padding: '20px',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center'
-                                }}>
-                                    <div>
-                                        <p style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', color: '#92400e', marginBottom: '4px' }}>Cotação Existente:</p>
-                                        <p style={{ fontSize: '0.9rem', fontWeight: 700, color: '#b45309', margin: 0 }}>
-                                            Doc: {duplicateSupplierModal.duplicate?.documentNumber || 'S/N'} • {duplicateSupplierModal.duplicate?.documentDate ? formatDate(duplicateSupplierModal.duplicate.documentDate) : 'N/A'}
-                                        </p>
-                                    </div>
-                                    <div style={{ textAlign: 'right' }}>
-                                        <p style={{ fontSize: '1.25rem', fontWeight: 900, color: '#92400e', margin: 0 }}>
-                                            <span style={{ fontSize: '0.8rem', opacity: 0.7, marginRight: '4px' }}>{duplicateSupplierModal.duplicate?.currency || 'AOA'}</span>
-                                            {formatCurrencyAO(duplicateSupplierModal.duplicate?.totalAmount || 0)}
-                                        </p>
-                                    </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+                                    <AlertCircle style={{ width: '32px', height: '32px', color: '#f59e0b' }} />
+                                    <h2 style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--color-text-main)', textTransform: 'uppercase', margin: 0, letterSpacing: '-0.02em' }}>
+                                        Fornecedor Duplicado
+                                    </h2>
                                 </div>
 
-                                <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginTop: '20px', fontWeight: 500, lineHeight: 1.5 }}>
-                                    Você deseja <strong>substituir</strong> a cotação existente pela nova que você está criando? 
-                                    A cotação anterior e seu arquivo proforma serão <strong>excluídos permanentemente</strong> para garantir a consistência do pedido.
-                                </p>
-                            </div>
+                                <div style={{ marginBottom: '24px' }}>
+                                    <p style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '16px', lineHeight: 1.4 }}>
+                                        Já existe uma cotação salva para <span style={{ color: 'var(--color-primary)' }}>{duplicateSupplierModal.draft?.supplierNameSnapshot || duplicateSupplierModal.duplicate?.supplierNameSnapshot}</span> neste pedido.
+                                    </p>
 
-                            <div style={{ display: 'flex', gap: '16px', marginTop: '12px' }}>
-                                <button
-                                    type="button"
-                                    onClick={cancelDuplicateFlow}
-                                    disabled={isSaving}
-                                    style={{
-                                        flex: 1, height: '48px', padding: '0 24px', background: 'none', border: '2px solid var(--color-border-heavy)',
-                                        cursor: 'pointer', fontWeight: 800, borderRadius: 'var(--radius-sm)',
-                                        fontFamily: 'var(--font-family-display)', fontSize: '0.875rem'
-                                    }}
-                                >
-                                    CANCELAR INCLUSÃO
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={confirmDuplicateReplacement}
-                                    disabled={isSaving}
-                                    style={{
-                                        flex: 2, height: '48px', padding: '0 24px', backgroundColor: '#f59e0b', color: '#fff',
-                                        border: 'none', cursor: 'pointer', fontWeight: 800, borderRadius: 'var(--radius-sm)',
-                                        boxShadow: '4px 4px 0px #b45309', fontFamily: 'var(--font-family-display)',
-                                        fontSize: '0.875rem', opacity: isSaving ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
-                                    }}
-                                >
-                                    {isSaving ? (
-                                        <>
-                                            <RefreshCcw className="w-4 h-4 animate-spin" />
-                                            SUBSTITUINDO...
-                                        </>
-                                    ) : (
-                                        'SUBSTITUIR COTAÇÃO'
-                                    )}
-                                </button>
-                            </div>
+                                    <div style={{
+                                        backgroundColor: '#fffbeb',
+                                        border: '2px solid #fef3c7',
+                                        borderRadius: 'var(--radius-sm)',
+                                        padding: '20px',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center'
+                                    }}>
+                                        <div>
+                                            <p style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', color: '#92400e', marginBottom: '4px' }}>Cotação Existente:</p>
+                                            <p style={{ fontSize: '0.9rem', fontWeight: 700, color: '#b45309', margin: 0 }}>
+                                                Doc: {duplicateSupplierModal.duplicate?.documentNumber || 'S/N'} • {duplicateSupplierModal.duplicate?.documentDate ? formatDate(duplicateSupplierModal.duplicate.documentDate) : 'N/A'}
+                                            </p>
+                                        </div>
+                                        <div style={{ textAlign: 'right' }}>
+                                            <p style={{ fontSize: '1.25rem', fontWeight: 900, color: '#92400e', margin: 0 }}>
+                                                <span style={{ fontSize: '0.8rem', opacity: 0.7, marginRight: '4px' }}>{duplicateSupplierModal.duplicate?.currency || 'AOA'}</span>
+                                                {formatCurrencyAO(duplicateSupplierModal.duplicate?.totalAmount || 0)}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginTop: '20px', fontWeight: 500, lineHeight: 1.5 }}>
+                                        Você deseja <strong>substituir</strong> a cotação existente pela nova que você está criando?
+                                        A cotação anterior e seu arquivo proforma serão <strong>excluídos permanentemente</strong> para garantir a consistência do pedido.
+                                    </p>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '16px', marginTop: '12px' }}>
+                                    <button
+                                        type="button"
+                                        onClick={cancelDuplicateFlow}
+                                        disabled={isSaving}
+                                        style={{
+                                            flex: 1, height: '48px', padding: '0 24px', background: 'none', border: '1px solid var(--color-border)',
+                                            cursor: 'pointer', fontWeight: 800, borderRadius: 'var(--radius-sm)',
+                                            fontFamily: 'var(--font-family-display)', fontSize: '0.875rem'
+                                        }}
+                                    >
+                                        CANCELAR INCLUSÃO
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={confirmDuplicateReplacement}
+                                        disabled={isSaving}
+                                        style={{
+                                            flex: 2, height: '48px', padding: '0 24px', backgroundColor: '#f59e0b', color: '#fff',
+                                            border: 'none', cursor: 'pointer', fontWeight: 800, borderRadius: 'var(--radius-sm)',
+                                            boxShadow: 'var(--shadow-md)', fontFamily: 'var(--font-family-display)',
+                                            fontSize: '0.875rem', opacity: isSaving ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                                        }}
+                                    >
+                                        {isSaving ? (
+                                            <>
+                                                <RefreshCcw size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                                                SUBSTITUINDO...
+                                            </>
+                                        ) : (
+                                            'SUBSTITUIR COTAÇÃO'
+                                        )}
+                                    </button>
+                                </div>
+                            </motion.div>
                         </motion.div>
-                    </motion.div>
-                </DropdownPortal>
+                    </DropdownPortal>
                 )}
             </AnimatePresence>
 
@@ -2723,7 +3487,7 @@ export function BuyerItemsList() {
                                 <p style={{ fontSize: '0.875rem', color: '#64748b', textAlign: 'center', marginBottom: '20px', fontWeight: 500, lineHeight: 1.5 }}>
                                     Este orçamento/proforma já foi carregado no sistema anteriormente. Deseja prosseguir mesmo assim?
                                 </p>
-                                
+
                                 <div style={{ backgroundColor: 'var(--color-bg-page)', padding: '16px', borderRadius: '8px', fontSize: '0.8rem', color: '#475569', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
                                     <p style={{ marginBottom: '6px' }}><span style={{ fontWeight: 800, color: '#1e293b', textTransform: 'uppercase', fontSize: '0.7rem' }}>Arquivo:</span> {fileDuplicateWarning.fileName}</p>
                                     <p style={{ marginBottom: '6px' }}><span style={{ fontWeight: 800, color: '#1e293b', textTransform: 'uppercase', fontSize: '0.7rem' }}>Pedido Vinculado:</span> {fileDuplicateWarning.requestNumber}</p>
@@ -2760,7 +3524,7 @@ export function BuyerItemsList() {
                 )}
             </AnimatePresence>
 
-            <QuickSupplierModal 
+            <QuickSupplierModal
                 isOpen={quickSupplierModal.show}
                 onClose={() => setQuickSupplierModal({ show: false, requestId: null, initialName: '', initialTaxId: '' })}
                 onSuccess={(supplier: { id: number; name: string; taxId?: string }) => {
@@ -2787,6 +3551,233 @@ export function BuyerItemsList() {
                 }}
                 initialCode={quickCurrencyModal.initialCode}
             />
+
+            {/* Quick View Drawer */}
+            <RequestDrawerPresentation
+                isOpen={!!drawerRequestId}
+                requestId={drawerRequestId}
+                onClose={() => setDrawerRequestId(null)}
+            />
+
+            {/* ═══════════════════════════════════════════════════════════════ */}
+            {/* FINANCIAL INTEGRITY GATE — Mismatch Modal                      */}
+            {/* ═══════════════════════════════════════════════════════════════ */}
+            <AnimatePresence>
+                {integrityModal && integrityModal.show && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        style={{
+                            position: 'fixed', inset: 0,
+                            backgroundColor: 'rgba(0,0,0,0.4)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            zIndex: 10000, padding: '1rem'
+                        }}
+                        onClick={() => { setIntegrityModal(null); setIntegrityJustification(''); }}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.92, opacity: 0, y: 20 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.92, opacity: 0, y: 20 }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 400 }}
+                            onClick={e => e.stopPropagation()}
+                            style={{
+                                background: '#ffffff',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '12px',
+                                width: '100%', maxWidth: '560px',
+                                overflow: 'hidden',
+                                boxShadow: '0 20px 60px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05)'
+                            }}
+                        >
+                            {/* Header */}
+                            <div style={{
+                                padding: '1.25rem 1.5rem',
+                                borderBottom: '1px solid #e2e8f0',
+                                display: 'flex', alignItems: 'center', gap: '0.75rem',
+                                background: 'linear-gradient(135deg, rgba(234,179,8,0.08), rgba(234,88,12,0.04))'
+                            }}>
+                                <div style={{
+                                    width: '40px', height: '40px', borderRadius: '10px',
+                                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    flexShrink: 0
+                                }}>
+                                    <AlertTriangle size={20} color="#fff" />
+                                </div>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#1e293b' }}>
+                                        Verificação de Integridade Financeira
+                                    </h3>
+                                    <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
+                                        O sistema detectou uma divergência entre os valores
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => { setIntegrityModal(null); setIntegrityJustification(''); }}
+                                    style={{
+                                        marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer',
+                                        color: '#94a3b8', padding: '4px'
+                                    }}
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            {/* Body */}
+                            <div style={{ padding: '1.25rem 1.5rem' }}>
+                                {/* Explanation */}
+                                <p style={{ fontSize: '0.85rem', color: '#475569', margin: '0 0 1rem 0', lineHeight: 1.5 }}>
+                                    {integrityModal.detail}
+                                </p>
+
+                                {/* Comparison Table */}
+                                <div style={{
+                                    border: '1px solid #e2e8f0',
+                                    borderRadius: '8px', overflow: 'hidden', marginBottom: '1rem'
+                                }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                                        <thead>
+                                            <tr style={{ background: '#f8fafc' }}>
+                                                <th style={{ padding: '0.6rem 1rem', textAlign: 'left', color: '#64748b', fontWeight: 600, borderBottom: '1px solid #e2e8f0', textTransform: 'uppercase', fontSize: '0.75rem' }}>Referência</th>
+                                                <th style={{ padding: '0.6rem 1rem', textAlign: 'right', color: '#64748b', fontWeight: 600, borderBottom: '1px solid #e2e8f0', textTransform: 'uppercase', fontSize: '0.75rem' }}>Valor</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td style={{ padding: '0.6rem 1rem', color: '#334155', borderBottom: '1px solid #f1f5f9' }}>
+                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                        <FileText size={14} style={{ color: '#3b82f6' }} />
+                                                        Total OCR (Documento Original)
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: '0.6rem 1rem', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#3b82f6', borderBottom: '1px solid #f1f5f9' }}>
+                                                    {integrityModal.ocrOriginalTotal.toLocaleString('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style={{ padding: '0.6rem 1rem', color: '#334155', borderBottom: '1px solid #f1f5f9' }}>
+                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                        <Hash size={14} style={{ color: '#8b5cf6' }} />
+                                                        Total da Cotação (Sistema)
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: '0.6rem 1rem', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#8b5cf6', borderBottom: '1px solid #f1f5f9' }}>
+                                                    {integrityModal.quotationTotal.toLocaleString('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </td>
+                                            </tr>
+                                            <tr style={{ background: integrityModal.varianceAmount !== 0 ? '#fef2f2' : 'transparent' }}>
+                                                <td style={{ padding: '0.6rem 1rem', color: '#334155' }}>
+                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                        <AlertTriangle size={14} style={{ color: '#ef4444' }} />
+                                                        Variação
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: '0.6rem 1rem', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#ef4444' }}>
+                                                    {integrityModal.varianceAmount > 0 ? '+' : ''}{integrityModal.varianceAmount.toLocaleString('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    {' '}
+                                                    <span style={{ fontSize: '0.75rem', color: '#f87171' }}>
+                                                        ({integrityModal.variancePercent > 0 ? '+' : ''}{integrityModal.variancePercent.toFixed(2)}%)
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {/* Unresolved reconciliation warning */}
+                                {integrityModal.unresolvedReconciliationCount > 0 && (
+                                    <div style={{
+                                        padding: '0.6rem 0.8rem', borderRadius: '8px',
+                                        background: '#fffbeb',
+                                        border: '1px solid #fde68a',
+                                        fontSize: '0.8rem', color: '#92400e',
+                                        display: 'flex', alignItems: 'center', gap: '0.5rem',
+                                        marginBottom: '1rem'
+                                    }}>
+                                        <AlertCircle size={14} />
+                                        {integrityModal.unresolvedReconciliationCount} item(ns) de reconciliação pendente(s) de revisão.
+                                    </div>
+                                )}
+
+                                {/* Override justification */}
+                                <div style={{ marginTop: '0.5rem' }}>
+                                    <label style={{
+                                        display: 'block', fontSize: '0.8rem', fontWeight: 600,
+                                        color: '#475569', marginBottom: '0.4rem'
+                                    }}>
+                                        Justificação para prosseguir (obrigatório):
+                                    </label>
+                                    <textarea
+                                        value={integrityJustification}
+                                        onChange={e => setIntegrityJustification(e.target.value)}
+                                        placeholder="Explique o motivo pelo qual deseja prosseguir com esta divergência financeira..."
+                                        rows={3}
+                                        style={{
+                                            width: '100%', padding: '0.6rem 0.8rem',
+                                            borderRadius: '8px',
+                                            border: '1px solid #cbd5e1',
+                                            background: '#f8fafc',
+                                            color: '#1e293b',
+                                            fontSize: '0.85rem', resize: 'vertical',
+                                            fontFamily: 'inherit',
+                                            boxSizing: 'border-box'
+                                        }}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Footer Actions */}
+                            <div style={{
+                                padding: '1rem 1.5rem',
+                                borderTop: '1px solid #e2e8f0',
+                                display: 'flex', gap: '0.75rem', justifyContent: 'flex-end',
+                                background: '#f8fafc'
+                            }}>
+                                <button
+                                    onClick={() => { setIntegrityModal(null); setIntegrityJustification(''); }}
+                                    style={{
+                                        padding: '0.55rem 1.2rem', borderRadius: '8px',
+                                        border: '1px solid #cbd5e1',
+                                        background: '#ffffff',
+                                        color: '#475569',
+                                        fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer',
+                                        display: 'flex', alignItems: 'center', gap: '0.4rem'
+                                    }}
+                                >
+                                    <ArrowLeft size={15} />
+                                    Voltar e Corrigir
+                                </button>
+                                <button
+                                    onClick={handleIntegrityOverride}
+                                    disabled={!integrityJustification.trim() || integrityOverrideLoading}
+                                    style={{
+                                        padding: '0.55rem 1.2rem', borderRadius: '8px',
+                                        border: 'none',
+                                        background: !integrityJustification.trim() || integrityOverrideLoading
+                                            ? '#f1f5f9'
+                                            : 'linear-gradient(135deg, #f59e0b, #d97706)',
+                                        color: !integrityJustification.trim() || integrityOverrideLoading
+                                            ? '#94a3b8'
+                                            : '#fff',
+                                        fontSize: '0.85rem', fontWeight: 700, cursor: !integrityJustification.trim() || integrityOverrideLoading ? 'not-allowed' : 'pointer',
+                                        display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {integrityOverrideLoading ? (
+                                        <RefreshCcw size={15} style={{ animation: 'spin 1s linear infinite' }} />
+                                    ) : (
+                                        <CheckCircle2 size={15} />
+                                    )}
+                                    {integrityOverrideLoading ? 'Processando...' : 'Confirmar Override'}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </PageContainer>
     );
 }

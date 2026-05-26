@@ -1,7 +1,7 @@
-import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, DocumentExtractionSettingsDto, SmtpSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult } from '../types';
+import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto, IntegrationSettingsDto, IntegrationConnectionTestResultDto, UpdateIntegrationSettingsDto, UpdatePrimaveraCompanyDto, ReplacePrimaveraCompanySecretDto } from '../types';
 import { logger, FrontendComponentKey } from './logger';
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 export class ApiError extends Error {
     public status?: number;
@@ -79,8 +79,8 @@ async function handleApiError(
     } else if (response.status === 403) {
         console.error(`[AUTH] 403 Forbidden for ${response.url}. Insufficient roles/permissions.`);
         errorMsg = 'Você não tem permissão para realizar esta ação.';
-    } else if (errJson?.detail || errJson?.title) {
-        errorMsg = errJson.detail || errJson.title;
+    } else if (errJson?.detail || errJson?.title || errJson?.message) {
+        errorMsg = errJson.detail || errJson.title || errJson.message;
     }
 
     throw new ApiError(
@@ -170,9 +170,23 @@ export const api = {
         }
     },
     requests: {
+        validateLine: async (payload: { companyId: number; itemCatalogCode: string; supplierId?: number | null }): Promise<import('../types').PrimaveraRequestValidationResultDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/validate-line`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao validar artigo no Primavera.');
+            return response.json();
+        },
         getDashboardSummary: async (): Promise<DashboardSummaryDto> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/summary`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar sumário do dashboard.');
+            return response.json();
+        },
+        getCockpitSummary: async (): Promise<CockpitSummaryDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/cockpit-summary`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar cockpit operacional.');
             return response.json();
         },
         getPurchasingSummary: async (): Promise<PurchasingSummaryDto> => {
@@ -442,6 +456,17 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao mover para aguardando recibo.');
             return response.json();
         },
+        confirmReceiving: async (id: string, comment?: string): Promise<{ message: string; statusCode: string }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/operational/confirm-receiving`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ comment }),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao confirmar recebimento.');
+            return response.json();
+        },
         finalize: async (id: string, comment?: string): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/operational/finalize`, {
                 method: 'POST',
@@ -453,14 +478,31 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao finalizar o pedido.');
             return response.json();
         },
-        completeQuotation: async (id: string, comment?: string): Promise<{ message: string; statusCode: string }> => {
+        completeQuotation: async (id: string, payload?: { comment?: string, financialIntegrityOverride?: boolean, overrideJustification?: string }): Promise<{ message: string; statusCode: string } | { integrityCheckFailed: true; ocrOriginalTotal: number; quotationTotal: number; varianceAmount: number; variancePercent: number; toleranceApplied: number; unresolvedReconciliationCount: number; quotationId: string; detail: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/quotation/complete`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ comment }),
+                body: JSON.stringify(payload || {}),
             });
+            // Handle Financial Integrity Gate 409 response
+            if (response.status === 409) {
+                const body = await response.json();
+                if (body?.integrityCheckFailed) {
+                    return {
+                        integrityCheckFailed: true as const,
+                        ocrOriginalTotal: body.ocrOriginalTotal ?? 0,
+                        quotationTotal: body.quotationTotal ?? 0,
+                        varianceAmount: body.varianceAmount ?? 0,
+                        variancePercent: body.variancePercent ?? 0,
+                        toleranceApplied: body.toleranceApplied ?? 0,
+                        unresolvedReconciliationCount: body.unresolvedReconciliationCount ?? 0,
+                        quotationId: body.quotationId ?? '',
+                        detail: body.detail ?? ''
+                    };
+                }
+            }
             if (!response.ok) return handleApiError(response, 'Falha ao concluir cotação.');
             return response.json();
         },
@@ -547,6 +589,172 @@ export const api = {
         getReconciliationSummary: async (requestId: string): Promise<any> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/reconciliation/summary`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar resumo de reconciliação.');
+            return response.json();
+        }
+    },
+    hrLeave: {
+        syncEmployees: async (): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/employees/sync`, { method: 'POST' });
+            if (!response.ok) {
+                // Return json anyway if 207 or specialized error
+                if (response.status === 207) return response.json();
+                return handleApiError(response, 'Falha ao sincronizar funcionários.');
+            }
+            return response.json();
+        },
+        getDashboard: async (): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/dashboard`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar dashboard de férias.');
+            return response.json();
+        },
+        getEmployees: async (params?: Record<string, string | number | boolean>): Promise<any> => {
+            const qs = params ? '?' + new URLSearchParams(params as any).toString() : '';
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/employees${qs}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao buscar funcionários.');
+            return response.json();
+        },
+        getDepartmentMasters: async (search?: string): Promise<import('../types').DepartmentMasterDto[]> => {
+            const qs = search ? `?search=${encodeURIComponent(search)}` : '';
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/departments/master${qs}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao buscar departamentos mestre.');
+            return response.json();
+        },
+        syncDepartments: async (): Promise<{ message: string, created: number, updated: number, processed: number, errors?: string[] }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/departments/sync`, { method: 'POST' });
+            if (!response.ok && response.status !== 207) return handleApiError(response, 'Falha ao sincronizar departamentos mestre.');
+            return response.json();
+        },
+        updateEmployeeMapping: async (id: string, payload: { plantId?: number | null, portalDepartmentId?: number | null, managerUserId?: string | null, departmentMasterId?: number | null }): Promise<void> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/employees/${id}/mapping`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao atualizar mapeamento.');
+        },
+        updateBulkEmployeeMapping: async (payload: { employeeIds: string[], plantId?: number | null, departmentMasterId?: number | null, managerUserId?: string | null, clearDepartmentMaster?: boolean, clearManager?: boolean }): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/employees/bulk/mapping`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao processar atualização em massa.');
+            return response.json();
+        },
+        getRecords: async (params?: Record<string, string | number>): Promise<any> => {
+            const qs = params ? '?' + new URLSearchParams(params as any).toString() : '';
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/records${qs}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao buscar registos de ausência.');
+            return response.json();
+        },
+        getLeaveOverlap: async (id: string): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/records/${id}/overlap`);
+            if (!response.ok) return handleApiError(response, 'Falha ao buscar conflitos de cobertura.');
+            return response.json();
+        },
+        createRecord: async (data: any): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/records`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao criar registo de ausência.');
+            return response.json();
+        },
+        updateRecordStatus: async (id: string, action: string, payload?: any): Promise<void> => {
+            const body = payload ? JSON.stringify(payload) : JSON.stringify({});
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/records/${id}/${action}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao atualizar o estado do registo.');
+        },
+        getCalendar: async (params?: Record<string, string | number>): Promise<any> => {
+            const qs = params ? '?' + new URLSearchParams(params as any).toString() : '';
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/calendar${qs}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao buscar calendário de equipa.');
+            return response.json();
+        },
+        getTypes: async (): Promise<any[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/types`);
+            if (!response.ok) return handleApiError(response, 'Falha ao buscar tipos de ausência.');
+            return response.json();
+        },
+        resolveSuggestions: async (): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/employees/resolve-suggestions`, { method: 'POST' });
+            if (!response.ok) return handleApiError(response, 'Falha ao resolver sugestões de planta.');
+            return response.json();
+        }
+    },
+    hrAttendance: {
+        getCalendar: async (params: { startDate: string; endDate: string; attendanceActivity?: string }): Promise<any> => {
+            const qs = new URLSearchParams(params as any).toString();
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/attendance/calendar?${qs}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar calendário de presenças.');
+            return response.json();
+        },
+        getDayDetail: async (innuxEmployeeId: number, date: string): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/attendance/detail/${innuxEmployeeId}/${date}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar detalhe de presença.');
+            return response.json();
+        },
+        getMonthlyDepartmentReport: async (params: { departmentId?: number | null; startDate: string; endDate: string; daysFilter?: string; attendanceActivity?: string }): Promise<any> => {
+            const qs = new URLSearchParams();
+            if (params.departmentId != null && params.departmentId > 0) {
+                qs.append('departmentId', params.departmentId.toString());
+            }
+            qs.append('startDate', params.startDate);
+            qs.append('endDate', params.endDate);
+            if (params.daysFilter) qs.append('daysFilter', params.daysFilter);
+            if (params.attendanceActivity) qs.append('attendanceActivity', params.attendanceActivity);
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/attendance/reports/monthly-by-department?${qs.toString()}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar relatório mensal por departamento.');
+            return response.json();
+        },
+        getAbsenceCodes: async (): Promise<any[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/attendance/lookup/absence-codes`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar códigos de ausência.');
+            return response.json();
+        },
+        getWorkCodes: async (): Promise<any[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/attendance/lookup/work-codes`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar códigos de trabalho.');
+            return response.json();
+        }
+    },
+    hrSchedules: {
+        getPlans: async (): Promise<any[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/schedules/plans`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar planos de trabalho.');
+            return response.json();
+        },
+        getSchedules: async (): Promise<any[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/schedules/schedules`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar horários.');
+            return response.json();
+        },
+        getPlanEmployees: async (planId: number): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/schedules/plans/${planId}/employees`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar funcionários do plano.');
+            return response.json();
+        }
+    },
+    hrAttendanceDiagnostics: {
+        compareRange: async (params: { startDate: string; endDate: string; innuxEmployeeId?: number; departmentId?: number; onlyDiscrepancies?: boolean }): Promise<any> => {
+            const qs = new URLSearchParams();
+            qs.append('startDate', params.startDate);
+            qs.append('endDate', params.endDate);
+            if (params.innuxEmployeeId) qs.append('innuxEmployeeId', String(params.innuxEmployeeId));
+            if (params.departmentId) qs.append('departmentId', String(params.departmentId));
+            if (params.onlyDiscrepancies !== undefined) qs.append('onlyDiscrepancies', String(params.onlyDiscrepancies));
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/attendance/portal/compare-range?${qs.toString()}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar comparação diagnóstica.');
+            return response.json();
+        },
+        interpretPunches: async (innuxEmployeeId: number, date: string): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/attendance/portal/interpret-punches/${innuxEmployeeId}/${date}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar interpretação de picagens.');
             return response.json();
         }
     },
@@ -791,6 +999,32 @@ export const api = {
             const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/plants/${id}/toggle-active`, { method: 'PUT' });
             if (!res.ok) return handleApiError(res, 'Falha ao alternar estado da planta.');
         },
+        getContractTypes: async (includeInactive = false): Promise<any[]> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/contract-types?includeInactive=${includeInactive}`);
+            if (!res.ok) return handleApiError(res, 'Falha ao carregar tipos de contrato.');
+            return res.json();
+        },
+        createContractType: async (data: any): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/contract-types`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao salvar tipo de contrato.');
+            return res.json();
+        },
+        updateContractType: async (id: number, data: any): Promise<void> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/contract-types/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao alterar tipo de contrato.');
+        },
+        toggleContractType: async (id: number): Promise<void> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/contract-types/${id}/toggle-active`, { method: 'PUT' });
+            if (!res.ok) return handleApiError(res, 'Falha ao alternar estado do tipo de contrato.');
+        },
         getCompanies: async (includeInactive = false): Promise<any[]> => {
             const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/companies?includeInactive=${includeInactive}`);
             if (!res.ok) return handleApiError(res, 'Falha ao carregar empresas.');
@@ -817,10 +1051,22 @@ export const api = {
             const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/companies/${id}/toggle-active`, { method: 'PUT' });
             if (!res.ok) return handleApiError(res, 'Falha ao alternar estado da empresa.');
         },
-        getSuppliers: async (includeInactive = false): Promise<any[]> => {
-            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers?includeInactive=${includeInactive}`);
+        getSuppliers: async (includeInactive = false, search?: string, page: number = 1, pageSize: number = 15): Promise<{ data: any[], totalCount: number, page: number, pageSize: number }> => {
+            const params = new URLSearchParams();
+            if (includeInactive) params.append('includeInactive', 'true');
+            if (search) params.append('search', search);
+            params.append('page', page.toString());
+            params.append('pageSize', pageSize.toString());
+
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers?${params.toString()}`);
             if (!res.ok) return handleApiError(res, 'Falha ao carregar fornecedores.');
-            return res.json();
+            const json = await res.json();
+            return {
+                data: json.items || json.data || [],
+                totalCount: json.totalCount || 0,
+                page: json.page || 1,
+                pageSize: json.pageSize || 15
+            };
         },
         searchSuppliers: async (term: string): Promise<any[]> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/search?q=${encodeURIComponent(term)}`);
@@ -856,6 +1102,138 @@ export const api = {
 
             const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/check-uniqueness?${params.toString()}`);
             if (!res.ok) return handleApiError(res, 'Falha ao verificar unicidade do fornecedor.');
+            return res.json();
+        },
+
+        // ─── Ficha de Fornecedor API ───
+        getSupplierFichas: async (params: {
+            search?: string;
+            status?: string;
+            origin?: string;
+            sortBy?: string;
+            sortDir?: string;
+            page?: number;
+            pageSize?: number;
+        } = {}): Promise<any> => {
+            const searchParams = new URLSearchParams();
+            if (params.search) searchParams.append('search', params.search);
+            if (params.status) searchParams.append('status', params.status);
+            if (params.origin) searchParams.append('origin', params.origin);
+            if (params.sortBy) searchParams.append('sortBy', params.sortBy);
+            if (params.sortDir) searchParams.append('sortDir', params.sortDir);
+            if (params.page) searchParams.append('page', String(params.page));
+            if (params.pageSize) searchParams.append('pageSize', String(params.pageSize));
+
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/fichas?${searchParams.toString()}`);
+            if (!res.ok) return handleApiError(res, 'Falha ao carregar fichas de fornecedor.');
+            return res.json();
+        },
+        getSupplierFicha: async (id: number): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/ficha`);
+            if (!res.ok) return handleApiError(res, 'Falha ao carregar ficha do fornecedor.');
+            return res.json();
+        },
+        updateSupplierFicha: async (id: number, data: any): Promise<void> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/ficha`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao atualizar ficha do fornecedor.');
+        },
+        updateSupplierStatus: async (id: number, newStatus: string): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/status`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ newStatus }),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao alterar estado do fornecedor.');
+            return res.json();
+        },
+        uploadSupplierDocument: async (supplierId: number, file: File, documentType: string): Promise<any> => {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('documentType', documentType);
+
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${supplierId}/documents`, {
+                method: 'POST',
+                body: formData,
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao enviar documento do fornecedor.');
+            return res.json();
+        },
+        downloadSupplierDocument: async (documentId: string): Promise<Blob> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/documents/${documentId}/download`);
+            if (!res.ok) throw new Error('Falha ao baixar documento.');
+            return res.blob();
+        },
+        deleteSupplierDocument: async (documentId: string): Promise<void> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/documents/${documentId}`, {
+                method: 'DELETE',
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao remover documento do fornecedor.');
+        },
+        // ─── Supplier Approval Workflow (Phase 2A) ───
+        getPendingSupplierApprovals: async (): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/pending-approval`);
+            if (!res.ok) return handleApiError(res, 'Falha ao carregar fichas pendentes.');
+            return res.json();
+        },
+        submitSupplierForApproval: async (id: number): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/submit-approval`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao submeter para aprovação.');
+            return res.json();
+        },
+        dafApproveSupplier: async (id: number): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/daf-approve`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            if (!res.ok) return handleApiError(res, 'Falha na aprovação DAF.');
+            return res.json();
+        },
+        dafReturnSupplier: async (id: number, comment: string): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/daf-return`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment }),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao devolver para reajuste (DAF).');
+            return res.json();
+        },
+        dgApproveSupplier: async (id: number): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/dg-approve`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            if (!res.ok) return handleApiError(res, 'Falha na aprovação DG.');
+            return res.json();
+        },
+        dgReturnSupplier: async (id: number, comment: string): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/dg-return`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment }),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao devolver para reajuste (DG).');
+            return res.json();
+        },
+        getSupplierCompleteness: async (id: number): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/completeness`);
+            if (!res.ok) return handleApiError(res, 'Falha ao carregar checklist.');
+            return res.json();
+        },
+        getSupplierHistory: async (id: number): Promise<any[]> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/history`);
+            if (!res.ok) return handleApiError(res, 'Falha ao carregar histórico.');
+            return res.json();
+        },
+        checkSupplierRegistration: async (id: number, operation: string = 'po'): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/registration-check?operation=${operation}`);
+            if (!res.ok) return handleApiError(res, 'Falha na verificação de registo.');
             return res.json();
         },
         getCostCenters: async (includeInactive = false, plantId?: number, companyId?: number): Promise<any[]> => {
@@ -925,22 +1303,29 @@ export const api = {
         }
     },
     catalogItems: {
-        getAll: async (includeInactive = false, search?: string, take: number = 10): Promise<any[]> => {
+        getAll: async (includeInactive = false, search?: string, page: number = 1, pageSize: number = 15): Promise<{ data: any[], totalCount: number, page: number, pageSize: number }> => {
             const params = new URLSearchParams();
             if (includeInactive) params.append('includeInactive', 'true');
             if (search) params.append('search', search);
-            params.append('take', take.toString());
+            params.append('page', page.toString());
+            params.append('pageSize', pageSize.toString());
 
             const res = await apiFetch(`${API_BASE_URL}/api/v1/catalog-items?${params.toString()}`);
             if (!res.ok) return handleApiError(res, 'Falha ao carregar itens do catálogo.');
-            return res.json();
+            const json = await res.json();
+            return {
+                data: json.items || json.data || [],
+                totalCount: json.totalCount || 0,
+                page: json.page || 1,
+                pageSize: json.pageSize || 15
+            };
         },
         search: async (q: string, take = 20): Promise<any[]> => {
             const res = await apiFetch(`${API_BASE_URL}/api/v1/catalog-items/search?q=${encodeURIComponent(q)}&take=${take}`);
             if (!res.ok) return handleApiError(res, 'Falha ao pesquisar itens do catálogo.');
             return res.json();
         },
-        create: async (data: { code: string; description: string; defaultUnitId?: number | null; category?: string }): Promise<any> => {
+        create: async (data: { description: string; primaveraCode?: string; supplierCode?: string; defaultUnitId?: number | null; category?: string }): Promise<any> => {
             const res = await apiFetch(`${API_BASE_URL}/api/v1/catalog-items`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -949,7 +1334,7 @@ export const api = {
             if (!res.ok) return handleApiError(res, 'Falha ao criar item do catálogo.');
             return res.json();
         },
-        update: async (id: number, data: { code: string; description: string; defaultUnitId?: number | null; category?: string }): Promise<void> => {
+        update: async (id: number, data: { description: string; primaveraCode?: string; supplierCode?: string; defaultUnitId?: number | null; category?: string }): Promise<void> => {
             const res = await apiFetch(`${API_BASE_URL}/api/v1/catalog-items/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -969,6 +1354,28 @@ export const api = {
             });
             if (!res.ok) return handleApiError(res, 'Falha ao importar itens do catálogo.');
             return res.json();
+        },
+        reconciliationCreate: async (data: { description: string; defaultUnitId?: number | null; supplierCode?: string; category?: string }): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/catalog-items/reconciliation-create`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao criar item do catálogo via reconciliação.');
+            return res.json();
+        },
+        batchMatch: async (descriptions: string[]): Promise<Record<number, any | null>> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/catalog-items/batch-match`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ descriptions }),
+            });
+            if (!res.ok) {
+                console.warn('[API] Batch match failed, falling back to no matches.');
+                return {};
+            }
+            const json = await res.json();
+            return json.matches || {};
         }
     },
     lineItems: {
@@ -1074,11 +1481,15 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao carregar projeções de fluxo de caixa.');
             return response.json();
         },
-        getPayments: async (filter?: string, page: number = 1, pageSize: number = 20): Promise<FinanceListResponseDto> => {
+        getPayments: async (filter?: string, page: number = 1, pageSize: number = 20, plantId?: number, statusCodes?: string, currencyCode?: string, searchSupplier?: string): Promise<FinanceListResponseDto> => {
             const params = new URLSearchParams();
             if (filter) params.append('filter', filter);
             params.append('page', page.toString());
             params.append('pageSize', pageSize.toString());
+            if (plantId) params.append('plantId', plantId.toString());
+            if (statusCodes) params.append('statusCodes', statusCodes);
+            if (currencyCode) params.append('currencyCode', currencyCode);
+            if (searchSupplier) params.append('searchSupplier', searchSupplier);
             const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/payments?${params.toString()}`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar pagamentos.');
             return response.json();
@@ -1114,11 +1525,11 @@ export const api = {
             });
             if (!response.ok) return handleApiError(response, 'Falha ao agendar pagamento.');
         },
-        markAsPaid: async (id: string, actionDateUtc?: string, notes?: string): Promise<void> => {
+        markAsPaid: async (id: string, actionDateUtc?: string, notes?: string, actualPaidAmount?: number): Promise<void> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/${id}/pay`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ actionDateUtc, notes })
+                body: JSON.stringify({ actionDateUtc, notes, actualPaidAmount })
             });
             if (!response.ok) return handleApiError(response, 'Falha ao registar pagamento.');
         },
@@ -1137,6 +1548,65 @@ export const api = {
                 body: JSON.stringify({ notes })
             });
             if (!response.ok) return handleApiError(response, 'Falha ao devolver pedido.');
+        },
+        getContractProjectionSummary: async (companyId?: number, plantId?: number, departmentId?: number): Promise<any> => {
+            const params = new URLSearchParams();
+            if (companyId) params.append('companyId', companyId.toString());
+            if (plantId) params.append('plantId', plantId.toString());
+            if (departmentId) params.append('departmentId', departmentId.toString());
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/contract-projections/summary?${params.toString()}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar projeção contratual.');
+            return response.json();
+        },
+        getContractProjections: async (params?: {
+            companyId?: number; plantId?: number; departmentId?: number;
+            bucket?: string; onlyAtRisk?: boolean;
+            dateFrom?: string; dateTo?: string;
+            page?: number; pageSize?: number;
+        }): Promise<any> => {
+            const qs = new URLSearchParams();
+            if (params?.companyId) qs.append('companyId', params.companyId.toString());
+            if (params?.plantId) qs.append('plantId', params.plantId.toString());
+            if (params?.departmentId) qs.append('departmentId', params.departmentId.toString());
+            if (params?.bucket) qs.append('bucket', params.bucket);
+            if (params?.onlyAtRisk) qs.append('onlyAtRisk', 'true');
+            if (params?.dateFrom) qs.append('dateFrom', params.dateFrom);
+            if (params?.dateTo) qs.append('dateTo', params.dateTo);
+            qs.append('page', (params?.page ?? 1).toString());
+            qs.append('pageSize', (params?.pageSize ?? 20).toString());
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/contract-projections?${qs.toString()}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar itens de projeção contratual.');
+            return response.json();
+        }
+    },
+    financeBudget: {
+        getOverview: async (year: number): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/budget/overview/${year}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar visão geral do orçamento.');
+            return response.json();
+        },
+        getDepartmentDetails: async (departmentId: number, year: number): Promise<any[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/budget/department/${departmentId}/details/${year}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar detalhes do orçamento do departamento.');
+            return response.json();
+        },
+        getMonthlyBreakdown: async (departmentId: number, year: number): Promise<any[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/budget/department/${departmentId}/monthly/${year}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar evolução mensal do orçamento.');
+            return response.json();
+        },
+        getConfig: async (year: number): Promise<any[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/budget/config/${year}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar configurações de orçamento.');
+            return response.json();
+        },
+        saveConfig: async (configs: any[]): Promise<void> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/budget/config`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(configs)
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao salvar configurações de orçamento.');
         }
     },
     admin: {
@@ -1162,32 +1632,158 @@ export const api = {
                 return response.json();
             }
         },
-        smtpSettings: {
-            get: async (): Promise<SmtpSettingsDto> => {
-                const response = await apiFetch(`${API_BASE_URL}/api/admin/smtp-settings`);
-                if (!response.ok) return handleApiError(response, 'Falha ao carregar configurações SMTP.', 'AdminApi');
-                return response.json();
-            },
-            update: async (data: SmtpSettingsDto): Promise<void> => {
-                const response = await apiFetch(`${API_BASE_URL}/api/admin/smtp-settings`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data),
-                });
-                if (!response.ok) return handleApiError(response, 'Falha ao atualizar configurações SMTP.', 'AdminApi');
-            },
-            testConnection: async (): Promise<any> => {
-                const response = await apiFetch(`${API_BASE_URL}/api/admin/smtp-settings/test-connection`, {
-                    method: 'POST'
-                });
-                if (!response.ok) return handleApiError(response, 'Falha ao testar conexão SMTP.', 'AdminApi');
-                return response.json();
-            }
-        },
         diagnostics: {
             getHealth: async (): Promise<any> => {
                 const response = await apiFetch(`${API_BASE_URL}/api/admin/diagnostics/health`);
                 if (!response.ok) return handleApiError(response, 'Falha ao carregar diagnóstico de serviços.', 'AdminApi');
+                return response.json();
+            }
+        },
+        integrations: {
+            getHealth: async (): Promise<any> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integrations/health`);
+                if (!response.ok) return handleApiError(response, 'Falha ao carregar saúde das integrações.', 'AdminApi');
+                return response.json();
+            },
+            testConnection: async (providerCode: string): Promise<any> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integrations/${providerCode}/test-connection`, {
+                    method: 'POST'
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao testar conexão do provedor.', 'AdminApi');
+                return response.json();
+            }
+        },
+        integrationSettings: {
+            getAll: async (): Promise<IntegrationSettingsDto[]> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings`);
+                if (!response.ok) return handleApiError(response, 'Falha ao carregar configurações de integração.', 'AdminApi');
+                return response.json();
+            },
+            getByCode: async (code: string): Promise<IntegrationSettingsDto> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings/${code}`);
+                if (!response.ok) return handleApiError(response, 'Falha ao carregar configuração do provedor.', 'AdminApi');
+                return response.json();
+            },
+            update: async (code: string, data: UpdateIntegrationSettingsDto): Promise<void> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings/${code}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao atualizar configurações do provedor.', 'AdminApi');
+            },
+            replaceSecret: async (code: string, secretType: string, newSecretValue: string): Promise<{ message: string }> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings/${code}/secret`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ secretType, newSecretValue }),
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao atualizar segredo.', 'AdminApi');
+                return response.json();
+            },
+            testConnection: async (code: string, companyKey?: string): Promise<IntegrationConnectionTestResultDto> => {
+                const url = companyKey 
+                    ? `${API_BASE_URL}/api/admin/integration-settings/${code}/test?companyKey=${encodeURIComponent(companyKey)}`
+                    : `${API_BASE_URL}/api/admin/integration-settings/${code}/test`;
+                const response = await apiFetch(url, {
+                    method: 'POST'
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao testar conexão.', 'AdminApi');
+                return response.json();
+            },
+            updatePrimaveraCompany: async (data: UpdatePrimaveraCompanyDto): Promise<void> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings/PRIMAVERA/company`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao atualizar configurações da empresa Primavera.', 'AdminApi');
+            },
+            replacePrimaveraCompanySecret: async (data: ReplacePrimaveraCompanySecretDto): Promise<{ message: string }> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings/PRIMAVERA/company/secret`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao atualizar senha da empresa Primavera.', 'AdminApi');
+                return response.json();
+            },
+            enable: async (code: string): Promise<{ message: string }> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings/${code}/enable`, {
+                    method: 'POST'
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao habilitar provedor.', 'AdminApi');
+                return response.json();
+            },
+            disable: async (code: string): Promise<{ message: string }> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings/${code}/disable`, {
+                    method: 'POST'
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao desabilitar provedor.', 'AdminApi');
+                return response.json();
+            }
+        }
+    },
+
+    // ─── Primavera Synchronization ────────────────────────────────────────
+    sync: {
+        catalog: {
+            preview: async (companyId: number, params: { search?: string; statusFilter?: string; page?: number; pageSize?: number } = {}): Promise<CatalogSyncPreviewDto> => {
+                const query = new URLSearchParams({ companyId: String(companyId) });
+                if (params.search) query.set('search', params.search);
+                if (params.statusFilter) query.set('statusFilter', params.statusFilter);
+                if (params.page) query.set('page', String(params.page));
+                if (params.pageSize) query.set('pageSize', String(params.pageSize));
+                const response = await apiFetch(`${API_BASE_URL}/api/v1/sync/catalog/preview?${query}`);
+                if (!response.ok) return handleApiError(response, 'Falha ao carregar preview do catálogo.', 'SyncApi');
+                return response.json();
+            },
+            import: async (companyId: number, body: SyncImportRequestDto): Promise<SyncImportResultDto> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/v1/sync/catalog/import?companyId=${companyId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao importar itens do catálogo.', 'SyncApi');
+                return response.json();
+            },
+            resolveConflict: async (companyId: number, body: CatalogResolveConflictRequestDto): Promise<CatalogResolveConflictResultDto> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/v1/sync/catalog/resolve-conflict?companyId=${companyId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao resolver conflito de catálogo.', 'SyncApi');
+                return response.json();
+            }
+        },
+        suppliers: {
+            preview: async (companyId: number, params: { search?: string; statusFilter?: string; page?: number; pageSize?: number } = {}): Promise<SupplierSyncPreviewDto> => {
+                const query = new URLSearchParams({ companyId: String(companyId) });
+                if (params.search) query.set('search', params.search);
+                if (params.statusFilter) query.set('statusFilter', params.statusFilter);
+                if (params.page) query.set('page', String(params.page));
+                if (params.pageSize) query.set('pageSize', String(params.pageSize));
+                const response = await apiFetch(`${API_BASE_URL}/api/v1/sync/suppliers/preview?${query}`);
+                if (!response.ok) return handleApiError(response, 'Falha ao carregar preview de fornecedores.', 'SyncApi');
+                return response.json();
+            },
+            import: async (companyId: number, body: SyncImportRequestDto): Promise<SyncImportResultDto> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/v1/sync/suppliers/import?companyId=${companyId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao importar fornecedores.', 'SyncApi');
+                return response.json();
+            },
+            importReviewed: async (companyId: number, body: SyncSupplierReviewedImportRequestDto): Promise<SyncImportResultDto> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/v1/sync/suppliers/import-reviewed?companyId=${companyId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao importar fornecedores (revisado).', 'SyncApi');
                 return response.json();
             }
         }
