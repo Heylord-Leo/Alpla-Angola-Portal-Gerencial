@@ -2,6 +2,24 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.156.0] - 2026-05-27
+
+### Added — Migration Consolidation & Deployment Hardening
+- **Consolidated Baseline Migration**: New `20260225000000_ConsolidatedBaseline` EF Core migration replacing 41 deleted migration files. Creates all 29 foundational tables, indexes, foreign keys, and seed data. Enables clean database installations via standard EF Core migration pipeline.
+- **Startup Schema Validation**: `Program.cs` validates 14 critical tables after migration. In TEST/PRODUCTION, failure crashes the application. In Development, failures log a warning and continue.
+- **Post-Install Validation Script**: New `docs/POST_INSTALL_DATABASE_VALIDATION.sql` — read-only SQL validating table existence, columns, seed data, FK integrity.
+- **Deployment Checklist**: New `docs/DEPLOYMENT_CHECKLIST.md` — full deployment procedure including local development database setup.
+- **Admin User Seed Template**: New `docs/ADMIN_USER_SEED_TEMPLATE.sql` — parameterized SQL template for first admin user creation.
+
+### Changed
+- Startup logging prefix changed from `[DEBUG]` to `[STARTUP]`.
+- Added `/api/v1/lookups/request-types` and `/api/v1/iva-rates` to deployment validation checks.
+
+### Database
+- Migration: `20260225000000_ConsolidatedBaseline` required for all environments.
+- Existing databases must register the baseline in `__EFMigrationsHistory` BEFORE deploying.
+- Local development: recommended clean recreate via `dotnet ef database drop --force && dotnet ef database update`.
+
 ## [v2.155.2] - 2026-05-26
 
 ### Fixed — RequestCreate Scope Loading Resilience
