@@ -203,7 +203,7 @@ var app = builder.Build();
 // Correlation ID middleware — must run first so all downstream services can access the ID.
 app.UseMiddleware<CorrelationIdMiddleware>();
 
-// Initialize database
+// Initialize database — apply pending migrations
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
@@ -211,12 +211,46 @@ using (var scope = app.Services.CreateScope())
     {
         var context = services.GetRequiredService<ApplicationDbContext>();
         context.Database.Migrate();
-        Console.WriteLine("[DEBUG] Database initialized and migrations applied.");
+        Console.WriteLine("[STARTUP] Database initialized and migrations applied successfully.");
+
+        // Post-migration schema validation: verify critical tables exist
+        var criticalTables = new[] { "Users", "Roles", "Plants", "Departments", "Companies",
+            "RequestTypes", "RequestStatuses", "IvaRates", "Currencies", "Units",
+            "NeedLevels", "LineItemStatuses", "SystemCounters", "CostCenters" };
+        
+        var connection = context.Database.GetDbConnection();
+        connection.Open();
+        foreach (var table in criticalTables)
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = $"SELECT CASE WHEN OBJECT_ID('{table}', 'U') IS NOT NULL THEN 1 ELSE 0 END";
+            var exists = (int)cmd.ExecuteScalar()!;
+            if (exists != 1)
+            {
+                throw new InvalidOperationException(
+                    $"[STARTUP] CRITICAL: Table '{table}' does not exist after migration. " +
+                    "The database schema is incomplete. Run POST_INSTALL_DATABASE_VALIDATION.sql for diagnostics.");
+            }
+        }
+        connection.Close();
+        Console.WriteLine("[STARTUP] Post-migration schema validation passed — all critical tables exist.");
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"[DEBUG] An error occurred while initializing the DB: {ex.Message}");
-        if (ex.InnerException != null) Console.WriteLine($"[DEBUG] Inner: {ex.InnerException.Message}");
+        Console.WriteLine($"[STARTUP] CRITICAL: Database initialization failed: {ex.Message}");
+        if (ex.InnerException != null)
+            Console.WriteLine($"[STARTUP] Inner: {ex.InnerException.Message}");
+
+        // In deployed environments (TEST/PRODUCTION), crash immediately.
+        // The application must NOT start with a broken or partial schema.
+        if (!app.Environment.IsDevelopment())
+        {
+            Console.WriteLine("[STARTUP] FATAL: Non-development environment detected. Shutting down to prevent operation with broken schema.");
+            throw;
+        }
+
+        // In Development only: log warning and continue (enables local iteration)
+        Console.WriteLine("[STARTUP] WARNING: Development environment — continuing despite migration failure. Fix the database before testing.");
     }
 }
 

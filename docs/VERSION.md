@@ -2,7 +2,36 @@
 
 ## Current Version
 
-v2.155.2
+v2.156.0
+
+## [2.156.0] - 2026-05-27
+
+### Added — Migration Consolidation & Deployment Hardening
+- **Consolidated Baseline Migration**: New `20260225000000_ConsolidatedBaseline` EF Core migration replacing 41 deleted migration files. Creates all 29 foundational tables with complete schema, indexes, foreign keys, and seed data. Enables clean database installations to work through the standard EF Core migration pipeline.
+- **Startup Schema Validation**: `Program.cs` now validates 14 critical tables exist after migration. In TEST/PRODUCTION, migration or schema failure **crashes the application** to prevent operation with a broken database. In Development, failures log a warning but allow continued local iteration.
+- **Post-Install Validation Script**: New `docs/POST_INSTALL_DATABASE_VALIDATION.sql` — read-only SQL script that validates table existence, critical columns, seed data counts, migration history, user status, and FK integrity. Run after every deployment.
+- **Deployment Checklist**: New `docs/DEPLOYMENT_CHECKLIST.md` covering pre-deployment, deployment steps, post-deployment validation, clean install, upgrade, emergency rollback, and **local development database** setup (Option A: clean recreate, Option B: preserve existing data).
+- **Admin User Seed Template**: New `docs/ADMIN_USER_SEED_TEMPLATE.sql` — parameterized SQL template for creating the first administrator user on clean databases, with placeholder validation and forced password change on first login.
+
+### Changed
+- **Startup Logging**: All migration messages now use `[STARTUP]` prefix instead of `[DEBUG]` for production visibility.
+- **Post-Deployment Endpoint Checks**: Added `/api/v1/lookups/request-types` and `/api/v1/iva-rates` to the deployment validation checklist (these were the root cause of the original AOVIA1VMS011 issue).
+
+### Database
+- **Migration**: `20260225000000_ConsolidatedBaseline` — required for all environments.
+- **Existing databases**: Must register the baseline in `__EFMigrationsHistory` BEFORE deploying the new build.
+- **Local development**: Recommended clean recreate via `dotnet ef database drop --force && dotnet ef database update`.
+
+**Files Changed**:
+- `src/backend/AlplaPortal.Infrastructure/Data/Migrations/20260225000000_ConsolidatedBaseline.cs` — [NEW] Consolidated baseline migration.
+- `src/backend/AlplaPortal.Infrastructure/Data/Migrations/20260225000000_ConsolidatedBaseline.Designer.cs` — [NEW] Model snapshot for baseline.
+- `src/backend/AlplaPortal.Api/Program.cs` — Crash-on-failure startup + schema validation.
+- `docs/POST_INSTALL_DATABASE_VALIDATION.sql` — [NEW] Read-only schema health check.
+- `docs/DEPLOYMENT_CHECKLIST.md` — [NEW] Full deployment procedure + local dev instructions.
+- `docs/ADMIN_USER_SEED_TEMPLATE.sql` — [NEW] Admin user seed template.
+- `docs/VERSION.md` — Bumped to v2.156.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.156.0".
 
 ## [2.155.2] - 2026-05-26
 
