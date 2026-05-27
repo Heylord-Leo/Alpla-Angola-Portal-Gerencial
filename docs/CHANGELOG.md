@@ -2,6 +2,13 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.156.1] - 2026-05-27
+
+### Improved — Deployment Tooling & Post-Install Validation
+- **Admin User Seed Template**: Enhanced `docs/ADMIN_USER_SEED_TEMPLATE.sql` — now fully idempotent (creates new or updates existing users), assigns all 12 roles via safe `INSERT...WHERE NOT EXISTS`, assigns all active plants and departments dynamically.
+- **Post-Install Validation**: Added `InformationalNotifications.Category` and `EventCorrelationId` to critical column checks (these were missing on TEST causing `/api/v1/notifications` 500). Added Step 5b: Admin User Bootstrap Validation — warns if no active System Administrator with plant/department scopes exists.
+- **Password Hash Generator**: New `tools/PasswordHasher` — standalone .NET 8 console tool using `BCrypt.Net-Next 4.1.0` for generating admin seed password hashes. Referenced by `ADMIN_USER_SEED_TEMPLATE.sql`.
+
 ## [v2.156.0] - 2026-05-27
 
 ### Added — Migration Consolidation & Deployment Hardening

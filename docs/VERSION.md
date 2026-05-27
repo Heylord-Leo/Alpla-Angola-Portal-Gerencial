@@ -2,7 +2,23 @@
 
 ## Current Version
 
-v2.156.0
+v2.156.1
+
+## [2.156.1] - 2026-05-27
+
+### Improved — Deployment Tooling & Post-Install Validation
+- **Admin User Seed Template**: Enhanced `docs/ADMIN_USER_SEED_TEMPLATE.sql` to be fully idempotent (works for both new and existing users). Now assigns all 12 administrative roles using safe `INSERT...WHERE NOT EXISTS` patterns. Plant and department scopes assigned dynamically via `WHERE IsActive = 1`.
+- **Post-Install Validation**: Added `InformationalNotifications.Category` and `InformationalNotifications.EventCorrelationId` to critical column checks. Added Step 5b: Admin User Bootstrap Validation — verifies at least one active System Administrator exists with plant scopes and department scopes.
+- **Password Hash Generator**: New `tools/PasswordHasher` — standalone .NET 8 console tool using `BCrypt.Net-Next 4.1.0` (same as application) for generating admin seed password hashes safely. Referenced by `ADMIN_USER_SEED_TEMPLATE.sql`.
+
+**Files Changed**:
+- `docs/ADMIN_USER_SEED_TEMPLATE.sql` — Idempotent, all roles, dynamic scopes.
+- `docs/POST_INSTALL_DATABASE_VALIDATION.sql` — Added notification columns + admin bootstrap check.
+- `tools/PasswordHasher/PasswordHasher.csproj` — [NEW] BCrypt hash generator project.
+- `tools/PasswordHasher/Program.cs` — [NEW] BCrypt hash generator code.
+- `docs/VERSION.md` — Bumped to v2.156.1.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.156.1".
 
 ## [2.156.0] - 2026-05-27
 
