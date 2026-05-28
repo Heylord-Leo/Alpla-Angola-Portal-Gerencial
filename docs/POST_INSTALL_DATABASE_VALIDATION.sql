@@ -63,6 +63,9 @@ INSERT INTO @criticalColumns VALUES
     ('Departments', 'ResponsibleUserId'),
     ('Suppliers', 'PortalCode'),
     ('Suppliers', 'PrimaveraCode'),
+    ('Suppliers', 'Origin'),
+    ('Suppliers', 'SourceCompany'),
+    ('Suppliers', 'LastSyncedAtUtc'),
     ('InformationalNotifications', 'Category'),
     ('InformationalNotifications', 'EventCorrelationId');
 

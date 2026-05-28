@@ -2,6 +2,14 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.156.3] - 2026-05-28
+
+### Fixed — Suppliers Baseline Schema Correction
+- **Missing Columns in ConsolidatedBaseline**: The `Suppliers` table in the baseline migration was missing 3 columns (`Origin`, `SourceCompany`, `LastSyncedAtUtc`) that existed in the entity model and snapshot but were never created by any migration. Clean database installs caused runtime `SqlException: Invalid column name` errors in `ProformaDeadlineAlertService`.
+- **Baseline Fix**: Added the 3 columns to the ConsolidatedBaseline `CreateTable` and `Designer.cs`. Updated seed data to include `Origin = "MANUAL"`.
+- **Post-Install Validation**: Added the 3 Supplier columns to critical column checks.
+- **No New Migration Required**: Snapshot was already correct; this fixes the baseline for clean installs only.
+
 ## [v2.156.2] - 2026-05-28
 
 ### Fixed — Primavera ERP Default SQL Server Instance

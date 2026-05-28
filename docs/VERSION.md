@@ -2,7 +2,29 @@
 
 ## Current Version
 
-v2.156.2
+v2.156.3
+
+## [2.156.3] - 2026-05-28
+
+### Fixed — Suppliers Baseline Schema Correction
+- **Missing Columns in ConsolidatedBaseline**: The `Suppliers` table in `20260225000000_ConsolidatedBaseline` was missing 3 columns that existed in the entity model and `ApplicationDbContextModelSnapshot` but were never added by any migration: `Origin` (nvarchar, NOT NULL, default `'MANUAL'`), `SourceCompany` (nvarchar, nullable), `LastSyncedAtUtc` (datetime2, nullable).
+- **Root Cause**: The entity properties were added to `Supplier.cs` and the snapshot was updated during migration scaffolding, but the generated `Up()` method in `AddSupplierRegistrationFields` did not include `AddColumn` calls for these 3 properties. Clean database installs created the Suppliers table without them, causing runtime `SqlException: Invalid column name` errors when `ProformaDeadlineAlertService` queried requests with `.Include(r => r.Supplier)`.
+- **Baseline Fix**: Added the 3 columns to the ConsolidatedBaseline `CreateTable` and `Designer.cs` snapshot. Updated seed data to include `Origin = "MANUAL"`.
+- **Post-Install Validation**: Added `Suppliers.Origin`, `Suppliers.SourceCompany`, and `Suppliers.LastSyncedAtUtc` to the critical column checks in `POST_INSTALL_DATABASE_VALIDATION.sql`.
+- **No New Migration Required**: The `ApplicationDbContextModelSnapshot` already contained these properties. This fix corrects the baseline for clean installs only.
+
+### Database
+- **Migration**: No new EF migration. Existing ConsolidatedBaseline updated.
+- **Existing databases**: Validate schema with `POST_INSTALL_DATABASE_VALIDATION.sql`. For TEST, prefer clean recreation when there is no important data. For Production, prepare a reviewed migration or repair plan before any database action.
+- **Local development**: Recommended clean recreate via `dotnet ef database drop --force && dotnet ef database update`.
+
+**Files Changed**:
+- `src/backend/AlplaPortal.Infrastructure/Data/Migrations/20260225000000_ConsolidatedBaseline.cs` — Added 3 Supplier columns + seed data.
+- `src/backend/AlplaPortal.Infrastructure/Data/Migrations/20260225000000_ConsolidatedBaseline.Designer.cs` — Added 3 properties + seed Origin.
+- `docs/POST_INSTALL_DATABASE_VALIDATION.sql` — Added 3 Supplier column checks.
+- `docs/VERSION.md` — Bumped to v2.156.3.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.156.3".
 
 ## [2.156.2] - 2026-05-28
 
