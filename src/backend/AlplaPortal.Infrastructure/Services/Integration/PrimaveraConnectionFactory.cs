@@ -332,13 +332,23 @@ public class PrimaveraConnectionFactory
 
     /// <summary>
     /// Builds a SQL Server connection string from resolved settings.
+    /// Handles default SQL Server instance names: MSSQLSERVER, DEFAULT, or empty
+    /// are treated as the default instance (no backslash in Data Source).
     /// </summary>
     private static string BuildConnectionString(
         IntegrationConfigResolver.ResolvedSqlSettings resolved, ResolvedCompanySettings companySettings)
     {
-        var dataSource = string.IsNullOrWhiteSpace(resolved.InstanceName)
+        var instanceName = resolved.InstanceName?.Trim();
+
+        // MSSQLSERVER is the SQL Server default instance name — appending it
+        // to the server address produces an invalid connection string.
+        var isDefaultInstance = string.IsNullOrWhiteSpace(instanceName)
+            || instanceName.Equals("MSSQLSERVER", StringComparison.OrdinalIgnoreCase)
+            || instanceName.Equals("DEFAULT", StringComparison.OrdinalIgnoreCase);
+
+        var dataSource = isDefaultInstance
             ? resolved.Server!
-            : $"{resolved.Server}\\{resolved.InstanceName}";
+            : $"{resolved.Server}\\{instanceName}";
 
         var builder = new SqlConnectionStringBuilder
         {

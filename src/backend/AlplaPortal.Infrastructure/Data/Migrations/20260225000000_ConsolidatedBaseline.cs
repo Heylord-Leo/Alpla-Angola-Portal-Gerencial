@@ -243,7 +243,10 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     TaxId = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     IsActive = table.Column<bool>(type: "bit", nullable: false),
                     PortalCode = table.Column<string>(type: "nvarchar(450)", nullable: true),
-                    PrimaveraCode = table.Column<string>(type: "nvarchar(450)", nullable: true)
+                    PrimaveraCode = table.Column<string>(type: "nvarchar(450)", nullable: true),
+                    Origin = table.Column<string>(type: "nvarchar(max)", nullable: false, defaultValue: "MANUAL"),
+                    SourceCompany = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    LastSyncedAtUtc = table.Column<DateTime>(type: "datetime2", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -849,10 +852,10 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
             });
 
             // Suppliers
-            migrationBuilder.InsertData(table: "Suppliers", columns: new[] { "Id", "Name", "IsActive", "PortalCode", "TaxId", "PrimaveraCode" }, values: new object[,]
+            migrationBuilder.InsertData(table: "Suppliers", columns: new[] { "Id", "Name", "IsActive", "PortalCode", "TaxId", "PrimaveraCode", "Origin" }, values: new object[,]
             {
-                { 1, "Alpla Global Services", true, "SUP-000001", null, null },
-                { 2, "Standard Supplier 01", true, "SUP-000002", null, null }
+                { 1, "Alpla Global Services", true, "SUP-000001", null, null, "MANUAL" },
+                { 2, "Standard Supplier 01", true, "SUP-000002", null, null, "MANUAL" }
             });
 
             // Units

@@ -62,7 +62,12 @@ INSERT INTO @criticalColumns VALUES
     ('CostCenters', 'PlantId'),
     ('Departments', 'ResponsibleUserId'),
     ('Suppliers', 'PortalCode'),
-    ('Suppliers', 'PrimaveraCode');
+    ('Suppliers', 'PrimaveraCode'),
+    ('Suppliers', 'Origin'),
+    ('Suppliers', 'SourceCompany'),
+    ('Suppliers', 'LastSyncedAtUtc'),
+    ('InformationalNotifications', 'Category'),
+    ('InformationalNotifications', 'EventCorrelationId');
 
 SELECT
     cc.TableName,
@@ -144,6 +149,49 @@ SELECT
     SUM(CASE WHEN IsActive = 1 THEN 1 ELSE 0 END) AS ActiveUsers,
     SUM(CASE WHEN IsActive = 0 THEN 1 ELSE 0 END) AS InactiveUsers
 FROM Users;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- STEP 5b: Admin User Bootstrap Validation
+-- ═══════════════════════════════════════════════════════════════════════════
+PRINT '';
+PRINT '--- STEP 5b: Admin User Bootstrap ---';
+
+-- Check System Administrator role is assigned to at least one active user
+IF OBJECT_ID('Users', 'U') IS NOT NULL AND OBJECT_ID('UserRoleAssignments', 'U') IS NOT NULL AND OBJECT_ID('Roles', 'U') IS NOT NULL
+BEGIN
+    SELECT
+        u.Email,
+        u.FullName,
+        u.IsActive,
+        (SELECT COUNT(*) FROM UserRoleAssignments ura2 WHERE ura2.UserId = u.Id) AS RoleCount,
+        (SELECT COUNT(*) FROM UserPlantScopes ups WHERE ups.UserId = u.Id) AS PlantScopeCount,
+        (SELECT COUNT(*) FROM UserDepartmentScopes uds WHERE uds.UserId = u.Id) AS DeptScopeCount,
+        CASE
+            WHEN u.IsActive = 0 THEN '** INACTIVE **'
+            WHEN (SELECT COUNT(*) FROM UserPlantScopes ups WHERE ups.UserId = u.Id) = 0 THEN '** NO PLANTS **'
+            WHEN (SELECT COUNT(*) FROM UserDepartmentScopes uds WHERE uds.UserId = u.Id) = 0 THEN '** NO DEPTS **'
+            ELSE 'OK'
+        END AS [Status]
+    FROM Users u
+    INNER JOIN UserRoleAssignments ura ON ura.UserId = u.Id
+    INNER JOIN Roles r ON r.Id = ura.RoleId AND r.RoleName = 'System Administrator'
+    ORDER BY u.Email;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM Users u
+        INNER JOIN UserRoleAssignments ura ON ura.UserId = u.Id
+        INNER JOIN Roles r ON r.Id = ura.RoleId AND r.RoleName = 'System Administrator'
+        WHERE u.IsActive = 1
+    )
+    BEGIN
+        PRINT '** WARNING: No active user with System Administrator role found! **';
+        PRINT '   Run ADMIN_USER_SEED_TEMPLATE.sql to bootstrap an admin user.';
+    END
+    ELSE
+    BEGIN
+        PRINT '[OK] System Administrator user(s) found.';
+    END
+END
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- STEP 6: Foreign Key Integrity Spot Checks

@@ -427,7 +427,12 @@ function ConnectionConfigureModal({ provider, onClose, onSuccess }: {
             if (isSQL) {
                 payload.server = server;
                 payload.databaseName = databaseName;
-                payload.instanceName = instanceName;
+                // Normalize default SQL Server instance names to empty
+                const trimmedInstance = instanceName.trim();
+                const isDefault = !trimmedInstance
+                    || trimmedInstance.toUpperCase() === 'MSSQLSERVER'
+                    || trimmedInstance.toUpperCase() === 'DEFAULT';
+                payload.instanceName = isDefault ? '' : trimmedInstance;
                 payload.authenticationMode = authenticationMode;
                 payload.username = username;
                 payload.timeoutSeconds = Number(timeoutSeconds) || undefined;
@@ -525,8 +530,11 @@ function ConnectionConfigureModal({ provider, onClose, onSuccess }: {
                                     </div>
                                 )}
                                 <div>
-                                    <label style={labelStyle}>Instância SQL</label>
-                                    <input type="text" value={instanceName} onChange={e => setInstanceName(e.target.value)} placeholder="ex: SQLEXPRESS (opcional)" style={inputStyle} />
+                                    <label style={labelStyle}>Instância SQL <span style={{ fontWeight: 400, color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>(opcional)</span></label>
+                                    <input type="text" value={instanceName} onChange={e => setInstanceName(e.target.value)} placeholder="ex: SQLEXPRESS" style={inputStyle} />
+                                    <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                                        Para a instância padrão do SQL Server, deixe este campo vazio.
+                                    </p>
                                 </div>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>

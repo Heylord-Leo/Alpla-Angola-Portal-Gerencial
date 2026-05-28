@@ -2,6 +2,28 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.156.3] - 2026-05-28
+
+### Fixed — Suppliers Baseline Schema Correction
+- **Missing Columns in ConsolidatedBaseline**: The `Suppliers` table in the baseline migration was missing 3 columns (`Origin`, `SourceCompany`, `LastSyncedAtUtc`) that existed in the entity model and snapshot but were never created by any migration. Clean database installs caused runtime `SqlException: Invalid column name` errors in `ProformaDeadlineAlertService`.
+- **Baseline Fix**: Added the 3 columns to the ConsolidatedBaseline `CreateTable` and `Designer.cs`. Updated seed data to include `Origin = "MANUAL"`.
+- **Post-Install Validation**: Added the 3 Supplier columns to critical column checks.
+- **No New Migration Required**: Snapshot was already correct; this fixes the baseline for clean installs only.
+
+## [v2.156.2] - 2026-05-28
+
+### Fixed — Primavera ERP Default SQL Server Instance
+- **Connection String Builder**: `PrimaveraConnectionFactory.BuildConnectionString` now treats `MSSQLSERVER`, `DEFAULT`, empty, and whitespace instance names as the default SQL Server instance — producing `Server=host` instead of the invalid `Server=host\MSSQLSERVER` that caused "SQL Network Interfaces, error: 25 - Connection string is not valid."
+- **Frontend Normalization**: Instance field value is trimmed and normalized to empty when saving `MSSQLSERVER` or `DEFAULT`, preventing bad data from being persisted to the database.
+- **UI Improvement**: Instance field label now shows "(opcional)" with helper text: "Para a instância padrão do SQL Server, deixe este campo vazio."
+
+## [v2.156.1] - 2026-05-27
+
+### Improved — Deployment Tooling & Post-Install Validation
+- **Admin User Seed Template**: Enhanced `docs/ADMIN_USER_SEED_TEMPLATE.sql` — now fully idempotent (creates new or updates existing users), assigns all 12 roles via safe `INSERT...WHERE NOT EXISTS`, assigns all active plants and departments dynamically.
+- **Post-Install Validation**: Added `InformationalNotifications.Category` and `EventCorrelationId` to critical column checks (these were missing on TEST causing `/api/v1/notifications` 500). Added Step 5b: Admin User Bootstrap Validation — warns if no active System Administrator with plant/department scopes exists.
+- **Password Hash Generator**: New `tools/PasswordHasher` — standalone .NET 8 console tool using `BCrypt.Net-Next 4.1.0` for generating admin seed password hashes. Referenced by `ADMIN_USER_SEED_TEMPLATE.sql`.
+
 ## [v2.156.0] - 2026-05-27
 
 ### Added — Migration Consolidation & Deployment Hardening
