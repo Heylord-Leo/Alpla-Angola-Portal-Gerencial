@@ -2,7 +2,47 @@
 
 ## Current Version
 
-v2.156.4
+v2.157.0
+
+## [2.157.0] - 2026-05-28
+
+### Added — Reusable Live Guide System & Request Creation Live Guide
+
+Introduced a reusable **Live Guide** infrastructure as an extension of the existing Guided Tour system. Live Guides provide interactive, step-by-step task guidance that validates user input before allowing progression — unlike explanatory tours that are passive and informational.
+
+**Live Guide Infrastructure** (`src/frontend/src/features/guided-tour/live-guide/`):
+- `liveGuideTypes.ts` — Core types (`LiveGuideStep`, `LiveGuideDefinition`) with support for `string | ReactNode` content, step conditions, validation functions, and required actions.
+- `useLiveGuide.ts` — React hook managing guide lifecycle (start, next, prev, skip, close, complete). Includes `findNextValidStep` for conditional step resolution and a **target-awaiting mechanism** that retries up to 550ms for DOM targets inside AnimatePresence animations.
+- `LiveGuideProvider.tsx` — React context provider wrapping Joyride in controlled mode with a custom tooltip component. Uses a separate `TooltipDataContext` to bypass Joyride's internal memoization and ensure real-time validation state propagation.
+- `LiveGuideLauncher.tsx` — Reusable button component for starting a registered Live Guide.
+- `liveGuideStorage.ts` — localStorage persistence for guide completion/dismissal state.
+
+**Request Creation Live Guide** (`guides/requestCreation.liveGuide.tsx`):
+- Factory function pattern: `createRequestCreationGuide(getFormValues)` receives a form state getter to avoid tight coupling to React hooks.
+- 12 steps covering: Introduction, Título, Descrição, Documentos de Apoio, Tipo de Pedido (rich JSX with bold Cotação/Pagamento sections and bullet examples), Itens Solicitados (Cotação-conditional), Input de Documento & Faturamento (Pagamento-conditional), Grau de Necessidade, Data Limite, Departamento, Empresa, Planta, Criar Rascunho.
+- Conditional steps use DOM-first reading (`readRequestTypeFromDOM()`) with form state fallback to eliminate stale-closure risks.
+- Validation blocks progression until required fields are filled (DOM value read + form state fallback).
+
+**Design Decisions**:
+- `data-guide` attributes are used for Live Guide targets, separate from `data-tour` (explanatory tours) to avoid namespace collisions.
+- No auto-start in v1 — guide starts only from explicit user action ("Guia ao vivo" button).
+- Guide definitions are factories registered via `useLiveGuideRegistration`, not hardcoded in page components.
+- Custom Joyride tooltip renders `ReactNode` content directly and splits plain strings on `\n` for line breaks.
+
+**Files Changed**:
+- `src/frontend/src/features/guided-tour/live-guide/liveGuideTypes.ts` — [NEW] Core types.
+- `src/frontend/src/features/guided-tour/live-guide/useLiveGuide.ts` — [NEW] Guide lifecycle hook.
+- `src/frontend/src/features/guided-tour/live-guide/LiveGuideProvider.tsx` — [NEW] Context provider + custom tooltip.
+- `src/frontend/src/features/guided-tour/live-guide/LiveGuideLauncher.tsx` — [NEW] Launcher button.
+- `src/frontend/src/features/guided-tour/live-guide/liveGuideStorage.ts` — [NEW] Persistence utility.
+- `src/frontend/src/features/guided-tour/live-guide/guides/requestCreation.liveGuide.tsx` — [NEW] Request creation guide definition.
+- `src/frontend/src/features/guided-tour/GuidedTourProvider.tsx` — Integrated LiveGuideProvider wrapper.
+- `src/frontend/src/features/guided-tour/GuidedTourButton.tsx` — Added LiveGuideLauncher import.
+- `src/frontend/src/pages/Requests/RequestCreate.tsx` — Added `data-guide` attributes and LiveGuideLauncher + guide registration.
+- `docs/GUIDED_TOUR_SYSTEM.md` — Added Live Guide architecture section.
+- `docs/CHANGELOG.md` — This entry.
+- `docs/VERSION.md` — Bumped to v2.157.0.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.157.0".
 
 ## [2.156.4] - 2026-05-28
 

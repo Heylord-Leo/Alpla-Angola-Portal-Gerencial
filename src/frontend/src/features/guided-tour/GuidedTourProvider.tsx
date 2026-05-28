@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Compass, Info } from 'lucide-react';
 import { useGuidedTour } from './useGuidedTour';
 import type { GuidedTourContextValue } from './guidedTourTypes';
+import { LiveGuideProvider } from './live-guide/LiveGuideProvider';
 
 /**
  * GuidedTourProvider
@@ -61,7 +62,9 @@ export function GuidedTourProvider({ children }: GuidedTourProviderProps) {
 
     return (
         <GuidedTourContext.Provider value={contextValue}>
+            <LiveGuideProvider>
             {children}
+            </LiveGuideProvider>
 
             {/* Joyride Tour Overlay */}
             <Joyride
