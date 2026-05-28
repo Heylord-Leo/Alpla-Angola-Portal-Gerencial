@@ -2,6 +2,13 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.156.2] - 2026-05-28
+
+### Fixed — Primavera ERP Default SQL Server Instance
+- **Connection String Builder**: `PrimaveraConnectionFactory.BuildConnectionString` now treats `MSSQLSERVER`, `DEFAULT`, empty, and whitespace instance names as the default SQL Server instance — producing `Server=host` instead of the invalid `Server=host\MSSQLSERVER` that caused "SQL Network Interfaces, error: 25 - Connection string is not valid."
+- **Frontend Normalization**: Instance field value is trimmed and normalized to empty when saving `MSSQLSERVER` or `DEFAULT`, preventing bad data from being persisted to the database.
+- **UI Improvement**: Instance field label now shows "(opcional)" with helper text: "Para a instância padrão do SQL Server, deixe este campo vazio."
+
 ## [v2.156.1] - 2026-05-27
 
 ### Improved — Deployment Tooling & Post-Install Validation

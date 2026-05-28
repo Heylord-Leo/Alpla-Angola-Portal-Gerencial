@@ -2,7 +2,21 @@
 
 ## Current Version
 
-v2.156.1
+v2.156.2
+
+## [2.156.2] - 2026-05-28
+
+### Fixed — Primavera ERP Default SQL Server Instance
+- **Connection String Builder**: `BuildConnectionString` in `PrimaveraConnectionFactory.cs` now correctly handles the default SQL Server instance. Values `MSSQLSERVER`, `DEFAULT`, empty, or whitespace are treated as the default instance — producing `Server=host` instead of the invalid `Server=host\MSSQLSERVER`.
+- **Frontend Normalization**: `IntegrationSettings.tsx` trims and normalizes `MSSQLSERVER`/`DEFAULT` to empty before saving, preventing bad data from being persisted.
+- **UI Improvement**: Instance field label now shows "(opcional)" with helper text: "Para a instância padrão do SQL Server, deixe este campo vazio."
+
+**Files Changed**:
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/PrimaveraConnectionFactory.cs` — Default instance normalization.
+- `src/frontend/src/pages/Admin/IntegrationSettings.tsx` — Frontend normalization + UI helper text.
+- `docs/VERSION.md` — Bumped to v2.156.2.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.156.2".
 
 ## [2.156.1] - 2026-05-27
 
