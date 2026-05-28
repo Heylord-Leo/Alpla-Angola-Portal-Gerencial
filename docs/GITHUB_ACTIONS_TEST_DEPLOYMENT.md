@@ -268,10 +268,21 @@ The following must be installed on `AOVIA1VMS011` for the reverse proxy to work:
 
 The file `src/frontend/public/web.config` is included in the Vite build output and deployed automatically. It contains:
 
-1. **Reverse Proxy Rule**: `/api/*` → `http://localhost:5001/api/*`
-2. **SPA Fallback Rule**: Non-file requests → `index.html` (React Router support)
+1. **HTTPS Redirect Rule** *(added v2.156.4)*: Redirects all HTTP requests to HTTPS with a 301 Permanent Redirect. Required because the IIS site has both `:80` and `:443` bindings. Without this, the portal is accessible over plain HTTP, triggering browser "Not secure" warnings.
+2. **Reverse Proxy Rule**: `/api/*` → `http://localhost:5001/api/*`
+3. **SPA Fallback Rule**: Non-file requests → `index.html` (React Router support)
 
 Port 5000 is **never** used. The reverse proxy always targets port 5001.
+
+### 9.3 ForwardedHeaders Middleware (Backend)
+
+> **Added in v2.156.4.** This is required for correct HTTPS behavior behind IIS ARR.
+
+The backend `Program.cs` configures `ForwardedHeaders` with `XForwardedFor` and `XForwardedProto`, and calls `app.UseForwardedHeaders()` as the **first middleware** in the pipeline.
+
+**Why this is needed:** IIS ARR proxies external HTTPS requests to Kestrel over internal HTTP (`http://localhost:5001`). Without `UseForwardedHeaders()`, ASP.NET Core sees all requests as plain HTTP, and `UseHttpsRedirection()` generates broken 307 redirects to `https://localhost:5001` — an unreachable internal URL that can trigger browser mixed content warnings.
+
+`KnownNetworks` and `KnownProxies` are cleared because IIS ARR runs on the same machine (localhost) and is the only proxy in this single-server architecture. This is the standard pattern for IIS in-process/out-of-process hosting behind ARR.
 
 ---
 
@@ -415,6 +426,8 @@ Get-ChildItem "C\Apps\AlplaPortal\Test\web\assets" -Filter "*.css"
 - The workflow uses only GitHub environment **variables** (not secrets) for paths and non-sensitive configuration.
 - The workflow preserves `appsettings.*.json` files on the server during deployment — they are never overwritten by the build artifact.
 - All `[REDACTED]` values in documentation are placeholders — real values are never committed.
+- **ForwardedHeaders** *(v2.156.4)*: The backend processes `X-Forwarded-For` and `X-Forwarded-Proto` headers from IIS ARR. `KnownNetworks`/`KnownProxies` are cleared for the localhost-only proxy. Do not expose Kestrel directly to the internet without re-restricting these settings.
+- **HTTPS Enforcement** *(v2.156.4)*: The frontend `web.config` redirects all HTTP traffic to HTTPS. The IIS site `:80` binding is kept only for the redirect; all application content is served over HTTPS.
 
 ---
 
@@ -428,4 +441,11 @@ Get-ChildItem "C\Apps\AlplaPortal\Test\web\assets" -Filter "*.css"
 | **Login 404** — `/api/api/auth/login` | `API_BASE_URL` defaulted to `/api` but endpoints already had `/api/` prefix | Default changed to `''` (empty string) |
 | **API 500** — Internal Server Error | Missing `appsettings.Test.json`, no `ASPNETCORE_ENVIRONMENT`, empty connection string | Server config checklist documented; requires manual admin setup |
 | **No reverse proxy** — browser can't reach API | Frontend and API on separate IIS sites, no routing from `/api/*` to `localhost:5001` | Added `web.config` with URL Rewrite + ARR reverse proxy rule |
+
+### v2.156.4 (Edge "Not Secure" Fix)
+
+| Issue | Root Cause | Fix |
+|:---|:---|:---|
+| **Edge "Not Secure"** — mixed content warning on HTTPS page | `ForwardedHeaders` middleware was disabled; `UseHttpsRedirection()` saw plain HTTP from IIS ARR and could generate broken 307 redirects to internal localhost | Enabled `ForwardedHeaders` with `XForwardedFor` + `XForwardedProto`; `UseForwardedHeaders()` placed as first middleware |
+| **HTTP accessible** — no HTTPS redirect | IIS site had both `:80` and `:443` bindings with no redirect rule | Added HTTP→HTTPS permanent redirect (301) as first rule in frontend `web.config` |
 
