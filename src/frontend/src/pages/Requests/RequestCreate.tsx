@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Save, X, Paperclip, Trash2, AlertTriangle, FileText, RefreshCw, UploadCloud, CheckCircle2, UserPlus, AlertCircle, Edit2, Plus, ArrowLeft } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
@@ -17,6 +17,9 @@ import { useCatalogItemReconciliation } from '../../hooks/useCatalogItemReconcil
 import { CatalogItemReconciliationModal } from '../../components/CatalogItemReconciliationModal';
 import { ReconciliationWarningDialog } from '../../components/ReconciliationWarningDialog';
 import { ReconcilableItem, ItemResolution } from '../../types';
+import { LiveGuideLauncher } from '../../features/guided-tour/live-guide/LiveGuideLauncher';
+import { useLiveGuideRegistration } from '../../features/guided-tour/live-guide/LiveGuideProvider';
+import { createRequestCreationGuide, type RequestFormValues } from '../../features/guided-tour/live-guide/guides/requestCreation.liveGuide';
 
 
 export function RequestCreate() {
@@ -85,6 +88,29 @@ export function RequestCreate() {
     const reconciliation = useCatalogItemReconciliation(activeItems);
 
     const initialFormDataRef = useRef(formData);
+
+    // ── Live Guide Registration ─────────────────────────────────────────
+    const { registerGuideFactory, unregisterGuideFactory } = useLiveGuideRegistration();
+    const formDataRef = useRef(formData);
+    formDataRef.current = formData;
+
+    const getFormValuesForGuide = useCallback((): RequestFormValues => ({
+        title: formDataRef.current.title,
+        description: formDataRef.current.description,
+        requestTypeId: formDataRef.current.requestTypeId,
+        needLevelId: formDataRef.current.needLevelId,
+        needByDateUtc: formDataRef.current.needByDateUtc,
+        departmentId: formDataRef.current.departmentId,
+        companyId: formDataRef.current.companyId,
+        plantId: formDataRef.current.plantId,
+    }), []);
+
+    useEffect(() => {
+        registerGuideFactory('request-creation-live-guide', () =>
+            createRequestCreationGuide(getFormValuesForGuide)
+        );
+        return () => unregisterGuideFactory('request-creation-live-guide');
+    }, [registerGuideFactory, unregisterGuideFactory, getFormValuesForGuide]);
 
     // Navigation Away Protection
     useEffect(() => {
@@ -769,20 +795,26 @@ export function RequestCreate() {
         ] as BreadcrumbItem[],
         title: isCopyMode ? 'Cópia de Pedido' : 'Novo Rascunho',
         secondaryActions: (
-            <button
-                type="button"
-                onClick={() => navigate(`/requests${location.state?.fromList || ''}`)}
-                style={{
-                    height: '36px', padding: '0 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)',
-                    backgroundColor: 'var(--color-bg-page)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
-                    fontWeight: 800, fontFamily: 'var(--font-family-display)', fontSize: '0.75rem', color: 'var(--color-text-main)'
-                }}
-            >
-                <X size={14} /> {isCopyMode ? 'DESCARTAR CÓPIA' : 'CANCELAR'}
-            </button>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                {!isCopyMode && (
+                    <LiveGuideLauncher guideId="request-creation-live-guide" label="Ajuda para criar pedido" />
+                )}
+                <button
+                    type="button"
+                    onClick={() => navigate(`/requests${location.state?.fromList || ''}`)}
+                    style={{
+                        height: '36px', padding: '0 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)',
+                        backgroundColor: 'var(--color-bg-page)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
+                        fontWeight: 800, fontFamily: 'var(--font-family-display)', fontSize: '0.75rem', color: 'var(--color-text-main)'
+                    }}
+                >
+                    <X size={14} /> {isCopyMode ? 'DESCARTAR CÓPIA' : 'CANCELAR'}
+                </button>
+            </div>
         ),
         primaryActions: (
             <button
+                data-guide="request-submit"
                 onClick={handleSubmit}
                 disabled={loading || isTemplateLoading || isOcrLoading}
                 className="btn-primary"
@@ -898,6 +930,7 @@ export function RequestCreate() {
             )}
 
             <form 
+                data-guide="request-form"
                 onSubmit={handleSubmit} 
                 style={{
                     display: (scopeError || allowedPlantCodes.length === 0) ? 'none' : 'flex',
@@ -908,7 +941,7 @@ export function RequestCreate() {
                     <h2 style={sectionTitleStyle}>Dados Gerais do Pedido</h2>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                        <label style={labelStyle}>
+                        <label data-guide="request-title" style={labelStyle}>
                             Título do Pedido <span style={{ color: 'red' }}>*</span>
                             <input
                                 required type="text" name="title" value={formData.title} onChange={handleChange}
@@ -917,7 +950,7 @@ export function RequestCreate() {
                             {renderFieldError('Title')}
                         </label>
 
-                        <label style={labelStyle}>
+                        <label data-guide="request-description" style={labelStyle}>
                             Descrição ou Justificativa <span style={{ color: 'red' }}>*</span>
                             <textarea
                                 required name="description" value={formData.description} onChange={handleChange} rows={4}
@@ -941,7 +974,7 @@ export function RequestCreate() {
                             {renderFieldError('Description')}
                         </label>
 
-                        <div style={{ marginTop: '-8px', marginBottom: '8px' }}>
+                        <div data-guide="request-documents" style={{ marginTop: '-8px', marginBottom: '8px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                                 <Paperclip size={16} style={{ color: 'var(--color-primary)' }} />
                                 <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-main)', textTransform: 'uppercase', letterSpacing: '0.025em' }}>
@@ -988,7 +1021,7 @@ export function RequestCreate() {
                             </div>
                         </div>
 
-                         <label style={labelStyle}>
+                         <label data-guide="request-type" style={labelStyle}>
                              Tipo de Pedido <span style={{ color: 'red' }}>*</span>
                              <select name="requestTypeId" value={formData.requestTypeId} onChange={handleChange} style={getInputStyle('RequestTypeId')}>
                                  <option value="">-- Selecione --</option>
@@ -1008,7 +1041,7 @@ export function RequestCreate() {
                                      exit={{ opacity: 0, height: 0, overflow: 'hidden' }}
                                      transition={{ duration: 0.3 }}
                                  >
-                                     <div style={{
+                                     <div data-guide="request-quotation-items-section" style={{
                                          marginBottom: '16px',
                                          padding: '24px',
                                          backgroundColor: 'var(--color-bg-surface)',
@@ -1129,7 +1162,7 @@ export function RequestCreate() {
                                      initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                                      style={{ position: 'relative' }}
                                  >
-                                     <div style={{ 
+                                     <div data-guide="request-payment-document-section" style={{ 
                                          marginBottom: '32px', padding: '24px', backgroundColor: 'var(--color-bg-surface)', 
                                          border: '1px solid var(--color-border)',  borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-sm)',
                                          position: 'relative'
@@ -1594,7 +1627,7 @@ export function RequestCreate() {
                          </AnimatePresence>
 
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '24px' }}>
-                            <label style={labelStyle}>
+                            <label data-guide="request-need-level" style={labelStyle}>
                                 Grau de Necessidade <span style={{ color: 'red' }}>*</span>
                                 <select name="needLevelId" value={formData.needLevelId} onChange={handleChange} style={getInputStyle('NeedLevelId')}>
                                     <option value="">-- Selecione --</option>
@@ -1611,7 +1644,7 @@ export function RequestCreate() {
                                         initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
                                         style={{ overflow: 'hidden' }}
                                     >
-                                        <label style={labelStyle}>
+                                        <label data-guide="request-needed-by" style={labelStyle}>
                                             {Number(formData.requestTypeId) === 2 ? 'Data de vencimento' : 'Necessário até (Data limite)'} <span style={{ color: 'red' }}>*</span>
                                             <DateInput
                                                 required name="needByDateUtc" value={formData.needByDateUtc}
@@ -1634,7 +1667,7 @@ export function RequestCreate() {
                                 )}
                             </AnimatePresence>
 
-                            <label style={labelStyle}>
+                            <label data-guide="request-department" style={labelStyle}>
                                 Departamento <span style={{ color: 'red' }}>*</span>
                                 <select name="departmentId" value={formData.departmentId} onChange={handleChange} style={getInputStyle('DepartmentId')}>
                                     <option value="">-- Selecione --</option>
@@ -1645,7 +1678,7 @@ export function RequestCreate() {
                                 {renderFieldError('DepartmentId')}
                             </label>
 
-                             <label style={labelStyle}>
+                             <label data-guide="request-company" style={labelStyle}>
                                 Empresa <span style={{ color: 'red' }}>*</span>
                                 <select 
                                     name="companyId" value={formData.companyId} onChange={handleChange} style={getInputStyle('CompanyId')}
@@ -1666,7 +1699,7 @@ export function RequestCreate() {
                                 )}
                             </label>
 
-                            <label style={labelStyle}>
+                            <label data-guide="request-plant" style={labelStyle}>
                                 Planta <span style={{ color: 'red' }}>*</span>
                                 <select 
                                     name="plantId" value={formData.plantId} onChange={handleChange} style={getInputStyle('PlantId')}

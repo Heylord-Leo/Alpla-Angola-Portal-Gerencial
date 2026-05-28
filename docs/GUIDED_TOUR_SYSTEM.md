@@ -345,3 +345,109 @@ The active registered tours are:
 - Avoid including DEV/debug-only UI.
 - When a tour changes user-facing behavior, update `FRONTEND_FOUNDATION.md` only if it contains guided tour standards that need alignment.
 - Keep `CHANGELOG.md` and `VERSION.md` aligned if a version bump is made.
+
+---
+
+## 19. Live Guide System (Extension)
+
+### 19.1 Overview
+
+The Live Guide system extends the Guided Tour architecture to support **interactive task guidance** — step-by-step walkthroughs that help users complete real tasks (e.g., filling forms) while validating each step before allowing progression.
+
+| Concept | Guided Tour | Live Guide |
+|---------|-------------|------------|
+| Purpose | Explain UI elements | Guide task execution |
+| Validation | None | Per-step, blocking |
+| Attribute | `data-tour` | `data-guide` |
+| Control | Joyride auto-progression | Manual step control |
+| ID Type | `TourId` | `LiveGuideId` |
+| Start | Auto (welcome) or manual | Always manual |
+| Screen Impact | Read-only overlay | User interacts with real form |
+
+### 19.2 Architecture
+
+```
+LiveGuideProvider (context + controlled Joyride)
+  └── useLiveGuide (hook — lifecycle, validation, step control)
+       ├── liveGuideTypes.ts (type definitions)
+       ├── liveGuideRegistry.ts (metadata registry + route matching)
+       ├── liveGuideStorage.ts (localStorage persistence)
+       └── guides/
+            └── requestCreation.liveGuide.ts (factory function)
+```
+
+- **LiveGuideProvider** is nested inside `GuidedTourProvider`, sharing the same provider tree.
+- **Joyride** is used in controlled mode (`continuous={false}`, `stepIndex` controlled) exclusively for spotlight, overlay, and positioning.
+- The **custom tooltip** (via `tooltipComponent`) handles all UI: step content, validation indicators, navigation buttons.
+- Step transitions are managed by the `useLiveGuide` hook, not by Joyride's internal state.
+
+### 19.3 Type System
+
+```typescript
+type LiveGuideId = 'request-creation-live-guide'; // extend as needed
+type RequiredAction = 'input' | 'select' | 'upload' | 'click' | 'none';
+type LiveGuideStatus = 'completed' | 'cancelled' | 'not-started';
+```
+
+### 19.4 Data Attributes
+
+Live Guides use `data-guide` attributes (never `data-tour`):
+
+| Attribute | Target |
+|-----------|--------|
+| `data-guide="request-form"` | The `<form>` element |
+| `data-guide="request-title"` | Title input label |
+| `data-guide="request-description"` | Description textarea label |
+| `data-guide="request-documents"` | Documents section |
+| `data-guide="request-type"` | Request type select |
+| `data-guide="request-need-level"` | Need level select |
+| `data-guide="request-department"` | Department select |
+| `data-guide="request-company"` | Company select |
+| `data-guide="request-plant"` | Plant select |
+| `data-guide="request-submit"` | Submit button |
+
+### 19.5 Step Validation
+
+Each step can define:
+- `requiredAction` — what type of interaction is needed.
+- `validate()` — returns `true` when the step's condition is satisfied.
+- `validationMessage` — Portuguese message shown when blocked.
+- `allowSkip` — if `true`, the user may bypass validation.
+
+Validation is evaluated every 300ms while the guide is active.
+
+### 19.6 Guide Factory Pattern
+
+Guide definitions are created via factory functions that receive a `getFormValues()` getter, avoiding tight coupling between the guide system and page component state.
+
+```typescript
+const guide = createRequestCreationGuide(() => ({
+    title: formData.title,
+    description: formData.description,
+    // ...
+}));
+```
+
+Pages register their factory via `useLiveGuideRegistration()` and unregister on unmount.
+
+### 19.7 Entry Points
+
+Live guides can be started from:
+1. **Inline button** — `LiveGuideLauncher` component placed in the page header.
+2. **Topbar help dropdown** — `GuidedTourButton` automatically shows live guides available for the current route under a "Guias Interativos" section.
+
+### 19.8 Registered Live Guides
+
+| ID | Module | Route | Description |
+|----|--------|-------|-------------|
+| `request-creation-live-guide` | requests | `/requests/new` | 10-step guide for creating a new request draft |
+
+### 19.9 Adding a New Live Guide
+
+1. Create a new file in `live-guide/guides/` with a factory function.
+2. Add the `LiveGuideId` to the union type in `liveGuideTypes.ts`.
+3. Add a metadata entry in `liveGuideRegistry.ts`.
+4. In the target page, register the factory via `useLiveGuideRegistration()`.
+5. Add `data-guide` attributes to the target elements.
+6. Optionally add a `LiveGuideLauncher` button.
+7. Document the new guide in this file.

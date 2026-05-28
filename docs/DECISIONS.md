@@ -1912,3 +1912,24 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
 - **Alternatives considered:** Creating a new `SystemIntegrationSettings` entity (rejected: duplicates existing schema). Using DataProtection API instead of AesEncryptionHelper (rejected: not yet persistent in Production, see DEC-134).
 - **Consequences:** Eliminates plaintext credentials from source control. Provides admin-managed integration configuration through the Portal UI. Enables self-service deployment to new environments without requiring manual appsettings editing. Maintains backward compatibility with existing config-driven behavior.
 - **Related:** [INTEGRATION_MANAGEMENT_ARCHITECTURE_REVIEW.md](INTEGRATION_MANAGEMENT_ARCHITECTURE_REVIEW.md)
+
+---
+
+## DEC-136 — Live Guide System (Interactive Task Guidance)
+
+- **Date:** 2026-05-28
+- **Status:** Accepted
+- **Context:** The existing Guided Tour system (DEC-132) provides explanatory walkthroughs of UI elements. Users requested interactive step-by-step guidance for complex tasks like creating a new purchase request — helping them fill the form while validating each field before progression. This is fundamentally different from "explaining the screen" and requires per-step validation, controlled state, and real form interaction during the guide.
+- **Decision:**
+    1. **Reusable Extension**: Implement the Live Guide as a reusable extension of the existing Guided Tour architecture, not as a one-off solution inside any specific page.
+    2. **Separate Namespace**: Use `data-guide` attributes for Live Guide targets, keeping them separate from `data-tour` (Guided Tours) to avoid namespace collisions.
+    3. **Controlled Joyride**: Use Joyride in controlled mode (`continuous={false}`, manual `stepIndex`) exclusively for spotlight, overlay, and positioning. All step transitions are managed by a custom `useLiveGuide` hook.
+    4. **Custom Tooltip**: Use Joyride's `tooltipComponent` prop for a fully custom tooltip with validation indicators, blocked progression, skip buttons, and Portuguese copy.
+    5. **Factory Pattern**: Guide definitions are created via factory functions that receive form state getters, decoupling the guide system from page component internals.
+    6. **Manual Start Only**: Live Guides start only from explicit user action (no auto-start). Auto-start may be evaluated after UX validation.
+    7. **Provider Nesting**: `LiveGuideProvider` is nested inside `GuidedTourProvider` so both systems coexist in the same provider tree.
+    8. **Topbar Integration**: The help dropdown (`GuidedTourButton`) automatically discovers live guides available for the current route via the `liveGuideRegistry`.
+- **Alternatives considered:** Converting the form into a wizard (rejected: user must see and use the full form), building a separate tooltip system without Joyride (rejected: duplicates spotlight/overlay/positioning logic), using `data-tour` for both systems (rejected: namespace collision risk).
+- **Consequences:** Establishes a scalable pattern for adding interactive task guides to any page. First implementation: Request Creation (10-step guide with field validation). The system can be extended to other complex forms (contracts, items, etc.) by adding new guide definitions.
+- **Related:** [GUIDED_TOUR_SYSTEM.md](GUIDED_TOUR_SYSTEM.md) § 19
+

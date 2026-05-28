@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { HelpCircle, Compass, Map, MonitorSmartphone } from 'lucide-react';
+import { HelpCircle, Compass, Map, MonitorSmartphone, Sparkles } from 'lucide-react';
 import { useGuidedTourContext } from './GuidedTourProvider';
 import { getToursForRoute } from './guidedTourRegistry';
 import { useLocation } from 'react-router-dom';
 import { Z_INDEX } from '../../constants/ui';
+import { getLiveGuidesForRoute } from './live-guide/liveGuideRegistry';
+import { useLiveGuideContext } from './live-guide/LiveGuideProvider';
 
 /**
  * GuidedTourButton
@@ -18,12 +20,16 @@ import { Z_INDEX } from '../../constants/ui';
  */
 export function GuidedTourButton() {
     const { startTour, startCurrentModuleTour, startCurrentPageTour } = useGuidedTourContext();
+    const { startLiveGuide } = useLiveGuideContext();
     const location = useLocation();
     const [isOpen, setIsOpen] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
 
     // Resolve available tours for the current route
     const { module, page } = getToursForRoute(location.pathname);
+
+    // Resolve available live guides for the current route
+    const liveGuides = getLiveGuidesForRoute(location.pathname);
 
     // Close on outside click
     useEffect(() => {
@@ -142,6 +148,36 @@ export function GuidedTourButton() {
                             description="Aprender a usar esta tela"
                             onClick={() => handleSelect(startCurrentPageTour)}
                         />
+                    )}
+
+                    {/* Live Guides — visible if live guides exist for the current route */}
+                    {liveGuides.length > 0 && (
+                        <>
+                            <div style={{
+                                height: '1px',
+                                backgroundColor: 'var(--color-border)',
+                                margin: '4px 16px',
+                            }} />
+                            <div style={{
+                                padding: '8px 16px 4px',
+                                fontSize: '0.65rem',
+                                fontWeight: 800,
+                                color: 'var(--color-text-muted)',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.1em',
+                            }}>
+                                Guias Interativos
+                            </div>
+                            {liveGuides.map(guide => (
+                                <DropdownItem
+                                    key={guide.id}
+                                    icon={<Sparkles size={16} strokeWidth={2} />}
+                                    label={guide.title}
+                                    description={guide.description}
+                                    onClick={() => handleSelect(() => startLiveGuide(guide.id))}
+                                />
+                            ))}
+                        </>
                     )}
 
                     {/* Bottom padding */}

@@ -2,6 +2,29 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.157.0] - 2026-05-28
+
+### Added — Reusable Live Guide System & Request Creation Live Guide
+- **Live Guide Infrastructure**: New reusable system under `src/frontend/src/features/guided-tour/live-guide/` for interactive, step-by-step task guidance with input validation. Extends the existing Guided Tour architecture using a separate `data-guide` attribute namespace.
+- **Core Types**: `LiveGuideStep` and `LiveGuideDefinition` supporting `string | ReactNode` content, step conditions, validation functions, required actions (`input`, `select`, `upload`, `none`), and skip/fallback behaviors.
+- **Guide Lifecycle Hook** (`useLiveGuide.ts`): Manages start, next, prev, skip, close, and complete actions. Includes `findNextValidStep` for conditional step resolution and a **target-awaiting mechanism** that retries up to 550ms for DOM targets rendered by AnimatePresence animations.
+- **Provider & Custom Tooltip** (`LiveGuideProvider.tsx`): Wraps Joyride in controlled mode with a custom tooltip component. Uses a dedicated `TooltipDataContext` to bypass Joyride's memoization and propagate real-time validation state.
+- **Launcher Button** (`LiveGuideLauncher.tsx`): Reusable component for explicit guide activation.
+- **Persistence** (`liveGuideStorage.ts`): localStorage-backed completion/dismissal tracking.
+- **Request Creation Live Guide** (`requestCreation.liveGuide.tsx`): Factory-based guide definition with 12 steps covering the full request creation flow. Includes rich JSX tooltips (bold Cotação/Pagamento labels with bullet examples), DOM-first conditional step conditions, and input validation that blocks progression until required fields are filled.
+- **Conditional Steps**: Cotação → "Itens Solicitados" section; Pagamento → "Input de Documento & Faturamento" section. Steps appear only for the selected request type and wait for the animated DOM target to render.
+- **No Auto-Start**: Guide starts only from explicit user action ("Guia ao vivo" button).
+
+**Files Changed**:
+- `src/frontend/src/features/guided-tour/live-guide/*.ts(x)` — [NEW] 6 files: types, hook, provider, launcher, storage, guide definition.
+- `src/frontend/src/features/guided-tour/GuidedTourProvider.tsx` — Integrated LiveGuideProvider.
+- `src/frontend/src/features/guided-tour/GuidedTourButton.tsx` — Added LiveGuideLauncher.
+- `src/frontend/src/pages/Requests/RequestCreate.tsx` — Added `data-guide` attributes and guide registration.
+- `docs/GUIDED_TOUR_SYSTEM.md` — Added Live Guide architecture section.
+- `docs/VERSION.md` — Bumped to v2.157.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.157.0".
+
 ## [v2.156.4] - 2026-05-28
 
 ### Fixed — Edge "Not Secure" Mixed Content Warning on TEST
