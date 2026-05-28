@@ -2,7 +2,37 @@
 
 ## Current Version
 
-v2.156.3
+v2.156.4
+
+## [2.156.4] - 2026-05-28
+
+### Fixed — Edge "Not Secure" Mixed Content Warning on TEST
+
+The TEST portal at `https://portalgerencial-test.alpla.net/login` displayed a browser "Not secure" warning in Microsoft Edge despite having a valid SSL certificate. The browser reported: *"This site has a valid certificate, issued by a trusted authority. However, some parts of the site are not secure."*
+
+**Root Cause**: Two issues combined to trigger the warning:
+
+1. **ForwardedHeaders middleware disabled**: `UseForwardedHeaders()` was commented out in `Program.cs`. The IIS ARR reverse proxy forwards `HTTPS → HTTP` to Kestrel on `localhost:5001`. Without the middleware, `UseHttpsRedirection()` detected plain HTTP and could generate broken 307 redirects or HTTP-scheme URLs visible to the browser.
+
+2. **No HTTP→HTTPS redirect**: The IIS Web site had both `:80` and `:443` bindings, but the frontend `web.config` had no redirect rule. The portal was accessible via plain `http://`, contributing to the insecure classification.
+
+**Fixes Applied**:
+- **Backend** (`Program.cs`): Enabled `ForwardedHeaders` with `XForwardedFor` and `XForwardedProto`. Added `app.UseForwardedHeaders()` as the first middleware call, before `UseHttpsRedirection()`. `KnownNetworks` and `KnownProxies` are cleared because IIS ARR runs on localhost in a single-server architecture.
+- **Frontend** (`web.config`): Added HTTP→HTTPS permanent redirect (301) as the first IIS URL Rewrite rule, before the API reverse proxy and SPA fallback rules.
+
+**Investigation Confirmed Safe**:
+- No hardcoded insecure `http://` URLs in the frontend codebase.
+- `API_BASE_URL` defaults to `''` (same-origin relative paths) — correct.
+- Login page resources use relative paths — no external CDN/font/WebSocket URLs.
+- Backend URL generation uses config-based `FrontendBaseUrl` (already HTTPS in `appsettings.Test.json`).
+
+**Files Changed**:
+- `src/backend/AlplaPortal.Api/Program.cs` — Enabled ForwardedHeaders middleware.
+- `src/frontend/public/web.config` — Added HTTP→HTTPS redirect rule.
+- `src/frontend/src/config.ts` — Bumped to v2.156.4.
+- `docs/VERSION.md` — This entry.
+- `docs/CHANGELOG.md` — v2.156.4 entry.
+- `docs/GITHUB_ACTIONS_TEST_DEPLOYMENT.md` — Documented ForwardedHeaders and HTTPS redirect requirements.
 
 ## [2.156.3] - 2026-05-28
 

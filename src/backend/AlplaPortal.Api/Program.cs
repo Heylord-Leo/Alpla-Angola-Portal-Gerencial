@@ -19,6 +19,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.HttpOverrides;
 using System.Collections.Concurrent;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -171,8 +172,18 @@ builder.Services.AddRateLimiter(options =>
     };
 });
 
-// Configure Forwarded Headers for IP resolution behind proxies (disabled by default for safety)
-// builder.Services.Configure<ForwardedHeadersOptions>(options => { options.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto; });
+// Configure Forwarded Headers for correct scheme/IP resolution behind IIS ARR reverse proxy.
+// In TEST/Production, IIS ARR proxies HTTPS → HTTP to Kestrel. Without this middleware,
+// UseHttpsRedirection() sees plain HTTP and generates broken 307 redirects to internal
+// localhost URLs (e.g., https://localhost:5001), which triggers browser "Not secure" warnings.
+// KnownNetworks/KnownProxies are cleared because IIS ARR runs on the same machine (localhost)
+// and is the only proxy in this architecture — this is safe for single-server IIS deployments.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 // Health checks
 builder.Services.AddHealthChecks();
@@ -255,6 +266,12 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Configure the HTTP request pipeline.
+
+// Must be first: corrects request scheme and client IP from IIS ARR reverse proxy.
+// IIS ARR sends X-Forwarded-Proto: https and X-Forwarded-For headers.
+// Without this, the app sees all requests as plain HTTP behind the proxy.
+app.UseForwardedHeaders();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();

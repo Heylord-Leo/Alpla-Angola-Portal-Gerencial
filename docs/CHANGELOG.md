@@ -2,6 +2,13 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.156.4] - 2026-05-28
+
+### Fixed — Edge "Not Secure" Mixed Content Warning on TEST
+- **ForwardedHeaders Middleware Enabled**: Uncommented and configured `ForwardedHeaders` in `Program.cs` with `XForwardedFor` and `XForwardedProto`. Added `app.UseForwardedHeaders()` as the first middleware call. Without this, `UseHttpsRedirection()` saw plain HTTP from the IIS ARR reverse proxy and could generate broken 307 redirects to internal localhost URLs.
+- **HTTP→HTTPS Redirect Rule**: Added a permanent (301) redirect rule as the first IIS URL Rewrite rule in `src/frontend/public/web.config`. The IIS site has both `:80` and `:443` bindings; without this rule, the portal was accessible over plain HTTP.
+- **No Hardcoded Insecure URLs**: Confirmed zero `http://` browser-visible URLs in the frontend codebase. `API_BASE_URL` defaults to `''` (same-origin relative). All login page resources use relative paths.
+
 ## [v2.156.3] - 2026-05-28
 
 ### Fixed — Suppliers Baseline Schema Correction
