@@ -2,7 +2,31 @@
 
 ## Current Version
 
-v2.157.0
+v2.158.0
+
+## [2.158.0] - 2026-05-29
+
+### Fixed — Guided Tour on Mandatory Password Change + Department Scope Filtering
+
+**Bug 1: Guided Tour suppressed on mandatory password change screen.**
+The general guided tour welcome modal was incorrectly appearing on `/change-password` when a new user logs in with `mustChangePassword = true`. Fixed by adding route and `mustChangePassword` guards to the auto-trigger `useEffect` in `useGuidedTour.ts`. The tour remains pending (not marked as completed) and triggers normally once the user reaches the dashboard after changing their password.
+
+**Bug 2: Department selector restricted to user-scoped departments.**
+The department dropdown in Request Creation (`/requests/new`) was showing all active departments regardless of the user's authorization scope. Fixed by filtering the dropdown using `allowedDepartmentCodes` from `/api/v1/users/me`, mirroring the existing plant scope pattern. Auto-selection is applied when only one department is in scope. Backend validation added to `CreateRequest` and `UpdateRequestDraft` endpoints to reject out-of-scope department IDs (HTTP 403).
+
+### Changed — Live Guide Copy Updates (v1.4.0)
+
+- **Grau de Necessidade step**: Updated to rich JSX content explaining each urgency level (Crítico, Urgente, Normal, Baixo) with color-coded labels and descriptions.
+- **Departamento step**: Updated to explain scope-based filtering — the list shows only departments within the user's access scope, with guidance to contact an administrator if needed.
+
+**Files Changed**:
+- `src/frontend/src/features/guided-tour/useGuidedTour.ts` — Added route + mustChangePassword guards.
+- `src/frontend/src/pages/Requests/RequestCreate.tsx` — Added `allowedDepartmentCodes` state, filtering, auto-selection, diagnostic log.
+- `src/backend/AlplaPortal.Api/Controllers/RequestsController.cs` — Department scope validation in CreateRequest + UpdateRequestDraft.
+- `src/frontend/src/features/guided-tour/live-guide/guides/requestCreation.liveGuide.tsx` — Updated Grau de Necessidade + Departamento step copy; version → 1.4.0.
+- `docs/VERSION.md` — Bumped to v2.158.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.158.0".
 
 ## [2.157.0] - 2026-05-28
 

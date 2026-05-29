@@ -1322,6 +1322,22 @@ public class RequestsController : BaseController
                  Status = 400 
              });
         }
+        // 1.3. Validate Department Scope
+        if (dto.DepartmentId.HasValue)
+        {
+            var isAuthorizedDepartment = await _context.UserDepartmentScopes
+                .AnyAsync(uds => uds.UserId == actorId && uds.DepartmentId == dto.DepartmentId.Value);
+            
+            if (!isAuthorizedDepartment)
+            {
+                return StatusCode(403, new ProblemDetails 
+                { 
+                    Title = "Acesso Proibido", 
+                    Detail = "O departamento selecionado está fora do seu âmbito de acesso autorizado para criação de pedidos.", 
+                    Status = 403 
+                });
+            }
+        }
 
         // 2. Resolve Request Type and Statuses
         var requestTypeEntity = await _context.RequestTypes.FirstOrDefaultAsync(rt => rt.Id == dto.RequestTypeId);
@@ -1540,6 +1556,23 @@ public class RequestsController : BaseController
                     Title = "Erro de Consistência", 
                     Detail = "A Empresa selecionada não corresponde à Planta informada.", 
                     Status = 400 
+                });
+            }
+        }
+
+        // 1.3. Validate Department Scope
+        if (dto.DepartmentId > 0)
+        {
+            var isAuthorizedDepartment = await _context.UserDepartmentScopes
+                .AnyAsync(uds => uds.UserId == actorId && uds.DepartmentId == dto.DepartmentId);
+            
+            if (!isAuthorizedDepartment)
+            {
+                return StatusCode(403, new ProblemDetails 
+                { 
+                    Title = "Acesso Proibido", 
+                    Detail = "O departamento selecionado está fora do seu âmbito de acesso autorizado para alteração de pedidos.", 
+                    Status = 403 
                 });
             }
         }

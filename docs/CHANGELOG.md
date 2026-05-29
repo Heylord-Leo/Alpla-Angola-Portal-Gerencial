@@ -2,6 +2,27 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.158.0] - 2026-05-29
+
+### Fixed — Guided Tour on Mandatory Password Change
+- The general guided tour welcome modal was appearing during mandatory password change. Fixed by adding route (`/change-password`) and `mustChangePassword` guards to the auto-trigger `useEffect` in `useGuidedTour.ts`. Tour remains pending and triggers normally after password change.
+
+### Fixed — Department Selector Restricted to User Scope
+- The department dropdown in Request Creation showed all active departments. Now filtered using `allowedDepartmentCodes` from `/api/v1/users/me`, mirroring the existing plant scope pattern. Auto-selects when only one department is in scope. Backend validation added (HTTP 403) in `CreateRequest` and `UpdateRequestDraft`.
+
+### Changed — Live Guide Copy Updates (v1.4.0)
+- **Grau de Necessidade step**: Rich JSX explaining each urgency level (Crítico, Urgente, Normal, Baixo) with color-coded labels.
+- **Departamento step**: Explains scope-based filtering and guides users to contact admin if needed.
+
+**Files Changed**:
+- `src/frontend/src/features/guided-tour/useGuidedTour.ts` — Route + mustChangePassword guards.
+- `src/frontend/src/pages/Requests/RequestCreate.tsx` — `allowedDepartmentCodes` state, filtering, auto-selection.
+- `src/backend/AlplaPortal.Api/Controllers/RequestsController.cs` — Department scope validation.
+- `src/frontend/src/features/guided-tour/live-guide/guides/requestCreation.liveGuide.tsx` — Updated copy; version → 1.4.0.
+- `docs/VERSION.md` — Bumped to v2.158.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.158.0".
+
 ## [v2.157.0] - 2026-05-28
 
 ### Added — Reusable Live Guide System & Request Creation Live Guide
