@@ -41,6 +41,7 @@ export function RequestCreate() {
     const [companies, setCompanies] = useState<any[]>([]);
     const [plants, setPlants] = useState<any[]>([]);
     const [allowedPlantCodes, setAllowedPlantCodes] = useState<string[]>([]);
+    const [allowedDepartmentCodes, setAllowedDepartmentCodes] = useState<string[]>([]);
     const [isScopeLoading, setIsScopeLoading] = useState(true);
     const [scopeError, setScopeError] = useState<string | null>(null);
     const [lookupsError, setLookupsError] = useState<string | null>(null);
@@ -138,8 +139,10 @@ export function RequestCreate() {
             try {
                 const meData = await api.users.me();
                 const userPlants: string[] = meData.plants || [];
+                const userDepartments: string[] = meData.departments || [];
                 setAllowedPlantCodes(userPlants);
-                console.info(`[RequestCreate] Profile loaded: ${userPlants.length} plant(s)`, userPlants);
+                setAllowedDepartmentCodes(userDepartments);
+                console.info(`[RequestCreate] Profile loaded: ${userPlants.length} plant(s), ${userDepartments.length} department(s)`);
             } catch (err) {
                 console.error('[RequestCreate] Failed to load user profile (/me)', err);
                 setScopeError('Não foi possível carregar o seu perfil de acesso. Tente recarregar a página ou contacte o Administrador.');
@@ -217,17 +220,21 @@ export function RequestCreate() {
     const filteredCompanies = companies.filter(c => 
         filteredPlants.some(p => p.companyId === c.id)
     );
+    const filteredDepartments = departments.filter(d => allowedDepartmentCodes.includes(d.code));
 
-    // Diagnostic log: plant scope filter result (non-sensitive)
+    // Diagnostic log: plant + department scope filter result (non-sensitive)
     useEffect(() => {
         if (!isScopeLoading && plants.length > 0) {
             console.info(`[RequestCreate] Plant scope filter: ${filteredPlants.length} allowed out of ${plants.length} total`);
         }
-    }, [isScopeLoading, plants.length, filteredPlants.length]);
+        if (!isScopeLoading && departments.length > 0) {
+            console.info(`[RequestCreate] Department scope filter: ${filteredDepartments.length} allowed out of ${departments.length} total`);
+        }
+    }, [isScopeLoading, plants.length, filteredPlants.length, departments.length, filteredDepartments.length]);
 
 
 
-    // Auto-selection of Company/Plant based on restricted scope
+    // Auto-selection of Company/Plant/Department based on restricted scope
     useEffect(() => {
         if (isScopeLoading || isTemplateLoading || plants.length === 0 || companies.length === 0 || isCopyMode) return;
 
@@ -243,9 +250,19 @@ export function RequestCreate() {
                 next.companyId = String(filteredCompanies[0].id);
             }
 
+            // Auto-select department when only one is in scope
+            if (filteredDepartments.length === 1 && !next.departmentId) {
+                const soloDept = filteredDepartments[0];
+                next.departmentId = String(soloDept.id);
+                // Auto-resolve area approver from the department's responsible user
+                if (soloDept.responsibleUserId) {
+                    next.areaApproverId = soloDept.responsibleUserId;
+                }
+            }
+
             return next;
         });
-    }, [isScopeLoading, isTemplateLoading, plants.length, companies.length, filteredPlants.length, filteredCompanies.length, isCopyMode]);
+    }, [isScopeLoading, isTemplateLoading, plants.length, companies.length, filteredPlants.length, filteredCompanies.length, filteredDepartments.length, isCopyMode]);
 
     const clearFieldError = (fieldName: string) => {
         setFieldErrors(prev => {
@@ -1671,7 +1688,7 @@ export function RequestCreate() {
                                 Departamento <span style={{ color: 'red' }}>*</span>
                                 <select name="departmentId" value={formData.departmentId} onChange={handleChange} style={getInputStyle('DepartmentId')}>
                                     <option value="">-- Selecione --</option>
-                                    {departments.filter(d => d.isActive).map(d => (
+                                    {filteredDepartments.filter(d => d.isActive).map(d => (
                                         <option key={d.id} value={d.id}>{d.name}</option>
                                     ))}
                                 </select>

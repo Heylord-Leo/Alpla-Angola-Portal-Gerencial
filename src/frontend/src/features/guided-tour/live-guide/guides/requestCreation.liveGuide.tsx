@@ -213,8 +213,42 @@ export function createRequestCreationSteps(
             id: 'request-need-level',
             target: '[data-guide="request-need-level"]',
             title: 'Grau de Necessidade',
-            content:
-                'Selecione a prioridade do pedido. Esta informação ajuda a equipe de compras e aprovação a entender a urgência.',
+            content: (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <p style={{ margin: 0 }}>
+                        Selecione o grau de necessidade do pedido. Esta informação ajuda a equipe de compras e aprovação a entender a urgência.
+                    </p>
+                    <p style={{ margin: 0, fontWeight: 600, fontSize: '0.82rem' }}>Use como referência:</p>
+
+                    <div>
+                        <strong style={{ color: 'var(--color-danger, #dc2626)' }}>Crítico</strong>
+                        <p style={{ margin: '2px 0 6px 0', fontSize: '0.85rem' }}>
+                            Quando a falta do item ou serviço pode parar uma operação, afetar produção, segurança, entrega ao cliente ou causar impacto imediato no negócio.
+                        </p>
+                    </div>
+
+                    <div style={{ borderTop: '1px solid var(--color-border, #e5e7eb)', paddingTop: '6px' }}>
+                        <strong style={{ color: 'var(--color-warning, #d97706)' }}>Urgente</strong>
+                        <p style={{ margin: '2px 0 6px 0', fontSize: '0.85rem' }}>
+                            Quando o pedido é importante e deve ser tratado com prioridade, mas ainda não representa uma parada imediata.
+                        </p>
+                    </div>
+
+                    <div style={{ borderTop: '1px solid var(--color-border, #e5e7eb)', paddingTop: '6px' }}>
+                        <strong style={{ color: 'var(--color-primary, #2563eb)' }}>Normal</strong>
+                        <p style={{ margin: '2px 0 6px 0', fontSize: '0.85rem' }}>
+                            Quando o pedido é necessário para manter a operação ou planejamento normal, mas existe algum tempo para tratamento.
+                        </p>
+                    </div>
+
+                    <div style={{ borderTop: '1px solid var(--color-border, #e5e7eb)', paddingTop: '6px' }}>
+                        <strong style={{ color: 'var(--color-text-muted, #6b7280)' }}>Baixo</strong>
+                        <p style={{ margin: '2px 0 0 0', fontSize: '0.85rem' }}>
+                            Quando o pedido não é urgente e pode seguir o fluxo normal de análise, compra e aprovação.
+                        </p>
+                    </div>
+                </div>
+            ),
             placement: 'bottom',
             requiredAction: 'select',
             validate: () => readGuideTargetValue('request-need-level').length > 0
@@ -251,9 +285,20 @@ export function createRequestCreationSteps(
             id: 'request-department',
             target: '[data-guide="request-department"]',
             title: 'Departamento',
-            content:
-                'Selecione o departamento responsável pelo pedido. ' +
-                'Esta informação será usada para definir aprovações, visibilidade e contexto do pedido.',
+            content: (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <p style={{ margin: 0 }}>
+                        Selecione o departamento responsável pelo pedido.
+                    </p>
+                    <p style={{ margin: 0, fontSize: '0.85rem' }}>
+                        A lista mostra apenas os departamentos que fazem parte do seu escopo de acesso.
+                        Isso garante que você consiga acompanhar o pedido depois de criado e evita pedidos vinculados a áreas que você não tem permissão para visualizar.
+                    </p>
+                    <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--color-text-muted, #6b7280)', fontStyle: 'italic' }}>
+                        Se o departamento necessário não aparecer na lista, solicite a revisão do seu escopo de acesso ao administrador.
+                    </p>
+                </div>
+            ),
             placement: 'bottom',
             requiredAction: 'select',
             validate: () => readGuideTargetValue('request-department').length > 0
@@ -324,7 +369,7 @@ export function createRequestCreationGuide(
         route: '/requests/new',
         title: 'Guia — Criar Pedido',
         description: 'Ajuda passo a passo para criar um novo pedido de compra.',
-        version: '1.3.0',
+        version: '1.4.0',
         enabled: true,
         steps: createRequestCreationSteps(getFormValues),
     };

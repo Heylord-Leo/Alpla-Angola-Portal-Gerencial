@@ -122,9 +122,19 @@ export function useGuidedTour() {
      * Layout readiness check (portal-main auto-show only).
      * Waits for the authenticated user AND the topbar/main menu to be in the DOM.
      * Uses a polling interval (200ms) with a max timeout (8s) instead of a fixed delay.
+     *
+     * Guards:
+     * - Suppressed on /change-password (mandatory password change flow).
+     * - Suppressed when user.mustChangePassword is true.
+     * In both cases hasCheckedRef is NOT set, so the tour remains pending and
+     * will trigger normally once the user reaches the dashboard after password change.
      */
     useEffect(() => {
         if (!userId || hasCheckedRef.current) return;
+
+        // Suppress on mandatory password change — tour defers until dashboard
+        if (user?.mustChangePassword) return;
+        if (location.pathname === '/change-password') return;
 
         let attempts = 0;
         const MAX_ATTEMPTS = 40; // 40 × 200ms = 8s max wait
@@ -157,7 +167,7 @@ export function useGuidedTour() {
         return () => {
             window.clearTimeout(timerId);
         };
-    }, [userId]);
+    }, [userId, user?.mustChangePassword, location.pathname]);
 
     // Auto-clear noStepsMessage after 3s
     useEffect(() => {
