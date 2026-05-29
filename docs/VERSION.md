@@ -2,7 +2,61 @@
 
 ## Current Version
 
-v2.158.0
+v2.161.0
+
+## [2.161.0] - 2026-05-29
+
+### Added — Quotation Management Live Guide (v1.0.0)
+
+New **Live Guide** for the Buyer's quotation management workspace (`/buyer/items`). Provides interactive, step-by-step guidance through the quotation management workflow — from page overview to adding quotations and completing the process.
+
+**Guide Architecture:**
+- Factory function pattern via `createQuotationManagementGuide(getState)` — receives a state getter to evaluate conditional steps without stale-closure risks.
+- 11 assistive steps (all `requiredAction: 'none'`) covering: Introduction, Header, Search/Filters, Request Card, Expand Button, Assignment, Summary, Items, Documents/Quotations, Add Quotation (OCR/Manual), Complete Quotation.
+- Conditional steps auto-skip when the target is not rendered (empty list, card not expanded, not assigned, etc.).
+- Empty state handling: the intro step warns when no request groups are visible, and card-level steps are safely skipped.
+- Assignment step adapts content dynamically: unassigned → explains "Atribuir a Mim"; assigned to current user → confirms ownership; assigned to other → explains limited actions.
+- Rich JSX content for complex steps (Add Quotation explains OCR vs Manual entry with styled sections).
+- `data-guide` attributes applied only to the first request group (index 0) to ensure unique Joyride targets.
+
+**Files Changed**:
+- `src/frontend/src/features/guided-tour/live-guide/liveGuideTypes.ts` — Extended `LiveGuideId` union with `'quotation-management-live-guide'`.
+- `src/frontend/src/features/guided-tour/live-guide/liveGuideRegistry.ts` — Added registry entry for `/buyer/items`.
+- `src/frontend/src/features/guided-tour/live-guide/guides/quotationManagement.liveGuide.tsx` — [NEW] Guide definition with factory function and 11 steps.
+- `src/frontend/src/pages/Buyer/BuyerItemsList.tsx` — Added 10 `data-guide` attributes, `LiveGuideLauncher` in header, guide factory registration via `useLiveGuideRegistration`.
+- `docs/VERSION.md` — Bumped to v2.161.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.161.0".
+- `docs/GUIDED_TOUR_SYSTEM.md` — Added quotation management guide to Live Guides table.
+
+## [2.160.0] - 2026-05-29
+
+### Changed — Requests Page Guided Tour Points to Timeline Toggle Button
+
+Updated the Requests page tour step 8 to target the new chevron expand/collapse button (`data-tour="request-timeline-toggle"`) instead of the generic `requests-explorer` row area. Title changed from "Clique na Linha para Expandir" to "Ver Timeline do Pedido". Content now instructs the user to click the button on the left side of the row. Placement changed from `top` to `right` for better alignment with the button.
+
+The `data-tour` attribute is applied only to the first row's button to ensure a unique tour target. When no rows exist, `filterActiveSteps` automatically skips the step.
+
+**Files Changed**:
+- `src/frontend/src/features/guided-tour/tours/requestsPageTour.ts` — Updated step 8 target, title, content, placement.
+- `src/frontend/src/pages/Requests/components/modern/RequestsTableWidget.tsx` — Added `data-tour="request-timeline-toggle"` to first row's chevron button, added `reqIndex` to map callback.
+- `docs/VERSION.md` — Bumped to v2.160.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.160.0".
+
+## [2.159.0] - 2026-05-29
+
+### Added — Timeline Expand/Collapse Button on Requests Table
+
+Added a visible expand/collapse chevron button as the first column of the Requests list table. Previously the timeline was only accessible by clicking the entire row, which had no visual affordance. The new button uses ChevronRight (closed) / ChevronDown (open) icons with Industrial Brutalist styling: clear border, strong hover/active states, and a filled primary-color background when expanded.
+
+Accessibility: `aria-expanded`, `aria-controls` linking to a `role="region"` timeline panel, keyboard Enter/Space support, and Portuguese tooltip labels ("Ver timeline do pedido" / "Ocultar timeline do pedido").
+
+**Files Changed**:
+- `src/frontend/src/pages/Requests/components/modern/RequestsTableWidget.tsx` — Added expand column, button, a11y attributes, updated colSpan 8→9.
+- `docs/VERSION.md` — Bumped to v2.159.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.159.0".
 
 ## [2.158.0] - 2026-05-29
 

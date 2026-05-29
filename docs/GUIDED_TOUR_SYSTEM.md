@@ -384,7 +384,7 @@ LiveGuideProvider (context + controlled Joyride)
 ### 19.3 Type System
 
 ```typescript
-type LiveGuideId = 'request-creation-live-guide'; // extend as needed
+type LiveGuideId = 'request-creation-live-guide' | 'quotation-management-live-guide';
 type RequiredAction = 'input' | 'select' | 'upload' | 'click' | 'none';
 type LiveGuideStatus = 'completed' | 'cancelled' | 'not-started';
 ```
@@ -440,7 +440,8 @@ Live guides can be started from:
 
 | ID | Module | Route | Description |
 |----|--------|-------|-------------|
-| `request-creation-live-guide` | requests | `/requests/new` | 10-step guide for creating a new request draft |
+| `request-creation-live-guide` | requests | `/requests/new` | 12-step guide for creating a new request draft |
+| `quotation-management-live-guide` | buyer | `/buyer/items` | 11-step assistive guide for the quotation management workspace |
 
 ### 19.9 Adding a New Live Guide
 

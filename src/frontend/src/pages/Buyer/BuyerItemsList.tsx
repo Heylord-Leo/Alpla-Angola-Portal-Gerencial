@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { useLocation, useSearchParams } from 'react-router-dom';
@@ -20,6 +20,10 @@ import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { SearchFilterBar } from '../../components/ui/SearchFilterBar';
 import { GuidedTourContextButton } from '../../features/guided-tour/GuidedTourContextButton';
+import { LiveGuideLauncher } from '../../features/guided-tour/live-guide/LiveGuideLauncher';
+import { useLiveGuideRegistration } from '../../features/guided-tour/live-guide/LiveGuideProvider';
+import { createQuotationManagementGuide } from '../../features/guided-tour/live-guide/guides/quotationManagement.liveGuide';
+import type { QuotationManagementState } from '../../features/guided-tour/live-guide/guides/quotationManagement.liveGuide';
 import { SavedQuotationDto, IvaRate, Unit, OcrDraft, OcrDraftItem, ReconciliationBatchDto } from '../../types';
 import { useOcrProcessor } from '../../hooks/useOcrProcessor';
 import { ReconciliationPanel } from '../../components/Buyer/ReconciliationPanel';
@@ -1307,8 +1311,43 @@ export function BuyerItemsList() {
         return () => window.removeEventListener('guided-tour:prepare', handleTourPrepare);
     }, [expandedRequests, groupedRequests]);
 
+    // ── Live Guide Registration ─────────────────────────────────────────
+    const { registerGuideFactory, unregisterGuideFactory } = useLiveGuideRegistration();
+
+    // Keep refs to avoid stale closures in the factory
+    const groupedRequestsRef = useRef(groupedRequests);
+    groupedRequestsRef.current = groupedRequests;
+    const expandedRequestsRef = useRef(expandedRequests);
+    expandedRequestsRef.current = expandedRequests;
+    const addQuotationModeRef = useRef(addQuotationMode);
+    addQuotationModeRef.current = addQuotationMode;
+
+    const getGuideState = useCallback((): QuotationManagementState => {
+        const groups = groupedRequestsRef.current;
+        const expanded = expandedRequestsRef.current;
+        const addQMode = addQuotationModeRef.current;
+        const firstGroup = groups.length > 0 ? groups[0] : null;
+        return {
+            hasVisibleGroups: groups.length > 0,
+            isFirstGroupExpanded: firstGroup ? expanded.has(firstGroup.requestId) : false,
+            isAssignedToMe: firstGroup ? firstGroup.buyerId === currentUser?.id : false,
+            hasBuyerAssigned: firstGroup ? !!firstGroup.buyerId : false,
+            hasQuotations: firstGroup ? firstGroup.quotations.length > 0 : false,
+            isAddingQuotation: firstGroup ? !!addQMode[firstGroup.requestId] : false,
+            requestStatusCode: firstGroup ? firstGroup.requestStatusCode : '',
+        };
+    }, [currentUser?.id]);
+
+    useEffect(() => {
+        registerGuideFactory('quotation-management-live-guide', () =>
+            createQuotationManagementGuide(getGuideState)
+        );
+        return () => unregisterGuideFactory('quotation-management-live-guide');
+    }, [registerGuideFactory, unregisterGuideFactory, getGuideState]);
+
     return (
         <PageContainer>
+            <div data-guide="qm-page">
             <style>{highlightStyles}</style>
 
             {feedback.message && (
@@ -1331,6 +1370,7 @@ export function BuyerItemsList() {
                 </div>
             )}
 
+            <div data-guide="qm-header">
             <PageHeader
                 data-tour="buyer-items-header"
                 title="Gestão de Cotações"
@@ -1338,6 +1378,7 @@ export function BuyerItemsList() {
                 actions={
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <GuidedTourContextButton tourId="page-buyer-items" label="Tour da Tela" />
+                        <LiveGuideLauncher guideId="quotation-management-live-guide" />
                         <button
                             onClick={() => setShowHelpModal(true)}
                             style={{
@@ -1364,6 +1405,7 @@ export function BuyerItemsList() {
                     </div>
                 }
             />
+            </div>
 
             <AnimatePresence>
                 {showHelpModal && (
@@ -1466,7 +1508,7 @@ export function BuyerItemsList() {
                 )}
             </AnimatePresence>
 
-            <div data-tour="buyer-items-search">
+            <div data-tour="buyer-items-search" data-guide="qm-search">
             <SearchFilterBar
                 searchPlaceholder="BUSCAR POR NÚMERO, TÍTULO, DESCRIÇÃO..."
                 searchValue={searchInput}
@@ -1540,7 +1582,7 @@ export function BuyerItemsList() {
                         )}
                     </div>
                 ) : (
-                    groupedRequests.map((group) => {
+                    groupedRequests.map((group, groupIndex) => {
                         const isExpanded = expandedRequests.has(group.requestId);
                         const isAssignedToMe = group.buyerId === currentUser?.id;
                         const urgency = getUrgencyStyle(group.needByDateUtc, group.requestStatusCode);
@@ -1549,7 +1591,7 @@ export function BuyerItemsList() {
                         const canMutateQuotation = ['DRAFT', 'WAITING_QUOTATION', 'AREA_ADJUSTMENT', 'FINAL_ADJUSTMENT'].includes(group.requestStatusCode) && isAssignedToMe;
 
                         return (
-                            <div key={group.requestId} id={`request-group-${group.requestId}`} className={highlightedRequestId === group.requestId ? 'section-attention-highlight' : ''} style={{
+                            <div key={group.requestId} id={`request-group-${group.requestId}`} {...(groupIndex === 0 ? { 'data-guide': 'qm-request-card' } : {})} className={highlightedRequestId === group.requestId ? 'section-attention-highlight' : ''} style={{
                                 backgroundColor: 'var(--color-bg-surface)',
                                 border: '1px solid var(--color-border)',
                                 borderRadius: '16px',
@@ -1590,7 +1632,9 @@ export function BuyerItemsList() {
                                                 <div style={{ width: '4px', height: '32px', backgroundColor: urgency.indicatorColor, borderRadius: '2px', marginRight: '-4px' }} />
                                             </Tooltip>
                                         )}
-                                        {isExpanded ? <ChevronDown size={20} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} /> : <ChevronRight size={20} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />}
+                                        <span {...(groupIndex === 0 ? { 'data-guide': 'qm-expand-request' } : {})} style={{ display: 'flex', alignItems: 'center' }}>
+                                            {isExpanded ? <ChevronDown size={20} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} /> : <ChevronRight size={20} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />}
+                                        </span>
                                         <div style={{ display: 'flex', flexDirection: 'column' }}>
                                             <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Pedido</span>
                                             <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>{group.requestNumber}</span>
@@ -1668,6 +1712,7 @@ export function BuyerItemsList() {
                                         </span>
                                         {group.buyerId !== currentUser?.id && (
                                             <button
+                                                {...(groupIndex === 0 ? { 'data-guide': 'qm-assign-btn' } : {})}
                                                 onClick={(e) => { e.stopPropagation(); handleAssignToMe(group.requestId); }}
                                                 disabled={isSaving}
                                                 style={{
@@ -1801,7 +1846,7 @@ export function BuyerItemsList() {
                                         )}
 
                                         {/* Row 1: Quotation Metadata Area */}
-                                        <div style={{
+                                        <div {...(groupIndex === 0 ? { 'data-guide': 'qm-request-summary' } : {})} style={{
                                             display: 'flex',
                                             flexDirection: 'column',
                                             gap: '16px',
@@ -1881,7 +1926,7 @@ export function BuyerItemsList() {
                                         </div>
 
                                         {/* REQUESTED ITEMS SECTION */}
-                                        <div data-tour="buyer-open-request-items" style={{
+                                        <div data-tour="buyer-open-request-items" {...(groupIndex === 0 ? { 'data-guide': 'qm-items-section' } : {})} style={{
                                             padding: '24px',
                                             backgroundColor: 'var(--color-bg-page)',
                                             border: '1px solid var(--color-border)',
@@ -2017,7 +2062,7 @@ export function BuyerItemsList() {
                                         </div>
 
                                         {/* SECTION A: Existing Quotations / Documents */}
-                                        <div data-tour="buyer-open-request-quotations" style={{
+                                        <div data-tour="buyer-open-request-quotations" {...(groupIndex === 0 ? { 'data-guide': 'qm-docs-section' } : {})} style={{
                                             padding: '24px',
                                             backgroundColor: 'var(--color-bg-page)',
                                             border: '1px solid var(--color-border)',
@@ -2295,6 +2340,7 @@ export function BuyerItemsList() {
                                         {/* SECTION B: Add New Quotation */}
                                         {canMutateQuotation && mode === 'BUYER' && (
                                             <div
+                                                {...(groupIndex === 0 ? { 'data-guide': 'qm-add-quotation' } : {})}
                                                 id={`section-b-${group.requestId}`}
                                                 className={highlightedRequestId === group.requestId ? 'section-attention-highlight' : ''}
                                                 style={{
@@ -3098,7 +3144,7 @@ export function BuyerItemsList() {
 
                                         {/* PERSISTENT REQUEST-LEVEL ACTION: CONCLUIR COTAÇÃO */}
                                         {group.requestStatusCode === 'WAITING_QUOTATION' && mode === 'BUYER' && isAssignedToMe && group.quotations.length > 0 && (
-                                            <div style={{
+                                            <div {...(groupIndex === 0 ? { 'data-guide': 'qm-complete-btn' } : {})} style={{
                                                 padding: '20px 24px',
                                                 backgroundColor: (!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]) ? '#fffbeb' : '#f0fdf4',
                                                 border: `2px solid ${(!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]) ? '#fcd34d' : '#86efac'}`,
@@ -3778,6 +3824,7 @@ export function BuyerItemsList() {
                     </motion.div>
                 )}
             </AnimatePresence>
+            </div>
         </PageContainer>
     );
 }

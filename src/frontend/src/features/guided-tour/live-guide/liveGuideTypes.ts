@@ -12,7 +12,7 @@ import type React from 'react';
  */
 
 /** Unique identifiers for each live guide in the system. Extend as new guides are added. */
-export type LiveGuideId = 'request-creation-live-guide';
+export type LiveGuideId = 'request-creation-live-guide' | 'quotation-management-live-guide';
 
 /** The kind of user interaction required to satisfy a step */
 export type RequiredAction = 'input' | 'select' | 'upload' | 'click' | 'none';

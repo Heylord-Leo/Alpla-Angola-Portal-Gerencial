@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Search, CheckCircle2, AlertCircle, Clock, CreditCard,
     FileText, XCircle, Briefcase, Package, ArrowUp, ArrowDown,
-    ArrowUpDown, CalendarClock, Copy, Eye, ChevronLeft, ChevronRight, User
+    ArrowUpDown, CalendarClock, Copy, Eye, ChevronLeft, ChevronRight, ChevronDown, User
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { RequestListItemDto } from '../../../../types';
@@ -129,6 +129,17 @@ export function RequestsTableWidget({
                 <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', margin: 0, border: 'none', boxShadow: 'none', borderRadius: 0 }}>
                     <thead>
                         <tr style={{ backgroundColor: '#FAFAFA', borderBottom: '1px solid var(--color-border)' }}>
+                            {/* Expand column header */}
+                            <th style={{
+                                padding: '14px 4px 14px 12px',
+                                width: '40px',
+                                minWidth: '40px',
+                                maxWidth: '40px',
+                                background: 'transparent',
+                                borderBottom: 'none',
+                            }}>
+                                <span style={{ position: 'absolute', width: '1px', height: '1px', padding: 0, margin: '-1px', overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0 }}>Timeline</span>
+                            </th>
                             {COLUMNS.map((col) => (
                                 <th
                                     key={col.key}
@@ -179,7 +190,7 @@ export function RequestsTableWidget({
                     <tbody>
                         {requests.length === 0 && !loading ? (
                             <tr>
-                                <td colSpan={8} style={{ padding: '60px 20px', textAlign: 'center', border: 'none' }}>
+                                <td colSpan={9} style={{ padding: '60px 20px', textAlign: 'center', border: 'none' }}>
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                                         <div style={{
                                             width: 64, height: 64,
@@ -203,7 +214,7 @@ export function RequestsTableWidget({
                             </tr>
                         ) : (
                             <AnimatePresence mode="popLayout">
-                                {requests.map((req) => {
+                                {requests.map((req, reqIndex) => {
                                     const deadline = req.needByDateUtc ? new Date(req.needByDateUtc) : null;
                                     const isOverdue = deadline ? deadline.getTime() < new Date().getTime() : false;
                                     const isApproaching = deadline && !isOverdue && (deadline.getTime() - new Date().getTime()) / (1000 * 3600 * 24) <= 7;
@@ -212,6 +223,9 @@ export function RequestsTableWidget({
                                     const guidance = getRequestGuidance(req.statusCode, req.requestTypeCode);
                                     const urgency = getUrgencyStyle(req.needByDateUtc, req.statusCode);
 
+                                    const isExpanded = expandedRequestId === req.id.toString();
+                                    const timelineRegionId = `timeline-${req.id}`;
+
                                     return (
                                         <React.Fragment key={req.id.toString()}>
                                             <motion.tr
@@ -219,10 +233,70 @@ export function RequestsTableWidget({
                                                 initial={{ opacity: 0 }}
                                                 animate={{ opacity: 1 }}
                                                 exit={{ opacity: 0 }}
-                                                onClick={() => setExpandedRequestId(expandedRequestId === req.id.toString() ? null : req.id.toString())}
-                                                style={{ cursor: 'pointer', borderBottom: '1px solid var(--color-border)', backgroundColor: expandedRequestId === req.id.toString() ? '#F8FAFC' : 'transparent' }}
+                                                onClick={() => setExpandedRequestId(isExpanded ? null : req.id.toString())}
+                                                style={{ cursor: 'pointer', borderBottom: '1px solid var(--color-border)', backgroundColor: isExpanded ? '#F8FAFC' : 'transparent' }}
                                                 className="hoverable-row"
                                             >
+                                                {/* Expand/Collapse */}
+                                                <td style={{ padding: '8px 4px 8px 12px', border: 'none', width: '40px', verticalAlign: 'middle' }}>
+                                                    <ModernTooltip content={isExpanded ? 'Ocultar timeline do pedido' : 'Ver timeline do pedido'} side="right">
+                                                        <button
+                                                            type="button"
+                                                            {...(reqIndex === 0 ? { 'data-tour': 'request-timeline-toggle' } : {})}
+                                                            aria-expanded={isExpanded}
+                                                            aria-controls={timelineRegionId}
+                                                            aria-label={isExpanded ? 'Ocultar timeline do pedido' : 'Ver timeline do pedido'}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setExpandedRequestId(isExpanded ? null : req.id.toString());
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                                    e.preventDefault();
+                                                                    e.stopPropagation();
+                                                                    setExpandedRequestId(isExpanded ? null : req.id.toString());
+                                                                }
+                                                            }}
+                                                            style={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                width: '30px',
+                                                                height: '30px',
+                                                                padding: 0,
+                                                                border: `1.5px solid ${isExpanded ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                                                                borderRadius: 'var(--radius-sm)',
+                                                                backgroundColor: isExpanded ? 'var(--color-primary)' : 'var(--color-bg-surface)',
+                                                                color: isExpanded ? '#FFFFFF' : 'var(--color-text-muted)',
+                                                                cursor: 'pointer',
+                                                                transition: 'all 0.15s ease',
+                                                                outline: 'none',
+                                                            }}
+                                                            onFocus={(e) => {
+                                                                e.currentTarget.style.boxShadow = '0 0 0 2px var(--color-primary), 0 0 0 4px rgba(37,99,235,0.2)';
+                                                            }}
+                                                            onBlur={(e) => {
+                                                                e.currentTarget.style.boxShadow = 'none';
+                                                            }}
+                                                            onMouseEnter={(e) => {
+                                                                if (!isExpanded) {
+                                                                    e.currentTarget.style.borderColor = 'var(--color-primary)';
+                                                                    e.currentTarget.style.color = 'var(--color-primary)';
+                                                                    e.currentTarget.style.backgroundColor = '#EFF6FF';
+                                                                }
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                if (!isExpanded) {
+                                                                    e.currentTarget.style.borderColor = 'var(--color-border)';
+                                                                    e.currentTarget.style.color = 'var(--color-text-muted)';
+                                                                    e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)';
+                                                                }
+                                                            }}
+                                                        >
+                                                            {isExpanded ? <ChevronDown size={16} strokeWidth={2.5} /> : <ChevronRight size={16} strokeWidth={2.5} />}
+                                                        </button>
+                                                    </ModernTooltip>
+                                                </td>
                                                 {/* Número */}
                                                 <td style={{ padding: '12px 20px', border: 'none' }}>
                                                     <ModernTooltip content={
@@ -378,8 +452,11 @@ export function RequestsTableWidget({
                                             
                                             {/* Timeline Expanded Row */}
                                             <AnimatePresence>
-                                                {expandedRequestId === req.id.toString() && (
+                                                {isExpanded && (
                                                     <motion.tr 
+                                                        id={timelineRegionId}
+                                                        role="region"
+                                                        aria-label={`Timeline do pedido ${req.requestNumber || req.id}`}
                                                         initial={{ opacity: 0, height: 0 }}
                                                         animate={{ opacity: 1, height: 'auto' }}
                                                         exit={{ opacity: 0, height: 0 }}
@@ -388,7 +465,7 @@ export function RequestsTableWidget({
                                                             backgroundColor: 'var(--color-bg-subtle)' 
                                                         }}
                                                     >
-                                                        <td colSpan={8} style={{ padding: 0, border: 'none' }}>
+                                                        <td colSpan={9} style={{ padding: 0, border: 'none' }}>
                                                             <div style={{ boxShadow: 'inset 0 4px 6px -4px rgba(0,0,0,0.05)', backgroundColor: '#F8FAFC' }}>
                                                                 <ModernRequestTimeline requestId={req.id.toString()} />
                                                             </div>

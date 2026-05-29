@@ -11,7 +11,7 @@ import type { TourStep } from '../guidedTourTypes';
  * 5. Quick filter tabs — Todos / Meus Pedidos / Minha Área
  * 6. Search & advanced filters
  * 7. Requests table — sortable columns and status hover info
- * 8. Row click / workflow — inline expand and full view
+ * 8. Timeline expand/collapse — chevron button on the left of each row
  * 
  * Steps whose target is not in the DOM (due to loading, RBAC, or empty data)
  * are filtered out automatically by filterActiveSteps.
@@ -67,11 +67,11 @@ export const REQUESTS_PAGE_STEPS: TourStep[] = [
         content: 'A tabela mostra os pedidos conforme os filtros aplicados. Clique nos cabeçalhos para ordenar. Passe o mouse sobre o status para ver detalhes da situação atual e a próxima ação esperada.',
         placement: 'top',
     },
-    // 8. Row click / workflow
+    // 8. Timeline expand/collapse button
     {
-        target: '[data-tour="requests-explorer"]',
-        title: 'Clique na Linha para Expandir',
-        content: 'Clique em qualquer linha da tabela para abrir o painel lateral com a timeline do pedido, documentos e histórico completo.',
-        placement: 'top',
+        target: '[data-tour="request-timeline-toggle"]',
+        title: 'Ver Timeline do Pedido',
+        content: 'Clique no botão à esquerda da linha para abrir ou ocultar a timeline do pedido. A timeline permite acompanhar em que etapa o pedido está e visualizar o histórico do processo — desde rascunho até conclusão.',
+        placement: 'right',
     },
 ];

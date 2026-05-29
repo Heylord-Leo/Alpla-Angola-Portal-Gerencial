@@ -38,6 +38,15 @@ export const LIVE_GUIDE_REGISTRY: LiveGuideRegistryEntry[] = [
         description: 'Ajuda passo a passo para criar um novo pedido.',
         enabled: true,
     },
+    {
+        id: 'quotation-management-live-guide',
+        type: 'live-guide',
+        module: 'buyer',
+        route: '/buyer/items',
+        title: 'Guia — Gestão de Cotações',
+        description: 'Ajuda passo a passo para gerir pedidos e registrar cotações.',
+        enabled: true,
+    },
 ];
 
 /** Look up a registry entry by its ID */
