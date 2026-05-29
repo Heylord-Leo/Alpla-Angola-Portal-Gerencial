@@ -2,6 +2,64 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.161.0] - 2026-05-29
+
+### Added — Quotation Management Live Guide (v1.0.0)
+- New reusable Live Guide for the Buyer's quotation management workspace (`/buyer/items`).
+- 11 assistive steps covering the full buyer workflow: Introduction, Header, Search/Filters, Request Card, Expand Button, Assignment, Request Summary, Items, Documents/Quotations, Add Quotation (OCR/Manual), Complete Quotation.
+- Factory function pattern (`createQuotationManagementGuide`) with state getter to avoid stale-closure risks.
+- All steps use `requiredAction: 'none'` — the guide is explanatory, not mandatory.
+- Conditional steps auto-skip when targets are not visible (empty list, card not expanded, not assigned).
+- Empty state handling: intro warns when no requests are visible; card-level steps are safely skipped.
+- Assignment step adapts content: unassigned → "Atribuir a Mim" explanation; assigned to self → ownership confirmed; assigned to other → explains limited actions.
+- Rich JSX content for Add Quotation step (OCR vs Manual entry).
+- `data-guide` attributes applied only to the first request group to avoid duplicate Joyride targets.
+- `LiveGuideLauncher` button added to page header next to existing Tour and Manual buttons.
+
+**Files Changed**:
+- `src/frontend/src/features/guided-tour/live-guide/liveGuideTypes.ts` — Extended `LiveGuideId` union.
+- `src/frontend/src/features/guided-tour/live-guide/liveGuideRegistry.ts` — Added registry entry.
+- `src/frontend/src/features/guided-tour/live-guide/guides/quotationManagement.liveGuide.tsx` — [NEW] Guide definition.
+- `src/frontend/src/pages/Buyer/BuyerItemsList.tsx` — Added `data-guide` attributes, launcher, registration.
+- `docs/VERSION.md` — Bumped to v2.161.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.161.0".
+- `docs/GUIDED_TOUR_SYSTEM.md` — Updated Live Guides table.
+
+## [v2.160.0] - 2026-05-29
+
+### Changed — Requests Page Guided Tour Updated for Timeline Toggle Button
+- Tour step 8 now targets `[data-tour="request-timeline-toggle"]` (the chevron button on the left of the first row).
+- Old title "Clique na Linha para Expandir" replaced with "Ver Timeline do Pedido".
+- Old content instructing to click the row replaced with instructions to click the left-side button.
+- Placement changed from `top` to `right` for better visual alignment with the button.
+- `data-tour="request-timeline-toggle"` added to the first row's chevron button only (avoids duplicate targets).
+- Empty request list: step is automatically skipped by `filterActiveSteps`.
+
+**Files Changed**:
+- `src/frontend/src/features/guided-tour/tours/requestsPageTour.ts` — Step 8 target, title, content, placement.
+- `src/frontend/src/pages/Requests/components/modern/RequestsTableWidget.tsx` — `data-tour` attribute + `reqIndex`.
+- `docs/VERSION.md` — Bumped to v2.160.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.160.0".
+
+## [v2.159.0] - 2026-05-29
+
+### Added — Timeline Expand/Collapse Button on Requests Table
+- Added a visible expand/collapse chevron button as the first column of the Requests list table.
+- Closed state: ChevronRight icon, tooltip "Ver timeline do pedido".
+- Open state: ChevronDown icon, tooltip "Ocultar timeline do pedido", filled primary-color background.
+- Industrial Brutalist styling: clear 1.5px border, strong hover state (blue accent), focus ring.
+- Accessibility: `aria-expanded`, `aria-controls` linking to `role="region"` timeline panel, keyboard Enter/Space.
+- Row-click still works as secondary interaction.
+- Updated colSpan from 8 to 9 for timeline and empty-state rows.
+
+**Files Changed**:
+- `src/frontend/src/pages/Requests/components/modern/RequestsTableWidget.tsx` — Expand column + button + a11y.
+- `docs/VERSION.md` — Bumped to v2.159.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.159.0".
+
 ## [v2.158.0] - 2026-05-29
 
 ### Fixed — Guided Tour on Mandatory Password Change
