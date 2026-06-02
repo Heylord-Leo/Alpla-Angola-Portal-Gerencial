@@ -355,7 +355,7 @@ $prodWebConfig = Join-Path $ProdWebPath "web.config"
 # Only create if it does not already exist - never overwrite a manually configured file
 if (-not (Test-Path $prodWebConfig)) {
     if ($PSCmdlet.ShouldProcess($prodWebConfig, "Create Production web.config")) {
-        $webConfigContent = @"
+        $webConfigContent = @'
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   IIS web.config for the Alpla Portal Gerencial PRODUCTION frontend (React SPA).
@@ -406,7 +406,7 @@ if (-not (Test-Path $prodWebConfig)) {
     </rewrite>
   </system.webServer>
 </configuration>
-"@
+'@
         Set-Content -Path $prodWebConfig -Value $webConfigContent -Encoding UTF8
         Log-Info "Created Production web.config with reverse proxy to localhost:$ApiPort"
     }
