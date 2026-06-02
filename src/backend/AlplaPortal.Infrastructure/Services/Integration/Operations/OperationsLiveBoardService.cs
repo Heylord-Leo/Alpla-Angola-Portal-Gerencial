@@ -107,7 +107,7 @@ public class OperationsLiveBoardService : IOperationsLiveBoardService
         CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
-        var pipelineModel = _pipelineDetector.DetectPipelineModel(plant);
+        var pipelineModel = await _pipelineDetector.DetectPipelineModelAsync(plant, ct);
         var plantName = PlantNames.GetValueOrDefault(plant, plant.ToString());
 
         _logger.LogInformation(

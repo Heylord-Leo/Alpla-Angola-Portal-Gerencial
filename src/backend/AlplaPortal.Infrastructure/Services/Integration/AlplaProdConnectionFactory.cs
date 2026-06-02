@@ -1,6 +1,9 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
+using AlplaPortal.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace AlplaPortal.Infrastructure.Services.Integration;
 
@@ -31,6 +34,7 @@ public class AlplaProdConnectionFactory
 {
     private readonly IConfiguration _configuration;
     private readonly IntegrationConfigResolver _configResolver;
+    private readonly ApplicationDbContext _db;
     private readonly ILogger<AlplaProdConnectionFactory> _logger;
 
     private const string ConfigSection = "Integrations:AlplaProd";
@@ -39,11 +43,50 @@ public class AlplaProdConnectionFactory
     public AlplaProdConnectionFactory(
         IConfiguration configuration,
         IntegrationConfigResolver configResolver,
+        ApplicationDbContext db,
         ILogger<AlplaProdConnectionFactory> logger)
     {
         _configuration = configuration;
         _configResolver = configResolver;
+        _db = db;
         _logger = logger;
+    }
+
+    private class AlplaProdAdditionalConfig
+    {
+        public Dictionary<string, AlplaProdPlantConfig>? Plants { get; set; }
+    }
+
+    private class AlplaProdPlantConfig
+    {
+        public string? Server { get; set; }
+        public string? DatabaseName { get; set; }
+        public bool Enabled { get; set; } = true;
+        public string? Username { get; set; }
+        public string? EncryptedPassword { get; set; }
+        public string? PipelineModel { get; set; }
+    }
+
+    private async Task<AlplaProdAdditionalConfig> GetParsedConfigAsync(CancellationToken ct)
+    {
+        var resolved = await _configResolver.ResolveSqlSettingsAsync(ProviderCode, ConfigSection, ct);
+        if (string.IsNullOrWhiteSpace(resolved.AdditionalConfig))
+        {
+            return new AlplaProdAdditionalConfig();
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<AlplaProdAdditionalConfig>(
+                resolved.AdditionalConfig,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) 
+                ?? new AlplaProdAdditionalConfig();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to parse AlplaPROD AdditionalConfig JSON.");
+            return new AlplaProdAdditionalConfig();
+        }
     }
 
     /// <summary>
@@ -59,24 +102,10 @@ public class AlplaProdConnectionFactory
     {
         var plantKey = plant.ToString();
         var plantSection = _configuration.GetSection($"{ConfigSection}:Plants:{plantKey}");
+        var parsedConfig = await GetParsedConfigAsync(ct);
+        var dbPlantConfig = parsedConfig.Plants != null && parsedConfig.Plants.TryGetValue(plantKey, out var p) ? p : null;
 
-        // ─── Validate global provider state ───
-        //
-        // AlplaProd uses a multi-server pattern: Server is per-plant, not at the
-        // global section level. The IntegrationConfigResolver may return Source=NONE
-        // because there's no top-level "Server" key. In that case, fall back to the
-        // IConfiguration Enabled flag directly (same as IsGloballyEnabled()).
-
-        var resolved = await _configResolver.ResolveSqlSettingsAsync(
-            ProviderCode, ConfigSection, ct);
-
-        var isEnabled = resolved.IsEnabled;
-
-        // If the resolver found no config (NONE), check IConfiguration directly
-        if (resolved.Source == "NONE")
-        {
-            isEnabled = IsGloballyEnabled();
-        }
+        var isEnabled = await IsGloballyEnabledAsync(ct);
 
         if (!isEnabled)
         {
@@ -84,21 +113,20 @@ public class AlplaProdConnectionFactory
                 "A integração AlplaPROD está desativada.");
         }
 
-        // ─── Resolve per-plant server and database ───
-
-        var plantEnabled = plantSection["Enabled"];
-        if (bool.TryParse(plantEnabled, out var pe) && !pe)
+        var plantEnabled = dbPlantConfig?.Enabled ?? (bool.TryParse(plantSection["Enabled"], out var pe) ? pe : true);
+        if (!plantEnabled)
         {
             throw new InvalidOperationException(
                 $"A planta {plantKey} está desativada para esta integração.");
         }
 
-        // Server: plant-level override takes precedence, then global resolved
-        var server = plantSection["Server"];
+        var server = dbPlantConfig?.Server;
         if (string.IsNullOrWhiteSpace(server))
-        {
+            server = plantSection["Server"];
+
+        var resolved = await _configResolver.ResolveSqlSettingsAsync(ProviderCode, ConfigSection, ct);
+        if (string.IsNullOrWhiteSpace(server))
             server = resolved.Server;
-        }
 
         if (string.IsNullOrWhiteSpace(server))
         {
@@ -106,28 +134,42 @@ public class AlplaProdConnectionFactory
                 "Servidor do AlplaPROD não configurado.");
         }
 
-        var databaseName = plantSection["DatabaseName"];
+        var databaseName = dbPlantConfig?.DatabaseName;
+        if (string.IsNullOrWhiteSpace(databaseName))
+            databaseName = plantSection["DatabaseName"];
+
         if (string.IsNullOrWhiteSpace(databaseName))
         {
             throw new InvalidOperationException(
                 $"Base de dados da planta {plantKey} não configurada.");
         }
 
-        // ─── Resolve credentials (shared across plants) ───
-
-        var username = resolved.Username;
-        var password = resolved.DecryptedPassword;
-
-        // Fallback to IConfiguration if resolver returned no credentials
+        // Credentials: try plant-specific override first, then global resolved, then IConfiguration
+        var username = dbPlantConfig?.Username;
         if (string.IsNullOrWhiteSpace(username))
-        {
+            username = resolved.Username;
+        if (string.IsNullOrWhiteSpace(username))
             username = _configuration[$"{ConfigSection}:Username"];
-        }
 
-        if (string.IsNullOrWhiteSpace(password))
+        var password = dbPlantConfig?.EncryptedPassword;
+        if (!string.IsNullOrWhiteSpace(password))
         {
-            password = _configuration[$"{ConfigSection}:Password"];
+            // The password at plant-level is already encrypted in the DB, decrypt it
+            try
+            {
+                var encryptionKey = _configuration["AppConfig:EncryptionKey"] ?? string.Empty;
+                password = AlplaPortal.Infrastructure.Security.AesEncryptionHelper.Decrypt(password, encryptionKey);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to decrypt plant {PlantKey} password override.", plantKey);
+                password = null;
+            }
         }
+        if (string.IsNullOrWhiteSpace(password))
+            password = resolved.DecryptedPassword;
+        if (string.IsNullOrWhiteSpace(password))
+            password = _configuration[$"{ConfigSection}:Password"];
 
         var authMode = resolved.AuthenticationMode;
         if (string.IsNullOrWhiteSpace(authMode) || authMode == "NONE")
@@ -137,8 +179,6 @@ public class AlplaProdConnectionFactory
                 ? configAuthMode.ToUpperInvariant()
                 : "SQL";
         }
-
-        // ─── Build connection string ───
 
         var connectionString = BuildConnectionString(
             server, databaseName, authMode, username, password, resolved.TimeoutSeconds);
@@ -165,48 +205,41 @@ public class AlplaProdConnectionFactory
     /// Checks whether a specific plant has a valid configuration (server + database name).
     /// Does not open a connection.
     /// </summary>
-    public bool IsPlantConfigured(AlplaProdPlant plant)
+    public async Task<bool> IsPlantConfiguredAsync(AlplaProdPlant plant, CancellationToken ct = default)
     {
         var plantKey = plant.ToString();
+        var parsedConfig = await GetParsedConfigAsync(ct);
+        var dbPlantConfig = parsedConfig.Plants != null && parsedConfig.Plants.TryGetValue(plantKey, out var p) ? p : null;
+
         var plantSection = _configuration.GetSection($"{ConfigSection}:Plants:{plantKey}");
+        var server = dbPlantConfig?.Server ?? plantSection["Server"];
+        var databaseName = dbPlantConfig?.DatabaseName ?? plantSection["DatabaseName"];
+        var enabled = dbPlantConfig?.Enabled ?? (bool.TryParse(plantSection["Enabled"], out var pe) ? pe : true);
 
-        var server = plantSection["Server"];
-        var databaseName = plantSection["DatabaseName"];
-
-        // Check if plant is explicitly disabled
-        var plantEnabled = plantSection["Enabled"];
-        if (bool.TryParse(plantEnabled, out var pe) && !pe)
+        if (!enabled)
             return false;
 
-        return !string.IsNullOrWhiteSpace(server)
-            && !string.IsNullOrWhiteSpace(databaseName);
+        return !string.IsNullOrWhiteSpace(server) && !string.IsNullOrWhiteSpace(databaseName);
     }
 
-    /// <summary>
-    /// Returns all plants that have valid configuration.
-    /// Does not open connections.
-    /// </summary>
-    public IReadOnlyList<AlplaProdPlant> GetConfiguredPlants()
+    public async Task<IReadOnlyList<AlplaProdPlant>> GetConfiguredPlantsAsync(CancellationToken ct = default)
     {
         var result = new List<AlplaProdPlant>();
-
         foreach (var plant in Enum.GetValues<AlplaProdPlant>())
         {
-            if (IsPlantConfigured(plant))
+            if (await IsPlantConfiguredAsync(plant, ct))
                 result.Add(plant);
         }
-
         return result;
     }
 
-    /// <summary>
-    /// Returns the configured pipeline model for a plant from configuration.
-    /// Defaults to STANDARD if not specified.
-    /// </summary>
-    public AlplaProdPipelineModel GetPlantPipelineModel(AlplaProdPlant plant)
+    public async Task<AlplaProdPipelineModel> GetPlantPipelineModelAsync(AlplaProdPlant plant, CancellationToken ct = default)
     {
         var plantKey = plant.ToString();
-        var pipelineModelRaw = _configuration[$"{ConfigSection}:Plants:{plantKey}:PipelineModel"];
+        var parsedConfig = await GetParsedConfigAsync(ct);
+        var dbPlantConfig = parsedConfig.Plants != null && parsedConfig.Plants.TryGetValue(plantKey, out var p) ? p : null;
+
+        var pipelineModelRaw = dbPlantConfig?.PipelineModel ?? _configuration[$"{ConfigSection}:Plants:{plantKey}:PipelineModel"];
 
         if (Enum.TryParse<AlplaProdPipelineModel>(pipelineModelRaw, ignoreCase: true, out var model))
             return model;
@@ -214,32 +247,34 @@ public class AlplaProdConnectionFactory
         return AlplaProdPipelineModel.STANDARD;
     }
 
-    /// <summary>
-    /// Returns the configured server for a plant for diagnostics/logging.
-    /// Does not open a connection.
-    /// </summary>
-    public string? GetPlantServer(AlplaProdPlant plant)
+    public async Task<string?> GetPlantServerAsync(AlplaProdPlant plant, CancellationToken ct = default)
     {
         var plantKey = plant.ToString();
-        return _configuration[$"{ConfigSection}:Plants:{plantKey}:Server"];
+        var parsedConfig = await GetParsedConfigAsync(ct);
+        var dbPlantConfig = parsedConfig.Plants != null && parsedConfig.Plants.TryGetValue(plantKey, out var p) ? p : null;
+        
+        return dbPlantConfig?.Server ?? _configuration[$"{ConfigSection}:Plants:{plantKey}:Server"];
     }
 
-    /// <summary>
-    /// Returns the configured database name for a plant for diagnostics/logging.
-    /// Does not open a connection.
-    /// </summary>
-    public string? GetPlantDatabaseName(AlplaProdPlant plant)
+    public async Task<string?> GetPlantDatabaseNameAsync(AlplaProdPlant plant, CancellationToken ct = default)
     {
         var plantKey = plant.ToString();
-        return _configuration[$"{ConfigSection}:Plants:{plantKey}:DatabaseName"];
+        var parsedConfig = await GetParsedConfigAsync(ct);
+        var dbPlantConfig = parsedConfig.Plants != null && parsedConfig.Plants.TryGetValue(plantKey, out var p) ? p : null;
+        
+        return dbPlantConfig?.DatabaseName ?? _configuration[$"{ConfigSection}:Plants:{plantKey}:DatabaseName"];
     }
 
     /// <summary>
     /// Returns whether the global AlplaPROD integration is enabled in configuration.
     /// Does not open a connection.
     /// </summary>
-    public bool IsGloballyEnabled()
+    public async Task<bool> IsGloballyEnabledAsync(CancellationToken ct = default)
     {
+        var provider = await _db.IntegrationProviders.FirstOrDefaultAsync(p => p.Code == ProviderCode, ct);
+        if (provider != null)
+            return provider.IsEnabled;
+
         var enabledRaw = _configuration[$"{ConfigSection}:Enabled"];
         return bool.TryParse(enabledRaw, out var e) && e;
     }

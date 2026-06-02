@@ -13,7 +13,7 @@ public interface IOperationsPipelineDetector
     /// <summary>
     /// Returns the pipeline model configured for the given plant.
     /// </summary>
-    AlplaProdPipelineModel DetectPipelineModel(AlplaProdPlant plant);
+    Task<AlplaProdPipelineModel> DetectPipelineModelAsync(AlplaProdPlant plant, CancellationToken ct = default);
 
     /// <summary>
     /// Returns the expected number of distinct timeline event types for the model.

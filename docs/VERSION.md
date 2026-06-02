@@ -1633,6 +1633,7 @@ The TEST portal at `https://portalgerencial-test.alpla.net/login` displayed a br
 - **2.104.0**: Buyer Requested Items Section. Added "Itens Solicitados no Pedido" read-only section to the Buyer Quotation Management view with catalog/manual type badges, priority indicators, and item count.
 - **2.103.0**: Requests Floating Mode Persistence. The "Flutuante Ativo / Inativo" UI toggle on the Requests dashboard now correctly saves its state to `localStorage`.
 - **2.12.1**: Resizable Approval Center Drawer. Implemented horizontal resizing with localStorage persistence and desktop-optimized reflow for decision insights.
+- **2.12.2**: Fixed AlplaPROD integration testing. Restored database configuration cascade priority, fixing false 'disabled' validation errors and synchronizing the factory logic.
 - **2.12.0**: Approval Center UX Refinement. Replaced stacked layout with a high-efficiency right-side drawer/panel workspace. Implemented auto-selection of next pending items and distinct queue-linked selection visual cues.
 - **2.11.5**: Fixed Cartesian Explosion in Quotation Management. Optimized backend hydration via `.AsSplitQuery()` to improve load times and resolve EF Core warnings.
 - **2.11.4**: Quotation Save Confirmation. Implemented mandatory UX confirmation prior to saving/updating quotations, with contextual messaging for OCR vs. Manual entries.

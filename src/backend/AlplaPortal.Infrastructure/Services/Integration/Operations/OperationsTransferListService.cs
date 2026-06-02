@@ -52,7 +52,7 @@ public class OperationsTransferListService : IOperationsTransferListService
         CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
-        var pipelineModel = _pipelineDetector.DetectPipelineModel(plant);
+        var pipelineModel = await _pipelineDetector.DetectPipelineModelAsync(plant, ct);
         var expectedEventCount = _pipelineDetector.GetExpectedEventCount(pipelineModel);
 
         _logger.LogInformation(
@@ -118,8 +118,8 @@ public class OperationsTransferListService : IOperationsTransferListService
 
         await using var reader = await dataCmd.ExecuteReaderAsync(ct);
 
-        var plantServer = _factory.GetPlantServer(plant);
-        var plantDatabase = _factory.GetPlantDatabaseName(plant);
+        var plantServer = await _factory.GetPlantServerAsync(plant, ct);
+        var plantDatabase = await _factory.GetPlantDatabaseNameAsync(plant, ct);
 
         while (await reader.ReadAsync(ct))
         {

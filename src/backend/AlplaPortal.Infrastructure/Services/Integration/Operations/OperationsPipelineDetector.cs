@@ -20,9 +20,9 @@ public class OperationsPipelineDetector : IOperationsPipelineDetector
     }
 
     /// <inheritdoc />
-    public AlplaProdPipelineModel DetectPipelineModel(AlplaProdPlant plant)
+    public async Task<AlplaProdPipelineModel> DetectPipelineModelAsync(AlplaProdPlant plant, CancellationToken ct = default)
     {
-        return _factory.GetPlantPipelineModel(plant);
+        return await _factory.GetPlantPipelineModelAsync(plant, ct);
     }
 
     /// <inheritdoc />

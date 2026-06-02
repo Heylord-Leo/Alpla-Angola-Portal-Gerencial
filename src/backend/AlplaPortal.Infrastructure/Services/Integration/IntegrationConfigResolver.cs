@@ -240,7 +240,8 @@ public class IntegrationConfigResolver
 
     private static bool HasSqlConfiguration(IntegrationProviderSettings settings)
     {
-        return !string.IsNullOrWhiteSpace(settings.Server);
+        return !string.IsNullOrWhiteSpace(settings.Server) ||
+               (settings.Provider?.Code == "ALPLAPROD" && !string.IsNullOrWhiteSpace(settings.AdditionalConfig));
     }
 
     private Task<ResolvedSqlSettings> ResolveSqlFromConfigAsync(string configSectionPath, string providerCode)
