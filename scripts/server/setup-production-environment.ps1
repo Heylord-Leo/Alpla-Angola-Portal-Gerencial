@@ -44,17 +44,20 @@ $ErrorActionPreference = "Stop"
 # =============================================================================
 function Log-Info {
     param([string]$Message)
-    Write-Host ('[INFO] {0} - {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message) -ForegroundColor Green
+    $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    Write-Host "[INFO] $ts - $Message" -ForegroundColor Green
 }
 
 function Log-Warn {
     param([string]$Message)
-    Write-Host ('[WARN] {0} - {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message) -ForegroundColor Yellow
+    $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    Write-Host "[WARN] $ts - $Message" -ForegroundColor Yellow
 }
 
 function Log-Error {
     param([string]$Message)
-    Write-Host ('[ERROR] {0} - {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message) -ForegroundColor Red
+    $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    Write-Host "[ERROR] $ts - $Message" -ForegroundColor Red
 }
 
 function Log-Manual {
@@ -65,21 +68,21 @@ function Log-Manual {
 # =============================================================================
 # Configuration Constants
 # =============================================================================
-$ProdRoot         = "C:\Apps\AlplaPortal\Prod"
-$ProdApiPath      = "$ProdRoot\api"
-$ProdWebPath      = "$ProdRoot\web"
-$ProdBackupsPath  = "$ProdRoot\backups"
+$ProdRoot = "C:\Apps\AlplaPortal\Prod"
+$ProdApiPath = "$ProdRoot\api"
+$ProdWebPath = "$ProdRoot\web"
+$ProdBackupsPath = "$ProdRoot\backups"
 $ProdReleasesPath = "$ProdRoot\releases"
-$ProdLogsPath     = "$ProdRoot\logs"
-$ProdUploadsPath  = "$ProdRoot\uploads"
-$ProdTempPath     = "$ProdRoot\temp"
+$ProdLogsPath = "$ProdRoot\logs"
+$ProdUploadsPath = "$ProdRoot\uploads"
+$ProdTempPath = "$ProdRoot\temp"
 
-$ApiPoolName  = "AlplaPortal-Prod-Api-Pool"
-$WebPoolName  = "AlplaPortal-Prod-Web-Pool"
-$ApiSiteName  = "AlplaPortal-Prod-Api"
-$WebSiteName  = "AlplaPortal-Prod-Web"
-$ApiPort      = 5002
-$WebHostname  = "portalgerencial.alpla.net"
+$ApiPoolName = "AlplaPortal-Prod-Api-Pool"
+$WebPoolName = "AlplaPortal-Prod-Web-Pool"
+$ApiSiteName = "AlplaPortal-Prod-Api"
+$WebSiteName = "AlplaPortal-Prod-Web"
+$ApiPort = 5002
+$WebHostname = "portalgerencial.alpla.net"
 $DatabaseName = "Portal-Gerencial"
 
 # Collect manual actions to summarize at the end
@@ -121,7 +124,8 @@ foreach ($folder in $folders) {
             New-Item -ItemType Directory -Path $folder -Force | Out-Null
             Log-Info "Created: $folder"
         }
-    } else {
+    }
+    else {
         Log-Info "Exists:  $folder"
     }
 }
@@ -137,14 +141,17 @@ if ($portInUse) {
     foreach ($procId in $processIds) {
         try {
             $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
-            Log-Warn ('Port {0} is in use by process: {1} (PID: {2})' -f $ApiPort, $proc.ProcessName, $procId)
-        } catch {
+            $procName = $proc.ProcessName
+            Log-Warn "Port $ApiPort is in use by process: $procName (PID: $procId)"
+        }
+        catch {
             Log-Warn "Port $ApiPort is in use by PID: $procId (process details unavailable)"
         }
     }
     # Don't fail - the port might be in use by the Prod API itself (script re-run)
     Log-Warn "Port $ApiPort is currently in use. If this is the Production API, this is expected on re-run."
-} else {
+}
+else {
     Log-Info "Port $ApiPort is available."
 }
 
@@ -156,7 +163,8 @@ Log-Info "--- Step 3: Loading IIS WebAdministration module ---"
 try {
     Import-Module WebAdministration -ErrorAction Stop
     Log-Info "WebAdministration module loaded successfully."
-} catch {
+}
+catch {
     Log-Error "Failed to load WebAdministration module. Is IIS fully installed?"
     exit 1
 }
@@ -174,7 +182,8 @@ function Provision-AppPool {
             New-WebAppPool -Name $PoolName | Out-Null
             Log-Info "Created App Pool: $PoolName"
         }
-    } else {
+    }
+    else {
         Log-Info "App Pool exists: $PoolName"
     }
 
@@ -224,15 +233,17 @@ function Set-AppPoolEnvVar {
                 -Filter "$configPath/add[@name='$VarName']" `
                 -Name "value" -Value $VarValue
             Log-Info "Updated env var: $VarName=$VarValue (pool: $PoolName)"
-        } else {
+        }
+        else {
             # Add new
             Add-WebConfigurationProperty -PSPath "MACHINE/WEBROOT/APPHOST" `
                 -Filter "$configPath" `
                 -Name "." `
-                -Value @{name=$VarName; value=$VarValue}
+                -Value @{name = $VarName; value = $VarValue }
             Log-Info "Added env var: $VarName=$VarValue (pool: $PoolName)"
         }
-    } catch {
+    }
+    catch {
         Log-Warn "Could not set env var '$VarName' on pool '$PoolName' via WebConfiguration. Error: $_"
         Log-Manual "Manually set environment variable '$VarName=$VarValue' on App Pool '$PoolName' via IIS Manager > App Pool > Advanced Settings > Environment Variables."
         $ManualActions.Add("Set env var $VarName=$VarValue on pool $PoolName")
@@ -250,12 +261,13 @@ Log-Info "--- Step 6: Creating/validating IIS Sites ---"
 if (-not (Test-Path "IIS:\Sites\$ApiSiteName")) {
     if ($PSCmdlet.ShouldProcess($ApiSiteName, "Create IIS Site on port $ApiPort")) {
         New-Website -Name $ApiSiteName `
-                    -PhysicalPath $ProdApiPath `
-                    -Port $ApiPort `
-                    -ApplicationPool $ApiPoolName | Out-Null
+            -PhysicalPath $ProdApiPath `
+            -Port $ApiPort `
+            -ApplicationPool $ApiPoolName | Out-Null
         Log-Info "Created IIS Site: $ApiSiteName (port $ApiPort)"
     }
-} else {
+}
+else {
     Log-Info "IIS Site exists: $ApiSiteName"
     # Ensure correct physical path and pool
     Set-ItemProperty -Path "IIS:\Sites\$ApiSiteName" -Name "physicalPath" -Value $ProdApiPath | Out-Null
@@ -267,13 +279,14 @@ if (-not (Test-Path "IIS:\Sites\$ApiSiteName")) {
 if (-not (Test-Path "IIS:\Sites\$WebSiteName")) {
     if ($PSCmdlet.ShouldProcess($WebSiteName, "Create IIS Site for $WebHostname")) {
         New-Website -Name $WebSiteName `
-                    -PhysicalPath $ProdWebPath `
-                    -Port 80 `
-                    -HostHeader $WebHostname `
-                    -ApplicationPool $WebPoolName | Out-Null
+            -PhysicalPath $ProdWebPath `
+            -Port 80 `
+            -HostHeader $WebHostname `
+            -ApplicationPool $WebPoolName | Out-Null
         Log-Info "Created IIS Site: $WebSiteName (hostname: $WebHostname)"
     }
-} else {
+}
+else {
     Log-Info "IIS Site exists: $WebSiteName"
     Set-ItemProperty -Path "IIS:\Sites\$WebSiteName" -Name "physicalPath" -Value $ProdWebPath | Out-Null
     Set-ItemProperty -Path "IIS:\Sites\$WebSiteName" -Name "applicationPool" -Value $WebPoolName | Out-Null
@@ -283,14 +296,16 @@ if (-not (Test-Path "IIS:\Sites\$WebSiteName")) {
 # HTTP binding (ensure it exists)
 if (-not (Test-Path "IIS:\Sites\$WebSiteName")) {
     Log-Warn "IIS Site '$WebSiteName' does not exist (likely due to -WhatIf). Skipping HTTP binding configuration."
-} else {
+}
+else {
     $httpBinding = Get-WebBinding -Name $WebSiteName -Protocol "http" -Port 80 -ErrorAction SilentlyContinue
     if ($null -eq $httpBinding) {
         if ($PSCmdlet.ShouldProcess("$WebSiteName HTTP:80", "Create HTTP binding")) {
             New-WebBinding -Name $WebSiteName -IPAddress "*" -Port 80 -Protocol "http" -HostHeader $WebHostname | Out-Null
             Log-Info "Added HTTP binding: *:80:$WebHostname"
         }
-    } else {
+    }
+    else {
         Log-Info "HTTP binding exists: *:80:$WebHostname"
     }
 }
@@ -305,19 +320,24 @@ if ([string]::IsNullOrWhiteSpace($CertificateThumbprint)) {
     Log-Manual "Install the SSL certificate for '$WebHostname' and bind it to IIS site '$WebSiteName' on port 443."
     Log-Manual "Command example: New-WebBinding -Name '$WebSiteName' -IPAddress '*' -Port 443 -Protocol 'https' -HostHeader '$WebHostname' -SslFlags 1"
     $ManualActions.Add("Install SSL certificate and create HTTPS binding for $WebSiteName on port 443")
-} else {
+}
+else {
     # Verify certificate exists in the local machine store
     $cert = Get-ChildItem -Path "Cert:\LocalMachine\My\$CertificateThumbprint" -ErrorAction SilentlyContinue
     if ($null -eq $cert) {
         Log-Error "Certificate with thumbprint '$CertificateThumbprint' not found in Cert:\LocalMachine\My."
         Log-Manual "Import the certificate first, then re-run this script with the correct thumbprint."
         $ManualActions.Add("Import SSL certificate with thumbprint $CertificateThumbprint")
-    } else {
-        Log-Info ("Certificate found: Subject={0}, Expires={1}" -f $cert.Subject, $cert.NotAfter)
+    }
+    else {
+        $certSubject = $cert.Subject
+        $certExpires = $cert.NotAfter
+        Log-Info "Certificate found: Subject=$certSubject, Expires=$certExpires"
 
         if (-not (Test-Path "IIS:\Sites\$WebSiteName")) {
             Log-Warn "IIS Site '$WebSiteName' does not exist (likely due to -WhatIf). Skipping HTTPS binding configuration."
-        } else {
+        }
+        else {
             # Check if HTTPS binding already exists
             $httpsBinding = Get-WebBinding -Name $WebSiteName -Protocol "https" -Port 443 -ErrorAction SilentlyContinue
             if ($null -eq $httpsBinding) {
@@ -325,7 +345,8 @@ if ([string]::IsNullOrWhiteSpace($CertificateThumbprint)) {
                     New-WebBinding -Name $WebSiteName -IPAddress "*" -Port 443 -Protocol "https" -HostHeader $WebHostname -SslFlags 1 | Out-Null
                     Log-Info "Created HTTPS binding: *:443:$WebHostname (SNI)"
                 }
-            } else {
+            }
+            else {
                 Log-Info "HTTPS binding already exists on $WebSiteName."
             }
 
@@ -336,7 +357,8 @@ if ([string]::IsNullOrWhiteSpace($CertificateThumbprint)) {
                     $httpsBinding.AddSslCertificate($CertificateThumbprint, "My")
                     Log-Info "SSL certificate bound to $WebSiteName (thumbprint: $CertificateThumbprint)"
                 }
-            } catch {
+            }
+            catch {
                 Log-Warn "Could not bind certificate: $_"
                 Log-Manual "Manually bind certificate '$CertificateThumbprint' to site '$WebSiteName' port 443 via IIS Manager."
                 $ManualActions.Add("Bind SSL certificate to $WebSiteName")
@@ -410,16 +432,19 @@ if (-not (Test-Path $prodWebConfig)) {
         Set-Content -Path $prodWebConfig -Value $webConfigContent -Encoding UTF8
         Log-Info "Created Production web.config with reverse proxy to localhost:$ApiPort"
     }
-} else {
+}
+else {
     Log-Info "Production web.config already exists. Verifying port reference..."
     $existingContent = Get-Content $prodWebConfig -Raw
     if ($existingContent -match "localhost:5001") {
         Log-Warn "WARNING: Production web.config references port 5001 (Test port)!"
         Log-Manual "Update $prodWebConfig to use port 5002 instead of 5001."
         $ManualActions.Add("Fix web.config port: change 5001 to 5002 in $prodWebConfig")
-    } elseif ($existingContent -match "localhost:$ApiPort") {
+    }
+    elseif ($existingContent -match "localhost:$ApiPort") {
         Log-Info "Production web.config correctly references port $ApiPort."
-    } else {
+    }
+    else {
         Log-Warn "Production web.config does not contain expected reverse proxy rule."
     }
 }
@@ -453,7 +478,8 @@ function Grant-FolderPermission {
         $acl.AddAccessRule($accessRule)
         Set-Acl $Path $acl
         Log-Info "Granted [$Rights] to '$Identity' on '$Path'"
-    } catch {
+    }
+    catch {
         Log-Warn "Could not set permissions on '$Path' for '$Identity': $_"
         Log-Manual "Grant $Rights permission to '$Identity' on '$Path'."
         $ManualActions.Add("Grant $Rights to $Identity on $Path")
@@ -492,22 +518,26 @@ if (-not [string]::IsNullOrWhiteSpace($ConnectionString)) {
             $dbName = $reader["DatabaseName"]
             if ($dbName -eq $DatabaseName) {
                 Log-Info "Database validation PASSED: connected to [$dbName]"
-            } elseif ($dbName -eq "Portal-Gerencial-Test") {
+            }
+            elseif ($dbName -eq "Portal-Gerencial-Test") {
                 Log-Error "CRITICAL: Connection string resolves to TEST database [$dbName]! This is NOT allowed for Production."
                 $conn.Close()
                 exit 1
-            } else {
+            }
+            else {
                 Log-Warn "Connected to database [$dbName] - expected [$DatabaseName]."
             }
         }
         $reader.Close()
         $conn.Close()
-    } catch {
+    }
+    catch {
         Log-Warn "Could not validate database connection: $_"
         Log-Manual "Verify the Production connection string manually."
         $ManualActions.Add("Verify Production database connection")
     }
-} else {
+}
+else {
     Log-Warn "No -ConnectionString provided. Skipping database validation."
     Log-Manual "Create the database [$DatabaseName] if it does not exist."
     Log-Manual "Configure appsettings.Production.json on the server with the correct connection string."
@@ -539,7 +569,8 @@ Write-Host ""
 
 if ($ManualActions.Count -gt 0) {
     Write-Host "============================================" -ForegroundColor Cyan
-    Write-Host ('  MANUAL ACTIONS REQUIRED ({0})' -f $ManualActions.Count) -ForegroundColor Cyan
+    $manualCount = $ManualActions.Count
+    Write-Host "  MANUAL ACTIONS REQUIRED ($manualCount)" -ForegroundColor Cyan
     Write-Host "============================================" -ForegroundColor Cyan
     $i = 1
     foreach ($action in $ManualActions) {
