@@ -21,7 +21,7 @@ import { useAuth } from '../../features/auth/AuthContext';
 import { Link } from 'react-router-dom';
 import { DropdownPortal } from '../../components/ui/DropdownPortal';
 import { Tooltip } from '../../components/ui/Tooltip';
-import { ROLES, ROLE_DESCRIPTIONS } from '../../constants/roles';
+import { ROLES, ROLE_DESCRIPTIONS, ROLE_DISPLAY_NAMES } from '../../constants/roles';
 import { Z_INDEX } from '../../constants/ui';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -345,7 +345,7 @@ export default function UserManagement() {
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                                     {user.roles.map(role => (
                                         <span key={role} style={{ ...s.badge, color: 'var(--color-primary)', background: 'var(--color-primary)10', fontSize: '9px' }}>
-                                            <Shield size={10} /> {role}
+                                            <Shield size={10} /> {ROLE_DISPLAY_NAMES[role] || role}
                                         </span>
                                     ))}
                                 </div>
@@ -455,7 +455,7 @@ export default function UserManagement() {
                                             <label key={role.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: 10, border: '1px solid var(--color-border)', cursor: 'pointer', fontSize: 11, fontWeight: 700, background: formData.roleIds.includes(role.id) ? 'var(--color-primary)08' : 'var(--color-bg-page)' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                                     <input type="checkbox" checked={formData.roleIds.includes(role.id)} onChange={() => setFormData({...formData, roleIds: toggleId(formData.roleIds, role.id)})} />
-                                                    {role.roleName}
+                                                    {ROLE_DISPLAY_NAMES[role.roleName] || role.roleName}
                                                 </div>
                                                 {ROLE_DESCRIPTIONS[role.roleName] && (
                                                     <Tooltip 

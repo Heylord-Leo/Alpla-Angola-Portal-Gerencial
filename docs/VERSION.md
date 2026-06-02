@@ -2,7 +2,43 @@
 
 ## Current Version
 
-v2.161.0
+v2.183.0
+
+## [2.183.0] - 2026-06-02
+
+### Fixed — Operations: Public Route
+
+- Moved `OperationsLiveBoardPage` outside of `ProtectedRoute` and `AppShell`.
+- This allows the Live Board to be displayed as a standalone page without requiring user login, while still preserving standard `apiFetch` behavior.
+
+## [2.182.0] - 2026-06-02
+
+### Changed — Operations: Anonymous Access for Live Board
+
+**Scope:** Backend and Frontend access control for Operations Live Board.
+
+- Made the Live Board route (`/operations/live-board/:plant`) accessible without login for TV/kiosk display usage.
+- Added `[AllowAnonymous]` to the `GetLiveBoard` API endpoint while keeping all other Operations endpoints protected.
+- Verified that no sensitive data (financials, usernames) is exposed in the Live Board DTOs.
+
+## [2.181.0] - 2026-06-02
+
+### Fixed — Operations: RBAC in User Management
+
+**Scope:** Frontend User Management.
+
+- Fixed an issue where the new `OPERATIONS` role was not visible in the User Management assignment screen due to a missing translation mapping in `roles.ts`.
+- The role is now displayed correctly as `Operações`.
+
+## [2.180.0] - 2026-06-02
+
+### Added — Operations: RBAC for Live Board
+
+**Scope:** Backend and Frontend access control for Operations Live Board.
+
+- Added role-based access control for `/operations/live-board/:plant`
+- Only users with `Operations` or `System Administrator` roles can access the TV Signage page.
+- Added specific exception for public kiosk displays (to be implemented via secure token in next phase).
 
 ## [2.161.0] - 2026-05-29
 

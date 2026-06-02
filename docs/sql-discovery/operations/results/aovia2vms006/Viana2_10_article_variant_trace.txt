@@ -1,0 +1,1475 @@
+TableName;ApproxRowCount;ColumnCount
+---------;--------------;-----------
+sysarticlecolumns;12229;5
+sysarticles;705;23
+sysarticleupdates;0;10
+sysschemaarticles;0;12
+T_AbfallmaterialGruppenHauptMaterialGruppen;24;9
+T_AbfallmaterialGruppenProdBereich;56;9
+T_AlternativHauptmaterialien;156;8
+T_ArtikelKlassifikationen;9;9
+T_Artikeltyp;6;9
+T_Artikelvarianten;270;58
+T_ArtikelvariantenTyp;33;11
+T_ArtikelvariantenTyp_LadeEinheiten;0;8
+T_AttachedMaterials;5;9
+T_ExportPalettenBewegungenProduktion;0;7
+T_HistoryProduktiondatenDetails;59755;8
+T_HistoryProduktionsdaten;59755;12
+T_LS_ArtikelKlassifizierung;0;11
+T_MaterialBedarf;0;25
+T_MaterialPreparations;8;10
+T_MaterialProdPlanungenJeProdTag;20944;16
+T_MaterialReservierungen;0;20
+T_ProdArtikel;26;22
+T_ProdArtikelgruppe;3;9
+T_ProductionFigures;0;17
+T_ProduktionInKundenperiode;0;12
+T_ProduktionsBuchungen;274235;35
+T_ProduktionsKonten;176;12
+T_ProduktionsKontenArchiv;0;13
+T_Produktionslose;886;30
+T_ProduktionsPositionen;15;30
+T_ProduktionsRueckmeldungDaten;9086;22
+T_ProduktionsRueckmeldungDatenDetail;11720;10
+T_ProduktionsRueckmeldungen;869;17
+T_ProduktionsRueckmeldungTagesStatus;2195;8
+T_tmpAlplaPlanning_Materialvorschau;0;11
+T_TmpArtikelliste;0;26
+T_tmpArtikelRezeptur;0;10
+T_tmpBudgetArtikelRezeptur;0;22
+T_tmpBudgetMaterialverbrauch;0;12
+T_VerkaufsProdukte;11;8
+T_ZentraleTollingVariante;1;11
+
+(41 rows affected)
+
+TableName;ApproxRowCount;ColumnCount
+---------;--------------;-----------
+T_EtikettenDefault;69;38
+T_EtikettenDrucker;6;14
+T_EtikettenDruckJobs;0;114
+T_EtikettenDruckJobsSystem;0;16
+T_EtikettenDummy;12;10
+T_EtikettenGedruckt;138325;58
+T_EtikettenGemappt;10569;40
+T_EtikettenHistorie;148907;12
+T_EtikettenLayouts;16;9
+T_EtikettenLog;0;10
+T_EtikettenPalettenKartons;84872;7
+T_EtikettenSperrgruende;1;10
+T_EtikettenVerworfen;0;53
+T_Identifikation_EtikettenHistorie;0;7
+T_LagerabgleichBarcodes;0;17
+T_LagerabgleichBarcodesExtern;0;8
+T_LagerabgleichBarcodesIntern;0;11
+T_Maschine_EtikettenDrucker;8;8
+T_Prozess_EtikettenDrucker;18;7
+T_tmpBarcode_EtikettenStatistik;0;17
+T_VpkEtiketten;101;17
+
+(21 rows affected)
+
+TableName;ApproxRowCount;ColumnCount
+---------;--------------;-----------
+T_AbfallNachfuellContainer;1;8
+T_AbfallReinheiten;5;8
+T_ArtikelvariantenTyp_LadeEinheiten;0;8
+T_ExportVerpackungskosten;0;8
+T_ExportVerpackungsVerhaeltnisse;0;9
+T_LadeEinheiten;5;7
+T_Leistungseinheit;0;9
+T_Mengeneinheit;2;9
+T_Preiseinheit;2;9
+T_SekundaereZentraleVerpackungen;0;10
+T_tmpBudgetVerpackungFracht;0;36
+T_tmpBudgetVerpackungsverbrauch;0;20
+T_tmpVPKKontoAusnahmen;0;10
+T_tmpVpkVorschrift;0;62
+T_TradeUnitBlockingInformation;0;7
+T_Vpk;101;16
+T_VpkDimensionen;101;12
+T_VpkEtiketten;101;17
+T_VpkKontenAusnahmen;0;8
+T_VpkPos;462;14
+T_VpkVorschrift_LadeEinheiten;101;7
+T_VpkVorschriftAlt;1;50
+
+(22 rows affected)
+
+TABLE_NAME;COLUMN_NAME;ORDINAL_POSITION;DATA_TYPE;CHARACTER_MAXIMUM_LENGTH;NUMERIC_PRECISION;NUMERIC_SCALE;IS_NULLABLE
+----------;-----------;----------------;---------;------------------------;-----------------;-------------;-----------
+sysarticlecolumns;artid;1;int;;10;0;NO
+sysarticlecolumns;colid;2;int;;10;0;NO
+sysarticlecolumns;is_udt;3;bit;;;;YES
+sysarticlecolumns;is_xml;4;bit;;;;YES
+sysarticlecolumns;is_max;5;bit;;;;YES
+sysarticles;artid;1;int;;10;0;NO
+sysarticles;creation_script;2;nvarchar;255;;;YES
+sysarticles;del_cmd;3;nvarchar;255;;;YES
+sysarticles;description;4;nvarchar;255;;;YES
+sysarticles;dest_table;5;nvarchar;128;;;NO
+sysarticles;filter;6;int;;10;0;NO
+sysarticles;filter_clause;7;nvarchar;-1;;;YES
+sysarticles;ins_cmd;8;nvarchar;255;;;YES
+sysarticles;name;9;nvarchar;128;;;NO
+sysarticles;objid;10;int;;10;0;NO
+sysarticles;pubid;11;int;;10;0;NO
+sysarticles;pre_creation_cmd;12;tinyint;;3;0;NO
+sysarticles;status;13;tinyint;;3;0;NO
+sysarticles;sync_objid;14;int;;10;0;NO
+sysarticles;type;15;tinyint;;3;0;NO
+sysarticles;upd_cmd;16;nvarchar;255;;;YES
+sysarticles;schema_option;17;binary;8;;;YES
+sysarticles;dest_owner;18;nvarchar;128;;;YES
+sysarticles;ins_scripting_proc;19;int;;10;0;YES
+sysarticles;del_scripting_proc;20;int;;10;0;YES
+sysarticles;upd_scripting_proc;21;int;;10;0;YES
+sysarticles;custom_script;22;nvarchar;2048;;;YES
+sysarticles;fire_triggers_on_snapshot;23;bit;;;;NO
+sysarticleupdates;artid;1;int;;10;0;NO
+sysarticleupdates;pubid;2;int;;10;0;NO
+sysarticleupdates;sync_ins_proc;3;int;;10;0;NO
+sysarticleupdates;sync_upd_proc;4;int;;10;0;NO
+sysarticleupdates;sync_del_proc;5;int;;10;0;NO
+sysarticleupdates;autogen;6;bit;;;;NO
+sysarticleupdates;sync_upd_trig;7;int;;10;0;NO
+sysarticleupdates;conflict_tableid;8;int;;10;0;YES
+sysarticleupdates;ins_conflict_proc;9;int;;10;0;YES
+sysarticleupdates;identity_support;10;bit;;;;NO
+sysschemaarticles;artid;1;int;;10;0;NO
+sysschemaarticles;creation_script;2;nvarchar;255;;;YES
+sysschemaarticles;description;3;nvarchar;255;;;YES
+sysschemaarticles;dest_object;4;nvarchar;128;;;NO
+sysschemaarticles;name;5;nvarchar;128;;;NO
+sysschemaarticles;objid;6;int;;10;0;NO
+sysschemaarticles;pubid;7;int;;10;0;NO
+sysschemaarticles;pre_creation_cmd;8;tinyint;;3;0;NO
+sysschemaarticles;status;9;int;;10;0;NO
+sysschemaarticles;type;10;tinyint;;3;0;NO
+sysschemaarticles;schema_option;11;binary;8;;;YES
+sysschemaarticles;dest_owner;12;nvarchar;128;;;YES
+T_ArtikelKlassifikationen;IdArtikelKlassifikation;1;int;;10;0;NO
+T_ArtikelKlassifikationen;id;2;int;;10;0;NO
+T_ArtikelKlassifikationen;Klassifikation_de;3;nvarchar;70;;;NO
+T_ArtikelKlassifikationen;Klassifikation_en;4;nvarchar;50;;;NO
+T_ArtikelKlassifikationen;Aktiv;5;int;;10;0;NO
+T_ArtikelKlassifikationen;Add_Date;6;datetime;;;;NO
+T_ArtikelKlassifikationen;Add_User;7;nvarchar;50;;;NO
+T_ArtikelKlassifikationen;Upd_Date;8;datetime;;;;YES
+T_ArtikelKlassifikationen;Upd_User;9;nvarchar;50;;;YES
+T_Artikeltyp;IdArtikeltyp;1;int;;10;0;NO
+T_Artikeltyp;Bezeichnung;2;nvarchar;50;;;NO
+T_Artikeltyp;Bemerkung;3;nvarchar;50;;;YES
+T_Artikeltyp;Aktiv;4;bit;;;;NO
+T_Artikeltyp;Add_User;5;nvarchar;50;;;YES
+T_Artikeltyp;Add_Date;6;datetime;;;;YES
+T_Artikeltyp;Upd_User;7;nvarchar;50;;;YES
+T_Artikeltyp;Upd_Date;8;datetime;;;;YES
+T_Artikeltyp;TabellenNr;9;int;;10;0;NO
+T_Artikelvarianten;IdArtikelvarianten;1;int;;10;0;NO
+T_Artikelvarianten;IdProdArtikel;2;int;;10;0;YES
+T_Artikelvarianten;IdFertigungsmittel;3;int;;10;0;YES
+T_Artikelvarianten;Farbbezeichnung;4;nvarchar;100;;;YES
+T_Artikelvarianten;IdRez;5;int;;10;0;YES
+T_Artikelvarianten;FremdKey;6;nvarchar;50;;;YES
+T_Artikelvarianten;Bezeichnung;7;nvarchar;50;;;YES
+T_Artikelvarianten;ArtikelGewicht;8;real;;24;;YES
+T_Artikelvarianten;ButzenGewicht;9;real;;24;;YES
+T_Artikelvarianten;Zyklus;10;real;;24;;YES
+T_Artikelvarianten;JahresMenge;11;int;;10;0;YES
+T_Artikelvarianten;StkjeKarton;12;int;;10;0;YES
+T_Artikelvarianten;KrtjePal;13;int;;10;0;YES
+T_Artikelvarianten;StkjePal;14;int;;10;0;YES
+T_Artikelvarianten;Bemerkung;15;nvarchar;255;;;YES
+T_Artikelvarianten;Aktiv;16;bit;;;;NO
+T_Artikelvarianten;Add_User;17;nvarchar;50;;;YES
+T_Artikelvarianten;Add_Date;18;datetime;;;;YES
+T_Artikelvarianten;Upd_User;19;nvarchar;50;;;YES
+T_Artikelvarianten;Upd_Date;20;datetime;;;;YES
+T_Artikelvarianten;Lagerplatz;21;nvarchar;50;;;YES
+T_Artikelvarianten;Bestandfuehren;22;bit;;;;NO
+T_Artikelvarianten;QSKZ;23;bit;;;;NO
+T_Artikelvarianten;Abmusterungsartikel;24;bit;;;;NO
+T_Artikelvarianten;Druckereiartikel;25;bit;;;;NO
+T_Artikelvarianten;IdProdBereich;26;int;;10;0;YES
+T_Artikelvarianten;AQSout;27;bit;;;;NO
+T_Artikelvarianten;IdLager;28;int;;10;0;YES
+T_Artikelvarianten;Alias;29;nvarchar;100;;;YES
+T_Artikelvarianten;TabellenNr;30;int;;10;0;NO
+T_Artikelvarianten;PN;31;nvarchar;50;;;NO
+T_Artikelvarianten;Kritisch;32;int;;10;0;NO
+T_Artikelvarianten;ek_fert_id;33;int;;10;0;YES
+T_Artikelvarianten;IdArtikelKlassifikation;34;int;;10;0;YES
+T_Artikelvarianten;Sypronummer;35;nvarchar;100;;;YES
+T_Artikelvarianten;ZolltarifNr;36;nvarchar;50;;;YES
+T_Artikelvarianten;Erloeskonto;37;nvarchar;50;;;YES
+T_Artikelvarianten;Ursprungsland;38;nvarchar;50;;;YES
+T_Artikelvarianten;IdFibuKonto;39;int;;10;0;YES
+T_Artikelvarianten;KFDichte;40;float;;53;;YES
+T_Artikelvarianten;KFDicke;41;float;;53;;YES
+T_Artikelvarianten;KFFlaechengewicht;42;float;;53;;YES
+T_Artikelvarianten;KFFlaeche;43;float;;53;;YES
+T_Artikelvarianten;IdUrsprungsland;44;int;;10;0;YES
+T_Artikelvarianten;MaxMahlgutanteil;45;float;;53;;YES
+T_Artikelvarianten;DOM;46;float;;53;;YES
+T_Artikelvarianten;IdFarbe;47;int;;10;0;YES
+T_Artikelvarianten;IdAbfallTyp;48;int;;10;0;YES
+T_Artikelvarianten;IdGlobalAbfall;49;int;;10;0;YES
+T_Artikelvarianten;VorbereitungsDauer;50;int;;10;0;YES
+T_Artikelvarianten;ZyklusVerkauf;51;float;;53;;YES
+T_Artikelvarianten;RuheZeit;52;float;;53;;YES
+T_Artikelvarianten;GTIN;53;nvarchar;15;;;YES
+T_Artikelvarianten;COA;54;int;;10;0;YES
+T_Artikelvarianten;HandelsWare;55;bit;;;;NO
+T_Artikelvarianten;IdZentraleTollingVariante;56;int;;10;0;NO
+T_Artikelvarianten;ProzentanteilRecycling;57;int;;10;0;NO
+T_Artikelvarianten;QualitaetStatus;58;int;;10;0;NO
+T_ArtikelvariantenTyp;IdArtikelvariantenTyp;1;int;;10;0;NO
+T_ArtikelvariantenTyp;IdArtikeltyp;2;int;;10;0;NO
+T_ArtikelvariantenTyp;Bezeichnung;3;nvarchar;50;;;NO
+T_ArtikelvariantenTyp;Bemerkung;4;nvarchar;50;;;YES
+T_ArtikelvariantenTyp;Aktiv;5;bit;;;;NO
+T_ArtikelvariantenTyp;Add_User;6;nvarchar;50;;;YES
+T_ArtikelvariantenTyp;Add_Date;7;datetime;;;;YES
+T_ArtikelvariantenTyp;Upd_User;8;nvarchar;50;;;YES
+T_ArtikelvariantenTyp;Upd_Date;9;datetime;;;;YES
+T_ArtikelvariantenTyp;IdHMT_eReporting;10;int;;10;0;NO
+T_ArtikelvariantenTyp;TabellenNr;11;int;;10;0;NO
+T_ArtikelvariantenTyp_LadeEinheiten;IdArtikelvariantenTyp_LadeEinheit;1;int;;10;0;NO
+T_ArtikelvariantenTyp_LadeEinheiten;IdArtikelvariantenTyp;2;int;;10;0;NO
+T_ArtikelvariantenTyp_LadeEinheiten;IdLadeEinheit;3;int;;10;0;NO
+T_ArtikelvariantenTyp_LadeEinheiten;Add_User;4;nvarchar;50;;;NO
+T_ArtikelvariantenTyp_LadeEinheiten;Add_Date;5;datetime;;;;NO
+T_ArtikelvariantenTyp_LadeEinheiten;Upd_User;6;nvarchar;50;;;YES
+T_ArtikelvariantenTyp_LadeEinheiten;Upd_Date;7;datetime;;;;YES
+T_ArtikelvariantenTyp_LadeEinheiten;GUID;8;uniqueidentifier;;;;YES
+T_EtikettenDefault;IdEtikettenDefault;1;int;;10;0;NO
+T_EtikettenDefault;ProduktionslosBasierend;2;int;;10;0;YES
+T_EtikettenDefault;IdProdPlanung;3;int;;10;0;YES
+T_EtikettenDefault;IdArtikelvarianten;4;int;;10;0;YES
+T_EtikettenDefault;IdAdressen;5;int;;10;0;YES
+T_EtikettenDefault;IdEtikettenDrucker;6;int;;10;0;YES
+T_EtikettenDefault;IdEtikettenLayout;7;int;;10;0;YES
+T_EtikettenDefault;AnzahlEtiketten;8;int;;10;0;YES
+T_EtikettenDefault;AnzahlKopien;9;int;;10;0;YES
+T_EtikettenDefault;IdEtikettenLayoutPalette;10;int;;10;0;YES
+T_EtikettenDefault;IdEtikettenLayoutKarton;11;int;;10;0;YES
+T_EtikettenDefault;IdEtikettenLayoutKunde;12;int;;10;0;YES
+T_EtikettenDefault;AnzahlPalette;13;int;;10;0;YES
+T_EtikettenDefault;AnzahlKarton;14;int;;10;0;YES
+T_EtikettenDefault;AnzahlKunde;15;int;;10;0;YES
+T_EtikettenDefault;IdMaschine;16;int;;10;0;YES
+T_EtikettenDefault;ReserveNummer;17;int;;10;0;YES
+T_EtikettenDefault;IdVpkVorschrift;18;int;;10;0;YES
+T_EtikettenDefault;IdHMT;19;int;;10;0;YES
+T_EtikettenDefault;IdWerkzeug;20;int;;10;0;YES
+T_EtikettenDefault;Bestellnummer;21;nvarchar;50;;;YES
+T_EtikettenDefault;ArtikelVariantenBez;22;nvarchar;50;;;YES
+T_EtikettenDefault;AdressBez;23;nvarchar;100;;;YES
+T_EtikettenDefault;ArtikelVariantenFarbBez;24;nvarchar;50;;;YES
+T_EtikettenDefault;Bemerkung;25;nvarchar;255;;;YES
+T_EtikettenDefault;Sonstiges_1;26;nvarchar;50;;;YES
+T_EtikettenDefault;Sonstiges_2;27;nvarchar;50;;;YES
+T_EtikettenDefault;Sonstiges_3;28;nvarchar;50;;;YES
+T_EtikettenDefault;Sonstiges_4;29;nvarchar;50;;;YES
+T_EtikettenDefault;Sonstiges_5;30;nvarchar;50;;;YES
+T_EtikettenDefault;Sonstiges_6;31;nvarchar;50;;;YES
+T_EtikettenDefault;Sonstiges_7;32;nvarchar;50;;;YES
+T_EtikettenDefault;Sonstiges_8;33;nvarchar;50;;;YES
+T_EtikettenDefault;Sonstiges_9;34;nvarchar;50;;;YES
+T_EtikettenDefault;Add_User;35;nvarchar;50;;;NO
+T_EtikettenDefault;Add_Date;36;datetime;;;;NO
+T_EtikettenDefault;Upd_User;37;nvarchar;50;;;YES
+T_EtikettenDefault;Upd_Date;38;datetime;;;;YES
+T_EtikettenDrucker;IdEtikettenDrucker;1;int;;10;0;NO
+T_EtikettenDrucker;Bezeichnung;2;nvarchar;50;;;NO
+T_EtikettenDrucker;Bemerkung;3;nvarchar;255;;;YES
+T_EtikettenDrucker;IPAdresse;4;nvarchar;15;;;YES
+T_EtikettenDrucker;Port;5;int;;10;0;YES
+T_EtikettenDrucker;Typ;6;int;;10;0;NO
+T_EtikettenDrucker;Aktiv;7;int;;10;0;NO
+T_EtikettenDrucker;Add_User;8;nvarchar;50;;;NO
+T_EtikettenDrucker;Add_Date;9;datetime;;;;NO
+T_EtikettenDrucker;Upd_User;10;nvarchar;50;;;YES
+T_EtikettenDrucker;Upd_Date;11;datetime;;;;YES
+T_EtikettenDrucker;LabelInstanz_IPAdresse;12;nvarchar;-1;;;YES
+T_EtikettenDrucker;LabelInstanz_Port;13;int;;10;0;YES
+T_EtikettenDrucker;StandardDrucker;14;int;;10;0;YES
+T_EtikettenDruckJobs;IdEtikettenDruckJob;1;int;;10;0;NO
+T_EtikettenDruckJobs;AlplaLABELInstanz;2;nvarchar;50;;;NO
+T_EtikettenDruckJobs;IdEtikettenHistorie;3;int;;10;0;YES
+T_EtikettenDruckJobs;IdProdPlanung;4;int;;10;0;YES
+T_EtikettenDruckJobs;IdArtikelvarianten;5;int;;10;0;YES
+T_EtikettenDruckJobs;IdAdressen;6;int;;10;0;YES
+T_EtikettenDruckJobs;IdMaschine;7;int;;10;0;YES
+T_EtikettenDruckJobs;LM;8;int;;10;0;YES
+T_EtikettenDruckJobs;ReserveNummer;9;int;;10;0;YES
+T_EtikettenDruckJobs;LfdNr;10;int;;10;0;NO
+T_EtikettenDruckJobs;IdVpkVorschrift;11;int;;10;0;YES
+T_EtikettenDruckJobs;IdHMT;12;int;;10;0;YES
+T_EtikettenDruckJobs;IdWerkzeug;13;int;;10;0;YES
+T_EtikettenDruckJobs;Bestellnummer;14;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Bemerkung;15;nvarchar;255;;;YES
+T_EtikettenDruckJobs;Sonstiges_1;16;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Sonstiges_2;17;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Sonstiges_3;18;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Sonstiges_4;19;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Sonstiges_5;20;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Sonstiges_6;21;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Sonstiges_7;22;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Sonstiges_8;23;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Sonstiges_9;24;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Benutzername;25;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Produktionsdatum;26;datetime;;;;YES
+T_EtikettenDruckJobs;IdEtikettenSperrgrund;27;int;;10;0;YES
+T_EtikettenDruckJobs;IdProdBereich;28;int;;10;0;YES
+T_EtikettenDruckJobs;IdRez;29;int;;10;0;YES
+T_EtikettenDruckJobs;Artikel_Bezeichnung;30;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Artikel_FarbBezeichnung;31;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Artikel_Aliasname;32;nvarchar;100;;;YES
+T_EtikettenDruckJobs;Artikel_Zyklus;33;float;;53;;YES
+T_EtikettenDruckJobs;Artikel_Gewicht;34;float;;53;;YES
+T_EtikettenDruckJobs;Artikel_ArtikelvariantenTyp;35;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Artikel_PN;36;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Artikel_KdArtNr;37;nvarchar;100;;;YES
+T_EtikettenDruckJobs;Artikel_KdArtBez;38;nvarchar;100;;;YES
+T_EtikettenDruckJobs;Artikel_AnzStkJeKarton;39;int;;10;0;YES
+T_EtikettenDruckJobs;Artikel_AnzStkJePalette;40;int;;10;0;YES
+T_EtikettenDruckJobs;Artikel_Bemerkung;41;nvarchar;255;;;YES
+T_EtikettenDruckJobs;Adressen_Bezeichnung;42;nvarchar;100;;;YES
+T_EtikettenDruckJobs;Adressen_Strasse;43;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Adressen_Ort;44;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Adressen_PLZ;45;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Adressen_Bemerkung;46;nvarchar;255;;;YES
+T_EtikettenDruckJobs;Hauptmaterial_Bezeichnung;47;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Hauptmaterial_Aliasname;48;nvarchar;100;;;YES
+T_EtikettenDruckJobs;Hauptmaterial_ArtikelvarianteTyp;49;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Hauptmaterial_Bemerkung;50;nvarchar;255;;;YES
+T_EtikettenDruckJobs;Werkzeug_Bezeichnung;51;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Werkzeug_Kavitaet;52;int;;10;0;YES
+T_EtikettenDruckJobs;Werkzeug_Stichmass;53;float;;53;;YES
+T_EtikettenDruckJobs;Werkzeug_Bemerkung;54;nvarchar;255;;;YES
+T_EtikettenDruckJobs;Maschine_Bezeichnung;55;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Maschine_Standort;56;int;;10;0;YES
+T_EtikettenDruckJobs;Maschine_Bemerkung;57;nvarchar;50;;;YES
+T_EtikettenDruckJobs;VpkVorschrift_Bezeichnung;58;nvarchar;100;;;YES
+T_EtikettenDruckJobs;VpkVorschrift_Bemerkung;59;nvarchar;255;;;YES
+T_EtikettenDruckJobs;Produktionsbereich_Bezeichnung;60;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Produktionsbereich_Schicht;61;int;;10;0;YES
+T_EtikettenDruckJobs;Etikett_DruckDatum;62;datetime;;;;YES
+T_EtikettenDruckJobs;Etikett_DruckUhrzeit;63;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Barcode;64;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Barcode_LM;65;nvarchar;1;;;YES
+T_EtikettenDruckJobs;Barcode_IdMaschine;66;nvarchar;4;;;YES
+T_EtikettenDruckJobs;Barcode_IdArtikelvarianten;67;nvarchar;5;;;YES
+T_EtikettenDruckJobs;Barcode_IdAdressen;68;nvarchar;5;;;YES
+T_EtikettenDruckJobs;Barcode_IdVpkVorschrift;69;nvarchar;4;;;YES
+T_EtikettenDruckJobs;Barcode_IdHMT;70;nvarchar;5;;;YES
+T_EtikettenDruckJobs;Barcode_Charge;71;nvarchar;10;;;YES
+T_EtikettenDruckJobs;Barcode_LfdNr;72;nvarchar;9;;;YES
+T_EtikettenDruckJobs;Barcode_StretchProgramm;73;nvarchar;1;;;YES
+T_EtikettenDruckJobs;EAN_BasisNr;74;nvarchar;10;;;YES
+T_EtikettenDruckJobs;Add_User;75;nvarchar;50;;;NO
+T_EtikettenDruckJobs;Add_Date;76;datetime;;;;NO
+T_EtikettenDruckJobs;Upd_User;77;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Upd_Date;78;datetime;;;;YES
+T_EtikettenDruckJobs;EtikettenSperrgrund_Nummer;79;int;;10;0;YES
+T_EtikettenDruckJobs;EtikettenSperrgrund_Bezeichnung;80;nvarchar;50;;;YES
+T_EtikettenDruckJobs;Produktionsdatum_Schicht;81;datetime;;;;YES
+T_EtikettenDruckJobs;SSCC_ReserveZiffer;82;int;;10;0;YES
+T_EtikettenDruckJobs;IdSperrgrund;83;int;;10;0;YES
+T_EtikettenDruckJobs;SperrgrundKurzBez;84;nvarchar;50;;;YES
+T_EtikettenDruckJobs;SperrgrundBez;85;nvarchar;50;;;YES
+T_EtikettenDruckJobs;IdWarenlager;86;int;;10;0;YES
+T_EtikettenDruckJobs;IdLagerAbteilung;87;int;;10;0;YES
+T_EtikettenDruckJobs;WarenlagerKurzBez;88;nvarchar;50;;;YES
+T_EtikettenDruckJobs;LagerAbteilungKurzBez;89;nvarchar;50;;;YES
+T_EtikettenDruckJobs;IdProdBereich_Waste;90;int;;10;0;YES
+T_EtikettenDruckJobs;IdFertigware;91;int;;10;0;YES
+T_EtikettenDruckJobs;IdRezeptur;92;int;;10;0;YES
+T_EtikettenDruckJobs;IdFarbe;93;int;;10;0;YES
+T_EtikettenDruckJobs;IdReinheit;94;int;;10;0;YES
+T_EtikettenDruckJobs;IdHerkunft;95;int;;10;0;YES
+T_EtikettenDruckJobs;IdVerwendung;96;int;;10;0;YES
+T_EtikettenDruckJobs;ProdBereich_Waste_Bezeichnung;97;nvarchar;100;;;YES
+T_EtikettenDruckJobs;Fertigware_Bezeichnung;98;nvarchar;100;;;YES
+T_EtikettenDruckJobs;Fertigware_Alias;99;nvarchar;100;;;YES
+T_EtikettenDruckJobs;Rezeptur_Bezeichnung;100;nvarchar;100;;;YES
+T_EtikettenDruckJobs;Rezeptur_Alias;101;nvarchar;255;;;YES
+T_EtikettenDruckJobs;Farbe_Bezeichung;102;nvarchar;100;;;YES
+T_EtikettenDruckJobs;Reinheit_Bezeichnung;103;nvarchar;100;;;YES
+T_EtikettenDruckJobs;Herkunft_Bezeichung;104;nvarchar;100;;;YES
+T_EtikettenDruckJobs;Verwendung_Bezeichnung;105;nvarchar;100;;;YES
+T_EtikettenDruckJobs;NettoGewicht;106;float;;53;;YES
+T_EtikettenDruckJobs;IdEtikettenDrucker;107;int;;10;0;YES
+T_EtikettenDruckJobs;EtikettenDruckerBezeichnung;108;nvarchar;-1;;;YES
+T_EtikettenDruckJobs;EtikettenDruckerTyp;109;int;;10;0;YES
+T_EtikettenDruckJobs;IdEtikettenLayout;110;int;;10;0;YES
+T_EtikettenDruckJobs;EtikettenLayoutBezeichnung;111;nvarchar;-1;;;YES
+T_EtikettenDruckJobs;DruckStatus;112;int;;10;0;YES
+T_EtikettenDruckJobs;IdBlockingOrder;113;int;;10;0;YES
+T_EtikettenDruckJobs;IdReworkOrder;114;int;;10;0;YES
+T_EtikettenDruckJobsSystem;IdEtikettenDruckJobSystem;1;int;;10;0;NO
+T_EtikettenDruckJobsSystem;AlplaLABELInstanz;2;nvarchar;50;;;NO
+T_EtikettenDruckJobsSystem;Typ;3;int;;10;0;YES
+T_EtikettenDruckJobsSystem;Barcode;4;nvarchar;50;;;YES
+T_EtikettenDruckJobsSystem;Identifier;5;nvarchar;50;;;YES
+T_EtikettenDruckJobsSystem;IdPrimaer;6;int;;10;0;YES
+T_EtikettenDruckJobsSystem;PrimaerBez;7;nvarchar;100;;;YES
+T_EtikettenDruckJobsSystem;PrimaerKurzBez;8;nvarchar;50;;;YES
+T_EtikettenDruckJobsSystem;IdSekundaer;9;int;;10;0;YES
+T_EtikettenDruckJobsSystem;SekundaerBez;10;nvarchar;100;;;YES
+T_EtikettenDruckJobsSystem;SekundaerKurzBez;11;nvarchar;50;;;YES
+T_EtikettenDruckJobsSystem;Add_User;12;nvarchar;50;;;NO
+T_EtikettenDruckJobsSystem;Add_Date;13;datetime;;;;NO
+T_EtikettenDruckJobsSystem;Upd_User;14;nvarchar;50;;;YES
+T_EtikettenDruckJobsSystem;Upd_Date;15;datetime;;;;YES
+T_EtikettenDruckJobsSystem;SSCC_ReserveZiffer;16;int;;10;0;YES
+T_EtikettenDummy;IdEtikettenDummy;1;int;;10;0;NO
+T_EtikettenDummy;IdProdBereich;2;int;;10;0;YES
+T_EtikettenDummy;IdEtikettenDrucker;3;int;;10;0;YES
+T_EtikettenDummy;IdEtikettenLayout;4;int;;10;0;YES
+T_EtikettenDummy;Benutzername;5;nvarchar;50;;;YES
+T_EtikettenDummy;DruckDatum;6;datetime;;;;YES
+T_EtikettenDummy;Add_User;7;nvarchar;50;;;NO
+T_EtikettenDummy;Add_Date;8;datetime;;;;NO
+T_EtikettenDummy;Upd_User;9;nvarchar;50;;;YES
+T_EtikettenDummy;Upd_Date;10;datetime;;;;YES
+T_EtikettenGedruckt;IdEtikettenGedruckt;1;int;;10;0;NO
+T_EtikettenGedruckt;IdProdPlanung;2;int;;10;0;YES
+T_EtikettenGedruckt;IdArtikelvarianten;3;int;;10;0;YES
+T_EtikettenGedruckt;IdAdressen;4;int;;10;0;YES
+T_EtikettenGedruckt;IdEtikettenDrucker;5;int;;10;0;YES
+T_EtikettenGedruckt;IdEtikettenLayout;6;int;;10;0;YES
+T_EtikettenGedruckt;AnzahlKopien;7;int;;10;0;YES
+T_EtikettenGedruckt;IdMaschine;8;int;;10;0;YES
+T_EtikettenGedruckt;LM;9;int;;10;0;YES
+T_EtikettenGedruckt;ReserveNummer;10;int;;10;0;YES
+T_EtikettenGedruckt;LfdNr;11;int;;10;0;NO
+T_EtikettenGedruckt;IdVpkVorschrift;12;int;;10;0;YES
+T_EtikettenGedruckt;IdHMT;13;int;;10;0;YES
+T_EtikettenGedruckt;IdWerkzeug;14;int;;10;0;YES
+T_EtikettenGedruckt;ArtikelVariantenBez;15;nvarchar;50;;;YES
+T_EtikettenGedruckt;AdressBez;16;nvarchar;100;;;YES
+T_EtikettenGedruckt;ArtikelVariantenFarbBez;17;nvarchar;50;;;YES
+T_EtikettenGedruckt;Bestellnummer;18;nvarchar;50;;;YES
+T_EtikettenGedruckt;Bemerkung;19;nvarchar;255;;;YES
+T_EtikettenGedruckt;Sonstiges_1;20;nvarchar;50;;;YES
+T_EtikettenGedruckt;Sonstiges_2;21;nvarchar;50;;;YES
+T_EtikettenGedruckt;Sonstiges_3;22;nvarchar;50;;;YES
+T_EtikettenGedruckt;Sonstiges_4;23;nvarchar;50;;;YES
+T_EtikettenGedruckt;Sonstiges_5;24;nvarchar;50;;;YES
+T_EtikettenGedruckt;Sonstiges_6;25;nvarchar;50;;;YES
+T_EtikettenGedruckt;Sonstiges_7;26;nvarchar;50;;;YES
+T_EtikettenGedruckt;Sonstiges_8;27;nvarchar;50;;;YES
+T_EtikettenGedruckt;Sonstiges_9;28;nvarchar;50;;;YES
+T_EtikettenGedruckt;Barcode;29;nvarchar;50;;;YES
+T_EtikettenGedruckt;DruckDatum;30;datetime;;;;YES
+T_EtikettenGedruckt;AnzStkJeKarton;31;int;;10;0;YES
+T_EtikettenGedruckt;AnzStkJePalette;32;int;;10;0;YES
+T_EtikettenGedruckt;Add_User;33;nvarchar;50;;;NO
+T_EtikettenGedruckt;Add_Date;34;datetime;;;;NO
+T_EtikettenGedruckt;Upd_User;35;nvarchar;50;;;YES
+T_EtikettenGedruckt;Upd_Date;36;datetime;;;;YES
+T_EtikettenGedruckt;ProduktionslosBasierend;37;int;;10;0;YES
+T_EtikettenGedruckt;SSCC_ReserveZiffer;38;int;;10;0;YES
+T_EtikettenGedruckt;IdSperrgrund;39;int;;10;0;YES
+T_EtikettenGedruckt;SperrgrundKurzBez;40;nvarchar;50;;;YES
+T_EtikettenGedruckt;SperrgrundBez;41;nvarchar;50;;;YES
+T_EtikettenGedruckt;IdWarenlager;42;int;;10;0;YES
+T_EtikettenGedruckt;IdLagerAbteilung;43;int;;10;0;YES
+T_EtikettenGedruckt;WarenlagerKurzBez;44;nvarchar;50;;;YES
+T_EtikettenGedruckt;LagerAbteilungKurzBez;45;nvarchar;50;;;YES
+T_EtikettenGedruckt;IdProdBereich;46;int;;10;0;YES
+T_EtikettenGedruckt;IdFertigware;47;int;;10;0;YES
+T_EtikettenGedruckt;IdRezeptur;48;int;;10;0;YES
+T_EtikettenGedruckt;IdFarbe;49;int;;10;0;YES
+T_EtikettenGedruckt;IdReinheit;50;int;;10;0;YES
+T_EtikettenGedruckt;IdHerkunft;51;int;;10;0;YES
+T_EtikettenGedruckt;IdVerwendung;52;int;;10;0;YES
+T_EtikettenGedruckt;Signatur;53;nvarchar;50;;;YES
+T_EtikettenGedruckt;AnzahlGedruckterKopien;54;int;;10;0;YES
+T_EtikettenGedruckt;NettoGewicht;55;float;;53;;YES
+T_EtikettenGedruckt;IdBlockingOrder;56;int;;10;0;YES
+T_EtikettenGedruckt;IdReworkOrder;57;int;;10;0;YES
+T_EtikettenGedruckt;Bestrahlungsnummer;58;nvarchar;50;;;YES
+T_EtikettenGemappt;IdEtikettenGemappt;1;int;;10;0;NO
+T_EtikettenGemappt;SSCC_EANBasisNr;2;int;;10;0;NO
+T_EtikettenGemappt;SSCC_LfdNr;3;int;;10;0;NO
+T_EtikettenGemappt;IdArtikelVariante;4;int;;10;0;NO
+T_EtikettenGemappt;IdAdresse;5;int;;10;0;NO
+T_EtikettenGemappt;IdVpkVorschrift;6;int;;10;0;NO
+T_EtikettenGemappt;IdHauptmaterial;7;int;;10;0;NO
+T_EtikettenGemappt;LM;8;int;;10;0;NO
+T_EtikettenGemappt;IdMaschine;9;int;;10;0;NO
+T_EtikettenGemappt;IdProdPlanung;10;int;;10;0;NO
+T_EtikettenGemappt;LfdNr;11;int;;10;0;NO
+T_EtikettenGemappt;ReserveNummer;12;int;;10;0;NO
+T_EtikettenGemappt;Barcode;13;nvarchar;50;;;NO
+T_EtikettenGemappt;ProdDatum;14;datetime;;;;NO
+T_EtikettenGemappt;Add_User;15;nvarchar;50;;;NO
+T_EtikettenGemappt;Add_Date;16;datetime;;;;NO
+T_EtikettenGemappt;Upd_User;17;nvarchar;50;;;YES
+T_EtikettenGemappt;Upd_Date;18;datetime;;;;YES
+T_EtikettenGemappt;AI_02;19;nvarchar;50;;;YES
+T_EtikettenGemappt;AI_37;20;nvarchar;50;;;YES
+T_EtikettenGemappt;AI_90;21;nvarchar;50;;;YES
+T_EtikettenGemappt;AI_91;22;nvarchar;50;;;YES
+T_EtikettenGemappt;AI_92;23;nvarchar;50;;;YES
+T_EtikettenGemappt;AI_93;24;nvarchar;50;;;YES
+T_EtikettenGemappt;AI_94;25;nvarchar;50;;;YES
+T_EtikettenGemappt;AI_95;26;nvarchar;50;;;YES
+T_EtikettenGemappt;AI_96;27;nvarchar;50;;;YES
+T_EtikettenGemappt;AI_97;28;nvarchar;50;;;YES
+T_EtikettenGemappt;AI_98;29;nvarchar;50;;;YES
+T_EtikettenGemappt;AI_99;30;nvarchar;50;;;YES
+T_EtikettenGemappt;AI_240;31;nvarchar;50;;;YES
+T_EtikettenGemappt;AnzStkJePalette;32;int;;10;0;YES
+T_EtikettenGemappt;SSCC_ReserveZiffer;33;int;;10;0;YES
+T_EtikettenGemappt;IdEtikettenLayout;34;int;;10;0;YES
+T_EtikettenGemappt;AnzahlKopien;35;int;;10;0;YES
+T_EtikettenGemappt;IdEtikettenDrucker;36;int;;10;0;YES
+T_EtikettenGemappt;AI_00;37;nvarchar;50;;;YES
+T_EtikettenGemappt;AI_10;38;nvarchar;50;;;YES
+T_EtikettenGemappt;AI_11;39;nvarchar;50;;;YES
+T_EtikettenGemappt;Bestrahlungsnummer;40;nvarchar;50;;;YES
+T_EtikettenHistorie;IdEtikettenHistorie;1;int;;10;0;NO
+T_EtikettenHistorie;IdEtikettenGedruckt;2;int;;10;0;NO
+T_EtikettenHistorie;IdEtikettenVerworfen;3;int;;10;0;NO
+T_EtikettenHistorie;IdEtikettenDummy;4;int;;10;0;NO
+T_EtikettenHistorie;Modus;5;int;;10;0;NO
+T_EtikettenHistorie;Status;6;int;;10;0;NO
+T_EtikettenHistorie;Add_User;7;nvarchar;50;;;NO
+T_EtikettenHistorie;Add_Date;8;datetime;;;;NO
+T_EtikettenHistorie;Upd_User;9;nvarchar;50;;;YES
+T_EtikettenHistorie;Upd_Date;10;datetime;;;;YES
+T_EtikettenHistorie;ComputerName;11;nvarchar;50;;;YES
+T_EtikettenHistorie;IdEtikettenGemappt;12;int;;10;0;YES
+T_EtikettenLayouts;IdEtikettenLayout;1;int;;10;0;NO
+T_EtikettenLayouts;Bezeichnung;2;nvarchar;50;;;NO
+T_EtikettenLayouts;Bemerkung;3;nvarchar;255;;;YES
+T_EtikettenLayouts;Typ;4;int;;10;0;NO
+T_EtikettenLayouts;Aktiv;5;int;;10;0;NO
+T_EtikettenLayouts;Add_User;6;nvarchar;50;;;NO
+T_EtikettenLayouts;Add_Date;7;datetime;;;;NO
+T_EtikettenLayouts;Upd_User;8;nvarchar;50;;;YES
+T_EtikettenLayouts;Upd_Date;9;datetime;;;;YES
+T_EtikettenLog;IdEtikettenLog;1;int;;10;0;NO
+T_EtikettenLog;IdArtikelvariante;2;int;;10;0;YES
+T_EtikettenLog;IdAdresse;3;int;;10;0;YES
+T_EtikettenLog;IdProdBereich;4;int;;10;0;YES
+T_EtikettenLog;DatumZeit;5;datetime;;;;YES
+T_EtikettenLog;lfdZahl;6;int;;10;0;YES
+T_EtikettenLog;IdMaschine;7;int;;10;0;YES
+T_EtikettenLog;AuftragsNr;8;nvarchar;50;;;YES
+T_EtikettenLog;ScanStatus;9;int;;10;0;YES
+T_EtikettenLog;TabellenNr;10;int;;10;0;NO
+T_EtikettenPalettenKartons;IdEtikettenPalettenKarton;1;int;;10;0;NO
+T_EtikettenPalettenKartons;IdEtikettenGedrucktPalette;2;int;;10;0;YES
+T_EtikettenPalettenKartons;IdEtikettenGedrucktKarton;3;int;;10;0;YES
+T_EtikettenPalettenKartons;Add_User;4;nvarchar;50;;;YES
+T_EtikettenPalettenKartons;Add_Date;5;datetime;;;;YES
+T_EtikettenPalettenKartons;Upd_User;6;nvarchar;50;;;YES
+T_EtikettenPalettenKartons;Upd_Date;7;datetime;;;;YES
+T_EtikettenSperrgruende;IdEtikettenSperrgrund;1;int;;10;0;NO
+T_EtikettenSperrgruende;IdProdBereich;2;int;;10;0;NO
+T_EtikettenSperrgruende;Nummer;3;int;;10;0;NO
+T_EtikettenSperrgruende;Bezeichnung;4;nvarchar;50;;;NO
+T_EtikettenSperrgruende;Aktiv;5;int;;10;0;NO
+T_EtikettenSperrgruende;Add_User;6;nvarchar;50;;;NO
+T_EtikettenSperrgruende;Add_Date;7;datetime;;;;NO
+T_EtikettenSperrgruende;Upd_User;8;nvarchar;50;;;YES
+T_EtikettenSperrgruende;Upd_Date;9;datetime;;;;YES
+T_EtikettenSperrgruende;Typ;10;int;;10;0;YES
+T_EtikettenVerworfen;IdEtikettenVerworfen;1;int;;10;0;NO
+T_EtikettenVerworfen;IdEtikettenSperrgrund;2;int;;10;0;NO
+T_EtikettenVerworfen;IdProdPlanung;3;int;;10;0;YES
+T_EtikettenVerworfen;IdArtikelvarianten;4;int;;10;0;YES
+T_EtikettenVerworfen;IdAdressen;5;int;;10;0;YES
+T_EtikettenVerworfen;IdEtikettenDrucker;6;int;;10;0;YES
+T_EtikettenVerworfen;IdEtikettenLayout;7;int;;10;0;YES
+T_EtikettenVerworfen;AnzahlKopien;8;int;;10;0;YES
+T_EtikettenVerworfen;IdMaschine;9;int;;10;0;YES
+T_EtikettenVerworfen;LM;10;int;;10;0;YES
+T_EtikettenVerworfen;ReserveNummer;11;int;;10;0;YES
+T_EtikettenVerworfen;LfdNr;12;int;;10;0;YES
+T_EtikettenVerworfen;IdVpkVorschrift;13;int;;10;0;YES
+T_EtikettenVerworfen;IdHMT;14;int;;10;0;YES
+T_EtikettenVerworfen;IdWerkzeug;15;int;;10;0;YES
+T_EtikettenVerworfen;ArtikelVariantenBez;16;nvarchar;50;;;YES
+T_EtikettenVerworfen;AdressBez;17;nvarchar;100;;;YES
+T_EtikettenVerworfen;ArtikelVariantenFarbBez;18;nvarchar;50;;;YES
+T_EtikettenVerworfen;Bestellnummer;19;nvarchar;50;;;YES
+T_EtikettenVerworfen;Bemerkung;20;nvarchar;255;;;YES
+T_EtikettenVerworfen;Sonstiges_1;21;nvarchar;50;;;YES
+T_EtikettenVerworfen;Sonstiges_2;22;nvarchar;50;;;YES
+T_EtikettenVerworfen;Sonstiges_3;23;nvarchar;50;;;YES
+T_EtikettenVerworfen;Sonstiges_4;24;nvarchar;50;;;YES
+T_EtikettenVerworfen;Sonstiges_5;25;nvarchar;50;;;YES
+T_EtikettenVerworfen;Sonstiges_6;26;nvarchar;50;;;YES
+T_EtikettenVerworfen;Sonstiges_7;27;nvarchar;50;;;YES
+T_EtikettenVerworfen;Sonstiges_8;28;nvarchar;50;;;YES
+T_EtikettenVerworfen;Sonstiges_9;29;nvarchar;50;;;YES
+T_EtikettenVerworfen;Barcode;30;nvarchar;50;;;YES
+T_EtikettenVerworfen;AnzStkJeKarton;31;int;;10;0;YES
+T_EtikettenVerworfen;AnzStkJePalette;32;int;;10;0;YES
+T_EtikettenVerworfen;Add_User;33;nvarchar;50;;;NO
+T_EtikettenVerworfen;Add_Date;34;datetime;;;;NO
+T_EtikettenVerworfen;Upd_User;35;nvarchar;50;;;YES
+T_EtikettenVerworfen;Upd_Date;36;datetime;;;;YES
+T_EtikettenVerworfen;ProduktionslosBasierend;37;int;;10;0;YES
+T_EtikettenVerworfen;SSCC_ReserveZiffer;38;int;;10;0;YES
+T_EtikettenVerworfen;IdSperrgrund;39;int;;10;0;YES
+T_EtikettenVerworfen;SperrgrundKurzBez;40;nvarchar;50;;;YES
+T_EtikettenVerworfen;SperrgrundBez;41;nvarchar;50;;;YES
+T_EtikettenVerworfen;IdWarenlager;42;int;;10;0;YES
+T_EtikettenVerworfen;IdLagerAbteilung;43;int;;10;0;YES
+T_EtikettenVerworfen;WarenlagerKurzBez;44;nvarchar;50;;;YES
+T_EtikettenVerworfen;LagerAbteilungKurzBez;45;nvarchar;50;;;YES
+T_EtikettenVerworfen;IdProdBereich;46;int;;10;0;YES
+T_EtikettenVerworfen;IdFertigware;47;int;;10;0;YES
+T_EtikettenVerworfen;IdRezeptur;48;int;;10;0;YES
+T_EtikettenVerworfen;IdFarbe;49;int;;10;0;YES
+T_EtikettenVerworfen;IdReinheit;50;int;;10;0;YES
+T_EtikettenVerworfen;IdHerkunft;51;int;;10;0;YES
+T_EtikettenVerworfen;IdVerwendung;52;int;;10;0;YES
+T_EtikettenVerworfen;NettoGewicht;53;float;;53;;YES
+T_ExportVerpackungskosten;LfdNr;1;int;;10;0;NO
+T_ExportVerpackungskosten;Datum;2;datetime;;;;NO
+T_ExportVerpackungskosten;IdArtikelVarianten;3;int;;10;0;NO
+T_ExportVerpackungskosten;Kosten;4;float;;53;;NO
+T_ExportVerpackungskosten;Add_User;5;nvarchar;50;;;NO
+T_ExportVerpackungskosten;Add_Date;6;datetime;;;;NO
+T_ExportVerpackungskosten;Upd_User;7;nvarchar;50;;;NO
+T_ExportVerpackungskosten;Upd_Date;8;datetime;;;;NO
+T_ExportVerpackungsVerhaeltnisse;LfdNr;1;int;;10;0;NO
+T_ExportVerpackungsVerhaeltnisse;Datum;2;datetime;;;;NO
+T_ExportVerpackungsVerhaeltnisse;IdArtikelVarianten;3;int;;10;0;NO
+T_ExportVerpackungsVerhaeltnisse;Ungebunden;4;float;;53;;NO
+T_ExportVerpackungsVerhaeltnisse;Gebunden;5;float;;53;;NO
+T_ExportVerpackungsVerhaeltnisse;Add_User;6;nvarchar;50;;;NO
+T_ExportVerpackungsVerhaeltnisse;Add_Date;7;datetime;;;;NO
+T_ExportVerpackungsVerhaeltnisse;Upd_User;8;nvarchar;50;;;NO
+T_ExportVerpackungsVerhaeltnisse;Upd_Date;9;datetime;;;;NO
+T_Identifikation_EtikettenHistorie;IdIdentifikationEtikettenHistorie;1;int;;10;0;NO
+T_Identifikation_EtikettenHistorie;IdIdentifikation;2;int;;10;0;NO
+T_Identifikation_EtikettenHistorie;IdEtikettenHistorie;3;int;;10;0;NO
+T_Identifikation_EtikettenHistorie;Add_User;4;nvarchar;50;;;NO
+T_Identifikation_EtikettenHistorie;Add_Date;5;datetime;;;;NO
+T_Identifikation_EtikettenHistorie;Upd_User;6;nvarchar;50;;;YES
+T_Identifikation_EtikettenHistorie;Upd_Date;7;datetime;;;;YES
+T_LagerabgleichBarcodes;IdBarcode;1;int;;10;0;NO
+T_LagerabgleichBarcodes;GUID;2;uniqueidentifier;;;;NO
+T_LagerabgleichBarcodes;BarcodeExtern;3;nvarchar;50;;;NO
+T_LagerabgleichBarcodes;LfdNrExtern;4;int;;10;0;NO
+T_LagerabgleichBarcodes;BarcodeInStockHRL;5;nvarchar;50;;;NO
+T_LagerabgleichBarcodes;LfdNrInStockHRL;6;int;;10;0;NO
+T_LagerabgleichBarcodes;BarcodeInStockNotHRL;7;nvarchar;50;;;NO
+T_LagerabgleichBarcodes;LfdNrInStockNotHRL;8;int;;10;0;NO
+T_LagerabgleichBarcodes;IdArtikelVariante;9;int;;10;0;NO
+T_LagerabgleichBarcodes;IdAdresse;10;int;;10;0;NO
+T_LagerabgleichBarcodes;IdVpkVorschrift;11;int;;10;0;NO
+T_LagerabgleichBarcodes;IdHauptmaterial;12;int;;10;0;NO
+T_LagerabgleichBarcodes;Beleg;13;nvarchar;50;;;NO
+T_LagerabgleichBarcodes;Add_User;14;nvarchar;50;;;NO
+T_LagerabgleichBarcodes;Add_Date;15;datetime;;;;NO
+T_LagerabgleichBarcodes;Upd_User;16;nvarchar;50;;;NO
+T_LagerabgleichBarcodes;Upd_Date;17;datetime;;;;NO
+T_LagerabgleichBarcodesExtern;IdBarcodeExtern;1;int;;10;0;NO
+T_LagerabgleichBarcodesExtern;GUID;2;uniqueidentifier;;;;NO
+T_LagerabgleichBarcodesExtern;Barcode;3;nvarchar;50;;;NO
+T_LagerabgleichBarcodesExtern;LfdNr;4;int;;10;0;NO
+T_LagerabgleichBarcodesExtern;Add_User;5;nvarchar;50;;;NO
+T_LagerabgleichBarcodesExtern;Add_Date;6;datetime;;;;NO
+T_LagerabgleichBarcodesExtern;Upd_User;7;nvarchar;50;;;NO
+T_LagerabgleichBarcodesExtern;Upd_Date;8;datetime;;;;NO
+T_LagerabgleichBarcodesIntern;IdBarcodeIntern;1;int;;10;0;NO
+T_LagerabgleichBarcodesIntern;GUID;2;uniqueidentifier;;;;NO
+T_LagerabgleichBarcodesIntern;Barcode;3;nvarchar;50;;;NO
+T_LagerabgleichBarcodesIntern;LfdNr;4;int;;10;0;NO
+T_LagerabgleichBarcodesIntern;IdWarenLager;5;int;;10;0;NO
+T_LagerabgleichBarcodesIntern;IdLagerAbteilung;6;int;;10;0;NO
+T_LagerabgleichBarcodesIntern;IdArtikelVariante;7;int;;10;0;NO
+T_LagerabgleichBarcodesIntern;Add_User;8;nvarchar;50;;;NO
+T_LagerabgleichBarcodesIntern;Add_Date;9;datetime;;;;NO
+T_LagerabgleichBarcodesIntern;Upd_User;10;nvarchar;50;;;NO
+T_LagerabgleichBarcodesIntern;Upd_Date;11;datetime;;;;NO
+T_LS_ArtikelKlassifizierung;IdArtikelKlassifizierung;1;int;;10;0;NO
+T_LS_ArtikelKlassifizierung;GUID;2;uniqueidentifier;;;;YES
+T_LS_ArtikelKlassifizierung;IdProdBereich;3;int;;10;0;YES
+T_LS_ArtikelKlassifizierung;IdProdArtikel;4;int;;10;0;YES
+T_LS_ArtikelKlassifizierung;IdArtikelVariante;5;int;;10;0;YES
+T_LS_ArtikelKlassifizierung;Klassifizierung;6;nvarchar;250;;;YES
+T_LS_ArtikelKlassifizierung;Bemerkung;7;nvarchar;250;;;YES
+T_LS_ArtikelKlassifizierung;Add_User;8;nvarchar;50;;;YES
+T_LS_ArtikelKlassifizierung;Add_Date;9;datetime;;;;YES
+T_LS_ArtikelKlassifizierung;Upd_User;10;nvarchar;50;;;YES
+T_LS_ArtikelKlassifizierung;Upd_Date;11;datetime;;;;YES
+T_Maschine_EtikettenDrucker;IdMaschineEtikettenDrucker;1;int;;10;0;NO
+T_Maschine_EtikettenDrucker;IdMaschine;2;int;;10;0;NO
+T_Maschine_EtikettenDrucker;IdEtikettenDrucker;3;int;;10;0;NO
+T_Maschine_EtikettenDrucker;Standard;4;int;;10;0;NO
+T_Maschine_EtikettenDrucker;Add_User;5;nvarchar;50;;;NO
+T_Maschine_EtikettenDrucker;Add_Date;6;datetime;;;;NO
+T_Maschine_EtikettenDrucker;Upd_User;7;nvarchar;50;;;YES
+T_Maschine_EtikettenDrucker;Upd_Date;8;datetime;;;;YES
+T_ProdArtikel;IdProdArtikel;1;int;;10;0;NO
+T_ProdArtikel;IdArtikelvariantenTyp;2;int;;10;0;YES
+T_ProdArtikel;IdProdArtikelgruppe;3;int;;10;0;YES
+T_ProdArtikel;Bezeichnung;4;nvarchar;50;;;NO
+T_ProdArtikel;Volumen;5;int;;10;0;YES
+T_ProdArtikel;Artikelzeichnungsnummer;6;nvarchar;50;;;YES
+T_ProdArtikel;Kundenbezeichnung;7;nvarchar;50;;;YES
+T_ProdArtikel;IdMengeneinheit;8;int;;10;0;YES
+T_ProdArtikel;IdPreiseinheit;9;int;;10;0;YES
+T_ProdArtikel;StkjeLKW;10;int;;10;0;YES
+T_ProdArtikel;Fahrtkosten;11;int;;10;0;YES
+T_ProdArtikel;Bemerkung;12;nvarchar;255;;;YES
+T_ProdArtikel;Aktiv;13;bit;;;;NO
+T_ProdArtikel;Add_User;14;nvarchar;50;;;YES
+T_ProdArtikel;Add_Date;15;datetime;;;;YES
+T_ProdArtikel;Upd_User;16;nvarchar;50;;;YES
+T_ProdArtikel;Upd_Date;17;datetime;;;;YES
+T_ProdArtikel;TabellenNr;18;int;;10;0;NO
+T_ProdArtikel;StdArtikel;19;int;;10;0;YES
+T_ProdArtikel;IdASMProdArtikel;20;uniqueidentifier;;;;YES
+T_ProdArtikel;IdProdBereich;21;int;;10;0;YES
+T_ProdArtikel;IdVerkaufsProdukt;22;int;;10;0;YES
+T_ProdArtikelgruppe;IdProdArtikelgruppe;1;int;;10;0;NO
+T_ProdArtikelgruppe;Bezeichnung;2;nvarchar;50;;;NO
+T_ProdArtikelgruppe;Bermerkung;3;nvarchar;50;;;YES
+T_ProdArtikelgruppe;Aktiv;4;bit;;;;NO
+T_ProdArtikelgruppe;Add_User;5;nvarchar;50;;;YES
+T_ProdArtikelgruppe;Add_Date;6;datetime;;;;YES
+T_ProdArtikelgruppe;Upd_User;7;nvarchar;50;;;YES
+T_ProdArtikelgruppe;Upd_Date;8;datetime;;;;YES
+T_ProdArtikelgruppe;TabellenNr;9;int;;10;0;NO
+T_Prozess_EtikettenDrucker;IdProzessEtikettenDrucker;1;int;;10;0;NO
+T_Prozess_EtikettenDrucker;IdEtikettenDrucker;2;int;;10;0;NO
+T_Prozess_EtikettenDrucker;DruckerProzess;3;int;;10;0;NO
+T_Prozess_EtikettenDrucker;Add_User;4;nvarchar;50;;;NO
+T_Prozess_EtikettenDrucker;Add_Date;5;datetime;;;;NO
+T_Prozess_EtikettenDrucker;Upd_User;6;nvarchar;50;;;YES
+T_Prozess_EtikettenDrucker;Upd_Date;7;datetime;;;;YES
+T_SekundaereZentraleVerpackungen;IdSekundaereZentraleVerpackung;1;int;;10;0;NO
+T_SekundaereZentraleVerpackungen;Anzeigenummer;2;nvarchar;100;;;NO
+T_SekundaereZentraleVerpackungen;Anzeigename;3;nvarchar;100;;;NO
+T_SekundaereZentraleVerpackungen;Attribut;4;nvarchar;-1;;;NO
+T_SekundaereZentraleVerpackungen;Attributgruppe;5;nvarchar;100;;;NO
+T_SekundaereZentraleVerpackungen;Datenbereich;6;nvarchar;100;;;NO
+T_SekundaereZentraleVerpackungen;Add_User;7;nvarchar;50;;;NO
+T_SekundaereZentraleVerpackungen;Add_Date;8;datetime;;;;NO
+T_SekundaereZentraleVerpackungen;Upd_User;9;nvarchar;50;;;YES
+T_SekundaereZentraleVerpackungen;Upd_Date;10;datetime;;;;YES
+T_TmpArtikelliste;IDAdressen;1;int;;10;0;YES
+T_TmpArtikelliste;AdressenBezeichnung;2;nvarchar;255;;;YES
+T_TmpArtikelliste;PostKZ;3;nvarchar;50;;;YES
+T_TmpArtikelliste;PLZ;4;nvarchar;50;;;YES
+T_TmpArtikelliste;Ort;5;nvarchar;50;;;YES
+T_TmpArtikelliste;Strasse;6;nvarchar;50;;;YES
+T_TmpArtikelliste;IdArtikelVarianten;7;int;;10;0;YES
+T_TmpArtikelliste;AVBezeichnung;8;nvarchar;50;;;YES
+T_TmpArtikelliste;FarbBezeichnung;9;nvarchar;50;;;YES
+T_TmpArtikelliste;Volumen;10;int;;10;0;YES
+T_TmpArtikelliste;ArtikelGewicht;11;real;;24;;YES
+T_TmpArtikelliste;Bemerkung;12;nvarchar;50;;;YES
+T_TmpArtikelliste;FremdKey;13;nvarchar;50;;;YES
+T_TmpArtikelliste;VKPreis;14;float;;53;;YES
+T_TmpArtikelliste;GueltigabDatum;15;datetime;;;;YES
+T_TmpArtikelliste;MPB;16;float;;53;;YES
+T_TmpArtikelliste;Diverses1;17;float;;53;;YES
+T_TmpArtikelliste;Waehrung;18;nvarchar;50;;;YES
+T_TmpArtikelliste;Fracht;19;float;;53;;YES
+T_TmpArtikelliste;Verpackung;20;float;;53;;YES
+T_TmpArtikelliste;Zyklus;21;real;;24;;YES
+T_TmpArtikelliste;Nestzahl;22;int;;10;0;YES
+T_TmpArtikelliste;Hauptmaterial;23;nvarchar;30;;;YES
+T_TmpArtikelliste;Amo;24;float;;53;;YES
+T_TmpArtikelliste;Aufbringung;25;float;;53;;YES
+T_TmpArtikelliste;Deko;26;float;;53;;YES
+T_tmpArtikelRezeptur;IdRez;1;int;;10;0;YES
+T_tmpArtikelRezeptur;IdAv;2;int;;10;0;YES
+T_tmpArtikelRezeptur;AvBezeichnung;3;nvarchar;99;;;YES
+T_tmpArtikelRezeptur;AvFremdkey;4;nvarchar;99;;;YES
+T_tmpArtikelRezeptur;IdFm;5;int;;10;0;YES
+T_tmpArtikelRezeptur;FmBezeichnung;6;nvarchar;99;;;YES
+T_tmpArtikelRezeptur;FmFremdkey;7;nvarchar;99;;;YES
+T_tmpArtikelRezeptur;FmAvTyp;8;int;;10;0;YES
+T_tmpArtikelRezeptur;Anteil;9;float;;53;;YES
+T_tmpArtikelRezeptur;Mengeneinheit;10;nvarchar;50;;;YES
+T_tmpBarcode_EtikettenStatistik;IdProdBereich;1;int;;10;0;YES
+T_tmpBarcode_EtikettenStatistik;ProdBereichBez;2;nvarchar;100;;;YES
+T_tmpBarcode_EtikettenStatistik;IdProdArtikel;3;int;;10;0;YES
+T_tmpBarcode_EtikettenStatistik;ProdArtikel_Bezeichnung;4;nvarchar;100;;;YES
+T_tmpBarcode_EtikettenStatistik;IdArtikelvariante;5;int;;10;0;YES
+T_tmpBarcode_EtikettenStatistik;Artikel_Bezeichnung;6;nvarchar;100;;;YES
+T_tmpBarcode_EtikettenStatistik;IdAdresse;7;int;;10;0;YES
+T_tmpBarcode_EtikettenStatistik;Kunde_Bezeichnung;8;nvarchar;100;;;YES
+T_tmpBarcode_EtikettenStatistik;IdEtiEinst;9;int;;10;0;YES
+T_tmpBarcode_EtikettenStatistik;Etikett_Bezeichnung;10;nvarchar;100;;;YES
+T_tmpBarcode_EtikettenStatistik;ZuletztGedruckt;11;datetime;;;;YES
+T_tmpBarcode_EtikettenStatistik;LetzteAnzahl;12;int;;10;0;YES
+T_tmpBarcode_EtikettenStatistik;Anzahl_Eti;13;int;;10;0;YES
+T_tmpBarcode_EtikettenStatistik;GesammtAnzahl;14;int;;10;0;YES
+T_tmpBarcode_EtikettenStatistik;LetzterUser;15;nvarchar;100;;;YES
+T_tmpBarcode_EtikettenStatistik;DruckBeginn;16;datetime;;;;YES
+T_tmpBarcode_EtikettenStatistik;User;17;nvarchar;100;;;YES
+T_tmpBudgetArtikelRezeptur;BudgetJahr;1;int;;10;0;YES
+T_tmpBudgetArtikelRezeptur;IdRez;2;int;;10;0;YES
+T_tmpBudgetArtikelRezeptur;RezBezeichnung;3;nvarchar;50;;;YES
+T_tmpBudgetArtikelRezeptur;IdFM;4;int;;10;0;YES
+T_tmpBudgetArtikelRezeptur;FMBez;5;nvarchar;100;;;YES
+T_tmpBudgetArtikelRezeptur;Anteil;6;float;;53;;YES
+T_tmpBudgetArtikelRezeptur;Mengeneinheit;7;nvarchar;50;;;YES
+T_tmpBudgetArtikelRezeptur;EKPreis;8;float;;53;;YES
+T_tmpBudgetArtikelRezeptur;FWEkPreis;9;float;;53;;YES
+T_tmpBudgetArtikelRezeptur;GueltigabDatum;10;datetime;;;;YES
+T_tmpBudgetArtikelRezeptur;MPB;11;float;;53;;YES
+T_tmpBudgetArtikelRezeptur;FWMPB;12;float;;53;;YES
+T_tmpBudgetArtikelRezeptur;IdLieferant;13;int;;10;0;YES
+T_tmpBudgetArtikelRezeptur;MaterialMischpreis;14;float;;53;;YES
+T_tmpBudgetArtikelRezeptur;FWMaterialMischpreis;15;float;;53;;YES
+T_tmpBudgetArtikelRezeptur;IdArtikelvarianten;16;int;;10;0;YES
+T_tmpBudgetArtikelRezeptur;AVBez;17;nvarchar;150;;;YES
+T_tmpBudgetArtikelRezeptur;IdKunde;18;int;;10;0;YES
+T_tmpBudgetArtikelRezeptur;Kundenbez;19;nvarchar;150;;;YES
+T_tmpBudgetArtikelRezeptur;IdAvTyp;20;int;;10;0;YES
+T_tmpBudgetArtikelRezeptur;Waehrung;21;nvarchar;50;;;YES
+T_tmpBudgetArtikelRezeptur;Benutzer;22;nvarchar;50;;;YES
+T_tmpBudgetVerpackungFracht;BudgetJahr;1;int;;10;0;YES
+T_tmpBudgetVerpackungFracht;IdKunde;2;int;;10;0;YES
+T_tmpBudgetVerpackungFracht;IdArtikelvariante;3;int;;10;0;YES
+T_tmpBudgetVerpackungFracht;IdProdartikel;4;int;;10;0;YES
+T_tmpBudgetVerpackungFracht;VKPreis;5;float;;53;;YES
+T_tmpBudgetVerpackungFracht;FWVKPreis;6;float;;53;;YES
+T_tmpBudgetVerpackungFracht;Verpackung;7;float;;53;;YES
+T_tmpBudgetVerpackungFracht;FWVerpackung;8;float;;53;;YES
+T_tmpBudgetVerpackungFracht;Fracht;9;float;;53;;YES
+T_tmpBudgetVerpackungFracht;FWFracht;10;float;;53;;YES
+T_tmpBudgetVerpackungFracht;MengeProJahr;11;int;;10;0;YES
+T_tmpBudgetVerpackungFracht;KostenKarton;12;float;;53;;YES
+T_tmpBudgetVerpackungFracht;FWKostenKarton;13;int;;10;0;YES
+T_tmpBudgetVerpackungFracht;UmlaeufeKarton;14;int;;10;0;YES
+T_tmpBudgetVerpackungFracht;KostenPalette;15;float;;53;;YES
+T_tmpBudgetVerpackungFracht;FWKostenPalette;16;float;;53;;YES
+T_tmpBudgetVerpackungFracht;UmlaeufePalette;17;int;;10;0;YES
+T_tmpBudgetVerpackungFracht;KostenPolysack;18;float;;53;;YES
+T_tmpBudgetVerpackungFracht;FWKostenPolysack;19;float;;53;;YES
+T_tmpBudgetVerpackungFracht;KostenStretchfolie;20;float;;53;;YES
+T_tmpBudgetVerpackungFracht;FWKostenStretchfolie;21;float;;53;;YES
+T_tmpBudgetVerpackungFracht;KostenZwischenlagen;22;float;;53;;YES
+T_tmpBudgetVerpackungFracht;FWKostenZwischenlagen;23;float;;53;;YES
+T_tmpBudgetVerpackungFracht;KostenSonstigeVpk;24;float;;53;;YES
+T_tmpBudgetVerpackungFracht;FWKostenSonstigeVpk;25;float;;53;;YES
+T_tmpBudgetVerpackungFracht;UmlaeufeSonstigeVpk;26;int;;10;0;YES
+T_tmpBudgetVerpackungFracht;SonstigeVpkKosten;27;float;;53;;YES
+T_tmpBudgetVerpackungFracht;FWSonstigeVpkKosten;28;float;;53;;YES
+T_tmpBudgetVerpackungFracht;KostenFahrtenEinfach;29;float;;53;;YES
+T_tmpBudgetVerpackungFracht;FWKostenFahrtenEinfach;30;float;;53;;YES
+T_tmpBudgetVerpackungFracht;GesamtKm;31;float;;53;;YES
+T_tmpBudgetVerpackungFracht;KostenProKm;32;float;;53;;YES
+T_tmpBudgetVerpackungFracht;FWKostenProKm;33;float;;53;;YES
+T_tmpBudgetVerpackungFracht;KostenRueckfracht;34;float;;53;;YES
+T_tmpBudgetVerpackungFracht;FWKostenRueckfracht;35;float;;53;;YES
+T_tmpBudgetVerpackungFracht;Benutzer;36;nvarchar;50;;;YES
+T_tmpBudgetVerpackungsverbrauch;BudgetJahr;1;int;;10;0;YES
+T_tmpBudgetVerpackungsverbrauch;IdKunde;2;int;;10;0;YES
+T_tmpBudgetVerpackungsverbrauch;KundenBez;3;nvarchar;150;;;YES
+T_tmpBudgetVerpackungsverbrauch;IdAv;4;int;;10;0;YES
+T_tmpBudgetVerpackungsverbrauch;AvBez;5;nvarchar;150;;;YES
+T_tmpBudgetVerpackungsverbrauch;IdAvTyp;6;int;;10;0;YES
+T_tmpBudgetVerpackungsverbrauch;AvTypBez;7;nvarchar;150;;;YES
+T_tmpBudgetVerpackungsverbrauch;Umlaeufe;8;smallint;;5;0;YES
+T_tmpBudgetVerpackungsverbrauch;Gewicht;9;float;;53;;YES
+T_tmpBudgetVerpackungsverbrauch;Preiseinheit;10;smallint;;5;0;YES
+T_tmpBudgetVerpackungsverbrauch;Mengeneinheit;11;nvarchar;150;;;YES
+T_tmpBudgetVerpackungsverbrauch;EKPreis;12;float;;53;;YES
+T_tmpBudgetVerpackungsverbrauch;FWEKPreis;13;float;;53;;YES
+T_tmpBudgetVerpackungsverbrauch;IdLieferant;14;int;;10;0;YES
+T_tmpBudgetVerpackungsverbrauch;LieferantBez;15;nvarchar;150;;;YES
+T_tmpBudgetVerpackungsverbrauch;Benutzer;16;nvarchar;150;;;YES
+T_tmpBudgetVerpackungsverbrauch;Anzahl;17;float;;53;;YES
+T_tmpBudgetVerpackungsverbrauch;GesamtGewicht;18;float;;53;;YES
+T_tmpBudgetVerpackungsverbrauch;Wert;19;float;;53;;YES
+T_tmpBudgetVerpackungsverbrauch;FWWert;20;float;;53;;YES
+T_tmpVPKKontoAusnahmen;tmpIdVpkKontoAusnahmen;1;int;;10;0;NO
+T_tmpVPKKontoAusnahmen;IdAdresse;2;int;;10;0;NO
+T_tmpVPKKontoAusnahmen;AdressenBezeichnung;3;nvarchar;200;;;YES
+T_tmpVPKKontoAusnahmen;PLZ;4;nvarchar;50;;;YES
+T_tmpVPKKontoAusnahmen;Ort;5;nvarchar;200;;;YES
+T_tmpVPKKontoAusnahmen;IdArtikelvariante;6;int;;10;0;NO
+T_tmpVPKKontoAusnahmen;AVBezeichnung;7;nvarchar;200;;;YES
+T_tmpVPKKontoAusnahmen;Alias;8;nvarchar;200;;;YES
+T_tmpVPKKontoAusnahmen;KontoFuehrung;9;int;;10;0;NO
+T_tmpVPKKontoAusnahmen;RandomUser;10;int;;10;0;NO
+T_tmpVpkVorschrift;IdKunde;1;int;;10;0;YES
+T_tmpVpkVorschrift;IdArtikelvariante;2;int;;10;0;YES
+T_tmpVpkVorschrift;BezArtikelvariante;3;nvarchar;100;;;YES
+T_tmpVpkVorschrift;VKPreisArtikelvariante;4;float;;53;;YES
+T_tmpVpkVorschrift;PreiseinheitArtikelvariante;5;int;;10;0;YES
+T_tmpVpkVorschrift;MengeneinheitArtikelvariante;6;nvarchar;50;;;YES
+T_tmpVpkVorschrift;IdProdArtikel;7;int;;10;0;YES
+T_tmpVpkVorschrift;BezProdartikel;8;nvarchar;100;;;YES
+T_tmpVpkVorschrift;IdKarton;9;int;;10;0;YES
+T_tmpVpkVorschrift;BezKarton;10;nvarchar;100;;;YES
+T_tmpVpkVorschrift;EKPreisKarton;11;float;;53;;YES
+T_tmpVpkVorschrift;PreiseinheitKarton;12;int;;10;0;YES
+T_tmpVpkVorschrift;MengeneinheitKarton;13;nvarchar;50;;;YES
+T_tmpVpkVorschrift;IdPalette;14;int;;10;0;YES
+T_tmpVpkVorschrift;BezPalette;15;nvarchar;100;;;YES
+T_tmpVpkVorschrift;EKPreisPalette;16;float;;53;;YES
+T_tmpVpkVorschrift;PreiseinheitPalette;17;int;;10;0;YES
+T_tmpVpkVorschrift;MengeneinheitPalette;18;nvarchar;50;;;YES
+T_tmpVpkVorschrift;IdSonstigeVpk;19;int;;10;0;YES
+T_tmpVpkVorschrift;BezSonstigeVpk;20;nvarchar;100;;;YES
+T_tmpVpkVorschrift;EKPreisSonstigeVpk;21;float;;53;;YES
+T_tmpVpkVorschrift;PreiseinheitSonstigeVpk;22;int;;10;0;YES
+T_tmpVpkVorschrift;MengeneinheitSonstigeVpk;23;nvarchar;50;;;YES
+T_tmpVpkVorschrift;IdPolysack;24;int;;10;0;YES
+T_tmpVpkVorschrift;BezPolysack;25;nvarchar;100;;;YES
+T_tmpVpkVorschrift;EKPreisPolysack;26;float;;53;;YES
+T_tmpVpkVorschrift;PreiseinheitPolysack;27;int;;10;0;YES
+T_tmpVpkVorschrift;MengeneinheitPolysack;28;nvarchar;50;;;YES
+T_tmpVpkVorschrift;IdStretchfolie;29;int;;10;0;YES
+T_tmpVpkVorschrift;BezStretchfolie;30;nvarchar;100;;;YES
+T_tmpVpkVorschrift;EKPreisStretchfolie;31;float;;53;;YES
+T_tmpVpkVorschrift;PreiseinheitStretchfolie;32;int;;10;0;YES
+T_tmpVpkVorschrift;MengeneinheitStretchfolie;33;nvarchar;50;;;YES
+T_tmpVpkVorschrift;IdZwischenlage;34;int;;10;0;YES
+T_tmpVpkVorschrift;BezZwischenlage;35;nvarchar;100;;;YES
+T_tmpVpkVorschrift;EKPreisZwischenlage;36;float;;53;;YES
+T_tmpVpkVorschrift;PreiseinheitZwischenlage;37;int;;10;0;YES
+T_tmpVpkVorschrift;MengeneinheitZwischenlage;38;nvarchar;50;;;YES
+T_tmpVpkVorschrift;IdZusVpk1;39;int;;10;0;YES
+T_tmpVpkVorschrift;BezZusVpk1;40;nvarchar;100;;;YES
+T_tmpVpkVorschrift;EkPreisZusVpk1;41;float;;53;;YES
+T_tmpVpkVorschrift;PreiseinheitZusVpk1;42;int;;10;0;YES
+T_tmpVpkVorschrift;MengeneinheitZusVpk1;43;nvarchar;50;;;YES
+T_tmpVpkVorschrift;IdZusVpk2;44;int;;10;0;YES
+T_tmpVpkVorschrift;BezZusVpk2;45;nvarchar;100;;;YES
+T_tmpVpkVorschrift;EkPreisZusVpk2;46;float;;53;;YES
+T_tmpVpkVorschrift;PreiseinheitZusVpk2;47;int;;10;0;YES
+T_tmpVpkVorschrift;MengeneinheitZusVpk2;48;nvarchar;50;;;YES
+T_tmpVpkVorschrift;AnzStkJeKarton;49;int;;10;0;YES
+T_tmpVpkVorschrift;AnzKartonJePalette;50;int;;10;0;YES
+T_tmpVpkVorschrift;AnzStkJeSonstigeVpk;51;int;;10;0;YES
+T_tmpVpkVorschrift;ZwischenlagenJePalette;52;int;;10;0;YES
+T_tmpVpkVorschrift;GewichtStretchfolieJePalette;53;float;;53;;YES
+T_tmpVpkVorschrift;AnzZusVpk1JePalette;54;int;;10;0;YES
+T_tmpVpkVorschrift;AnzZusVpk2JePalette;55;int;;10;0;YES
+T_tmpVpkVorschrift;SonstigeVpkKosten;56;float;;53;;YES
+T_tmpVpkVorschrift;AnzahlPalettenJeLKW;57;int;;10;0;YES
+T_tmpVpkVorschrift;FrachtkostenJePalette;58;float;;53;;YES
+T_tmpVpkVorschrift;Rueckfrachtkosten;59;float;;53;;YES
+T_tmpVpkVorschrift;VpkKostenGesammt;60;float;;53;;YES
+T_tmpVpkVorschrift;FrachtKostenGesammt;61;float;;53;;YES
+T_tmpVpkVorschrift;Bemerkung;62;nvarchar;255;;;YES
+T_Vpk;IdVpkVorschrift;1;int;;10;0;NO
+T_Vpk;Aktiv;2;int;;10;0;NO
+T_Vpk;Bezeichnung;3;nvarchar;100;;;NO
+T_Vpk;VpkBerechnen;4;int;;10;0;NO
+T_Vpk;Bemerkung;5;nvarchar;255;;;NO
+T_Vpk;SonstigeVpkKosten;6;float;;53;;NO
+T_Vpk;AnzahlAVProVpk;7;int;;10;0;NO
+T_Vpk;AnzahlVpkProLKW;8;int;;10;0;NO
+T_Vpk;StretchProgramm;9;int;;10;0;NO
+T_Vpk;AnzahlKistenProKarton;10;int;;10;0;NO
+T_Vpk;BruttoGewicht;11;float;;53;;NO
+T_Vpk;Add_User;12;nvarchar;50;;;NO
+T_Vpk;Add_Date;13;datetime;;;;NO
+T_Vpk;Upd_User;14;nvarchar;50;;;YES
+T_Vpk;Upd_Date;15;datetime;;;;YES
+T_Vpk;AnzahlAVProHE;16;int;;10;0;YES
+T_VpkDimensionen;IdVpkDimension;1;int;;10;0;NO
+T_VpkDimensionen;IdVpkVorschrift;2;int;;10;0;NO
+T_VpkDimensionen;Hoehe;3;int;;10;0;NO
+T_VpkDimensionen;Breite;4;int;;10;0;NO
+T_VpkDimensionen;Tiefe;5;int;;10;0;NO
+T_VpkDimensionen;Stapelfaktor;6;int;;10;0;NO
+T_VpkDimensionen;Add_User;7;nvarchar;50;;;NO
+T_VpkDimensionen;Add_Date;8;datetime;;;;NO
+T_VpkDimensionen;Upd_User;9;nvarchar;50;;;YES
+T_VpkDimensionen;Upd_Date;10;datetime;;;;YES
+T_VpkDimensionen;StapelFaktorStaplerTiefe;11;int;;10;0;NO
+T_VpkDimensionen;StapelFaktorStaplerHoehe;12;int;;10;0;NO
+T_VpkEtiketten;IdVpkEtikette;1;int;;10;0;NO
+T_VpkEtiketten;IdVpkVorschrift;2;int;;10;0;NO
+T_VpkEtiketten;LM;3;int;;10;0;NO
+T_VpkEtiketten;IdLayoutPalette;4;int;;10;0;NO
+T_VpkEtiketten;IdLayoutKarton;5;int;;10;0;NO
+T_VpkEtiketten;IdLayoutKunde;6;int;;10;0;NO
+T_VpkEtiketten;AnzahlEtiPaletten;7;int;;10;0;NO
+T_VpkEtiketten;AnzahlEtiKarton;8;int;;10;0;NO
+T_VpkEtiketten;AnzahlEtiKunde;9;int;;10;0;NO
+T_VpkEtiketten;Add_User;10;nvarchar;50;;;NO
+T_VpkEtiketten;Add_Date;11;datetime;;;;NO
+T_VpkEtiketten;Upd_User;12;nvarchar;50;;;YES
+T_VpkEtiketten;Upd_Date;13;datetime;;;;YES
+T_VpkEtiketten;SSCC_ReserveZiffer;14;int;;10;0;YES
+T_VpkEtiketten;AnzahlKopienEtiPaletten;15;int;;10;0;YES
+T_VpkEtiketten;AnzahlKopienEtiKarton;16;int;;10;0;YES
+T_VpkEtiketten;AnzahlKopienEtiKunde;17;int;;10;0;YES
+T_VpkKontenAusnahmen;IdVpkKontenAusnahme;1;int;;10;0;NO
+T_VpkKontenAusnahmen;IdAdresse;2;int;;10;0;NO
+T_VpkKontenAusnahmen;IdArtikelvariante;3;int;;10;0;NO
+T_VpkKontenAusnahmen;KontoFuehrung;4;int;;10;0;NO
+T_VpkKontenAusnahmen;Add_User;5;nchar;50;;;NO
+T_VpkKontenAusnahmen;Add_Date;6;datetime;;;;NO
+T_VpkKontenAusnahmen;Upd_User;7;nchar;50;;;YES
+T_VpkKontenAusnahmen;Upd_Date;8;datetime;;;;YES
+T_VpkPos;IdVpkPos;1;int;;10;0;NO
+T_VpkPos;IdVpkVorschrift;2;int;;10;0;NO
+T_VpkPos;IdArtikelvarianten;3;int;;10;0;NO
+T_VpkPos;MengeProVpk;4;float;;53;;NO
+T_VpkPos;Wincarat;5;int;;10;0;NO
+T_VpkPos;AltePos;6;int;;10;0;NO
+T_VpkPos;Add_User;7;nvarchar;50;;;NO
+T_VpkPos;Add_Date;8;datetime;;;;NO
+T_VpkPos;Upd_User;9;nvarchar;50;;;YES
+T_VpkPos;Upd_Date;10;datetime;;;;YES
+T_VpkPos;IdVpkPosBasis;11;int;;10;0;YES
+T_VpkPos;AnzahlAVProPos;12;int;;10;0;YES
+T_VpkPos;AVPos;13;int;;10;0;YES
+T_VpkPos;VerpackungsDauerAktuell;14;int;;10;0;YES
+T_VpkVorschrift_LadeEinheiten;IdVpkVorschriftLadeEinheit;1;int;;10;0;NO
+T_VpkVorschrift_LadeEinheiten;IdVpkVorschrift;2;int;;10;0;NO
+T_VpkVorschrift_LadeEinheiten;IdLadeEinheit;3;int;;10;0;NO
+T_VpkVorschrift_LadeEinheiten;Add_User;4;nvarchar;50;;;NO
+T_VpkVorschrift_LadeEinheiten;Add_Date;5;datetime;;;;NO
+T_VpkVorschrift_LadeEinheiten;Upd_User;6;nvarchar;50;;;YES
+T_VpkVorschrift_LadeEinheiten;Upd_Date;7;datetime;;;;YES
+T_VpkVorschriftAlt;IdVpkVorschrift;1;int;;10;0;NO
+T_VpkVorschriftAlt;IdKarton;2;int;;10;0;YES
+T_VpkVorschriftAlt;IdPalette;3;int;;10;0;YES
+T_VpkVorschriftAlt;IdSonstigeVpk;4;int;;10;0;YES
+T_VpkVorschriftAlt;IdPolysack;5;int;;10;0;YES
+T_VpkVorschriftAlt;IdStretchfolie;6;int;;10;0;YES
+T_VpkVorschriftAlt;IdZwischenlage;7;int;;10;0;YES
+T_VpkVorschriftAlt;IdZusVpk1;8;int;;10;0;YES
+T_VpkVorschriftAlt;IdZusVpk2;9;int;;10;0;YES
+T_VpkVorschriftAlt;AnzStkJeKarton;10;int;;10;0;YES
+T_VpkVorschriftAlt;AnzKartonJePalette;11;float;;53;;YES
+T_VpkVorschriftAlt;AnzStkJeSonstigeVpk;12;int;;10;0;YES
+T_VpkVorschriftAlt;ZwischenlagenJePalette;13;int;;10;0;YES
+T_VpkVorschriftAlt;GewichtStretchfolieJePalette;14;float;;53;;YES
+T_VpkVorschriftAlt;AnzZusVpk1JePalette;15;int;;10;0;YES
+T_VpkVorschriftAlt;AnzZusVpk2JePalette;16;int;;10;0;YES
+T_VpkVorschriftAlt;SonstigeVpkKosten;17;float;;53;;YES
+T_VpkVorschriftAlt;AnzahlPalettenJeLKW;18;int;;10;0;YES
+T_VpkVorschriftAlt;VpkBerechnen;19;bit;;;;NO
+T_VpkVorschriftAlt;Bemerkung;20;nvarchar;255;;;YES
+T_VpkVorschriftAlt;KartonWincarat;21;bit;;;;NO
+T_VpkVorschriftAlt;PaletteWincarat;22;bit;;;;NO
+T_VpkVorschriftAlt;SonstigeVpkWincarat;23;bit;;;;NO
+T_VpkVorschriftAlt;PolysackWincarat;24;bit;;;;NO
+T_VpkVorschriftAlt;ZwischenlageWincarat;25;bit;;;;NO
+T_VpkVorschriftAlt;ZusVpk1Wincarat;26;bit;;;;NO
+T_VpkVorschriftAlt;ZusVpk2Wincarat;27;bit;;;;NO
+T_VpkVorschriftAlt;EtikettLayout;28;nvarchar;50;;;YES
+T_VpkVorschriftAlt;EtikettFeld1;29;nvarchar;50;;;YES
+T_VpkVorschriftAlt;EtikettFeld2;30;nvarchar;50;;;YES
+T_VpkVorschriftAlt;EtikettFeld3;31;nvarchar;50;;;YES
+T_VpkVorschriftAlt;EtikettFeld4;32;nvarchar;50;;;YES
+T_VpkVorschriftAlt;EtikettFeld5;33;nvarchar;50;;;YES
+T_VpkVorschriftAlt;EtikettFeld6;34;nvarchar;50;;;YES
+T_VpkVorschriftAlt;LM;35;int;;10;0;YES
+T_VpkVorschriftAlt;Add_User;36;nvarchar;50;;;YES
+T_VpkVorschriftAlt;Add_Date;37;datetime;;;;YES
+T_VpkVorschriftAlt;Upd_User;38;nvarchar;50;;;YES
+T_VpkVorschriftAlt;Upd_Date;39;datetime;;;;YES
+T_VpkVorschriftAlt;Bezeichnung;40;nvarchar;100;;;NO
+T_VpkVorschriftAlt;Aktiv;41;bit;;;;NO
+T_VpkVorschriftAlt;TabellenNr;42;int;;10;0;NO
+T_VpkVorschriftAlt;Stretchprogramm;43;int;;10;0;YES
+T_VpkVorschriftAlt;AnzKistenJeKarton;44;int;;10;0;YES
+T_VpkVorschriftAlt;IdEtikettenLayoutPalette;45;int;;10;0;YES
+T_VpkVorschriftAlt;IdEtikettenLayoutKarton;46;int;;10;0;YES
+T_VpkVorschriftAlt;IdEtikettenLayoutKunde;47;int;;10;0;YES
+T_VpkVorschriftAlt;AnzahlPalette;48;int;;10;0;YES
+T_VpkVorschriftAlt;AnzahlKarton;49;int;;10;0;YES
+T_VpkVorschriftAlt;AnzahlKunde;50;int;;10;0;YES
+T_ZentraleTollingVariante;IdZentraleTollingVariante;1;int;;10;0;NO
+T_ZentraleTollingVariante;ItemId;2;nvarchar;50;;;NO
+T_ZentraleTollingVariante;ProduktName;3;nvarchar;100;;;NO
+T_ZentraleTollingVariante;ConfigId;4;nvarchar;50;;;NO
+T_ZentraleTollingVariante;TollingTyp;5;nvarchar;50;;;NO
+T_ZentraleTollingVariante;TollingKundeId;6;int;;10;0;NO
+T_ZentraleTollingVariante;TollingKundeName;7;nvarchar;50;;;NO
+T_ZentraleTollingVariante;Add_User;8;nvarchar;50;;;NO
+T_ZentraleTollingVariante;Add_Date;9;datetime;;;;NO
+T_ZentraleTollingVariante;Upd_User;10;nvarchar;50;;;YES
+T_ZentraleTollingVariante;Upd_Date;11;datetime;;;;YES
+
+(1001 rows affected)
+
+IdArtikelvarianten;IdProdArtikel;IdFertigungsmittel;Farbbezeichnung;IdRez;FremdKey;Bezeichnung;ArtikelGewicht;ButzenGewicht;Zyklus;JahresMenge;StkjeKarton;KrtjePal;StkjePal;Bemerkung;Aktiv;Add_User;Add_Date;Upd_User;Upd_Date;Lagerplatz;Bestandfuehren;QSKZ;Abmusterungsartikel;Druckereiartikel;IdProdBereich;AQSout;IdLager;Alias;TabellenNr;PN;Kritisch;ek_fert_id;IdArtikelKlassifikation;Sypronummer;ZolltarifNr;Erloeskonto;Ursprungsland;IdFibuKonto;KFDichte;KFDicke;KFFlaechengewicht;KFFlaeche;IdUrsprungsland;MaxMahlgutanteil;DOM;IdFarbe;IdAbfallTyp;IdGlobalAbfall;VorbereitungsDauer;ZyklusVerkauf;RuheZeit;GTIN;COA;HandelsWare;IdZentraleTollingVariante;ProzentanteilRecycling;QualitaetStatus
+------------------;-------------;------------------;---------------;-----;--------;-----------;--------------;-------------;------;-----------;-----------;--------;--------;---------;-----;--------;--------;--------;--------;----------;--------------;----;-------------------;----------------;-------------;------;-------;-----;----------;--;--------;----------;-----------------------;-----------;-----------;-----------;-------------;-----------;--------;-------;-----------------;---------;---------------;----------------;---;-------;-----------;--------------;------------------;-------------;--------;----;---;-----------;-------------------------;----------------------;---------------
+1269;-1;177;Cristal;-1;;MM PET CR-8828F (FastHeat);0;0;0;0;0;0;0;;True;ALPLA\cintra01;4/2/2026 7:53:05 PM;ALPLA\cintra01;4/2/2026 7:53:05 PM;;True;True;False;False;-1;False;1;MM PET CR-8828F (FastHeat);6;;0;1563;-1;;;;;13;0;0;0;0;-1;0;0;9;-1;-1;0;0;0;;0;False;-1;0;1
+
+(1 rows affected)
+
+IdArtikelvarianten;IdProdArtikel;IdFertigungsmittel;Farbbezeichnung;IdRez;FremdKey;Bezeichnung;ArtikelGewicht;ButzenGewicht;Zyklus;JahresMenge;StkjeKarton;KrtjePal;StkjePal;Bemerkung;Aktiv;Add_User;Add_Date;Upd_User;Upd_Date;Lagerplatz;Bestandfuehren;QSKZ;Abmusterungsartikel;Druckereiartikel;IdProdBereich;AQSout;IdLager;Alias;TabellenNr;PN;Kritisch;ek_fert_id;IdArtikelKlassifikation;Sypronummer;ZolltarifNr;Erloeskonto;Ursprungsland;IdFibuKonto;KFDichte;KFDicke;KFFlaechengewicht;KFFlaeche;IdUrsprungsland;MaxMahlgutanteil;DOM;IdFarbe;IdAbfallTyp;IdGlobalAbfall;VorbereitungsDauer;ZyklusVerkauf;RuheZeit;GTIN;COA;HandelsWare;IdZentraleTollingVariante;ProzentanteilRecycling;QualitaetStatus
+------------------;-------------;------------------;---------------;-----;--------;-----------;--------------;-------------;------;-----------;-----------;--------;--------;---------;-----;--------;--------;--------;--------;----------;--------------;----;-------------------;----------------;-------------;------;-------;-----;----------;--;--------;----------;-----------------------;-----------;-----------;-----------;-------------;-----------;--------;-------;-----------------;---------;---------------;----------------;---;-------;-----------;--------------;------------------;-------------;--------;----;---;-----------;-------------------------;----------------------;---------------
+100;-1;98;;-1;;MM JADE CZ-328;0;0;0;0;0;0;0;;True;ALPLA\honjo001;5/13/2022 12:46:00 PM;ALPLA\cintra01;5/12/2026 2:40:08 PM;;True;True;False;False;-1;False;1;MM Jade CZ-328;6;;0;7812;-1;;;;;13;0;0;0;0;-1;0;0;-1;-1;-1;0;0;0;;0;False;-1;0;1
+1258;-1;173;;-1;;MM JADE CZ-302;0;0;0;0;0;0;0;;True;ALPLA\cintra01;11/12/2025 11:02:38 AM;ALPLA\cintra01;11/12/2025 11:02:38 AM;;True;True;False;False;-1;False;1;MM JADE CZ-302;6;;0;7812;-1;;;;;13;0;0;0;0;-1;0;0;-1;-1;-1;0;0;0;;0;False;-1;0;1
+1273;-1;179;;-1;;MM JADE CZ-328 (FastHeat);0;0;0;0;0;0;0;;True;ALPLA\cintra01;5/22/2026 9:37:27 AM;ALPLA\cintra01;5/22/2026 9:37:27 AM;;True;True;False;False;-1;False;1;MM JADE CZ-328 (FastHeat);6;;0;7812;-1;;;;;13;0;0;0;0;-1;0;0;-1;-1;-1;0;0;0;;0;False;-1;0;1
+
+(3 rows affected)
+
+IdArtikelvariantenTyp;IdArtikeltyp;Bezeichnung;Bemerkung;Aktiv;Add_User;Add_Date;Upd_User;Upd_Date;IdHMT_eReporting;TabellenNr
+---------------------;------------;-----------;---------;-----;--------;--------;--------;--------;----------------;----------
+1;3;Label;Decoration Labels;True;sa;8/1/2011 12:00:00 AM;sa;8/1/2011 12:00:00 AM;100;7
+2;2;Carton Box;Cartons;True;sa;8/1/2011 12:00:00 AM;ALPLA\cintra01;6/23/2023 12:52:44 PM;30;7
+3;4;HD-PE;HD-PE;True;sa;8/1/2011 12:00:00 AM;sa;8/1/2011 12:00:00 AM;1;7
+4;1;Bottle;Production Article;True;sa;8/1/2011 12:00:00 AM;sa;8/1/2011 12:00:00 AM;8;7
+5;1;Self Produced Preform;Production Article;True;sa;8/1/2011 12:00:00 AM;sa;8/1/2011 12:00:00 AM;7;7
+6;4;HD-PP;HD-PP;True;sa;8/1/2011 12:00:00 AM;sa;8/1/2011 12:00:00 AM;3;7
+7;4;PET-G;PET-G;True;sa;8/1/2011 12:00:00 AM;sa;8/1/2011 12:00:00 AM;4;7
+8;4;PET-P;PET-P;True;sa;8/1/2011 12:00:00 AM;sa;8/1/2011 12:00:00 AM;5;7
+9;2;Pallet;Pallet;True;sa;8/1/2011 12:00:00 AM;sa;8/1/2011 12:00:00 AM;100;7
+10;1;Cap;Cap;True;sa;8/1/2011 12:00:00 AM;sa;8/1/2011 12:00:00 AM;100;7
+11;3;Paper Label;Paper Label;True;sa;8/1/2011 12:00:00 AM;sa;8/1/2011 12:00:00 AM;100;7
+12;4;Masterbatch;Masterbatch;True;sa;8/1/2011 12:00:00 AM;sa;8/1/2011 12:00:00 AM;20;7
+13;4;Purchased Preform;Purchased Preform;True;sa;8/1/2011 12:00:00 AM;sa;8/1/2011 12:00:00 AM;7;7
+14;6;HDPE-Waste;;True;sa;9/18/2015 8:32:06 AM;*ALPLAPROD_RS*;2/10/2026 12:44:46 PM;60;7
+15;6;HDPE 6L-Waste;;True;sa;9/18/2015 8:32:06 AM;sa;9/18/2015 8:32:06 AM;61;7
+16;6;LDPE-Waste;;True;sa;9/18/2015 8:32:06 AM;*ALPLAPROD_RS*;2/10/2026 12:44:45 PM;62;7
+17;6;PP-Waste;;True;sa;9/18/2015 8:32:06 AM;*ALPLAPROD_RS*;2/10/2026 12:44:44 PM;63;7
+18;6;PP 6L-Waste;;True;sa;9/18/2015 8:32:06 AM;sa;9/18/2015 8:32:06 AM;64;7
+19;6;PET-G-Waste;;True;sa;9/18/2015 8:32:06 AM;*ALPLAPROD_RS*;2/10/2026 12:44:46 PM;65;7
+20;6;PET-Waste;;True;sa;9/18/2015 8:32:06 AM;*ALPLAPROD_RS*;2/10/2026 12:44:45 PM;66;7
+21;6;Color-Waste;;True;sa;9/18/2015 8:32:06 AM;*ALPLAPROD_RS*;2/10/2026 12:44:45 PM;67;7
+22;6;Additive-Waste;;True;sa;9/18/2015 8:32:06 AM;*ALPLAPROD_RS*;2/10/2026 12:44:46 PM;68;7
+23;6;Mixed-Waste;;True;sa;9/18/2015 8:32:06 AM;*ALPLAPROD_RS*;2/10/2026 12:44:45 PM;69;7
+24;6;Divers-Waste;;True;sa;9/18/2015 8:32:06 AM;*ALPLAPROD_RS*;2/10/2026 12:44:47 PM;70;7
+25;2;$Waste Container;*** DO NOT DELETE ***;True;sa;9/18/2015 8:32:11 AM;sa;9/18/2015 8:32:11 AM;31;7
+26;2;Saco Plastico;;True;ALPLA\silva075;5/27/2022 2:21:28 PM;ALPLA\silva075;5/27/2022 2:21:28 PM;36;7
+27;2;ETIQUETA;Decoration Labels;True;ALPLA\ramos034;8/30/2022 2:00:24 PM;ALPLA\ramos034;8/30/2022 2:00:25 PM;23;7
+28;4;AA Blocker;;True;ALPLA\ramos034;8/30/2022 3:32:05 PM;ALPLA\ramos034;8/30/2022 3:32:05 PM;25;7
+29;2;PLASTICOS;;True;ALPLA\ramos034;8/30/2022 4:24:59 PM;ALPLA\ramos034;8/30/2022 4:24:59 PM;36;7
+30;2;Metallic Box;Metalic Box;True;ALPLA\ramos034;6/18/2023 10:42:40 AM;ALPLA\ramos034;6/18/2023 10:42:40 AM;41;7
+31;2;Plastic Box;Metalic Box;True;ALPLA\cintra01;6/23/2023 12:52:07 PM;ALPLA\cintra01;6/23/2023 12:52:07 PM;37;7
+32;6;rPET - Waste;;True;*ALPLAPROD_RS*;5/6/2025 1:20:09 PM;*ALPLAPROD_RS*;2/10/2026 12:44:45 PM;72;7
+33;4;PCR;;True;ALPLA\cintra01;5/23/2025 9:35:57 AM;ALPLA\cintra01;5/23/2025 9:35:57 AM;14;7
+
+(33 rows affected)
+
+IdArtikeltyp;Bezeichnung;Bemerkung;Aktiv;Add_User;Add_Date;Upd_User;Upd_Date;TabellenNr
+------------;-----------;---------;-----;--------;--------;--------;--------;----------
+1;Production;Description defined by MDM;True;sa;8/1/2011 12:00:00 AM;AlplaPROD-Admin;10/19/2016 2:00:43 PM;5
+2;Packaging;Description defined by MDM;True;sa;8/1/2011 12:00:00 AM;AlplaPROD-Admin;10/19/2016 2:00:43 PM;5
+3;Decoration;Description defined by MDM;True;sa;8/1/2011 12:00:00 AM;AlplaPROD-Admin;10/19/2016 2:00:43 PM;5
+4;Raw Material;Description defined by MDM;True;sa;8/1/2011 12:00:00 AM;AlplaPROD-Admin;10/19/2016 2:00:43 PM;5
+5;Spare Part;Description defined by MDM;True;sa;3/5/2014 10:04:46 AM;AlplaPROD-Admin;10/19/2016 2:00:43 PM;5
+6;Waste;Description defined by MDM;True;sa;3/5/2014 10:04:46 AM;AlplaPROD-Admin;10/19/2016 2:00:43 PM;5
+
+(6 rows affected)
+
+IdArtikelKlassifikation;id;Klassifikation_de;Klassifikation_en;Aktiv;Add_Date;Add_User;Upd_Date;Upd_User
+-----------------------;--;-----------------;-----------------;-----;--------;--------;--------;--------
+1;10;Waschmittel & Haushalt;Household/Home care;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS
+2;20;Körperpflege & Kosmetik;Personal & Beauty care;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS
+3;30;Motoröl & Schmierstoffe;Oils & Lubricants;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS
+4;52;Getränke;Beverage;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS
+5;56;Speiseöl;Edible Oil;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS
+6;58;Lebensmittel;Food;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS
+7;59;Milchprodukte;Milk Dairy;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS
+8;60;Pharma;Pharma;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS
+9;61;Rest;Rest;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS
+
+(9 rows affected)
+
+IdArtikelvarianten;Bezeichnung;Alias;Farbbezeichnung;PN;GTIN;FremdKey;Sypronummer;ArtikelGewicht;Aktiv;IdArtikelKlassifikation;IdFarbe;IdAbfallTyp;Add_Date;Upd_Date
+------------------;-----------;-----;---------------;--;----;--------;-----------;--------------;-----;-----------------------;-------;-----------;--------;--------
+1;$Sampling;;.;0;09010746000012;;;1;True;0;-1;-1;5/5/1998 5:17:57 PM;10/11/2023 1:40:49 PM
+2;$Machine Downtime;;.;0;09010746000029;;;1;True;0;-1;-1;5/5/1998 5:23:35 PM;10/11/2023 1:40:49 PM
+3;$Waste Container;$Waste Container;;;;;;0.001;True;-1;-1;-1;9/18/2015 8:32:12 AM;12/1/2022 2:56:34 PM
+4;HDPE Resina;HDPE Resina;;;;;;0;True;-1;-1;1;9/18/2015 8:32:13 AM;2/10/2026 12:45:03 PM
+5;HDPE Borras / Matacões;HDPE Borras / Matacões;;;;;;0;True;-1;-1;2;9/18/2015 8:32:14 AM;2/10/2026 12:44:52 PM
+6;HDPE Varrição;HDPE Varrição;;;;;;0;True;-1;-1;3;9/18/2015 8:32:14 AM;2/10/2026 12:44:59 PM
+7;HDPE Produto Semi Acabado;HDPE Produto Semi Acabado;;;;;;0;True;-1;-1;4;9/18/2015 8:32:15 AM;2/10/2026 12:44:54 PM
+8;HDPE Produto Acabado;HDPE Produto Acabado;;;;;;0;True;-1;-1;5;9/18/2015 8:32:15 AM;2/10/2026 12:44:51 PM
+9;HDPE Moído;HDPE Moído;;;;;;0;True;-1;-1;6;9/18/2015 8:32:16 AM;2/10/2026 12:44:54 PM
+10;HDPE Granulado;HDPE Granulado;;;;;;0;True;-1;-1;8;9/18/2015 8:32:16 AM;2/10/2026 12:44:55 PM
+11;HDPE PCR - Lascas;HDPE PCR - Lascas;;;;;;0;True;-1;-1;9;9/18/2015 8:32:17 AM;2/10/2026 12:44:58 PM
+12;HDPE PCR - Granulado;HDPE PCR - Granulado;;;;;;0;True;-1;-1;10;9/18/2015 8:32:17 AM;2/10/2026 12:44:55 PM
+13;HDPE Cabeça Perdida;HDPE Cabeça Perdida;;;;;;0;True;-1;-1;11;9/18/2015 8:32:17 AM;2/10/2026 12:44:53 PM
+14;HDPE 6L Borras / Matacões;HDPE 6L Borras / Matacões;;;;;;0;True;-1;-1;2;9/18/2015 8:32:18 AM;5/16/2022 9:13:19 AM
+15;HDPE 6L Varrição;HDPE 6L Varrição;;;;;;0;True;-1;-1;3;9/18/2015 8:32:18 AM;5/16/2022 9:13:19 AM
+16;HDPE 6L Produto Semi Acabado;HDPE 6L Produto Semi Acabado;;;;;;0;True;-1;-1;4;9/18/2015 8:32:19 AM;5/16/2022 9:13:19 AM
+17;HDPE 6L Produto Acabado;HDPE 6L Produto Acabado;;;;;;0;True;-1;-1;5;9/18/2015 8:32:19 AM;5/16/2022 9:13:19 AM
+18;HDPE 6L Moído;HDPE 6L Moído;;;;;;0;True;-1;-1;6;9/18/2015 8:32:20 AM;5/16/2022 9:13:19 AM
+19;HDPE 6L Granulado;HDPE 6L Granulado;;;;;;0;True;-1;-1;8;9/18/2015 8:32:20 AM;5/16/2022 9:13:19 AM
+20;HDPE 6L PCR - Lascas;HDPE 6L PCR - Lascas;;;;;;0;True;-1;-1;9;9/18/2015 8:32:21 AM;5/16/2022 9:13:19 AM
+21;HDPE 6L PCR - Granulado;HDPE 6L PCR - Granulado;;;;;;0;True;-1;-1;10;9/18/2015 8:32:21 AM;5/16/2022 9:13:20 AM
+22;HDPE 6L Cabeça Perdida;HDPE 6L Cabeça Perdida;;;;;;0;True;-1;-1;11;9/18/2015 8:32:21 AM;5/16/2022 9:13:20 AM
+23;LDPE Resina;LDPE Resina;;;;;;0;True;-1;-1;1;9/18/2015 8:32:22 AM;2/10/2026 12:54:07 PM
+24;LDPE Borras / Matacões;LDPE Borras / Matacões;;;;;;0;True;-1;-1;2;9/18/2015 8:32:22 AM;2/10/2026 12:45:03 PM
+25;LDPE Varrição;LDPE Varrição;;;;;;0;True;-1;-1;3;9/18/2015 8:32:23 AM;2/10/2026 12:44:57 PM
+26;LDPE Produto Semi Acabado;LDPE Produto Semi Acabado;;;;;;0;True;-1;-1;4;9/18/2015 8:32:23 AM;2/10/2026 12:54:06 PM
+27;LDPE Produto Acabado;LDPE Produto Acabado;;;;;;0;True;-1;-1;5;9/18/2015 8:32:24 AM;2/10/2026 12:54:05 PM
+28;LDPE Moído;LDPE Moído;;;;;;0;True;-1;-1;6;9/18/2015 8:32:24 AM;2/10/2026 12:44:56 PM
+29;LDPE Granulado;LDPE Granulado;;;;;;0;True;-1;-1;8;9/18/2015 8:32:25 AM;2/10/2026 12:44:58 PM
+30;LDPE PCR - Lascas;LDPE PCR - Lascas;;;;;;0;True;-1;-1;9;9/18/2015 8:32:25 AM;2/10/2026 12:44:54 PM
+31;LDPE PCR - Granulado;LDPE PCR - Granulado;;;;;;0;True;-1;-1;10;9/18/2015 8:32:25 AM;2/10/2026 12:44:51 PM
+32;LDPE Cabeça Perdida;LDPE Cabeça Perdida;;;;;;0;True;-1;-1;11;9/18/2015 8:32:26 AM;2/10/2026 12:45:00 PM
+33;PP Resina;PP Resina;;;;;;0;True;-1;-1;1;9/18/2015 8:32:26 AM;2/10/2026 12:45:02 PM
+34;PP Borras / Matacões;PP Borras / Matacões;;;;;;0;True;-1;-1;2;9/18/2015 8:32:27 AM;2/10/2026 12:45:01 PM
+35;PP Varrição;PP Varrição;;;;;;0;True;-1;-1;3;9/18/2015 8:32:27 AM;2/10/2026 12:44:53 PM
+36;PP Produto Semi Acabado;PP Produto Semi Acabado;;;;;;0;True;-1;-1;4;9/18/2015 8:32:28 AM;2/10/2026 12:44:52 PM
+37;PP Produto Acabado;PP Produto Acabado;;;;;;0;True;-1;-1;5;9/18/2015 8:32:28 AM;2/10/2026 12:45:01 PM
+38;PP Moído;PP Moído;;;;;;0;True;-1;-1;6;9/18/2015 8:32:29 AM;2/10/2026 12:45:00 PM
+39;PP Granulado;PP Granulado;;;;;;0;True;-1;-1;8;9/18/2015 8:32:29 AM;2/10/2026 12:44:56 PM
+40;PP PCR - Lascas;PP PCR - Lascas;;;;;;0;True;-1;-1;9;9/18/2015 8:32:30 AM;2/10/2026 12:54:05 PM
+41;PP PCR - Granulado;PP PCR - Granulado;;;;;;0;True;-1;-1;10;9/18/2015 8:32:30 AM;2/10/2026 12:44:55 PM
+42;PP Cabeça Perdida;PP Cabeça Perdida;;;;;;0;True;-1;-1;11;9/18/2015 8:32:30 AM;2/10/2026 12:54:07 PM
+43;PP 6L Borras / Matacões;PP 6L Borras / Matacões;;;;;;0;True;-1;-1;2;9/18/2015 8:32:31 AM;5/16/2022 9:13:21 AM
+44;PP 6L Varrição;PP 6L Varrição;;;;;;0;True;-1;-1;3;9/18/2015 8:32:31 AM;5/16/2022 9:13:21 AM
+45;PP 6L Produto Semi Acabado;PP 6L Produto Semi Acabado;;;;;;0;True;-1;-1;4;9/18/2015 8:32:32 AM;5/16/2022 9:13:21 AM
+46;PP 6L Produto Acabado;PP 6L Produto Acabado;;;;;;0;True;-1;-1;5;9/18/2015 8:32:32 AM;5/16/2022 9:13:21 AM
+47;PP 6L Moído;PP 6L Moído;;;;;;0;True;-1;-1;6;9/18/2015 8:32:33 AM;5/16/2022 9:13:21 AM
+48;PP 6L Granulado;PP 6L Granulado;;;;;;0;True;-1;-1;8;9/18/2015 8:32:33 AM;5/16/2022 9:13:21 AM
+49;PP 6L PCR - Lascas;PP 6L PCR - Lascas;;;;;;0;True;-1;-1;9;9/18/2015 8:32:34 AM;5/16/2022 9:13:21 AM
+50;PP 6L PCR - Granulado;PP 6L PCR - Granulado;;;;;;0;True;-1;-1;10;9/18/2015 8:32:34 AM;5/16/2022 9:13:21 AM
+
+(50 rows affected)
+
+ERROR in batch 8: Exception calling "Fill" with "1" argument(s): "Invalid column name 'Menge'.
+Invalid column name 'Preis'."
+
+ERROR in batch 9: Exception calling "Fill" with "1" argument(s): "Invalid column name 'IdWareneingang'.
+Invalid column name 'IdArtikelVarianten'.
+Invalid column name 'GewichtNetto'.
+Invalid column name 'GewichtBrutto'."
+
+ERROR in batch 10: Exception calling "Fill" with "1" argument(s): "Invalid column name 'IdLadeAuftrag'.
+Invalid column name 'IdArtikelVarianten'."
+
+ERROR in batch 11: Exception calling "Fill" with "1" argument(s): "Invalid column name 'IdEtikettGedruckt'.
+Invalid column name 'IdArtikelVariante'.
+Invalid column name 'Menge'.
+Invalid column name 'GewichtNetto'.
+Invalid column name 'GewichtBrutto'.
+Invalid column name 'IdEtikettGedruckt'."
+
+IdVpkVorschrift;Aktiv;Bezeichnung;VpkBerechnen;Bemerkung;SonstigeVpkKosten;AnzahlAVProVpk;AnzahlVpkProLKW;StretchProgramm;AnzahlKistenProKarton;BruttoGewicht;Add_User;Add_Date;Upd_User;Upd_Date;AnzahlAVProHE
+---------------;-----;-----------;------------;---------;-----------------;--------------;---------------;---------------;---------------------;-------------;--------;--------;--------;--------;-------------
+0;1;$Dummy Packaging Instruction;0;*** DO NOT CHANGE EVER***;0;0;1;0;0;0;sa;8/1/2011 12:00:00 AM;sa;5/22/2023 10:15:51 AM;0
+2;1;$Waste Container;1;*** DO NOT DELETE ***;0;1000;1;0;0;0;sa;9/18/2015 8:32:12 AM;ALPLA\silva075;5/22/2023 10:15:51 AM;1000
+3;1;$Dummy Emabalagem Para Start Up;1;*** DO NOT DELETE ***;0;19200;30;0;0;0;ALPLA\silva075;5/25/2022 8:40:05 AM;ALPLA\silva075;12/1/2022 2:56:18 PM;19200
+4;1;Caixa Cartao 16560;1;;0;16560;20;0;0;43500;ALPLA\silva075;5/27/2022 2:11:16 PM;ALPLA\cintra01;11/10/2023 1:20:33 PM;16560
+5;1;Caixa Cartao 3680;1;;0;3680;20;0;0;43500;ALPLA\silva075;5/27/2022 2:35:06 PM;ALPLA\cintra01;11/10/2023 1:20:33 PM;3680
+6;1;12gr 14.5gr 19.200pf CAIXA CARTAO;1;;0;19200;20;0;0;44302;ALPLA\honjo001;7/19/2022 8:59:58 AM;ALPLA\cintra01;4/1/2025 9:35:25 AM;19200
+7;1;Caixa Cartão 10 320 - 28gr;1;;0;10320;36;0;0;43503;ALPLA\ramos034;8/30/2022 8:27:38 AM;ALPLA\cintra01;11/10/2023 1:20:34 PM;10320
+8;1;Caixa Cartão 10 080 - 23gr;1;;0;10080;36;0;0;43503;ALPLA\ramos034;9/19/2022 2:56:03 PM;ALPLA\cintra01;11/10/2023 1:20:35 PM;10080
+9;1;Caixa Cartão 3 600 - 72gr;1;;0;3600;36;0;0;43302;ALPLA\ramos034;10/28/2022 9:53:03 AM;ALPLA\cintra01;11/10/2023 1:20:35 PM;3600
+10;1;Caixa Cartão 9 600 - 29,5gr;1;;0;9600;36;0;0;43502;ALPLA\ramos034;11/23/2022 2:35:08 PM;ALPLA\cintra01;11/10/2023 1:20:36 PM;9600
+11;1;18.5gr 14.976pf CAIXA CARTAO;1;;0;14976;36;0;0;43503;ALPLA\cintra01;3/15/2023 9:42:37 AM;ALPLA\cintra01;11/10/2023 1:20:38 PM;14976
+12;1;16gr 13.056pf CAIXA CARTÃO;1;;0;13056;22;0;0;43503;ALPLA\ramos034;6/6/2023 3:03:09 PM;ALPLA\cintra01;11/10/2023 1:20:39 PM;13056
+13;1;12gr 14.5gr 19.200pf CAIXA METALICA;1;;0;19200;22;0;0;15103;ALPLA\ramos034;6/18/2023 10:56:01 AM;ALPLA\cintra01;8/27/2025 3:06:30 PM;19200
+14;1;TESTE;1;;0;10080;36;0;0;15103;ALPLA\cintra01;6/23/2023 12:59:03 PM;ALPLA\cintra01;10/18/2023 1:11:36 PM;10080
+15;0;14gr 19.680pf CAIXA METALICA;1;;0;19680;22;0;0;15103;ALPLA\cintra01;6/26/2023 4:18:16 PM;ALPLA\cintra01;7/21/2025 12:34:41 PM;19680
+16;1;14gr 19.680pf CAIXA CARTAO;1;;0;19680;20;0;0;43500;ALPLA\cintra01;6/26/2023 4:19:09 PM;ALPLA\cintra01;11/10/2023 1:20:37 PM;19680
+17;0;18.5gr 14.976pf CAIXA METALLICA;1;;0;14976;36;0;0;15102;ALPLA\cintra01;6/26/2023 4:22:45 PM;ALPLA\cintra01;7/21/2025 12:34:50 PM;14976
+18;0;18.5gr 14.976pf CAIXA PLASTICA;1;;0;14976;36;0;0;15103;ALPLA\cintra01;6/26/2023 4:24:48 PM;ALPLA\cintra01;7/21/2025 10:40:20 AM;14976
+19;0;14gr 19.680pf CAIXA PLASTICA;1;;0;19680;22;0;0;15103;ALPLA\cintra01;6/26/2023 4:27:34 PM;ALPLA\cintra01;7/21/2025 10:41:37 AM;19680
+20;1;12gr 14.5gr 19.200pf CAIXA PLASTICA;1;;0;19200;22;0;0;15103;ALPLA\cintra01;6/26/2023 4:29:25 PM;ALPLA\cintra01;6/26/2023 4:29:26 PM;19200
+21;0;16gr 13.056pf CAIXA PLASTICA;1;;0;13056;22;0;0;15103;ALPLA\cintra01;6/26/2023 4:35:27 PM;ALPLA\cintra01;7/21/2025 10:47:48 AM;13056
+22;1;16gr e 19gr 13.056pf CAIXA METALICA;1;;0;13056;22;0;0;15103;ALPLA\cintra01;6/26/2023 4:38:39 PM;ALPLA\cintra01;9/9/2025 10:04:16 AM;13056
+23;1;16gr 16.800pf CAIXA CARTÃO;1;;0;16800;22;0;0;43503;ALPLA\cintra01;6/26/2023 4:41:10 PM;ALPLA\cintra01;11/10/2023 1:20:39 PM;16800
+24;0;16gr 16.800pf CAIXA PLASTICA;1;;0;16800;22;0;0;15103;ALPLA\cintra01;6/26/2023 4:41:53 PM;ALPLA\cintra01;7/21/2025 10:48:00 AM;16800
+25;0;16gr 16.800pf CAIXA METALICA;1;;0;16800;22;0;0;15103;ALPLA\cintra01;6/26/2023 4:42:34 PM;ALPLA\cintra01;7/21/2025 12:36:48 PM;16800
+26;0;16gr 15.264pf CAIXA METALICA;1;;0;15264;22;0;0;15103;ALPLA\cintra01;6/26/2023 4:46:05 PM;ALPLA\cintra01;7/21/2025 12:36:57 PM;15264
+27;0;18gr 14.976pf CAIXA METALICA;1;;0;14976;22;0;0;15103;ALPLA\cintra01;6/26/2023 4:48:01 PM;ALPLA\cintra01;7/21/2025 12:37:08 PM;14976
+28;0;18gr 14.976pf CAIXA PLASTICA;1;;0;14976;22;0;0;15103;ALPLA\cintra01;6/26/2023 4:49:13 PM;ALPLA\cintra01;7/21/2025 10:52:56 AM;14976
+29;0;19gr 13.056pf CAIXA PLASTICA;1;;0;13056;22;0;0;15103;ALPLA\cintra01;6/26/2023 4:54:08 PM;ALPLA\cintra01;7/21/2025 10:52:41 AM;13056
+30;0;19gr 13.056pf CAIXA METALICA;1;;0;13056;22;0;0;15103;ALPLA\cintra01;6/26/2023 4:54:53 PM;ALPLA\cintra01;7/21/2025 12:37:19 PM;13056
+31;1;19gr 13.056pf CAIXA CARTÃO;1;;0;13056;22;0;0;43503;ALPLA\cintra01;6/26/2023 4:55:34 PM;ALPLA\cintra01;11/10/2023 1:20:40 PM;13056
+32;1;23gr 10.080pf CAIXA CARTÃO;1;;0;10080;22;0;0;43503;ALPLA\cintra01;6/26/2023 4:58:46 PM;ALPLA\cintra01;11/10/2023 1:20:41 PM;10080
+33;0;23gr 10.080pf CAIXA METALICA;1;;0;10080;22;0;0;15103;ALPLA\cintra01;6/26/2023 4:59:35 PM;ALPLA\cintra01;7/21/2025 12:38:12 PM;10080
+34;0;23gr 10.080pf CAIXA PLASTICA;1;;0;10080;22;0;0;15103;ALPLA\cintra01;6/26/2023 5:00:14 PM;ALPLA\cintra01;7/21/2025 10:52:32 AM;10080
+35;1;23.6gr 13.056pf CAIXA CARTÃO;1;;0;13056;22;0;0;43503;ALPLA\cintra01;6/26/2023 5:01:03 PM;ALPLA\cintra01;11/10/2023 1:20:42 PM;13056
+36;0;23.6gr 13.056pf CAIXA PLASTICA;1;;0;13056;22;0;0;15103;ALPLA\cintra01;6/26/2023 5:01:46 PM;ALPLA\cintra01;7/21/2025 10:52:22 AM;13056
+37;0;23.6gr 13.056pf CAIXA METALICA;1;;0;13056;22;0;0;15103;ALPLA\cintra01;6/26/2023 5:02:36 PM;ALPLA\cintra01;7/21/2025 12:38:23 PM;13056
+38;1;26gr 13.056pf CAIXA CARTÃO;1;;0;13056;22;0;0;43503;ALPLA\cintra01;6/26/2023 5:06:19 PM;ALPLA\cintra01;11/10/2023 1:20:42 PM;13056
+39;0;26gr 13.056pf CAIXA METALICA;1;;0;13056;22;0;0;15103;ALPLA\cintra01;6/26/2023 5:06:49 PM;ALPLA\cintra01;7/21/2025 12:38:31 PM;13056
+40;0;26gr 13.056pf CAIXA PLASTICA;1;;0;13056;22;0;0;15103;ALPLA\cintra01;6/26/2023 5:07:15 PM;ALPLA\cintra01;7/21/2025 10:52:13 AM;13056
+41;1;26.5gr 13.056pf CAIXA CARTÃO;1;;0;13056;22;0;0;43503;ALPLA\cintra01;6/26/2023 5:08:06 PM;ALPLA\cintra01;11/10/2023 1:20:43 PM;13056
+42;0;26.5gr 13.056pf CAIXA METALICA;1;;0;13056;22;0;0;15103;ALPLA\cintra01;6/26/2023 5:08:36 PM;ALPLA\cintra01;7/21/2025 12:38:40 PM;13056
+43;0;26.5gr 13.056pf CAIXA PLASTICA;1;;0;13056;22;0;0;15103;ALPLA\cintra01;6/26/2023 5:09:11 PM;ALPLA\cintra01;7/21/2025 10:52:03 AM;13056
+44;1;28gr 10.320pf CAIXA CARTÃO;1;;0;10320;22;0;0;43503;ALPLA\cintra01;6/26/2023 5:11:34 PM;ALPLA\cintra01;11/10/2023 1:20:44 PM;10320
+45;0;28gr 10.320pf CAIXA METALICA;1;;0;10320;22;0;0;15103;ALPLA\cintra01;6/26/2023 5:14:30 PM;ALPLA\cintra01;7/21/2025 12:39:34 PM;10320
+46;0;28gr 10.320pf CAIXA PLASTICA;1;;0;10320;22;0;0;15103;ALPLA\cintra01;6/26/2023 5:15:07 PM;ALPLA\cintra01;7/21/2025 10:51:52 AM;10320
+47;1;29gr 9.600pf CAIXA CARTÃO;1;;0;9600;22;0;0;43503;ALPLA\cintra01;6/26/2023 5:17:50 PM;ALPLA\cintra01;11/10/2023 1:20:44 PM;9600
+48;0;29gr 9.600pf CAIXA METALICA;1;;0;9600;22;0;0;15103;ALPLA\cintra01;6/26/2023 5:18:33 PM;ALPLA\cintra01;7/21/2025 12:39:43 PM;9600
+49;0;29gr 9.600pf CAIXA PLASTICA;1;;0;9600;22;0;0;15103;ALPLA\cintra01;6/26/2023 5:19:07 PM;ALPLA\cintra01;7/21/2025 10:51:41 AM;9600
+50;1;72gr 3.600pf CAIXA CARTÃO;1;;0;3600;22;0;0;43503;ALPLA\cintra01;6/26/2023 5:20:16 PM;ALPLA\cintra01;11/10/2023 1:20:45 PM;3600
+
+(50 rows affected)
+
+IdVpkPos;IdVpkVorschrift;IdArtikelvarianten;MengeProVpk;Wincarat;AltePos;Add_User;Add_Date;Upd_User;Upd_Date;IdVpkPosBasis;AnzahlAVProPos;AVPos;VerpackungsDauerAktuell
+--------;---------------;------------------;-----------;--------;-------;--------;--------;--------;--------;-------------;--------------;-----;-----------------------
+1;2;3;1;0;3;sa;9/18/2015 8:32:13 AM;sa;10/12/2015 10:52:49 AM;-1;1000;1;0
+2;3;3;1;0;3;ALPLA\silva075;5/25/2022 8:40:05 AM;ALPLA\silva075;5/25/2022 8:40:05 AM;-1;19200;1;0
+7;4;117;1;0;3;ALPLA\silva075;5/27/2022 2:22:44 PM;ALPLA\silva075;5/27/2022 2:22:44 PM;-1;16560;0;0
+8;4;104;1;0;6;ALPLA\silva075;5/27/2022 2:22:44 PM;ALPLA\silva075;5/27/2022 2:22:44 PM;7;16560;0;0
+9;4;115;1;0;7;ALPLA\silva075;5/27/2022 2:22:44 PM;ALPLA\silva075;5/27/2022 2:22:44 PM;8;16560;1;0
+10;4;116;1;0;8;ALPLA\silva075;5/27/2022 2:22:44 PM;ALPLA\silva075;5/27/2022 2:22:44 PM;7;0;0;0
+11;4;103;1;0;9;ALPLA\silva075;5/27/2022 2:22:44 PM;ALPLA\silva075;5/27/2022 2:22:44 PM;7;0;0;0
+12;5;117;1;0;3;ALPLA\silva075;5/27/2022 2:35:07 PM;ALPLA\silva075;5/27/2022 2:35:07 PM;-1;3680;0;0
+13;5;104;1;0;6;ALPLA\silva075;5/27/2022 2:35:07 PM;ALPLA\silva075;5/27/2022 2:35:07 PM;12;3680;0;0
+14;5;115;1;0;7;ALPLA\silva075;5/27/2022 2:35:07 PM;ALPLA\silva075;5/27/2022 2:35:07 PM;13;3680;1;0
+15;5;116;1;0;8;ALPLA\silva075;5/27/2022 2:35:07 PM;ALPLA\silva075;5/27/2022 2:35:07 PM;12;0;0;0
+16;5;103;1;0;9;ALPLA\silva075;5/27/2022 2:35:07 PM;ALPLA\silva075;5/27/2022 2:35:07 PM;12;0;0;0
+109;7;117;1;0;3;ALPLA\ramos034;8/30/2022 4:28:38 PM;ALPLA\ramos034;8/30/2022 4:28:38 PM;-1;10320;0;0
+110;7;129;1;0;4;ALPLA\ramos034;8/30/2022 4:28:38 PM;ALPLA\ramos034;8/30/2022 4:28:38 PM;109;0;0;0
+111;7;104;1;0;6;ALPLA\ramos034;8/30/2022 4:28:38 PM;ALPLA\ramos034;8/30/2022 4:28:38 PM;109;10320;0;0
+112;7;115;1;0;7;ALPLA\ramos034;8/30/2022 4:28:39 PM;ALPLA\ramos034;8/30/2022 4:28:39 PM;111;10320;1;0
+113;7;116;1;0;8;ALPLA\ramos034;8/30/2022 4:28:39 PM;ALPLA\ramos034;8/30/2022 4:28:39 PM;109;0;0;0
+114;7;103;1;0;9;ALPLA\ramos034;8/30/2022 4:28:39 PM;ALPLA\ramos034;8/30/2022 4:28:39 PM;109;0;0;0
+115;7;125;2;0;10;ALPLA\ramos034;8/30/2022 4:28:40 PM;ALPLA\ramos034;8/30/2022 4:28:40 PM;109;0;0;0
+130;8;103;1;0;3;ALPLA\ramos034;9/19/2022 3:34:48 PM;ALPLA\ramos034;9/19/2022 3:34:48 PM;-1;10080;0;0
+131;8;116;1;0;6;ALPLA\ramos034;9/19/2022 3:34:48 PM;ALPLA\ramos034;9/19/2022 3:34:48 PM;130;0;0;0
+132;8;104;1;0;7;ALPLA\ramos034;9/19/2022 3:34:49 PM;ALPLA\ramos034;9/19/2022 3:34:49 PM;130;10080;0;0
+133;8;115;1;0;8;ALPLA\ramos034;9/19/2022 3:34:49 PM;ALPLA\ramos034;9/19/2022 3:34:49 PM;132;10080;1;0
+134;8;129;1;0;9;ALPLA\ramos034;9/19/2022 3:34:49 PM;ALPLA\ramos034;9/19/2022 3:34:49 PM;132;0;0;0
+135;8;117;1;0;10;ALPLA\ramos034;9/19/2022 3:34:49 PM;ALPLA\ramos034;9/19/2022 3:34:49 PM;130;0;0;0
+136;8;125;2;0;11;ALPLA\ramos034;9/19/2022 3:34:49 PM;ALPLA\ramos034;9/19/2022 3:34:49 PM;130;0;0;0
+144;9;103;1;0;3;ALPLA\ramos034;10/28/2022 9:57:20 AM;ALPLA\ramos034;10/28/2022 9:57:20 AM;-1;3600;0;0
+145;9;104;1;0;6;ALPLA\ramos034;10/28/2022 9:57:20 AM;ALPLA\ramos034;10/28/2022 9:57:20 AM;144;3600;0;0
+146;9;115;1;0;7;ALPLA\ramos034;10/28/2022 9:57:20 AM;ALPLA\ramos034;10/28/2022 9:57:20 AM;145;3600;1;0
+147;9;129;1;0;8;ALPLA\ramos034;10/28/2022 9:57:20 AM;ALPLA\ramos034;10/28/2022 9:57:20 AM;145;0;0;0
+
+(30 rows affected)
+
+IdVpkVorschriftLadeEinheit;IdVpkVorschrift;IdLadeEinheit;Add_User;Add_Date;Upd_User;Upd_Date
+--------------------------;---------------;-------------;--------;--------;--------;--------
+1;0;-1;sa;7/19/2010 3:25:21 PM;;
+2;2;-1;sa;9/18/2015 8:32:13 AM;sa;9/18/2015 8:32:13 AM
+3;3;-1;ALPLA\silva075;5/25/2022 8:40:05 AM;ALPLA\silva075;5/25/2022 8:40:05 AM
+4;4;-1;ALPLA\silva075;5/27/2022 2:11:16 PM;ALPLA\silva075;5/27/2022 2:22:44 PM
+5;5;-1;ALPLA\silva075;5/27/2022 2:35:06 PM;ALPLA\silva075;5/27/2022 2:35:06 PM
+6;6;-1;ALPLA\honjo001;7/19/2022 8:59:58 AM;ALPLA\cintra01;4/1/2025 9:35:25 AM
+7;7;-1;ALPLA\ramos034;8/30/2022 8:27:39 AM;ALPLA\ramos034;8/30/2022 4:28:36 PM
+8;8;-1;ALPLA\ramos034;9/19/2022 2:56:03 PM;ALPLA\ramos034;9/19/2022 3:34:47 PM
+9;9;-1;ALPLA\ramos034;10/28/2022 9:53:03 AM;ALPLA\ramos034;10/28/2022 9:57:20 AM
+10;10;5;ALPLA\ramos034;11/23/2022 2:35:08 PM;ALPLA\ramos034;11/23/2022 2:37:26 PM
+11;11;-1;ALPLA\cintra01;3/15/2023 9:42:37 AM;ALPLA\cintra01;6/26/2023 4:21:21 PM
+12;12;-1;ALPLA\ramos034;6/6/2023 3:03:09 PM;ALPLA\cintra01;6/26/2023 4:34:16 PM
+13;13;-1;ALPLA\ramos034;6/18/2023 10:56:01 AM;ALPLA\cintra01;8/27/2025 3:06:30 PM
+14;14;-1;ALPLA\cintra01;6/23/2023 12:59:03 PM;ALPLA\cintra01;10/18/2023 1:11:36 PM
+15;15;-1;ALPLA\cintra01;6/26/2023 4:18:16 PM;ALPLA\cintra01;7/21/2025 12:34:41 PM
+16;16;-1;ALPLA\cintra01;6/26/2023 4:19:09 PM;ALPLA\cintra01;6/26/2023 4:19:09 PM
+17;17;-1;ALPLA\cintra01;6/26/2023 4:22:45 PM;ALPLA\cintra01;7/21/2025 12:34:50 PM
+18;18;-1;ALPLA\cintra01;6/26/2023 4:24:48 PM;ALPLA\cintra01;7/21/2025 10:40:20 AM
+19;19;-1;ALPLA\cintra01;6/26/2023 4:27:34 PM;ALPLA\cintra01;7/21/2025 10:41:37 AM
+20;20;-1;ALPLA\cintra01;6/26/2023 4:29:25 PM;ALPLA\cintra01;6/26/2023 4:29:25 PM
+21;21;-1;ALPLA\cintra01;6/26/2023 4:35:27 PM;ALPLA\cintra01;7/21/2025 10:47:48 AM
+22;22;-1;ALPLA\cintra01;6/26/2023 4:38:39 PM;ALPLA\cintra01;9/9/2025 10:04:16 AM
+23;23;-1;ALPLA\cintra01;6/26/2023 4:41:10 PM;ALPLA\cintra01;6/26/2023 4:41:10 PM
+24;24;-1;ALPLA\cintra01;6/26/2023 4:41:54 PM;ALPLA\cintra01;7/21/2025 10:48:00 AM
+25;25;-1;ALPLA\cintra01;6/26/2023 4:42:34 PM;ALPLA\cintra01;7/21/2025 12:36:48 PM
+26;26;-1;ALPLA\cintra01;6/26/2023 4:46:05 PM;ALPLA\cintra01;7/21/2025 12:36:57 PM
+27;27;-1;ALPLA\cintra01;6/26/2023 4:48:01 PM;ALPLA\cintra01;7/21/2025 12:37:08 PM
+28;28;-1;ALPLA\cintra01;6/26/2023 4:49:13 PM;ALPLA\cintra01;7/21/2025 10:52:56 AM
+29;29;-1;ALPLA\cintra01;6/26/2023 4:54:08 PM;ALPLA\cintra01;7/21/2025 10:52:41 AM
+30;30;-1;ALPLA\cintra01;6/26/2023 4:54:53 PM;ALPLA\cintra01;7/21/2025 12:37:19 PM
+
+(30 rows affected)
+
+IdMengeneinheit;Bezeichnung;Bemerkung;Aktiv;Add_User;Add_Date;Upd_User;Upd_Date;TabellenNr
+---------------;-----------;---------;-----;--------;--------;--------;--------;----------
+1;Piece;Piece;True;sa;6/26/1997 3:23:51 PM;AlplaPROD-Admin;2/8/2017 12:16:04 PM;42
+2;kg;kg;True;sa;6/26/1997 3:24:06 PM;AlplaPROD-Admin;2/8/2017 12:16:04 PM;42
+
+(2 rows affected)
+
+TABLE_NAME;COLUMN_NAME;ORDINAL_POSITION;DATA_TYPE;CHARACTER_MAXIMUM_LENGTH;IS_NULLABLE
+----------;-----------;----------------;---------;------------------------;-----------
+T_InhouseBewegungen;IdInhouseBewegung;1;int;;NO
+T_InhouseBewegungen;ProdTag;2;datetime;;NO
+T_InhouseBewegungen;IdArtikelVariante;3;int;;NO
+T_InhouseBewegungen;ProduzierteMenge;4;float;;NO
+T_InhouseBewegungen;FehlMenge;5;float;;NO
+T_InhouseBewegungen;BufferEinlagerungsMenge;6;float;;NO
+T_InhouseBewegungen;BufferLieferMenge;7;float;;NO
+T_InhouseBewegungen;BufferRetourMenge;8;float;;NO
+T_InhouseBewegungen;LieferMenge;9;float;;NO
+T_InhouseBewegungen;Add_User;10;nvarchar;50;NO
+T_InhouseBewegungen;Add_Date;11;datetime;;NO
+T_InhouseBewegungen;Upd_User;12;nvarchar;50;YES
+T_InhouseBewegungen;Upd_Date;13;datetime;;YES
+
+(13 rows affected)
+
+TABLE_NAME;COLUMN_NAME;ORDINAL_POSITION;DATA_TYPE;CHARACTER_MAXIMUM_LENGTH;IS_NULLABLE
+----------;-----------;----------------;---------;------------------------;-----------
+T_InhouseLieferungen;IdInhouseLieferung;1;int;;NO
+T_InhouseLieferungen;ProdTag;2;datetime;;NO
+T_InhouseLieferungen;IdArtikelVariante;3;int;;NO
+T_InhouseLieferungen;IdVpkVorschrift;4;int;;NO
+T_InhouseLieferungen;IdHauptmaterial;5;int;;NO
+T_InhouseLieferungen;IdAdresse;6;int;;NO
+T_InhouseLieferungen;LieferMenge;7;float;;NO
+T_InhouseLieferungen;BufferRetourMenge;8;float;;NO
+T_InhouseLieferungen;LieferMengeVereinbart;9;float;;NO
+T_InhouseLieferungen;IdJournal;10;int;;NO
+T_InhouseLieferungen;Add_User;11;nvarchar;50;NO
+T_InhouseLieferungen;Add_Date;12;datetime;;NO
+T_InhouseLieferungen;Upd_User;13;nvarchar;50;YES
+T_InhouseLieferungen;Upd_Date;14;datetime;;YES
+T_InhouseLieferungen;JournalPositionGuid;15;uniqueidentifier;;YES
+T_InhouseLieferungen;SammelGuid;16;uniqueidentifier;;YES
+T_InhouseLieferungen;JournalNummer;17;nvarchar;50;YES
+T_InhouseLieferungen;LieferscheinDatum;18;datetime;;YES
+T_InhouseLieferungen;KundenAuftragsNummer;19;nvarchar;255;YES
+T_InhouseLieferungen;KundenPositionsNummer;20;nvarchar;255;YES
+
+(20 rows affected)
+
+IdInhouseBewegung;ProdTag;IdArtikelVariante;ProduzierteMenge;FehlMenge;BufferEinlagerungsMenge;BufferLieferMenge;BufferRetourMenge;LieferMenge;Add_User;Add_Date;Upd_User;Upd_Date
+-----------------;-------;-----------------;----------------;---------;-----------------------;-----------------;-----------------;-----------;--------;--------;--------;--------
+
+(0 rows affected)
+
+IdInhouseLieferung;ProdTag;IdArtikelVariante;IdVpkVorschrift;IdHauptmaterial;IdAdresse;LieferMenge;BufferRetourMenge;LieferMengeVereinbart;IdJournal;Add_User;Add_Date;Upd_User;Upd_Date;JournalPositionGuid;SammelGuid;JournalNummer;LieferscheinDatum;KundenAuftragsNummer;KundenPositionsNummer
+------------------;-------;-----------------;---------------;---------------;---------;-----------;-----------------;---------------------;---------;--------;--------;--------;--------;-------------------;----------;-------------;-----------------;--------------------;---------------------
+
+(0 rows affected)
+
+ERROR in batch 20: Exception calling "Fill" with "1" argument(s): "Invalid column name 'IdAbruf'.
+Invalid column name 'IdBestellung'.
+Invalid column name 'IdLieferplan'.
+Invalid column name 'AbrufMenge'.
+Invalid column name 'IdAbruf'."
+
+IdKonto;IdAdresse;IdArtikelVarianten;IdArtikelVariantenTyp;IdArtikelTyp;IdVpkVorschrift;IdMengeneinheit;Add_Date;Upd_Date
+-------;---------;------------------;---------------------;------------;---------------;---------------;--------;--------
+1;10;107;5;1;4;1;5/30/2022 4:25:23 PM;5/30/2022 4:25:23 PM
+2;4;99;8;4;-1;2;5/30/2022 4:25:24 PM;5/30/2022 4:25:24 PM
+3;6;101;12;4;-1;2;5/30/2022 4:25:24 PM;5/30/2022 4:25:24 PM
+4;10;107;5;1;4;1;5/30/2022 4:28:23 PM;5/30/2022 4:28:23 PM
+5;5;100;8;4;-1;2;5/30/2022 4:28:23 PM;5/30/2022 4:28:23 PM
+6;2;111;5;1;2;1;6/3/2022 12:00:41 PM;6/3/2022 12:00:41 PM
+7;11;107;5;1;4;1;6/29/2022 3:26:24 PM;6/29/2022 3:26:24 PM
+8;13;107;5;1;4;1;6/30/2022 2:27:31 PM;6/30/2022 2:27:31 PM
+9;15;107;5;1;4;1;6/30/2022 2:27:31 PM;6/30/2022 2:27:31 PM
+10;2;123;5;1;7;1;8/31/2022 1:56:49 PM;8/31/2022 1:56:49 PM
+11;6;121;28;4;-1;2;8/31/2022 1:56:49 PM;8/31/2022 1:56:49 PM
+12;6;122;8;4;-1;2;8/31/2022 1:56:49 PM;8/31/2022 1:56:49 PM
+13;21;127;5;1;7;1;8/31/2022 2:47:26 PM;8/31/2022 2:47:26 PM
+14;18;132;5;1;8;1;9/21/2022 2:30:37 PM;9/21/2022 2:30:37 PM
+15;6;131;12;4;-1;2;9/21/2022 2:30:37 PM;9/21/2022 2:30:37 PM
+16;21;143;5;1;10;1;11/25/2022 2:35:42 PM;11/25/2022 2:35:42 PM
+17;23;141;5;1;10;1;11/25/2022 2:35:42 PM;11/25/2022 2:35:42 PM
+18;7;102;12;4;-1;2;11/25/2022 2:35:42 PM;11/25/2022 2:35:42 PM
+19;2;123;5;1;7;1;11/25/2022 3:54:34 PM;11/25/2022 3:54:34 PM
+20;2;103;9;2;-1;1;11/30/2022 10:13:02 AM;11/30/2022 10:13:02 AM
+
+(20 rows affected)
+
+ERROR in batch 22: Exception calling "Fill" with "1" argument(s): "Invalid column name 'IdArtikelVarianten'.
+Invalid column name 'IdArtikelVariante'."
+
+

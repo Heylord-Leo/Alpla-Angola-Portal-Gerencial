@@ -173,6 +173,7 @@ export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
                             'rh': 'hr',
                             'equipa': 'hr',
                             'contratos': 'contracts',
+                            'operacoes': 'operations-module',
                             'administracao': 'administration-module',
                             'configuracoes': 'configuration-module',
                             'ti': 'it-module',

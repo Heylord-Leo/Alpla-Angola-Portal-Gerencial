@@ -1,0 +1,2052 @@
+Msg 9829, Level 16, State 1, Server AOVIA1VMS006, Line 40
+STRING_AGG aggregation result exceeded the limit of 8000 bytes. Use LOB types to avoid result truncation.
+COLUMN_NAME;TableCount;Tables;DataType
+-----------;----------;------;--------
+Add_Date;85;T_Abrufe, T_ArtikelvariantenTyp_LadeEinheiten, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_AxIncasTransferQueueEntry, T_AxTransferQueueEntry, T_BestellMengenGrenzen, T_Bestellpositionen, T_BestellPositionenBewertungen, T_Bestellung, T_Bestellungen, T_BestellungenJournal, T_Bestellvorschlaege, T_BlockingOrders, T_BlockingOrders_Positions, T_BlockingOrdersAdditionalDefects, T_EAIJournal, T_EAIJournalAdresse, T_EAIJournalAmo, T_EAIJournalBeleg, T_EAIJournalBestellPosition, T_EAIJournalEx, T_EAIJournalLayout, T_EAIJournalLeistungsPosition, T_EAIJournalLeistungsVorlageZuordnung, T_EAIJournalLieferPosition, T_EAIJournalPosition, T_EAIJournalSynch, T_EAIJournalText, T_EAIJournalTextPosition, T_EAIJournalTextVorlageZuordnung, T_EAIJournalWarenPosition, T_EAIKundenAbrufBestaetigungen, T_EAIKundenAbrufe, T_EDIDifferenzen, T_EDIDokumente, T_EDIDokumentPositionen, T_EDIKonfigurationen, T_EDIPositionDetails, T_EDIRouting, T_EDIUpload, T_EntladeAuftraege, T_EntladePlanungen, T_EntladePositionen, T_ExportPalettenBewegungenLKW, T_HistoryTransportkosten, T_InhouseLieferungen, T_KundenAbrufBestaetigungen, T_KundenAbrufe, T_KundenAbrufeHistorie, T_LadeAuftraege, T_LadeEinheiten, T_LadePlanungen, T_LadePositionen, T_LagerabgleichBarcodes, T_LagerabgleichBarcodesExtern, T_LagerabgleichBarcodesIntern, T_LieferantenbewertungAbgrenzung, T_LieferantenBewertungen, T_LieferantenBewertungenHistorie, T_LieferantenReklamationen, T_LieferantenReklamationsPositionen, T_LieferBuchungen, T_Lieferkonditionen, T_LieferKonten, T_LieferKontenArchiv, T_LieferPositionen, T_Lieferscheine, T_LieferscheinLayouts, T_LieferscheinPositionen, T_Lieferungen, T_LKWTypen, T_RahmenBestellung, T_RahmenBestellungPosition, T_ReworkOrders, T_SperrJournal, T_TransferQueue, T_TransportTypen, T_VpkVorschrift_LadeEinheiten, T_Wareneingaenge, T_WareneingangAuftraege, T_WareneingangBewertungen, T_WareneingangPlanungen, T_WareneingangPositionen, T_ZentraleLieferanten;datetime
+Add_User;85;T_Abrufe, T_ArtikelvariantenTyp_LadeEinheiten, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_AxIncasTransferQueueEntry, T_AxTransferQueueEntry, T_BestellMengenGrenzen, T_Bestellpositionen, T_BestellPositionenBewertungen, T_Bestellung, T_Bestellungen, T_BestellungenJournal, T_Bestellvorschlaege, T_BlockingOrders, T_BlockingOrders_Positions, T_BlockingOrdersAdditionalDefects, T_EAIJournal, T_EAIJournalAdresse, T_EAIJournalAmo, T_EAIJournalBeleg, T_EAIJournalBestellPosition, T_EAIJournalEx, T_EAIJournalLayout, T_EAIJournalLeistungsPosition, T_EAIJournalLeistungsVorlageZuordnung, T_EAIJournalLieferPosition, T_EAIJournalPosition, T_EAIJournalSynch, T_EAIJournalText, T_EAIJournalTextPosition, T_EAIJournalTextVorlageZuordnung, T_EAIJournalWarenPosition, T_EAIKundenAbrufBestaetigungen, T_EAIKundenAbrufe, T_EDIDifferenzen, T_EDIDokumente, T_EDIDokumentPositionen, T_EDIKonfigurationen, T_EDIPositionDetails, T_EDIRouting, T_EDIUpload, T_EntladeAuftraege, T_EntladePlanungen, T_EntladePositionen, T_ExportPalettenBewegungenLKW, T_HistoryTransportkosten, T_InhouseLieferungen, T_KundenAbrufBestaetigungen, T_KundenAbrufe, T_KundenAbrufeHistorie, T_LadeAuftraege, T_LadeEinheiten, T_LadePlanungen, T_LadePositionen, T_LagerabgleichBarcodes, T_LagerabgleichBarcodesExtern, T_LagerabgleichBarcodesIntern, T_LieferantenbewertungAbgrenzung, T_LieferantenBewertungen, T_LieferantenBewertungenHistorie, T_LieferantenReklamationen, T_LieferantenReklamationsPositionen, T_LieferBuchungen, T_Lieferkonditionen, T_LieferKonten, T_LieferKontenArchiv, T_LieferPositionen, T_Lieferscheine, T_LieferscheinLayouts, T_LieferscheinPositionen, T_Lieferungen, T_LKWTypen, T_RahmenBestellung, T_RahmenBestellungPosition, T_ReworkOrders, T_SperrJournal, T_TransferQueue, T_TransportTypen, T_VpkVorschrift_LadeEinheiten, T_Wareneingaenge, T_WareneingangAuftraege, T_WareneingangBewertungen, T_WareneingangPlanungen, T_WareneingangPositionen, T_ZentraleLieferanten;nvarchar
+Upd_Date;85;T_Abrufe, T_ArtikelvariantenTyp_LadeEinheiten, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_AxIncasTransferQueueEntry, T_AxTransferQueueEntry, T_BestellMengenGrenzen, T_Bestellpositionen, T_BestellPositionenBewertungen, T_Bestellung, T_Bestellungen, T_BestellungenJournal, T_Bestellvorschlaege, T_BlockingOrders, T_BlockingOrders_Positions, T_BlockingOrdersAdditionalDefects, T_EAIJournal, T_EAIJournalAdresse, T_EAIJournalAmo, T_EAIJournalBeleg, T_EAIJournalBestellPosition, T_EAIJournalEx, T_EAIJournalLayout, T_EAIJournalLeistungsPosition, T_EAIJournalLeistungsVorlageZuordnung, T_EAIJournalLieferPosition, T_EAIJournalPosition, T_EAIJournalSynch, T_EAIJournalText, T_EAIJournalTextPosition, T_EAIJournalTextVorlageZuordnung, T_EAIJournalWarenPosition, T_EAIKundenAbrufBestaetigungen, T_EAIKundenAbrufe, T_EDIDifferenzen, T_EDIDokumente, T_EDIDokumentPositionen, T_EDIKonfigurationen, T_EDIPositionDetails, T_EDIRouting, T_EDIUpload, T_EntladeAuftraege, T_EntladePlanungen, T_EntladePositionen, T_ExportPalettenBewegungenLKW, T_HistoryTransportkosten, T_InhouseLieferungen, T_KundenAbrufBestaetigungen, T_KundenAbrufe, T_KundenAbrufeHistorie, T_LadeAuftraege, T_LadeEinheiten, T_LadePlanungen, T_LadePositionen, T_LagerabgleichBarcodes, T_LagerabgleichBarcodesExtern, T_LagerabgleichBarcodesIntern, T_LieferantenbewertungAbgrenzung, T_LieferantenBewertungen, T_LieferantenBewertungenHistorie, T_LieferantenReklamationen, T_LieferantenReklamationsPositionen, T_LieferBuchungen, T_Lieferkonditionen, T_LieferKonten, T_LieferKontenArchiv, T_LieferPositionen, T_Lieferscheine, T_LieferscheinLayouts, T_LieferscheinPositionen, T_Lieferungen, T_LKWTypen, T_RahmenBestellung, T_RahmenBestellungPosition, T_ReworkOrders, T_SperrJournal, T_TransferQueue, T_TransportTypen, T_VpkVorschrift_LadeEinheiten, T_Wareneingaenge, T_WareneingangAuftraege, T_WareneingangBewertungen, T_WareneingangPlanungen, T_WareneingangPositionen, T_ZentraleLieferanten;datetime
+Upd_User;85;T_Abrufe, T_ArtikelvariantenTyp_LadeEinheiten, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_AxIncasTransferQueueEntry, T_AxTransferQueueEntry, T_BestellMengenGrenzen, T_Bestellpositionen, T_BestellPositionenBewertungen, T_Bestellung, T_Bestellungen, T_BestellungenJournal, T_Bestellvorschlaege, T_BlockingOrders, T_BlockingOrders_Positions, T_BlockingOrdersAdditionalDefects, T_EAIJournal, T_EAIJournalAdresse, T_EAIJournalAmo, T_EAIJournalBeleg, T_EAIJournalBestellPosition, T_EAIJournalEx, T_EAIJournalLayout, T_EAIJournalLeistungsPosition, T_EAIJournalLeistungsVorlageZuordnung, T_EAIJournalLieferPosition, T_EAIJournalPosition, T_EAIJournalSynch, T_EAIJournalText, T_EAIJournalTextPosition, T_EAIJournalTextVorlageZuordnung, T_EAIJournalWarenPosition, T_EAIKundenAbrufBestaetigungen, T_EAIKundenAbrufe, T_EDIDifferenzen, T_EDIDokumente, T_EDIDokumentPositionen, T_EDIKonfigurationen, T_EDIPositionDetails, T_EDIRouting, T_EDIUpload, T_EntladeAuftraege, T_EntladePlanungen, T_EntladePositionen, T_ExportPalettenBewegungenLKW, T_HistoryTransportkosten, T_InhouseLieferungen, T_KundenAbrufBestaetigungen, T_KundenAbrufe, T_KundenAbrufeHistorie, T_LadeAuftraege, T_LadeEinheiten, T_LadePlanungen, T_LadePositionen, T_LagerabgleichBarcodes, T_LagerabgleichBarcodesExtern, T_LagerabgleichBarcodesIntern, T_LieferantenbewertungAbgrenzung, T_LieferantenBewertungen, T_LieferantenBewertungenHistorie, T_LieferantenReklamationen, T_LieferantenReklamationsPositionen, T_LieferBuchungen, T_Lieferkonditionen, T_LieferKonten, T_LieferKontenArchiv, T_LieferPositionen, T_Lieferscheine, T_LieferscheinLayouts, T_LieferscheinPositionen, T_Lieferungen, T_LKWTypen, T_RahmenBestellung, T_RahmenBestellungPosition, T_ReworkOrders, T_SperrJournal, T_TransferQueue, T_TransportTypen, T_VpkVorschrift_LadeEinheiten, T_Wareneingaenge, T_WareneingangAuftraege, T_WareneingangBewertungen, T_WareneingangPlanungen, T_WareneingangPositionen, T_ZentraleLieferanten;nvarchar
+Bemerkung;27;T_Abrufe, T_Bestellungen, T_EAIJournal, T_EAIJournalAdresse, T_EAIJournalBeleg, T_EAIJournalBestellPosition, T_EAIJournalEx, T_EAIJournalLayout, T_EAIJournalLeistungsPosition, T_EAIJournalPosition, T_EAIJournalSynch, T_EAIJournalText, T_EAIJournalTextPosition, T_EAIJournalWarenPosition, T_EntladeAuftraege, T_EntladePlanungen, T_LadeAuftraege, T_LadePlanungen, T_LieferBuchungen, T_Lieferkonditionen, T_Lieferscheine, T_LieferscheinLayouts, T_RahmenBestellung, T_SperrJournal, T_Wareneingaenge, T_WareneingangAuftraege, T_WareneingangPlanungen;nvarchar
+IdVpkVorschrift;19;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_Bestellpositionen, T_Bestellung, T_Bestellvorschlaege, T_EAIJournalBestellPosition, T_EAIJournalWarenPosition, T_EDIDokumentPositionen, T_InhouseLieferungen, T_KundenAbrufBestaetigungen, T_KundenAbrufe, T_KundenAbrufeHistorie, T_LagerabgleichBarcodes, T_LieferantenReklamationsPositionen, T_Lieferungen, T_RahmenBestellungPosition, T_SperrJournal, T_VpkVorschrift_LadeEinheiten, T_Wareneingaenge;int
+GUID;18;T_ArtikelvariantenTyp_LadeEinheiten, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_EAIJournal, T_EAIJournalAdresse, T_EAIJournalBeleg, T_EAIJournalBestellPosition, T_EAIJournalLeistungsPosition, T_EAIJournalLieferPosition, T_EAIJournalPosition, T_EAIJournalText, T_EAIJournalWarenPosition, T_LagerabgleichBarcodes, T_LagerabgleichBarcodesExtern, T_LagerabgleichBarcodesIntern, T_LieferantenReklamationen, T_LieferantenReklamationsPositionen, T_SperrJournal;uniqueidentifier
+Status;18;T_Abrufe, T_Bestellungen, T_EAIJournalSynch, T_EAIKundenAbrufBestaetigungen, T_EAIKundenAbrufe, T_EDIDokumente, T_EDIUpload, T_EntladeAuftraege, T_EntladePlanungen, T_KundenAbrufBestaetigungen, T_KundenAbrufe, T_LadeAuftraege, T_LadePlanungen, T_LieferantenReklamationen, T_Lieferscheine, T_Wareneingaenge, T_WareneingangAuftraege, T_WareneingangPlanungen;int
+IdArtikelvarianten;17;T_BestellMengenGrenzen, T_Bestellpositionen, T_Bestellung, T_Bestellvorschlaege, T_EAIJournalAmo, T_EAIJournalBestellPosition, T_EAIJournalLayout, T_EAIJournalLeistungsVorlageZuordnung, T_EAIJournalTextVorlageZuordnung, T_EAIJournalWarenPosition, T_EDIDokumentPositionen, T_LieferantenbewertungAbgrenzung, T_LieferantenReklamationsPositionen, T_Lieferungen, T_RahmenBestellungPosition, T_SperrJournal, T_Wareneingaenge;int
+IdJournal;16;T_AxIncasTransferQueueEntry, T_Bestellpositionen, T_Bestellung, T_Bestellungen, T_BestellungenJournal, T_Bestellvorschlaege, T_EAIJournal, T_EAIJournalBestellPosition, T_EAIJournalEx, T_EAIJournalPosition, T_EAIJournalSynch, T_EAIJournalText, T_InhouseLieferungen, T_Lieferungen, T_Wareneingaenge, T_WareneingangPlanungen;int
+IdLieferAdresse;16;T_Abrufe, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_BestellMengenGrenzen, T_Bestellungen, T_EAIJournalEx, T_EDIDokumente, T_HistoryTransportkosten, T_LieferBuchungen, T_LieferKonten, T_LieferPositionen, T_Lieferscheine, T_Lieferungen, T_RahmenBestellung, T_RahmenBestellungPosition, T_Wareneingaenge;int
+Menge;14;T_Abrufe, T_EAIKundenAbrufBestaetigungen, T_EAIKundenAbrufe, T_EDIDokumentPositionen, T_KundenAbrufBestaetigungen, T_KundenAbrufe, T_KundenAbrufeHistorie, T_LadePlanungen, T_LadePositionen, T_LieferantenReklamationsPositionen, T_LieferBuchungen, T_LieferscheinPositionen, T_WareneingangPlanungen, T_WareneingangPositionen;float
+MengeVPK;14;T_Abrufe, T_EAIKundenAbrufBestaetigungen, T_EAIKundenAbrufe, T_EDIDokumentPositionen, T_KundenAbrufBestaetigungen, T_KundenAbrufe, T_KundenAbrufeHistorie, T_LadePlanungen, T_LadePositionen, T_LieferantenReklamationsPositionen, T_LieferBuchungen, T_LieferscheinPositionen, T_WareneingangPlanungen, T_WareneingangPositionen;float
+IdHauptmaterial;13;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_Bestellpositionen, T_EAIJournalBestellPosition, T_EAIJournalWarenPosition, T_InhouseLieferungen, T_KundenAbrufBestaetigungen, T_KundenAbrufe, T_KundenAbrufeHistorie, T_LagerabgleichBarcodes, T_Lieferungen, T_SperrJournal, T_Wareneingaenge;int
+IdKonto;13;T_Abrufe, T_EntladePlanungen, T_EntladePositionen, T_LadePlanungen, T_LadePositionen, T_LieferBuchungen, T_LieferKonten, T_LieferKontenArchiv, T_LieferPositionen, T_SperrJournal, T_Wareneingaenge, T_WareneingangPlanungen, T_WareneingangPositionen;int
+IdRechnungsAdresse;12;T_Abrufe, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_Bestellungen, T_EAIJournalEx, T_EDIDokumente, T_Lieferscheine, T_LieferscheinPositionen, T_Lieferungen, T_RahmenBestellung, T_RahmenBestellungPosition, T_Wareneingaenge;int
+Aktiv;11;T_EAIJournalLayout, T_EAIJournalLeistungsVorlageZuordnung, T_EAIJournalTextVorlageZuordnung, T_HistoryTransportkosten, T_Lieferkonditionen, T_LieferscheinLayouts, T_LKWTypen, T_RahmenBestellung, T_RahmenBestellungPosition, T_TransportTypen, T_ZentraleLieferanten;int
+Beleg;11;T_EAIJournalLieferPosition, T_EntladePositionen, T_LadePositionen, T_LagerabgleichBarcodes, T_LieferBuchungen, T_LieferPositionen, T_SperrJournal, T_Wareneingaenge, T_WareneingangAuftraege, T_WareneingangPlanungen, T_WareneingangPositionen;nvarchar
+IdAdresse;11;T_InhouseLieferungen, T_KundenAbrufBestaetigungen, T_KundenAbrufe, T_KundenAbrufeHistorie, T_LagerabgleichBarcodes, T_LieferantenbewertungAbgrenzung, T_LieferantenBewertungen, T_LieferantenBewertungenHistorie, T_SperrJournal, T_tmpBarcode_EtikettenStatistik, T_Wareneingaenge;int
+Lieferdatum;11;T_Abrufe, T_Bestellpositionen, T_Bestellung, T_Bestellvorschlaege, T_EAIJournalPosition, T_EDIDokumentPositionen, T_LadePlanungen, T_LieferBuchungen, T_LieferPositionen, T_Lieferscheine, T_Lieferungen;datetime
+Barcode;9;T_EAIJournalLieferPosition, T_EntladePositionen, T_LadePositionen, T_LagerabgleichBarcodesExtern, T_LagerabgleichBarcodesIntern, T_LieferBuchungen, T_LieferPositionen, T_SperrJournal, T_WareneingangPositionen;nvarchar
+IdArtikelVariante;9;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_InhouseLieferungen, T_KundenAbrufBestaetigungen, T_KundenAbrufe, T_KundenAbrufeHistorie, T_LagerabgleichBarcodes, T_LagerabgleichBarcodesIntern, T_tmpBarcode_EtikettenStatistik;int
+IdJournalPosition;9;T_Bestellpositionen, T_EAIJournalLeistungsPosition, T_EAIJournalLieferPosition, T_EAIJournalPosition, T_EAIJournalText, T_EAIJournalTextPosition, T_EAIJournalWarenPosition, T_Wareneingaenge, T_WareneingangPlanungen;int
+Typ;9;T_Abrufe, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_LadeAuftraege, T_LadePlanungen, T_Lieferscheine, T_Wareneingaenge, T_WareneingangAuftraege, T_WareneingangPlanungen;int
+Bezeichnung;8;T_Bestellung, T_EAIJournalAdresse, T_LadeEinheiten, T_Lieferkonditionen, T_LieferscheinLayouts, T_LKWTypen, T_TransportTypen, T_ZentraleLieferanten;nvarchar
+IdKundenAdresse;8;T_Abrufe, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_Bestellungen, T_EAIJournalEx, T_Lieferscheine, T_Lieferungen, T_Wareneingaenge;int
+IdLadePlanung;8;T_EAIJournalLieferPosition, T_EAIJournalPosition, T_LadePlanungen, T_LadePositionen, T_LieferBuchungen, T_LieferPositionen, T_LieferscheinPositionen, T_WareneingangPlanungen;int
+IdLagerAbteilung;8;T_LadeAuftraege, T_LagerabgleichBarcodesIntern, T_LieferBuchungen, T_LieferPositionen, T_SperrJournal, T_Wareneingaenge, T_WareneingangAuftraege, T_WareneingangPlanungen;int
+IdAuftragsAbruf;7;T_Abrufe, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_EAIJournalPosition, T_KundenAbrufe, T_LieferscheinPositionen, T_Wareneingaenge;int
+IdBestellung;7;T_Bestellpositionen, T_Bestellung, T_Bestellungen, T_BestellungenJournal, T_Bestellvorschlaege, T_EAIJournalPosition, T_Wareneingaenge;int
+IdLieferant;7;T_Bestellpositionen, T_Bestellung, T_Bestellungen, T_Bestellvorschlaege, T_EAIJournalWarenPosition, T_EDIDokumente, T_LieferantenReklamationen;int
+IdLieferKondition;7;T_Abrufe, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_EAIJournalAdresse, T_Lieferkonditionen, T_Lieferscheine, T_RahmenBestellung;int
+IdLieferschein;7;T_EAIJournalPosition, T_LadePlanungen, T_LieferBuchungen, T_LieferPositionen, T_Lieferscheine, T_LieferscheinPositionen, T_WareneingangPlanungen;int
+IdZahlKond;7;T_Abrufe, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_Bestellungen, T_EAIJournalAdresse, T_EAIJournalEx, T_RahmenBestellung;int
+KdArtNr;7;T_Abrufe, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_EAIKundenAbrufBestaetigungen, T_EAIKundenAbrufe, T_EDIDokumentPositionen, T_KundenAbrufBestaetigungen;nvarchar
+LieferMenge;7;T_EAIJournalLeistungsPosition, T_EAIJournalLieferPosition, T_EAIJournalWarenPosition, T_EDIPositionDetails, T_InhouseLieferungen, T_LieferPositionen, T_Lieferungen;float
+LKWNummer;7;T_EAIJournal, T_EAIJournalEx, T_EntladeAuftraege, T_LadeAuftraege, T_Lieferscheine, T_LieferscheinPositionen, T_WareneingangAuftraege;nvarchar
+BestellDatum;6;T_Bestellpositionen, T_Bestellung, T_Bestellvorschlaege, T_EAIJournalBestellPosition, T_EAIJournalPosition, T_EDIDokumentPositionen;datetime
+IdAdressen;6;T_EAIJournalAdresse, T_EAIJournalAmo, T_EAIJournalLayout, T_EAIJournalLeistungsVorlageZuordnung, T_EAIJournalTextVorlageZuordnung, T_EDIKonfigurationen;int
+IdAuftrag;6;T_Abrufe, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_EAIJournalBestellPosition, T_EAIJournalPosition, T_LieferscheinPositionen;int
+IdEDIDokumentPosition;6;T_AuftragsAbrufe, T_EDIDokumentPositionen, T_EDIPositionDetails, T_KundenAbrufBestaetigungen, T_KundenAbrufe, T_WareneingangPlanungen;int
+IdJournalTyp;6;T_AxIncasTransferQueueEntry, T_EAIJournal, T_EAIJournalEx, T_EAIJournalLayout, T_EAIJournalTextVorlageZuordnung, T_Lieferungen;int
+IdJournalWarenPosition;6;T_Bestellpositionen, T_EAIJournalLieferPosition, T_EAIJournalText, T_EAIJournalWarenPosition, T_Wareneingaenge, T_WareneingangPlanungen;int
+IdRampe;6;T_EAIJournal, T_EAIJournalEx, T_EntladeAuftraege, T_LadeAuftraege, T_Lieferscheine, T_WareneingangAuftraege;int
+IdSpediteur;6;T_EAIJournal, T_EAIJournalEx, T_EntladeAuftraege, T_LadeAuftraege, T_Lieferscheine, T_WareneingangAuftraege;int
+JournalNummer;6;T_Bestellpositionen, T_Bestellungen, T_EAIJournal, T_EAIJournalEx, T_InhouseLieferungen, T_Lieferungen;nvarchar
+LieferKonditionBez;6;T_Abrufe, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_EAIJournalAdresse, T_Lieferscheine, T_RahmenBestellung;nvarchar
+PositionNr;6;T_EAIJournalBestellPosition, T_EAIJournalLeistungsPosition, T_EAIJournalPosition, T_EAIJournalText, T_EAIJournalTextPosition, T_EAIJournalWarenPosition;int
+PreisProEinheit;6;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_Bestellpositionen, T_Bestellung, T_Bestellvorschlaege, T_RahmenBestellungPosition;float
+Bedarfsdatum;5;T_EAIKundenAbrufBestaetigungen, T_EAIKundenAbrufe, T_KundenAbrufBestaetigungen, T_KundenAbrufe, T_KundenAbrufeHistorie;datetime
+BestellMenge;5;T_Bestellpositionen, T_Bestellung, T_Bestellvorschlaege, T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;float
+Bestrahlungsnummer;5;T_EAIJournalLieferPosition, T_EDIPositionDetails, T_LieferBuchungen, T_LieferPositionen, T_WareneingangPlanungen;nvarchar
+BruttoGewicht;5;T_EAIJournal, T_EAIJournalEx, T_EAIJournalPosition, T_EAIJournalWarenPosition, T_LadeAuftraege;float
+Dateiname;5;T_EAIJournalSynch, T_EDIDifferenzen, T_EDIDokumente, T_EDIUpload, T_LieferscheinLayouts;nvarchar
+IdArtikelvariantenTyp;5;T_ArtikelvariantenTyp_LadeEinheiten, T_Bestellung, T_Bestellvorschlaege, T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;int
+IdAuftragsPosition;5;T_Abrufe, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_EAIJournalBestellPosition, T_EAIJournalPosition;int
+IdKunde;5;T_EDIDokumente, T_LieferBuchungen, T_LieferKonten, T_LieferKontenArchiv, T_LieferPositionen;int
+IdMengeneinheit;5;T_Bestellpositionen, T_Bestellung, T_Bestellvorschlaege, T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;int
+IdPreisEinheit;5;T_Bestellpositionen, T_Bestellung, T_Bestellvorschlaege, T_EAIJournalLeistungsPosition, T_EAIJournalWarenPosition;int
+KundeAbrufNr;5;T_EAIKundenAbrufBestaetigungen, T_EAIKundenAbrufe, T_KundenAbrufBestaetigungen, T_KundenAbrufe, T_KundenAbrufeHistorie;nvarchar
+LadeDatum;5;T_Abrufe, T_EAIJournal, T_EAIJournalEx, T_LadeAuftraege, T_Lieferscheine;datetime
+LfdNr;5;T_EDIPositionDetails, T_ExportPalettenBewegungenLKW, T_LagerabgleichBarcodesExtern, T_LagerabgleichBarcodesIntern, T_SperrJournal;int
+PreisBrutto;5;T_EAIJournal, T_EAIJournalEx, T_EAIJournalLeistungsPosition, T_EAIJournalPosition, T_EAIJournalWarenPosition;float
+PreisBruttoSkonto;5;T_EAIJournal, T_EAIJournalEx, T_EAIJournalLeistungsPosition, T_EAIJournalPosition, T_EAIJournalWarenPosition;float
+PreisNetto;5;T_EAIJournal, T_EAIJournalEx, T_EAIJournalLeistungsPosition, T_EAIJournalPosition, T_EAIJournalWarenPosition;float
+ProduktionsDatum;5;T_EAIJournalLieferPosition, T_EDIPositionDetails, T_LadePositionen, T_LieferBuchungen, T_LieferPositionen;datetime
+Standard;5;T_HistoryTransportkosten, T_LadeEinheiten, T_LieferscheinLayouts, T_LKWTypen, T_TransportTypen;int
+Abrufnummer;4;T_Abrufe, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_LieferscheinPositionen;nvarchar
+AuftragsNummer;4;T_Abrufe, T_EAIJournalBestellPosition, T_EAIJournalPosition, T_LieferscheinPositionen;nvarchar
+BestellMengeVPK;4;T_Bestellpositionen, T_Bestellvorschlaege, T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;float
+Datum;4;T_EAIJournalEx, T_ExportPalettenBewegungenLKW, T_Wareneingaenge, T_WareneingangAuftraege;datetime
+IdArtikeltyp;4;T_Bestellung, T_Bestellvorschlaege, T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;int
+IdAuftragsBest;4;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_EAIJournalPosition, T_LadePlanungen;int
+IdBestellvorschlag;4;T_Bestellvorschlaege, T_EAIJournal, T_EAIJournalBestellPosition, T_EAIJournalPosition;int
+IdBlockingOrder;4;T_BlockingOrders, T_BlockingOrders_Positions, T_BlockingOrdersAdditionalDefects, T_ReworkOrders;int
+IdEDIKonfiguration;4;T_EAIJournalSynch, T_EDIKonfigurationen, T_EDIRouting, T_EDIUpload;int
+IdJournalBestellPosition;4;T_Bestellpositionen, T_EAIJournalBestellPosition, T_EAIJournalPosition, T_Wareneingaenge;int
+IdLadeAuftrag;4;T_EAIJournal, T_LadeAuftraege, T_LadePlanungen, T_WareneingangAuftraege;int
+IdLadeEinheit;4;T_ArtikelvariantenTyp_LadeEinheiten, T_EAIJournalWarenPosition, T_LadeEinheiten, T_VpkVorschrift_LadeEinheiten;int
+IdLieferscheinPosition;4;T_EAIJournalPosition, T_LadePlanungen, T_LieferscheinPositionen, T_WareneingangPlanungen;int
+IdLKWTyp;4;T_EAIJournal, T_HistoryTransportkosten, T_LadeAuftraege, T_LKWTypen;int
+IdMwst;4;T_EAIJournalAdresse, T_EAIJournalEx, T_EAIJournalLeistungsPosition, T_EAIJournalWarenPosition;int
+IdPreisLogik;4;T_Bestellpositionen, T_Bestellung, T_Bestellvorschlaege, T_EAIJournalPosition;int
+IdProduktionsArtikel;4;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;int
+IdRahmenbestellungPosition;4;T_Bestellpositionen, T_Bestellung, T_Bestellvorschlaege, T_RahmenBestellungPosition;int
+IdScanner;4;T_EntladeAuftraege, T_LadeAuftraege, T_LieferBuchungen, T_WareneingangAuftraege;int
+IdSperrgrund;4;T_LieferBuchungen, T_LieferPositionen, T_SperrJournal, T_Wareneingaenge;int
+KdArtBez;4;T_Abrufe, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie, T_EAIKundenAbrufe;nvarchar
+LadeStatus;4;T_Abrufe, T_LadeAuftraege, T_LadePlanungen, T_WareneingangPlanungen;int
+LKWBezeichnung;4;T_EAIJournal, T_EntladeAuftraege, T_LadeAuftraege, T_WareneingangAuftraege;nvarchar
+NettoGewicht;4;T_EAIJournal, T_EAIJournalEx, T_EAIJournalPosition, T_EAIJournalWarenPosition;float
+Nettotage;4;T_Abrufe, T_Bestellungen, T_EAIJournalAdresse, T_EAIJournalEx;int
+PreisBruttoBW;4;T_EAIJournal, T_EAIJournalLeistungsPosition, T_EAIJournalPosition, T_EAIJournalWarenPosition;float
+PreisBruttoSkontoBW;4;T_EAIJournal, T_EAIJournalLeistungsPosition, T_EAIJournalPosition, T_EAIJournalWarenPosition;float
+PreisNettoBW;4;T_EAIJournal, T_EAIJournalLeistungsPosition, T_EAIJournalPosition, T_EAIJournalWarenPosition;float
+ProduktionsLos;4;T_EDIPositionDetails, T_LieferBuchungen, T_LieferPositionen, T_Lieferungen;int
+Skonto;4;T_Abrufe, T_Bestellungen, T_EAIJournalAdresse, T_EAIJournalEx;float
+Skontotage;4;T_Abrufe, T_Bestellungen, T_EAIJournalAdresse, T_EAIJournalEx;int
+VpkVorschriftBez;4;T_Bestellung, T_EAIJournalBestellPosition, T_EAIJournalWarenPosition, T_RahmenBestellungPosition;nvarchar
+ZahlKondBez;4;T_Abrufe, T_EAIJournalAdresse, T_EAIJournalEx, T_RahmenBestellung;nvarchar
+AbrufAbdeckung;3;T_Abrufe, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;float
+AbrufDatum;3;T_Abrufe, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;datetime
+AbrufNr;3;T_EAIKundenAbrufBestaetigungen, T_EDIDokumentPositionen, T_KundenAbrufBestaetigungen;nvarchar
+AbrufStatus;3;T_Abrufe, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;int
+AXAuftragsNummer;3;T_Bestellungen, T_EAIJournal, T_Wareneingaenge;nvarchar
+ExtLieferscheinNummer;3;T_LadeAuftraege, T_LadePlanungen, T_WareneingangAuftraege;nvarchar
+GTIN;3;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition, T_EDIDokumentPositionen;nvarchar
+IdBestellPosition;3;T_Bestellpositionen, T_BestellPositionenBewertungen, T_Wareneingaenge;int
+IdEAIKundenAbrufe;3;T_EAIKundenAbrufe, T_KundenAbrufe, T_KundenAbrufeHistorie;int
+IdJournalStatus;3;T_AxIncasTransferQueueEntry, T_EAIJournal, T_EAIJournalEx;int
+IdLayout;3;T_EAIJournalEx, T_LadeAuftraege, T_WareneingangAuftraege;int
+IdMaschine;3;T_LieferBuchungen, T_LieferPositionen, T_SperrJournal;int
+IdRetourware;3;T_EntladePlanungen, T_Wareneingaenge, T_WareneingangPlanungen;int
+IdStapler;3;T_EntladeAuftraege, T_LadeAuftraege, T_WareneingangAuftraege;int
+IdWaehrung;3;T_EAIJournal, T_EAIJournalAdresse, T_EAIJournalEx;int
+IdWareneingangPlanung;3;T_WareneingangBewertungen, T_WareneingangPlanungen, T_WareneingangPositionen;int
+IdWarenLager;3;T_LagerabgleichBarcodesIntern, T_LieferKonten, T_LieferKontenArchiv;int
+KontoToleranz;3;T_Abrufe, T_LadePlanungen, T_WareneingangPlanungen;int
+KundeAuftragsNr;3;T_EAIKundenAbrufe, T_KundenAbrufe, T_KundenAbrufeHistorie;nvarchar
+KundeNr;3;T_EAIKundenAbrufBestaetigungen, T_EAIKundenAbrufe, T_KundenAbrufBestaetigungen;nvarchar
+LetztesLieferDatum;3;T_Abrufe, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;datetime
+LieferMengeTE;3;T_EAIJournal, T_EAIJournalPosition, T_EAIJournalWarenPosition;int
+LieferMengeVPK;3;T_EAIJournalWarenPosition, T_LieferPositionen, T_Lieferungen;float
+LieferscheinText;3;T_Abrufe, T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;nvarchar
+Mwst;3;T_EAIJournalEx, T_EAIJournalLeistungsPosition, T_EAIJournalWarenPosition;float
+Payload;3;T_AxIncasTransferQueueEntry, T_AxTransferQueueEntry, T_TransferQueue;nvarchar
+Transient;3;T_EAIJournalPosition, T_EAIJournalText, T_EAIJournalWarenPosition;int
+Validation;3;T_EDIDokumente, T_EDIDokumentPositionen, T_EDIPositionDetails;nvarchar
+AbgleichStatus;2;T_Abrufe, T_Wareneingaenge;int
+AbrufBemerkung;2;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;nvarchar
+AbrufLadeDatum;2;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;datetime
+AbrufLieferStatus;2;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;int
+AbrufLiefertermin;2;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;datetime
+AbrufMenge;2;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;float
+AbrufMengeVPK;2;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;float
+AenderungsTyp;2;T_AuftragsAbrufeHistorie, T_KundenAbrufe;int
+AllowedWasteDeviation;2;T_BlockingOrders, T_ReworkOrders;decimal
+AnzahlAVProHE;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;int
+AnzahlAVProVpk;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;int
+ArtikelTypBez;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;nvarchar
+ArtikelVariantenAlias;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;nvarchar
+ArtikelVariantenBez;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;nvarchar
+ArtikelVariantenTypBez;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;nvarchar
+AuftragsBestDatum;2;T_EAIJournalPosition, T_LadePlanungen;datetime
+AuftragsBestText;2;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;nvarchar
+AuftragsDatum;2;T_EAIJournalBestellPosition, T_EAIJournalPosition;datetime
+AXLoskennung;2;T_Bestellpositionen, T_Wareneingaenge;nvarchar
+AxTransferState;2;T_AxIncasTransferQueueEntry, T_AxTransferQueueEntry;int
+Beschreibung;2;T_EDIDifferenzen, T_EDIRouting;nvarchar
+Bestand;2;T_LieferKonten, T_LieferKontenArchiv;float
+BestandVpk;2;T_LieferKonten, T_LieferKontenArchiv;float
+BestellMengeHE;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;int
+BestellMengeTE;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;int
+Bestellt;2;T_Bestellung, T_Bestellvorschlaege;int
+BestellVorschlagBez;2;T_EAIJournalBestellPosition, T_EAIJournalPosition;nvarchar
+BestellVorschlagDatum;2;T_EAIJournalBestellPosition, T_EAIJournalPosition;datetime
+Bestrahlt;2;T_Abrufe, T_AuftragsAbrufe;int
+BlockingDate;2;T_BlockingOrders, T_BlockingOrders_Positions;datetime
+BlockingUser;2;T_BlockingOrders, T_BlockingOrders_Positions;nvarchar
+EAN_BasisNr;2;T_EAIJournal, T_EAIJournalLieferPosition;nvarchar
+EdiAbrufLiefertermin;2;T_AuftragsAbrufe, T_KundenAbrufe;datetime
+EdiAbrufMenge;2;T_AuftragsAbrufe, T_KundenAbrufe;float
+EdiAbrufMengeVPK;2;T_AuftragsAbrufe, T_KundenAbrufe;float
+EdiIdVpkVorschrift;2;T_AuftragsAbrufe, T_KundenAbrufe;int
+EdiImportPlausi;2;T_AuftragsAbrufe, T_KundenAbrufe;int
+EdiImportPlausiKategorie;2;T_AuftragsAbrufe, T_KundenAbrufe;int
+EdiImportStatus;2;T_AuftragsAbrufe, T_KundenAbrufe;int
+EDIRichtung;2;T_EDIDokumente, T_EDIKonfigurationen;int
+EDITyp;2;T_EDIDokumente, T_EDIKonfigurationen;int
+EinlagerungsBuchung;2;T_LieferBuchungen, T_LieferPositionen;int
+EinlagerungsDatum;2;T_LieferBuchungen, T_LieferPositionen;datetime
+EntladeDatum;2;T_EntladeAuftraege, T_EntladePositionen;datetime
+eReporting_IdWerk;2;T_EAIJournal, T_EAIJournalEx;int
+ErloesKonto;2;T_EAIJournalLeistungsPosition, T_EAIJournalWarenPosition;nvarchar
+ErrorCode;2;T_AxIncasTransferQueueEntry, T_AxTransferQueueEntry;int
+ErrorMessage;2;T_AxIncasTransferQueueEntry, T_AxTransferQueueEntry;text
+Exportiert;2;T_EAIJournal, T_EAIJournalEx;datetime
+FahrtTyp;2;T_EAIJournal, T_LadeAuftraege;int
+Flexibilitaet;2;T_LieferantenBewertungen, T_LieferantenBewertungenHistorie;int
+Gedruckt;2;T_EAIJournal, T_EAIJournalEx;datetime
+GelieferteMenge;2;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;float
+GelieferteMengeVPK;2;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;float
+GeplanteMenge;2;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;float
+GeplanteMengeVPK;2;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;float
+GesamtBewertung;2;T_LieferantenBewertungen, T_LieferantenBewertungenHistorie;float
+GesperrtAktiv;2;T_LieferBuchungen, T_LieferPositionen;int
+GueltigabDatum;2;T_HistoryTransportkosten, T_LieferantenBewertungenHistorie;datetime
+GueltigBisDatum;2;T_RahmenBestellung, T_RahmenBestellungPosition;datetime
+GueltigVonDatum;2;T_RahmenBestellung, T_RahmenBestellungPosition;datetime
+HandelsEinheitBez;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;nvarchar
+HandelsEinheitTyp;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;int
+HauptmaterialBez;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;nvarchar
+IdAbrufe;2;T_Abrufe, T_LadePlanungen;int
+IdAuftragsBestPosition;2;T_EAIJournalPosition, T_LadePlanungen;int
+IdAuftragsBestText;2;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;int
+IdBezugsJournalWarenPosition;2;T_EAIJournalLeistungsPosition, T_EAIJournalWarenPosition;int
+IdEAIKundenAbrufBestaetigungen;2;T_EAIKundenAbrufBestaetigungen, T_KundenAbrufBestaetigungen;int
+IdEDIDokument;2;T_EDIDokumente, T_EDIDokumentPositionen;int
+IdEntladeAuftrag;2;T_EntladeAuftraege, T_EntladePlanungen;int
+IdEntladePlanung;2;T_EntladePlanungen, T_EntladePositionen;int
+IdHandelsEinheit;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;int
+IdHistoryEKKunde;2;T_Bestellpositionen, T_Bestellvorschlaege;int
+IdJournalAmo;2;T_EAIJournalAmo, T_EAIJournalLeistungsPosition;int
+IdJournalBeleg;2;T_EAIJournal, T_EAIJournalBeleg;int
+IdKontoAdresse;2;T_EAIJournalWarenPosition, T_Lieferungen;int
+IdKundenAbrufe;2;T_KundenAbrufe, T_KundenAbrufeHistorie;int
+IdKundenGrp;2;T_EAIJournalAdresse, T_EAIJournalEx;int
+IdLagerAbteilungVon;2;T_LieferBuchungen, T_LieferPositionen;int
+IdLagerLos;2;T_LieferBuchungen, T_LieferPositionen;int
+IdLagerPlanung;2;T_LieferBuchungen, T_LieferPositionen;int
+IdLeistungsVorlage;2;T_EAIJournalLeistungsPosition, T_EAIJournalLeistungsVorlageZuordnung;int
+IdLieferantAdresse;2;T_Lieferungen, T_Wareneingaenge;int
+IdLieferantenAdresse;2;T_RahmenBestellung, T_RahmenBestellungPosition;int
+IdLieferantenBewertung;2;T_LieferantenBewertungen, T_LieferantenBewertungenHistorie;int
+IdLieferantenReklamation;2;T_LieferantenReklamationen, T_LieferantenReklamationsPositionen;int
+IdLieferscheinLayout;2;T_Lieferscheine, T_LieferscheinLayouts;int
+IdLieferscheinText;2;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;int
+IdProdAuftrag;2;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;int
+IdProdBereich;2;T_SperrJournal, T_tmpBarcode_EtikettenStatistik;int
+IdProdPlanung;2;T_KundenAbrufe, T_KundenAbrufeHistorie;int
+IdRahmenBestellung;2;T_RahmenBestellung, T_RahmenBestellungPosition;int
+IdRechnungText;2;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;int
+IdReworkOrder;2;T_BlockingOrders_Positions, T_ReworkOrders;int
+IdSchicht;2;T_KundenAbrufe, T_KundenAbrufeHistorie;int
+IdTextVorlage;2;T_EAIJournalText, T_EAIJournalTextPosition;int
+IdTransportEinheit;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;int
+IdUmlagerung;2;T_Wareneingaenge, T_WareneingangPlanungen;int
+IdVpkRuecknahme;2;T_Wareneingaenge, T_WareneingangPlanungen;int
+IdWareneingang;2;T_Wareneingaenge, T_WareneingangPlanungen;int
+IdWareneingangAuftrag;2;T_WareneingangAuftraege, T_WareneingangPlanungen;int
+ImportDatum;2;T_KundenAbrufBestaetigungen, T_KundenAbrufe;datetime
+ImportNummer;2;T_KundenAbrufBestaetigungen, T_KundenAbrufe;int
+ImportText;2;T_KundenAbrufBestaetigungen, T_KundenAbrufe;nvarchar
+InterfaceTyp;2;T_EDIDokumente, T_EDIRouting;int
+InternerUmsatz;2;T_EAIJournalAdresse, T_EAIJournalEx;int
+IsFooter;2;T_EAIJournalText, T_EAIJournalTextPosition;int
+IsHeader;2;T_EAIJournalText, T_EAIJournalTextPosition;int
+IstMenge;2;T_EntladePositionen, T_Wareneingaenge;float
+IstMengeVPK;2;T_EntladePositionen, T_Wareneingaenge;float
+Kommunikation;2;T_LieferantenBewertungen, T_LieferantenBewertungenHistorie;int
+Kostenstelle;2;T_EAIJournalLeistungsPosition, T_EAIJournalWarenPosition;nvarchar
+KundenArtikelBez;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;nvarchar
+KundenArtikelNummer;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;nvarchar
+KundenGrpBez;2;T_EAIJournalAdresse, T_EAIJournalEx;nvarchar
+KurzBezeichnung;2;T_EDIRouting, T_Lieferkonditionen;nvarchar
+LadeMenge;2;T_Abrufe, T_LadePlanungen;float
+LadeMengeVPK;2;T_Abrufe, T_LadePlanungen;float
+LadeToleranz;2;T_LadePlanungen, T_WareneingangPlanungen;int
+Lagerbewegungen;2;T_LieferKonten, T_LieferKontenArchiv;int
+LetztesAbgangsDatum;2;T_LieferKonten, T_LieferKontenArchiv;datetime
+LetztesZugangsDatum;2;T_LieferKonten, T_LieferKontenArchiv;datetime
+LfdNrExtern;2;T_LagerabgleichBarcodes, T_WareneingangPositionen;int
+LiefArtNr;2;T_EDIDokumentPositionen, T_Wareneingaenge;nvarchar
+LieferantenNr;2;T_EAIJournalAdresse, T_EAIJournalEx;nvarchar
+LieferBuchung;2;T_LieferBuchungen, T_LieferPositionen;int
+LieferMengeHE;2;T_EAIJournalPosition, T_EAIJournalWarenPosition;int
+LieferscheinDatum;2;T_EAIJournalPosition, T_InhouseLieferungen;datetime
+MaterialQualitaet;2;T_BestellPositionenBewertungen, T_WareneingangBewertungen;int
+MengenEinheitBez;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;nvarchar
+MengeProVpk;2;T_Bestellung, T_Bestellvorschlaege;float
+MinimumProzentLieferMenge;2;T_AuftragsAbrufe, T_Bestellpositionen;float
+MitSkonto;2;T_EAIJournalLeistungsPosition, T_EAIJournalWarenPosition;int
+PlanMenge;2;T_Abrufe, T_LadeAuftraege;float
+PlanMengeVPK;2;T_Abrufe, T_LadeAuftraege;float
+PlanStatus;2;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;int
+PositionBez;2;T_EAIJournalBestellPosition, T_EAIJournalPosition;nvarchar
+PositionsStatus;2;T_Bestellpositionen, T_LieferantenReklamationsPositionen;int
+PositionsText;2;T_EAIJournalText, T_EAIJournalTextPosition;nvarchar
+PositionsTyp;2;T_LieferBuchungen, T_LieferPositionen;int
+PreisEinheitBez;2;T_EAIJournalLeistungsPosition, T_EAIJournalWarenPosition;int
+PreisGueltigAb;2;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;int
+PreisNettoProEinheit;2;T_EAIJournalLeistungsPosition, T_EAIJournalWarenPosition;float
+PreisNettoProEinheitBW;2;T_EAIJournalLeistungsPosition, T_EAIJournalWarenPosition;float
+Preistyp;2;T_Bestellpositionen, T_Bestellvorschlaege;int
+ProduktionsArtikelBez;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;nvarchar
+ProduktionsBuchung;2;T_LieferBuchungen, T_LieferPositionen;int
+RechnungText;2;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;nvarchar
+Reihenfolge;2;T_LadePlanungen, T_WareneingangPlanungen;int
+RemainingWasteWeight;2;T_BlockingOrders, T_ReworkOrders;decimal
+Retries;2;T_AxIncasTransferQueueEntry, T_AxTransferQueueEntry;int
+Revision;2;T_Bestellungen, T_BestellungenJournal;int
+Service;2;T_LieferantenBewertungen, T_LieferantenBewertungenHistorie;int
+SollMenge;2;T_EntladePlanungen, T_Wareneingaenge;float
+SollMengeVPK;2;T_EntladePlanungen, T_Wareneingaenge;float
+SpediteurBez;2;T_EAIJournal, T_EAIJournalEx;nvarchar
+TextVorlageBez;2;T_EAIJournalText, T_EAIJournalTextPosition;nvarchar
+ToleranzTyp;2;T_AuftragsAbrufe, T_AuftragsAbrufeHistorie;int
+TransaktionUID;2;T_EAIJournalSynch, T_EDIUpload;uniqueidentifier
+TransportEinheitBez;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;nvarchar
+TransportEinheitTyp;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;int
+Urheber;2;T_LieferBuchungen, T_LieferPositionen;int
+UrheberReferenz;2;T_LieferBuchungen, T_LieferPositionen;int
+URL;2;T_AxTransferQueueEntry, T_EDIRouting;nvarchar
+Ursprungsland;2;T_EAIJournalBestellPosition, T_EAIJournalWarenPosition;nvarchar
+VerpackungsQualitaet;2;T_BestellPositionenBewertungen, T_WareneingangBewertungen;int
+WaehrungBez;2;T_EAIJournal, T_EAIJournalAdresse;nvarchar
+ZusatzInfo1;2;T_EAIJournalAdresse, T_EAIJournalPosition;nvarchar
+ZusatzInfo2;2;T_EAIJournalAdresse, T_EAIJournalPosition;nvarchar
+ZusatzInfo3;2;T_EAIJournalAdresse, T_EAIJournalPosition;nvarchar
+ZusatzInfo5;2;T_AuftragsAbrufe, T_EAIJournalPosition;nvarchar
+ZusatzInfo6;2;T_AuftragsAbrufe, T_EAIJournalPosition;nvarchar
+
+(301 rows affected)
+TABLE_NAME;COLUMN_NAME;DATA_TYPE;CHARACTER_MAXIMUM_LENGTH;IS_NULLABLE
+----------;-----------;---------;------------------------;-----------
+syncobj_0x3034363234464337;Beleg;nvarchar;50;NO
+syncobj_0x3036384341383934;Referenz;nvarchar;50;NO
+syncobj_0x3039303644304641;Beleg;nvarchar;50;YES
+syncobj_0x3039303644304641;ReferenzBuchungsDatum;datetime;NULL;YES
+syncobj_0x3039373443443136;Beleg;nvarchar;50;NO
+syncobj_0x3045433141433846;IdEDIDokumentPosition;int;NULL;YES
+syncobj_0x3046303833383633;Beleg;nvarchar;50;YES
+syncobj_0x3132373642344433;TransportKostenDokumentiert;int;NULL;YES
+syncobj_0x3145314431423431;IdJournalBeleg;int;NULL;YES
+syncobj_0x3145314431423431;ReferenzDatum;datetime;NULL;YES
+syncobj_0x3145314431423431;ReferenzNummer;nvarchar;50;YES
+syncobj_0x3145453536333938;IdEDIDokumentPosition;int;NULL;YES
+syncobj_0x3231304545354137;IdGutschriftBeleg;int;NULL;YES
+syncobj_0x3231304545354137;IdRechnungsBeleg;int;NULL;YES
+syncobj_0x3231304545354137;ReferenzAuftragsBestDatum;datetime;NULL;YES
+syncobj_0x3231304545354137;ReferenzAuftragsBestNummer;nvarchar;50;YES
+syncobj_0x3231304545354137;ReferenzAuftragsBestPosition;nvarchar;50;YES
+syncobj_0x3231304545354137;ReferenzBestellungDatum;datetime;NULL;YES
+syncobj_0x3231304545354137;ReferenzBestellungNummer;nvarchar;50;YES
+syncobj_0x3231304545354137;ReferenzBestellungPosition;nvarchar;50;YES
+syncobj_0x3231304545354137;ReferenzGutschriftDatum;datetime;NULL;YES
+syncobj_0x3231304545354137;ReferenzGutschriftNummer;nvarchar;50;YES
+syncobj_0x3231304545354137;ReferenzGutschriftPosition;nvarchar;50;YES
+syncobj_0x3231304545354137;ReferenzLieferscheinDatum;datetime;NULL;YES
+syncobj_0x3231304545354137;ReferenzLieferscheinNummer;nvarchar;50;YES
+syncobj_0x3231304545354137;ReferenzLieferscheinPosition;nvarchar;50;YES
+syncobj_0x3231304545354137;ReferenzPosition;nvarchar;50;YES
+syncobj_0x3231304545354137;ReferenzRechnungsDatum;datetime;NULL;YES
+syncobj_0x3231304545354137;ReferenzRechnungsNummer;nvarchar;50;YES
+syncobj_0x3231304545354137;ReferenzRechnungsPosition;nvarchar;50;YES
+syncobj_0x3232384146414443;Beleg;nvarchar;50;NO
+syncobj_0x3232384146414443;ReferenzBuchung;int;NULL;NO
+syncobj_0x3232384146414443;UrheberReferenz;int;NULL;NO
+syncobj_0x3235343336373536;IdEDIDokumentPosition;int;NULL;YES
+syncobj_0x3236433930464332;Beleg;nvarchar;50;YES
+syncobj_0x3236433930464332;IdEDIDokumentPosition;int;NULL;YES
+syncobj_0x3242373933393938;BelegNr;nvarchar;10;YES
+syncobj_0x3332414633334634;IdEDIDokumentPosition;int;NULL;NO
+syncobj_0x3530364331444544;Beleg;nvarchar;50;NO
+syncobj_0x3539384435433746;DokumentTyp;nvarchar;50;NO
+syncobj_0x3541393236343442;Beleg;nvarchar;50;NO
+syncobj_0x3545384634354439;Beleg;nvarchar;50;YES
+syncobj_0x3546303532323239;Beleg;nvarchar;50;NO
+syncobj_0x3546423537464142;Beleg;nvarchar;50;NO
+syncobj_0x3546423537464142;UrheberReferenz;int;NULL;NO
+syncobj_0x3632393843394434;Beleg;nvarchar;50;NO
+syncobj_0x3632393843394434;UrheberReferenz;int;NULL;NO
+syncobj_0x3633344132303534;BelegNr;int;NULL;YES
+syncobj_0x3635394142434538;IdGutschriftBeleg;int;NULL;YES
+syncobj_0x3635394142434538;IdRechnungsBeleg;int;NULL;YES
+syncobj_0x3635394142434538;ReferenzAuftragsBestDatum;datetime;NULL;YES
+syncobj_0x3635394142434538;ReferenzAuftragsBestNummer;nvarchar;50;YES
+syncobj_0x3635394142434538;ReferenzAuftragsBestPosition;nvarchar;50;YES
+syncobj_0x3635394142434538;ReferenzBestellungDatum;datetime;NULL;YES
+syncobj_0x3635394142434538;ReferenzBestellungNummer;nvarchar;50;YES
+syncobj_0x3635394142434538;ReferenzBestellungPosition;nvarchar;50;YES
+syncobj_0x3635394142434538;ReferenzGutschriftDatum;datetime;NULL;YES
+syncobj_0x3635394142434538;ReferenzGutschriftNummer;nvarchar;50;YES
+syncobj_0x3635394142434538;ReferenzGutschriftPosition;nvarchar;50;YES
+syncobj_0x3635394142434538;ReferenzLieferscheinDatum;datetime;NULL;YES
+syncobj_0x3635394142434538;ReferenzLieferscheinNummer;nvarchar;50;YES
+syncobj_0x3635394142434538;ReferenzLieferscheinPosition;nvarchar;50;YES
+syncobj_0x3635394142434538;ReferenzPosition;nvarchar;50;YES
+syncobj_0x3635394142434538;ReferenzRechnungsDatum;datetime;NULL;YES
+syncobj_0x3635394142434538;ReferenzRechnungsNummer;nvarchar;50;YES
+syncobj_0x3635394142434538;ReferenzRechnungsPosition;nvarchar;50;YES
+syncobj_0x3638414445413242;Beleg;nvarchar;50;NO
+syncobj_0x3638414445413242;ReferenzBuchung;int;NULL;NO
+syncobj_0x3638414445413242;UrheberReferenz;int;NULL;NO
+syncobj_0x3641304537463130;Beleg;nvarchar;50;NO
+syncobj_0x3641304537463130;ReferenzBuchung;int;NULL;NO
+syncobj_0x3641304537463130;UrheberReferenz;int;NULL;NO
+syncobj_0x3641314642433138;Referenz;nvarchar;50;NO
+syncobj_0x3641363145453044;Beleg;nvarchar;50;NO
+syncobj_0x3641363145453044;ReferenzBuchung;int;NULL;NO
+syncobj_0x3641363145453044;UrheberReferenz;int;NULL;NO
+syncobj_0x3642373939333435;Beleg;nvarchar;50;NO
+syncobj_0x3642373939333435;UrheberReferenz;int;NULL;NO
+syncobj_0x3734313144383346;Beleg;nvarchar;50;NO
+syncobj_0x3734313144383346;ReferenzBuchung;int;NULL;NO
+syncobj_0x3734313144383346;UrheberReferenz;int;NULL;NO
+syncobj_0x3736323738334645;Beleg;nvarchar;50;NO
+syncobj_0x3737333442424335;Beleg;nvarchar;50;NO
+syncobj_0x3737333442424335;UrheberReferenz;int;NULL;NO
+syncobj_0x3744363943393438;IdEdiDokument;int;NULL;YES
+syncobj_0x3745414637324537;Beleg;nvarchar;50;NO
+syncobj_0x3830383732363734;IdEDIDokumentPosition;int;NULL;NO
+syncobj_0x3830443145314637;Beleg;nvarchar;50;NO
+syncobj_0x3830443145314637;UrheberReferenz;int;NULL;NO
+syncobj_0x3839344430343033;IdEDIDokument;int;NULL;NO
+syncobj_0x3839344430343033;IdEDIDokumentPosition;int;NULL;NO
+syncobj_0x3842384531423943;IdEDIDokumentPosition;int;NULL;YES
+syncobj_0x3842414339303836;Beleg;nvarchar;50;NO
+syncobj_0x3844443237443035;IdEdiDokument;int;NULL;YES
+syncobj_0x3931453342453142;Beleg;nvarchar;50;YES
+syncobj_0x3931453342453142;ReferenzBuchungsDatum;datetime;NULL;YES
+syncobj_0x3932433531314146;Beleg;nvarchar;50;NO
+syncobj_0x3941434541434544;Beleg;nvarchar;50;YES
+syncobj_0x3941434541434544;IdEDIDokumentPosition;int;NULL;YES
+syncobj_0x3945444345383738;Beleg;nvarchar;50;NO
+syncobj_0x3945444345383738;UrheberReferenz;int;NULL;NO
+syncobj_0x4137443430384241;Beleg;nvarchar;50;NO
+syncobj_0x4138443530444346;BelegNr;int;NULL;YES
+syncobj_0x4145443434374541;Beleg;nvarchar;50;NO
+syncobj_0x4232323144333143;IdEDIDokumentPosition;int;NULL;YES
+syncobj_0x4232363134373144;Beleg;nvarchar;50;NO
+syncobj_0x4232393632313043;Beleg;nvarchar;50;YES
+syncobj_0x4233374330383738;BelegNr;nvarchar;10;YES
+syncobj_0x4332363532374534;Beleg;nvarchar;50;NO
+syncobj_0x4334443744424437;Beleg;nvarchar;50;NO
+syncobj_0x4430463142304143;IdEDIDokumentPosition;int;NULL;YES
+syncobj_0x4432463831313437;IdEDIDokument;int;NULL;NO
+syncobj_0x4432463831313437;ReferenzDatumExtern;datetime;NULL;YES
+syncobj_0x4432463831313437;ReferenzNummerExtern;nvarchar;50;YES
+syncobj_0x4436313335414234;Beleg;nvarchar;50;NO
+syncobj_0x4436313335414234;ReferenzBuchung;int;NULL;NO
+syncobj_0x4436313335414234;UrheberReferenz;int;NULL;NO
+syncobj_0x4437314434464631;IdJournalBeleg;int;NULL;YES
+syncobj_0x4437314434464631;ReferenzDatum;datetime;NULL;YES
+syncobj_0x4437314434464631;ReferenzNummer;nvarchar;50;YES
+syncobj_0x4438313345333438;IdEDIDokumentPosition;int;NULL;YES
+syncobj_0x4439414539423536;Beleg;nvarchar;50;YES
+syncobj_0x4446424636453046;BelegNr;nvarchar;10;YES
+syncobj_0x4530333546304338;BelegNr;nvarchar;10;YES
+syncobj_0x4530413532423730;IdEDIDokument;int;NULL;NO
+syncobj_0x4530413532423730;IdEDIDokumentPosition;int;NULL;NO
+syncobj_0x4534413944414543;Beleg;nvarchar;50;NO
+syncobj_0x4538314344354344;ReferenceBarcode;nvarchar;50;YES
+syncobj_0x4538314344354344;ReferenceId;int;NULL;YES
+syncobj_0x4538333141393946;IdEDIDokumentPosition;int;NULL;YES
+syncobj_0x4542364346463246;IdEDIDokument;int;NULL;NO
+syncobj_0x4542364346463246;ReferenzDatumExtern;datetime;NULL;YES
+syncobj_0x4542364346463246;ReferenzNummerExtern;nvarchar;50;YES
+syncobj_0x4544364645423145;Beleg;nvarchar;50;NO
+syncobj_0x4545313935394645;IdJournalBeleg;int;NULL;NO
+syncobj_0x4634373032363137;Beleg;nvarchar;50;NO
+syncobj_0x4636303439334144;IdJournalBeleg;int;NULL;NO
+syncobj_0x4638393338353945;Beleg;nvarchar;50;NO
+syncobj_0x4639314443424143;TransportKostenDokumentiert;int;NULL;YES
+syncobj_0x4642464543313132;Beleg;nvarchar;50;NO
+T_Auftraege;IdEdiDokument;int;NULL;YES
+T_AuftragsAbrufe;IdEDIDokumentPosition;int;NULL;YES
+T_EAIJournal;IdJournalBeleg;int;NULL;YES
+T_EAIJournal;ReferenzDatum;datetime;NULL;YES
+T_EAIJournal;ReferenzNummer;nvarchar;50;YES
+T_EAIJournalBeleg;IdJournalBeleg;int;NULL;NO
+T_EAIJournalLieferPosition;Beleg;nvarchar;50;YES
+T_EAIJournalPosition;IdGutschriftBeleg;int;NULL;YES
+T_EAIJournalPosition;IdRechnungsBeleg;int;NULL;YES
+T_EAIJournalPosition;ReferenzAuftragsBestDatum;datetime;NULL;YES
+T_EAIJournalPosition;ReferenzAuftragsBestNummer;nvarchar;50;YES
+T_EAIJournalPosition;ReferenzAuftragsBestPosition;nvarchar;50;YES
+T_EAIJournalPosition;ReferenzBestellungDatum;datetime;NULL;YES
+T_EAIJournalPosition;ReferenzBestellungNummer;nvarchar;50;YES
+T_EAIJournalPosition;ReferenzBestellungPosition;nvarchar;50;YES
+T_EAIJournalPosition;ReferenzGutschriftDatum;datetime;NULL;YES
+T_EAIJournalPosition;ReferenzGutschriftNummer;nvarchar;50;YES
+T_EAIJournalPosition;ReferenzGutschriftPosition;nvarchar;50;YES
+T_EAIJournalPosition;ReferenzLieferscheinDatum;datetime;NULL;YES
+T_EAIJournalPosition;ReferenzLieferscheinNummer;nvarchar;50;YES
+T_EAIJournalPosition;ReferenzLieferscheinPosition;nvarchar;50;YES
+T_EAIJournalPosition;ReferenzPosition;nvarchar;50;YES
+T_EAIJournalPosition;ReferenzRechnungsDatum;datetime;NULL;YES
+T_EAIJournalPosition;ReferenzRechnungsNummer;nvarchar;50;YES
+T_EAIJournalPosition;ReferenzRechnungsPosition;nvarchar;50;YES
+T_EDIDokumente;IdEDIDokument;int;NULL;NO
+T_EDIDokumente;ReferenzDatumExtern;datetime;NULL;YES
+T_EDIDokumente;ReferenzNummerExtern;nvarchar;50;YES
+T_EDIDokumentPositionen;IdEDIDokument;int;NULL;NO
+T_EDIDokumentPositionen;IdEDIDokumentPosition;int;NULL;NO
+T_EDIPositionDetails;IdEDIDokumentPosition;int;NULL;NO
+T_EDIUpload;DokumentTyp;nvarchar;50;NO
+T_EinkaufsPreise;Beleg;nvarchar;50;YES
+T_EntladePositionen;Beleg;nvarchar;50;NO
+T_InventurPositionen;Referenz;nvarchar;50;NO
+T_KonsignationsBewegungen;Beleg;nvarchar;50;NO
+T_KundenAbrufBestaetigungen;IdEDIDokumentPosition;int;NULL;YES
+T_KundenAbrufe;IdEDIDokumentPosition;int;NULL;YES
+T_KundenBestandHistorie;IdEDIDokumentPosition;int;NULL;YES
+T_LadeAuftraege;TransportKostenDokumentiert;int;NULL;YES
+T_LadePositionen;Beleg;nvarchar;50;NO
+T_LagerabgleichBarcodes;Beleg;nvarchar;50;NO
+T_LagerBuchungen;Beleg;nvarchar;50;NO
+T_LagerBuchungen;ReferenzBuchung;int;NULL;NO
+T_LagerBuchungen;UrheberReferenz;int;NULL;NO
+T_LagerPlanungen;Beleg;nvarchar;50;YES
+T_LagerPlanungen;ReferenzBuchungsDatum;datetime;NULL;YES
+T_LagerPositionen;Beleg;nvarchar;50;NO
+T_LagerPositionen;UrheberReferenz;int;NULL;NO
+T_LBW;BelegNr;nvarchar;10;YES
+T_LBW_Archiv;BelegNr;nvarchar;10;YES
+T_LieferBuchungen;Beleg;nvarchar;50;NO
+T_LieferBuchungen;ReferenzBuchung;int;NULL;NO
+T_LieferBuchungen;UrheberReferenz;int;NULL;NO
+T_LieferPositionen;Beleg;nvarchar;50;NO
+T_LieferPositionen;UrheberReferenz;int;NULL;NO
+T_PDLBW;BelegNr;int;NULL;YES
+T_ProductionFigures;ReferenceBarcode;nvarchar;50;YES
+T_ProductionFigures;ReferenceId;int;NULL;YES
+T_ProduktionsBuchungen;Beleg;nvarchar;50;NO
+T_ProduktionsBuchungen;ReferenzBuchung;int;NULL;NO
+T_ProduktionsBuchungen;UrheberReferenz;int;NULL;NO
+T_ProduktionsPositionen;Beleg;nvarchar;50;NO
+T_ProduktionsPositionen;UrheberReferenz;int;NULL;NO
+T_Ruecknahmen;Beleg;nvarchar;50;NO
+T_SperrJournal;Beleg;nvarchar;50;NO
+T_TmpMatVerbrauch;BelegNr;nvarchar;10;YES
+T_Umlagerungen;Beleg;nvarchar;50;NO
+T_Wareneingaenge;Beleg;nvarchar;50;NO
+T_WareneingangAuftraege;Beleg;nvarchar;50;NO
+T_WareneingangPlanungen;Beleg;nvarchar;50;YES
+T_WareneingangPlanungen;IdEDIDokumentPosition;int;NULL;YES
+T_WareneingangPositionen;Beleg;nvarchar;50;NO
+V_AbfallLagerBuchungen;Beleg;nvarchar;50;NO
+V_AbfallLagerBuchungen;ReferenzBuchung;int;NULL;NO
+V_AbfallLagerBuchungen;UrheberReferenz;int;NULL;NO
+V_AppWarenEingaenge;Beleg;nvarchar;50;NO
+V_Auftraege;IdEdiDokument;int;NULL;YES
+V_AuftraegeMinimal;IdEdiDokument;int;NULL;YES
+V_AuftragsAbrufe;IdEdiDokument;int;NULL;NO
+V_AuftragsAbrufe;IdEDIDokumentPosition;int;NULL;YES
+V_AuslagerungsPositionen;Beleg;nvarchar;50;NO
+V_AuslagerungsPositionenBarcodes;Beleg;nvarchar;50;NO
+V_Bereitstellungsplan;Beleg;nvarchar;50;NO
+V_BestellungenEAIJournal;IdJournalBeleg;int;NULL;YES
+V_BestellungenEAIJournal;ReferenzDatum;datetime;NULL;YES
+V_BestellungenEAIJournal;ReferenzNummer;nvarchar;50;YES
+V_Buchungen;Beleg;nvarchar;50;NO
+V_Buchungen;ReferenzBuchung;int;NULL;NO
+V_Buchungen;UrheberReferenz;int;NULL;NO
+V_DocumentationLinks_CENTRAL;IdDocumentationLink;int;NULL;NO
+V_EAIJournalHeader;IdJournalBeleg;int;NULL;YES
+V_EAIJournalHeader;ReferenzDatum;datetime;NULL;YES
+V_EAIJournalHeader;ReferenzNummer;nvarchar;50;YES
+V_EAIJournalHistoryHeader;IdJournalBeleg;int;NULL;YES
+V_EAIJournalHistoryHeader;ReferenzDatum;datetime;NULL;YES
+V_EAIJournalHistoryHeader;ReferenzNummer;nvarchar;50;YES
+V_EAIJournalPositionSummary;IdJournalBeleg;int;NULL;YES
+V_EDIDokumente;IdEDIDokument;int;NULL;NO
+V_EDIDokumente;ReferenzDatumExtern;datetime;NULL;YES
+V_EDIDokumente;ReferenzNummerExtern;nvarchar;50;YES
+V_EDIDokumentPositionen;EDIDokumenteValidation;nvarchar;1000;YES
+V_EDIDokumentPositionen;IdEDIDokument;int;NULL;YES
+V_EDIDokumentPositionen;IdEDIDokumentPosition;int;NULL;NO
+V_EDIDokumentPositionen;ReferenzDatumExtern;datetime;NULL;YES
+V_EDIDokumentPositionen;ReferenzNummerExtern;nvarchar;50;YES
+V_EDIDokumentPositionen_ORDER;EDIDokumenteValidation;nvarchar;1000;YES
+V_EDIDokumentPositionen_ORDER;IdEDIDokument;int;NULL;YES
+V_EDIDokumentPositionen_ORDER;IdEDIDokumentPosition;int;NULL;NO
+V_EDIJournalUpload;DokumentTyp;nvarchar;50;NO
+V_EDIPositionDetails;EDIDokumenteValidation;nvarchar;1000;YES
+V_EDIPositionDetails;EDIDokumentPositionenValidation;nvarchar;1000;YES
+V_EDIPositionDetails;IdEDIDokument;int;NULL;YES
+V_EDIPositionDetails;IdEDIDokumentPosition;int;NULL;YES
+V_EDIUpload;DokumentTyp;nvarchar;50;NO
+V_EinkaufsPreise;Beleg;nvarchar;50;YES
+V_EinlagerungsPositionen;Beleg;nvarchar;50;NO
+V_eMIS_EAIJournalPositionSummary;IdJournalBeleg_eMIS;int;NULL;YES
+V_EntladePositionen;Beleg;nvarchar;50;NO
+V_GeplantePositionenPerKontoAbteilungenBelegSum;Beleg;nvarchar;50;NO
+V_InventurPositionen;Referenz;nvarchar;50;NO
+V_KonsignationsBewegungen;Beleg;nvarchar;50;NO
+V_KritischerMaterialVerbrauchKompensiert;Beleg;nvarchar;50;NO
+V_KundenAbrufBestaetigungen;IdEDIDokumentPosition;int;NULL;YES
+V_KundenAbrufe;IdEDIDokumentPosition;int;NULL;YES
+V_KundenBestandHistorie;IdEDIDokumentPosition;int;NULL;YES
+V_LadeAuftraege;TransportKostenDokumentiert;int;NULL;YES
+V_LadePlanungenLadeAuftragAbruf;LadeAuftragTransportKostenDokumentiert;int;NULL;YES
+V_LadePositionen;Beleg;nvarchar;50;NO
+V_LagerabgleichBarcodes;Beleg;nvarchar;50;NO
+V_LagerabgleichInventurJournal;Beleg;nvarchar;50;NO
+V_LagerAbteilungenBelegungen;BelegtePositionen;int;NULL;YES
+V_LagerAbteilungenSum;BelegtePositionen;int;NULL;YES
+V_LagerBelegungen;Belegt;int;NULL;YES
+V_LagerBerechnung;Beleg;nvarchar;50;NO
+V_LagerBuchungen;Beleg;nvarchar;50;NO
+V_LagerBuchungen;ReferenzBuchung;int;NULL;NO
+V_LagerBuchungen;UrheberReferenz;int;NULL;NO
+V_LagerBuchungenEinkaufsPreise;Beleg;nvarchar;50;NO
+V_LagerKontenBuchungen;Beleg;nvarchar;50;NO
+V_LagerKontenBuchungen;ReferenzBuchung;int;NULL;NO
+V_LagerKontenBuchungen;UrheberReferenz;int;NULL;NO
+V_LagerPlanungen;Beleg;nvarchar;50;YES
+V_LagerPlanungen;ReferenzBuchungsDatum;datetime;NULL;YES
+V_LagerPlanungenAbrufe;ReferenzBuchungsDatum;datetime;NULL;YES
+V_LagerPositionen;Beleg;nvarchar;50;NO
+V_LagerPositionen;UrheberReferenz;int;NULL;NO
+V_LagerPositionenBarcodes;Beleg;nvarchar;50;NO
+V_LagerPositionenBarcodes;UrheberReferenz;int;NULL;NO
+V_LagerPositionenBarcodes;UrheberReferenzAlias;nvarchar;50;NO
+V_LagerPositionenBarcodes;UrheberReferenzBez;nvarchar;50;NO
+V_LagerPositionenBarcodesInventuren;Beleg;nvarchar;50;YES
+V_LagerPositionenGeplantSum;Beleg;nvarchar;50;NO
+V_LagerPositionenGesperrtSum;Beleg;nvarchar;50;NO
+V_LagerPositionenInventuren;Beleg;nvarchar;50;NO
+V_LagerPositionenPlanungen;Beleg;nvarchar;50;NO
+V_LagerPositionenPlanungen;UrheberReferenz;int;NULL;NO
+V_LagerPositionenPlanungen;UrheberReferenzAlias;nvarchar;1;NO
+V_LagerPositionenPlanungen;UrheberReferenzBez;nvarchar;1;NO
+V_LagerPositionenTotalSum;Beleg;nvarchar;50;NO
+V_LBW_BASIS;BelegNr;nvarchar;10;YES
+V_LieferBuchungen;Beleg;nvarchar;50;NO
+V_LieferBuchungen;ReferenzBuchung;int;NULL;NO
+V_LieferBuchungen;UrheberReferenz;int;NULL;NO
+V_LieferKontenBuchungen;Beleg;nvarchar;50;NO
+V_LieferKontenBuchungen;ReferenzBuchung;int;NULL;NO
+V_LieferKontenBuchungen;UrheberReferenz;int;NULL;NO
+V_LieferPositionen;Beleg;nvarchar;50;NO
+V_LieferPositionen;UrheberReferenz;int;NULL;NO
+V_LieferungenFromEAIJournal;Beleg;nvarchar;50;NO
+V_Positionen;Beleg;nvarchar;50;NO
+V_Positionen;UrheberReferenz;int;NULL;NO
+V_ProductionFigures;ReferenceBarcode;nvarchar;50;YES
+V_ProductionFigures;ReferenceId;int;NULL;YES
+V_ProduktionLagerLieferBuchungen;Beleg;nvarchar;50;NO
+V_ProduktionLagerLieferBuchungen;UrheberReferenz;int;NULL;NO
+V_ProduktionLagerPositionen;Beleg;nvarchar;50;NO
+V_ProduktionLagerPositionen;UrheberReferenz;int;NULL;NO
+V_ProduktionLagerPositionenAusgaben;Beleg;nvarchar;50;NO
+V_ProduktionLagerPositionenAusgaben;UrheberReferenz;int;NULL;NO
+V_ProduktionsBuchungen;Beleg;nvarchar;50;NO
+V_ProduktionsBuchungen;ReferenzBuchung;int;NULL;NO
+V_ProduktionsBuchungen;UrheberReferenz;int;NULL;NO
+V_ProduktionsKontenBuchungen;Beleg;nvarchar;50;NO
+V_ProduktionsKontenBuchungen;ReferenzBuchung;int;NULL;NO
+V_ProduktionsKontenBuchungen;UrheberReferenz;int;NULL;NO
+V_ProduktionsPositionen;Beleg;nvarchar;50;NO
+V_ProduktionsPositionen;UrheberReferenz;int;NULL;NO
+V_ProduktionsPositionenGeplantSum;Beleg;nvarchar;50;NO
+V_ProduktionsPositionenGesperrtSum;Beleg;nvarchar;50;NO
+V_ProduktionsPositionenRuecknahmen;Beleg;nvarchar;50;NO
+V_ProduktionsPositionenRuecknahmen;UrheberReferenz;int;NULL;NO
+V_ProduktionsPositionenTotalSum;Beleg;nvarchar;50;NO
+V_RestfulGetStockPositions;Beleg;nvarchar;50;NO
+V_RestfulGetStockPositions;UrheberReferenz;int;NULL;NO
+V_RestfulGetStockPositions;UrheberReferenzAlias;nvarchar;50;NO
+V_RestfulGetStockPositions;UrheberReferenzBez;nvarchar;50;NO
+V_Ruecknahmen;Beleg;nvarchar;50;NO
+V_SperrJournal;Beleg;nvarchar;50;NO
+V_SperrJournalAktuell;Beleg;nvarchar;50;YES
+V_TrackerBarcodeSperrHistorie;Beleg;nvarchar;50;NO
+V_TrackerLagerBuchungenBarcode;Beleg;nvarchar;50;NO
+V_TrackerLagerBuchungenBarcode;UrheberReferenz;int;NULL;NO
+V_TrackerLagerBuchungenBarcode;UrheberReferenzAlias;nvarchar;100;NO
+V_TrackerLagerBuchungenBarcode;UrheberReferenzBez;nvarchar;50;NO
+V_TrackerLagerBuchungenBarcodeBelegSum;Beleg;nvarchar;50;NO
+V_TrackerLagerBuchungenBeleg;Beleg;nvarchar;50;NO
+V_TrackerLagerBuchungenBelegBarcodeSum;Beleg;nvarchar;50;YES
+V_TrackerLagerBuchungenBelegProduktionslosSuchgrenzen;Beleg;nvarchar;50;NO
+V_TrackerLagerBuchungenBelegProduktionslosSum;Beleg;nvarchar;50;NO
+V_TrackerLagerBuchungenBelegSuchgrenzen;Beleg;nvarchar;50;NO
+V_TrackerLagerBuchungenProduktionslosBarcode;Beleg;nvarchar;50;NO
+V_TrackerLagerBuchungenProduktionslosBelegSum;Beleg;nvarchar;50;NO
+V_TrackerLieferscheinLieferPositionen;Beleg;nvarchar;50;YES
+V_Umlagerungen;Beleg;nvarchar;50;NO
+V_VerfuegbarePositionenPerKontoAbteilungenBelegSum;Beleg;nvarchar;50;NO
+V_VerpackungsBewegungenGeliefert;Beleg;nvarchar;50;NO
+V_VerpackungsBewegungenGeliefert;ReferenzBuchung;int;NULL;NO
+V_VerpackungsBewegungenGeliefert;UrheberReferenz;int;NULL;NO
+V_VerpackungsBewegungenRuecknahmen;Beleg;nvarchar;50;NO
+V_VerpackungsBewegungenRuecknahmen;ReferenzBuchung;int;NULL;NO
+V_VerpackungsBewegungenRuecknahmen;UrheberReferenz;int;NULL;NO
+V_Wareneingaenge;Beleg;nvarchar;50;NO
+V_WareneingangAuftraege;Beleg;nvarchar;50;NO
+V_WareneingangPlanungen;Beleg;nvarchar;50;YES
+V_WareneingangPlanungen;IdEDIDokumentPosition;int;NULL;YES
+V_WareneingangPositionen;Beleg;nvarchar;50;NO
+
+(367 rows affected)
+TABLE_NAME;COLUMN_NAME;DATA_TYPE;CHARACTER_MAXIMUM_LENGTH;IS_NULLABLE
+----------;-----------;---------;------------------------;-----------
+MSpeer_conflictdetectionconfigresponse;originator_id;int;NULL;YES
+MSpeer_lsns;originator;nvarchar;128;NO
+MSpeer_lsns;originator_db;nvarchar;128;NO
+MSpeer_lsns;originator_db_version;int;NULL;YES
+MSpeer_lsns;originator_id;int;NULL;YES
+MSpeer_lsns;originator_lsn;varbinary;16;YES
+MSpeer_lsns;originator_publication;nvarchar;128;NO
+MSpeer_lsns;originator_publication_id;int;NULL;YES
+MSpeer_lsns;originator_version;int;NULL;YES
+MSpeer_originatorid_history;originator_db;nvarchar;128;NO
+MSpeer_originatorid_history;originator_db_version;int;NULL;NO
+MSpeer_originatorid_history;originator_id;int;NULL;NO
+MSpeer_originatorid_history;originator_node;nvarchar;128;NO
+MSpeer_originatorid_history;originator_publication;nvarchar;128;NO
+MSpeer_originatorid_history;originator_version;int;NULL;NO
+MSpeer_topologyresponse;originator_id;int;NULL;YES
+syncobj_0x3042464142373036;Ursprungsland;nvarchar;50;YES
+syncobj_0x3134423035313534;Ursprungsland;nvarchar;50;YES
+syncobj_0x3336413336343038;AnzahlOriginale;int;NULL;YES
+syncobj_0x3336413336343038;IdOriginalSchacht;int;NULL;YES
+syncobj_0x3543383145383446;IdOriginalSchacht;int;NULL;YES
+syncobj_0x3546373535394236;IdUrsprungsland;int;NULL;YES
+syncobj_0x3546373535394236;Ursprungsland;nvarchar;50;YES
+syncobj_0x3632454239343241;IdUrsprungsland;int;NULL;YES
+syncobj_0x3632454239343241;Ursprungsland;nvarchar;50;YES
+syncobj_0x3642384144344439;IdOriginalSchacht;int;NULL;YES
+syncobj_0x4134374544443938;AnzahlOriginale;int;NULL;YES
+syncobj_0x4134374544443938;IdOriginalSchacht;int;NULL;YES
+syncobj_0x4538314344354344;Origin;int;NULL;NO
+syncobj_0x4636374246324545;Ursprungsland;nvarchar;50;YES
+syncobj_0x4638463232334345;Ursprungsland;nvarchar;50;YES
+syspublications;originator_id;int;NULL;YES
+T_Artikelvarianten;IdUrsprungsland;int;NULL;YES
+T_Artikelvarianten;Ursprungsland;nvarchar;50;YES
+T_EAIJournalBestellPosition;Ursprungsland;nvarchar;50;YES
+T_EAIJournalWarenPosition;Ursprungsland;nvarchar;50;YES
+T_Layout;AnzahlOriginale;int;NULL;YES
+T_Layout;IdOriginalSchacht;int;NULL;YES
+T_Lieferscheine;IdOriginalSchacht;int;NULL;YES
+T_ProductionFigures;Origin;int;NULL;NO
+V_AbfallLagerBuchungen;ArtikelVarianteUrsprungAlias;nvarchar;100;NO
+V_AbfallLagerBuchungen;ArtikelVarianteUrsprungBez;nvarchar;50;NO
+V_ArticleFetch;IdUrsprungsland;int;NULL;YES
+V_ArticleFetch;Ursprungsland;nvarchar;50;YES
+V_ArtikelKomplett;Ursprungsland;nvarchar;50;NO
+V_ArtikelKomplett_IM;Ursprungsland;nvarchar;50;NO
+V_Artikelvarianten;IdUrsprungsland;int;NULL;YES
+V_Artikelvarianten;Ursprungsland;nvarchar;50;YES
+V_Artikelvarianten_BASIS;IdUrsprungsland;int;NULL;YES
+V_Artikelvarianten_BASIS;Ursprungsland;nvarchar;50;YES
+V_EAIArtikel;Ursprungsland;nvarchar;50;NO
+V_Layout;AnzahlOriginale;int;NULL;YES
+V_Layout;IdOriginalSchacht;int;NULL;YES
+V_Lieferscheine;IdOriginalSchacht;int;NULL;YES
+V_NiceLabel_Automation;IdWasteOrigin;int;NULL;YES
+V_NiceLabel_Automation;WasteOriginDescription;nvarchar;100;YES
+V_ProductionFigures;Origin;int;NULL;NO
+V_Werkzeug_Artikelvarianten_BASIS;IdUrsprungsland;int;NULL;YES
+V_Werkzeug_Artikelvarianten_BASIS;Ursprungsland;nvarchar;50;NO
+
+(59 rows affected)
+TABLE_NAME;COLUMN_NAME;DATA_TYPE;CHARACTER_MAXIMUM_LENGTH;IS_NULLABLE
+----------;-----------;---------;------------------------;-----------
+syncobj_0x3046394338363430;ExternesToolGuid;uniqueidentifier;NULL;NO
+syncobj_0x3046394338363430;IdExternesToolModul;int;NULL;NO
+syncobj_0x3134453337433941;Fremdkey;nvarchar;50;YES
+syncobj_0x3136373937303445;IdPartnerWerk;int;NULL;NO
+syncobj_0x3139314239333544;AnsprechpartnerEmail;nvarchar;50;YES
+syncobj_0x3139314239333544;AnsprechpartnerFax;nvarchar;50;YES
+syncobj_0x3139314239333544;AnsprechpartnerName;nvarchar;50;YES
+syncobj_0x3139314239333544;AnsprechpartnerPos;nvarchar;50;YES
+syncobj_0x3139314239333544;AnsprechpartnerTel;nvarchar;50;YES
+syncobj_0x3139314239333544;AnsprechpartnerVorname;nvarchar;50;YES
+syncobj_0x3332393842354338;ExternesToolGuid;uniqueidentifier;NULL;NO
+syncobj_0x3332393842354338;IdExternesToolModul;int;NULL;NO
+syncobj_0x3438374431413632;AnsprechpartnerEmail;nvarchar;50;YES
+syncobj_0x3438374431413632;AnsprechpartnerFax;nvarchar;50;YES
+syncobj_0x3438374431413632;AnsprechpartnerName;nvarchar;50;YES
+syncobj_0x3438374431413632;AnsprechpartnerPos;nvarchar;50;YES
+syncobj_0x3438374431413632;AnsprechpartnerTel;nvarchar;50;YES
+syncobj_0x3438374431413632;AnsprechpartnerVorname;nvarchar;50;YES
+syncobj_0x3439413946303130;IdBarcodeExtern;int;NULL;NO
+syncobj_0x3532443943374335;AnpsrechpartnerVorname;nvarchar;50;YES
+syncobj_0x3532443943374335;AnsprechpartnerEmail;nvarchar;50;YES
+syncobj_0x3532443943374335;AnsprechpartnerFax;nvarchar;50;YES
+syncobj_0x3532443943374335;AnsprechpartnerName;nvarchar;50;YES
+syncobj_0x3532443943374335;AnsprechpartnerPos;nvarchar;50;YES
+syncobj_0x3532443943374335;AnsprechpartnerTel;nvarchar;50;YES
+syncobj_0x3546373535394236;FremdKey;nvarchar;50;YES
+syncobj_0x3632454239343241;FremdKey;nvarchar;50;YES
+syncobj_0x3634334237463446;AnsprechpartnerEmail;nvarchar;50;YES
+syncobj_0x3634334237463446;AnsprechpartnerFax;nvarchar;50;YES
+syncobj_0x3634334237463446;AnsprechpartnerName;nvarchar;50;YES
+syncobj_0x3634334237463446;AnsprechpartnerPos;nvarchar;50;YES
+syncobj_0x3634334237463446;AnsprechpartnerTel;nvarchar;50;YES
+syncobj_0x3634334237463446;AnsprechpartnerVorname;nvarchar;50;YES
+syncobj_0x3836334531414142;AnpsrechpartnerVorname;nvarchar;50;YES
+syncobj_0x3836334531414142;AnsprechpartnerEmail;nvarchar;50;YES
+syncobj_0x3836334531414142;AnsprechpartnerFax;nvarchar;50;YES
+syncobj_0x3836334531414142;AnsprechpartnerName;nvarchar;50;YES
+syncobj_0x3836334531414142;AnsprechpartnerPos;nvarchar;50;YES
+syncobj_0x3836334531414142;AnsprechpartnerTel;nvarchar;50;YES
+syncobj_0x4144384341343432;AnsprechpartnerEmail;nvarchar;50;YES
+syncobj_0x4144384341343432;AnsprechpartnerFax;nvarchar;50;YES
+syncobj_0x4144384341343432;AnsprechpartnerName;nvarchar;50;YES
+syncobj_0x4144384341343432;AnsprechpartnerPos;nvarchar;50;YES
+syncobj_0x4144384341343432;AnsprechpartnerTel;nvarchar;50;YES
+syncobj_0x4144384341343432;AnsprechpartnerVorname;nvarchar;50;YES
+syncobj_0x4238304536383143;IdPartnerWerk;int;NULL;NO
+syncobj_0x4330413346343738;FremdKey;nvarchar;100;YES
+syncobj_0x4332363532374534;BarcodeExtern;nvarchar;50;NO
+syncobj_0x4332363532374534;LfdNrExtern;int;NULL;NO
+syncobj_0x4432463831313437;ReferenzDatumExtern;datetime;NULL;YES
+syncobj_0x4432463831313437;ReferenzNummerExtern;nvarchar;50;YES
+syncobj_0x4542364346463246;ReferenzDatumExtern;datetime;NULL;YES
+syncobj_0x4542364346463246;ReferenzNummerExtern;nvarchar;50;YES
+syncobj_0x4544364645423145;LfdNrExtern;int;NULL;YES
+syncobj_0x4634373032363137;LfdNrExtern;int;NULL;YES
+T_Adressen;AnpsrechpartnerVorname;nvarchar;50;YES
+T_Adressen;AnsprechpartnerEmail;nvarchar;50;YES
+T_Adressen;AnsprechpartnerFax;nvarchar;50;YES
+T_Adressen;AnsprechpartnerName;nvarchar;50;YES
+T_Adressen;AnsprechpartnerPos;nvarchar;50;YES
+T_Adressen;AnsprechpartnerTel;nvarchar;50;YES
+T_Artikelvarianten;FremdKey;nvarchar;50;YES
+T_EAIJournalAdresse;AnsprechpartnerEmail;nvarchar;50;YES
+T_EAIJournalAdresse;AnsprechpartnerFax;nvarchar;50;YES
+T_EAIJournalAdresse;AnsprechpartnerName;nvarchar;50;YES
+T_EAIJournalAdresse;AnsprechpartnerPos;nvarchar;50;YES
+T_EAIJournalAdresse;AnsprechpartnerTel;nvarchar;50;YES
+T_EAIJournalAdresse;AnsprechpartnerVorname;nvarchar;50;YES
+T_EAIJournalEx;KundenAnsprechpartnerEmail;nvarchar;50;YES
+T_EAIJournalEx;KundenAnsprechpartnerFax;nvarchar;50;YES
+T_EAIJournalEx;KundenAnsprechpartnerName;nvarchar;50;YES
+T_EAIJournalEx;KundenAnsprechpartnerPos;nvarchar;50;YES
+T_EAIJournalEx;KundenAnsprechpartnerTel;nvarchar;50;YES
+T_EAIJournalEx;KundenAnsprechpartnerVorname;nvarchar;50;YES
+T_EAIJournalEx;LieferAnsprechpartnerEmail;nvarchar;50;YES
+T_EAIJournalEx;LieferAnsprechpartnerFax;nvarchar;50;YES
+T_EAIJournalEx;LieferAnsprechpartnerName;nvarchar;50;YES
+T_EAIJournalEx;LieferAnsprechpartnerPos;nvarchar;50;YES
+T_EAIJournalEx;LieferAnsprechpartnerTel;nvarchar;50;YES
+T_EAIJournalEx;LieferAnsprechpartnerVorname;nvarchar;50;YES
+T_EAIJournalEx;RechnungAnsprechpartnerEmail;nvarchar;50;YES
+T_EAIJournalEx;RechnungAnsprechpartnerFax;nvarchar;50;YES
+T_EAIJournalEx;RechnungAnsprechpartnerName;nvarchar;50;YES
+T_EAIJournalEx;RechnungAnsprechpartnerPos;nvarchar;50;YES
+T_EAIJournalEx;RechnungAnsprechpartnerTel;nvarchar;50;YES
+T_EAIJournalEx;RechnungAnsprechpartnerVorname;nvarchar;50;YES
+T_EAIJournalEx;WerkAnsprechpartnerEmail;nvarchar;50;YES
+T_EAIJournalEx;WerkAnsprechpartnerFax;nvarchar;50;YES
+T_EAIJournalEx;WerkAnsprechpartnerName;nvarchar;50;YES
+T_EAIJournalEx;WerkAnsprechpartnerPos;nvarchar;50;YES
+T_EAIJournalEx;WerkAnsprechpartnerTel;nvarchar;50;YES
+T_EAIJournalEx;WerkAnsprechpartnerVorname;nvarchar;50;YES
+T_EAIMandanten;AnsprechpartnerEmail;nvarchar;50;YES
+T_EAIMandanten;AnsprechpartnerFax;nvarchar;50;YES
+T_EAIMandanten;AnsprechpartnerName;nvarchar;50;YES
+T_EAIMandanten;AnsprechpartnerPos;nvarchar;50;YES
+T_EAIMandanten;AnsprechpartnerTel;nvarchar;50;YES
+T_EAIMandanten;AnsprechpartnerVorname;nvarchar;50;YES
+T_EDIDokumente;ReferenzDatumExtern;datetime;NULL;YES
+T_EDIDokumente;ReferenzNummerExtern;nvarchar;50;YES
+T_ExterneToolsModule;ExternesToolGuid;uniqueidentifier;NULL;NO
+T_ExterneToolsModule;IdExternesToolModul;int;NULL;NO
+T_LagerabgleichBarcodes;BarcodeExtern;nvarchar;50;NO
+T_LagerabgleichBarcodes;LfdNrExtern;int;NULL;NO
+T_LagerabgleichBarcodesExtern;IdBarcodeExtern;int;NULL;NO
+T_PartnerWerke;IdPartnerWerk;int;NULL;NO
+T_TmpArtikelliste;FremdKey;nvarchar;50;YES
+T_tmpArtikelRezeptur;AvFremdkey;nvarchar;99;YES
+T_tmpArtikelRezeptur;FmFremdkey;nvarchar;99;YES
+T_TmpBewertFM;Fremdkey;nvarchar;50;YES
+T_TmpBewertPA;Fremdkey;nvarchar;50;YES
+T_tmpBudgetASP;FremdKey;nvarchar;100;YES
+T_TmpMPB;Fremdkey;nvarchar;50;YES
+T_TmpMPBProt;Fremdkey;nvarchar;50;YES
+T_TmpPreislisteVK;FremdKey;nvarchar;50;YES
+T_TmpProdBericht;Fremdschluessel;nvarchar;50;YES
+T_TmpProdInformation;Fremdkey;nvarchar;50;YES
+T_TmpZaehlPA;FremdKey;nvarchar;50;YES
+T_WareneingangPositionen;LfdNrExtern;int;NULL;YES
+V_Adressen;AnpsrechpartnerVorname;nvarchar;50;YES
+V_Adressen;AnsprechpartnerEmail;nvarchar;50;YES
+V_Adressen;AnsprechpartnerFax;nvarchar;50;YES
+V_Adressen;AnsprechpartnerName;nvarchar;50;YES
+V_Adressen;AnsprechpartnerPos;nvarchar;50;YES
+V_Adressen;AnsprechpartnerTel;nvarchar;50;YES
+V_Adressen_BASIS;AnpsrechpartnerVorname;nvarchar;50;YES
+V_Adressen_BASIS;AnsprechpartnerEmail;nvarchar;50;YES
+V_Adressen_BASIS;AnsprechpartnerFax;nvarchar;50;YES
+V_Adressen_BASIS;AnsprechpartnerName;nvarchar;50;YES
+V_Adressen_BASIS;AnsprechpartnerPos;nvarchar;50;YES
+V_Adressen_BASIS;AnsprechpartnerTel;nvarchar;50;YES
+V_AdressenKomplett;AnsprechpartnerEmail;nvarchar;50;NO
+V_AdressenKomplett;AnsprechpartnerFax;nvarchar;50;NO
+V_AdressenKomplett;AnsprechpartnerName;nvarchar;50;NO
+V_AdressenKomplett;AnsprechpartnerPos;nvarchar;50;NO
+V_AdressenKomplett;AnsprechpartnerTel;nvarchar;50;NO
+V_AdressenKomplett;AnsprechpartnerVorname;nvarchar;50;NO
+V_ArticleFetch;FremdKey;nvarchar;50;YES
+V_Artikel;FremdKey;nvarchar;50;YES
+V_ArtikelKomplett;FremdKey;nvarchar;50;YES
+V_ArtikelKomplett_IM;FremdKey;nvarchar;50;YES
+V_Artikelvarianten;FremdKey;nvarchar;50;YES
+V_Artikelvarianten_BASIS;FremdKey;nvarchar;50;YES
+V_EAIAdressen;AnsprechpartnerEmail;nvarchar;50;NO
+V_EAIAdressen;AnsprechpartnerFax;nvarchar;50;NO
+V_EAIAdressen;AnsprechpartnerName;nvarchar;50;NO
+V_EAIAdressen;AnsprechpartnerPos;nvarchar;50;NO
+V_EAIAdressen;AnsprechpartnerTel;nvarchar;50;NO
+V_EAIAdressen;AnsprechpartnerVorname;nvarchar;50;NO
+V_EAIArtikel;FremdKey;nvarchar;50;YES
+V_EDIDokumente;ReferenzDatumExtern;datetime;NULL;YES
+V_EDIDokumente;ReferenzNummerExtern;nvarchar;50;YES
+V_EDIDokumentPositionen;ReferenzDatumExtern;datetime;NULL;YES
+V_EDIDokumentPositionen;ReferenzNummerExtern;nvarchar;50;YES
+V_ExterneToolsModule_BASIS;ExternesToolAktiv;int;NULL;YES
+V_ExterneToolsModule_BASIS;ExternesToolBem;nvarchar;255;YES
+V_ExterneToolsModule_BASIS;ExternesToolBez;nvarchar;50;YES
+V_ExterneToolsModule_BASIS;ExternesToolClusteringId;int;NULL;YES
+V_ExterneToolsModule_BASIS;ExternesToolGuid;uniqueidentifier;NULL;NO
+V_ExterneToolsModule_BASIS;ExternesToolPfad;nvarchar;255;YES
+V_ExterneToolsModule_BASIS;IdExternesToolModul;int;NULL;NO
+V_LagerabgleichBarcodes;BarcodeExtern;nvarchar;50;NO
+V_LagerabgleichBarcodes;LfdNrExtern;int;NULL;NO
+V_LagerabgleichBarcodesExtern;IdBarcodeExtern;int;NULL;NO
+V_Lieferscheine;KundenAnsprechpartnerName;nvarchar;50;NO
+V_Lieferscheine;KundenAnsprechpartnerTel;nvarchar;50;NO
+V_Lieferscheine;KundenAnsprechpartnerVorname;nvarchar;50;NO
+V_Lieferscheine;LieferAnsprechpartnerName;nvarchar;50;NO
+V_Lieferscheine;LieferAnsprechpartnerTel;nvarchar;50;NO
+V_Lieferscheine;LieferAnsprechpartnerVorname;nvarchar;50;NO
+V_Lieferscheine;RechnungAnsprechpartnerName;nvarchar;50;NO
+V_Lieferscheine;RechnungAnsprechpartnerTel;nvarchar;50;NO
+V_Lieferscheine;RechnungAnsprechpartnerVorname;nvarchar;50;NO
+V_LieferscheinPositionen;RechnungAnsprechpartnerName;nvarchar;50;NO
+V_LieferscheinPositionen;RechnungAnsprechpartnerTel;nvarchar;50;NO
+V_LieferscheinPositionen;RechnungAnsprechpartnerVorname;nvarchar;50;NO
+v_MD_sales_price_list;costs of decoration in foreign currency;float;NULL;YES
+v_MD_sales_price_list;costs of placement in foreign currency;float;NULL;YES
+v_MD_sales_price_list;sales price in foreign currency;float;NULL;NO
+V_MES_ArticleVariant;Foreign_Description;nvarchar;50;YES
+V_PartnerWerke;IdPartnerWerk;int;NULL;NO
+V_TrackerEtikettenGedruckt;Extern;int;NULL;NO
+V_WareneingangPositionen;LfdNrExtern;int;NULL;YES
+V_Werkzeug_Artikelvarianten_BASIS;FremdKey;nvarchar;50;YES
+
+(184 rows affected)
+TABLE_NAME;COLUMN_NAME;IS_NULLABLE
+----------;-----------;-----------
+T_ArtikelvariantenTyp_LadeEinheiten;GUID;YES
+T_AuftragsAbrufe;Guid;YES
+T_AuftragsAbrufeHistorie;Guid;YES
+T_EAIJournal;Guid;YES
+T_EAIJournalAdresse;Guid;YES
+T_EAIJournalBeleg;Guid;YES
+T_EAIJournalBestellPosition;Guid;YES
+T_EAIJournalLeistungsPosition;Guid;YES
+T_EAIJournalLieferPosition;Guid;YES
+T_EAIJournalPosition;Guid;YES
+T_EAIJournalSynch;TransaktionUID;YES
+T_EAIJournalText;Guid;YES
+T_EAIJournalWarenPosition;Guid;YES
+T_EDIUpload;TransaktionUID;NO
+T_InhouseLieferungen;JournalPositionGuid;YES
+T_InhouseLieferungen;SammelGuid;YES
+T_LieferantenReklamationen;Guid;YES
+T_LieferantenReklamationsPositionen;Guid;YES
+T_SperrJournal;GUID;NO
+
+(19 rows affected)
+TABLE_NAME;COLUMN_NAME;IS_NULLABLE
+----------;-----------;-----------
+syncobj_0x3030454145323036;IdASMProdArtikel;YES
+syncobj_0x3042364139423038;GUID;YES
+syncobj_0x3042464142373036;Guid;YES
+syncobj_0x3043393236463437;Guid;YES
+syncobj_0x3045433141433846;Guid;YES
+syncobj_0x3046394338363430;ExternesToolGuid;NO
+syncobj_0x3133324534443536;Guid;YES
+syncobj_0x3134423035313534;Guid;YES
+syncobj_0x3139314239333544;Guid;YES
+syncobj_0x3139364546423844;Guid;YES
+syncobj_0x3145314431423431;Guid;YES
+syncobj_0x3231304545354137;Guid;YES
+syncobj_0x3241314144303841;GUID;YES
+syncobj_0x3244353144363645;JournalPositionGuid;YES
+syncobj_0x3244353144363645;SammelGuid;YES
+syncobj_0x3332393842354338;ExternesToolGuid;NO
+syncobj_0x3333324632454545;Guid;YES
+syncobj_0x3342393132413432;Guid;YES
+syncobj_0x3438374431413632;Guid;YES
+syncobj_0x3439413946303130;GUID;NO
+syncobj_0x3442333945303841;GUID;YES
+syncobj_0x3442344246463433;GUID;YES
+syncobj_0x3442353033423546;TransaktionUID;YES
+syncobj_0x3532393130433842;Guid;YES
+syncobj_0x3532443943374335;IdASMAdresse;YES
+syncobj_0x3537453143363139;GUID;YES
+syncobj_0x3539384435433746;TransaktionUID;NO
+syncobj_0x3539463142343835;GUID;YES
+syncobj_0x3541374435444131;Guid;YES
+syncobj_0x3541393236343442;GUID;NO
+syncobj_0x3545384634354439;Guid;YES
+syncobj_0x3546303532323239;GUID;NO
+syncobj_0x3631413446394633;GUID;YES
+syncobj_0x3633393736334242;ComplaintGuid;NO
+syncobj_0x3634393332384438;GUID;NO
+syncobj_0x3635394142434538;Guid;YES
+syncobj_0x3638313233433434;GUID;NO
+syncobj_0x3641394646464545;GUID;YES
+syncobj_0x3641443037373736;Guid;YES
+syncobj_0x3644363233344231;Guid;NO
+syncobj_0x3742354535334630;GUID;NO
+syncobj_0x3744363943393438;Guid;YES
+syncobj_0x3836334531414142;IdASMAdresse;YES
+syncobj_0x3838333143354639;UID;NO
+syncobj_0x3841343830343141;Guid;YES
+syncobj_0x3842323939413731;Guid;YES
+syncobj_0x3844443237443035;Guid;YES
+syncobj_0x3845414541443635;Guid;YES
+syncobj_0x3932433435313638;ComplaintPositionId;YES
+syncobj_0x3932444431304336;Guid;NO
+syncobj_0x3938323346393031;TransaktionUID;YES
+syncobj_0x3941393236303030;GUID;YES
+syncobj_0x3944324638433031;JournalPositionGuid;YES
+syncobj_0x3944324638433031;SammelGuid;YES
+syncobj_0x4142434443324638;Guid;YES
+syncobj_0x4143384138453635;GUID;YES
+syncobj_0x4232393632313043;Guid;YES
+syncobj_0x4246354532304141;GUID;YES
+syncobj_0x4330393842384542;GUID;NO
+syncobj_0x4332363532374534;GUID;NO
+syncobj_0x4334423541303934;Guid;YES
+syncobj_0x4339384337394331;GUID;YES
+syncobj_0x4339463545453437;GUID;YES
+syncobj_0x4341413430363444;IdASMProdArtikel;YES
+syncobj_0x4437314434464631;Guid;YES
+syncobj_0x4438313345333438;Guid;YES
+syncobj_0x4441444639364341;ComplaintGuid;NO
+syncobj_0x4443434138324235;GUID;YES
+syncobj_0x4444463045323931;GUID;YES
+syncobj_0x4446444532423634;GUID;YES
+syncobj_0x4532374631373543;GUID;YES
+syncobj_0x4533433345443831;GUID;YES
+syncobj_0x4535373142434141;ComplaintPositionId;YES
+syncobj_0x4536444431323432;Guid;YES
+syncobj_0x4538394344333932;Guid;YES
+syncobj_0x4539433641453437;GUID;YES
+syncobj_0x4542433438333746;GUID;NO
+syncobj_0x4545313935394645;Guid;YES
+syncobj_0x4636303439334144;Guid;YES
+syncobj_0x4636374246324545;Guid;YES
+syncobj_0x4637413331394543;GUID;YES
+syncobj_0x4637444134453445;UID;NO
+syncobj_0x4638463232334345;Guid;YES
+syncobj_0x4646353036424341;Guid;YES
+T_Adressen;IdASMAdresse;YES
+T_ArtikelvariantenTyp_LadeEinheiten;GUID;YES
+T_Auftraege;Guid;YES
+T_AuftragsAbrufe;Guid;YES
+T_AuftragsAbrufeHistorie;Guid;YES
+T_AuftragsKomponenten;Guid;YES
+T_AuftragsLeistungen;Guid;YES
+T_AuftragsPositionen;Guid;YES
+T_BestandsGrenzen;GUID;YES
+T_ComplaintPositions;ComplaintGuid;NO
+T_EAIJournal;Guid;YES
+T_EAIJournalAdresse;Guid;YES
+T_EAIJournalBeleg;Guid;YES
+T_EAIJournalBestellPosition;Guid;YES
+T_EAIJournalLeistungsPosition;Guid;YES
+T_EAIJournalLieferPosition;Guid;YES
+T_EAIJournalPosition;Guid;YES
+T_EAIJournalSynch;TransaktionUID;YES
+T_EAIJournalText;Guid;YES
+T_EAIJournalWarenPosition;Guid;YES
+T_EDIUpload;TransaktionUID;NO
+T_ExterneTools;Guid;NO
+T_ExterneToolsModule;ExternesToolGuid;NO
+T_FeldText;UID;NO
+T_IncomingGoodCustomerReturns;ComplaintPositionId;YES
+T_InhouseLieferungen;JournalPositionGuid;YES
+T_InhouseLieferungen;SammelGuid;YES
+T_LagerabgleichBarcodes;GUID;NO
+T_LagerabgleichBarcodesExtern;GUID;NO
+T_LagerabgleichBarcodesIntern;GUID;NO
+T_LagerAbteilungen;GUID;YES
+T_LieferantenReklamationen;Guid;YES
+T_LieferantenReklamationsPositionen;Guid;YES
+T_LogBenutzer;GUID;NO
+T_LS_ArtikelKlassifizierung;GUID;YES
+T_LS_Reservierungen;GUID;YES
+T_LS_Steuerung;GUID;YES
+T_LS_SteuerungFIFO;GUID;YES
+T_ProdArtikel;IdASMProdArtikel;YES
+T_Rampen;GUID;YES
+T_Sperrgruende;GUID;NO
+T_SperrJournal;GUID;NO
+T_Stapler;GUID;YES
+T_WarenLager;GUID;YES
+V_Adressen;IdASMAdresse;YES
+V_Adressen_BASIS;IdASMAdresse;YES
+V_ArtikelvariantenTyp_LadeEinheiten;GUID;YES
+V_ASMAdressen_CENTRAL;IdASMAdresse;YES
+V_ASMProdArtikel_CENTRAL;IdASMProdArtikel;YES
+V_Auftraege;Guid;YES
+V_AuftraegeMinimal;Guid;YES
+V_AuftragsAbrufe;Guid;YES
+V_AuftragsAbrufeHistorie;Guid;YES
+V_AuftragsKomponenten;Guid;YES
+V_AuftragsLeistungen;Guid;YES
+V_AuftragsPositionen;Guid;YES
+V_BestandsGrenzen;GUID;YES
+V_ComplaintPositions;ComplaintGuid;NO
+V_EAIJournalPositionSummary;UID;YES
+V_EDIJournalUpload;TransaktionUID;YES
+V_EDIUpload;TransaktionUID;NO
+V_ExterneTools;Guid;NO
+V_ExterneTools_BASIS;Guid;NO
+V_ExterneToolsModule_BASIS;ExternesToolGuid;NO
+V_IncomingGoodCustomerReturns;ComplaintPositionId;YES
+V_InhouseLieferungen;JournalPositionGuid;YES
+V_InhouseLieferungen;SammelGuid;YES
+V_LagerabgleichBarcodes;GUID;NO
+V_LagerabgleichBarcodesExtern;GUID;NO
+V_LagerabgleichBarcodesIntern;GUID;NO
+V_LagerAbteilungen;GUID;YES
+V_LieferantenReklamationen;Guid;YES
+V_LieferantenReklamationsPositionen;Guid;YES
+V_LieferantenReklamationsPositionen;LieferantenReklamationsGuid;YES
+V_LogBenutzer;GUID;NO
+V_LS_ArtikelKlassifizierung;GUID;YES
+V_LS_Reservierungen;GUID;YES
+V_LS_Steuerung;GUID;YES
+V_LS_SteuerungFIFO;GUID;YES
+V_MES_AP_Addresses;ASM_Id;YES
+V_PA_Werkzeug_BASIS;ProdArtikelASMProdArtikel;YES
+V_ProdArtikel;IdASMProdArtikel;YES
+V_ProdArtikel_BASIS;IdASMProdArtikel;YES
+V_Rampen;GUID;YES
+V_Sperrgruende;GUID;NO
+V_SperrJournal;GUID;NO
+V_SperrJournalAktuell;GUID;YES
+V_Stapler;GUID;YES
+V_WarenLager;GUID;YES
+
+(173 rows affected)
+TABLE_NAME;COLUMN_NAME;DATA_TYPE;CHARACTER_MAXIMUM_LENGTH
+----------;-----------;---------;------------------------
+syncobj_0x3031453636454431;ProductionReport_ProductionReportId;int;NULL
+syncobj_0x3039373443443136;BestellPositionStatus;int;NULL
+syncobj_0x3039373443443136;IdBestellPosition;int;NULL
+syncobj_0x3039373443443136;IdBestellung;int;NULL
+syncobj_0x3039373443443136;IdJournalBestellPosition;int;NULL
+syncobj_0x3042464142373036;BestellDatum;datetime;NULL
+syncobj_0x3042464142373036;BestellMenge;float;NULL
+syncobj_0x3042464142373036;BestellMengeHE;int;NULL
+syncobj_0x3042464142373036;BestellMengeTE;int;NULL
+syncobj_0x3042464142373036;BestellMengeVPK;float;NULL
+syncobj_0x3042464142373036;BestellVorschlagBez;nvarchar;50
+syncobj_0x3042464142373036;BestellVorschlagDatum;datetime;NULL
+syncobj_0x3042464142373036;IdBestellVorschlag;int;NULL
+syncobj_0x3042464142373036;IdJournalBestellPosition;int;NULL
+syncobj_0x3130414441443637;BestellPositionBewertung;float;NULL
+syncobj_0x3130414441443637;IdBestellPosition;int;NULL
+syncobj_0x3130414441443637;IdBestellPositionenBewertung;int;NULL
+syncobj_0x3131363130434433;IdBestellung;int;NULL
+syncobj_0x3131363130434433;IdBestellungJournal;int;NULL
+syncobj_0x3134423035313534;BestellDatum;datetime;NULL
+syncobj_0x3134423035313534;BestellMenge;float;NULL
+syncobj_0x3134423035313534;BestellMengeHE;int;NULL
+syncobj_0x3134423035313534;BestellMengeTE;int;NULL
+syncobj_0x3134423035313534;BestellMengeVPK;float;NULL
+syncobj_0x3134423035313534;BestellVorschlagBez;nvarchar;50
+syncobj_0x3134423035313534;BestellVorschlagDatum;datetime;NULL
+syncobj_0x3134423035313534;IdBestellVorschlag;int;NULL
+syncobj_0x3134423035313534;IdJournalBestellPosition;int;NULL
+syncobj_0x3136413432424434;ProductionReportData_ProductionReportDataId;int;NULL
+syncobj_0x3139414339414245;ProductionReport_ProductionReportId;int;NULL
+syncobj_0x3145314431423431;BestellVorschlagRevision;int;NULL
+syncobj_0x3145314431423431;eReporting_IdWerk;int;NULL
+syncobj_0x3145314431423431;IdBestellVorschlag;int;NULL
+syncobj_0x3146424636393335;ReportId;int;NULL
+syncobj_0x3230303445363933;BestellDatum;datetime;NULL
+syncobj_0x3230303445363933;BestellMenge;float;NULL
+syncobj_0x3230303445363933;BestellMengeVPK;float;NULL
+syncobj_0x3230303445363933;IdBestellPosition;int;NULL
+syncobj_0x3230303445363933;IdBestellung;int;NULL
+syncobj_0x3230303445363933;IdJournalBestellPosition;int;NULL
+syncobj_0x3230303445363933;IdRahmenbestellungPosition;int;NULL
+syncobj_0x3231304545354137;BestellDatum;datetime;NULL
+syncobj_0x3231304545354137;BestellungDatum;datetime;NULL
+syncobj_0x3231304545354137;BestellungNummer;nvarchar;50
+syncobj_0x3231304545354137;BestellungPositionNr;int;NULL
+syncobj_0x3231304545354137;BestellVorschlagBez;nvarchar;50
+syncobj_0x3231304545354137;BestellVorschlagDatum;datetime;NULL
+syncobj_0x3231304545354137;IdBestellung;int;NULL
+syncobj_0x3231304545354137;IdBestellungPosition;int;NULL
+syncobj_0x3231304545354137;IdBestellVorschlag;int;NULL
+syncobj_0x3231304545354137;IdBestellVorschlagPosition;int;NULL
+syncobj_0x3231304545354137;IdJournalBestellPosition;int;NULL
+syncobj_0x3231304545354137;ReferenzBestellungDatum;datetime;NULL
+syncobj_0x3231304545354137;ReferenzBestellungNummer;nvarchar;50
+syncobj_0x3231304545354137;ReferenzBestellungPosition;nvarchar;50
+syncobj_0x3236324641363845;IdRahmenBestellung;int;NULL
+syncobj_0x3236324641363845;RahmenBestellungNummer;nvarchar;50
+syncobj_0x3242343730323946;Bestellnummer;nvarchar;50
+syncobj_0x3242453731414236;IdRahmenBestellung;int;NULL
+syncobj_0x3242453731414236;RahmenBestellungNummer;nvarchar;50
+syncobj_0x3244353144363645;JournalPositionGuid;uniqueidentifier;NULL
+syncobj_0x3244433237313735;ProductionReportData_ProductionReportDataId;int;NULL
+syncobj_0x3334333339314630;Bestellnummer;nvarchar;50
+syncobj_0x3336353232424531;IdBestellung;int;NULL
+syncobj_0x3337423033373130;Bestellnummer;nvarchar;50
+syncobj_0x3338423244453043;IdBestellMengenGrenzen;int;NULL
+syncobj_0x3338423244453043;MaximumBestellMenge;float;NULL
+syncobj_0x3338423244453043;MaximumBestellMengeVPK;float;NULL
+syncobj_0x3338423244453043;MinimumBestellMenge;float;NULL
+syncobj_0x3338423244453043;MinimumBestellMengeVPK;float;NULL
+syncobj_0x3338464535344242;bpos_artikel_id;int;NULL
+syncobj_0x3338464535344242;bpos_blaskopf_id;int;NULL
+syncobj_0x3338464535344242;bpos_farbe1_id;int;NULL
+syncobj_0x3338464535344242;bpos_farbe1_lief_id;int;NULL
+syncobj_0x3338464535344242;bpos_farbe2_id;int;NULL
+syncobj_0x3338464535344242;bpos_farbe2_lief_id;int;NULL
+syncobj_0x3338464535344242;bpos_farbe3_id;int;NULL
+syncobj_0x3338464535344242;bpos_farbe3_lief_id;int;NULL
+syncobj_0x3338464535344242;bpos_id;int;NULL
+syncobj_0x3338464535344242;bpos_IDwerkzeug;int;NULL
+syncobj_0x3338464535344242;bpos_karton_id;int;NULL
+syncobj_0x3338464535344242;bpos_kunde_id;int;NULL
+syncobj_0x3338464535344242;bpos_maschtypbudget_id;int;NULL
+syncobj_0x3338464535344242;bpos_material1_id;int;NULL
+syncobj_0x3338464535344242;bpos_material1_lief_id;int;NULL
+syncobj_0x3338464535344242;bpos_material2_id;int;NULL
+syncobj_0x3338464535344242;bpos_material2_lief_id;int;NULL
+syncobj_0x3338464535344242;bpos_material3_id;int;NULL
+syncobj_0x3338464535344242;bpos_material3_lief_id;int;NULL
+syncobj_0x3338464535344242;bpos_material4_id;int;NULL
+syncobj_0x3338464535344242;bpos_material4_lief_id;int;NULL
+syncobj_0x3338464535344242;bpos_material5_id;int;NULL
+syncobj_0x3338464535344242;bpos_material5_lief_id;int;NULL
+syncobj_0x3338464535344242;bpos_material6_id;int;NULL
+syncobj_0x3338464535344242;bpos_material6_lief_id;int;NULL
+syncobj_0x3338464535344242;bpos_palette_id;int;NULL
+syncobj_0x3338464535344242;bpos_polysack_id;int;NULL
+syncobj_0x3338464535344242;bpos_stretch_id;int;NULL
+syncobj_0x3338464535344242;bpos_zlage_id;int;NULL
+syncobj_0x3341343631303939;BestellPositionBewertung;float;NULL
+syncobj_0x3341343631303939;IdBestellPosition;int;NULL
+syncobj_0x3341343631303939;IdBestellPositionenBewertung;int;NULL
+syncobj_0x3430334246354537;ProductionReport_ProductionReportId;int;NULL
+syncobj_0x3432424636314544;IdRahmenBestellung;int;NULL
+syncobj_0x3432424636314544;IdRahmenBestellungPosition;int;NULL
+syncobj_0x3536343237414638;ReportAuthorizationId;int;NULL
+syncobj_0x3536343237414638;ReportId;int;NULL
+syncobj_0x3634334237463446;eReporting_IdWerk;int;NULL
+syncobj_0x3635304246443836;Bestellnummer;nvarchar;50
+syncobj_0x3635394142434538;BestellDatum;datetime;NULL
+syncobj_0x3635394142434538;BestellungDatum;datetime;NULL
+syncobj_0x3635394142434538;BestellungNummer;nvarchar;50
+syncobj_0x3635394142434538;BestellungPositionNr;int;NULL
+syncobj_0x3635394142434538;BestellVorschlagBez;nvarchar;50
+syncobj_0x3635394142434538;BestellVorschlagDatum;datetime;NULL
+syncobj_0x3635394142434538;IdBestellung;int;NULL
+syncobj_0x3635394142434538;IdBestellungPosition;int;NULL
+syncobj_0x3635394142434538;IdBestellVorschlag;int;NULL
+syncobj_0x3635394142434538;IdBestellVorschlagPosition;int;NULL
+syncobj_0x3635394142434538;IdJournalBestellPosition;int;NULL
+syncobj_0x3635394142434538;ReferenzBestellungDatum;datetime;NULL
+syncobj_0x3635394142434538;ReferenzBestellungNummer;nvarchar;50
+syncobj_0x3635394142434538;ReferenzBestellungPosition;nvarchar;50
+syncobj_0x3635443534353944;ReportAuthorizationId;int;NULL
+syncobj_0x3635443534353944;ReportId;int;NULL
+syncobj_0x3645414535324246;Bestellnummer;nvarchar;50
+syncobj_0x3738354532383330;Bestellnummer;nvarchar;50
+syncobj_0x3830423441374541;IdRahmenBestellung;int;NULL
+syncobj_0x3830423441374541;IdRahmenBestellungPosition;int;NULL
+syncobj_0x3839344430343033;BestellDatum;datetime;NULL
+syncobj_0x3839344430343033;BestellNr;nvarchar;50
+syncobj_0x3841384642363741;Bestellnummer;nvarchar;50
+syncobj_0x3842373233383843;IdBestellung;int;NULL
+syncobj_0x3842414339303836;BestellPositionStatus;int;NULL
+syncobj_0x3842414339303836;IdBestellPosition;int;NULL
+syncobj_0x3842414339303836;IdBestellung;int;NULL
+syncobj_0x3842414339303836;IdJournalBestellPosition;int;NULL
+syncobj_0x3846394341353746;bpos_artikel_id;int;NULL
+syncobj_0x3846394341353746;bpos_blaskopf_id;int;NULL
+syncobj_0x3846394341353746;bpos_farbe1_id;int;NULL
+syncobj_0x3846394341353746;bpos_farbe1_lief_id;int;NULL
+syncobj_0x3846394341353746;bpos_farbe2_id;int;NULL
+syncobj_0x3846394341353746;bpos_farbe2_lief_id;int;NULL
+syncobj_0x3846394341353746;bpos_farbe3_id;int;NULL
+syncobj_0x3846394341353746;bpos_farbe3_lief_id;int;NULL
+syncobj_0x3846394341353746;bpos_id;int;NULL
+syncobj_0x3846394341353746;bpos_IDwerkzeug;int;NULL
+syncobj_0x3846394341353746;bpos_karton_id;int;NULL
+syncobj_0x3846394341353746;bpos_kunde_id;int;NULL
+syncobj_0x3846394341353746;bpos_maschtypbudget_id;int;NULL
+syncobj_0x3846394341353746;bpos_material1_id;int;NULL
+syncobj_0x3846394341353746;bpos_material1_lief_id;int;NULL
+syncobj_0x3846394341353746;bpos_material2_id;int;NULL
+syncobj_0x3846394341353746;bpos_material2_lief_id;int;NULL
+syncobj_0x3846394341353746;bpos_material3_id;int;NULL
+syncobj_0x3846394341353746;bpos_material3_lief_id;int;NULL
+syncobj_0x3846394341353746;bpos_material4_id;int;NULL
+syncobj_0x3846394341353746;bpos_material4_lief_id;int;NULL
+syncobj_0x3846394341353746;bpos_material5_id;int;NULL
+syncobj_0x3846394341353746;bpos_material5_lief_id;int;NULL
+syncobj_0x3846394341353746;bpos_material6_id;int;NULL
+syncobj_0x3846394341353746;bpos_material6_lief_id;int;NULL
+syncobj_0x3846394341353746;bpos_palette_id;int;NULL
+syncobj_0x3846394341353746;bpos_polysack_id;int;NULL
+syncobj_0x3846394341353746;bpos_stretch_id;int;NULL
+syncobj_0x3846394341353746;bpos_zlage_id;int;NULL
+syncobj_0x3932433435313638;ComplaintPositionId;uniqueidentifier;NULL
+syncobj_0x3937433534364635;BestellDatum;datetime;NULL
+syncobj_0x3937433534364635;BestellMenge;float;NULL
+syncobj_0x3937433534364635;Bestellt;int;NULL
+syncobj_0x3937433534364635;IdBestellung;int;NULL
+syncobj_0x3937433534364635;IdRahmenBestellungPosition;int;NULL
+syncobj_0x3944324638433031;JournalPositionGuid;uniqueidentifier;NULL
+syncobj_0x4132393243314439;BestellDatum;datetime;NULL
+syncobj_0x4132393243314439;BestellMenge;float;NULL
+syncobj_0x4132393243314439;BestellMengeVPK;float;NULL
+syncobj_0x4133314631433830;ReportId;int;NULL
+syncobj_0x4144384341343432;eReporting_IdWerk;int;NULL
+syncobj_0x4239374135324443;Bestellnummer;nvarchar;50
+syncobj_0x4242323630453637;Bestellnummer;nvarchar;50
+syncobj_0x4334323246423334;BestellDatum;datetime;NULL
+syncobj_0x4334323246423334;BestellMenge;float;NULL
+syncobj_0x4334323246423334;BestellMengeVPK;float;NULL
+syncobj_0x4334323246423334;Bestellt;int;NULL
+syncobj_0x4334323246423334;IdBestellung;int;NULL
+syncobj_0x4334323246423334;IdBestellvorschlag;int;NULL
+syncobj_0x4334323246423334;IdRahmenbestellungPosition;int;NULL
+syncobj_0x4338304339304138;IdBestellung;int;NULL
+syncobj_0x4338304339304138;IdBestellungJournal;int;NULL
+syncobj_0x4338393645343642;IdBestellMengenGrenzen;int;NULL
+syncobj_0x4338393645343642;MaximumBestellMenge;float;NULL
+syncobj_0x4338393645343642;MaximumBestellMengeVPK;float;NULL
+syncobj_0x4338393645343642;MinimumBestellMenge;float;NULL
+syncobj_0x4338393645343642;MinimumBestellMengeVPK;float;NULL
+syncobj_0x4433323446363335;BestellDatum;datetime;NULL
+syncobj_0x4433323446363335;BestellMenge;float;NULL
+syncobj_0x4433323446363335;BestellMengeVPK;float;NULL
+syncobj_0x4437314434464631;BestellVorschlagRevision;int;NULL
+syncobj_0x4437314434464631;eReporting_IdWerk;int;NULL
+syncobj_0x4437314434464631;IdBestellVorschlag;int;NULL
+syncobj_0x4530413532423730;BestellDatum;datetime;NULL
+syncobj_0x4530413532423730;BestellNr;nvarchar;50
+syncobj_0x4535373142434141;ComplaintPositionId;uniqueidentifier;NULL
+syncobj_0x4538314344354344;CompoundId;int;NULL
+syncobj_0x4539383642353033;ProductionReport_ProductionReportId;int;NULL
+syncobj_0x4634344137423339;BestellDatum;datetime;NULL
+syncobj_0x4634344137423339;BestellMenge;float;NULL
+syncobj_0x4634344137423339;BestellMengeVPK;float;NULL
+syncobj_0x4634344137423339;Bestellt;int;NULL
+syncobj_0x4634344137423339;IdBestellung;int;NULL
+syncobj_0x4634344137423339;IdBestellvorschlag;int;NULL
+syncobj_0x4634344137423339;IdRahmenbestellungPosition;int;NULL
+syncobj_0x4636374246324545;AnzahlAVProHEBestellt;int;NULL
+syncobj_0x4636374246324545;AnzahlAVProVpkBestellt;int;NULL
+syncobj_0x4636374246324545;BestellMenge;float;NULL
+syncobj_0x4636374246324545;BestellMengeHE;int;NULL
+syncobj_0x4636374246324545;BestellMengeTE;int;NULL
+syncobj_0x4636374246324545;BestellMengeVPK;float;NULL
+syncobj_0x4636374246324545;HandelsEinheitBestelltBez;nvarchar;100
+syncobj_0x4636374246324545;HandelsEinheitBestelltTyp;int;NULL
+syncobj_0x4636374246324545;HauptmaterialBestelltBez;nvarchar;50
+syncobj_0x4636374246324545;IdHandelsEinheitBestellt;int;NULL
+syncobj_0x4636374246324545;IdHauptmaterialBestellt;int;NULL
+syncobj_0x4636374246324545;IdTransportEinheitBestellt;int;NULL
+syncobj_0x4636374246324545;IdVpkVorschriftBestellt;int;NULL
+syncobj_0x4636374246324545;TransportEinheitBestelltBez;nvarchar;100
+syncobj_0x4636374246324545;TransportEinheitBestelltTyp;int;NULL
+syncobj_0x4636374246324545;VpkVorschriftBestelltBez;nvarchar;100
+syncobj_0x4636423339393945;BestellDatum;datetime;NULL
+syncobj_0x4636423339393945;BestellMenge;float;NULL
+syncobj_0x4636423339393945;BestellMengeVPK;float;NULL
+syncobj_0x4636423339393945;IdBestellPosition;int;NULL
+syncobj_0x4636423339393945;IdBestellung;int;NULL
+syncobj_0x4636423339393945;IdJournalBestellPosition;int;NULL
+syncobj_0x4636423339393945;IdRahmenbestellungPosition;int;NULL
+syncobj_0x4637463431324342;Bestellnummer;nvarchar;50
+syncobj_0x4638463232334345;AnzahlAVProHEBestellt;int;NULL
+syncobj_0x4638463232334345;AnzahlAVProVpkBestellt;int;NULL
+syncobj_0x4638463232334345;BestellMenge;float;NULL
+syncobj_0x4638463232334345;BestellMengeHE;int;NULL
+syncobj_0x4638463232334345;BestellMengeTE;int;NULL
+syncobj_0x4638463232334345;BestellMengeVPK;float;NULL
+syncobj_0x4638463232334345;HandelsEinheitBestelltBez;nvarchar;100
+syncobj_0x4638463232334345;HandelsEinheitBestelltTyp;int;NULL
+syncobj_0x4638463232334345;HauptmaterialBestelltBez;nvarchar;50
+syncobj_0x4638463232334345;IdHandelsEinheitBestellt;int;NULL
+syncobj_0x4638463232334345;IdHauptmaterialBestellt;int;NULL
+syncobj_0x4638463232334345;IdTransportEinheitBestellt;int;NULL
+syncobj_0x4638463232334345;IdVpkVorschriftBestellt;int;NULL
+syncobj_0x4638463232334345;TransportEinheitBestelltBez;nvarchar;100
+syncobj_0x4638463232334345;TransportEinheitBestelltTyp;int;NULL
+syncobj_0x4638463232334345;VpkVorschriftBestelltBez;nvarchar;100
+syncobj_0x4644423934423546;BestellDatum;datetime;NULL
+syncobj_0x4644423934423546;BestellMenge;float;NULL
+syncobj_0x4644423934423546;Bestellt;int;NULL
+syncobj_0x4644423934423546;IdBestellung;int;NULL
+syncobj_0x4644423934423546;IdRahmenBestellungPosition;int;NULL
+T_BerichtBerechtigungen;ReportAuthorizationId;int;NULL
+T_BerichtBerechtigungen;ReportId;int;NULL
+T_Berichte;ReportId;int;NULL
+T_EAIFakturaPositionen;BestellDatum;datetime;NULL
+T_EAIFakturaPositionen;BestellMenge;float;NULL
+T_EAIFakturaPositionen;BestellMengeVPK;float;NULL
+T_EAIJournal;BestellVorschlagRevision;int;NULL
+T_EAIJournal;eReporting_IdWerk;int;NULL
+T_EAIJournal;IdBestellVorschlag;int;NULL
+T_EAIJournalEx;eReporting_IdWerk;int;NULL
+T_EAIJournalPosition;BestellDatum;datetime;NULL
+T_EAIJournalPosition;BestellungDatum;datetime;NULL
+T_EAIJournalPosition;BestellungNummer;nvarchar;50
+T_EAIJournalPosition;BestellungPositionNr;int;NULL
+T_EAIJournalPosition;BestellVorschlagBez;nvarchar;50
+T_EAIJournalPosition;BestellVorschlagDatum;datetime;NULL
+T_EAIJournalPosition;IdBestellung;int;NULL
+T_EAIJournalPosition;IdBestellungPosition;int;NULL
+T_EAIJournalPosition;IdBestellVorschlag;int;NULL
+T_EAIJournalPosition;IdBestellVorschlagPosition;int;NULL
+T_EAIJournalPosition;IdJournalBestellPosition;int;NULL
+T_EAIJournalPosition;ReferenzBestellungDatum;datetime;NULL
+T_EAIJournalPosition;ReferenzBestellungNummer;nvarchar;50
+T_EAIJournalPosition;ReferenzBestellungPosition;nvarchar;50
+T_EAIJournalWarenPosition;AnzahlAVProHEBestellt;int;NULL
+T_EAIJournalWarenPosition;AnzahlAVProVpkBestellt;int;NULL
+T_EAIJournalWarenPosition;BestellMenge;float;NULL
+T_EAIJournalWarenPosition;BestellMengeHE;int;NULL
+T_EAIJournalWarenPosition;BestellMengeTE;int;NULL
+T_EAIJournalWarenPosition;BestellMengeVPK;float;NULL
+T_EAIJournalWarenPosition;HandelsEinheitBestelltBez;nvarchar;100
+T_EAIJournalWarenPosition;HandelsEinheitBestelltTyp;int;NULL
+T_EAIJournalWarenPosition;HauptmaterialBestelltBez;nvarchar;50
+T_EAIJournalWarenPosition;IdHandelsEinheitBestellt;int;NULL
+T_EAIJournalWarenPosition;IdHauptmaterialBestellt;int;NULL
+T_EAIJournalWarenPosition;IdTransportEinheitBestellt;int;NULL
+T_EAIJournalWarenPosition;IdVpkVorschriftBestellt;int;NULL
+T_EAIJournalWarenPosition;TransportEinheitBestelltBez;nvarchar;100
+T_EAIJournalWarenPosition;TransportEinheitBestelltTyp;int;NULL
+T_EAIJournalWarenPosition;VpkVorschriftBestelltBez;nvarchar;100
+T_EAIMandanten;eReporting_IdWerk;int;NULL
+T_EDIDokumentPositionen;BestellDatum;datetime;NULL
+T_EDIDokumentPositionen;BestellNr;nvarchar;50
+T_EtikettenDefault;Bestellnummer;nvarchar;50
+T_EtikettenDruckJobs;Bestellnummer;nvarchar;50
+T_EtikettenGedruckt;Bestellnummer;nvarchar;50
+T_EtikettenVerworfen;Bestellnummer;nvarchar;50
+T_IncomingGoodCustomerReturns;ComplaintPositionId;uniqueidentifier;NULL
+T_InhouseLieferungen;JournalPositionGuid;uniqueidentifier;NULL
+T_Maschinen_ProdPlanungen;Bestellnummer;nvarchar;50
+T_ProductionFigures;CompoundId;int;NULL
+T_ProduktionsRueckmeldungDaten;ProductionReport_ProductionReportId;int;NULL
+T_ProduktionsRueckmeldungDatenDetail;ProductionReportData_ProductionReportDataId;int;NULL
+T_Stillstandsereignis;ProductionReport_ProductionReportId;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_artikel_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_blaskopf_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_farbe1_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_farbe1_lief_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_farbe2_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_farbe2_lief_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_farbe3_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_farbe3_lief_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_IDwerkzeug;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_karton_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_kunde_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_maschtypbudget_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_material1_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_material1_lief_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_material2_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_material2_lief_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_material3_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_material3_lief_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_material4_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_material4_lief_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_material5_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_material5_lief_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_material6_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_material6_lief_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_palette_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_polysack_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_stretch_id;int;NULL
+T_tmpBudget_eMis_Positionen;bpos_zlage_id;int;NULL
+T_Wareneingaenge;BestellPositionStatus;int;NULL
+T_Wareneingaenge;IdBestellPosition;int;NULL
+T_Wareneingaenge;IdBestellung;int;NULL
+T_Wareneingaenge;IdJournalBestellPosition;int;NULL
+V_AuftragsPositionsSummen;Bestelldatum;datetime;NULL
+V_AuftragsPositionsSummen;BestellMenge;float;NULL
+V_AuftragsPositionsSummen;BestellMengeVPK;float;NULL
+V_Blaskopf_CENTRAL;IdeReporting_WerkId;int;NULL
+V_EAIJournalPositionHeader;BestellDatum;datetime;NULL
+V_EAIJournalPositionHeader;IdJournalBestellPosition;int;NULL
+V_EAIJournalPositionSummary;BestellDatum;datetime;NULL
+V_EAIJournalPositionSummary;BestellungDatum;datetime;NULL
+V_EAIJournalPositionSummary;BestellungNummer;nvarchar;50
+V_EAIJournalPositionSummary;eReporting_IdWerk;int;NULL
+V_EAIJournalPositionSummary;IdBestellung;int;NULL
+V_EAIJournalPositionSummary;IdBestellungPosition;int;NULL
+V_EAIJournalPositionSummary;IdBestellVorschlag;int;NULL
+V_EAIJournalPositionSummary;IdBestellVorschlagPosition;int;NULL
+V_EAIJournalPositionSummary;IdJournalBestellPosition;int;NULL
+V_EDIDokumentPositionen;BestellDatum;datetime;NULL
+V_EDIDokumentPositionen;BestellNr;nvarchar;50
+V_EDIPositionDetails;BestellDatum;datetime;NULL
+V_EDIPositionDetails;BestellNr;nvarchar;50
+V_EDIPositionDetails;EDIDokumentPositionenValidation;nvarchar;1000
+V_eMIS_EAIJournalPositionSummary;BestellDatum_eMIS;datetime;NULL
+V_eMIS_EAIJournalPositionSummary;BestellungDatum_eMIS;int;NULL
+V_eMIS_EAIJournalPositionSummary;BestellungNummer_eMIS;int;NULL
+V_eMIS_EAIJournalPositionSummary;eReporting_IdWerk_eMIS;int;NULL
+V_eMIS_EAIJournalPositionSummary;IdBestellung_eMIS;int;NULL
+V_eMIS_EAIJournalPositionSummary;IdJournalBestellPosition_eMIS;int;NULL
+V_EtikettenGedruckt;Bestellnummer;nvarchar;50
+V_EtikettenVerworfen;Bestellnummer;nvarchar;50
+V_HistoryVK_AktuelleUndZukuenftigePreise_BASIS;RezPosIdArtikelvarianten;int;NULL
+V_HistoryVK_AktuelleUndZukuenftigePreise_BASIS;RezPosIdRez;int;NULL
+V_HistoryVK_BASIS;RezPosIdArtikelvarianten;int;NULL
+V_HistoryVK_BASIS;RezPosIdRez;int;NULL
+V_HistoryVK_Hauptkunden_BASIS;RezPosIdArtikelvarianten;int;NULL
+V_HistoryVK_Hauptkunden_BASIS;RezPosIdRez;int;NULL
+V_HistoryVK_HauptmaterialTyp_BASIS;RezPosIdArtikelvarianten;int;NULL
+V_HistoryVK_HauptmaterialTyp_BASIS;RezPosIdArtikelvariantenTyp;int;NULL
+V_HistoryVK_HauptmaterialTyp_BASIS;RezPosIdRez;int;NULL
+V_HistoryVK_HauptmaterialTyp_BASIS;RezPosIdRezPos;int;NULL
+V_HistoryVK_HauptmaterialTypGruppiert_BASIS;RezPosIdArtikelvarianten;int;NULL
+V_HistoryVK_HauptmaterialTypGruppiert_BASIS;RezPosIdArtikelvariantenTyp;int;NULL
+V_HistoryVK_HauptmaterialTypGruppiert_BASIS;RezPosIdRez;int;NULL
+V_HistoryVK_HauptmaterialTypGruppiert_BASIS;RezPosIdRezPos;int;NULL
+V_HistoryVK_Hauptverpackung_BASIS;VpkPosIdArtikelvarianten;int;NULL
+V_IncomingGoodCustomerReturns;ComplaintPositionId;uniqueidentifier;NULL
+V_InhouseLieferungen;JournalPositionGuid;uniqueidentifier;NULL
+V_LieferscheinPositionen;BestellDatum;datetime;NULL
+V_LieferscheinPositionen;BestellMenge;float;NULL
+V_LieferscheinPositionen;BestellMengeVPK;float;NULL
+V_MachineProductionLotAssignment;Bestellnummer;nvarchar;50
+V_MaintenanceMessdatenStillstaende;ProductionReport_ProductionReportId;int;NULL
+V_Maschinen_CENTRAL;IdeReporting_WerkId;int;NULL
+V_Maschinen_ProdPlanungen;Bestellnummer;nvarchar;50
+v_MD_purchase_price_list;ID purchase price;int;NULL
+v_MD_purchase_price_list;purchase price;float;NULL
+V_MES_ArticleVariant;Component_Id;int;NULL
+V_MES_ArticleVariant;Purchase_Id;int;NULL
+V_MES_Compounds;Compound_ID;int;NULL
+V_MES_Compounds;CompoundPos_ID;int;NULL
+V_MES_ProductionLots;Compound_Id;int;NULL
+V_ProductionFigures;CompoundId;int;NULL
+V_ProductionReportData;ProductionReport_ProductionReportId;int;NULL
+V_ProduktionsRueckmeldungDaten;ProductionReport_ProductionReportId;int;NULL
+V_TrackerEtikettenVerworfen;Bestellnummer;nvarchar;50
+V_TrackerLieferscheinLieferPositionen;BestellDatum;datetime;NULL
+V_Wareneingaenge;BestellPositionStatus;int;NULL
+V_Wareneingaenge;IdBestellPosition;int;NULL
+V_Wareneingaenge;IdBestellung;int;NULL
+V_Wareneingaenge;IdJournalBestellPosition;int;NULL
+
+(412 rows affected)
+TABLE_NAME;COLUMN_NAME;DATA_TYPE;CHARACTER_MAXIMUM_LENGTH
+----------;-----------;---------;------------------------
+syncobj_0x3034303432433431;AbrufNr;nvarchar;100
+syncobj_0x3034303432433431;IdEAIKundenAbrufBestaetigungen;int;NULL
+syncobj_0x3034303432433431;KundeAbrufNr;nvarchar;100
+syncobj_0x3039373443443136;IdAuftragsAbruf;int;NULL
+syncobj_0x3041384543433538;Abrufnummer;nvarchar;50
+syncobj_0x3041384543433538;IdAbruf;int;NULL
+syncobj_0x3041384543433538;IdAuftragsAbruf;int;NULL
+syncobj_0x3042464142373036;RestAbrufMenge;float;NULL
+syncobj_0x3042464142373036;RestAbrufMengeVPK;float;NULL
+syncobj_0x3043333631393836;AbrufStatus;int;NULL
+syncobj_0x3043333631393836;IdAbruf;int;NULL
+syncobj_0x3045433141433846;AbrufAbdeckung;float;NULL
+syncobj_0x3045433141433846;AbrufBemerkung;nvarchar;250
+syncobj_0x3045433141433846;AbrufDatum;datetime;NULL
+syncobj_0x3045433141433846;AbrufLadeDatum;datetime;NULL
+syncobj_0x3045433141433846;AbrufLieferStatus;int;NULL
+syncobj_0x3045433141433846;AbrufLiefertermin;datetime;NULL
+syncobj_0x3045433141433846;AbrufMenge;float;NULL
+syncobj_0x3045433141433846;AbrufMengeVPK;float;NULL
+syncobj_0x3045433141433846;AbrufNummer;nvarchar;50
+syncobj_0x3045433141433846;AbrufStatus;int;NULL
+syncobj_0x3045433141433846;EdiAbrufDatum;datetime;NULL
+syncobj_0x3045433141433846;EdiAbrufLadeDatum;datetime;NULL
+syncobj_0x3045433141433846;EdiAbrufLiefertermin;datetime;NULL
+syncobj_0x3045433141433846;EdiAbrufMenge;float;NULL
+syncobj_0x3045433141433846;EdiAbrufMengeVPK;float;NULL
+syncobj_0x3045433141433846;IdAuftragsAbruf;int;NULL
+syncobj_0x3133324534443536;IdAuftragsAbruf;int;NULL
+syncobj_0x3134423035313534;RestAbrufMenge;float;NULL
+syncobj_0x3134423035313534;RestAbrufMengeVPK;float;NULL
+syncobj_0x3231304545354137;AuftragsAbrufDatum;datetime;NULL
+syncobj_0x3231304545354137;AuftragsAbrufNummer;nvarchar;50
+syncobj_0x3231304545354137;IdAuftragsAbruf;int;NULL
+syncobj_0x3235343336373536;EdiAbrufLiefertermin;datetime;NULL
+syncobj_0x3235343336373536;EdiAbrufMenge;float;NULL
+syncobj_0x3235343336373536;EdiAbrufMengeVPK;float;NULL
+syncobj_0x3235343336373536;IdAuftragsAbruf;int;NULL
+syncobj_0x3235343336373536;IdEAIKundenAbrufe;int;NULL
+syncobj_0x3235343336373536;IdKundenAbrufe;int;NULL
+syncobj_0x3235343336373536;KundeAbrufNr;nvarchar;100
+syncobj_0x3244313238373841;AbrufStatus;int;NULL
+syncobj_0x3244313238373841;IdAbruf;int;NULL
+syncobj_0x3336303443434641;Abrufnummer;nvarchar;50
+syncobj_0x3336303443434641;IdAbruf;int;NULL
+syncobj_0x3336303443434641;IdAuftragsAbruf;int;NULL
+syncobj_0x3443393534324231;IdEAIKundenAbrufe;int;NULL
+syncobj_0x3443393534324231;KundeAbrufNr;nvarchar;100
+syncobj_0x3446384337463145;AbrufAbdeckung;float;NULL
+syncobj_0x3446384337463145;AbrufDatum;datetime;NULL
+syncobj_0x3446384337463145;Abrufnummer;nvarchar;50
+syncobj_0x3446384337463145;AbrufStatus;int;NULL
+syncobj_0x3446384337463145;IdAbrufe;int;NULL
+syncobj_0x3446384337463145;IdAuftragsAbruf;int;NULL
+syncobj_0x3538413336433345;AbrufAbdeckung;float;NULL
+syncobj_0x3538413336433345;AbrufDatum;datetime;NULL
+syncobj_0x3538413336433345;Abrufnummer;nvarchar;50
+syncobj_0x3538413336433345;AbrufStatus;int;NULL
+syncobj_0x3538413336433345;IdAbrufe;int;NULL
+syncobj_0x3538413336433345;IdAuftragsAbruf;int;NULL
+syncobj_0x3541374435444131;IdAuftragsAbruf;int;NULL
+syncobj_0x3542303236434444;IdEAIKundenAbrufe;int;NULL
+syncobj_0x3542303236434444;IdKundenAbrufe;int;NULL
+syncobj_0x3542303236434444;IdkundenAbrufeHistorie;int;NULL
+syncobj_0x3542303236434444;KundeAbrufNr;nvarchar;100
+syncobj_0x3544424636433146;IdAbrufe;int;NULL
+syncobj_0x3635394142434538;AuftragsAbrufDatum;datetime;NULL
+syncobj_0x3635394142434538;AuftragsAbrufNummer;nvarchar;50
+syncobj_0x3635394142434538;IdAuftragsAbruf;int;NULL
+syncobj_0x3732353935363746;AbrufNr;nvarchar;100
+syncobj_0x3732353935363746;IdEAIKundenAbrufBestaetigungen;int;NULL
+syncobj_0x3732353935363746;KundeAbrufNr;nvarchar;100
+syncobj_0x3742303042453734;IdEAIKundenAbrufe;int;NULL
+syncobj_0x3742303042453734;IdKundenAbrufe;int;NULL
+syncobj_0x3742303042453734;IdkundenAbrufeHistorie;int;NULL
+syncobj_0x3742303042453734;KundeAbrufNr;nvarchar;100
+syncobj_0x3746424142423438;AbrufAbgleichLogik;int;NULL
+syncobj_0x3839344430343033;AbrufNr;nvarchar;50
+syncobj_0x3839344430343033;AlplaAbrufNr;nvarchar;50
+syncobj_0x3841343830343141;AbrufAbdeckung;float;NULL
+syncobj_0x3841343830343141;AbrufBemerkung;nvarchar;250
+syncobj_0x3841343830343141;AbrufDatum;datetime;NULL
+syncobj_0x3841343830343141;AbrufLadeDatum;datetime;NULL
+syncobj_0x3841343830343141;AbrufLieferStatus;int;NULL
+syncobj_0x3841343830343141;AbrufLiefertermin;datetime;NULL
+syncobj_0x3841343830343141;AbrufMenge;float;NULL
+syncobj_0x3841343830343141;AbrufMengeVPK;float;NULL
+syncobj_0x3841343830343141;AbrufNummer;nvarchar;50
+syncobj_0x3841343830343141;AbrufStatus;int;NULL
+syncobj_0x3841343830343141;IdAuftragsAbruf;int;NULL
+syncobj_0x3841343830343141;IdAuftragsAbrufeHistorie;int;NULL
+syncobj_0x3842323939413731;AbrufAbdeckung;float;NULL
+syncobj_0x3842323939413731;AbrufBemerkung;nvarchar;250
+syncobj_0x3842323939413731;AbrufDatum;datetime;NULL
+syncobj_0x3842323939413731;AbrufLadeDatum;datetime;NULL
+syncobj_0x3842323939413731;AbrufLieferStatus;int;NULL
+syncobj_0x3842323939413731;AbrufLiefertermin;datetime;NULL
+syncobj_0x3842323939413731;AbrufMenge;float;NULL
+syncobj_0x3842323939413731;AbrufMengeVPK;float;NULL
+syncobj_0x3842323939413731;AbrufNummer;nvarchar;50
+syncobj_0x3842323939413731;AbrufStatus;int;NULL
+syncobj_0x3842323939413731;IdAuftragsAbruf;int;NULL
+syncobj_0x3842323939413731;IdAuftragsAbrufeHistorie;int;NULL
+syncobj_0x3842384531423943;EdiAbrufLiefertermin;datetime;NULL
+syncobj_0x3842384531423943;EdiAbrufMenge;float;NULL
+syncobj_0x3842384531423943;EdiAbrufMengeVPK;float;NULL
+syncobj_0x3842384531423943;IdAuftragsAbruf;int;NULL
+syncobj_0x3842384531423943;IdEAIKundenAbrufe;int;NULL
+syncobj_0x3842384531423943;IdKundenAbrufe;int;NULL
+syncobj_0x3842384531423943;KundeAbrufNr;nvarchar;100
+syncobj_0x3842414339303836;IdAuftragsAbruf;int;NULL
+syncobj_0x3842443443333937;IdAbrufe;int;NULL
+syncobj_0x4132393243314439;AbrufNummer;nvarchar;50
+syncobj_0x4132393243314439;IdAbruf;int;NULL
+syncobj_0x4132393243314439;IdAuftragsAbruf;int;NULL
+syncobj_0x4142434443324638;IdAuftragsAbruf;int;NULL
+syncobj_0x4232323144333143;AbrufNr;nvarchar;100
+syncobj_0x4232323144333143;IdEAIKundenAbrufBestaetigungen;int;NULL
+syncobj_0x4232323144333143;IdKundenAbrufBestaetigungen;int;NULL
+syncobj_0x4232323144333143;KundeAbrufNr;nvarchar;100
+syncobj_0x4430463142304143;AbrufNr;nvarchar;100
+syncobj_0x4430463142304143;IdEAIKundenAbrufBestaetigungen;int;NULL
+syncobj_0x4430463142304143;IdKundenAbrufBestaetigungen;int;NULL
+syncobj_0x4430463142304143;KundeAbrufNr;nvarchar;100
+syncobj_0x4433323446363335;AbrufNummer;nvarchar;50
+syncobj_0x4433323446363335;IdAbruf;int;NULL
+syncobj_0x4433323446363335;IdAuftragsAbruf;int;NULL
+syncobj_0x4438313345333438;AbrufAbdeckung;float;NULL
+syncobj_0x4438313345333438;AbrufBemerkung;nvarchar;250
+syncobj_0x4438313345333438;AbrufDatum;datetime;NULL
+syncobj_0x4438313345333438;AbrufLadeDatum;datetime;NULL
+syncobj_0x4438313345333438;AbrufLieferStatus;int;NULL
+syncobj_0x4438313345333438;AbrufLiefertermin;datetime;NULL
+syncobj_0x4438313345333438;AbrufMenge;float;NULL
+syncobj_0x4438313345333438;AbrufMengeVPK;float;NULL
+syncobj_0x4438313345333438;AbrufNummer;nvarchar;50
+syncobj_0x4438313345333438;AbrufStatus;int;NULL
+syncobj_0x4438313345333438;EdiAbrufDatum;datetime;NULL
+syncobj_0x4438313345333438;EdiAbrufLadeDatum;datetime;NULL
+syncobj_0x4438313345333438;EdiAbrufLiefertermin;datetime;NULL
+syncobj_0x4438313345333438;EdiAbrufMenge;float;NULL
+syncobj_0x4438313345333438;EdiAbrufMengeVPK;float;NULL
+syncobj_0x4438313345333438;IdAuftragsAbruf;int;NULL
+syncobj_0x4438414335324138;AbrufAbgleichLogik;int;NULL
+syncobj_0x4530413532423730;AbrufNr;nvarchar;50
+syncobj_0x4530413532423730;AlplaAbrufNr;nvarchar;50
+syncobj_0x4538394344333932;IdAuftragsAbruf;int;NULL
+syncobj_0x4633444545413330;IdEAIKundenAbrufe;int;NULL
+syncobj_0x4633444545413330;KundeAbrufNr;nvarchar;100
+T_AuftragsKomponenten;IdAuftragsAbruf;int;NULL
+T_AuftragsLeistungen;IdAuftragsAbruf;int;NULL
+T_EAIFakturaPositionen;AbrufNummer;nvarchar;50
+T_EAIFakturaPositionen;IdAbruf;int;NULL
+T_EAIFakturaPositionen;IdAuftragsAbruf;int;NULL
+T_EAIJournalBestellPosition;RestAbrufMenge;float;NULL
+T_EAIJournalBestellPosition;RestAbrufMengeVPK;float;NULL
+T_EAIJournalPosition;AuftragsAbrufDatum;datetime;NULL
+T_EAIJournalPosition;AuftragsAbrufNummer;nvarchar;50
+T_EAIJournalPosition;IdAuftragsAbruf;int;NULL
+T_EDIDokumentPositionen;AbrufNr;nvarchar;50
+T_EDIDokumentPositionen;AlplaAbrufNr;nvarchar;50
+T_KundenBeziehungen;AbrufAbgleichLogik;int;NULL
+T_LadePlanungen;IdAbrufe;int;NULL
+T_LieferscheinPositionen;Abrufnummer;nvarchar;50
+T_LieferscheinPositionen;IdAbruf;int;NULL
+T_LieferscheinPositionen;IdAuftragsAbruf;int;NULL
+T_Retourwaren;AbrufStatus;int;NULL
+T_Retourwaren;IdAbruf;int;NULL
+T_TEMP_INVOICE;IdAuftragsAbruf;int;NULL
+T_Wareneingaenge;IdAuftragsAbruf;int;NULL
+V_AppLieferplan;Abrufnummer;nvarchar;50
+V_AuftragsKomponenten;IdAuftragsAbruf;int;NULL
+V_AuftragsLeistungen;IdAuftragsAbruf;int;NULL
+V_AuftragsPositionsSummen;AbrufNummer;nvarchar;50
+V_AuftragsPositionsSummen;AbrufTyp;int;NULL
+V_AuftragsPositionsSummen;IdAuftragsAbruf;int;NULL
+V_AuftragsSuche;AbrufNummer;nvarchar;50
+V_AuftragsSuche;AbrufTyp;int;NULL
+V_AuftragsSuche;IdAuftragsAbruf;int;NULL
+V_EAIJournalPositionSummary;AuftragsAbrufDatum;datetime;NULL
+V_EAIJournalPositionSummary;AuftragsAbrufNummer;nvarchar;50
+V_EAIJournalPositionSummary;IdAuftragsAbruf;int;NULL
+V_EDIDokumentPositionen;AbrufNr;nvarchar;50
+V_EDIDokumentPositionen;AlplaAbrufNr;nvarchar;50
+V_EDIDokumentPositionen_ORDER;AbrufNr;nvarchar;50
+V_EDIDokumentPositionen_ORDER;AlplaAbrufNr;nvarchar;50
+V_EDIDokumentPositionen_ORDER;IdAuftragsAbruf;int;NULL
+V_EDIDokumentPositionen_ORDER;IdKundenAbrufe;int;NULL
+V_EDIDokumentPositionen_ORDER;KundenAbrufStatus;int;NULL
+V_EDIPositionDetails;AbrufNr;nvarchar;50
+V_EDIPositionDetails;AlplaAbrufNr;nvarchar;50
+V_eMIS_EAIJournalPositionSummary;AuftragsAbrufDatum_eMIS;int;NULL
+V_eMIS_EAIJournalPositionSummary;AuftragsAbrufNummer_eMIS;int;NULL
+V_eMIS_EAIJournalPositionSummary;IdAuftragsAbruf_eMIS;int;NULL
+V_KundenBeziehungen;AbrufAbgleichLogik;int;NULL
+V_KundenBeziehungen_BASIS;AbrufAbgleichLogik;int;NULL
+V_LadePlanungen;IdAbrufe;int;NULL
+V_LadePlanungenLadePositionenSum;IdAbrufe;int;NULL
+V_LadePlanungenLadePositionenSum;IdAuftragsAbruf;int;NULL
+V_LadePlanungenSum;IdAbrufe;int;NULL
+V_LieferscheinPositionen;Abrufnummer;nvarchar;50
+V_LieferscheinPositionen;IdAbruf;int;NULL
+V_LieferscheinPositionen;IdAuftragsAbruf;int;NULL
+V_Retourwaren;Abrufnummer;nvarchar;50
+V_Retourwaren;AbrufStatus;int;NULL
+V_Retourwaren;IdAbruf;int;NULL
+V_Retourwaren;IdAuftragsAbruf;int;NULL
+V_TrackerLieferscheinLieferPositionen;AuftragsAbrufDatum;datetime;NULL
+V_TrackerLieferscheinLieferPositionen;AuftragsAbrufNummer;nvarchar;50
+V_TrackerLieferscheinLieferPositionen;IdAuftragsAbruf;int;NULL
+V_Wareneingaenge;IdAuftragsAbruf;int;NULL
+
+(210 rows affected)
+TABLE_NAME;COLUMN_NAME;DATA_TYPE;CHARACTER_MAXIMUM_LENGTH
+----------;-----------;---------;------------------------
+syncobj_0x3039373443443136;IdWareneingang;int;NULL
+syncobj_0x3236433930464332;IdWareneingang;int;NULL
+syncobj_0x3236433930464332;IdWareneingangAuftrag;int;NULL
+syncobj_0x3236433930464332;IdWareneingangPlanung;int;NULL
+syncobj_0x3241313633323536;IdWareneingangBewertung;int;NULL
+syncobj_0x3241313633323536;IdWareneingangPlanung;int;NULL
+syncobj_0x3430313230443543;IdAppStaplerEingang;int;NULL
+syncobj_0x3430313230443543;IdWareneingangAuftrag;int;NULL
+syncobj_0x3441414345333633;IdWareneingangBewertung;int;NULL
+syncobj_0x3441414345333633;IdWareneingangPlanung;int;NULL
+syncobj_0x3530364331444544;IdWareneingangAuftrag;int;NULL
+syncobj_0x3842414339303836;IdWareneingang;int;NULL
+syncobj_0x3932433435313638;IdWareneingang;int;NULL
+syncobj_0x3932433531314146;IdWareneingangAuftrag;int;NULL
+syncobj_0x3941434541434544;IdWareneingang;int;NULL
+syncobj_0x3941434541434544;IdWareneingangAuftrag;int;NULL
+syncobj_0x3941434541434544;IdWareneingangPlanung;int;NULL
+syncobj_0x4432463831313437;EingangsDatum;datetime;NULL
+syncobj_0x4535373142434141;IdWareneingang;int;NULL
+syncobj_0x4542364346463246;EingangsDatum;datetime;NULL
+syncobj_0x4544364645423145;IdWareneingangPlanung;int;NULL
+syncobj_0x4544364645423145;IdWareneingangPosition;int;NULL
+syncobj_0x4634373032363137;IdWareneingangPlanung;int;NULL
+syncobj_0x4634373032363137;IdWareneingangPosition;int;NULL
+T_AppStaplerEingaenge;IdAppStaplerEingang;int;NULL
+T_AppStaplerEingaenge;IdWareneingangAuftrag;int;NULL
+T_EDIDokumente;EingangsDatum;datetime;NULL
+T_IncomingGoodCustomerReturns;IdWareneingang;int;NULL
+V_EDIDokumente;EingangsDatum;datetime;NULL
+V_EDIDokumentPositionen;EingangsDatum;datetime;NULL
+V_EDIDokumentPositionen_ORDER;EingangsDatum;datetime;NULL
+V_EDIPositionDetails;EingangsDatum;datetime;NULL
+V_IncomingGoodCustomerReturnIncomingGoodPositions;IdWareneingang;int;NULL
+V_IncomingGoodCustomerReturns;IdWareneingang;int;NULL
+
+(34 rows affected)
+TABLE_NAME;COLUMN_NAME;DATA_TYPE;CHARACTER_MAXIMUM_LENGTH
+----------;-----------;---------;------------------------
+syncobj_0x3039373443443136;IdJournal;int;NULL
+syncobj_0x3039373443443136;IdJournalBestellPosition;int;NULL
+syncobj_0x3039373443443136;IdJournalPosition;int;NULL
+syncobj_0x3039373443443136;IdJournalWarenPosition;int;NULL
+syncobj_0x3042464142373036;IdJournal;int;NULL
+syncobj_0x3042464142373036;IdJournalBestellPosition;int;NULL
+syncobj_0x3131363130434433;IdBestellungJournal;int;NULL
+syncobj_0x3131363130434433;IdJournal;int;NULL
+syncobj_0x3133463743383434;IdJournalAmo;int;NULL
+syncobj_0x3134423035313534;IdJournal;int;NULL
+syncobj_0x3134423035313534;IdJournalBestellPosition;int;NULL
+syncobj_0x3139314239333544;IdJournalAdresse;int;NULL
+syncobj_0x3139364546423844;IdBezugsJournalWarenPosition;int;NULL
+syncobj_0x3139364546423844;IdJournalAmo;int;NULL
+syncobj_0x3139364546423844;IdJournalLeistungsPosition;int;NULL
+syncobj_0x3139364546423844;IdJournalPosition;int;NULL
+syncobj_0x3145314431423431;IdJournal;int;NULL
+syncobj_0x3145314431423431;IdJournalBeleg;int;NULL
+syncobj_0x3145314431423431;IdJournalKundenAdresse;int;NULL
+syncobj_0x3145314431423431;IdJournalLieferAdresse;int;NULL
+syncobj_0x3145314431423431;IdJournalLieferantAdresse;int;NULL
+syncobj_0x3145314431423431;IdJournalQuellModul;int;NULL
+syncobj_0x3145314431423431;IdJournalRechnungsAdresse;int;NULL
+syncobj_0x3145314431423431;IdJournalStatus;int;NULL
+syncobj_0x3145314431423431;IdJournalTyp;int;NULL
+syncobj_0x3145314431423431;JournalDatum;datetime;NULL
+syncobj_0x3145314431423431;JournalNummer;nvarchar;50
+syncobj_0x3230303445363933;IdJournal;int;NULL
+syncobj_0x3230303445363933;IdJournalBestellPosition;int;NULL
+syncobj_0x3230303445363933;IdJournalPosition;int;NULL
+syncobj_0x3230303445363933;IdJournalWarenPosition;int;NULL
+syncobj_0x3230303445363933;JournalNummer;nvarchar;50
+syncobj_0x3231304545354137;IdBasisJournal;int;NULL
+syncobj_0x3231304545354137;IdBasisJournalPosition;int;NULL
+syncobj_0x3231304545354137;IdJournal;int;NULL
+syncobj_0x3231304545354137;IdJournalBestellPosition;int;NULL
+syncobj_0x3231304545354137;IdJournalPosition;int;NULL
+syncobj_0x3233413334424545;IdJournalAmo;int;NULL
+syncobj_0x3236433930464332;IdJournal;int;NULL
+syncobj_0x3236433930464332;IdJournalPosition;int;NULL
+syncobj_0x3236433930464332;IdJournalWarenPosition;int;NULL
+syncobj_0x3244353144363645;IdJournal;int;NULL
+syncobj_0x3244353144363645;JournalNummer;nvarchar;50
+syncobj_0x3244353144363645;JournalPositionGuid;uniqueidentifier;NULL
+syncobj_0x3333324632454545;IdJournal;int;NULL
+syncobj_0x3333324632454545;IdJournalPosition;int;NULL
+syncobj_0x3333324632454545;IdJournalText;int;NULL
+syncobj_0x3333324632454545;IdJournalWarenPosition;int;NULL
+syncobj_0x3336353232424531;IdJournal;int;NULL
+syncobj_0x3336353232424531;JournalNummer;nvarchar;50
+syncobj_0x3438374431413632;IdJournalAdresse;int;NULL
+syncobj_0x3442353033423546;IdEAIJournalSynch;int;NULL
+syncobj_0x3442353033423546;IdJournal;int;NULL
+syncobj_0x3537353045323843;IdJournalLayout;int;NULL
+syncobj_0x3537353045323843;IdJournalTyp;int;NULL
+syncobj_0x3541393236343442;IdSperrJournal;int;NULL
+syncobj_0x3545384634354439;IdJournalLieferPosition;int;NULL
+syncobj_0x3545384634354439;IdJournalPosition;int;NULL
+syncobj_0x3545384634354439;IdJournalWarenPosition;int;NULL
+syncobj_0x3546303532323239;IdSperrJournal;int;NULL
+syncobj_0x3635394142434538;IdBasisJournal;int;NULL
+syncobj_0x3635394142434538;IdBasisJournalPosition;int;NULL
+syncobj_0x3635394142434538;IdJournal;int;NULL
+syncobj_0x3635394142434538;IdJournalBestellPosition;int;NULL
+syncobj_0x3635394142434538;IdJournalPosition;int;NULL
+syncobj_0x3641443037373736;IdJournal;int;NULL
+syncobj_0x3641443037373736;IdJournalPosition;int;NULL
+syncobj_0x3641443037373736;IdJournalText;int;NULL
+syncobj_0x3641443037373736;IdJournalWarenPosition;int;NULL
+syncobj_0x3736323738334645;IdJournal;int;NULL
+syncobj_0x3736323738334645;IdJournalPosition;int;NULL
+syncobj_0x3745414637324537;IdJournal;int;NULL
+syncobj_0x3745414637324537;IdJournalPosition;int;NULL
+syncobj_0x3842373233383843;IdJournal;int;NULL
+syncobj_0x3842373233383843;JournalNummer;nvarchar;50
+syncobj_0x3842414339303836;IdJournal;int;NULL
+syncobj_0x3842414339303836;IdJournalBestellPosition;int;NULL
+syncobj_0x3842414339303836;IdJournalPosition;int;NULL
+syncobj_0x3842414339303836;IdJournalWarenPosition;int;NULL
+syncobj_0x3932433435313638;Journalnummer;varchar;50
+syncobj_0x3937433534364635;IdJournal;int;NULL
+syncobj_0x3938323346393031;IdEAIJournalSynch;int;NULL
+syncobj_0x3938323346393031;IdJournal;int;NULL
+syncobj_0x3941434541434544;IdJournal;int;NULL
+syncobj_0x3941434541434544;IdJournalPosition;int;NULL
+syncobj_0x3941434541434544;IdJournalWarenPosition;int;NULL
+syncobj_0x3942323738374233;IdJournal;int;NULL
+syncobj_0x3942323738374233;IdJournalTyp;int;NULL
+syncobj_0x3942323738374233;Journalnummer;nvarchar;50
+syncobj_0x3944324638433031;IdJournal;int;NULL
+syncobj_0x3944324638433031;JournalNummer;nvarchar;50
+syncobj_0x3944324638433031;JournalPositionGuid;uniqueidentifier;NULL
+syncobj_0x3945454231444633;IdEAIJournalTextVorlageZuordnung;int;NULL
+syncobj_0x3945454231444633;IdJournalTyp;int;NULL
+syncobj_0x4132384232304430;IdEAIJournalLeistungsVorlageZuordnung;int;NULL
+syncobj_0x4232393632313043;IdJournalLieferPosition;int;NULL
+syncobj_0x4232393632313043;IdJournalPosition;int;NULL
+syncobj_0x4232393632313043;IdJournalWarenPosition;int;NULL
+syncobj_0x4236343042414236;IdJournal;int;NULL
+syncobj_0x4236343042414236;IdJournalStatus;int;NULL
+syncobj_0x4236343042414236;IdJournalTyp;int;NULL
+syncobj_0x4245434537433634;IdJournalPosition;int;NULL
+syncobj_0x4245434537433634;IdJournalTextPosition;int;NULL
+syncobj_0x4334323246423334;IdJournal;int;NULL
+syncobj_0x4336363934424139;IdJournal;int;NULL
+syncobj_0x4336363934424139;IdJournalTyp;int;NULL
+syncobj_0x4336363934424139;Journalnummer;nvarchar;50
+syncobj_0x4338304339304138;IdBestellungJournal;int;NULL
+syncobj_0x4338304339304138;IdJournal;int;NULL
+syncobj_0x4432463831313437;JournalStatus;int;NULL
+syncobj_0x4435383637373737;IdEAIJournalTextVorlageZuordnung;int;NULL
+syncobj_0x4435383637373737;IdJournalTyp;int;NULL
+syncobj_0x4435414530454245;IdJournalLayout;int;NULL
+syncobj_0x4435414530454245;IdJournalTyp;int;NULL
+syncobj_0x4436463932443738;IdEAIJournalLeistungsVorlageZuordnung;int;NULL
+syncobj_0x4437314434464631;IdJournal;int;NULL
+syncobj_0x4437314434464631;IdJournalBeleg;int;NULL
+syncobj_0x4437314434464631;IdJournalKundenAdresse;int;NULL
+syncobj_0x4437314434464631;IdJournalLieferAdresse;int;NULL
+syncobj_0x4437314434464631;IdJournalLieferantAdresse;int;NULL
+syncobj_0x4437314434464631;IdJournalQuellModul;int;NULL
+syncobj_0x4437314434464631;IdJournalRechnungsAdresse;int;NULL
+syncobj_0x4437314434464631;IdJournalStatus;int;NULL
+syncobj_0x4437314434464631;IdJournalTyp;int;NULL
+syncobj_0x4437314434464631;JournalDatum;datetime;NULL
+syncobj_0x4437314434464631;JournalNummer;nvarchar;50
+syncobj_0x4535373142434141;Journalnummer;varchar;50
+syncobj_0x4536444431323432;IdBezugsJournalWarenPosition;int;NULL
+syncobj_0x4536444431323432;IdJournalAmo;int;NULL
+syncobj_0x4536444431323432;IdJournalLeistungsPosition;int;NULL
+syncobj_0x4536444431323432;IdJournalPosition;int;NULL
+syncobj_0x4542364346463246;JournalStatus;int;NULL
+syncobj_0x4545313935394645;IdJournalBeleg;int;NULL
+syncobj_0x4634344137423339;IdJournal;int;NULL
+syncobj_0x4636303439334144;IdJournalBeleg;int;NULL
+syncobj_0x4636374246324545;IdBezugsJournalWarenPosition;int;NULL
+syncobj_0x4636374246324545;IdJournalPosition;int;NULL
+syncobj_0x4636374246324545;IdJournalWarenPosition;int;NULL
+syncobj_0x4636423339393945;IdJournal;int;NULL
+syncobj_0x4636423339393945;IdJournalBestellPosition;int;NULL
+syncobj_0x4636423339393945;IdJournalPosition;int;NULL
+syncobj_0x4636423339393945;IdJournalWarenPosition;int;NULL
+syncobj_0x4636423339393945;JournalNummer;nvarchar;50
+syncobj_0x4638463232334345;IdBezugsJournalWarenPosition;int;NULL
+syncobj_0x4638463232334345;IdJournalPosition;int;NULL
+syncobj_0x4638463232334345;IdJournalWarenPosition;int;NULL
+syncobj_0x4642374342383238;IdJournalPosition;int;NULL
+syncobj_0x4642374342383238;IdJournalTextPosition;int;NULL
+syncobj_0x4644423934423546;IdJournal;int;NULL
+T_AxIncasTransferQueueEntry;IdJournal;int;NULL
+T_AxIncasTransferQueueEntry;IdJournalStatus;int;NULL
+T_AxIncasTransferQueueEntry;IdJournalTyp;int;NULL
+T_Bestellpositionen;IdJournal;int;NULL
+T_Bestellpositionen;IdJournalBestellPosition;int;NULL
+T_Bestellpositionen;IdJournalPosition;int;NULL
+T_Bestellpositionen;IdJournalWarenPosition;int;NULL
+T_Bestellpositionen;JournalNummer;nvarchar;50
+T_Bestellung;IdJournal;int;NULL
+T_Bestellungen;IdJournal;int;NULL
+T_Bestellungen;JournalNummer;nvarchar;50
+T_Bestellvorschlaege;IdJournal;int;NULL
+T_EDIDokumente;JournalStatus;int;NULL
+T_IncomingGoodCustomerReturns;Journalnummer;varchar;50
+T_InhouseLieferungen;IdJournal;int;NULL
+T_InhouseLieferungen;JournalNummer;nvarchar;50
+T_InhouseLieferungen;JournalPositionGuid;uniqueidentifier;NULL
+T_KonsignationsBewegungen;IdJournal;int;NULL
+T_KonsignationsBewegungen;IdJournalPosition;int;NULL
+T_Lieferungen;IdJournal;int;NULL
+T_Lieferungen;IdJournalTyp;int;NULL
+T_Lieferungen;Journalnummer;nvarchar;50
+T_Wareneingaenge;IdJournal;int;NULL
+T_Wareneingaenge;IdJournalBestellPosition;int;NULL
+T_Wareneingaenge;IdJournalPosition;int;NULL
+T_Wareneingaenge;IdJournalWarenPosition;int;NULL
+T_WareneingangPlanungen;IdJournal;int;NULL
+T_WareneingangPlanungen;IdJournalPosition;int;NULL
+T_WareneingangPlanungen;IdJournalWarenPosition;int;NULL
+V_AxIncasTransferQueueEntry;IdJournal;int;NULL
+V_AxIncasTransferQueueEntry;IdJournalStatus;int;NULL
+V_AxIncasTransferQueueEntry;IdJournalTyp;int;NULL
+V_Bestellpositionen;BestellungIdJournal;int;NULL
+V_Bestellpositionen;IdJournal;int;NULL
+V_Bestellpositionen;IdJournalBestellPosition;int;NULL
+V_Bestellpositionen;IdJournalPosition;int;NULL
+V_Bestellpositionen;IdJournalWarenPosition;int;NULL
+V_Bestellpositionen;JournalNummer;nvarchar;50
+V_Bestellpositionen_PURCHASE;IdJournal;int;NULL
+V_Bestellpositionen_PURCHASE;IdJournalBestellPosition;int;NULL
+V_Bestellpositionen_PURCHASE;IdJournalPosition;int;NULL
+V_Bestellpositionen_PURCHASE;IdJournalWarenPosition;int;NULL
+V_Bestellpositionen_PURCHASE;JournalNummer;nvarchar;50
+V_BestellPositionenBewertungen;BestellungIdJournal;int;NULL
+V_BestellPositionenBewertungen;IdJournal;int;NULL
+V_BestellPositionenBewertungen;IdJournalBestellPosition;int;NULL
+V_BestellPositionenBewertungen;IdJournalPosition;int;NULL
+V_BestellPositionenBewertungen;IdJournalWarenPosition;int;NULL
+V_BestellPositionenBewertungen;JournalNummer;nvarchar;50
+V_BestellpositionenSync;IdJournal;int;NULL
+V_BestellpositionenSync;IdJournalBestellPosition;int;NULL
+V_BestellpositionenSync;IdJournalPosition;int;NULL
+V_BestellpositionenSync;IdJournalWarenPosition;int;NULL
+V_BestellpositionenSync;JournalNummer;nvarchar;50
+V_Bestellung;IdJournal;int;NULL
+V_Bestellungen;IdJournal;int;NULL
+V_Bestellungen;JournalNummer;nvarchar;50
+V_BestellungenFehlend;IdJournal;int;NULL
+V_BestellungenFehlend;IdJournalPosition;int;NULL
+V_Bestellvorschlaege;IdJournal;int;NULL
+V_ComplaintPositions;IdJournal;int;NULL
+V_ComplaintPositions;Journalnummer;nvarchar;50
+V_EDIDokumente;JournalStatus;int;NULL
+V_EDIDokumentPositionen;JournalStatus;int;NULL
+V_EDIDokumentPositionen_ORDER;JournalStatus;int;NULL
+V_GelieferteMengenJeBestellPosition_PURCHASE;IdJournalPosition;int;NULL
+V_GelieferteMengenJeBestellPosition_PURCHASE;IdJournalStatus;int;NULL
+V_GelieferteMengenJeBestellPosition_PURCHASE;IdJournalTyp;int;NULL
+V_GelieferteMengenJeBestellPosition_PURCHASE;JournalDatum;datetime;NULL
+V_GelieferteMengenJeBestellPosition_PURCHASE;JournalNummer;nvarchar;50
+V_IncomingGoodCustomerReturnIncomingGoodPositions;IdJournalTyp;int;NULL
+V_IncomingGoodCustomerReturnIncomingGoodPositions;JournalNummer;nvarchar;50
+V_IncomingGoodCustomerReturns;Journalnummer;varchar;50
+V_InhouseLieferungen;IdJournal;int;NULL
+V_InhouseLieferungen;JournalNummer;nvarchar;50
+V_InhouseLieferungen;JournalPositionGuid;uniqueidentifier;NULL
+V_KonsignationsBewegungen;IdJournal;int;NULL
+V_KonsignationsBewegungen;IdJournalPosition;int;NULL
+V_Lieferungen;IdJournal;int;NULL
+V_Lieferungen;IdJournalTyp;int;NULL
+V_Lieferungen;Journalnummer;nvarchar;50
+V_TrackerBarcodeSperrHistorie;IdSperrJournal;int;NULL
+V_TrackerBestellPositionen;IdJournal;int;NULL
+V_TrackerBestellPositionen;IdJournalBestellPosition;int;NULL
+V_TrackerBestellPositionen;IdJournalPosition;int;NULL
+V_TrackerBestellPositionen;IdJournalWarenPosition;int;NULL
+V_TrackerBestellPositionen;JournalNummer;nvarchar;50
+V_TrackerGelieferteMengenJeBestellPosition;IdJournalPosition;int;NULL
+V_TrackerGelieferteMengenJeBestellPosition;IdJournalStatus;int;NULL
+V_TrackerGelieferteMengenJeBestellPosition;IdJournalTyp;int;NULL
+V_TrackerGelieferteMengenJeBestellPosition;JournalDatum;datetime;NULL
+V_TrackerGelieferteMengenJeBestellPosition;JournalNummer;nvarchar;50
+V_TrackerLieferscheinLieferPositionen;IdJournalPosition;int;NULL
+V_TrackerLieferscheinLieferPositionen;IdJournalStatus;int;NULL
+V_Wareneingaenge;IdJournal;int;NULL
+V_Wareneingaenge;IdJournalBestellPosition;int;NULL
+V_Wareneingaenge;IdJournalPosition;int;NULL
+V_Wareneingaenge;IdJournalWarenPosition;int;NULL
+V_Wareneingaenge;Journalnummer;varchar;50
+V_WareneingangPlanungen;IdJournal;int;NULL
+V_WareneingangPlanungen;IdJournalPosition;int;NULL
+V_WareneingangPlanungen;IdJournalWarenPosition;int;NULL
+
+(251 rows affected)

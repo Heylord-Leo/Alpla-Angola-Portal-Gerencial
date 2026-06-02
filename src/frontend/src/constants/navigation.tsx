@@ -219,6 +219,26 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                 }
             ]
         },
+        // ── Operações (Operations Module) ──
+        {
+            id: 'operacoes',
+            type: 'group',
+            label: 'Operações',
+            icon: <Activity size={18} strokeWidth={2.5} />,
+            roles: [ROLES.SYSTEM_ADMINISTRATOR, ROLES.OPERATIONS],
+            keywords: ['operações', 'transferências', 'logística', 'timeline', 'alplaprod', 'planta'],
+            children: [
+                {
+                    id: 'operations-transfers',
+                    type: 'link',
+                    label: 'Transferências Logísticas',
+                    icon: <Package size={18} strokeWidth={2.5} />,
+                    to: '/operations/transfers',
+                    roles: [ROLES.SYSTEM_ADMINISTRATOR, ROLES.OPERATIONS],
+                    keywords: ['transferências', 'timeline', 'pedido', 'compra', 'planta', 'viana']
+                }
+            ]
+        },
         // ── T.I. (IT Equipment Module) ──
         {
             id: 'ti',

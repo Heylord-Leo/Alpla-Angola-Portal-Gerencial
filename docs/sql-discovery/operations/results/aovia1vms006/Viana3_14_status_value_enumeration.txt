@@ -1,0 +1,576 @@
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+T_Bestellungen;Status;1;61;4/16/2025 2:29:09 PM;5/23/2026 8:37:06 PM;456;2573
+T_Bestellungen;Status;2;67;4/6/2025 11:15:18 AM;5/29/2026 7:04:51 PM;416;2606
+T_Bestellungen;Status;4;121;6/2/2024 12:14:42 PM;5/28/2026 10:38:35 AM;75;2591
+T_Bestellungen;Status;5;83;2/28/2025 4:03:00 PM;5/22/2026 3:23:27 AM;355;2556
+T_Bestellungen;Status;6;1836;12/2/2024 10:32:14 AM;5/29/2026 7:03:01 PM;270;2602
+T_Bestellungen;Status;7;102;2/28/2024 9:44:54 AM;5/2/2026 9:56:47 AM;3;2441
+T_Bestellungen;Status;8;279;2/29/2024 9:19:45 PM;11/15/2025 1:49:52 PM;6;1455
+
+(7 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+T_Bestellungen;UebermittlungsStatus;1;2549;2/28/2024 9:44:54 AM;5/29/2026 7:04:51 PM;3;2606
+
+(1 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+T_Bestellungen;Bestaetigt;0;2190;3/16/2024 11:18:53 AM;5/29/2026 7:04:51 PM;19;2606
+T_Bestellungen;Bestaetigt;1;359;2/28/2024 9:44:54 AM;5/2/2026 9:56:47 AM;3;2441
+
+(2 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_Bestellungen;Revision;-1;61;4/16/2025 2:29:09 PM;5/23/2026 8:37:06 PM
+T_Bestellungen;Revision;1;2446;2/29/2024 10:26:38 AM;5/29/2026 7:04:51 PM
+T_Bestellungen;Revision;2;23;2/28/2024 9:44:54 AM;4/8/2026 8:35:55 PM
+T_Bestellungen;Revision;3;18;2/29/2024 9:19:45 PM;4/15/2025 8:15:15 AM
+T_Bestellungen;Revision;4;1;9/2/2024 4:29:23 PM;3/3/2025 1:01:30 PM
+
+(5 rows affected)
+
+IdBestellung;Status;UebermittlungsStatus;Bestaetigt;Revision;IdJournal;JournalNummer;Add_User;Add_Date;Upd_User;Upd_Date
+------------;------;--------------------;----------;--------;---------;-------------;--------;--------;--------;--------
+2606;2;1;0;1;6577;102550;ALPLA\farias003;5/29/2026 7:04:28 PM;ALPLA\farias003;5/29/2026 7:04:51 PM
+2605;2;1;0;1;6576;102549;ALPLA\farias003;5/29/2026 7:03:49 PM;ALPLA\farias003;5/29/2026 7:04:16 PM
+2604;2;1;0;1;6574;102548;ALPLA\farias003;5/29/2026 10:31:45 AM;ALPLA\farias003;5/29/2026 10:32:05 AM
+2603;2;1;0;1;6573;102547;ALPLA\farias003;5/29/2026 10:31:04 AM;ALPLA\farias003;5/29/2026 10:31:33 AM
+2602;6;1;0;1;6572;102546;ALPLA\farias003;5/29/2026 10:30:30 AM;ALPLA\farias003;5/29/2026 7:03:01 PM
+2601;2;1;0;1;6571;102545;ALPLA\farias003;5/29/2026 10:29:40 AM;ALPLA\farias003;5/29/2026 10:30:11 AM
+2600;2;1;0;1;6569;102544;ALPLA\mendes01;5/29/2026 12:14:02 AM;ALPLA\mendes01;5/29/2026 12:14:40 AM
+2599;6;1;0;1;6568;102543;ALPLA\mendes01;5/29/2026 12:12:40 AM;ALPLA\mendes01;5/29/2026 4:06:40 AM
+2598;6;1;0;1;6566;102542;ALPLA\arriaga008;5/28/2026 7:47:00 PM;ALPLA\mendes01;5/29/2026 12:04:38 AM
+2597;6;1;0;1;6558;102541;ALPLA\arriaga008;5/28/2026 9:34:39 AM;ALPLA\farias003;5/28/2026 4:07:17 PM
+2596;6;1;0;1;6557;102540;ALPLA\arriaga008;5/28/2026 9:33:05 AM;ALPLA\farias003;5/28/2026 4:06:28 PM
+2595;6;1;0;1;6556;102539;ALPLA\arriaga008;5/28/2026 9:32:09 AM;ALPLA\farias003;5/28/2026 4:05:45 PM
+2594;6;1;0;1;6555;102538;ALPLA\mendes01;5/27/2026 7:49:03 PM;ALPLA\arriaga008;5/28/2026 10:41:25 AM
+2593;6;1;0;1;6554;102537;ALPLA\mendes01;5/27/2026 7:45:56 PM;ALPLA\farias003;5/28/2026 4:04:56 PM
+2592;6;1;0;1;6553;102536;ALPLA\mendes01;5/27/2026 7:44:32 PM;ALPLA\arriaga008;5/28/2026 10:40:24 AM
+2591;4;1;0;1;6552;102535;ALPLA\mendes01;5/27/2026 7:43:45 PM;ALPLA\arriaga008;5/28/2026 10:38:35 AM
+2590;6;1;0;1;6549;102534;ALPLA\mendes01;5/27/2026 9:52:12 AM;ALPLA\farias003;5/27/2026 4:27:33 PM
+2589;6;1;0;1;6548;102533;ALPLA\mendes01;5/27/2026 9:50:48 AM;ALPLA\farias003;5/27/2026 4:26:55 PM
+2588;4;1;0;1;6547;102532;ALPLA\mendes01;5/27/2026 9:49:41 AM;ALPLA\farias003;5/27/2026 4:19:27 PM
+2587;6;1;0;1;6533;102531;ALPLA\farias003;5/26/2026 7:35:04 PM;ALPLA\mendes01;5/27/2026 7:36:35 AM
+
+(20 rows affected)
+
+Status;UebermittlungsStatus;Bestaetigt;Cnt
+------;--------------------;----------;---
+1;1;0;61
+2;1;0;67
+4;1;0;119
+4;1;1;2
+5;1;0;82
+5;1;1;1
+6;1;0;1836
+7;1;0;5
+7;1;1;97
+8;1;0;20
+8;1;1;259
+
+(11 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_BestellungenJournal;Revision;1;2488;2/28/2024 9:47:36 AM;5/29/2026 7:04:51 PM
+T_BestellungenJournal;Revision;2;42;2/28/2024 9:55:50 AM;4/8/2026 6:58:05 PM
+T_BestellungenJournal;Revision;3;19;3/5/2024 8:10:11 AM;4/14/2025 5:37:51 PM
+T_BestellungenJournal;Revision;4;1;9/5/2024 11:40:16 AM;9/5/2024 11:40:16 AM
+
+(4 rows affected)
+
+IdBestellungJournal;IdBestellung;IdJournal;Revision;Add_User;Add_Date;Upd_User;Upd_Date
+-------------------;------------;---------;--------;--------;--------;--------;--------
+2550;2606;6577;1;ALPLA\farias003;5/29/2026 7:04:51 PM;ALPLA\farias003;5/29/2026 7:04:51 PM
+2549;2605;6576;1;ALPLA\farias003;5/29/2026 7:04:16 PM;ALPLA\farias003;5/29/2026 7:04:16 PM
+2548;2604;6574;1;ALPLA\farias003;5/29/2026 10:32:05 AM;ALPLA\farias003;5/29/2026 10:32:05 AM
+2547;2603;6573;1;ALPLA\farias003;5/29/2026 10:31:33 AM;ALPLA\farias003;5/29/2026 10:31:33 AM
+2546;2602;6572;1;ALPLA\farias003;5/29/2026 10:30:52 AM;ALPLA\farias003;5/29/2026 10:30:52 AM
+2545;2601;6571;1;ALPLA\farias003;5/29/2026 10:30:11 AM;ALPLA\farias003;5/29/2026 10:30:11 AM
+2544;2600;6569;1;ALPLA\mendes01;5/29/2026 12:14:40 AM;ALPLA\mendes01;5/29/2026 12:14:40 AM
+2543;2599;6568;1;ALPLA\mendes01;5/29/2026 12:13:51 AM;ALPLA\mendes01;5/29/2026 12:13:51 AM
+2542;2598;6566;1;ALPLA\arriaga008;5/28/2026 7:48:25 PM;ALPLA\arriaga008;5/28/2026 7:48:25 PM
+2541;2597;6558;1;ALPLA\arriaga008;5/28/2026 9:35:37 AM;ALPLA\arriaga008;5/28/2026 9:35:37 AM
+2540;2596;6557;1;ALPLA\arriaga008;5/28/2026 9:34:20 AM;ALPLA\arriaga008;5/28/2026 9:34:20 AM
+2539;2595;6556;1;ALPLA\arriaga008;5/28/2026 9:32:51 AM;ALPLA\arriaga008;5/28/2026 9:32:51 AM
+2538;2594;6555;1;ALPLA\mendes01;5/27/2026 7:49:52 PM;ALPLA\mendes01;5/27/2026 7:49:52 PM
+2537;2593;6554;1;ALPLA\mendes01;5/27/2026 7:48:50 PM;ALPLA\mendes01;5/27/2026 7:48:50 PM
+2536;2592;6553;1;ALPLA\mendes01;5/27/2026 7:45:34 PM;ALPLA\mendes01;5/27/2026 7:45:34 PM
+2535;2591;6552;1;ALPLA\mendes01;5/27/2026 7:44:12 PM;ALPLA\mendes01;5/27/2026 7:44:12 PM
+2534;2590;6549;1;ALPLA\mendes01;5/27/2026 9:52:57 AM;ALPLA\mendes01;5/27/2026 9:52:57 AM
+2533;2589;6548;1;ALPLA\mendes01;5/27/2026 9:51:16 AM;ALPLA\mendes01;5/27/2026 9:51:16 AM
+2532;2588;6547;1;ALPLA\mendes01;5/27/2026 9:50:19 AM;ALPLA\mendes01;5/27/2026 9:50:19 AM
+2531;2587;6533;1;ALPLA\farias003;5/26/2026 7:35:30 PM;ALPLA\farias003;5/26/2026 7:35:30 PM
+
+(20 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+T_EAIJournal;IdJournalStatus;11;359;2/28/2024 6:14:51 PM;5/2/2026 9:56:45 AM;6;6281
+T_EAIJournal;IdJournalStatus;62;3604;1/31/2024 12:00:00 AM;5/29/2026 7:03:00 PM;31;6575
+T_EAIJournal;IdJournalStatus;64;64;1/1/2024 12:00:00 AM;3/31/2026 11:49:41 AM;1;5924
+T_EAIJournal;IdJournalStatus;91;2186;2/28/2024 9:47:35 AM;5/29/2026 7:04:51 PM;4;6577
+T_EAIJournal;IdJournalStatus;92;103;2/28/2024 9:55:50 AM;5/1/2026 2:46:50 PM;5;6280
+T_EAIJournal;IdJournalStatus;93;1;11/9/2025 4:25:07 AM;11/9/2025 4:25:07 AM;4310;4310
+T_EAIJournal;IdJournalStatus;94;260;3/1/2024 9:24:53 AM;11/14/2025 10:37:53 PM;12;4366
+
+(7 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_EAIJournal;IdJournalTyp;1;359;2/28/2024 6:14:51 PM;5/2/2026 9:56:45 AM
+T_EAIJournal;IdJournalTyp;6;3668;1/1/2024 12:00:00 AM;5/29/2026 7:03:00 PM
+T_EAIJournal;IdJournalTyp;9;2550;2/28/2024 9:47:35 AM;5/29/2026 7:04:51 PM
+
+(3 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_EAIJournal;IdJournalQuellModul;-1;359;2/28/2024 6:14:51 PM;5/2/2026 9:56:45 AM
+T_EAIJournal;IdJournalQuellModul;5;3526;3/26/2024 7:47:23 PM;5/29/2026 7:03:00 PM
+T_EAIJournal;IdJournalQuellModul;10;142;1/1/2024 12:00:00 AM;5/25/2026 9:27:41 AM
+T_EAIJournal;IdJournalQuellModul;14;2550;2/28/2024 9:47:35 AM;5/29/2026 7:04:51 PM
+
+(4 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinJournalDate;MaxJournalDate;MinExportDate;MaxExportDate
+---------;-----------;-----------;---;--------------;--------------;-------------;-------------
+T_EAIJournal;Exportiert;SET (exported);6577;1/1/2024 12:00:00 AM;5/29/2026 7:04:51 PM;1/1/1900 12:00:00 AM;1/1/1900 12:00:00 AM
+
+(1 rows affected)
+
+IdJournalStatus;IdJournalTyp;IdJournalQuellModul;Cnt;MinDate;MaxDate
+---------------;------------;-------------------;---;-------;-------
+11;1;-1;359;2/28/2024 6:14:51 PM;5/2/2026 9:56:45 AM
+62;6;5;3482;3/26/2024 7:47:23 PM;5/29/2026 7:03:00 PM
+62;6;10;122;1/31/2024 12:00:00 AM;5/25/2026 9:27:41 AM
+64;6;5;44;6/6/2024 6:23:55 PM;7/17/2025 2:12:31 PM
+64;6;10;20;1/1/2024 12:00:00 AM;3/31/2026 11:49:41 AM
+91;9;14;2186;2/28/2024 9:47:35 AM;5/29/2026 7:04:51 PM
+92;9;14;103;2/28/2024 9:55:50 AM;5/1/2026 2:46:50 PM
+93;9;14;1;11/9/2025 4:25:07 AM;11/9/2025 4:25:07 AM
+94;9;14;260;3/1/2024 9:24:53 AM;11/14/2025 10:37:53 PM
+
+(9 rows affected)
+
+IdJournal;JournalNummer;IdJournalStatus;IdJournalTyp;IdJournalQuellModul;Exportiert;JournalDatum;IdLadeAuftrag;IdBestellVorschlag;Add_User;Add_Date;Upd_User;Upd_Date
+---------;-------------;---------------;------------;-------------------;----------;------------;-------------;------------------;--------;--------;--------;--------
+6577;102550;91;9;14;1/1/1900 12:00:00 AM;5/29/2026 7:04:51 PM;-1;2606;ALPLA\farias003;5/29/2026 7:04:51 PM;ALPLA\farias003;5/29/2026 7:04:51 PM
+6576;102549;91;9;14;1/1/1900 12:00:00 AM;5/29/2026 7:04:16 PM;-1;2605;ALPLA\farias003;5/29/2026 7:04:16 PM;ALPLA\farias003;5/29/2026 7:04:16 PM
+6575;103668;62;6;5;1/1/1900 12:00:00 AM;5/29/2026 7:03:00 PM;3795;-1;ALPLA\farias003;5/29/2026 7:03:01 PM;ALPLA\farias003;5/29/2026 7:03:01 PM
+6574;102548;91;9;14;1/1/1900 12:00:00 AM;5/29/2026 10:32:05 AM;-1;2604;ALPLA\farias003;5/29/2026 10:32:05 AM;ALPLA\farias003;5/29/2026 10:32:05 AM
+6573;102547;91;9;14;1/1/1900 12:00:00 AM;5/29/2026 10:31:32 AM;-1;2603;ALPLA\farias003;5/29/2026 10:31:32 AM;ALPLA\farias003;5/29/2026 10:31:32 AM
+6572;102546;91;9;14;1/1/1900 12:00:00 AM;5/29/2026 10:30:52 AM;-1;2602;ALPLA\farias003;5/29/2026 10:30:52 AM;ALPLA\farias003;5/29/2026 10:30:52 AM
+6571;102545;91;9;14;1/1/1900 12:00:00 AM;5/29/2026 10:30:11 AM;-1;2601;ALPLA\farias003;5/29/2026 10:30:11 AM;ALPLA\farias003;5/29/2026 10:30:11 AM
+6570;103667;62;6;5;1/1/1900 12:00:00 AM;5/29/2026 4:06:40 AM;3794;-1;ALPLA\mendes01;5/29/2026 4:06:40 AM;ALPLA\mendes01;5/29/2026 4:06:40 AM
+6569;102544;91;9;14;1/1/1900 12:00:00 AM;5/29/2026 12:14:39 AM;-1;2600;ALPLA\mendes01;5/29/2026 12:14:39 AM;ALPLA\mendes01;5/29/2026 12:14:39 AM
+6568;102543;91;9;14;1/1/1900 12:00:00 AM;5/29/2026 12:13:50 AM;-1;2599;ALPLA\mendes01;5/29/2026 12:13:51 AM;ALPLA\mendes01;5/29/2026 12:13:51 AM
+6567;103666;62;6;5;1/1/1900 12:00:00 AM;5/29/2026 12:04:38 AM;3793;-1;ALPLA\mendes01;5/29/2026 12:04:38 AM;ALPLA\mendes01;5/29/2026 12:04:38 AM
+6566;102542;91;9;14;1/1/1900 12:00:00 AM;5/28/2026 7:48:25 PM;-1;2598;ALPLA\arriaga008;5/28/2026 7:48:25 PM;ALPLA\arriaga008;5/28/2026 7:48:25 PM
+6565;103665;62;6;5;1/1/1900 12:00:00 AM;5/28/2026 4:07:17 PM;3792;-1;ALPLA\farias003;5/28/2026 4:07:17 PM;ALPLA\farias003;5/28/2026 4:07:17 PM
+6564;103664;62;6;5;1/1/1900 12:00:00 AM;5/28/2026 4:06:28 PM;3791;-1;ALPLA\farias003;5/28/2026 4:06:28 PM;ALPLA\farias003;5/28/2026 4:06:28 PM
+6563;103663;62;6;5;1/1/1900 12:00:00 AM;5/28/2026 4:05:45 PM;3790;-1;ALPLA\farias003;5/28/2026 4:05:45 PM;ALPLA\farias003;5/28/2026 4:05:45 PM
+6562;103662;62;6;5;1/1/1900 12:00:00 AM;5/28/2026 4:04:56 PM;3789;-1;ALPLA\farias003;5/28/2026 4:04:56 PM;ALPLA\farias003;5/28/2026 4:04:56 PM
+6561;103661;62;6;5;1/1/1900 12:00:00 AM;5/28/2026 4:03:54 PM;3788;-1;ALPLA\farias003;5/28/2026 4:03:54 PM;ALPLA\farias003;5/28/2026 4:03:54 PM
+6560;103660;62;6;5;1/1/1900 12:00:00 AM;5/28/2026 10:41:25 AM;3787;-1;ALPLA\arriaga008;5/28/2026 10:41:25 AM;ALPLA\arriaga008;5/28/2026 10:41:25 AM
+6559;103659;62;6;5;1/1/1900 12:00:00 AM;5/28/2026 10:40:24 AM;3786;-1;ALPLA\arriaga008;5/28/2026 10:40:24 AM;ALPLA\arriaga008;5/28/2026 10:40:24 AM
+6558;102541;91;9;14;1/1/1900 12:00:00 AM;5/28/2026 9:35:36 AM;-1;2597;ALPLA\arriaga008;5/28/2026 9:35:37 AM;ALPLA\arriaga008;5/28/2026 9:35:37 AM
+
+(20 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+T_EAIJournalSynch;Status;1;9416;2/10/2024 4:22:08 PM;5/29/2026 7:04:52 PM;1;9416
+
+(1 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_EAIJournalSynch;Aktion;1;2625;2/29/2024 10:26:59 AM;5/29/2026 7:04:52 PM
+T_EAIJournalSynch;Aktion;2;3527;3/26/2024 7:47:24 PM;5/29/2026 7:04:16 PM
+T_EAIJournalSynch;Aktion;3;3102;2/28/2024 9:47:36 AM;5/29/2026 7:04:51 PM
+T_EAIJournalSynch;Aktion;6;162;2/10/2024 4:22:08 PM;5/26/2026 9:27:55 AM
+
+(4 rows affected)
+
+Status;Aktion;Cnt;MinDate;MaxDate
+------;------;---;-------;-------
+1;1;2625;2/29/2024 10:26:59 AM;5/29/2026 7:04:52 PM
+1;2;3527;3/26/2024 7:47:24 PM;5/29/2026 7:04:16 PM
+1;3;3102;2/28/2024 9:47:36 AM;5/29/2026 7:04:51 PM
+1;6;162;2/10/2024 4:22:08 PM;5/26/2026 9:27:55 AM
+
+(4 rows affected)
+
+IdEAIJournalSynch;IdJournal;IdEDIKonfiguration;Status;Aktion;TransaktionUID;Dateiname;Plandatum;Fehler;Bemerkung;Add_User;Add_Date;Upd_User;Upd_Date
+-----------------;---------;------------------;------;------;--------------;---------;---------;------;---------;--------;--------;--------;--------
+9416;6577;16;1;1;2b2f56a4-6298-416f-bbf9-ad844870ab14;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia3\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia1_ORDERS-in_00011-AlplaViana1Preformas_2026052919045233.xml;5/29/2026 7:04:51 PM;;;ALPLA\farias003;5/29/2026 7:04:51 PM;*ALPLAPROD_RS*;5/29/2026 7:04:52 PM
+9415;6577;-1;1;3;00000000-0000-0000-0000-000000000000;;5/29/2026 7:04:51 PM;;;ALPLA\farias003;5/29/2026 7:04:51 PM;*ALPLAPROD_RS*;5/29/2026 7:04:51 PM
+9414;6576;20;1;1;47988b4f-2568-499d-ae57-5fb215387445;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia3\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia1_ORDERS-in_00004-AlplaViana1_2026052919041705.xml;5/29/2026 7:04:16 PM;;;ALPLA\farias003;5/29/2026 7:04:16 PM;*ALPLAPROD_RS*;5/29/2026 7:04:17 PM
+9413;6576;-1;1;3;00000000-0000-0000-0000-000000000000;;5/29/2026 7:04:16 PM;;;ALPLA\farias003;5/29/2026 7:04:16 PM;*ALPLAPROD_RS*;5/29/2026 7:04:16 PM
+9412;6575;-1;1;2;00000000-0000-0000-0000-000000000000;;5/29/2026 7:03:01 PM;;;ALPLA\farias003;5/29/2026 7:03:01 PM;*ALPLAPROD_RS*;5/29/2026 7:04:16 PM
+9411;6574;16;1;1;c2b62423-d134-48a4-b246-e0dbfcc236e1;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia3\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia1_ORDERS-in_00011-AlplaViana1Preformas_2026052910320589.xml;5/29/2026 10:32:05 AM;;;ALPLA\farias003;5/29/2026 10:32:05 AM;*ALPLAPROD_RS*;5/29/2026 10:32:05 AM
+9410;6574;-1;1;3;00000000-0000-0000-0000-000000000000;;5/29/2026 10:32:05 AM;;;ALPLA\farias003;5/29/2026 10:32:05 AM;*ALPLAPROD_RS*;5/29/2026 10:32:05 AM
+9409;6573;16;1;1;27b8bd8d-16fa-4dff-8fd6-428a29b0974a;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia3\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia1_ORDERS-in_00011-AlplaViana1Preformas_2026052910313373.xml;5/29/2026 10:31:32 AM;;;ALPLA\farias003;5/29/2026 10:31:33 AM;*ALPLAPROD_RS*;5/29/2026 10:31:33 AM
+9408;6573;-1;1;3;00000000-0000-0000-0000-000000000000;;5/29/2026 10:31:32 AM;;;ALPLA\farias003;5/29/2026 10:31:33 AM;*ALPLAPROD_RS*;5/29/2026 10:31:33 AM
+9407;6572;20;1;1;b0e46271-94c0-46b8-9c79-cb35ca90a203;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia3\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia1_ORDERS-in_00004-AlplaViana1_2026052910305329.xml;5/29/2026 10:30:52 AM;;;ALPLA\farias003;5/29/2026 10:30:52 AM;*ALPLAPROD_RS*;5/29/2026 10:30:53 AM
+9406;6572;-1;1;3;00000000-0000-0000-0000-000000000000;;5/29/2026 10:30:52 AM;;;ALPLA\farias003;5/29/2026 10:30:52 AM;*ALPLAPROD_RS*;5/29/2026 10:30:52 AM
+9405;6571;20;1;1;d51dbea2-9d3f-4750-b216-6766bf85fe6b;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia3\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia1_ORDERS-in_00004-AlplaViana1_2026052910301214.xml;5/29/2026 10:30:11 AM;;;ALPLA\farias003;5/29/2026 10:30:11 AM;*ALPLAPROD_RS*;5/29/2026 10:30:12 AM
+9404;6571;-1;1;3;00000000-0000-0000-0000-000000000000;;5/29/2026 10:30:11 AM;;;ALPLA\farias003;5/29/2026 10:30:11 AM;*ALPLAPROD_RS*;5/29/2026 10:30:11 AM
+9403;6570;-1;1;2;00000000-0000-0000-0000-000000000000;;5/29/2026 4:06:40 AM;;;ALPLA\mendes01;5/29/2026 4:06:40 AM;*ALPLAPROD_RS*;5/29/2026 10:30:11 AM
+9402;6569;16;1;1;31cdbe3b-8252-4e2a-8731-4d0f46034d87;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia3\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia1_ORDERS-in_00011-AlplaViana1Preformas_2026052900144074.xml;5/29/2026 12:14:39 AM;;;ALPLA\mendes01;5/29/2026 12:14:39 AM;*ALPLAPROD_RS*;5/29/2026 12:14:40 AM
+9401;6569;-1;1;3;00000000-0000-0000-0000-000000000000;;5/29/2026 12:14:39 AM;;;ALPLA\mendes01;5/29/2026 12:14:39 AM;*ALPLAPROD_RS*;5/29/2026 12:14:40 AM
+9400;6568;20;1;1;7305f2cd-c854-49b9-884a-7c1c7e7729fe;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia3\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia1_ORDERS-in_00004-AlplaViana1_2026052900135178.xml;5/29/2026 12:13:51 AM;;;ALPLA\mendes01;5/29/2026 12:13:51 AM;*ALPLAPROD_RS*;5/29/2026 12:13:51 AM
+9399;6568;-1;1;3;00000000-0000-0000-0000-000000000000;;5/29/2026 12:13:51 AM;;;ALPLA\mendes01;5/29/2026 12:13:51 AM;*ALPLAPROD_RS*;5/29/2026 12:13:51 AM
+9398;6567;-1;1;2;00000000-0000-0000-0000-000000000000;;5/29/2026 12:04:38 AM;;;ALPLA\mendes01;5/29/2026 12:04:38 AM;*ALPLAPROD_RS*;5/29/2026 12:13:51 AM
+9397;6566;16;1;1;e41b6021-9c6d-458a-aabb-e598b421ddd0;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia3\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia1_ORDERS-in_00011-AlplaViana1Preformas_2026052819482622.xml;5/28/2026 7:48:25 PM;;;ALPLA\arriaga008;5/28/2026 7:48:25 PM;*ALPLAPROD_RS*;5/28/2026 7:48:26 PM
+
+(20 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+
+(0 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+
+(0 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+
+(0 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+
+(0 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+
+(0 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+
+(0 rows affected)
+
+Status;AbrufStatus;LadeStatus;LieferStatus;AbgleichStatus;Cnt
+------;-----------;----------;------------;--------------;---
+
+(0 rows affected)
+
+IdAbrufe;IdAuftragsAbruf;Status;AbrufStatus;LadeStatus;LieferStatus;AbgleichStatus;AbgleichTyp;AbrufDatum;LadeDatum;Lieferdatum;LetztesLieferDatum;Abrufnummer;Menge;LadeMenge;PlanMenge;Add_User;Add_Date;Upd_User;Upd_Date
+--------;---------------;------;-----------;----------;------------;--------------;-----------;----------;---------;-----------;------------------;-----------;-----;---------;---------;--------;--------;--------;--------
+
+(0 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+
+(0 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+
+(0 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+
+(0 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+
+(0 rows affected)
+
+Status;LadeStatus;Typ;PlanLogik;Cnt
+------;----------;---;---------;---
+
+(0 rows affected)
+
+IdLadePlanung;IdAbrufe;IdLadeAuftrag;IdLieferschein;Status;LadeStatus;Typ;PlanLogik;LieferDatum;Menge;LadeMenge;Add_User;Add_Date;Upd_User;Upd_Date
+-------------;--------;-------------;--------------;------;----------;---;---------;-----------;-----;---------;--------;--------;--------;--------
+
+(0 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+
+(0 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+
+(0 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+
+(0 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+
+(0 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+
+(0 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+
+(0 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+
+(0 rows affected)
+
+Status;LadeStatus;LKWStatus;LieferplanStatus;Cnt
+------;----------;---------;----------------;---
+
+(0 rows affected)
+
+IdLadeAuftrag;Status;LadeStatus;LKWStatus;LieferplanStatus;WAAvisoStatus;LieferAvisoStatus;SpedAnfrageStatus;LadeDatum;LKWNummer;LKWBezeichnung;Add_User;Add_Date;Upd_User;Upd_Date
+-------------;------;----------;---------;----------------;-------------;-----------------;-----------------;---------;---------;--------------;--------;--------;--------;--------
+
+(0 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+T_Wareneingaenge;Status;0;203;2/28/2024 9:44:54 AM;5/29/2026 8:04:28 PM;1;2500
+T_Wareneingaenge;Status;1;2;1/2/2026 6:23:33 PM;5/14/2026 8:11:57 PM;1649;2428
+T_Wareneingaenge;Status;6;29;8/21/2025 9:27:32 PM;5/19/2026 10:06:08 AM;1003;2445
+T_Wareneingaenge;Status;11;90;6/2/2024 12:14:42 PM;5/27/2026 8:43:45 PM;73;2485
+T_Wareneingaenge;Status;21;2173;2/29/2024 9:21:32 PM;5/29/2026 11:30:31 AM;8;2496
+
+(5 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_Wareneingaenge;AbgleichStatus;0;119;6/2/2024 12:14:42 PM;5/27/2026 8:43:45 PM
+T_Wareneingaenge;AbgleichStatus;1;46;4/22/2025 9:01:32 PM;5/29/2026 8:04:28 PM
+T_Wareneingaenge;AbgleichStatus;2;2332;2/28/2024 9:44:54 AM;5/29/2026 11:30:31 AM
+
+(3 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_Wareneingaenge;BestellPositionStatus;2;67;4/6/2025 1:00:00 PM;5/29/2026 8:04:28 PM
+T_Wareneingaenge;BestellPositionStatus;4;120;8/21/2025 9:20:51 PM;5/27/2026 8:43:45 PM
+T_Wareneingaenge;BestellPositionStatus;5;82;4/3/2025 9:33:00 AM;5/20/2026 11:38:27 PM
+T_Wareneingaenge;BestellPositionStatus;6;1836;12/2/2024 11:32:14 AM;5/29/2026 11:30:31 AM
+T_Wareneingaenge;BestellPositionStatus;7;283;2/29/2024 9:21:32 PM;11/14/2025 11:36:04 PM
+T_Wareneingaenge;BestellPositionStatus;8;109;2/28/2024 9:44:54 AM;5/1/2026 3:46:00 PM
+
+(6 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_Wareneingaenge;EurologStatus;-1;2497;2/28/2024 9:44:54 AM;5/29/2026 8:04:28 PM
+
+(1 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_Wareneingaenge;Typ;20;2497;2/28/2024 9:44:54 AM;5/29/2026 8:04:28 PM
+
+(1 rows affected)
+
+Status;AbgleichStatus;BestellPositionStatus;EurologStatus;Typ;Cnt
+------;--------------;---------------------;-------------;---;---
+0;1;2;-1;20;46
+0;2;2;-1;20;21
+0;2;7;-1;20;27
+0;2;8;-1;20;109
+1;2;4;-1;20;2
+6;0;4;-1;20;29
+11;0;4;-1;20;89
+11;0;7;-1;20;1
+21;2;5;-1;20;82
+21;2;6;-1;20;1836
+21;2;7;-1;20;255
+
+(11 rows affected)
+
+IdWareneingang;IdBestellung;IdBestellPosition;IdJournal;IdAuftragsAbruf;Status;AbgleichStatus;BestellPositionStatus;EurologStatus;Typ;Datum;SollMenge;IstMenge;Add_User;Add_Date;Upd_User;Upd_Date
+--------------;------------;-----------------;---------;---------------;------;--------------;---------------------;-------------;---;-----;---------;--------;--------;--------;--------;--------
+2500;2606;2524;6577;-1;0;1;2;-1;20;5/29/2026 8:04:28 PM;235008;0;ALPLA\farias003;5/29/2026 7:04:51 PM;ALPLA\farias003;5/29/2026 7:04:51 PM
+2499;2605;2523;6576;-1;0;1;2;-1;20;5/29/2026 8:03:49 PM;144480;0;ALPLA\farias003;5/29/2026 7:04:16 PM;ALPLA\farias003;5/29/2026 7:04:16 PM
+2498;2604;2522;6574;-1;0;1;2;-1;20;5/29/2026 11:31:45 AM;21600;0;ALPLA\farias003;5/29/2026 10:32:05 AM;ALPLA\farias003;5/29/2026 10:32:05 AM
+2497;2603;2521;6573;-1;0;1;2;-1;20;5/29/2026 11:31:04 AM;261120;0;ALPLA\farias003;5/29/2026 10:31:33 AM;ALPLA\farias003;5/29/2026 10:31:33 AM
+2496;2602;2520;6572;-1;21;2;6;-1;20;5/29/2026 11:30:31 AM;61920;0;ALPLA\farias003;5/29/2026 10:30:52 AM;ALPLA\farias003;5/29/2026 7:03:01 PM
+2495;2601;2519;6571;-1;0;1;2;-1;20;5/29/2026 11:29:40 AM;192000;0;ALPLA\farias003;5/29/2026 10:30:11 AM;ALPLA\farias003;5/29/2026 10:30:11 AM
+2494;2600;2518;6569;-1;0;1;2;-1;20;5/29/2026 1:14:02 AM;391680;0;ALPLA\mendes01;5/29/2026 12:14:40 AM;ALPLA\mendes01;5/29/2026 12:14:40 AM
+2493;2599;2517;6568;-1;21;2;6;-1;20;5/29/2026 1:12:40 AM;123840;0;ALPLA\mendes01;5/29/2026 12:13:51 AM;ALPLA\mendes01;5/29/2026 4:06:40 AM
+2492;2598;2516;6566;-1;21;2;6;-1;20;5/28/2026 8:47:00 PM;28800;0;ALPLA\arriaga008;5/28/2026 7:48:25 PM;ALPLA\mendes01;5/29/2026 12:04:38 AM
+2491;2597;2515;6558;-1;21;2;6;-1;20;5/28/2026 10:34:39 AM;261120;0;ALPLA\arriaga008;5/28/2026 9:35:37 AM;ALPLA\farias003;5/28/2026 4:07:17 PM
+2490;2596;2514;6557;-1;21;2;6;-1;20;5/28/2026 10:33:05 AM;123840;0;ALPLA\arriaga008;5/28/2026 9:34:20 AM;ALPLA\farias003;5/28/2026 4:06:28 PM
+2489;2595;2513;6556;-1;21;2;6;-1;20;5/28/2026 10:32:10 AM;288000;0;ALPLA\arriaga008;5/28/2026 9:32:51 AM;ALPLA\farias003;5/28/2026 4:05:46 PM
+2488;2594;2512;6555;-1;21;2;6;-1;20;5/27/2026 8:49:03 PM;25200;0;ALPLA\mendes01;5/27/2026 7:49:52 PM;ALPLA\arriaga008;5/28/2026 10:41:25 AM
+2487;2593;2511;6554;-1;21;2;6;-1;20;5/27/2026 8:45:56 PM;391680;0;ALPLA\mendes01;5/27/2026 7:48:50 PM;ALPLA\farias003;5/28/2026 4:04:56 PM
+2486;2592;2510;6553;-1;21;2;6;-1;20;5/27/2026 8:44:32 PM;103200;0;ALPLA\mendes01;5/27/2026 7:45:34 PM;ALPLA\arriaga008;5/28/2026 10:40:24 AM
+2485;2591;2509;6552;-1;11;0;4;-1;20;5/27/2026 8:43:45 PM;384000;0;ALPLA\mendes01;5/27/2026 7:44:12 PM;ALPLA\arriaga008;5/28/2026 10:39:07 AM
+2484;2590;2508;6549;-1;21;2;6;-1;20;5/27/2026 10:52:12 AM;195840;0;ALPLA\mendes01;5/27/2026 9:52:57 AM;ALPLA\farias003;5/27/2026 4:27:34 PM
+2483;2589;2507;6548;-1;21;2;6;-1;20;5/27/2026 10:50:48 AM;82560;0;ALPLA\mendes01;5/27/2026 9:51:16 AM;ALPLA\farias003;5/27/2026 4:26:55 PM
+2482;2588;2506;6547;-1;11;0;4;-1;20;5/27/2026 10:49:41 AM;288000;0;ALPLA\mendes01;5/27/2026 9:50:20 AM;ALPLA\farias003;5/27/2026 4:19:44 PM
+2481;2587;2505;6533;-1;21;2;6;-1;20;5/26/2026 8:35:04 PM;261120;0;ALPLA\farias003;5/26/2026 7:35:30 PM;ALPLA\mendes01;5/27/2026 7:36:35 AM
+
+(20 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+T_WareneingangPlanungen;Status;1;68;6/30/2025 6:59:27 PM;5/28/2026 10:38:35 AM;2309;4153
+T_WareneingangPlanungen;Status;6;42;3/25/2025 11:27:44 AM;5/19/2026 2:20:51 PM;1866;4106
+T_WareneingangPlanungen;Status;11;111;6/6/2024 6:22:51 PM;5/28/2026 10:39:07 AM;417;4152
+T_WareneingangPlanungen;Status;21;3744;3/5/2024 11:01:08 AM;5/29/2026 7:03:01 PM;3;4163
+
+(4 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_WareneingangPlanungen;LadeStatus;0;136;9/1/2024 10:35:55 AM;5/28/2026 10:38:35 AM
+T_WareneingangPlanungen;LadeStatus;10;90;6/25/2024 2:54:37 PM;3/16/2026 9:55:08 PM
+T_WareneingangPlanungen;LadeStatus;11;3701;3/5/2024 11:01:08 AM;5/29/2026 7:03:01 PM
+T_WareneingangPlanungen;LadeStatus;12;38;6/26/2024 10:41:00 PM;1/9/2026 9:09:02 AM
+
+(4 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_WareneingangPlanungen;Typ;20;3965;3/5/2024 11:01:08 AM;5/29/2026 7:03:01 PM
+
+(1 rows affected)
+
+IdWareneingangPlanung;IdWareneingang;IdWareneingangAuftrag;IdJournal;IdLadePlanung;Status;LadeStatus;Typ;Menge;EntladeMenge;Add_User;Add_Date;Upd_User;Upd_Date
+---------------------;--------------;---------------------;---------;-------------;------;----------;---;-----;------------;--------;--------;--------;--------
+4163;2496;3795;-1;-1;21;11;20;61920;61920;ALPLA\farias003;5/29/2026 7:02:39 PM;ALPLA\farias003;5/29/2026 7:03:01 PM
+4162;2493;3794;-1;-1;21;11;20;123840;123840;ALPLA\mendes01;5/29/2026 4:06:03 AM;ALPLA\mendes01;5/29/2026 4:06:40 AM
+4161;2492;3793;-1;-1;21;11;20;28800;28800;ALPLA\mendes01;5/29/2026 12:03:47 AM;ALPLA\mendes01;5/29/2026 12:04:38 AM
+4160;2491;3792;-1;-1;21;11;20;261120;261120;ALPLA\farias003;5/28/2026 4:06:45 PM;ALPLA\farias003;5/28/2026 4:07:17 PM
+4159;2490;3791;-1;-1;21;11;20;123840;123840;ALPLA\farias003;5/28/2026 4:06:04 PM;ALPLA\farias003;5/28/2026 4:06:28 PM
+4158;2489;3790;-1;-1;21;11;20;288000;288000;ALPLA\farias003;5/28/2026 4:05:24 PM;ALPLA\farias003;5/28/2026 4:05:45 PM
+4157;2487;3789;-1;-1;21;11;20;39168;39168;ALPLA\farias003;5/28/2026 4:04:31 PM;ALPLA\farias003;5/28/2026 4:04:56 PM
+4156;2487;3788;-1;-1;21;11;20;352512;352512;ALPLA\farias003;5/28/2026 4:03:25 PM;ALPLA\farias003;5/28/2026 4:03:54 PM
+4155;2488;3787;-1;-1;21;11;20;25200;25200;ALPLA\arriaga008;5/28/2026 10:40:52 AM;ALPLA\arriaga008;5/28/2026 10:41:25 AM
+4154;2486;3786;-1;-1;21;11;20;103200;103200;ALPLA\arriaga008;5/28/2026 10:39:54 AM;ALPLA\arriaga008;5/28/2026 10:40:24 AM
+4153;2485;3785;-1;-1;1;0;20;76800;0;ALPLA\arriaga008;5/28/2026 10:38:35 AM;ALPLA\arriaga008;5/28/2026 10:38:35 AM
+4152;2485;3785;-1;-1;11;11;20;307200;307200;ALPLA\arriaga008;5/28/2026 10:38:35 AM;ALPLA\arriaga008;5/28/2026 10:39:07 AM
+4151;2484;3784;-1;-1;21;11;20;195840;195840;ALPLA\farias003;5/27/2026 4:27:10 PM;ALPLA\farias003;5/27/2026 4:27:33 PM
+4150;2483;3783;-1;-1;21;11;20;82560;82560;ALPLA\farias003;5/27/2026 4:26:35 PM;ALPLA\farias003;5/27/2026 4:26:55 PM
+4149;2482;3782;-1;-1;1;0;20;76800;0;ALPLA\farias003;5/27/2026 4:19:27 PM;ALPLA\farias003;5/27/2026 4:19:27 PM
+4148;2482;3782;-1;-1;11;11;20;211200;211200;ALPLA\farias003;5/27/2026 4:19:27 PM;ALPLA\farias003;5/27/2026 4:19:44 PM
+4147;2481;3781;-1;-1;21;11;20;261120;261120;ALPLA\mendes01;5/27/2026 7:36:05 AM;ALPLA\mendes01;5/27/2026 7:36:35 AM
+4146;2480;3780;-1;-1;21;11;20;61920;61920;ALPLA\mendes01;5/27/2026 7:35:16 AM;ALPLA\mendes01;5/27/2026 7:35:40 AM
+4145;2479;3779;-1;-1;21;11;20;38400;38400;ALPLA\mendes01;5/27/2026 7:34:19 AM;ALPLA\mendes01;5/27/2026 7:34:57 AM
+4144;2479;3779;-1;-1;21;11;20;192000;192000;ALPLA\mendes01;5/27/2026 7:34:19 AM;ALPLA\mendes01;5/27/2026 7:34:57 AM
+
+(20 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinProdTag;MaxProdTag;MinAddDate;MaxUpdDate
+---------;-----------;-----------;---;----------;----------;----------;----------
+T_InhouseLieferungen;RowSummary;ALL;4353;1/1/2024 12:00:00 AM;5/25/2026 12:00:00 AM;1/30/2024 9:00:19 PM;5/26/2026 9:27:55 AM
+
+(1 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_InhouseLieferungen;IdVpkVorschrift;13;4064;1/1/2024 12:00:00 AM;5/25/2026 12:00:00 AM
+T_InhouseLieferungen;IdVpkVorschrift;17;228;8/21/2024 12:00:00 AM;5/22/2026 12:00:00 AM
+T_InhouseLieferungen;IdVpkVorschrift;2;34;8/3/2024 12:00:00 AM;7/17/2025 12:00:00 AM
+T_InhouseLieferungen;IdVpkVorschrift;15;24;4/6/2024 12:00:00 AM;10/27/2024 12:00:00 AM
+T_InhouseLieferungen;IdVpkVorschrift;10;2;3/11/2024 12:00:00 AM;3/12/2024 12:00:00 AM
+T_InhouseLieferungen;IdVpkVorschrift;0;1;1/15/2025 12:00:00 AM;1/15/2025 12:00:00 AM
+
+(6 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_InhouseLieferungen;IdAdresse;6;4353;1/1/2024 12:00:00 AM;5/25/2026 12:00:00 AM
+
+(1 rows affected)
+
+IdInhouseLieferung;ProdTag;IdArtikelVariante;IdVpkVorschrift;IdHauptmaterial;IdAdresse;LieferMenge;BufferRetourMenge;LieferMengeVereinbart;IdJournal;JournalNummer;JournalPositionGuid;SammelGuid;LieferscheinDatum;KundenAuftragsNummer;KundenPositionsNummer;Add_User;Add_Date;Upd_User;Upd_Date
+------------------;-------;-----------------;---------------;---------------;---------;-----------;-----------------;---------------------;---------;-------------;-------------------;----------;-----------------;--------------------;---------------------;--------;--------;--------;--------
+4353;5/25/2026 12:00:00 AM;179;13;159;6;10368;0;10368;6527;103643;b894c010-f4ed-4501-8566-5efda51fa808;abf15b51-38e1-4a9b-8ba3-521274f14713;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+4352;5/25/2026 12:00:00 AM;163;13;101;6;632050;0;632050;6527;103643;3c856276-7f82-42cd-ab31-9e4414050228;d3e5a6af-eaf8-47e9-9f6f-b1ebeca45c1e;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+4351;5/25/2026 12:00:00 AM;122;13;245;6;80898;0;80898;6527;103643;b299027d-d6ab-49e0-993b-6545fc8179cb;5dbc8dbe-f043-4fa3-aa38-2c31df1148a7;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+4350;5/25/2026 12:00:00 AM;120;13;100;6;98200;0;98200;6527;103643;d60c4537-a94d-4405-be8e-9c99de7c96ad;b801fd2d-f5db-4156-82c3-1f57dc4aec45;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+4349;5/24/2026 12:00:00 AM;294;13;266;6;3334;0;3334;6527;103643;8007b388-a682-477d-88e1-2dae53ceeeb5;a28f5043-36af-488c-817d-18586a91bc4f;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+4348;5/24/2026 12:00:00 AM;178;13;115;6;4032;0;4032;6527;103643;126a1166-e292-4839-8d8c-13b0fbf7c79d;d4aefcaa-fa15-476a-acbc-0f07b20b1d1d;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+4347;5/24/2026 12:00:00 AM;163;13;101;6;128681;0;128681;6527;103643;3c856276-7f82-42cd-ab31-9e4414050228;d3e5a6af-eaf8-47e9-9f6f-b1ebeca45c1e;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+4346;5/24/2026 12:00:00 AM;122;13;245;6;12640;0;12640;6527;103643;b299027d-d6ab-49e0-993b-6545fc8179cb;5dbc8dbe-f043-4fa3-aa38-2c31df1148a7;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+4345;5/24/2026 12:00:00 AM;120;13;100;6;9658;0;9658;6527;103643;d60c4537-a94d-4405-be8e-9c99de7c96ad;b801fd2d-f5db-4156-82c3-1f57dc4aec45;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+4344;5/23/2026 12:00:00 AM;294;13;266;6;33302;0;33302;6527;103643;8007b388-a682-477d-88e1-2dae53ceeeb5;a28f5043-36af-488c-817d-18586a91bc4f;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+4343;5/23/2026 12:00:00 AM;178;13;115;6;36864;0;36864;6527;103643;126a1166-e292-4839-8d8c-13b0fbf7c79d;d4aefcaa-fa15-476a-acbc-0f07b20b1d1d;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+4342;5/23/2026 12:00:00 AM;176;13;101;6;476703;0;476703;6527;103643;eb750324-b74b-4917-aeb2-970d0eb71fd5;3c3b69a7-3a67-48cd-9bb1-4d5d61847079;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+4341;5/23/2026 12:00:00 AM;122;13;245;6;127168;0;127168;6527;103643;b299027d-d6ab-49e0-993b-6545fc8179cb;5dbc8dbe-f043-4fa3-aa38-2c31df1148a7;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+4340;5/23/2026 12:00:00 AM;120;13;100;6;252982;0;252482;6527;103643;d60c4537-a94d-4405-be8e-9c99de7c96ad;b801fd2d-f5db-4156-82c3-1f57dc4aec45;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+4339;5/22/2026 12:00:00 AM;310;17;266;6;8814;0;8814;6527;103643;c16d489e-e600-433f-8c7d-5c65e11ed64d;5fcd703d-6cac-4f06-8ac3-64efc0e25198;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+4338;5/22/2026 12:00:00 AM;296;13;266;6;48233;0;48233;6527;103643;66ea47f4-d8c3-44b6-9c63-37906b00e603;c21eefe4-6156-48d3-ad67-caffff20993f;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+4337;5/22/2026 12:00:00 AM;178;13;115;6;35520;0;35520;6527;103643;126a1166-e292-4839-8d8c-13b0fbf7c79d;d4aefcaa-fa15-476a-acbc-0f07b20b1d1d;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+4336;5/22/2026 12:00:00 AM;176;13;101;6;569295;0;569295;6527;103643;eb750324-b74b-4917-aeb2-970d0eb71fd5;3c3b69a7-3a67-48cd-9bb1-4d5d61847079;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+4335;5/22/2026 12:00:00 AM;122;13;245;6;3542;0;3542;6527;103643;b299027d-d6ab-49e0-993b-6545fc8179cb;5dbc8dbe-f043-4fa3-aa38-2c31df1148a7;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+4334;5/22/2026 12:00:00 AM;120;13;100;6;36375;0;36375;6527;103643;d60c4537-a94d-4405-be8e-9c99de7c96ad;b801fd2d-f5db-4156-82c3-1f57dc4aec45;5/25/2026 9:27:41 AM;;;ALPLA\vieira016;5/26/2026 9:12:18 AM;*ALPLAPROD_RS*;5/26/2026 9:27:55 AM
+
+(20 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinProdTag;MaxProdTag;MinAddDate;MaxUpdDate
+---------;-----------;-----------;---;----------;----------;----------;----------
+T_InhouseBewegungen;RowSummary;ALL;4179;1/1/2024 12:00:00 AM;5/25/2026 12:00:00 AM;2/10/2024 5:45:38 PM;5/26/2026 9:03:06 AM
+
+(1 rows affected)
+
+IdInhouseBewegung;ProdTag;IdArtikelVariante;ProduzierteMenge;FehlMenge;BufferEinlagerungsMenge;BufferLieferMenge;BufferRetourMenge;LieferMenge;Add_User;Add_Date;Upd_User;Upd_Date
+-----------------;-------;-----------------;----------------;---------;-----------------------;-----------------;-----------------;-----------;--------;--------;--------;--------
+21688;5/24/2026 12:00:00 AM;294;3334;0;0;0;0;3334;ALPLA\vieira016;5/26/2026 9:03:06 AM;ALPLA\vieira016;5/26/2026 9:03:06 AM
+21687;5/24/2026 12:00:00 AM;290;0;0;0;0;0;0;ALPLA\vieira016;5/26/2026 9:03:06 AM;ALPLA\vieira016;5/26/2026 9:03:06 AM
+21686;5/24/2026 12:00:00 AM;179;0;0;0;0;0;0;ALPLA\vieira016;5/26/2026 9:03:06 AM;ALPLA\vieira016;5/26/2026 9:03:06 AM
+21685;5/24/2026 12:00:00 AM;178;4032;0;0;0;0;4032;ALPLA\vieira016;5/26/2026 9:03:06 AM;ALPLA\vieira016;5/26/2026 9:03:06 AM
+21684;5/24/2026 12:00:00 AM;163;128681;0;0;0;0;128681;ALPLA\vieira016;5/26/2026 9:03:06 AM;ALPLA\vieira016;5/26/2026 9:03:06 AM
+21683;5/24/2026 12:00:00 AM;122;12640;0;0;0;0;12640;ALPLA\vieira016;5/26/2026 9:03:06 AM;ALPLA\vieira016;5/26/2026 9:03:06 AM
+21682;5/24/2026 12:00:00 AM;120;9658;0;0;0;0;9658;ALPLA\vieira016;5/26/2026 9:03:06 AM;ALPLA\vieira016;5/26/2026 9:03:06 AM
+21681;5/23/2026 12:00:00 AM;294;33302;0;0;0;0;33302;ALPLA\vieira016;5/26/2026 9:03:04 AM;ALPLA\vieira016;5/26/2026 9:03:04 AM
+21680;5/23/2026 12:00:00 AM;178;36864;0;0;0;0;36864;ALPLA\vieira016;5/26/2026 9:03:04 AM;ALPLA\vieira016;5/26/2026 9:03:04 AM
+21679;5/23/2026 12:00:00 AM;176;476703;0;0;0;0;476703;ALPLA\vieira016;5/26/2026 9:03:04 AM;ALPLA\vieira016;5/26/2026 9:03:04 AM
+21678;5/23/2026 12:00:00 AM;122;127168;0;0;0;0;127168;ALPLA\vieira016;5/26/2026 9:03:04 AM;ALPLA\vieira016;5/26/2026 9:03:04 AM
+21677;5/23/2026 12:00:00 AM;120;252982;0;0;0;0;252982;ALPLA\vieira016;5/26/2026 9:03:04 AM;ALPLA\vieira016;5/26/2026 9:03:04 AM
+21676;5/21/2026 12:00:00 AM;297;42856;0;0;0;0;42856;ALPLA\vieira016;5/26/2026 9:03:01 AM;ALPLA\vieira016;5/26/2026 9:03:01 AM
+21675;5/21/2026 12:00:00 AM;296;0;0;0;0;0;0;ALPLA\vieira016;5/26/2026 9:03:01 AM;ALPLA\vieira016;5/26/2026 9:03:01 AM
+21674;5/21/2026 12:00:00 AM;178;39168;0;0;0;0;39168;ALPLA\vieira016;5/26/2026 9:03:01 AM;ALPLA\vieira016;5/26/2026 9:03:01 AM
+21673;5/21/2026 12:00:00 AM;176;209550;0;0;0;0;209550;ALPLA\vieira016;5/26/2026 9:03:01 AM;ALPLA\vieira016;5/26/2026 9:03:01 AM
+21672;5/21/2026 12:00:00 AM;133;119001;0;0;0;0;119001;ALPLA\vieira016;5/26/2026 9:03:01 AM;ALPLA\vieira016;5/26/2026 9:03:01 AM
+21671;5/21/2026 12:00:00 AM;120;81347;0;0;0;0;81347;ALPLA\vieira016;5/26/2026 9:03:01 AM;ALPLA\vieira016;5/26/2026 9:03:01 AM
+21670;5/22/2026 12:00:00 AM;310;8814;0;0;0;0;8814;ALPLA\vieira016;5/26/2026 9:02:58 AM;ALPLA\vieira016;5/26/2026 9:02:58 AM
+21669;5/22/2026 12:00:00 AM;296;48233;0;0;0;0;48233;ALPLA\vieira016;5/26/2026 9:02:58 AM;ALPLA\vieira016;5/26/2026 9:02:58 AM
+
+(20 rows affected)
+
+TABLE_CATALOG;TABLE_SCHEMA;TABLE_NAME;COLUMN_NAME;ORDINAL_POSITION;COLUMN_DEFAULT;IS_NULLABLE;DATA_TYPE;CHARACTER_MAXIMUM_LENGTH;CHARACTER_OCTET_LENGTH;NUMERIC_PRECISION;NUMERIC_PRECISION_RADIX;NUMERIC_SCALE;DATETIME_PRECISION;CHARACTER_SET_CATALOG;CHARACTER_SET_SCHEMA;CHARACTER_SET_NAME;COLLATION_CATALOG;COLLATION_SCHEMA;COLLATION_NAME;DOMAIN_CATALOG;DOMAIN_SCHEMA;DOMAIN_NAME
+-------------;------------;----------;-----------;----------------;--------------;-----------;---------;------------------------;----------------------;-----------------;-----------------------;-------------;------------------;---------------------;--------------------;------------------;-----------------;----------------;--------------;--------------;-------------;-----------
+
+(0 rows affected)
+
+TableName;ApproxRowCount
+---------;--------------
+T_AppHygieneStatus;0
+T_ProduktionsRueckmeldungTagesStatus;876
+
+(2 rows affected)
+
+TABLE_NAME;COLUMN_NAME;ORDINAL_POSITION;DATA_TYPE;CHARACTER_MAXIMUM_LENGTH;IS_NULLABLE
+----------;-----------;----------------;---------;------------------------;-----------
+
+(0 rows affected)
+
+

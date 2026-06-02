@@ -1,0 +1,1940 @@
+TableName;ApproxRowCount;ColumnCount
+---------;--------------;-----------
+T_EAIMandanten;0;54
+T_Maschine_Werkzeug;6;9
+T_PA_Werkzeug;60;9
+T_PartnerWerke;0;7
+T_tmpAmoWerkzeug;0;16
+T_tmpBudget_eMis_WerkzeugAMO;0;21
+T_tmpBudgetWerkzeugBedarf;0;10
+T_tmpBudgetWerkzeugliste;0;6
+T_Werke;536;36
+T_Werkzeug;31;35
+T_Werkzeug_Blaskopf;0;8
+T_ZentraleWerkzeuge;18717;13
+
+(12 rows affected)
+
+TABLE_NAME;COLUMN_NAME;DATA_TYPE;CHARACTER_MAXIMUM_LENGTH;IS_NULLABLE
+----------;-----------;---------;------------------------;-----------
+Alpla_Blowheads;werk_id;int;;NO
+ALPLA_GRAV_NUMBERS;stamm_werkzg_nr;nvarchar;100;YES
+ALPLA_MD_WERK;werk_id;int;;NO
+ALPLA_MD_WERK;werk_name;nvarchar;70;NO
+ALPLA_MD_WERK;werk_country_id;nvarchar;50;NO
+ALPLA_MD_WERK;werk_mail;nvarchar;70;NO
+ALPLA_MD_WERK;werk_RepKennz;nvarchar;50;NO
+ALPLA_MD_WERK;werk_DINISOzert;nvarchar;50;NO
+ALPLA_MD_WERK;werk_curr_id;nvarchar;50;NO
+ALPLA_MD_WERK;werk_Firmennummer;nvarchar;70;NO
+ALPLA_MD_WERK;werk_incl_olap;int;;NO
+ALPLA_MD_WERK;werk_Firmennummer_soplar;nvarchar;70;NO
+ALPLA_MD_WERK;werk_server;nvarchar;100;NO
+ALPLA_MD_WERK;werk_db;nvarchar;100;NO
+ALPLA_MD_WERK;werk_shortcut;nvarchar;50;NO
+ALPLA_MD_WERK;werk_OrgRegion_id;int;;NO
+ALPLA_MD_WERK;werk_close_date;datetime;;YES
+ALPLA_MD_WERK;werk_ReplicationServer;nvarchar;100;NO
+ALPLA_MD_WERK;werk_LocationType;int;;NO
+syncobj_0x3038423039333641;IdWerkzeug;int;;YES
+syncobj_0x3039323445303838;IdWerkzeug;int;;YES
+syncobj_0x3041373339393633;stamm_werkzg_nr;nvarchar;100;YES
+syncobj_0x3135453142353837;IdWerkzeug;int;;YES
+syncobj_0x3136313733454241;IdWerk;int;;NO
+syncobj_0x3136313733454241;werk_id;int;;NO
+syncobj_0x3136313733454241;werk_name;nvarchar;70;NO
+syncobj_0x3136313733454241;werk_country_id;nvarchar;50;NO
+syncobj_0x3136313733454241;werk_mail;nvarchar;70;NO
+syncobj_0x3136313733454241;werk_RepKennz;nvarchar;50;NO
+syncobj_0x3136313733454241;werk_DINISOzert;nvarchar;50;NO
+syncobj_0x3136313733454241;werk_curr_id;nvarchar;50;NO
+syncobj_0x3136313733454241;werk_Firmennummer;nvarchar;70;NO
+syncobj_0x3136313733454241;werk_incl_olap;int;;NO
+syncobj_0x3136313733454241;werk_Firmennummer_soplar;nvarchar;70;NO
+syncobj_0x3136313733454241;werk_server;nvarchar;100;NO
+syncobj_0x3136313733454241;werk_db;nvarchar;100;NO
+syncobj_0x3136313733454241;werk_shortcut;nvarchar;50;NO
+syncobj_0x3136313733454241;werk_OrgRegion_id;int;;NO
+syncobj_0x3136313733454241;werk_close_date;datetime;;YES
+syncobj_0x3136313733454241;werk_ReplicationServer;nvarchar;100;NO
+syncobj_0x3136313733454241;werk_LocationType;int;;NO
+syncobj_0x3136313733454241;werk_company;int;;YES
+syncobj_0x3136313733454241;werk_suffix;nvarchar;10;NO
+syncobj_0x3137323841303936;GeplanteRundfahrtHaeufigkeit;float;;YES
+syncobj_0x3138363631373745;IdWerkzeug;int;;YES
+syncobj_0x3138433139434134;IdWerkzeug;int;;YES
+syncobj_0x3139393632373837;WerkKurzBez;nvarchar;10;YES
+syncobj_0x3143453034333442;IdWerkzeug;int;;YES
+syncobj_0x3230343434374536;WerkzeugBez;nvarchar;100;YES
+syncobj_0x3232313141444244;IdWerkzeug;int;;YES
+syncobj_0x3234353537314438;WerkKurzBez;nvarchar;10;YES
+syncobj_0x3236363643384439;budget_werk_id;int;;YES
+syncobj_0x3236363643384439;bpos_IDwerkzeug;int;;YES
+syncobj_0x3236363643384439;bpos_werkzeug_bez;nvarchar;100;YES
+syncobj_0x3236364344364243;budget_werk_id;int;;YES
+syncobj_0x3236364344364243;wamo_WerkzTyp;nvarchar;100;YES
+syncobj_0x3236364344364243;wamo_werkzeug_id;int;;YES
+syncobj_0x3236364344364243;IDemisWerkzeugAmo;int;;NO
+syncobj_0x3243383543433936;IdWerkzeug;int;;YES
+syncobj_0x3243414531363745;Werk;nchar;10;NO
+syncobj_0x3244424635424246;budget_werk_id;int;;YES
+syncobj_0x3246363830413141;Standort;int;;NO
+syncobj_0x3246414646384333;IdPA_Werkzeug;int;;NO
+syncobj_0x3246414646384333;IdWerkzeug;int;;NO
+syncobj_0x3246414646384333;StandardWerkzeug;bit;;YES
+syncobj_0x3246443042333244;IdWerkzeug;int;;YES
+syncobj_0x3332444133433638;IdWerkzeug;int;;YES
+syncobj_0x3334353338374230;Standort;nvarchar;100;YES
+syncobj_0x3342333338454436;budget_werk_id;int;;YES
+syncobj_0x3342333338454436;wamo_WerkzTyp;nvarchar;100;YES
+syncobj_0x3342333338454436;wamo_werkzeug_id;int;;YES
+syncobj_0x3342333338454436;IDemisWerkzeugAmo;int;;NO
+syncobj_0x3345344133433334;Standort;int;;NO
+syncobj_0x3345383231423442;Standort;int;;NO
+syncobj_0x3346343137384242;Standort;int;;YES
+syncobj_0x3346343331383344;Standort;int;;YES
+syncobj_0x3346364142344243;IdWerkzeug;int;;YES
+syncobj_0x3431353344344246;WerkKurzBez;nvarchar;10;YES
+syncobj_0x3431354630464338;IdWerkzeug;int;;YES
+syncobj_0x3431354630464338;Werkzeug_Bezeichnung;nvarchar;50;YES
+syncobj_0x3431354630464338;Werkzeug_Kavitaet;int;;YES
+syncobj_0x3431354630464338;Werkzeug_Stichmass;float;;YES
+syncobj_0x3431354630464338;Werkzeug_Bemerkung;nvarchar;255;YES
+syncobj_0x3431354630464338;Maschine_Standort;int;;YES
+syncobj_0x3432363132463732;IdPA_Werkzeug;int;;NO
+syncobj_0x3432363132463732;IdWerkzeug;int;;NO
+syncobj_0x3432363132463732;StandardWerkzeug;bit;;YES
+syncobj_0x3436353846413542;VolumenGeplant;float;;YES
+syncobj_0x3439383641413237;Werk;nchar;10;NO
+syncobj_0x3441314446414237;eReporting_IdWerk;int;;YES
+syncobj_0x3443424542313145;eReporting_IdWerk;int;;NO
+syncobj_0x3443463844304641;IdWerkzeug;int;;YES
+syncobj_0x3444444443363334;werk_id;int;;NO
+syncobj_0x3530324445304136;IdWerkzeug;int;;YES
+syncobj_0x3534354446454139;Standort;int;;NO
+syncobj_0x3534354446454139;IdWerkzeug;int;;YES
+syncobj_0x3534354446454139;WerkzeugKavitaet;int;;YES
+syncobj_0x3537313234303945;IdWerkzeug;int;;YES
+syncobj_0x3538343731383530;IdWerkzeug;int;;NO
+syncobj_0x3538343731383530;WerkzeugKavität;int;;NO
+syncobj_0x3538343731383530;PlanType;int;;NO
+syncobj_0x3545374539363238;Standort;int;;NO
+syncobj_0x3546353444444546;IdWerkzeug;int;;NO
+syncobj_0x3632384246383034;IdWerkzeug;int;;NO
+syncobj_0x3636353046333344;IdWerkzeug;int;;YES
+syncobj_0x3639373345323031;IdPartnerWerk;int;;NO
+syncobj_0x3642394644343336;IdWerkzeug;int;;YES
+syncobj_0x3645463433323138;IdWerkzeug;int;;NO
+syncobj_0x3645463433323138;WerkzeugKavität;int;;NO
+syncobj_0x3645463433323138;PlanType;int;;NO
+syncobj_0x3730303345453044;Standort;int;;NO
+syncobj_0x3730353338393332;IdMaschineWerkzeug;int;;NO
+syncobj_0x3730353338393332;IdWerkzeug;int;;NO
+syncobj_0x3730423239344138;IdWerkzeug;int;;YES
+syncobj_0x3731314337383742;GeplanteRundfahrtHaeufigkeit;float;;NO
+syncobj_0x3741433443454535;GeplanteMenge;float;;YES
+syncobj_0x3741433443454535;GeplanteMengeVPK;float;;YES
+syncobj_0x3742303436303144;Standort;int;;NO
+syncobj_0x3742303436303144;IdWerkzeug;int;;YES
+syncobj_0x3742303436303144;WerkzeugKavitaet;int;;YES
+syncobj_0x3742393532383542;stamm_werkzg_nr;nvarchar;100;YES
+syncobj_0x3843303145343242;WerkKurzBez;nvarchar;10;YES
+syncobj_0x3930434343304343;PlanTyp;int;;NO
+syncobj_0x3931343145394335;GeplanteRundfahrtHaeufigkeit;float;;YES
+syncobj_0x3931384337344437;GeplanteMenge;float;;YES
+syncobj_0x3931384337344437;GeplanteMengeVPK;float;;YES
+syncobj_0x3932384634333543;GeplanteRundfahrtHaeufigkeit;float;;NO
+syncobj_0x3935304332443832;PlanType;int;;NO
+syncobj_0x3944333638454541;IdWerkzeug;int;;YES
+syncobj_0x3944393741364338;IdZentralesWerkzeug;int;;NO
+syncobj_0x3944393741364338;IdGlobalZentralesWerkzeug;int;;NO
+syncobj_0x3944393741364338;WerkzeugBasisNummer;nvarchar;255;NO
+syncobj_0x4130423530433037;eReporting_IdWerk;int;;NO
+syncobj_0x4130444131344146;IdMaschineWerkzeug;int;;NO
+syncobj_0x4130444131344146;IdWerkzeug;int;;NO
+syncobj_0x4133324542443337;IdWerk;int;;NO
+syncobj_0x4133324542443337;werk_id;int;;NO
+syncobj_0x4133324542443337;werk_name;nvarchar;70;NO
+syncobj_0x4133324542443337;werk_country_id;nvarchar;50;NO
+syncobj_0x4133324542443337;werk_mail;nvarchar;70;NO
+syncobj_0x4133324542443337;werk_RepKennz;nvarchar;50;NO
+syncobj_0x4133324542443337;werk_DINISOzert;nvarchar;50;NO
+syncobj_0x4133324542443337;werk_curr_id;nvarchar;50;NO
+syncobj_0x4133324542443337;werk_Firmennummer;nvarchar;70;NO
+syncobj_0x4133324542443337;werk_incl_olap;int;;NO
+syncobj_0x4133324542443337;werk_Firmennummer_soplar;nvarchar;70;NO
+syncobj_0x4133324542443337;werk_server;nvarchar;100;NO
+syncobj_0x4133324542443337;werk_db;nvarchar;100;NO
+syncobj_0x4133324542443337;werk_shortcut;nvarchar;50;NO
+syncobj_0x4133324542443337;werk_OrgRegion_id;int;;NO
+syncobj_0x4133324542443337;werk_close_date;datetime;;YES
+syncobj_0x4133324542443337;werk_ReplicationServer;nvarchar;100;NO
+syncobj_0x4133324542443337;werk_LocationType;int;;NO
+syncobj_0x4133324542443337;werk_company;int;;YES
+syncobj_0x4133324542443337;werk_suffix;nvarchar;10;NO
+syncobj_0x4133353332353939;Standort;nvarchar;100;YES
+syncobj_0x4133444641433439;PlanTyp;int;;NO
+syncobj_0x4141444142463831;IdWerkzeug;int;;NO
+syncobj_0x4141444142463831;IdZentralesWerkzeug1;int;;YES
+syncobj_0x4141444142463831;IdZentralesWerkzeug2;int;;YES
+syncobj_0x4141444142463831;WerkzeugSatz;int;;YES
+syncobj_0x4142433233343330;PlanType;int;;NO
+syncobj_0x4144353535353931;VolumenGeplant;float;;YES
+syncobj_0x4233393433364232;ek_fert_lief_werk_id;int;;NO
+syncobj_0x4233463238314337;IdPartnerWerk;int;;NO
+syncobj_0x4242444533463541;WerkzeugBez;nvarchar;100;YES
+syncobj_0x4243444138414136;IdZentralesWerkzeug;int;;NO
+syncobj_0x4243444138414136;IdGlobalZentralesWerkzeug;int;;NO
+syncobj_0x4243444138414136;WerkzeugBasisNummer;nvarchar;255;NO
+syncobj_0x4330383236323334;IdWerkzeug;int;;YES
+syncobj_0x4332334432384230;werk_id;int;;NO
+syncobj_0x4339353036454642;budget_werk_id;int;;YES
+syncobj_0x4339353036454642;bpos_IDwerkzeug;int;;YES
+syncobj_0x4339353036454642;bpos_werkzeug_bez;nvarchar;100;YES
+syncobj_0x4342443439304236;BMaschTyp_Werk_id;int;;YES
+syncobj_0x4344423642463244;ek_fert_lief_werk_id;int;;NO
+syncobj_0x4345393235463732;GeplanteMenge;float;;YES
+syncobj_0x4345393235463732;GeplanteMengeVPK;float;;YES
+syncobj_0x4430383833464530;IdWerkzeugBlaskopf;int;;NO
+syncobj_0x4430383833464530;IdWerkzeug;int;;NO
+syncobj_0x4432424235373543;IdWerkzeug;int;;NO
+syncobj_0x4432424235373543;WerkzeugKavität;int;;NO
+syncobj_0x4432424235373543;PlanType;int;;NO
+syncobj_0x4434363130364141;IdWerkzeug;int;;YES
+syncobj_0x4437373243434633;IdWerkzeug;int;;NO
+syncobj_0x4437373243434633;WerkzeugKavität;int;;NO
+syncobj_0x4437373243434633;PlanType;int;;NO
+syncobj_0x4439303146463741;IdWerkzeugBlaskopf;int;;NO
+syncobj_0x4439303146463741;IdWerkzeug;int;;NO
+syncobj_0x4443334639313431;IdWerkzeug;int;;YES
+syncobj_0x4444394233444632;IdWerkzeug;int;;YES
+syncobj_0x4444394233444632;Werkzeug_Bezeichnung;nvarchar;50;YES
+syncobj_0x4444394233444632;Werkzeug_Kavitaet;int;;YES
+syncobj_0x4444394233444632;Werkzeug_Stichmass;float;;YES
+syncobj_0x4444394233444632;Werkzeug_Bemerkung;nvarchar;255;YES
+syncobj_0x4444394233444632;Maschine_Standort;int;;YES
+syncobj_0x4532324137374231;IdWerkzeug;int;;YES
+syncobj_0x4533433743333646;eReporting_IdWerk;int;;YES
+syncobj_0x4544374437444244;budget_werk_id;int;;YES
+syncobj_0x4634464643323430;IdWerkzeug;int;;NO
+syncobj_0x4634464643323430;IdZentralesWerkzeug1;int;;YES
+syncobj_0x4634464643323430;IdZentralesWerkzeug2;int;;YES
+syncobj_0x4634464643323430;WerkzeugSatz;int;;YES
+syncobj_0x4636343635464137;Standort;int;;NO
+syncobj_0x4643394144423446;GeplanteMenge;float;;YES
+syncobj_0x4643394144423446;GeplanteMengeVPK;float;;YES
+syncobj_0x4644443937313145;BMaschTyp_Werk_id;int;;YES
+T_Adressen;WerkKurzBez;nvarchar;10;YES
+T_AuftragsAbrufe;GeplanteMenge;float;;YES
+T_AuftragsAbrufe;GeplanteMengeVPK;float;;YES
+T_AuftragsAbrufeHistorie;GeplanteMenge;float;;YES
+T_AuftragsAbrufeHistorie;GeplanteMengeVPK;float;;YES
+T_BlaskopfNummern;werk_id;int;;NO
+T_BudgetAbsatzplan;IdWerkzeug;int;;YES
+T_EAIJournal;eReporting_IdWerk;int;;YES
+T_EAIJournalAdresse;WerkKurzBez;nvarchar;10;YES
+T_EAIJournalAmo;IdWerkzeug;int;;YES
+T_EAIJournalEx;IdWerksAdresse;int;;YES
+T_EAIJournalEx;WerkBez;nvarchar;100;YES
+T_EAIJournalEx;WerkStrasse;nvarchar;50;YES
+T_EAIJournalEx;WerkPLZ;nvarchar;50;YES
+T_EAIJournalEx;WerkOrt;nvarchar;50;YES
+T_EAIJournalEx;WerkStaat;nvarchar;50;YES
+T_EAIJournalEx;WerkStaatPostKz;nvarchar;50;YES
+T_EAIJournalEx;WerkDebitorenKonto;nvarchar;50;YES
+T_EAIJournalEx;WerkUID;nvarchar;50;YES
+T_EAIJournalEx;WerkTel;nvarchar;50;YES
+T_EAIJournalEx;WerkFax;nvarchar;50;YES
+T_EAIJournalEx;eReporting_IdWerk;int;;YES
+T_EAIJournalEx;WerkAnsprechpartnerName;nvarchar;50;YES
+T_EAIJournalEx;WerkAnsprechpartnerVorname;nvarchar;50;YES
+T_EAIJournalEx;WerkAnsprechpartnerTel;nvarchar;50;YES
+T_EAIJournalEx;WerkAnsprechpartnerFax;nvarchar;50;YES
+T_EAIJournalEx;WerkAnsprechpartnerEmail;nvarchar;50;YES
+T_EAIJournalEx;WerkAnsprechpartnerPos;nvarchar;50;YES
+T_EAIMandanten;eReporting_IdWerk;int;;NO
+T_EDIDokumente;Werk;nchar;10;NO
+T_EtikettenDefault;IdWerkzeug;int;;YES
+T_EtikettenDruckJobs;IdWerkzeug;int;;YES
+T_EtikettenDruckJobs;Werkzeug_Bezeichnung;nvarchar;50;YES
+T_EtikettenDruckJobs;Werkzeug_Kavitaet;int;;YES
+T_EtikettenDruckJobs;Werkzeug_Stichmass;float;;YES
+T_EtikettenDruckJobs;Werkzeug_Bemerkung;nvarchar;255;YES
+T_EtikettenDruckJobs;Maschine_Standort;int;;YES
+T_EtikettenGedruckt;IdWerkzeug;int;;YES
+T_EtikettenVerworfen;IdWerkzeug;int;;YES
+T_ExportLagerBestand;Standort;int;;NO
+T_FuellLinien;Standort;int;;NO
+T_GravurNummern;stamm_werkzg_nr;nvarchar;100;YES
+T_HistoryVK;GeplanteRundfahrtHaeufigkeit;float;;YES
+T_HistoryVKImport;GeplanteRundfahrtHaeufigkeit;float;;NO
+T_LadeAuftraege;VolumenGeplant;float;;YES
+T_Lieferkonditionen;Standort;nvarchar;100;YES
+T_Maschine;Standort;int;;NO
+T_Maschine_Werkzeug;IdMaschineWerkzeug;int;;NO
+T_Maschine_Werkzeug;IdWerkzeug;int;;NO
+T_Maschinen_ProdPlanungen;IdWerkzeug;int;;YES
+T_MaterialBedarf;PlanTyp;int;;NO
+T_MaterialProdPlanungenJeProdTag;PlanType;int;;NO
+T_PA_Werkzeug;IdPA_Werkzeug;int;;NO
+T_PA_Werkzeug;IdWerkzeug;int;;NO
+T_PA_Werkzeug;StandardWerkzeug;bit;;YES
+T_PartnerWerke;IdPartnerWerk;int;;NO
+T_ProdDaten;IdWerkzeug;int;;YES
+T_ProdDaten_Archiv;IdWerkzeug;int;;YES
+T_ProdPlanung;IdWerkzeug;int;;NO
+T_ProdPlanung;WerkzeugKavität;int;;NO
+T_ProdPlanung;PlanType;int;;NO
+T_ProdPlanungHistory;IdWerkzeug;int;;NO
+T_ProdPlanungHistory;WerkzeugKavität;int;;NO
+T_ProdPlanungHistory;PlanType;int;;NO
+T_Produktionslose;Standort;int;;NO
+T_Produktionslose;IdWerkzeug;int;;YES
+T_Produktionslose;WerkzeugKavitaet;int;;YES
+T_ProduktionsRueckmeldungen;IdWerkzeug;int;;NO
+T_tmpAmoWerkzeug;IdWerkzeug;int;;NO
+T_tmpBudget_eMis_Maschinentypen;BMaschTyp_Werk_id;int;;YES
+T_tmpBudget_eMis_Positionen;budget_werk_id;int;;YES
+T_tmpBudget_eMis_Positionen;bpos_IDwerkzeug;int;;YES
+T_tmpBudget_eMis_Positionen;bpos_werkzeug_bez;nvarchar;100;YES
+T_tmpBudget_eMis_Summen;budget_werk_id;int;;YES
+T_tmpBudget_eMis_WerkzeugAMO;budget_werk_id;int;;YES
+T_tmpBudget_eMis_WerkzeugAMO;wamo_WerkzTyp;nvarchar;100;YES
+T_tmpBudget_eMis_WerkzeugAMO;wamo_werkzeug_id;int;;YES
+T_tmpBudget_eMis_WerkzeugAMO;IDemisWerkzeugAmo;int;;NO
+T_tmpBudgetAbsatzplanBlaskopf;WerkzeugBez;nvarchar;100;YES
+T_tmpBudgetAbsatzplanDaten;IdWerkzeug;int;;YES
+T_tmpBudgetAbsatzplanSelect;IdWerkzeug;int;;YES
+T_tmpBudgetAbsatzplanUebersicht;IdWerkzeug;int;;YES
+T_tmpBudgetAmo;IdWerkzeug;int;;YES
+T_tmpBudgetAmo;BezWerkzeug;nvarchar;150;YES
+T_tmpBudgetASP;IdWerkzeug;int;;YES
+T_tmpBudgetParameter;AnzahlWerkzeuge;int;;YES
+T_tmpBudgetParameter;BezWerkzeuge;nvarchar;150;YES
+T_tmpBudgetPETSpritzereiWKZ;IdWerkzeug;int;;YES
+T_tmpBudgetPlanquote;IdWerkzeug;int;;YES
+T_tmpBudgetSkontoBonus;IdWerkzeug;int;;YES
+T_tmpBudgetWerkzeugBedarf;IdWerkzeug;int;;YES
+T_tmpBudgetWerkzeugliste;IdWerkzeug;int;;YES
+T_tmpBudgetWerkzeugliste;BezWerkzeug;nvarchar;150;YES
+T_tmpEMIS_MD_Ressourcen;IDress_werk;int;;YES
+T_TmpPDDruckerei;IdWerkzeug;int;;YES
+T_TmpProdInformation;Standort;int;;YES
+T_tmpProdTagParameter;Werksauslastung;float;;YES
+T_WarenLager;Standort;int;;YES
+T_Werke;IdWerk;int;;NO
+T_Werke;werk_id;int;;NO
+T_Werke;werk_name;nvarchar;70;NO
+T_Werke;werk_country_id;nvarchar;50;NO
+T_Werke;werk_mail;nvarchar;70;NO
+T_Werke;werk_RepKennz;nvarchar;50;NO
+T_Werke;werk_DINISOzert;nvarchar;50;NO
+T_Werke;werk_curr_id;nvarchar;50;NO
+T_Werke;werk_Firmennummer;nvarchar;70;NO
+T_Werke;werk_incl_olap;int;;NO
+T_Werke;werk_Firmennummer_soplar;nvarchar;70;NO
+T_Werke;werk_server;nvarchar;100;NO
+T_Werke;werk_db;nvarchar;100;NO
+T_Werke;werk_shortcut;nvarchar;50;NO
+T_Werke;werk_OrgRegion_id;int;;NO
+T_Werke;werk_close_date;datetime;;YES
+T_Werke;werk_ReplicationServer;nvarchar;100;NO
+T_Werke;werk_LocationType;int;;NO
+T_Werke;werk_company;int;;YES
+T_Werke;werk_suffix;nvarchar;10;NO
+T_Werkzeug;IdWerkzeug;int;;NO
+T_Werkzeug;IdZentralesWerkzeug1;int;;YES
+T_Werkzeug;IdZentralesWerkzeug2;int;;YES
+T_Werkzeug;WerkzeugSatz;int;;YES
+T_Werkzeug_Blaskopf;IdWerkzeugBlaskopf;int;;NO
+T_Werkzeug_Blaskopf;IdWerkzeug;int;;NO
+T_ZentraleFertigungsmittel;ek_fert_lief_werk_id;int;;NO
+T_ZentraleWerkzeuge;IdZentralesWerkzeug;int;;NO
+T_ZentraleWerkzeuge;IdGlobalZentralesWerkzeug;int;;NO
+T_ZentraleWerkzeuge;WerkzeugBasisNummer;nvarchar;255;NO
+V_AbfallLagerBuchungen;MaschineStandort;int;;NO
+V_ADGruppe_Werk_CENTRAL;IdAdGruppe_MD_plants;int;;NO
+V_ADGruppe_Werk_CENTRAL;werk_id;int;;YES
+V_Adressen;WerkKurzBez;nvarchar;10;YES
+V_Adressen_BASIS;WerkKurzBez;nvarchar;10;YES
+V_Adressen_CENTRAL;IdWerk;int;;NO
+V_AdressenKomplett;WerkKurzBez;nvarchar;10;YES
+V_AppOcpClient;Standort;int;;YES
+V_ArtikelWerkzeuge;IdWerkzeug;int;;NO
+V_ArtikelWerkzeuge;IdZentralesWerkzeug1;int;;YES
+V_ArtikelWerkzeuge;IdZentralesWerkzeug2;int;;YES
+V_ArtikelWerkzeuge;WerkzeugSatz;int;;YES
+V_ASMAdressen_CENTRAL;IdWerk;int;;NO
+V_ASMProdArtikel_CENTRAL;IdWerk;int;;NO
+V_AuftragsAbrufe;GeplanteMenge;float;;YES
+V_AuftragsAbrufe;GeplanteMengeVPK;float;;YES
+V_AuftragsAbrufeHistorie;GeplanteMenge;float;;YES
+V_AuftragsAbrufeHistorie;GeplanteMengeVPK;float;;YES
+V_AuftragsAbrufeUebersicht;GeplanteMenge;float;;YES
+V_AuftragsAbrufeUebersicht;GeplanteMengeVPK;float;;YES
+V_AuslagerungsPositionen;GeplanteMengeVPKSum;float;;NO
+V_AuslagerungsPositionen;GeplanteMengeSum;float;;NO
+V_AuslagerungsPositionen;IdWerkzeug;int;;NO
+V_AuslagerungsPositionenBarcodes;GeplanteMengeVPKSum;float;;NO
+V_AuslagerungsPositionenBarcodes;GeplanteMengeSum;float;;NO
+V_AuslagerungsPositionenBarcodes;IdWerkzeug;int;;NO
+V_Bereitstellungsplan;Standort;int;;NO
+V_Blaskopf_CENTRAL;IdeReporting_WerkId;int;;NO
+V_BlaskopfNummern;werk_id;int;;NO
+V_BlaskopfNummern_BASIS;werk_id;int;;NO
+V_BlaskopfNummern_CENTRAL;werk_id;int;;NO
+V_BlockedItemsOfActiveReworkTasks;IdWerkzeug;int;;YES
+V_EAIJournalPositionSummary;eReporting_IdWerk;int;;YES
+V_EDIDokumente;Werk;nchar;10;NO
+V_EDIDokumentPositionen;Werk;nchar;10;YES
+V_EDIDokumentPositionen_ORDER;Werk;nchar;10;YES
+V_EDIPositionDetails;Werk;nchar;10;YES
+V_EingesetzteRessourcen;Standort;int;;NO
+V_EinlagerungsPositionen;GeplanteMengeVPKSum;float;;NO
+V_EinlagerungsPositionen;GeplanteMengeSum;float;;NO
+V_eMIS_EAIJournalPositionSummary;eReporting_IdWerk_eMIS;int;;YES
+V_EtikettenGedruckt;IdWerkzeug;int;;YES
+V_EtikettenGedrucktSuche;MaschinenStandort;int;;NO
+V_EtikettenVerworfen;IdWerkzeug;int;;YES
+V_EurologLagerbestand_CENTRAL;IdWerk;int;;NO
+V_ExportAktuellerLagerBestand;Standort;int;;YES
+V_FuellLinien;Standort;int;;NO
+V_FuellLinien_BASIS;Standort;int;;NO
+V_FuellLinienArtikelvariantenWerkzeuge_PLANNING;StandardWerkzeug;bit;;YES
+V_FuellLinienArtikelvariantenWerkzeuge_PLANNING;IdWerkzeug;int;;YES
+V_FuellLinienArtikelvariantenWerkzeuge_PLANNING;WerkzeugBez;nvarchar;50;YES
+V_FuellLinienArtikelvariantenWerkzeuge_PLANNING;WerkzeugZyklus;float;;YES
+V_FuellLinienArtikelvariantenWerkzeuge_PLANNING;IdWerkzeugProdBereich;int;;YES
+V_FuellLinienArtikelvariantenWerkzeuge_PLANNING;WerkzeugAktiv;bit;;YES
+V_FuellLinienMaschinenSetupTypen_PLANNING;MaschinenStandort;int;;NO
+V_FuellLinienMaschinenSetupTypen_PLANNING;MaschinenStandortBezeichnung;nvarchar;81;YES
+V_FuellLoseProdPlanung_PLANNING;IdWerkzeug;int;;NO
+V_FuellLoseProdPlanung_PLANNING;WerkzeugKavität;int;;NO
+V_GravurNummern;stamm_werkzg_nr;nvarchar;100;YES
+V_GravurNummern_BASIS;stamm_werkzg_nr;nvarchar;100;YES
+V_GravurNummern_CENTRAL;stamm_werkzg_nr;nvarchar;100;YES
+V_HistoryEK_CENTRAL;werk_id;int;;NO
+V_HistoryVK_AktuelleUndZukuenftigePreise_BASIS;GeplanteRundfahrtHaeufigkeit;float;;YES
+V_HistoryVK_BASIS;GeplanteRundfahrtHaeufigkeit;float;;YES
+V_HistoryVK_Hauptkunden_BASIS;GeplanteRundfahrtHaeufigkeit;float;;YES
+V_HistoryVK_HauptmaterialTyp_BASIS;GeplanteRundfahrtHaeufigkeit;float;;YES
+V_HistoryVK_HauptmaterialTypGruppiert_BASIS;GeplanteRundfahrtHaeufigkeit;float;;YES
+V_HistoryVKImport_BASIS;GeplanteRundfahrtHaeufigkeit;float;;NO
+V_KomponentenAusgaben;MaschStandort;int;;NO
+V_LadeAuftraege;VolumenGeplant;float;;YES
+V_LadeAuftraegeSum;GeplanteMenge;float;;YES
+V_LadeAuftraegeSum;GeplanteMengeVPK;float;;YES
+V_LadePlanungenLadeAuftragAbruf;LadeAuftragVolumenGeplant;float;;YES
+V_LadePlanungenSum;MengeSumGeplant;float;;YES
+V_LadePlanungenSum;MengeVPKSumGeplant;float;;YES
+V_LagerKontenPositionenProduktionSum;SumGeplantVPK;float;;NO
+V_LagerKontenPositionenProduktionSum;SumGeplant;float;;NO
+V_LagerPositionenBarcodes;GeplanteMengeVPKSum;float;;NO
+V_LagerPositionenBarcodes;GeplanteMengeSum;float;;NO
+V_LagerPositionenBarcodes;IdWerkzeug;int;;NO
+V_LagerPositionenBarcodes;WerkzeugBez;nvarchar;50;NO
+V_LagerPositionenBarcodesInventuren;GeplanteMengeVPKSum;float;;NO
+V_LagerPositionenBarcodesInventuren;GeplanteMengeSum;float;;NO
+V_LagerPositionenGeplantSum;GeplanteMengeVPKSum;float;;YES
+V_LagerPositionenGeplantSum;GeplanteMengeSum;float;;YES
+V_LagerPositionenInventuren;GeplanteMengeVPKSum;float;;NO
+V_LagerPositionenInventuren;GeplanteMengeSum;float;;NO
+V_LagerPositionenPlanungen;GeplanteMengeVPKSum;float;;NO
+V_LagerPositionenPlanungen;GeplanteMengeSum;float;;NO
+V_LagerPositionenPlanungen;IdWerkzeug;int;;NO
+V_LagerPositionenPlanungen;WerkzeugBez;nvarchar;50;NO
+V_Lieferkonditionen_BASIS;Standort;nvarchar;100;YES
+V_MachineFetch;Standort;int;;NO
+V_MachineProductionLotAssignment;IdWerkzeug;int;;YES
+V_MaintenanceMessdaten;IdWerkzeug;int;;NO
+V_Maschine;Standort;int;;NO
+V_Maschine_BASIS;Standort;int;;NO
+V_Maschine_Werkzeug;IdMaschineWerkzeug;int;;NO
+V_Maschine_Werkzeug;IdWerkzeug;int;;NO
+V_Maschine_Werkzeug;WerkzeugBez;nvarchar;50;NO
+V_Maschine_Werkzeug;WerkzeugIdAdressen;int;;NO
+V_Maschine_Werkzeug;WerkzeugAdressenBez;nvarchar;100;NO
+V_Maschine_Werkzeug;WerkzeugIdProdBereich;int;;NO
+V_Maschine_Werkzeug;WerkzeugProdBereichBez;nvarchar;50;NO
+V_Maschine_Werkzeug;WerkzeugNestZahl;int;;NO
+V_Maschine_Werkzeug;WerkzeugHub;real;;YES
+V_Maschine_Werkzeug;WerkzeugStichmass;real;;YES
+V_Maschine_Werkzeug;WerkzeugBauDatum;datetime;;YES
+V_Maschine_Werkzeug;WerkzeugAmoBezahlt;bit;;NO
+V_Maschine_Werkzeug;WerkzeugAmoSollMenge;int;;YES
+V_Maschine_Werkzeug;WerkzeugAmoIstMenge;int;;YES
+V_Maschine_Werkzeug;WerkzeugAmoIstBetrag;float;;YES
+V_Maschine_Werkzeug;WerkzeugAmoAnteil;float;;YES
+V_Maschine_Werkzeug;WerkzeugAmoWkzgKosten;int;;YES
+V_Maschine_Werkzeug;WerkzeugBemerkung;nvarchar;50;YES
+V_Maschine_Werkzeug;WerkzeugAktiv;bit;;NO
+V_Maschine_Werkzeug;WerkzeugAnzahl;int;;YES
+V_Maschine_Werkzeug;WerkzeugAmoStartDatum;datetime;;YES
+V_Maschine_Werkzeug;WerkzeugOffeneAmoPerJahresende;int;;YES
+V_Maschine_Werkzeug;WerkzeugAmoOhneBerechnung;float;;YES
+V_Maschine_Werkzeug;WerkzeugGrav_Id;nvarchar;50;NO
+V_Maschine_Werkzeug;WerkzeugZyklus;float;;YES
+V_Maschine_Werkzeug;WerkzeugIdProdBereich_eReporting;int;;YES
+V_Maschine_Werkzeug;WerkzeugVerfuegbar;int;;YES
+V_Maschine_Werkzeug_BASIS;IdMaschineWerkzeug;int;;NO
+V_Maschine_Werkzeug_BASIS;IdWerkzeug;int;;NO
+V_Maschine_Werkzeug_BASIS;WerkzeugBez;nvarchar;50;NO
+V_Maschine_Werkzeug_BASIS;WerkzeugIdAdressen;int;;NO
+V_Maschine_Werkzeug_BASIS;WerkzeugAdressenBez;nvarchar;100;NO
+V_Maschine_Werkzeug_BASIS;WerkzeugIdProdBereich;int;;NO
+V_Maschine_Werkzeug_BASIS;WerkzeugProdBereichBez;nvarchar;50;NO
+V_Maschine_Werkzeug_BASIS;WerkzeugNestZahl;int;;NO
+V_Maschine_Werkzeug_BASIS;WerkzeugHub;real;;YES
+V_Maschine_Werkzeug_BASIS;WerkzeugStichmass;real;;YES
+V_Maschine_Werkzeug_BASIS;WerkzeugBauDatum;datetime;;YES
+V_Maschine_Werkzeug_BASIS;WerkzeugAmoBezahlt;bit;;NO
+V_Maschine_Werkzeug_BASIS;WerkzeugAmoSollMenge;int;;YES
+V_Maschine_Werkzeug_BASIS;WerkzeugAmoIstMenge;int;;YES
+V_Maschine_Werkzeug_BASIS;WerkzeugAmoIstBetrag;float;;YES
+V_Maschine_Werkzeug_BASIS;WerkzeugAmoAnteil;float;;YES
+V_Maschine_Werkzeug_BASIS;WerkzeugAmoWkzgKosten;int;;YES
+V_Maschine_Werkzeug_BASIS;WerkzeugBemerkung;nvarchar;50;YES
+V_Maschine_Werkzeug_BASIS;WerkzeugAktiv;bit;;NO
+V_Maschine_Werkzeug_BASIS;WerkzeugAnzahl;int;;YES
+V_Maschine_Werkzeug_BASIS;WerkzeugAmoStartDatum;datetime;;YES
+V_Maschine_Werkzeug_BASIS;WerkzeugOffeneAmoPerJahresende;int;;YES
+V_Maschine_Werkzeug_BASIS;WerkzeugAmoOhneBerechnung;float;;YES
+V_Maschine_Werkzeug_BASIS;WerkzeugGrav_Id;nvarchar;50;NO
+V_Maschine_Werkzeug_BASIS;WerkzeugZyklus;float;;YES
+V_Maschine_Werkzeug_BASIS;WerkzeugVerfuegbar;int;;YES
+V_Maschine_Werkzeug_BASIS;WerkzeugIdProdBereich_eReporting;int;;YES
+V_Maschinen_CENTRAL;IdeReporting_WerkId;int;;NO
+V_Maschinen_EXTERNAL;Standort;int;;NO
+V_Maschinen_FuellLinien_BASIS;MaschineStandort;int;;YES
+V_Maschinen_FuellLinien_BASIS;FuellLinienStandort;int;;YES
+V_Maschinen_ProdPlanungen;IdWerkzeug;int;;YES
+V_Maschinen_ProdPlanungen;MaschinenStandort;int;;NO
+V_Maschinen_ProdPlanungen;WerkzeugBez;nvarchar;50;NO
+V_MaterialBedarf;PlanTyp;int;;NO
+V_MaterialJeProdTag;PlanType;int;;NO
+V_MT_SCS_Artikelstammdaten;plant;varchar;5;NO
+V_MT_SCS_Artikelstammdaten;IdWerkzeug;int;;YES
+V_NiceLabel_Automation_v2;PlantLogo;nvarchar;13;NO
+V_PA_Werkzeug;IdPA_Werkzeug;int;;NO
+V_PA_Werkzeug;IdWerkzeug;int;;NO
+V_PA_Werkzeug;StandardWerkzeug;bit;;YES
+V_PA_Werkzeug_BASIS;IdPA_Werkzeug;int;;NO
+V_PA_Werkzeug_BASIS;IdWerkzeug;int;;NO
+V_PA_Werkzeug_BASIS;StandardWerkzeug;bit;;YES
+V_PA_Werkzeug_BASIS;WerkzeugAktiv;bit;;NO
+V_PA_Werkzeug_BASIS;WerkzeugNestzahl;int;;NO
+V_PA_Werkzeug_BASIS;WerkzeugHub;real;;YES
+V_PA_Werkzeug_BASIS;WerkzeugStichmass;real;;YES
+V_PA_Werkzeug_BASIS;WerkzeugBauDatum;datetime;;YES
+V_PA_Werkzeug_BASIS;WerkzeugAmoBezahlt;bit;;NO
+V_PA_Werkzeug_BASIS;WerkzeugAmoSollMenge;int;;YES
+V_PA_Werkzeug_BASIS;WerkzeugAmoIstMenge;int;;YES
+V_PA_Werkzeug_BASIS;WerkzeugAmoIstBetrag;float;;YES
+V_PA_Werkzeug_BASIS;WerkzeugAmoAnteil;float;;YES
+V_PA_Werkzeug_BASIS;WerkzeugAmoWkzgKosten;int;;YES
+V_PA_Werkzeug_BASIS;WerkzeugBemerkung;nvarchar;50;YES
+V_PA_Werkzeug_BASIS;WerkzeugAnzahl;int;;YES
+V_PA_Werkzeug_BASIS;WerkzeugAmoStartDatum;datetime;;YES
+V_PA_Werkzeug_BASIS;WerkzeugOffeneAmoPerJahresende;int;;YES
+V_PA_Werkzeug_BASIS;WerkzeugAmoOhneBerechnung;float;;YES
+V_PA_Werkzeug_BASIS;Werkzeugidress;int;;YES
+V_PA_Werkzeug_BASIS;WerkzeugIdeMisVar;nvarchar;100;NO
+V_PA_Werkzeug_BASIS;WerkzeugGrav_Id;nvarchar;50;NO
+V_PA_Werkzeug_BASIS;WerkzeugZyklus;float;;YES
+V_PA_Werkzeug_BASIS;WerkzeugBez;nvarchar;50;NO
+V_PartnerWerke;IdPartnerWerk;int;;NO
+V_PDE;MaschinenStandort;int;;NO
+V_PDE_ProduktionsDaten;MaschinenStandort;int;;NO
+V_ProdDaten;IdWerkzeug;int;;YES
+V_ProdDaten;WerkzeugBez;nvarchar;50;NO
+V_ProdDaten;MaschinenStandort;int;;NO
+V_ProdDaten_BASIS;IdWerkzeug;int;;YES
+V_ProdLosArtikelvarianten_PLANNING;WerkzeugKavität;int;;NO
+V_ProdLosArtikelvarianten_PLANNING;PlanType;int;;NO
+V_ProdLosArtikelvarianten_PLANNING;IdWerkzeug;int;;NO
+V_ProdLosKomponenten_PLANNING;WerkzeugKavität;int;;NO
+V_ProdLosKomponenten_PLANNING;PlanType;int;;NO
+V_ProdLosMaterialJeProdTag_PLANNING;Standort;int;;NO
+V_ProdLosMaterialJeProdTag_PLANNING;WerkzeugKavität;int;;NO
+V_ProdLosMaterialJeProdTag_PLANNING;IdWerkzeug;int;;NO
+V_ProdLosMaterialJeProdTagGruppiert_PLANNING;Standort;int;;NO
+V_ProdLosMaterialJeProdTagGruppiert_PLANNING;WerkzeugKavität;int;;NO
+V_ProdLosProduktionJeProdTag_PLANNING;Standort;int;;NO
+V_ProdLosProduktionJeProdTag_PLANNING;WerkzeugKavität;int;;NO
+V_ProdLosProduktionJeProdTagGruppiert_PLANNING;Standort;int;;NO
+V_ProdLosProduktionJeProdTagGruppiert_PLANNING;WerkzeugKavität;int;;NO
+V_ProdlosVerpackungen_PLANNING;WerkzeugKavität;int;;NO
+V_ProdlosVerpackungen_PLANNING;PlanType;int;;NO
+V_ProdPlanung;PlanType;int;;NO
+V_ProdPlanung;WerkzeugKavität;int;;NO
+V_ProdPlanung;IdWerkzeug;int;;NO
+V_ProdPlanung;MaschStandort;int;;NO
+V_ProdPlanung;WerkzeugBez;nvarchar;50;NO
+V_ProdPlanungHistoryProtokoll;IdWerkzeug;int;;NO
+V_ProdPlanungHistoryProtokoll;WerkzeugKavität;int;;NO
+V_ProdPlanungHistoryProtokoll;PlanType;int;;NO
+V_ProdPlanungJeProdTag_PLANNING;IdWerkzeug;int;;NO
+V_ProdPlanungJeProdTag_PLANNING;WerkzeugKavität;int;;NO
+V_ProdPlanungJeProdTag_PLANNING;PlanType;int;;NO
+V_ProdPlanungMaschinen_PLANNING;PlanType;int;;NO
+V_ProdPlanungMaschinen_PLANNING;WerkzeugKavität;int;;NO
+V_ProdPlanungMaschinen_PLANNING;IdWerkzeug;int;;NO
+V_ProdPlanungMaschinen_PLANNING;MaschStandort;int;;NO
+V_ProdPlanungSetupTypen_PLANNING;ProdPlanungWerkzeugKavitaet;int;;NO
+V_ProdPlanungSetupTypen_PLANNING;IdWerkzeug;int;;NO
+V_ProdPlanungSetupTypen_PLANNING;MaschStandort;int;;NO
+V_ProdPlanungSuche;MaschStandort;int;;NO
+V_ProduktionsKontenPositionenSum;SumGeplantVPK;float;;NO
+V_ProduktionsKontenPositionenSum;SumGeplant;float;;NO
+V_Produktionslose;Standort;int;;NO
+V_Produktionslose;IdWerkzeug;int;;YES
+V_Produktionslose;WerkzeugKavitaet;int;;YES
+V_ProduktionsPositionenGeplantSum;GeplanteMengeVPKSum;float;;YES
+V_ProduktionsPositionenGeplantSum;GeplanteMengeSum;float;;YES
+V_ProduktionsRueckmeldungen;IdWerkzeug;int;;NO
+V_RessourcenBedarfMaschineEingesetzteRessourcen_PLANNING;Standort;int;;NO
+V_RestfulGetStockPositions;GeplanteMengeVPKSum;float;;NO
+V_RestfulGetStockPositions;GeplanteMengeSum;float;;NO
+V_RestfulGetStockPositions;IdWerkzeug;int;;NO
+V_RestfulGetStockPositions;WerkzeugBez;nvarchar;50;NO
+v_SD_plant_id;plant_id;nvarchar;100;YES
+V_SperrJournal;MaschinenStandort;int;;YES
+V_TrackerEtikettenGedruckt;MaschinenStandort;int;;NO
+V_TrackerEtikettenGedruckt;IdWerkzeug;int;;NO
+V_TrackerEtikettenGedruckt;WerkzeugBez;nvarchar;50;NO
+V_TrackerEtikettenGedrucktProduktionslosSum;IdWerkzeug;int;;YES
+V_TrackerEtikettenKartons;IdWerkzeug;int;;YES
+V_TrackerEtikettenPaletten;IdWerkzeug;int;;YES
+V_TrackerEtikettenVerworfen;IdWerkzeug;int;;YES
+V_TrackerProdPlanungen;MaschinenStandort;int;;NO
+V_TrackerProdPlanungen;IdWerkzeug;int;;NO
+V_TrackerProdPlanungen;WerkzeugBez;nvarchar;50;NO
+V_Umlagerungen;StandortVon;int;;NO
+V_Umlagerungen;StandortNach;int;;NO
+V_UmlagerungenFehlend;StandortVon;int;;NO
+V_UmlagerungenFehlend;StandortNach;int;;NO
+V_VerfuegbarerBestandPerKontoSum;LagerMengeVPKGeplantSum;float;;NO
+V_VerfuegbarerBestandPerKontoSum;LagerMengeGeplantSum;float;;NO
+V_VerfuegbarerBestandPerKontoSum;ProduktionMengeVPKGeplantSum;float;;NO
+V_VerfuegbarerBestandPerKontoSum;ProduktionMengeGeplantSum;float;;NO
+V_VerfuegbarerBestandPerKontoSum;TotalMengeVPKGeplantSum;float;;NO
+V_VerfuegbarerBestandPerKontoSum;TotalMengeGeplantSum;float;;NO
+V_WarenLager;Standort;int;;YES
+V_Werk_CENTRAL;IdWerk;int;;NO
+V_Werk_CENTRAL;WerkKurzBez;nvarchar;50;NO
+V_Werke;IdWerk;int;;NO
+V_Werke;werk_id;int;;NO
+V_Werke;werk_name;nvarchar;70;NO
+V_Werke;werk_country_id;nvarchar;50;NO
+V_Werke;werk_mail;nvarchar;70;NO
+V_Werke;werk_RepKennz;nvarchar;50;NO
+V_Werke;werk_DINISOzert;nvarchar;50;NO
+V_Werke;werk_curr_id;nvarchar;50;NO
+V_Werke;werk_Firmennummer;nvarchar;70;NO
+V_Werke;werk_incl_olap;int;;NO
+V_Werke;werk_Firmennummer_soplar;nvarchar;70;NO
+V_Werke;werk_server;nvarchar;100;NO
+V_Werke;werk_db;nvarchar;100;NO
+V_Werke;werk_shortcut;nvarchar;50;NO
+V_Werke;werk_OrgRegion_id;int;;NO
+V_Werke;werk_close_date;datetime;;YES
+V_Werke;werk_ReplicationServer;nvarchar;100;NO
+V_Werke;werk_LocationType;int;;NO
+V_Werke;werk_company;int;;YES
+V_Werke;werk_suffix;nvarchar;10;NO
+V_Werke;werk_company_suffix;nvarchar;25;NO
+V_Werke_BASIS;IdWerk;int;;NO
+V_Werke_BASIS;werk_id;int;;NO
+V_Werke_BASIS;werk_name;nvarchar;70;NO
+V_Werke_BASIS;werk_country_id;nvarchar;50;NO
+V_Werke_BASIS;werk_mail;nvarchar;70;NO
+V_Werke_BASIS;werk_RepKennz;nvarchar;50;NO
+V_Werke_BASIS;werk_DINISOzert;nvarchar;50;NO
+V_Werke_BASIS;werk_curr_id;nvarchar;50;NO
+V_Werke_BASIS;werk_Firmennummer;nvarchar;70;NO
+V_Werke_BASIS;werk_incl_olap;int;;NO
+V_Werke_BASIS;werk_Firmennummer_soplar;nvarchar;70;NO
+V_Werke_BASIS;werk_server;nvarchar;100;NO
+V_Werke_BASIS;werk_db;nvarchar;100;NO
+V_Werke_BASIS;werk_shortcut;nvarchar;50;NO
+V_Werke_BASIS;werk_OrgRegion_id;int;;NO
+V_Werke_BASIS;werk_close_date;datetime;;YES
+V_Werke_BASIS;werk_ReplicationServer;nvarchar;100;NO
+V_Werke_BASIS;werk_LocationType;int;;NO
+V_Werke_BASIS;werk_company;int;;YES
+V_Werke_BASIS;werk_suffix;nvarchar;10;NO
+V_Werke_BASIS;werk_company_suffix;nvarchar;25;NO
+V_Werke_CENTRAL;werk_id;int;;NO
+V_Werke_CENTRAL;werk_name;nvarchar;70;NO
+V_Werke_CENTRAL;werk_country_id;nvarchar;5;YES
+V_Werke_CENTRAL;werk_mail;nvarchar;70;YES
+V_Werke_CENTRAL;werk_RepKennz;char;1;NO
+V_Werke_CENTRAL;werk_DINISOzert;nvarchar;25;YES
+V_Werke_CENTRAL;werk_curr_id;nvarchar;3;YES
+V_Werke_CENTRAL;werk_Firmennummer;nvarchar;70;YES
+V_Werke_CENTRAL;werk_incl_olap;int;;YES
+V_Werke_CENTRAL;werk_Firmennummer_soplar;nvarchar;70;YES
+V_Werke_CENTRAL;werk_server;nvarchar;100;YES
+V_Werke_CENTRAL;werk_db;nvarchar;100;YES
+V_Werke_CENTRAL;werk_shortcut;nvarchar;10;YES
+V_Werke_CENTRAL;werk_OrgRegion_id;int;;YES
+V_Werke_CENTRAL;werk_close_date;datetime;;YES
+V_Werke_CENTRAL;werk_ReplicationServer;nvarchar;100;YES
+V_Werke_CENTRAL;werk_LocationType;int;;YES
+V_Werke_CENTRAL;werk_company;int;;YES
+V_Werkzeug;IdWerkzeug;int;;NO
+V_Werkzeug;IdZentralesWerkzeug1;int;;YES
+V_Werkzeug;IdZentralesWerkzeug2;int;;YES
+V_Werkzeug_Artikelvarianten_BASIS;IdWerkzeug;int;;NO
+V_Werkzeug_Artikelvarianten_BASIS;StandardWerkzeug;bit;;YES
+V_Werkzeug_Artikelvarianten_BASIS;IdProdBereichWerkzeug;int;;NO
+V_Werkzeug_Artikelvarianten_BASIS;WerkzeugBez;nvarchar;50;NO
+V_Werkzeug_Artikelvarianten_BASIS;WerkzeugBem;nvarchar;50;YES
+V_Werkzeug_Artikelvarianten_BASIS;WerkzeugAktiv;bit;;NO
+V_Werkzeug_Artikelvarianten_BASIS;WerkzeugZyklus;float;;YES
+V_Werkzeug_Artikelvarianten_BASIS;WerkzeugProdBereichBez;nvarchar;50;NO
+V_Werkzeug_BASIS;IdWerkzeug;int;;NO
+V_Werkzeug_BASIS;IdZentralesWerkzeug1;int;;YES
+V_Werkzeug_BASIS;IdZentralesWerkzeug2;int;;YES
+V_Werkzeug_BASIS;WerkzeugSatz;int;;YES
+V_Werkzeug_BASIS;ZentralesWerkzeug1Bez;nvarchar;513;NO
+V_Werkzeug_BASIS;ZentralesWerkzeug2Bez;nvarchar;513;NO
+V_Werkzeug_BASIS;ZentralesWerkzeug1WerkzeugBasisNummer;nvarchar;255;YES
+V_Werkzeug_Blaskopf;IdWerkzeugBlaskopf;int;;NO
+V_Werkzeug_Blaskopf;IdWerkzeug;int;;NO
+V_Werkzeug_Blaskopf;WerkzeugBez;nvarchar;50;NO
+V_Werkzeug_Blaskopf;WerkzeugAdressen;int;;NO
+V_Werkzeug_Blaskopf;WerkzeugProdBereich;int;;NO
+V_Werkzeug_Blaskopf;WerkzeugNestzahl;int;;NO
+V_Werkzeug_Blaskopf;WerkzeugHub;real;;YES
+V_Werkzeug_Blaskopf;WerkzeugStichmass;real;;YES
+V_Werkzeug_Blaskopf;WerkzeugBauDatum;datetime;;YES
+V_Werkzeug_Blaskopf;WerkzeugAmoBezahlt;bit;;NO
+V_Werkzeug_Blaskopf;WerkzeugAmoSollMenge;int;;YES
+V_Werkzeug_Blaskopf;WerkzeugAmoIstMenge;int;;YES
+V_Werkzeug_Blaskopf;WerkzeugAmoIstBetrag;float;;YES
+V_Werkzeug_Blaskopf;WerkzeugAmoAnteil;float;;YES
+V_Werkzeug_Blaskopf;WerkzeugAmoWkzgKosten;int;;YES
+V_Werkzeug_Blaskopf;WerkzeugBemerkung;nvarchar;50;YES
+V_Werkzeug_Blaskopf;WerkzeugAktiv;bit;;NO
+V_Werkzeug_Blaskopf;WerkzeugAnzahl;int;;YES
+V_Werkzeug_Blaskopf;WerkzeugAmoStartDatum;datetime;;YES
+V_Werkzeug_Blaskopf;WerkzeugOffeneAmoPerJahresende;int;;YES
+V_Werkzeug_Blaskopf;WerkzeugAmoOhneBerechnung;float;;YES
+V_Werkzeug_Blaskopf;WerkzeugGrav_Id;nvarchar;50;NO
+V_Werkzeug_Blaskopf;WerkzeugZyklus;float;;YES
+V_Werkzeug_Blaskopf;WerkzeugVerfuegbar;int;;YES
+V_Werkzeug_Blaskopf_BASIS;IdWerkzeugBlaskopf;int;;NO
+V_Werkzeug_Blaskopf_BASIS;IdWerkzeug;int;;NO
+V_Werkzeug_Blaskopf_BASIS;WerkzeugBez;nvarchar;50;NO
+V_Werkzeug_Blaskopf_BASIS;WerkzeugAdressen;int;;NO
+V_Werkzeug_Blaskopf_BASIS;WerkzeugProdBereich;int;;NO
+V_Werkzeug_Blaskopf_BASIS;WerkzeugNestzahl;int;;NO
+V_Werkzeug_Blaskopf_BASIS;WerkzeugHub;real;;YES
+V_Werkzeug_Blaskopf_BASIS;WerkzeugStichmass;real;;YES
+V_Werkzeug_Blaskopf_BASIS;WerkzeugBauDatum;datetime;;YES
+V_Werkzeug_Blaskopf_BASIS;WerkzeugAmoBezahlt;bit;;NO
+V_Werkzeug_Blaskopf_BASIS;WerkzeugAmoSollMenge;int;;YES
+V_Werkzeug_Blaskopf_BASIS;WerkzeugAmoIstMenge;int;;YES
+V_Werkzeug_Blaskopf_BASIS;WerkzeugAmoIstBetrag;float;;YES
+V_Werkzeug_Blaskopf_BASIS;WerkzeugAmoAnteil;float;;YES
+V_Werkzeug_Blaskopf_BASIS;WerkzeugAmoWkzgKosten;int;;YES
+V_Werkzeug_Blaskopf_BASIS;WerkzeugBemerkung;nvarchar;50;YES
+V_Werkzeug_Blaskopf_BASIS;WerkzeugAktiv;bit;;NO
+V_Werkzeug_Blaskopf_BASIS;WerkzeugAnzahl;int;;YES
+V_Werkzeug_Blaskopf_BASIS;WerkzeugAmoStartDatum;datetime;;YES
+V_Werkzeug_Blaskopf_BASIS;WerkzeugOffeneAmoPerJahresende;int;;YES
+V_Werkzeug_Blaskopf_BASIS;WerkzeugAmoOhneBerechnung;float;;YES
+V_Werkzeug_Blaskopf_BASIS;WerkzeugGrav_Id;nvarchar;50;NO
+V_Werkzeug_Blaskopf_BASIS;WerkzeugZyklus;float;;YES
+V_Werkzeug_Blaskopf_BASIS;WerkzeugVerfuegbar;int;;YES
+V_WerkzeugSuche;IdWerkzeug;int;;NO
+V_ZentraleFertigungsmittel;ek_fert_lief_werk_id;int;;NO
+V_ZentraleFertigungsmittel_BASIS;ek_fert_lief_werk_id;int;;NO
+V_ZentraleFertigungsmittel_CENTRAL;ek_fert_lief_werk_id;int;;NO
+V_ZentraleWerkzeuge;IdZentralesWerkzeug;int;;NO
+V_ZentraleWerkzeuge;IdGlobalZentralesWerkzeug;int;;NO
+V_ZentraleWerkzeuge;WerkzeugBasisNummer;nvarchar;255;NO
+V_ZentraleWerkzeuge_BASIS;IdZentralesWerkzeug;int;;NO
+V_ZentraleWerkzeuge_BASIS;IdGlobalZentralesWerkzeug;int;;NO
+V_ZentraleWerkzeuge_BASIS;WerkzeugBasisNummer;nvarchar;255;NO
+V_ZentraleWerkzeuge_CENTRAL;IdZentralesWerkzeug;int;;NO
+V_ZentraleWerkzeuge_CENTRAL;IdWerk;int;;YES
+V_ZentraleWerkzeuge_CENTRAL;WerkzeugBasisNummer;nvarchar;255;YES
+View_EK_Price_Data_Home_Cur;werk_id;int;;NO
+
+(745 rows affected)
+
+TABLE_NAME;COLUMN_NAME;DATA_TYPE;CHARACTER_MAXIMUM_LENGTH;IS_NULLABLE
+----------;-----------;---------;------------------------;-----------
+MSpeer_conflictdetectionconfigresponse;originator_id;int;;YES
+MSpeer_lsns;originator;nvarchar;128;NO
+MSpeer_lsns;originator_db;nvarchar;128;NO
+MSpeer_lsns;originator_publication;nvarchar;128;NO
+MSpeer_lsns;originator_publication_id;int;;YES
+MSpeer_lsns;originator_db_version;int;;YES
+MSpeer_lsns;originator_lsn;varbinary;16;YES
+MSpeer_lsns;originator_version;int;;YES
+MSpeer_lsns;originator_id;int;;YES
+MSpeer_originatorid_history;originator_publication;nvarchar;128;NO
+MSpeer_originatorid_history;originator_id;int;;NO
+MSpeer_originatorid_history;originator_node;nvarchar;128;NO
+MSpeer_originatorid_history;originator_db;nvarchar;128;NO
+MSpeer_originatorid_history;originator_db_version;int;;NO
+MSpeer_originatorid_history;originator_version;int;;NO
+MSpeer_topologyresponse;originator_id;int;;YES
+syncobj_0x3035413034444336;IdHerkunft;int;;YES
+syncobj_0x3038343743344443;IdRessourcenBedarf;int;;NO
+syncobj_0x3038343743344443;RessourcenTyp;int;;NO
+syncobj_0x3042374443364345;IdHerkunft;int;;YES
+syncobj_0x3132343831424345;IdEingesetzteRessource;int;;NO
+syncobj_0x3132343831424345;IdRessourcenBedarfMaschine;int;;NO
+syncobj_0x3132343831424345;IdRessource;int;;NO
+syncobj_0x3137353033374435;SourceMachineId;int;;NO
+syncobj_0x3142383643453736;IdOriginalSchacht;int;;YES
+syncobj_0x3245443641413130;IdOriginalSchacht;int;;YES
+syncobj_0x3246363830413141;ProduktionsDatenImportQuelle;int;;YES
+syncobj_0x3334383836444332;IdHerkunft;int;;YES
+syncobj_0x3344414242464245;IdZentraleRessourcenBeziehung;int;;NO
+syncobj_0x3344463135303543;IdAbfallHerkunft;int;;NO
+syncobj_0x3344463135303543;IdGlobalAbfallHerkunft;int;;NO
+syncobj_0x3345383231423442;ProduktionsDatenImportQuelle;int;;YES
+syncobj_0x3345443436424233;IdRessourcenBedarfMaschine;int;;NO
+syncobj_0x3431354630464338;IdHerkunft;int;;YES
+syncobj_0x3431354630464338;Herkunft_Bezeichung;nvarchar;100;YES
+syncobj_0x3435424337323132;IdZentraleRessource;int;;NO
+syncobj_0x3538343731383530;ProduktionsDatenImportQuelle;int;;NO
+syncobj_0x3545343544303846;IdRessourcenBedarf;int;;NO
+syncobj_0x3545343544303846;RessourcenTyp;int;;NO
+syncobj_0x3546353444444546;ImportQuelle;int;;NO
+syncobj_0x3632313342424638;IdZentraleRessource;int;;NO
+syncobj_0x3632384246383034;ImportQuelle;int;;NO
+syncobj_0x3635453243373235;IdAbfallTypAbfallHerkunft;int;;NO
+syncobj_0x3635453243373235;IdGlobalAbfallHerkunft;int;;NO
+syncobj_0x3635453243373235;IdAbfallHerkunft;int;;NO
+syncobj_0x3642394644343336;IdHerkunft;int;;YES
+syncobj_0x3645463433323138;ProduktionsDatenImportQuelle;int;;NO
+syncobj_0x3730423239344138;IdHerkunft;int;;YES
+syncobj_0x3731343431424533;IdRessource;int;;NO
+syncobj_0x3731343431424533;RessourcenTyp;int;;NO
+syncobj_0x3732383942413239;IdEingesetzteRessource;int;;NO
+syncobj_0x3732383942413239;IdRessourcenBedarfMaschine;int;;NO
+syncobj_0x3732383942413239;IdRessource;int;;NO
+syncobj_0x3733413831443131;IdAbfallHerkunft;int;;NO
+syncobj_0x3742423343303137;IdPDESourceTyp;int;;YES
+syncobj_0x3742423343303137;IdPDESource;int;;YES
+syncobj_0x3836314435323544;IdPDESourceTyp;int;;YES
+syncobj_0x3836314435323544;IdPDESource;int;;YES
+syncobj_0x3836433046353639;IdOriginalSchacht;int;;YES
+syncobj_0x3836433046353639;AnzahlOriginale;int;;YES
+syncobj_0x3937383444393144;IdAbfallHerkunft;int;;NO
+syncobj_0x4131304241464644;IdAbfallTypAbfallHerkunft;int;;NO
+syncobj_0x4131304241464644;IdGlobalAbfallHerkunft;int;;NO
+syncobj_0x4131304241464644;IdAbfallHerkunft;int;;NO
+syncobj_0x4134333441303342;IdRessource;int;;NO
+syncobj_0x4134333441303342;RessourcenTyp;int;;NO
+syncobj_0x4231313241443534;IdZentraleRessourcenBeziehung;int;;NO
+syncobj_0x4237443144433130;IdAbfallHerkunft;int;;NO
+syncobj_0x4237443144433130;IdGlobalAbfallHerkunft;int;;NO
+syncobj_0x4330383236323334;IdHerkunft;int;;YES
+syncobj_0x4431343232334642;IdOriginalSchacht;int;;YES
+syncobj_0x4431343232334642;AnzahlOriginale;int;;YES
+syncobj_0x4432424235373543;ProduktionsDatenImportQuelle;int;;NO
+syncobj_0x4437373243434633;ProduktionsDatenImportQuelle;int;;NO
+syncobj_0x4444394233444632;IdHerkunft;int;;YES
+syncobj_0x4444394233444632;Herkunft_Bezeichung;nvarchar;100;YES
+syncobj_0x4532324137374231;IdHerkunft;int;;YES
+syncobj_0x4536324139384344;IdHerkunft;int;;YES
+syncobj_0x4537303246354335;IdRessourcenBedarfMaschine;int;;NO
+syncobj_0x4641413742363837;Origin;int;;NO
+syspublications;originator_id;int;;YES
+T_AbfallAttribute;IdAbfallHerkunft;int;;NO
+T_AbfallHerkuenfte;IdAbfallHerkunft;int;;NO
+T_AbfallHerkuenfte;IdGlobalAbfallHerkunft;int;;NO
+T_AbfallTypenAbfallHerkuenfte;IdAbfallTypAbfallHerkunft;int;;NO
+T_AbfallTypenAbfallHerkuenfte;IdGlobalAbfallHerkunft;int;;NO
+T_AbfallTypenAbfallHerkuenfte;IdAbfallHerkunft;int;;NO
+T_AttachedMaterials;SourceMachineId;int;;NO
+T_EingesetzteRessourcen;IdEingesetzteRessource;int;;NO
+T_EingesetzteRessourcen;IdRessourcenBedarfMaschine;int;;NO
+T_EingesetzteRessourcen;IdRessource;int;;NO
+T_EtikettenDruckJobs;IdHerkunft;int;;YES
+T_EtikettenDruckJobs;Herkunft_Bezeichung;nvarchar;100;YES
+T_EtikettenGedruckt;IdHerkunft;int;;YES
+T_EtikettenVerworfen;IdHerkunft;int;;YES
+T_Konten;IdHerkunft;int;;YES
+T_Layout;IdOriginalSchacht;int;;YES
+T_Layout;AnzahlOriginale;int;;YES
+T_Lieferscheine;IdOriginalSchacht;int;;YES
+T_Maschine;ProduktionsDatenImportQuelle;int;;YES
+T_MaterialReservierungen;IdHerkunft;int;;YES
+T_PDE;IdPDESourceTyp;int;;YES
+T_PDE;IdPDESource;int;;YES
+T_ProdPlanung;ProduktionsDatenImportQuelle;int;;NO
+T_ProdPlanungHistory;ProduktionsDatenImportQuelle;int;;NO
+T_ProductionFigures;Origin;int;;NO
+T_ProduktionsRueckmeldungen;ImportQuelle;int;;NO
+T_Ressourcen;IdRessource;int;;NO
+T_Ressourcen;RessourcenTyp;int;;NO
+T_RessourcenBedarf;IdRessourcenBedarf;int;;NO
+T_RessourcenBedarf;RessourcenTyp;int;;NO
+T_RessourcenBedarfMaschine;IdRessourcenBedarfMaschine;int;;NO
+T_ZentraleRessourcen;IdZentraleRessource;int;;NO
+T_ZentraleRessourcenBeziehungen;IdZentraleRessourcenBeziehung;int;;NO
+V_AbfallAttribute;IdAbfallHerkunft;int;;NO
+V_AbfallAttribute;AbfallHerkunftBez;nvarchar;100;NO
+V_AbfallAttribute_BASIS;IdAbfallHerkunft;int;;NO
+V_AbfallAttribute_BASIS;AbfallHerkunftBez;nvarchar;100;NO
+V_AbfallHerkuenfte;IdAbfallHerkunft;int;;NO
+V_AbfallHerkuenfte;IdGlobalAbfallHerkunft;int;;NO
+V_AbfallHerkuenfte_BASIS;IdAbfallHerkunft;int;;NO
+V_AbfallHerkuenfte_BASIS;IdGlobalAbfallHerkunft;int;;NO
+V_AbfallHerkuenfte_CENTRAL;IdAbfallHerkunft;int;;NO
+V_AbfallLagerBuchungen;IdHerkunft;int;;YES
+V_AbfallLagerBuchungen;HerkunftBez;nvarchar;100;NO
+V_AbfallTypenAbfallHerkuenfte;IdAbfallTypAbfallHerkunft;int;;NO
+V_AbfallTypenAbfallHerkuenfte;IdGlobalAbfallHerkunft;int;;NO
+V_AbfallTypenAbfallHerkuenfte;IdAbfallHerkunft;int;;NO
+V_AbfallTypenAbfallHerkuenfte_BASIS;IdAbfallTypAbfallHerkunft;int;;NO
+V_AbfallTypenAbfallHerkuenfte_BASIS;IdGlobalAbfallHerkunft;int;;NO
+V_AbfallTypenAbfallHerkuenfte_BASIS;IdAbfallHerkunft;int;;NO
+V_AbfallTypenAbfallHerkuenfte_CENTRAL;IdAbfallTypAbfallHerkunft;int;;NO
+V_AbfallTypenAbfallHerkuenfte_CENTRAL;IdAbfallHerkunft;int;;NO
+V_AktuellerLagerBestandDetail;IdHerkunft;int;;YES
+V_AktuellerLagerBestandDetail;HerkunftBez;nvarchar;100;NO
+V_AktuellerLagerBestandVerkaufsArtikel;IdHerkunft;int;;YES
+V_AktuellerLagerBestandVerkaufsArtikel;HerkunftBez;nvarchar;100;NO
+V_AttachedMaterials;SourceMachineId;int;;NO
+V_AuslagerungsPositionen;IdHerkunft;int;;NO
+V_AuslagerungsPositionen;HerkunftBez;nvarchar;100;NO
+V_AuslagerungsPositionenBarcodes;IdHerkunft;int;;YES
+V_AuslagerungsPositionenBarcodes;HerkunftBez;nvarchar;100;NO
+V_BestandPerKontoSum;IdHerkunft;int;;YES
+V_BestandPerKontoSum;HerkunftBez;nvarchar;100;YES
+V_EingesetzteRessourcen;IdEingesetzteRessource;int;;NO
+V_EingesetzteRessourcen;IdRessourcenBedarfMaschine;int;;NO
+V_EingesetzteRessourcen;IdRessource;int;;NO
+V_EingesetzteRessourcen;RessourcenTyp;int;;NO
+V_EingesetzteRessourcen;RessourcenBez;nvarchar;50;NO
+V_EingesetzteRessourcen;RessourcenAktiv;int;;NO
+V_EtikettenGedruckt;IdHerkunft;int;;NO
+V_EtikettenGedruckt;HerkunftBez;nvarchar;100;NO
+V_EtikettenVerworfen;IdHerkunft;int;;NO
+V_EtikettenVerworfen;HerkunftBez;nvarchar;100;NO
+V_GravNummer_CENTRAL;IdRessource;int;;NO
+V_InventurPositionen;IdHerkunft;int;;NO
+V_InventurPositionen;HerkunftBez;nvarchar;100;NO
+V_Konten;IdHerkunft;int;;YES
+V_Konten;HerkunftBez;nvarchar;100;NO
+V_LagerBuchungen;IdHerkunft;int;;YES
+V_LagerBuchungen;HerkunftBez;nvarchar;100;NO
+V_LagerKonten;IdHerkunft;int;;YES
+V_LagerKonten;HerkunftBez;nvarchar;100;NO
+V_LagerPlanungen;IdHerkunft;int;;YES
+V_LagerPlanungen;HerkunftBez;nvarchar;100;NO
+V_LagerPositionen;IdHerkunft;int;;YES
+V_LagerPositionen;HerkunftBez;nvarchar;100;NO
+V_LagerPositionenBarcodes;IdHerkunft;int;;YES
+V_LagerPositionenBarcodes;HerkunftBez;nvarchar;100;NO
+V_LagerPositionenBarcodesInventuren;IdHerkunft;int;;YES
+V_LagerPositionenBarcodesInventuren;HerkunftBez;nvarchar;100;NO
+V_LagerPositionenInventuren;IdHerkunft;int;;YES
+V_LagerPositionenInventuren;HerkunftBez;nvarchar;100;YES
+V_LagerPositionenPlanungen;IdHerkunft;int;;NO
+V_LagerPositionenPlanungen;HerkunftBez;nvarchar;100;NO
+V_Layout;IdOriginalSchacht;int;;YES
+V_Layout;AnzahlOriginale;int;;YES
+V_Lieferscheine;IdOriginalSchacht;int;;YES
+V_MachineFetch;ProduktionsDatenImportQuelle;int;;YES
+V_Maschine;ProduktionsDatenImportQuelle;int;;YES
+V_Maschine_BASIS;ProduktionsDatenImportQuelle;int;;YES
+V_Maschinen_EXTERNAL;ProduktionsDatenImportQuelle;int;;YES
+V_MaterialReservierungen;IdHerkunft;int;;YES
+V_MES_Moulds;Amo_Target_Amount;int;;YES
+V_MES_ProductionLots;Target_Machine_Efficiency;float;;NO
+V_MES_ProductionLots;Target_quantity;int;;NO
+V_MES_ProductionLots;Target_Cycle;float;;NO
+V_MES_ProductionLots;Target_Setup_Type;int;;YES
+V_MES_ProductionLots;Target_Setup_Duration;float;;YES
+V_NiceLabel_Automation;IdWasteOrigin;int;;YES
+V_NiceLabel_Automation;WasteOriginDescription;nvarchar;100;YES
+V_NiceLabel_Automation_v2;IdWasteOrigin;int;;YES
+V_NiceLabel_Automation_v2;WasteOriginDescription;nvarchar;100;YES
+V_PDE;IdPDESourceTyp;int;;YES
+V_PDE;IdPDESource;int;;YES
+V_Positionen;IdHerkunft;int;;YES
+V_Positionen;HerkunftBez;nvarchar;100;NO
+V_ProdLosArtikelvarianten_PLANNING;ProduktionsDatenImportQuelle;int;;NO
+V_ProdPlanung;ProduktionsDatenImportQuelle;int;;NO
+V_ProdPlanungHistoryProtokoll;ProduktionsDatenImportQuelle;int;;NO
+V_ProdPlanungJeProdTag_PLANNING;ProduktionsDatenImportQuelle;int;;NO
+V_ProdPlanungMaschinen_PLANNING;ProduktionsDatenImportQuelle;int;;YES
+V_ProdPlanungMaschinen_PLANNING;StartProduktionsDatenImportQuelle;int;;NO
+V_ProductionFigures;Origin;int;;NO
+V_ProduktionsBuchungen;IdHerkunft;int;;YES
+V_ProduktionsBuchungen;HerkunftBez;nvarchar;100;NO
+V_ProduktionsKonten;IdHerkunft;int;;YES
+V_ProduktionsKonten;HerkunftBez;nvarchar;100;NO
+V_ProduktionsPositionen;IdHerkunft;int;;YES
+V_ProduktionsPositionen;HerkunftBez;nvarchar;100;NO
+V_ProduktionsRueckmeldungen;ImportQuelle;int;;NO
+V_ProduktionsRueckmeldungenJeProdLosQuellen;IdDataSource;int;;NO
+V_ProduktionsRueckmeldungenJeProdLosQuellen;SourceName;varchar;58;NO
+V_ProduktionsRueckmeldungenJeProdLosQuellen;ProduktionsDatenImportQuelleLos;int;;NO
+V_ProduktionsRueckmeldungenJeProdLosQuellen;ProduktionsDatenImportQuelleMaschine;int;;YES
+V_ProduktionsRueckmeldungenKomplett;IdDataSource;int;;NO
+V_ProduktionsRueckmeldungenKomplett;SourceName;varchar;58;NO
+V_ProduktionsRueckmeldungenKomplettSumProTag;IdDataSource;int;;NO
+V_ProduktionsRueckmeldungenKomplettSumProTag;SourceName;varchar;58;NO
+V_Ressourcen;IdRessource;int;;NO
+V_Ressourcen;RessourcenTyp;int;;NO
+V_Ressourcen_BASIS;IdRessource;int;;NO
+V_Ressourcen_BASIS;RessourcenTyp;int;;NO
+V_Ressourcen_CENTRAL;IdRessource;int;;NO
+V_RessourcenBedarf;IdRessourcenBedarf;int;;NO
+V_RessourcenBedarf;RessourcenTyp;int;;NO
+V_RessourcenBedarfMaschine;IdRessourcenBedarfMaschine;int;;NO
+V_RessourcenBedarfMaschineEingesetzteRessourcen_PLANNING;IdEingesetzteRessource;int;;NO
+V_RessourcenBedarfMaschineEingesetzteRessourcen_PLANNING;IdRessource;int;;NO
+V_RessourcenBedarfMaschineEingesetzteRessourcen_PLANNING;IdRessourcenBedarfMaschine;int;;NO
+V_RessourcenBedarfMaschineEingesetzteRessourcen_PLANNING;RessourcenTyp;int;;NO
+V_RessourcenBedarfMaschineEingesetzteRessourcen_PLANNING;RessourcenBez;nvarchar;50;NO
+V_RessourcenGruppen_CENTRAL;IdRessourcenGruppe;int;;NO
+V_RessourcenGruppen_CENTRAL;IdRessourcenTyp;int;;YES
+V_RessourcenGruppen_CENTRAL;RessourcenTyp;nvarchar;50;YES
+V_RestfulGetStockPositions;IdHerkunft;int;;YES
+V_RestfulGetStockPositions;HerkunftBez;nvarchar;100;NO
+V_TrackerEtikettenVerworfen;IdHerkunft;int;;NO
+V_TrackerEtikettenVerworfen;HerkunftBez;nvarchar;100;NO
+V_TrackerLagerBuchungenBarcode;IdHerkunft;int;;NO
+V_TrackerLagerBuchungenBarcode;HerkunftBez;nvarchar;100;NO
+V_VerfuegbarerBestandPerKontoSum;TotalMengeVPKGeplantSum;float;;NO
+V_VerfuegbarerBestandPerKontoSum;TotalMengeGeplantSum;float;;NO
+V_VerfuegbarerBestandPerKontoSum;IdHerkunft;int;;YES
+V_VerfuegbarerBestandPerKontoSum;HerkunftBez;nvarchar;100;NO
+V_VerfuegbarerLagerbestand;IdHerkunft;int;;YES
+V_VerfuegbarerLagerbestand;HerkunftBez;nvarchar;100;NO
+V_Wareneingaenge;IdHerkunft;int;;YES
+V_Wareneingaenge;HerkunftBez;nvarchar;100;YES
+V_WareneingangPlanungen;IdHerkunft;int;;YES
+V_WareneingangPlanungen;HerkunftBez;nvarchar;100;NO
+V_ZentraleRessourcen;IdZentraleRessource;int;;NO
+V_ZentraleRessourcen_BASIS;IdZentraleRessource;int;;NO
+V_ZentraleRessourcenBeziehungen;IdZentraleRessourcenBeziehung;int;;NO
+V_ZentraleRessourcenBeziehungen_BASIS;IdZentraleRessourcenBeziehung;int;;NO
+
+(255 rows affected)
+
+TABLE_NAME
+----------
+syncobj_0x3132344646303437
+syncobj_0x3135463735303643
+syncobj_0x3139393632373837
+syncobj_0x3234353537314438
+syncobj_0x3239374634463133
+syncobj_0x3243414531363745
+syncobj_0x3431353344344246
+syncobj_0x3439343041383546
+syncobj_0x3439383641413237
+syncobj_0x3441314446414237
+syncobj_0x3443424542313145
+syncobj_0x3843303145343242
+syncobj_0x3846443342354130
+syncobj_0x3933393638314636
+syncobj_0x4130423530433037
+syncobj_0x4239354642383933
+syncobj_0x4434454135413542
+syncobj_0x4531414530314536
+syncobj_0x4532363742363845
+syncobj_0x4533433743333646
+syncobj_0x4537433539353046
+syncobj_0x4632394138353846
+T_Adressen
+T_Bestellpositionen
+T_Bestellungen
+T_Bestellvorschlaege
+T_EAIJournal
+T_EAIJournalAdresse
+T_EAIJournalEx
+T_EAIJournalWarenPosition
+T_EAIMandanten
+T_EDIDokumente
+T_Lieferungen
+T_tmpBudgetArtikelRezeptur
+T_tmpBudgetVerpackungsverbrauch
+T_TmpEkPreisErhoehung
+T_TmpEkPreisProt
+T_TmpFertigungsmittel
+T_Wareneingaenge
+V_Adressen
+V_Adressen_BASIS
+V_AdressenKomplett
+V_Bestellpositionen
+V_Bestellpositionen_PURCHASE
+V_BestellpositionenSync
+V_Bestellungen
+V_BestellungenEAIJournal
+V_Bestellvorschlaege
+V_EAIAdressen
+V_EAIJournalHeader
+V_EAIJournalHistoryHeader
+V_EAIJournalPositionSummary
+V_EDIDokumente
+V_EDIDokumentPositionen
+V_EDIDokumentPositionen_ORDER
+V_EDIJournalUpload
+V_EDIPositionDetails
+V_eMIS_EAIJournalPositionSummary
+V_Fertigungsmittel_CENTRAL
+V_Lieferungen
+V_LieferungenFromEAIJournal
+V_MES_AP_Addresses
+V_TrackerBestellPositionen
+V_Wareneingaenge
+
+(64 rows affected)
+
+server_id;LinkedServerName;Product;OleDbProvider;DataSource;DefaultCatalog;IsLinked;RemoteLoginEnabled;LastModified
+---------;----------------;-------;-------------;----------;--------------;--------;------------------;------------
+2;ACDC01VMS006;SQL Server;SQLNCLI;ACDC01VMS006;;False;True;5/20/2026 11:39:40 AM
+3;ALPLABILAKE0SQLMI20SER.BE2B4EB8DD7C.DATABASE.WINDOWS.NET;SQL Server;SQLNCLI;ALPLABILAKE0SQLMI20SER.BE2B4EB8DD7C.DATABASE.WINDOWS.NET;;False;True;5/20/2026 12:18:05 PM
+0;AOVIA1VMS006;SQL Server;SQLNCLI;AOVIA1VMS006;;False;True;5/20/2026 9:48:47 AM
+1;repl_distributor;SQL Server;SQLNCLI;AOVIA1VMS006;;False;True;5/20/2026 11:29:46 AM
+
+(4 rows affected)
+
+SynonymName;TargetObject;SchemaName;CreatedDate
+-----------;------------;----------;-----------
+
+(0 rows affected)
+
+ViewName;ViewDefinition
+--------;--------------
+
+(0 rows affected)
+
+ObjectName;ObjectDefinition
+----------;----------------
+
+(0 rows affected)
+
+ServerName;DatabaseName;TableCount;ViewCount;SPCount;FKCount;LinkedServerCount;SynonymCount
+----------;------------;----------;---------;-------;-------;-----------------;------------
+AOVIA1VMS006;AlplaPROD_aovia1;421;747;0;77;0;0
+
+(1 rows affected)
+
+TableName;ApproxRowCount
+---------;--------------
+__MigrationHistory;0
+T_AbfallAttribute;78
+T_AbfallHerkuenfte;14
+T_AbfallmaterialGruppenHauptMaterialGruppen;37
+T_AbfallmaterialGruppenProdBereich;57
+T_AbfallNachfuellContainer;1
+T_AbfallReinheiten;5
+T_AbfallTypen;11
+T_AbfallTypenAbfallHerkuenfte;106
+T_AbfallVerwendungszwecke;4
+T_Abrufe;4041
+T_ActivityLog;166
+T_ADGruppe_BenutzerRollen;151
+T_ADGruppe_WindowsBenutzer;240
+T_AdressBeziehungen;220
+T_Adressen;111
+T_Adressentyp;4
+T_AktuellerLagerBestand;814
+T_AlplaPRODViewWhitelist;729
+T_AlternativHauptmaterialien;328
+T_AlternativRezepturen;627
+T_ApiLog;0
+T_AppBenutzerRechte;0
+T_AppHygieneStatus;0
+T_AppOcpDrucker;0
+T_AppOcpLogPrinted;0
+T_AppRechte;4
+T_AppStaplerAufgaben;0
+T_AppStaplerEingaenge;0
+T_AppStaplerInventuren;0
+T_AppStaplerPlanungen;0
+T_AppThemen;1
+T_ArtikelKlassifikationen;9
+T_Artikeltyp;6
+T_Artikelvarianten;454
+T_ArtikelvariantenTyp;36
+T_ArtikelvariantenTyp_LadeEinheiten;0
+T_AttachedMaterials;4
+T_Auftraege;3850
+T_AuftragsAbrufe;4041
+T_AuftragsAbrufeHistorie;24
+T_AuftragsBest;0
+T_AuftragsKomponenten;46
+T_AuftragsLeistungen;0
+T_AuftragsPositionen;3998
+T_AxIncasTransferQueueEntry;0
+T_AxTransferQueueEntry;0
+T_AXWebServices;13
+T_Benutzer;155
+T_Benutzer_Module;644
+T_BenutzerEinstellungen;16
+T_BenutzerRollen;55
+T_BerichtBerechtigungen;6
+T_Berichte;9
+T_BestandsGrenzen;0
+T_BestellMengenGrenzen;0
+T_Bestellpositionen;2623
+T_BestellPositionenBewertungen;0
+T_Bestellung;0
+T_Bestellungen;2436
+T_BestellungenJournal;2411
+T_Bestellvorschlaege;0
+T_Blaskopf;0
+T_BlaskopfNummern;5289
+T_BlockingDefects;501
+T_BlockingDefectsGroups;36
+T_BlockingOrders;116
+T_BlockingOrders_Positions;1602
+T_BlockingOrdersAdditionalDefects;4
+T_BuchungsGruende;25
+T_BudgetAbsatzplan;123
+T_BudgetAbsatzplanDetails;247
+T_BudgetBlaskopf;0
+T_BudgetEinstellungen;12
+T_BudgetMaschinentypen;14
+T_CoexPos;0
+T_CoexSchichten;0
+T_ComplaintPositions;42
+T_EAIFakturaLeistungen;0
+T_EAIFakturaPositionen;0
+T_EAIJournal;12641
+T_EAIJournalAdresse;50564
+T_EAIJournalAmo;0
+T_EAIJournalBeleg;0
+T_EAIJournalBestellPosition;4392
+T_EAIJournalEx;0
+T_EAIJournalLayout;0
+T_EAIJournalLeistungsPosition;0
+T_EAIJournalLeistungsVorlageZuordnung;0
+T_EAIJournalLieferPosition;129899
+T_EAIJournalPosition;13902
+T_EAIJournalSynch;11883
+T_EAIJournalText;0
+T_EAIJournalTextPosition;0
+T_EAIJournalTextVorlageZuordnung;0
+T_EAIJournalWarenPosition;14435
+T_EAIKundenAbrufBestaetigungen;0
+T_EAIKundenAbrufe;0
+T_EAIKundenBestand;0
+T_EAIMandanten;0
+T_EAIPrognosen;0
+T_EDIDifferenzen;0
+T_EDIDokumente;1222
+T_EDIDokumentPositionen;1457
+T_EDIKonfigurationen;3
+T_EDIPositionDetails;16638
+T_EDIRouting;3
+T_EDIUpload;5463
+T_EingesetzteRessourcen;0
+T_EinkaufsPreise;0
+T_EntladeAuftraege;0
+T_EntladePlanungen;0
+T_EntladePositionen;0
+T_EtikettenDefault;148
+T_EtikettenDrucker;12
+T_EtikettenDruckJobs;0
+T_EtikettenDruckJobsSystem;0
+T_EtikettenDummy;69
+T_EtikettenGedruckt;178755
+T_EtikettenGemappt;15784
+T_EtikettenHistorie;194608
+T_EtikettenLayouts;13
+T_EtikettenLog;0
+T_EtikettenPalettenKartons;21866
+T_EtikettenSperrgruende;1
+T_EtikettenVerworfen;0
+T_ExportInventurAbweichungen;0
+T_ExportLagerBestand;0
+T_ExportLagerDauer;0
+T_ExportPalettenBewegungenLager;0
+T_ExportPalettenBewegungenLKW;0
+T_ExportPalettenBewegungenProduktion;0
+T_ExportSchnittstellen;1
+T_ExportVerpackungskosten;0
+T_ExportVerpackungsVerhaeltnisse;0
+T_ExternalConfigurationStore;0
+T_ExterneTools;2
+T_ExterneToolsModule;6
+T_Farben;35
+T_Farbencode;19
+T_Farbkategorien;32
+T_FeatureSwitch;8
+T_FeldText;0
+T_Fertigungsmittel;218
+T_FertigungsmittelAdditive;16
+T_FertigungsmittelGruppen;89
+T_FibuKonten;18
+T_FuellLinien;0
+T_FuellLose;0
+T_FuellLose_ProdPlanung;0
+T_FuellLoseJeProdTag;0
+T_FuellLosHistorie;0
+T_GravurNummern;1678
+T_HistorieProtokoll;0
+T_HistoryEK;563
+T_HistoryEKImport;0
+T_HistoryEKKunden;3
+T_HistoryEKProtokoll;0
+T_HistoryEKStaffel;0
+T_HistoryProduktiondatenDetails;101014
+T_HistoryProduktionsdaten;101014
+T_HistoryStillstandsereignis;5010
+T_HistoryTransportkosten;0
+T_HistoryVK;1018
+T_HistoryVKImport;0
+T_HistoryVKProtokoll;0
+T_Identifikation;0
+T_Identifikation_EtikettenHistorie;0
+T_IncomingGoodCustomerReturnAdditionalDefects;9
+T_IncomingGoodCustomerReturns;22
+T_InhouseBewegungen;0
+T_InhouseLieferungen;0
+T_Inventuren;2785
+T_InventurPositionen;6965
+T_Kalender;0
+T_KalenderwochenSchichtdefinitionen;1884
+T_Keykunden;549
+T_KomponentenAusgaben;3050
+T_KonsignationsBewegungen;0
+T_Konten;2167
+T_KontenHistorie;401802
+T_KundenAbrufBestaetigungen;0
+T_KundenAbrufe;0
+T_KundenAbrufeHistorie;0
+T_KundenBestand;0
+T_KundenBestandHistorie;0
+T_KundenBeziehungen;110
+T_LadeAuftraege;6461
+T_LadeEinheiten;5
+T_LadePlanungen;6970
+T_LadePositionen;127653
+T_Lager;1
+T_LagerabgleichBarcodes;0
+T_LagerabgleichBarcodesExtern;0
+T_LagerabgleichBarcodesIntern;0
+T_LagerAbteilungen;10232
+T_LagerAbteilungenInventuren;155
+T_Lagerbestand;37
+T_LagerBestandsHistorie;547911
+T_LagerBuchungen;1091209
+T_LagerFehler;857
+T_LagerKonten;2221
+T_LagerKontenArchiv;0
+T_LagerLose;386683
+T_LagerPlanungen;90692
+T_LagerPositionen;12017
+T_Layout;9
+T_LBW;57667
+T_LBW_Archiv;0
+T_LBWTyp;8
+T_Leistungseinheit;0
+T_LeistungsVorlagen;1
+T_LieferantenbewertungAbgrenzung;0
+T_LieferantenBewertungen;0
+T_LieferantenBewertungenHistorie;0
+T_LieferantenReklamationen;0
+T_LieferantenReklamationsPositionen;0
+T_LieferBuchungen;189576
+T_Lieferkonditionen;1
+T_LieferKonten;623
+T_LieferKontenArchiv;0
+T_LieferPositionen;127602
+T_Lieferscheine;0
+T_LieferscheinLayouts;0
+T_LieferscheinPositionen;0
+T_Lieferungen;6224
+T_LKWTypen;1
+T_Localizer;5866
+T_LocalizerDetail;84165
+T_LocalizerNamespace;7225
+T_LogBenutzer;6371
+T_LogEUROLOG;0
+T_LogHistorizeStocks;363418
+T_LS_ArtikelKlassifizierung;0
+T_LS_Reservierungen;0
+T_LS_Steuerung;8
+T_LS_SteuerungFIFO;0
+T_Maschine;5
+T_Maschine_Blaskopf;0
+T_Maschine_EtikettenDrucker;12
+T_Maschine_Werkzeug;6
+T_Maschinen_FuellLinien;0
+T_Maschinen_ProdPlanungen;8
+T_MaschinenAnzahl;39
+T_Maschinentyp;2
+T_MaschinenTyp_eReporting;17
+T_MaterialBedarf;0
+T_MaterialPreparations;5
+T_MaterialProdPlanungenJeProdTag;49649
+T_MaterialReservierungen;246
+T_Mengeneinheit;2
+T_Module;18
+T_ModulParameter;1
+T_MPBBerechTyp;3
+T_Mwst;2
+T_PA_Werkzeug;60
+T_PartnerWerke;0
+T_PDE;140011
+T_PDInputFehler;0
+T_PDLBW;5353
+T_PreformNummern;3241
+T_Preiseinheit;2
+T_ProdArtikel;40
+T_ProdArtikelgruppe;3
+T_ProdBereich;8
+T_ProdBereich_eReporting;10
+T_ProdDaten;25993
+T_ProdDaten_Archiv;0
+T_ProdPlanung;1950
+T_ProdPlanungenJeProdTag;10473
+T_ProdPlanungHistory;126612
+T_ProdSchichten;41
+T_ProductionFigures;0
+T_ProduktionInKundenperiode;0
+T_ProduktionsBuchungen;285255
+T_ProduktionsKonten;257
+T_ProduktionsKontenArchiv;0
+T_Produktionslose;1950
+T_ProduktionsPositionen;25
+T_ProduktionsRueckmeldungDaten;22500
+T_ProduktionsRueckmeldungDatenDetail;29078
+T_ProduktionsRueckmeldungen;3723
+T_ProduktionsRueckmeldungTagesStatus;3154
+T_Prognosen;0
+T_PrognosenHistorie;0
+T_Prozess_EtikettenDrucker;24
+T_QueueExterneOperationen;0
+T_QueueLagerOperationen;0
+T_RahmenBestellung;0
+T_RahmenBestellungPosition;0
+T_Rampen;0
+T_Ressourcen;0
+T_RessourcenBedarf;0
+T_RessourcenBedarfMaschine;0
+T_Retourwaren;0
+T_ReworkOrders;47
+T_Rez;223
+T_RezPos;472
+T_Ruecknahmen;0
+T_Scanner;1
+T_ScannerKommandos;62
+T_ScannerTyp;5
+T_SchichtDefinitionen;47
+T_Schichten;8
+T_Schnittstellen;1
+T_SekundaereZentraleVerpackungen;0
+T_SetupTypen;268
+T_SetupTypMerkmale;203
+T_SetupTypMerkmalTypen;58
+T_SetupTypMerkmalTypGruppen;33
+T_SperrAuftraege;0
+T_Sperrgruende;4
+T_SperrJournal;3264
+T_Spez_StkJePalette;0
+T_Sprachen;17
+T_Staaten;244
+T_Staatengruppe;3
+T_Stapler;1
+T_Statistik;115
+T_Stillstandsereignis;9419
+T_StoerGruende;133
+T_StoerGruendeProdBereich;840
+T_StoerGruendeSetupTypen;1318
+T_StoerGruppen;15
+T_StoerMerkmale;10
+T_StoerTyp;11
+T_Stoerung;11
+T_SystemParameter;35
+T_TabellenNr;77
+T_TEMP_INVOICE;0
+T_TextVorlagen;2
+T_tmpAlplaPlanning_Materialvorschau;0
+T_tmpAmoWerkzeug;0
+T_TmpArtikelliste;0
+T_tmpArtikelRezeptur;0
+T_tmpBarcode_EtikettenStatistik;0
+T_TmpBewertFM;0
+T_TmpBewertPA;0
+T_tmpBudget_eMis_Maschinentypen;2
+T_tmpBudget_eMis_Positionen;18
+T_tmpBudget_eMis_Summen;1
+T_tmpBudget_eMis_WerkzeugAMO;0
+T_tmpBudgetAbsatzplan;0
+T_tmpBudgetAbsatzplanBlaskopf;0
+T_tmpBudgetAbsatzplanDaten;0
+T_tmpBudgetAbsatzplanSelect;0
+T_tmpBudgetAbsatzplanUebersicht;0
+T_tmpBudgetAmo;0
+T_tmpBudgetArtikelRezeptur;0
+T_tmpBudgetASP;0
+T_tmpBudgetBlaskopfBedarf;0
+T_tmpBudgetMaschinenBedarf;0
+T_tmpBudgetMaterialverbrauch;0
+T_tmpBudgetParameter;0
+T_tmpBudgetPETSpritzereiWKZ;0
+T_tmpBudgetPlanquote;0
+T_tmpBudgetSkontoBonus;0
+T_tmpBudgetVerpackungFracht;0
+T_tmpBudgetVerpackungsverbrauch;0
+T_tmpBudgetWerkzeugBedarf;0
+T_tmpBudgetWerkzeugliste;0
+T_TmpEkPreisErhoehung;0
+T_TmpEkPreisProt;0
+T_tmpEMIS_MD_Ressourcen;0
+T_TmpFertigungsmittel;0
+T_TmpHauptMat;0
+T_TmpKdArtPreise;2
+T_TmpMatVerbrauch;0
+T_TmpMBV;0
+T_TmpMPB;0
+T_TmpMPBProt;0
+T_TmpPDDruckerei;0
+T_TmpPreislisteVK;0
+T_TmpProdBericht;337
+T_TmpProdInformation;5
+T_tmpProdTagParameter;1
+T_TmpRezeptur;0
+T_TmpRezPos;0
+T_TmpStatistik;96
+T_TmpStoerTyp;0
+T_TmpSumUmsatzHMT;0
+T_tmpVPKKontoAusnahmen;0
+T_tmpVpkVorschrift;0
+T_TmpZaehlFM;0
+T_TmpZaehlPA;0
+T_TradeUnitBlockingInformation;0
+T_Traegerstoffe;6
+T_TransferQueue;0
+T_TransportTypen;13
+T_Umlagerungen;0
+T_Update_History;2323
+T_VerfuegbarerLagerbestand;112
+T_VerkaufsMaerkte;16
+T_VerkaufsMaerkte_VerkaufsMarktSegmente;55
+T_VerkaufsMarktSegmente;54
+T_VerkaufsProdukte;11
+T_Vpk;133
+T_VpkDimensionen;133
+T_VpkEtiketten;133
+T_VpkKontenAusnahmen;7
+T_VpkPos;549
+T_VpkVorschrift_LadeEinheiten;133
+T_VpkVorschriftAlt;1
+T_Waehrung;3
+T_Wareneingaenge;2716
+T_WareneingangAuftraege;2471
+T_WareneingangBewertungen;2548
+T_WareneingangPlanungen;2617
+T_WareneingangPositionen;57591
+T_WarenLager;20
+T_Werke;536
+T_Werkzeug;31
+T_Werkzeug_Blaskopf;0
+T_Zahlkond;5
+T_ZentraleFertigungsmittel;13856
+T_ZentraleLieferanten;909
+T_ZentraleRessourcen;1659
+T_ZentraleRessourcenBeziehungen;9064
+T_ZentraleTollingVariante;1
+T_ZentraleWerkzeuge;18717
+T_ZolltarifNummern;1
+
+(421 rows affected)
+
+IdWerk;werk_id;werk_name;werk_country_id;werk_mail;werk_RepKennz;werk_DINISOzert;werk_curr_id;AddDate;AddUser;UpdDate;UpdUser;werk_Firmennummer;werk_incl_olap;alpla_rep_db;werk_Firmennummer_soplar;werk_server;werk_db;inhouse;Alpla_Invoice;JurPers_id;Servicecenter;Alpla_Stock;GLN;werk_shortcut;werk_OrgRegion_id;werk_close_date;werk_ReplicationServer;werk_LocationType;Aktiv;Add_Date;Add_User;Upd_Date;Upd_User;werk_company;werk_suffix
+------;-------;---------;---------------;---------;-------------;---------------;------------;-------;-------;-------;-------;-----------------;--------------;------------;------------------------;-----------;-------;-------;-------------;----------;-------------;-----------;---;-------------;-----------------;---------------;----------------------;-----------------;-----;--------;--------;--------;--------;------------;-----------
+1;1;DE, Mannheim (closed);DE;;N;;EUR;10/18/2002 2:27:00 PM;0;2/19/2025 3:09:00 PM;1071;Mannheim;0;;Test Company;;AlplaPROD_demai1;-1;1;-1;-1;1;0000000000000;deman1;1;7/30/2014 12:00:00 AM;None;-1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;2/20/2025 7:15:00 AM;ALPLA_BASIS_RS;-1;
+2;2;DE, Flörsheim;DE;;N;nicht notwendig;EUR;7/14/2002 12:00:00 AM;0;9/30/2025 1:41:00 PM;3229;;1;AlplaPROD_deflo1;;DEHOL1VMS006;AlplaPROD_deflo1;-1;-1;-1;-1;-1;9009736000002;deflo1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;10/1/2025 7:15:00 AM;ALPLA_BASIS_RS;124;
+3;4;TR, Izmir (closed);TR;;E;;TRL;7/14/2002 12:00:00 AM;0;11/9/2016 2:52:39 PM;1;Izmir;0;AlplaPROD_trizm;;;AlplaPROD_trizm;0;-1;-1;-1;-1;0000000000000;trizm;11;12/31/2008 12:00:00 AM;;1;0;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;4/10/2019 7:15:01 AM;ALPLA_BASIS_RS;-1;
+4;100;DE, Baesweiler;DE;DEBAE1-Office@alpla.com;N;ausstehend;EUR;7/14/2002 12:00:00 AM;0;3/26/2026 1:40:00 PM;1071;;1;AlplaPROD_debae1;Baesweiler;DEBAE1VMS006;AlplaPROD_debae1;-1;1;-1;-1;1;9008685000002;debae1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;3/27/2026 7:15:00 AM;ALPLA_BASIS_RS;121;
+5;101;IT, Tortona;IT;office-tortona@alpla.com;N;JA;EUR;7/14/2002 12:00:00 AM;0;10/28/2025 1:43:00 PM;1071;;1;AlplaPROD_ittor1;I Tortona I Tortona ? Tortona;ITTOR1VMS006;AlplaPROD_ittor1;-1;-1;-1;-1;1;9008975000002;ittor1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;10/29/2025 7:15:00 AM;ALPLA_BASIS_RS;171;
+6;102;FR, Dijon;FR;contact-france@alpla.com;N;von Remy aus;EUR;7/14/2002 12:00:00 AM;0;2/17/2025 9:34:00 AM;1071;Dijon;1;AlplaPROD_frdij1;Dijon;FRDIJ1VMS006;AlplaPROD_frdij1;-1;1;-1;-1;1;9009047000005;frdij1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;2/18/2025 7:15:00 AM;ALPLA_BASIS_RS;153;
+7;103;DE, Markdorf;DE;office-markdorf@alpla.com;N;JA;EUR;7/14/2002 12:00:00 AM;0;7/21/2025 9:18:00 AM;1071;;1;AlplaPROD_demkd1;Markdorf;DEMKD1VMS006;AlplaPROD_demkd1;-1;1;-1;-1;1;9008569000005;demkd1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;7/22/2025 7:15:00 AM;ALPLA_BASIS_RS;121;
+8;104;DE, Gemünden;DE;office-gemuenden@alpla.com;N;JA;EUR;7/14/2002 12:00:00 AM;0;3/23/2026 11:16:00 AM;1071;;1;AlplaPROD_degem1;Gemünden;DEGEM1VMS006;AlplaPROD_degem1;-1;1;-1;-1;1;9008564000000;degem1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;3/24/2026 7:15:00 AM;ALPLA_BASIS_RS;121;
+9;105;AT, Steinabrückl;AT;office-steinabrueckl@alpla.com;N;;EUR;7/14/2002 12:00:00 AM;0;2/20/2025 10:04:00 AM;2197;Steinabrückl;1;AlplaPROD_atstb1;Steinabrückl;ATSTB1VMS006;AlplaPROD_atstb1;-1;1;-1;-1;1;9008418000002;atstb1;2;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;2/21/2025 7:15:00 AM;ALPLA_BASIS_RS;104;
+10;106;DE, Greven (closed);DE;;N;JA;EUR;7/14/2002 12:00:00 AM;0;4/25/2025 11:08:00 AM;1071;;1;;Greven;;;-1;1;-1;-1;-1;0000000000000;degre1;1;12/31/2021 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;4/30/2025 7:15:00 AM;ALPLA_BASIS_RS;121;
+11;107;DE, Mainz;DE;office-mainz@alpla.com;N;nicht notwendig;EUR;7/14/2002 12:00:00 AM;0;8/13/2024 5:05:00 PM;1071;;1;AlplaPROD_demai1;Mainz;DEMAI1VMS006;AlplaPROD_demai1;-1;1;-1;-1;-1;9010353000009;demai1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;8/14/2024 7:15:00 AM;ALPLA_BASIS_RS;121;
+12;108;DE, Berlin;DE;office-berlin@alpla.com;N;JA;EUR;7/14/2002 12:00:00 AM;0;3/15/2022 9:50:00 AM;1071;Bepla;1;AlplaPROD_debln1;Bepla Berlin;DEBLN1VMS006;AlplaPROD_debln1;-1;1;-1;-1;-1;9008479000003;debln1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;3/16/2022 7:15:00 AM;ALPLA_BASIS_RS;121;
+13;109;DE, Lübeck;DE;office-luebeck@alpla.com;N;JA;EUR;7/14/2002 12:00:00 AM;0;3/1/2021 11:51:49 AM;1071;;1;AlplaPROD_delub1;Lübeck;DELUB1VMS006;AlplaPROD_delub1;-1;1;-1;-1;1;9008789000007;delub1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;3/2/2021 7:15:00 AM;ALPLA_BASIS_RS;131;
+14;110;DE, Exter;DE;office-exter@alpla.com;N;JA;EUR;7/14/2002 12:00:00 AM;0;9/30/2025 8:48:00 AM;1071;Exter;1;AlplaPROD_deext1;Exter;DEEXT1VMS006;AlplaPROD_deext1;-1;1;-1;-1;1;9008540000000;deext1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;10/1/2025 7:15:00 AM;ALPLA_BASIS_RS;121;
+15;111;DE, Kaiserslautern;DE;office-kaiserslautern@alpla.com;N;gestoppt;EUR;7/14/2002 12:00:00 AM;0;2/17/2025 9:33:00 AM;1071;Kaiserslautern;1;AlplaPROD_dekai1;Kaiserslautern;DEKAI1VMS006;AlplaPROD_dekai1;-1;1;-1;-1;1;9009341000008;dekai1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;2/18/2025 7:15:00 AM;ALPLA_BASIS_RS;121;
+16;112;FR, Compiègne;FR;contact-france@alpla.com;N;von Remy aus;EUR;7/14/2002 12:00:00 AM;0;8/13/2024 5:08:00 PM;1071;;1;AlplaPROD_frcom1;Compiegne Compiégne;FRCOM1VMS006;AlplaPROD_frcom1;-1;1;-1;-1;1;9009433000008;frcom1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;8/14/2024 7:15:00 AM;ALPLA_BASIS_RS;152;
+17;113;FR, Blois;FR;contact-france@alpla.com;N;JA;EUR;7/14/2002 12:00:00 AM;0;8/13/2024 5:08:00 PM;1071;;1;AlplaPROD_frblo1;Blois;FRBLO1VMS006;AlplaPROD_frblo1;-1;1;-1;-1;1;9009046000006;frblo1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;8/14/2024 7:15:00 AM;ALPLA_BASIS_RS;151;
+18;114;IT, Anzio;IT;office-anzio@alpla.com;N;JA;EUR;7/14/2002 12:00:00 AM;0;10/28/2025 1:44:00 PM;1071;Anzio;1;AlplaPROD_itanz1;I Anzio;ITANZ1VMS006;AlplaPROD_itanz1;-1;-1;-1;-1;1;9008661000002;itanz1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;10/29/2025 7:15:00 AM;ALPLA_BASIS_RS;171;
+19;115;FR, Remy (closed);FR;;N;JA;EUR;7/14/2002 12:00:00 AM;0;1/15/2026 9:58:00 AM;1071;;1;;Remy;;AlplaPROD_frrem1;-1;1;-1;-1;-1;0000000000000;frrem1;1;12/31/2013 12:00:00 AM;;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;1/16/2026 7:15:00 AM;ALPLA_BASIS_RS;151;
+20;116;ES, Les Franqueses 1;ES;;N;;EUR;7/14/2002 12:00:00 AM;0;1/15/2026 10:13:00 AM;1071;;1;AlplaPROD_eslef1;;ESLEF1VMS006;AlplaPROD_eslef1;-1;-1;-1;-1;1;9008686000001;eslef1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;1/16/2026 7:15:00 AM;ALPLA_BASIS_RS;231;
+21;117;IT, Lomazzo (closed);IT;office-lomazzo@alpla.com;N;JA;EUR;7/14/2002 12:00:00 AM;0;5/2/2023 9:10:00 AM;1076;;1;AlplaPROD_itlom1;I Lomazzo;ITTOR1VMS006;AlplaPROD_itlom1;-1;-1;-1;-1;-1;0000000000000;itlom1;1;7/13/2021 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;5/3/2023 7:15:00 AM;ALPLA_BASIS_RS;171;
+22;118;DE, Föritztal;DE;office-gefell@alpla.com;N;;EUR;7/14/2002 12:00:00 AM;0;5/13/2025 3:03:00 PM;1071;;1;AlplaPROD_degef1;;DEGEF1VMS006;AlplaPROD_degef1;-1;1;-1;-1;1;9008526000000;degef1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;5/14/2025 7:15:00 AM;ALPLA_BASIS_RS;131;
+23;119;NL, Mijdrecht;NL;;N;JA;EUR;7/14/2002 12:00:00 AM;0;1/15/2026 10:06:00 AM;1071;;1;AlplaPROD_nlmij1;Mijdrecht;NLMIJ1VMS006;AlplaPROD_nlmij1;-1;-1;-1;-1;1;9009259000008;nlmij1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;1/16/2026 7:15:00 AM;ALPLA_BASIS_RS;191;
+24;120;HU, Tatabanya;HU;office-tatabanya@alpla.com;N;;HUF;7/14/2002 12:00:00 AM;0;7/2/2025 2:54:00 PM;1071;Tatabanya;1;AlplaPROD_hutat1;Ungarn;HUTAT1VMS006;AlplaPROD_hutat1;-1;-1;-1;-1;1;9009323000002;hutat1;2;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;7/3/2025 7:15:00 AM;ALPLA_BASIS_RS;261;
+25;121;PL, Zywiec;PL;office-zywiec@alpla.com;N;;PLN;7/14/2002 12:00:00 AM;0;4/9/2025 1:43:00 PM;1071;Zywiec;1;AlplaPROD_plzyw1;;PLZYW1VMS006;AlplaPROD_plzyw1;-1;-1;-1;-1;1;9009121000006;plzyw1;2;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;4/10/2025 7:15:00 AM;ALPLA_BASIS_RS;201;
+26;122;PL, Ostrow;PL;PLOST1-Office@alpla.com;N;;PLN;7/14/2002 12:00:00 AM;0;8/13/2024 5:15:00 PM;1071;Ostrow Maz;1;AlplaPROD_plost1;;PLOST1VMS006;AlplaPROD_plost1;-1;-1;-1;-1;1;9009120000007;plost1;2;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;8/14/2024 7:15:00 AM;ALPLA_BASIS_RS;201;
+27;123;CZ, Bystrice;CZ;office-bystrice@alpla.com;N;;CZK;7/14/2002 12:00:00 AM;0;3/1/2021 11:51:49 AM;1068;Petrovice;1;AlplaPROD_czbys1;Petrovice;CZBYS1VMS006;AlplaPROD_czbys1;-1;-1;-1;-1;-1;8592196000008;czbys1;2;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;3/2/2021 7:15:00 AM;ALPLA_BASIS_RS;241;
+28;124;MX, Toluca Aeropuerto;MX;office-toluca@alpla.com;N;;MXN;7/14/2002 12:00:00 AM;0;2/26/2025 9:24:00 AM;1071;;1;AlplaPROD_mxtol1;;MXTOL1VMS006;AlplaPROD_mxtol1;-1;1;-1;-1;1;9008612000006;mxtol1;6;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;2/27/2025 7:15:00 AM;ALPLA_BASIS_RS;412;
+29;125;MX, Toluca 2000;MX;office-toluca2000@alpla.com;N;;MXN;7/14/2002 12:00:00 AM;0;7/23/2024 11:01:00 AM;1071;Toluca;1;AlplaPROD_mxtol2;;MXTOL2VMS006;AlplaPROD_mxtol2;-1;1;-1;-1;1;9008667000006;mxtol2;6;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;7/24/2024 7:15:00 AM;ALPLA_BASIS_RS;412;
+30;126;MX, San José Iturbide (El Bajío);MX;;N;;MXN;7/14/2002 12:00:00 AM;0;3/31/2026 11:40:00 AM;1071;;1;AlplaPROD_mxsan1;Mexico Bajio Mexiko El Baijo;MXSAN1VMS006;AlplaPROD_mxsan1;-1;1;-1;-1;1;9008613000005;mxsan1;6;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;4/1/2026 7:15:00 AM;ALPLA_BASIS_RS;412;
+31;127;BR, Itapevi;BR;office-saopaulo@alpla.com;N;;BRL;7/14/2002 12:00:00 AM;0;10/21/2025 9:55:00 AM;1071;Sao-Paulo;1;AlplaPROD_brita1;Brasilien S-Paulo;BRITA1VMS006;AlplaPROD_brita1;-1;-1;-1;-1;1;9009325000000;brita1;5;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;10/22/2025 7:15:00 AM;ALPLA_BASIS_RS;521;
+32;128;UK, Milton Keynes;UK;UKMIK1-Office@alpla.com ;N;;GBP;10/15/2002 7:29:00 AM;0;4/15/2026 4:33:00 PM;1071;Milton Kenynes;1;AlplaPROD_ukmik1;Milton UK Milton Keynes;UKMIK1VMS006;AlplaPROD_ukmik1;-1;-1;-1;-1;1;9009291000004;ukmik1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;4/16/2026 7:15:00 AM;ALPLA_BASIS_RS;162;
+33;129;FR, Amiens;FR;contact-france@alpla.com;N;noch nicht;EUR;7/14/2002 12:00:00 AM;0;2/17/2025 9:34:00 AM;1071;;1;AlplaPROD_frami1;Amiens;FRAMI1VMS006;AlplaPROD_frami1;-1;-1;-1;-1;-1;9009706000001;frami1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;2/18/2025 7:15:00 AM;ALPLA_BASIS_RS;151;
+34;130;AR, Pilar;AR;office-pilar@alpla.com;N;;ARS;7/14/2002 12:00:00 AM;0;8/13/2024 4:51:00 PM;1071;Argentinien;1;AlplaPROD_arpil1;Pilar
+Argentinien;ARPIL1VMS006;AlplaPROD_arpil1;-1;-1;-1;-1;1;9008694000000;arpil1;5;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;8/14/2024 7:15:00 AM;ALPLA_BASIS_RS;502;
+35;131;AR, Tortuguitas;AR;office-pilar@alpla.com;N;;ARS;7/14/2002 12:00:00 AM;0;2/11/2025 10:10:00 AM;1071;;1;AlplaPROD_artor1;Argentinien T;ARTOR1VMS006;AlplaPROD_artor1;-1;-1;-1;-1;-1;9009460000002;artor1;5;1/1/1900 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;2/12/2025 7:15:00 AM;ALPLA_BASIS_RS;502;
+36;132;US, McDonough;US;office-Atlanta@alpla.com;N;;USD;7/14/2002 12:00:00 AM;0;8/13/2024 5:24:00 PM;1071;;1;AlplaPROD_usmcd1;US Atlanta;USMCD1VMS006;AlplaPROD_usmcd1;-1;-1;-1;-1;1;9008609000002;usmcd1;4;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;8/14/2024 7:15:00 AM;ALPLA_BASIS_RS;401;
+37;133;AT, Fußach;AT;Info-Fussach@alpla.com;N;;EUR;7/14/2002 12:00:00 AM;0;1/21/2026 2:36:00 PM;1071;Hard;1;AlplaPROD_atfus1;Hard Hard Allmendstr. Hard Mockenstr. Hard Technik;ATFUS1VMS006;AlplaPROD_atfus1;-1;1;-1;-1;1;9008509000003;atfus1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;1/22/2026 7:15:00 AM;ALPLA_BASIS_RS;104;
+38;134;AT, Waidhofen/Thaya;AT;office-waidhofen@alpla.com;N;;EUR;4/18/2012 6:06:00 PM;0;5/13/2025 3:04:00 PM;1071;Waidhofen;1;AlplaPROD_atwai1;Waidhofen;ATWAI1VMS006;AlplaPROD_atwai1;-1;-1;-1;-1;1;9009776000000;atwai1;2;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;5/14/2025 7:15:00 AM;ALPLA_BASIS_RS;107;
+39;135;RU, Dzerzhinsky;RU;office-dzerzhinsky@alpla.com;N;;RUB;7/14/2002 12:00:00 AM;0;3/1/2021 11:51:49 AM;2;Moskau;1;AlplaPROD_rudze1;Moskau;RUDZE1VMS006;AlplaPROD_rudze1;-1;-1;-1;-1;-1;9010262000008;rudze1;8;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;3/2/2021 7:15:00 AM;ALPLA_BASIS_RS;221;
+40;136;IT, Brembate (closed);IT;;A;;EUR;7/14/2002 12:00:00 AM;0;11/9/2016 2:52:39 PM;1;Brembate;0;;;;;0;-1;171;-1;-1;0000000000000;;1;12/31/2006 12:00:00 AM;;1;0;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;4/10/2019 7:15:01 AM;ALPLA_BASIS_RS;-1;
+41;137;BE, Oudenaarde;BE;office-oudenaarde@alpla.com;N;;EUR;7/14/2002 12:00:00 AM;0;12/2/2025 3:07:00 PM;1071;Oudenaarde;1;AlplaPROD_beoud1;;BEOUD1VMS006;AlplaPROD_beoud1;-1;1;-1;-1;1;9008536000007;beoud1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;12/3/2025 7:15:00 AM;ALPLA_BASIS_RS;135;
+42;138;ES, Requena;ES;;N;;EUR;7/14/2002 12:00:00 AM;0;1/15/2026 9:47:00 AM;1071;Requena;1;AlplaPROD_esreq1;;ESREQ1VMS006;AlplaPROD_esreq1;-1;-1;-1;-1;-1;9009583000002;esreq1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;1/16/2026 7:15:00 AM;ALPLA_BASIS_RS;231;
+43;139;NL, Vlaardingen (closed);NL;;N;JA;EUR;7/14/2002 12:00:00 AM;0;9/29/2021 10:18:00 AM;1071;;0;;Vlaardingen;NLVLASRV06;AlplaPROD_nlvla;-1;-1;-1;-1;-1;0000000000000;nlvla;1;12/28/2009 12:00:00 AM;;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;9/30/2021 7:15:00 AM;ALPLA_BASIS_RS;-1;
+44;140;UK, Golborne 1 (closed);UK;;N;;GBP;10/15/2002 7:14:00 AM;0;5/23/2025 11:06:00 AM;1071;;0;;Golborne UK Golborne;;;-1;-1;-1;-1;1;0000000000000;gbgb;1;1/1/2013 12:00:00 AM;;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;5/24/2025 7:15:00 AM;ALPLA_BASIS_RS;162;
+45;141;US, Iowa PET;US;office-iowa@alpla.com;N;;USD;8/29/2003 3:50:00 PM;0;10/3/2024 3:51:00 PM;1071;Iowa;1;AlplaPROD_usiow2;Iowa Cty. US Iowa;USIOW1VMS006;AlplaPROD_usiow2;-1;-1;-1;-1;1;9008902000006;usiow2;4;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;10/4/2024 7:15:00 AM;ALPLA_BASIS_RS;401;
+46;142;MX, Villahermosa;MX;office-villahermosa@alpla.com;N;;MXN;11/20/2002 5:17:00 PM;0;7/23/2024 11:00:00 AM;1071;;1;AlplaPROD_mxvil1;;MXVIL1VMS006;AlplaPROD_mxvil1;-1;1;-1;-1;1;9009009000005;mxvil1;6;1/1/1900 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;7/24/2024 7:15:00 AM;ALPLA_BASIS_RS;412;
+47;143;US, Houston;US;office-Houston@alpla.com;N;;USD;8/29/2003 3:50:00 PM;0;9/23/2025 1:57:00 PM;1071;;1;AlplaPROD_ushou1;US Houston;USHOU1VMS006;AlplaPROD_ushou1;-1;-1;-1;-1;-1;9009839000008;ushou1;4;1/1/1900 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;9/24/2025 7:15:00 AM;ALPLA_BASIS_RS;401;
+48;144;DE, Genthin (closed);DE;office-berlin@alpla.com;N;;EUR;5/12/2003 10:14:00 AM;0;10/5/2021 12:44:00 PM;7;;1;;Genthin;;AlplaPROD_degen1;-1;1;-1;-1;-1;0000000000000;degen1;1;6/1/2016 12:00:00 AM;ACDC01CDAP02\ACDC01DBAP02;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;10/6/2021 7:15:00 AM;ALPLA_BASIS_RS;121;
+49;145;TH, Prachinburi;TH;office-prachinburi@alpla.com;N;;THB;6/6/2003 9:23:00 AM;0;8/13/2024 5:18:00 PM;1071;;1;AlplaPROD_thpra1;;THPRA1VMS006;AlplaPROD_thpra1;-1;1;-1;-1;1;9008875000003;thpra1;12;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;8/14/2024 7:15:00 AM;ALPLA_BASIS_RS;303;
+50;146;HN, San Pedro Sula;HN;office-SanPedroSula@alpla.com;N;;HNL;8/6/2003 8:29:00 AM;0;8/17/2023 4:14:00 PM;1071;Honduras;1;AlplaPROD_hnsps1;;HNSPS1VMS006;AlplaPROD_hnsps1;-1;-1;-1;-1;1;9009285000003;hnsps1;6;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;8/18/2023 7:15:00 AM;ALPLA_BASIS_RS;431;
+51;148;MX, Pacifico (closed);MX;;N;;MXN;8/29/2003 3:16:00 PM;0;10/4/2023 5:33:00 PM;1071;;0;;;;AlplaPROD_mxpac;-1;-1;-1;-1;-1;0000000000000;mxpac;6;12/1/2008 12:00:00 AM;;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;10/5/2023 7:15:00 AM;ALPLA_BASIS_RS;412;
+52;149;MX, Toluca SBM;MX;;N;;MXN;8/29/2003 3:50:00 PM;0;1/15/2026 10:01:00 AM;1071;;1;AlplaPROD_mxtol3;;MXTOL3VMS006;AlplaPROD_mxtol3;-1;1;-1;-1;1;9009026000002;mxtol3;6;1/1/1900 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;1/16/2026 7:15:00 AM;ALPLA_BASIS_RS;412;
+53;150;MX, Los Reyes SBM (closed);MX;;N;;MXN;8/29/2003 3:49:00 PM;0;10/4/2023 5:37:00 PM;1071;;0;;;;AlplaPROD_mxlre;-1;-1;-1;-1;-1;0000000000000;mxlre;6;2/1/2009 12:00:00 AM;;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;10/5/2023 7:15:00 AM;ALPLA_BASIS_RS;412;
+54;151;MX, Cuautitlán SBM;MX;;N;;MXN;8/29/2003 3:49:00 PM;0;8/30/2024 8:52:00 AM;1071;;1;AlplaPROD_mxcua1;;MXCUA1VMS006;AlplaPROD_mxcua1;-1;-1;-1;-1;1;9009007000007;mxcua1;6;1/1/1900 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;8/31/2024 7:15:00 AM;ALPLA_BASIS_RS;412;
+55;152;MX, San Cristobal SBM;MX;;N;;MXN;8/29/2003 3:49:00 PM;0;1/15/2026 10:00:00 AM;1071;;1;AlplaPROD_mxscr1;;MXSCR1VMS006;AlplaPROD_mxscr1;-1;-1;-1;-1;-1;9009023000005;mxscr1;6;1/1/1900 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;1/16/2026 7:15:00 AM;ALPLA_BASIS_RS;412;
+56;153;MX, Cuernavaca SBM (closed);MX;;N;;MXN;8/29/2003 3:48:53 PM;0;11/9/2016 2:52:39 PM;1;;0;;;MXTOLSRV16;AlplaPROD_mxcue;1;-1;-1;-1;-1;0000000000000;;6;12/31/2006 12:00:00 AM;;2;0;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;4/10/2019 7:15:01 AM;ALPLA_BASIS_RS;-1;
+57;154;CO, Bogotá (closed);CO;;N;;COP;8/29/2003 3:45:00 PM;0;1/15/2026 9:54:00 AM;1071;;1;;Kolumbien;;AlplaPROD_cobog1;-1;-1;-1;-1;1;0000000000000;cobog;5;9/11/2014 12:00:00 AM;;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;1/16/2026 7:15:00 AM;ALPLA_BASIS_RS;511;
+58;155;MX, Tlalnepantla EBM;MX;;N;;MXN;9/8/2003 4:39:00 PM;0;2/13/2024 3:19:00 PM;1071;;1;AlplaPROD_mxtla1;;MXTLA1VMS006;AlplaPROD_mxtla1;-1;-1;-1;-1;-1;9009025000003;mxtla1;6;1/1/1900 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;2/14/2024 7:15:00 AM;ALPLA_BASIS_RS;412;
+59;156;ES, Noblejas;ES;;N;;EUR;10/21/2003 2:46:00 PM;0;1/15/2026 10:15:00 AM;1071;;1;AlplaPROD_esnob1;;ESNOB1VMS006;AlplaPROD_esnob1;-1;-1;-1;-1;-1;9008974000003;esnob1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;1/16/2026 7:15:00 AM;ALPLA_BASIS_RS;231;
+60;157;RU, Kinel;RU;office-kinel@alpla.com;N;;RUB;10/27/2003 11:20:00 AM;0;8/8/2024 10:55:00 AM;1071;;1;AlplaPROD_rukin1;;RUKIN1VMS006;AlplaPROD_rukin1;-1;-1;-1;-1;-1;9010263000007;rukin1;8;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;8/9/2024 7:15:00 AM;ALPLA_BASIS_RS;221;
+61;158;HR, Sveta Nedelja;HR;HRSVE1-Office@alpla.com;N;;EUR;11/21/2003 10:45:00 AM;0;8/13/2024 5:10:00 PM;1071;Kroatien;1;AlplaPROD_hrsve1;;HRSVE1VMS006;AlplaPROD_hrsve1;-1;-1;-1;-1;-1;9010148000009;hrsve1;2;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;8/14/2024 7:15:00 AM;ALPLA_BASIS_RS;181;
+62;159;PL, Hellena (close);PL;;N;;PLN;11/13/2003 8:19:23 AM;0;11/9/2016 2:52:39 PM;-1;;0;;;;;0;-1;-1;-1;-1;0000000000000;;2;12/31/2006 12:00:00 AM;;1;0;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;4/10/2019 7:15:01 AM;ALPLA_BASIS_RS;-1;
+63;160;TR, Gebze;TR;info-tr@alpla.com;N;;TRL;5/24/2004 9:40:00 AM;0;8/5/2025 11:06:00 AM;1104;;1;AlplaPROD_trgeb1;;TRGEB1VMS006;AlplaPROD_trgeb1;-1;-1;-1;-1;-1;9010323000008;trgeb1;11;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;8/6/2025 7:15:00 AM;ALPLA_BASIS_RS;251;
+64;161;BR, Rio de Janeiro (closed);BR;;N;;BRL;10/15/2004 4:07:00 PM;0;10/31/2025 9:08:00 AM;1071;;0;;Brasilien Rio Rio;;AlplaPROD_brrio1;-1;-1;-1;-1;-1;0000000000000;brrio;5;5/31/2008 12:00:00 AM;;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;11/1/2025 7:15:00 AM;ALPLA_BASIS_RS;521;
+65;162;RU, Tosno;RU;office-tosno@alpla.com;N;;RUB;7/30/2004 11:28:00 AM;0;3/24/2021 6:05:00 PM;1071;;1;AlplaPROD_rutos1;;RUTOS1VMS006;AlplaPROD_rutos1;-1;-1;-1;-1;-1;9010266000004;rutos1;8;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;3/25/2021 7:15:00 AM;ALPLA_BASIS_RS;221;
+66;163;RU, Chekhov;RU;office-chekhov@alpla.com;N;;RUB;5/15/2006 4:00:00 PM;0;3/1/2021 11:51:49 AM;1068;;1;AlplaPROD_ruche1;;RUCHE1VMS006;AlplaPROD_ruche1;-1;-1;-1;-1;-1;9010261000009;ruche1;8;1/1/1900 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;3/2/2021 7:15:00 AM;ALPLA_BASIS_RS;221;
+67;164;US, Lima;US;office-lima@alpla.com;N;;USD;9/12/2006 1:31:00 PM;0;6/18/2024 1:43:00 PM;1071;;1;AlplaPROD_uslim1;;USLIM1VMS006;AlplaPROD_uslim1;-1;-1;-1;-1;1;9008771000008;uslim1;4;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;6/19/2024 7:15:00 AM;ALPLA_BASIS_RS;401;
+68;170;BE, Schoten (closed);BE;;N;;EUR;2/23/2007 9:11:00 AM;0;1/15/2026 10:12:00 AM;1071;;1;;;;AlplaPROD_besch1;-1;-1;-1;-1;-1;0000000000000;besch1;1;12/31/2021 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;1/16/2026 7:15:00 AM;ALPLA_BASIS_RS;135;
+69;172;BA, Citluk (closed);BA;;N;;BAM;5/21/2008 8:02:00 AM;0;1/15/2026 9:55:00 AM;1071;;1;;;;AlplaPROD_bacit1;-1;-1;-1;-1;-1;0000000000000;bacit1;2;11/24/2016 12:00:00 AM;ACDC01CDAP02\ACDC01DBAP02;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;1/16/2026 7:15:00 AM;ALPLA_BASIS_RS;185;
+70;199;DE, Bruchsal (closed);DE;;N;;EUR;9/8/2006 8:03:00 AM;0;3/4/2024 11:09:00 AM;1071;;1;;;;AlplaPROD_debru1;-1;-1;-1;-1;-1;0000000000000;debru;1;1/1/2011 12:00:00 AM;;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;3/5/2024 7:15:00 AM;ALPLA_BASIS_RS;124;
+71;200;DE, Beiseförth (closed);DE;;N;;EUR;7/14/2002 12:00:00 AM;0;3/4/2024 11:10:00 AM;1071;Beiseförth;1;;;;AlplaPROD_debei1;-1;-1;-1;-1;-1;0000000000000;debei;1;1/1/2008 12:00:00 AM;;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;3/5/2024 7:15:00 AM;ALPLA_BASIS_RS;124;
+72;201;PR, Guayama/Caribe;PR;office-guayama@alpla.com;N;;USD;7/14/2002 12:00:00 AM;0;5/7/2026 4:25:00 PM;1071;Caribe;1;AlplaPROD_prgua1;Caribe;PRGUA1VMS006;AlplaPROD_prgua1;-1;-1;-1;-1;1;9008693000001;prgua1;6;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;5/8/2026 7:15:00 AM;ALPLA_BASIS_RS;421;
+73;202;UK, Droitwich;UK;;N;;GBP;7/14/2002 12:00:00 AM;0;8/13/2024 5:19:00 PM;1071;;1;AlplaPROD_ukdrw1;;UKDRW1VMS006;AlplaPROD_ukdrw1;-1;-1;-1;-1;-1;9009649000007;ukdrw1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;8/14/2024 7:15:00 AM;ALPLA_BASIS_RS;162;
+74;203;CH, Eglisau (closed);CH;;N;;CHF;7/14/2002 12:00:00 AM;0;7/4/2023 10:25:00 AM;2198;;0;;;;AlplaPROD_chegl1;-1;-1;-1;-1;-1;0000000000000;chegl;1;12/1/2010 12:00:00 AM;;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;7/5/2023 7:15:00 AM;ALPLA_BASIS_RS;271;
+75;207;DE, Hamm;DE;;N;;EUR;7/14/2002 12:00:00 AM;0;7/21/2025 9:17:00 AM;1071;;1;AlplaPROD_deham1;;DEEXT1VMS006;AlplaPROD_deham1;-1;-1;-1;-1;-1;9010759000009;deham1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;7/22/2025 7:15:00 AM;ALPLA_BASIS_RS;121;
+76;208;AT, Hard;AT;;N;;EUR;7/14/2002 12:00:00 AM;1;11/3/2016 9:16:52 AM;1;;0;;;;;0;-1;104;-1;-1;0000000000000;;1;1/1/1900 12:00:00 AM;;1;0;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;4/10/2019 7:15:01 AM;ALPLA_BASIS_RS;-1;
+77;209;CH, Hochdorf (closed);CH;;N;;CHF;7/14/2002 12:00:00 AM;0;11/9/2016 2:52:39 PM;1;;0;;;ATHRDSRV05;AlplaPROD_chhoc;1;-1;-1;-1;-1;0000000000000;;1;12/31/2006 12:00:00 AM;;2;0;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;4/10/2019 7:15:01 AM;ALPLA_BASIS_RS;-1;
+78;210;US, Jefferson City;US;office-JeffersonCity@alpla.com;N;;USD;9/20/2004 6:13:00 PM;0;11/24/2025 2:51:00 PM;1071;;1;AlplaPROD_usjci1;US Jefferson  City;USJCI1VMS006;AlplaPROD_usjci1;-1;-1;-1;-1;1;9008608000003;usjci1;4;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;11/25/2025 7:15:00 AM;ALPLA_BASIS_RS;401;
+79;211;DE, Löhne (closed);DE;;N;;EUR;7/14/2002 12:00:00 AM;0;1/15/2026 9:57:00 AM;1071;;1;;;;AlplaPROD_deloe1;-1;-1;-1;-1;-1;0000000000000;deloe;1;2/1/2013 12:00:00 AM;;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;1/16/2026 7:15:00 AM;ALPLA_BASIS_RS;124;
+80;212;CH, Lostorf (closed);CH;;N;;CHF;7/14/2002 12:00:00 AM;0;7/4/2023 10:26:00 AM;2198;;0;;;;AlplaPROD_chlos1;-1;-1;-1;-1;-1;0000000000000;chlos;1;3/31/2011 12:00:00 AM;;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;7/5/2023 7:15:00 AM;ALPLA_BASIS_RS;271;
+81;213;NI, Managua;NI;;N;;NIO;9/28/2004 10:49:00 AM;0;3/28/2025 10:23:00 AM;1071;;1;AlplaPROD_niman1;;NIMAN1VMS006;AlplaPROD_niman1;-1;-1;-1;-1;-1;9009764000005;niman1;6;1/1/1900 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;3/29/2025 7:15:00 AM;ALPLA_BASIS_RS;541;
+82;214;UK, Port Sunlight 1;UK;Office-PortSunlight@alpla.com;N;;GBP;7/14/2002 12:00:00 AM;0;8/13/2024 5:20:00 PM;1071;;1;AlplaPROD_ukpsl1;;UKPSL1VMS006;AlplaPROD_ukpsl1;-1;-1;-1;-1;-1;9009314000004;ukpsl1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;8/14/2024 7:15:00 AM;ALPLA_BASIS_RS;162;
+83;215;UK, Port Sunlight 4 (closed);UK;Office-PortSunlight@alpla.com;N;;GBP;7/14/2002 12:00:00 AM;0;12/10/2025 2:54:00 PM;3229;;1;;;UKPSL1VMS006;AlplaPROD_ukpsl4;-1;-1;-1;-1;-1;9010719000001;ukpsl4;1;12/31/2023 12:00:00 AM;;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;12/11/2025 7:15:00 AM;ALPLA_BASIS_RS;162;
+84;216;PT, Marinha Grande;PT;;N;;EUR;7/14/2002 12:00:00 AM;0;1/15/2026 10:14:00 AM;1071;Portugal;1;AlplaPROD_ptmar1;;PTMAR1VMS006;AlplaPROD_ptmar1;-1;-1;-1;-1;-1;9009798000002;ptmar1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;1/16/2026 7:15:00 AM;ALPLA_BASIS_RS;211;
+85;217;CH, Rothrist (closed);CH;chrot1-office@alpla.com;N;;CHF;7/14/2002 12:00:00 AM;0;9/30/2025 5:55:00 PM;1071;;1;AlplaPROD_chrot1;;ATFUS1VMS022;AlplaPROD_chrot1;-1;-1;-1;-1;-1;0000000000000;chrot1;1;5/30/2025 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;10/1/2025 7:15:00 AM;ALPLA_BASIS_RS;271;
+86;218;UZ, Tashkent (closed);UZ;;N;;UZS;7/14/2002 12:00:00 AM;0;1/15/2026 10:01:00 AM;1071;Taschkent;1;;;;AlplaPROD_uztas1;-1;-1;-1;-1;-1;0000000000000;uztas1;8;1/1/2020 12:00:00 AM;;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;1/16/2026 7:15:00 AM;ALPLA_BASIS_RS;301;
+87;219;VE, San Joaquin;VE;vesjq1-office@alpla.com;N;;VES;7/14/2002 12:00:00 AM;0;10/13/2025 4:17:00 PM;1071;Venezuela;1;AlplaPROD_vesjq1;;VESJQ1VMS006;AlplaPROD_vesjq1;-1;-1;-1;-1;1;9008690000004;vesjq1;5;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;10/14/2025 7:15:00 AM;ALPLA_BASIS_RS;531;
+88;220;MX, Technical Center Toluca;MX;office-toluca@alpla.com;N;;MXN;11/8/2002 11:20:00 AM;0;11/5/2025 9:24:00 AM;1071;;1;;;;;-1;-1;-1;-1;-1;0000000000000;mxtol4-tc;6;1/1/1900 12:00:00 AM;;4;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;11/6/2025 7:15:00 AM;ALPLA_BASIS_RS;412;
+89;221;AT, Hard Technics;AT;office@alpla.com;N;;EUR;12/13/2002 11:19:00 AM;0;10/31/2025 9:53:00 AM;1071;;1;;;;;-1;-1;-1;-1;-1;9008417000003;athrd1-tc;1;1/1/1900 12:00:00 AM;;4;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;11/1/2025 7:15:00 AM;ALPLA_BASIS_RS;104;
+90;222;AT, Hard OH;AT;office@alpla.com;N;;EUR;12/13/2002 11:19:00 AM;0;9/4/2024 8:58:00 AM;1071;;1;;;;;-1;-1;-1;-1;-1;9008417000003;athrd1-hq;1;1/1/1900 12:00:00 AM;;6;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;9/5/2024 7:15:00 AM;ALPLA_BASIS_RS;104;
+91;223;VE, Barcelona (Venezuela);VE;vesjq1-office@alpla.com;N;;VES;2/20/2003 1:49:00 PM;0;10/13/2025 4:17:00 PM;1071;;1;AlplaPROD_vebar1;;VESJQ1VMS006;AlplaPROD_vebar1;-1;-1;-1;-1;-1;9008691000003;vebar1;5;1/1/1900 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;10/14/2025 7:15:00 AM;ALPLA_BASIS_RS;531;
+92;224;DE, Föritztal TC (ehem. Gefell);DE;;N;;EUR;2/25/2003 9:29:24 AM;1;8/20/2018 2:55:38 PM;-1;;1;;;;;0;-1;131;-1;-1;0000000000000;;1;1/1/1900 12:00:00 AM;;4;0;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;4/10/2019 7:15:01 AM;ALPLA_BASIS_RS;-1;
+93;225;FR, Hesdin L´Abbe (closed);FR;;N;;EUR;9/10/2013 4:44:00 PM;0;9/29/2021 10:16:00 AM;1071;;0;;;;;-1;-1;-1;-1;-1;0000000000000;frhes1;1;12/2/2013 12:00:00 AM;;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;9/30/2021 7:15:00 AM;ALPLA_BASIS_RS;-1;
+94;226;DE, Service Center Local;DE;office-markdorf@alpla.com;N;;EUR;3/18/2003 4:58:00 PM;0;8/13/2024 5:06:00 PM;1071;;1;;;;;-1;-1;-1;-1;-1;0000000000000;acdc02-sc;1;1/1/1900 12:00:00 AM;;3;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;8/14/2024 7:15:00 AM;ALPLA_BASIS_RS;121;
+95;227;FR, Nemours;FR;contact-france@alpla.com;N;;EUR;6/13/2003 3:38:00 PM;0;3/20/2025 4:20:00 PM;1071;;1;AlplaPROD_frnem1;Nemours;FRNEM1VMS006;AlplaPROD_frnem1;-1;-1;-1;-1;-1;9009972000002;frnem1;1;1/1/1900 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;3/21/2025 7:15:00 AM;ALPLA_BASIS_RS;151;
+96;228;PT, Pombal (closed);PT;;N;;EUR;4/21/2004 2:18:00 PM;0;5/23/2025 1:44:00 PM;1071;;1;;;;AlplaPROD_ptpom1;-1;-1;-1;-1;-1;0000000000000;ptpom1;1;2/23/2021 12:00:00 AM;ACDC01VMS006;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;5/24/2025 7:15:00 AM;ALPLA_BASIS_RS;211;
+97;229;IT, Anzio CP (closed);IT;office-anzio@alpla.com;N;;EUR;6/8/2004 8:36:00 AM;0;6/11/2025 3:16:00 PM;1076;;1;;;;;-1;-1;-1;-1;-1;0000000000000;itnet1;1;6/26/2023 12:00:00 AM;;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;6/12/2025 7:15:00 AM;ALPLA_BASIS_RS;171;
+98;230;TH, Bangkok (closed);TH;;N;;THB;10/11/2004 12:33:00 PM;0;2/24/2025 2:54:00 PM;1071;;0;;;THBKKSRV06;AlplaPROD_thbkk1;-1;-1;-1;-1;-1;0000000000000;thban1;12;12/18/2008 12:00:00 AM;;2;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;2/25/2025 7:15:00 AM;ALPLA_BASIS_RS;303;
+99;231;BR, Manaus (closed);BR;;N;;BRL;10/6/2004 10:38:00 AM;0;1/15/2026 9:58:00 AM;1071;Manaus;1;;;;;-1;-1;-1;-1;1;0000000000000;brman1;5;12/31/2019 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;1/16/2026 7:15:00 AM;ALPLA_BASIS_RS;522;
+100;232;BR, Louveira 1;BR;office-saopaulo@alpla.com;N;;BRL;10/7/2004 9:52:00 AM;0;10/21/2025 9:55:00 AM;1071;;1;AlplaPROD_brlou1;;BRLOU1VMS006;AlplaPROD_brlou1;-1;-1;-1;-1;1;9009324000001;brlou1;5;1/1/1900 12:00:00 AM;ACDC01VMS006;1;1;7/27/2018 10:36:19 AM;ALPLA_BASIS_RS;10/22/2025 7:15:00 AM;ALPLA_BASIS_RS;521;
+
+(100 rows affected)
+
+IdAdressen;Bezeichnung;Ort;PLZ;Strasse;IdAdressentyp;IdStaaten;LieferantenNr;DebNr;UID
+----------;-----------;---;---;-------;-------------;---------;-------------;-----;---
+1;ALPLA-Werke - Technik
+Alwin Lehner GmbH & Co KG;HARD;6971;Mockenstrasse 34;3;15;;;UID: ATU35658506
+2;Alpla viana 1
+;Viana;00000;Estrada do Kikuxi;3;7;;;5417567485
+8;Metalúrgica de Viana;Luanda;0000;Estrada de Calumbo, S/N;2;7;;;
+9;IBEROALPLA PORTUGAL;Leiria;0000;Rua da Nazaré, EN 242, Nº224;2;184;;;503297208
+11;ALPLA MIDDLE EAST DMCC;Dubai;0000;DMCC Business Center;2;238;;;100363347400003
+13;DHL ANGOLA;Luanda;0000;(PO BOX 1545);2;7;;;5410000870
+26;DHL EXPRESS ANGOLA;Luanda;0000;(PO BOX 1545);2;7;;;5410000870
+30;ALPLA ANGOLA PLASTICOS, Lda
+;Viana;00000;Estrada do Kikuxi;4;7;;;5417567485
+33;Beba - Sociedade De Bebidas De Angola, Lda;Kuanza Sul;0000;Porto Amboim - Kuanza Sul;1;7;;;5604000639
+36;NUTRYPOUPE ANGOLA - COM. GERAL PREST. DE SERVIÇOS, LDA
+;Luanda;0000;Av. 4 Fevereiro, nº 32, 13 Andar;1;7;;;5000239453
+46;ALPLA Samrand
+;Samrand;Samrand;30 Landmarks Avenue;3;209;;;
+52;Alpla Viana 2 (ZEE);Viana;00000;Zona Economica Especial;3;7;;;
+56;Alpla viana 3 (SOPRO)
+;Viana;00000;Estrada do Kikuxi;3;7;;;XXXXXXXX
+57;Alpla Trading - KWANZA;xyz;000;;2;209;;;
+59;Diageo - Angola;Luanda;0000;Rua Joaquim Figueiredo, 12 Kikuxi;1;7;;;
+61;Alpla Viana 3 (SOPRO);Luanda;000;;3;7;;;
+67;Angolamais, Lda
+;Luanda;0000;Zango 3;3;7;;11111;5402148503
+68;Angolamais, Lda
+;Luanda;0000;Zango 3;1;7;;11111;5402148503
+69;ALPLA Packaging SA (Pty) Ltd ;Johannesburg;00000;2 Crane Lane, Lanseria Corporate Estate, ;1;209;;;
+78;ALPLA TRADING - EURO;DUBAI;000;;2;238;;;
+80;Angola local Suppliers;LUANDA;00000;;2;7;;;
+81;Alpla Marrocos;Tanger;0000;;1;7;;;
+84;ZEEPACK ANGOLA LDA;LUANDA;000-000;;2;7;;;
+85;TOPAK ANGOLA;LUANDA;000-000;;2;7;;;
+94;AOPACKS-ANGOLA-INDUSTRIA DE PLASTICOS;Luanda;000-000;;2;7;;;
+95;Solevo Angola (SU), SA;Luanda;000-000;Via S8 SN Condomínio Dolce Vita Lote 1 Edifício E ;2;7;;;
+98;ALPLA MIDDLE EAST DMCC;Dubai;0000;DMCC Business Center;2;238;;;100363347400003
+101;CAPSULAS VIANA 2;LUANDA;000-000;;2;7;;;
+
+(28 rows affected)
+
+IdZentralerLieferant;Bezeichnung;CreatedOn;CreatedBy;LastUpdateOn;LastUpdateBy;Timestamp;Aktiv;Add_Date;Add_User;Upd_Date;Upd_User
+--------------------;-----------;---------;---------;------------;------------;---------;-----;--------;--------;--------;--------
+1;DOW Europe;2/1/2017 3:02:00 PM;0;7/26/2018 8:17:00 AM;28;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:02 AM;ALPLA_BASIS_RS;6/29/2019 8:25:02 AM;ALPLA_BASIS_RS
+2;EQP  Germany;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:02 AM;ALPLA_BASIS_RS;6/29/2019 8:25:02 AM;ALPLA_BASIS_RS
+3;DOW Europe (PP);2/1/2017 3:02:00 PM;0;7/23/2018 8:46:00 AM;28;10/20/2017 10:06:43 AM;0;6/29/2019 8:25:02 AM;ALPLA_BASIS_RS;6/29/2019 8:25:02 AM;ALPLA_BASIS_RS
+4;Borealis Europe - PP;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:02 AM;ALPLA_BASIS_RS;6/29/2019 8:25:02 AM;ALPLA_BASIS_RS
+5;Borealis Europe - HDPE;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:02 AM;ALPLA_BASIS_RS;6/29/2019 8:25:02 AM;ALPLA_BASIS_RS
+6;DuPontSa;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:02 AM;ALPLA_BASIS_RS;6/29/2019 8:25:02 AM;ALPLA_BASIS_RS
+7;Eastman Chemicals, Germany;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:02 AM;ALPLA_BASIS_RS;6/29/2019 8:25:02 AM;ALPLA_BASIS_RS
+8;Invista Europe;2/1/2017 3:02:00 PM;0;12/20/2017 4:29:00 PM;28;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+9;Indorama (ex Eastman);2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;0;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+11;Artenius PET;2/1/2017 3:02:00 PM;0;7/26/2018 8:12:00 AM;28;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+12;Artenius - PET/G;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+13;Basell Europe - PP;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+14;Basell Europe - HD/LD;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+15;Ineos  Europe - Caps & Closures -;2/1/2017 3:02:00 PM;0;9/27/2018 10:56:00 AM;28;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+16;Ineos Europe-HDLD;2/1/2017 3:02:00 PM;0;9/27/2018 10:56:00 AM;28;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+17;Ineos  Europe - PP -;2/1/2017 3:02:00 PM;0;9/27/2018 10:56:00 AM;28;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+18;Begra;2/1/2017 3:02:00 PM;0;7/23/2018 2:06:00 PM;28;10/20/2017 10:06:43 AM;0;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+19;Artenius ;2/1/2017 3:02:00 PM;0;7/26/2018 8:12:00 AM;28;10/20/2017 10:06:43 AM;0;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+20;Classica, Trader Brasil;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;0;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+21;Daehan;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+22;Sabic Europe;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+23;Elana;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+24;Hualon;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+25;Marubeni;2/1/2017 3:02:00 PM;0;2/7/2018 12:57:00 PM;28;10/20/2017 10:06:43 AM;0;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+26;M & G  - Tolling -;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;0;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+27;Rotanso;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;0;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+28;Sabic;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;0;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+29;Vinmar, USA;2/1/2017 3:02:00 PM;0;7/31/2018 9:26:00 AM;28;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+108;TVK, Hungary;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+118;Unassigned supplier;2/1/2017 3:02:00 PM;0;7/26/2018 2:13:00 PM;28;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+119;Braskem Argentina (ex Ipiranga);2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+120;Ineos  USA;2/1/2017 3:02:00 PM;0;9/27/2018 10:56:00 AM;28;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+121;Propilven ;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+122;Exxon Mobil, USA;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+123;KW Plastics  (Recycle);2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+124;Plasticos del Lago;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+125;Propilco Colombia;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+126;Equistar USA;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+127;Able International, USA;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+128;Polymeros Nacionales, Mexico;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+129;Resilin;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+130;Petrotrade;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+131;Quimicoplasticos;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+132;DOW USA;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+133;Rhodia Ster;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+134;Petroquimica Cuyo, Argentina;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+135;Polinter;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+136;Total Petrochemicals Europe;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+137;Dolder;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;1;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+138;Fareast-PET-suppliers;2/1/2017 3:02:00 PM;0;;;10/20/2017 10:06:43 AM;0;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS;6/29/2019 8:25:03 AM;ALPLA_BASIS_RS
+
+(50 rows affected)
+
+TABLE_NAME;COLUMN_NAME;DATA_TYPE;CHARACTER_MAXIMUM_LENGTH
+----------;-----------;---------;------------------------
+T_Konten;IdKonto;int;
+T_Konten;IdArtikelVarianten;int;
+T_Konten;IdHauptmaterial;int;
+T_Konten;IdAdresse;int;
+T_Konten;IdVpkVorschrift;int;
+T_Konten;IdProdBereich;int;
+T_Konten;IdMengeneinheit;int;
+T_Konten;IdArtikelVariantenTyp;int;
+T_Konten;IdArtikelTyp;int;
+T_Konten;Add_User;nvarchar;50
+T_Konten;Add_Date;datetime;
+T_Konten;Upd_User;nvarchar;50
+T_Konten;Upd_Date;datetime;
+T_Konten;IdRezeptur;int;
+T_Konten;IdFarbe;int;
+T_Konten;IdReinheit;int;
+T_Konten;IdHerkunft;int;
+T_Konten;IdVerwendung;int;
+
+(18 rows affected)
+
+IdEDIKonfiguration;InterfaceTyp;KurzBezeichnung;Beschreibung;Url;Schema;AutoKonfiguration;Add_User;Add_Date;Upd_User;Upd_Date
+------------------;------------;---------------;------------;---;------;-----------------;--------;--------;--------;--------
+29;2;aovia3;;http://AOVIA1VMS006.alpla.net/AlplaPROD/AlplaPROD_WS_aovia3/EDI/V01.00/EDIImport.asmx;EAIJournalExport_v06.40;2;*ALPLAPROD_RS*;1/27/2025 8:37:43 AM;*ALPLAPROD_RS*;1/27/2025 8:37:43 AM
+32;2;aovia2;;http://AOVIA2VMS006.alpla.net/AlplaPROD/AlplaPROD_WS_aovia2/EDI/V01.00/EDIImport.asmx;EAIJournalExport_v06.40;2;*ALPLAPROD_RS*;7/24/2025 9:53:07 AM;*ALPLAPROD_RS*;7/24/2025 9:53:07 AM
+33;2;aovia2;;http://AOVIA2VMS006.alpla.net/AlplaPROD/AlplaPROD_WS_aovia2/EDI/V01.00/EDIImport.asmx;EAIJournalExport_v06.40;2;*ALPLAPROD_RS*;7/24/2025 9:53:07 AM;*ALPLAPROD_RS*;7/24/2025 9:53:07 AM
+
+(3 rows affected)
+
+IdEDIKonfiguration;IdAdressen;EDITyp;EDIRichtung;AutomatischeOperation;Add_User;Add_Date;Upd_User;Upd_Date
+------------------;----------;------;-----------;---------------------;--------;--------;--------;--------
+29;61;4;1;110;*ALPLAPROD_RS*;1/27/2025 8:37:43 AM;*ALPLAPROD_RS*;1/27/2025 8:37:43 AM
+32;52;0;1;110;*ALPLAPROD_RS*;7/24/2025 9:53:07 AM;*ALPLAPROD_RS*;7/24/2025 9:53:07 AM
+33;52;4;1;110;*ALPLAPROD_RS*;7/24/2025 9:53:07 AM;*ALPLAPROD_RS*;7/24/2025 9:53:07 AM
+
+(3 rows affected)
+
+IdJournal;IdJournalTyp;IdJournalStatus;JournalNummer;JournalDatum;LKWNummer;ReferenzNummer;AXAuftragsNummer;Guid;Bemerkung;Add_Date
+---------;------------;---------------;-------------;------------;---------;--------------;----------------;----;---------;--------
+20631;6;62;108748;5/29/2026 9:48:54 PM;;;;7d37bf2a-439a-48fe-8439-2945b86ea32c;;5/29/2026 9:48:54 PM
+20630;6;62;108747;5/29/2026 7:29:38 PM;;;;2da3bcd0-2aa5-4366-a2bb-f134b936210d;;5/29/2026 7:29:41 PM
+20629;6;62;108746;5/29/2026 7:27:24 PM;;;;eccdb274-053e-461f-8f5b-768ca09422d6;;5/29/2026 7:27:27 PM
+20628;6;62;108745;5/29/2026 7:24:52 PM;;102952;;6e15cce4-9003-4527-b5ff-9944989b794f;;5/29/2026 7:24:52 PM
+20627;6;62;108744;5/29/2026 7:23:33 PM;;;;5d6c9131-75c9-4406-9d87-d42e4b072328;;5/29/2026 7:23:37 PM
+20626;6;62;108743;5/29/2026 6:52:43 PM;;;;147d2acb-9e74-47a7-8f4f-18742df2a75b;;5/29/2026 6:52:43 PM
+20625;6;62;108742;5/29/2026 6:44:54 PM;;;;e9e7bb6a-d5ce-422d-90d1-4f0cf951a9ab;;5/29/2026 6:44:54 PM
+20624;6;62;108741;5/29/2026 6:43:02 PM;;102951;;e0a7e4b7-b996-43f0-852a-bfb229fc715f;;5/29/2026 6:43:03 PM
+20623;6;62;108740;5/29/2026 5:26:05 PM;;;;d40000ea-d16d-4d87-9a2a-6dc03be69670;;5/29/2026 5:26:05 PM
+20622;6;62;108739;5/29/2026 5:09:48 PM;;;;65de933d-721a-42a6-a9d6-3dbfac34a994;;5/29/2026 5:09:48 PM
+20621;6;62;108738;5/29/2026 2:13:08 PM;;;;1b11d9ae-ad91-44f3-b4fd-1dfa0ef2652d;;5/29/2026 2:13:08 PM
+20620;6;62;108737;5/29/2026 11:47:10 AM;;;;fcef4333-a846-4e5a-970c-04b15177dcd9;;5/29/2026 11:47:10 AM
+20619;6;62;108736;5/29/2026 11:43:21 AM;;;;42448f75-f643-4b7d-b617-e613d3d59a40;;5/29/2026 11:43:21 AM
+20618;6;62;108735;5/29/2026 11:07:12 AM;;;;e9711a70-f91c-4e1e-a696-81816c2d2ebc;;5/29/2026 11:07:12 AM
+20617;9;91;102411;5/29/2026 9:52:02 AM;;;;1ec52eb1-1124-4ec8-bc5d-25228c263fae;;5/29/2026 9:52:03 AM
+20616;9;91;102410;5/29/2026 9:49:20 AM;;;;0af76667-1b7a-4f7c-90ae-2df29fdf5f63;;5/29/2026 9:49:21 AM
+20615;9;91;102409;5/29/2026 9:48:50 AM;;;;fb9d1858-1f14-4f22-bba6-e32dcc68b47f;;5/29/2026 9:48:51 AM
+20614;9;91;102408;5/29/2026 9:48:19 AM;;;;5998866d-695e-4a73-bae2-f40dfb664a70;;5/29/2026 9:48:20 AM
+20613;9;91;102407;5/29/2026 9:47:48 AM;;;;4f275128-fe1b-45ae-81ce-76c6d5a3000a;;5/29/2026 9:47:49 AM
+20612;9;91;102406;5/29/2026 9:46:39 AM;;;;44beaeb9-46f1-447a-930a-cafff06ebf37;;5/29/2026 9:46:40 AM
+
+(20 rows affected)
+
+IdEAIJournalSynch;IdJournal;Status;Aktion;Bemerkung;Add_Date;TransaktionUID
+-----------------;---------;------;------;---------;--------;--------------
+13882;20631;1;1;;5/29/2026 9:48:54 PM;f044fcb4-ac27-42f3-b54b-44dffd80ea21
+13881;20630;1;1;;5/29/2026 7:29:41 PM;dba6a8f7-d862-492b-875b-b96f8bf180c9
+13880;20629;1;1;;5/29/2026 7:27:27 PM;d5224eab-e009-4f40-9e92-10b97ff6214a
+13879;20628;0;2;;5/29/2026 7:24:52 PM;00000000-0000-0000-0000-000000000000
+13878;20627;1;1;;5/29/2026 7:23:38 PM;ca38ff00-7eeb-4b4c-bd30-8e048a9015bf
+13877;20626;1;1;;5/29/2026 6:52:43 PM;be42d90e-ea66-4760-a9c2-5bb8fcf47b25
+13876;20625;1;1;;5/29/2026 6:44:54 PM;6a1f2614-37ab-48d7-b693-cc29a6e02826
+13875;20624;0;2;;5/29/2026 6:43:03 PM;00000000-0000-0000-0000-000000000000
+13874;20620;1;1;;5/29/2026 11:47:10 AM;3e3dade7-b8a1-4afd-b85c-79f329e643cf
+13873;20617;1;1;;5/29/2026 9:52:03 AM;9aa1145e-674e-4732-8c88-43b637b6e70a
+13872;20617;1;3;;5/29/2026 9:52:03 AM;00000000-0000-0000-0000-000000000000
+13871;20616;1;1;;5/29/2026 9:49:21 AM;ef12136c-ea46-4642-b22d-288c8eed0ad6
+13870;20616;1;3;;5/29/2026 9:49:21 AM;00000000-0000-0000-0000-000000000000
+13869;20615;1;1;;5/29/2026 9:48:51 AM;f23d0d93-dfe4-4027-a543-61dbade8c34e
+13868;20615;1;3;;5/29/2026 9:48:51 AM;00000000-0000-0000-0000-000000000000
+13867;20614;1;1;;5/29/2026 9:48:20 AM;53ad4989-7fbb-4537-ba6d-4ea89503497d
+13866;20614;1;3;;5/29/2026 9:48:20 AM;00000000-0000-0000-0000-000000000000
+13865;20613;1;1;;5/29/2026 9:47:49 AM;4428cf41-a940-44af-8fcb-ac45380851ca
+13864;20613;1;3;;5/29/2026 9:47:49 AM;00000000-0000-0000-0000-000000000000
+13863;20612;1;1;;5/29/2026 9:46:40 AM;bbe08fb8-1acf-4f4d-b622-3cbc4f01e345
+
+(20 rows affected)
+
+IdAdressBeziehung;IdHauptAdresse;IdNebenAdresse;AdressEigenschaft;Standard;Add_User;Add_Date;Upd_User;Upd_Date;PreisUebernehmen
+-----------------;--------------;--------------;-----------------;--------;--------;--------;--------;--------;----------------
+3;1;1;1;1;sa;3/5/2014 10:04:48 AM;ALPLA\honjo001;11/25/2022 10:20:20 AM;0
+4;1;1;2;1;sa;3/5/2014 10:04:48 AM;ALPLA\honjo001;11/25/2022 10:20:20 AM;0
+5;2;2;1;1;ALPLA\adm_hewitt01;9/3/2018 1:46:30 PM;ALPLA\cintra01;10/11/2023 1:56:14 PM;0
+6;2;2;2;1;ALPLA\adm_hewitt01;9/3/2018 1:46:30 PM;ALPLA\cintra01;10/11/2023 1:56:14 PM;0
+7;3;3;1;1;ALPLA\mohamed003;10/17/2018 2:46:56 PM;ALPLA\ramos034;10/15/2022 12:47:29 PM;0
+8;3;3;2;1;ALPLA\mohamed003;10/17/2018 2:46:56 PM;ALPLA\ramos034;10/15/2022 12:47:29 PM;0
+9;4;4;1;1;ALPLA\mohamed003;10/17/2018 2:48:45 PM;ALPLA\ramos034;6/2/2023 4:06:30 PM;0
+10;4;4;2;1;ALPLA\mohamed003;10/17/2018 2:48:45 PM;ALPLA\ramos034;6/2/2023 4:06:30 PM;0
+11;5;5;1;1;ALPLA\mohamed003;10/17/2018 2:50:16 PM;ALPLA\honjo001;6/16/2022 4:33:04 PM;0
+12;5;5;2;1;ALPLA\mohamed003;10/17/2018 2:50:16 PM;ALPLA\honjo001;6/16/2022 4:33:04 PM;0
+13;6;6;1;1;ALPLA\mohamed003;10/17/2018 2:51:28 PM;ALPLA\ramos034;10/15/2022 12:35:19 PM;0
+14;6;6;2;1;ALPLA\mohamed003;10/17/2018 2:51:28 PM;ALPLA\ramos034;10/15/2022 12:35:19 PM;0
+15;7;7;1;1;ALPLA\mohamed003;10/17/2018 2:52:42 PM;ALPLA\ramos034;7/11/2022 4:56:25 PM;0
+16;7;7;2;1;ALPLA\mohamed003;10/17/2018 2:52:42 PM;ALPLA\ramos034;7/11/2022 4:56:25 PM;0
+17;8;8;1;1;ALPLA\mohamed003;10/17/2018 3:01:18 PM;ALPLA\cintra01;3/15/2023 10:57:42 AM;0
+18;8;8;2;1;ALPLA\mohamed003;10/17/2018 3:01:18 PM;ALPLA\cintra01;3/15/2023 10:57:42 AM;0
+19;9;9;1;1;ALPLA\mohamed003;10/17/2018 3:02:40 PM;ALPLA\cintra01;8/21/2024 4:11:50 PM;0
+20;9;9;2;1;ALPLA\mohamed003;10/17/2018 3:02:40 PM;ALPLA\cintra01;8/21/2024 4:11:50 PM;0
+21;10;10;1;1;ALPLA\mohamed003;10/17/2018 3:07:11 PM;ALPLA\cintra01;8/27/2024 6:03:04 PM;0
+22;10;10;2;1;ALPLA\mohamed003;10/17/2018 3:07:11 PM;ALPLA\cintra01;8/27/2024 6:03:04 PM;0
+23;11;11;1;1;ALPLA\mohamed003;10/17/2018 3:09:09 PM;ALPLA\cintra01;10/17/2023 4:42:22 PM;0
+24;11;11;2;1;ALPLA\mohamed003;10/17/2018 3:09:09 PM;ALPLA\cintra01;10/17/2023 4:42:22 PM;0
+25;12;12;1;1;ALPLA\mohamed003;10/17/2018 3:10:26 PM;ALPLA\cintra01;3/15/2023 2:44:54 PM;0
+26;12;12;2;1;ALPLA\mohamed003;10/17/2018 3:10:26 PM;ALPLA\cintra01;3/15/2023 2:44:54 PM;0
+27;13;13;1;1;ALPLA\mohamed003;10/17/2018 3:13:38 PM;ALPLA\cintra01;3/15/2023 10:58:35 AM;0
+28;13;13;2;1;ALPLA\mohamed003;10/17/2018 3:13:38 PM;ALPLA\cintra01;3/15/2023 10:58:35 AM;0
+29;14;14;1;1;ALPLA\mohamed003;10/17/2018 3:14:54 PM;ALPLA\ramos034;10/15/2022 11:18:35 AM;0
+30;14;14;2;1;ALPLA\mohamed003;10/17/2018 3:14:54 PM;ALPLA\ramos034;10/15/2022 11:18:35 AM;0
+31;15;15;1;1;ALPLA\mohamed003;10/17/2018 3:18:04 PM;ALPLA\cintra01;3/15/2023 10:58:53 AM;0
+32;15;15;2;1;ALPLA\mohamed003;10/17/2018 3:18:04 PM;ALPLA\cintra01;3/15/2023 10:58:53 AM;0
+33;16;16;1;1;ALPLA\mohamed003;10/17/2018 3:19:01 PM;ALPLA\ramos034;10/15/2022 11:13:45 AM;0
+34;16;16;2;1;ALPLA\mohamed003;10/17/2018 3:19:01 PM;ALPLA\ramos034;10/15/2022 11:13:45 AM;0
+35;17;17;1;1;ALPLA\mohamed003;10/17/2018 3:19:58 PM;ALPLA\ramos034;10/15/2022 11:16:30 AM;0
+36;17;17;2;1;ALPLA\mohamed003;10/17/2018 3:19:58 PM;ALPLA\ramos034;10/15/2022 11:16:31 AM;0
+37;18;18;1;1;ALPLA\mohamed003;10/17/2018 3:21:00 PM;ALPLA\ramos034;10/15/2022 11:12:24 AM;0
+38;18;18;2;1;ALPLA\mohamed003;10/17/2018 3:21:00 PM;ALPLA\ramos034;10/15/2022 11:12:24 AM;0
+39;19;19;1;1;ALPLA\mohamed003;10/17/2018 3:22:02 PM;ALPLA\ramos034;10/15/2022 12:37:33 PM;0
+40;19;19;2;1;ALPLA\mohamed003;10/17/2018 3:22:02 PM;ALPLA\ramos034;10/15/2022 12:37:33 PM;0
+41;20;20;1;1;ALPLA\mohamed003;10/29/2018 11:12:13 AM;ALPLA\cintra01;8/7/2023 5:09:23 PM;0
+42;20;20;2;1;ALPLA\mohamed003;10/29/2018 11:12:13 AM;ALPLA\cintra01;8/7/2023 5:09:23 PM;0
+45;22;22;1;1;ALPLA\mohamed003;11/13/2018 6:02:07 PM;ALPLA\ramos034;10/15/2022 11:22:10 AM;0
+46;22;22;2;1;ALPLA\mohamed003;11/13/2018 6:02:07 PM;ALPLA\ramos034;10/15/2022 11:22:10 AM;0
+47;23;23;1;1;ALPLA\pedro002;5/6/2019 9:39:15 AM;ALPLA\cintra01;10/17/2023 11:35:34 AM;0
+48;23;23;2;1;ALPLA\pedro002;5/6/2019 9:39:16 AM;ALPLA\cintra01;10/17/2023 11:35:34 AM;0
+49;24;24;1;1;ALPLA\pedro002;5/6/2019 9:50:27 AM;ALPLA\cintra01;8/7/2023 5:12:43 PM;0
+50;24;24;2;1;ALPLA\pedro002;5/6/2019 9:50:28 AM;ALPLA\cintra01;8/7/2023 5:12:43 PM;0
+51;25;25;1;1;ALPLA\pedro002;5/6/2019 9:58:45 AM;ALPLA\ramos034;10/15/2022 11:15:04 AM;0
+52;25;25;2;1;ALPLA\pedro002;5/6/2019 9:58:45 AM;ALPLA\ramos034;10/15/2022 11:15:04 AM;0
+53;26;26;1;1;ALPLA\pedro002;5/6/2019 10:06:32 AM;ALPLA\ramos034;10/15/2022 11:21:36 AM;0
+54;26;26;2;1;ALPLA\pedro002;5/6/2019 10:06:32 AM;ALPLA\ramos034;10/15/2022 11:21:36 AM;0
+
+(50 rows affected)
+
+COLUMN_NAME;DATA_TYPE;CHARACTER_MAXIMUM_LENGTH;IS_NULLABLE
+-----------;---------;------------------------;-----------
+IdWerk;int;;NO
+werk_id;int;;NO
+werk_name;nvarchar;70;NO
+werk_country_id;nvarchar;50;NO
+werk_mail;nvarchar;70;NO
+werk_RepKennz;nvarchar;50;NO
+werk_DINISOzert;nvarchar;50;NO
+werk_curr_id;nvarchar;50;NO
+AddDate;datetime;;YES
+AddUser;int;;NO
+UpdDate;datetime;;YES
+UpdUser;int;;NO
+werk_Firmennummer;nvarchar;70;NO
+werk_incl_olap;int;;NO
+alpla_rep_db;nvarchar;100;NO
+werk_Firmennummer_soplar;nvarchar;70;NO
+werk_server;nvarchar;100;NO
+werk_db;nvarchar;100;NO
+inhouse;int;;NO
+Alpla_Invoice;int;;NO
+JurPers_id;int;;NO
+Servicecenter;int;;NO
+Alpla_Stock;int;;NO
+GLN;nvarchar;50;NO
+werk_shortcut;nvarchar;50;NO
+werk_OrgRegion_id;int;;NO
+werk_close_date;datetime;;YES
+werk_ReplicationServer;nvarchar;100;NO
+werk_LocationType;int;;NO
+Aktiv;int;;NO
+Add_Date;datetime;;NO
+Add_User;nvarchar;50;NO
+Upd_Date;datetime;;YES
+Upd_User;nvarchar;50;YES
+werk_company;int;;YES
+werk_suffix;nvarchar;10;NO
+
+(36 rows affected)
+
+

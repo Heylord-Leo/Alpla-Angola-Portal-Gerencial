@@ -1,0 +1,1438 @@
+ServerName;DatabaseName;SQLServerVersion;QueryExecutedAt
+----------;------------;----------------;---------------
+AOVIA1VMS006;AlplaPROD_aovia1;Microsoft SQL Server 2022 (RTM-CU24) (KB5080999) - 16.0.4245.2 (X64) 
+	Feb 25 2026 15:01:38 
+	Copyright (C) 2022 Microsoft Corporation
+	Standard Edition (64-bit) on Windows Server 2022 Standard 10.0 <X64> (Build 20348: ) (Hypervisor)
+;2026-05-29 21:28:15.660
+
+(1 rows affected)
+SchemaName;SchemaId
+----------;--------
+AlplaAPP;5
+AlplaREPORTBUDGET;6
+db_accessadmin;16385
+db_backupoperator;16389
+db_datareader;16390
+db_datawriter;16391
+db_ddladmin;16387
+db_denydatareader;16392
+db_denydatawriter;16393
+db_owner;16384
+db_securityadmin;16386
+dbo;1
+
+(12 rows affected)
+SchemaName;TableName;ApproxRowCount;CreatedDate;LastModifiedDate
+----------;---------;--------------;-----------;----------------
+AlplaAPP;T_AppBenutzerRechte;0;2018-09-27 14:20:02.510;2026-05-20 11:44:09.757
+AlplaAPP;T_AppHygieneStatus;0;2018-09-27 14:19:59.487;2026-05-20 11:44:09.787
+AlplaAPP;T_AppOcpDrucker;0;2018-09-27 14:20:00.113;2026-05-20 11:44:09.837
+AlplaAPP;T_AppOcpLogPrinted;0;2018-09-27 14:20:03.417;2026-05-20 11:44:09.843
+AlplaAPP;T_AppRechte;4;2018-09-27 14:20:02.347;2026-05-20 11:44:09.873
+AlplaAPP;T_AppStaplerAufgaben;0;2018-09-27 14:20:00.837;2026-05-20 11:44:09.910
+AlplaAPP;T_AppStaplerEingaenge;0;2018-09-27 14:20:00.450;2026-05-20 11:44:09.933
+AlplaAPP;T_AppStaplerInventuren;0;2018-09-27 14:20:00.830;2026-05-20 11:44:09.963
+AlplaAPP;T_AppStaplerPlanungen;0;2018-09-27 14:20:00.840;2026-05-20 11:44:09.997
+AlplaAPP;T_AppThemen;1;2018-09-27 14:20:02.357;2026-05-20 11:44:10.010
+dbo;__MigrationHistory;0;2018-09-27 14:20:03.620;2026-05-20 07:43:31.907
+dbo;T_AbfallAttribute;78;2018-09-27 14:20:02.590;2026-05-20 11:44:09.207
+dbo;T_AbfallHerkuenfte;14;2018-09-27 14:19:59.287;2026-05-20 11:44:09.240
+dbo;T_AbfallmaterialGruppenHauptMaterialGruppen;37;2018-09-27 14:20:00.293;2026-05-20 11:44:09.277
+dbo;T_AbfallmaterialGruppenProdBereich;57;2018-09-27 14:20:01.610;2026-05-20 11:44:09.303
+dbo;T_AbfallNachfuellContainer;1;2018-09-27 14:20:00.680;2026-05-20 11:44:09.323
+dbo;T_AbfallReinheiten;5;2018-09-27 14:19:59.280;2026-05-20 11:44:09.350
+dbo;T_AbfallTypen;11;2018-09-27 14:19:59.080;2026-05-20 11:44:09.373
+dbo;T_AbfallTypenAbfallHerkuenfte;106;2018-09-27 14:19:59.830;2026-05-20 11:44:09.407
+dbo;T_AbfallVerwendungszwecke;4;2018-09-27 14:19:59.293;2026-05-20 11:44:09.427
+dbo;T_Abrufe;4041;2018-09-27 14:20:00.077;2026-05-20 11:44:09.717
+dbo;T_ActivityLog;166;2018-09-27 14:20:03.420;2026-05-20 11:44:09.507
+dbo;T_ADGruppe_BenutzerRollen;151;2018-09-27 14:20:00.780;2026-05-20 11:44:09.503
+dbo;T_ADGruppe_WindowsBenutzer;240;2018-09-27 14:20:00.533;2026-05-20 11:44:09.527
+dbo;T_AdressBeziehungen;220;2018-09-27 14:19:59.700;2026-05-20 11:44:09.593
+dbo;T_Adressen;111;2018-09-27 14:19:59.183;2026-05-20 11:44:09.960
+dbo;T_Adressentyp;4;2018-09-27 14:19:59.933;2026-05-20 11:44:09.690
+dbo;T_AktuellerLagerBestand;814;2018-09-27 14:19:59.693;2026-05-20 11:44:09.750
+dbo;T_AlplaPRODViewWhitelist;729;2018-09-27 14:20:03.423;2018-09-27 14:20:03.423
+dbo;T_AlternativHauptmaterialien;328;2018-09-27 14:20:02.620;2026-05-20 11:44:09.737
+dbo;T_AlternativRezepturen;627;2018-09-27 14:19:59.203;2026-05-20 11:44:09.760
+dbo;T_ApiLog;0;2023-10-31 13:59:06.323;2023-10-31 13:59:06.323
+dbo;T_ArtikelKlassifikationen;9;2018-09-27 14:19:59.600;2026-05-20 11:44:10.073
+dbo;T_Artikeltyp;6;2018-09-27 14:19:59.103;2026-05-20 11:44:10.100
+dbo;T_Artikelvarianten;454;2018-09-27 14:19:59.133;2026-05-20 11:44:10.453
+dbo;T_ArtikelvariantenTyp;36;2018-09-27 14:19:59.120;2026-05-20 11:44:10.207
+dbo;T_ArtikelvariantenTyp_LadeEinheiten;0;2018-09-27 14:20:00.937;2026-05-20 11:44:10.217
+dbo;T_AttachedMaterials;4;2021-08-29 16:10:42.007;2026-05-20 11:44:10.220
+dbo;T_Auftraege;3850;2018-09-27 14:19:59.730;2026-05-20 11:44:10.433
+dbo;T_AuftragsAbrufe;4041;2018-09-27 14:19:59.720;2026-05-20 11:44:10.687
+dbo;T_AuftragsAbrufeHistorie;24;2018-09-27 14:19:59.953;2026-05-20 11:44:10.670
+dbo;T_AuftragsBest;0;2018-09-27 14:20:02.770;2026-05-20 11:44:10.433
+dbo;T_AuftragsKomponenten;46;2018-09-27 14:20:02.180;2026-05-20 11:44:10.507
+dbo;T_AuftragsLeistungen;0;2018-09-27 14:20:01.903;2026-05-20 11:44:10.583
+dbo;T_AuftragsPositionen;3998;2018-09-27 14:19:59.727;2026-05-20 11:44:10.823
+dbo;T_AxIncasTransferQueueEntry;0;2022-03-13 17:08:22.950;2026-05-20 11:44:10.587
+dbo;T_AxTransferQueueEntry;0;2021-08-15 16:07:37.943;2026-05-20 11:44:10.643
+dbo;T_AXWebServices;13;2019-06-29 08:24:21.123;2026-05-20 11:44:10.760
+dbo;T_Benutzer;155;2018-09-27 14:19:59.480;2026-05-20 11:44:10.873
+dbo;T_Benutzer_Module;644;2018-09-27 14:20:01.300;2026-05-20 11:44:10.867
+dbo;T_BenutzerEinstellungen;16;2018-09-27 14:20:02.950;2026-05-20 11:44:10.873
+dbo;T_BenutzerRollen;55;2018-09-27 14:20:01.293;2026-05-20 11:44:10.927
+dbo;T_BerichtBerechtigungen;6;2018-09-27 14:20:03.407;2026-05-20 11:44:10.910
+dbo;T_Berichte;9;2018-09-27 14:20:03.403;2026-05-20 11:44:10.940
+dbo;T_BestandsGrenzen;0;2018-09-27 14:20:00.210;2026-05-20 11:44:11.020
+dbo;T_BestellMengenGrenzen;0;2018-09-27 14:20:01.460;2026-05-20 11:44:11.040
+dbo;T_Bestellpositionen;2623;2018-09-27 14:20:01.493;2026-05-20 11:44:11.190
+dbo;T_BestellPositionenBewertungen;0;2018-09-27 14:20:02.970;2026-05-20 11:44:11.110
+dbo;T_Bestellung;0;2018-09-27 14:20:01.980;2026-05-20 11:44:11.223
+dbo;T_Bestellungen;2436;2018-09-27 14:20:01.490;2026-05-20 11:44:11.250
+dbo;T_BestellungenJournal;2411;2018-09-27 14:20:02.800;2026-05-20 11:44:11.207
+dbo;T_Bestellvorschlaege;0;2018-09-27 14:20:01.453;2026-05-20 11:44:11.353
+dbo;T_Blaskopf;0;2018-09-27 14:20:00.147;2026-05-20 11:44:11.353
+dbo;T_BlaskopfNummern;5289;2018-09-27 14:20:00.673;2026-05-20 11:44:11.310
+dbo;T_BlockingDefects;501;2018-09-27 14:20:02.567;2026-05-20 11:44:11.350
+dbo;T_BlockingDefectsGroups;36;2018-09-27 14:20:02.300;2026-05-20 11:44:11.367
+dbo;T_BlockingOrders;116;2018-09-27 14:20:00.380;2026-05-20 11:44:11.473
+dbo;T_BlockingOrders_Positions;1602;2018-09-27 14:20:00.370;2026-05-20 11:44:11.473
+dbo;T_BlockingOrdersAdditionalDefects;4;2018-09-27 14:20:02.830;2026-05-20 11:44:11.460
+dbo;T_BuchungsGruende;25;2018-09-27 14:20:03.400;2026-05-20 11:44:11.507
+dbo;T_BudgetAbsatzplan;123;2018-09-27 14:20:03.083;2026-05-20 11:44:11.583
+dbo;T_BudgetAbsatzplanDetails;247;2018-09-27 14:20:03.427;2026-05-20 11:44:11.593
+dbo;T_BudgetBlaskopf;0;2018-09-27 14:20:03.143;2026-05-20 11:44:11.637
+dbo;T_BudgetEinstellungen;12;2018-09-27 14:20:03.117;2026-05-20 11:44:11.643
+dbo;T_BudgetMaschinentypen;14;2018-09-27 14:20:03.027;2026-05-20 11:44:11.647
+dbo;T_CoexPos;0;2018-09-27 14:20:01.957;2026-05-20 11:44:11.687
+dbo;T_CoexSchichten;0;2018-09-27 14:20:01.480;2026-05-20 11:44:11.727
+dbo;T_ComplaintPositions;42;2020-03-14 09:37:33.983;2026-05-20 11:44:11.843
+dbo;T_EAIFakturaLeistungen;0;2018-09-27 14:20:03.430;2026-05-20 11:44:11.907
+dbo;T_EAIFakturaPositionen;0;2018-09-27 14:20:03.433;2026-05-20 11:44:12.157
+dbo;T_EAIJournal;12640;2018-09-27 14:19:59.547;2026-05-20 11:44:12.320
+dbo;T_EAIJournalAdresse;50560;2018-09-27 14:19:59.837;2026-05-20 11:44:12.367
+dbo;T_EAIJournalAmo;0;2018-09-27 14:20:03.437;2026-05-20 11:44:12.163
+dbo;T_EAIJournalBeleg;0;2018-09-27 14:20:03.440;2026-05-20 11:44:12.153
+dbo;T_EAIJournalBestellPosition;4392;2018-09-27 14:19:59.553;2026-05-20 11:44:12.507
+dbo;T_EAIJournalEx;0;2018-09-27 14:20:03.447;2018-09-27 14:20:03.447
+dbo;T_EAIJournalLayout;0;2018-09-27 14:20:01.523;2026-05-20 11:44:12.283
+dbo;T_EAIJournalLeistungsPosition;0;2018-09-27 14:20:00.880;2026-05-20 11:44:12.450
+dbo;T_EAIJournalLeistungsVorlageZuordnung;0;2018-09-27 14:20:00.050;2026-05-20 11:44:12.337
+dbo;T_EAIJournalLieferPosition;129885;2018-09-27 14:20:01.217;2026-05-20 11:44:12.427
+dbo;T_EAIJournalPosition;13901;2018-09-27 14:19:59.560;2026-05-20 11:44:12.950
+dbo;T_EAIJournalSynch;11882;2018-09-27 14:20:00.427;2026-05-20 11:44:12.527
+dbo;T_EAIJournalText;0;2018-09-27 14:20:02.087;2026-05-20 11:44:12.577
+dbo;T_EAIJournalTextPosition;0;2018-09-27 14:20:03.463;2026-05-20 11:44:12.587
+dbo;T_EAIJournalTextVorlageZuordnung;0;2018-09-27 14:20:02.173;2026-05-20 11:44:12.607
+dbo;T_EAIJournalWarenPosition;14433;2018-09-27 14:20:00.863;2026-05-20 11:44:13.223
+dbo;T_EAIKundenAbrufBestaetigungen;0;2018-09-27 14:20:02.767;2026-05-20 11:44:12.773
+dbo;T_EAIKundenAbrufe;0;2018-09-27 14:20:01.713;2026-05-20 11:44:12.843
+dbo;T_EAIKundenBestand;0;2018-09-27 14:20:00.857;2026-05-20 11:44:12.893
+dbo;T_EAIMandanten;0;2018-09-27 14:20:03.467;2026-05-20 11:44:13.183
+dbo;T_EAIPrognosen;0;2018-09-27 14:20:02.600;2026-05-20 11:44:12.987
+dbo;T_EDIDifferenzen;0;2019-06-15 08:08:20.610;2026-05-20 11:44:12.983
+dbo;T_EDIDokumente;1222;2018-09-27 14:20:01.800;2026-05-20 11:44:13.107
+dbo;T_EDIDokumentPositionen;1457;2018-09-27 14:20:01.793;2026-05-20 11:44:13.160
+dbo;T_EDIKonfigurationen;3;2018-09-27 14:20:00.430;2026-05-20 11:44:13.093
+dbo;T_EDIPositionDetails;16638;2018-09-27 14:20:01.790;2026-05-20 11:44:13.140
+dbo;T_EDIRouting;3;2018-09-27 14:19:59.903;2026-05-20 11:44:13.127
+dbo;T_EDIUpload;5462;2018-09-27 14:19:59.907;2026-05-20 11:44:13.157
+dbo;T_EingesetzteRessourcen;0;2018-09-27 14:20:00.137;2026-05-20 11:44:13.200
+dbo;T_EinkaufsPreise;0;2018-09-27 14:20:01.937;2026-05-20 11:44:13.260
+dbo;T_EntladeAuftraege;0;2018-09-27 14:20:01.883;2026-05-20 11:44:13.307
+dbo;T_EntladePlanungen;0;2018-09-27 14:20:00.100;2026-05-20 11:44:13.323
+dbo;T_EntladePositionen;0;2018-09-27 14:20:00.097;2026-05-20 11:44:13.353
+dbo;T_EtikettenDefault;148;2018-09-27 14:20:03.470;2026-05-20 11:44:13.557
+dbo;T_EtikettenDrucker;12;2018-09-27 14:20:00.110;2026-05-20 11:44:13.453
+dbo;T_EtikettenDruckJobs;0;2018-09-27 14:20:01.270;2026-05-20 11:44:14.157
+dbo;T_EtikettenDruckJobsSystem;0;2018-09-27 14:20:03.477;2026-05-20 11:44:13.620
+dbo;T_EtikettenDummy;69;2018-09-27 14:20:01.197;2026-05-20 11:44:13.617
+dbo;T_EtikettenGedruckt;178745;2018-09-27 14:19:59.363;2026-05-20 11:44:13.977
+dbo;T_EtikettenGemappt;15784;2018-09-27 14:20:00.360;2026-05-20 11:44:13.927
+dbo;T_EtikettenHistorie;194598;2018-09-27 14:19:59.417;2026-05-20 11:44:13.793
+dbo;T_EtikettenLayouts;13;2018-09-27 14:19:59.657;2026-05-20 11:44:13.823
+dbo;T_EtikettenLog;0;2018-09-27 14:20:01.027;2026-05-20 11:44:13.863
+dbo;T_EtikettenPalettenKartons;21866;2018-09-27 14:19:59.430;2026-05-20 11:44:13.873
+dbo;T_EtikettenSperrgruende;1;2018-09-27 14:20:00.063;2026-05-20 11:44:13.923
+dbo;T_EtikettenVerworfen;0;2018-09-27 14:20:00.757;2026-05-20 11:44:14.240
+dbo;T_ExportInventurAbweichungen;0;2018-09-27 14:20:03.480;2026-05-20 11:44:14.023
+dbo;T_ExportLagerBestand;0;2018-09-27 14:20:03.483;2026-05-20 11:44:14.067
+dbo;T_ExportLagerDauer;0;2018-09-27 14:20:03.487;2026-05-20 11:44:14.107
+dbo;T_ExportPalettenBewegungenLager;0;2018-09-27 14:20:03.497;2026-05-20 11:44:14.120
+dbo;T_ExportPalettenBewegungenLKW;0;2018-09-27 14:20:03.490;2026-05-20 11:44:14.150
+dbo;T_ExportPalettenBewegungenProduktion;0;2018-09-27 14:20:03.500;2026-05-20 11:44:14.180
+dbo;T_ExportSchnittstellen;1;2018-09-27 14:20:03.503;2026-05-20 11:44:14.243
+dbo;T_ExportVerpackungskosten;0;2018-09-27 14:20:03.510;2026-05-20 11:44:14.277
+dbo;T_ExportVerpackungsVerhaeltnisse;0;2018-09-27 14:20:03.507;2026-05-20 11:44:14.317
+dbo;T_ExternalConfigurationStore;0;2018-09-27 14:20:03.513;2024-05-28 15:41:35.677
+dbo;T_ExterneTools;2;2018-09-27 14:20:01.120;2026-05-20 11:44:14.350
+dbo;T_ExterneToolsModule;6;2018-09-27 14:20:02.490;2026-05-20 11:44:14.373
+dbo;T_Farben;35;2018-09-27 14:19:59.087;2026-05-20 11:44:14.413
+dbo;T_Farbencode;19;2018-09-27 14:19:59.710;2026-05-20 11:44:14.417
+dbo;T_Farbkategorien;32;2018-09-27 14:20:01.927;2026-05-20 11:44:14.467
+dbo;T_FeatureSwitch;8;2018-09-27 14:20:00.240;2026-05-20 11:44:14.497
+dbo;T_FeldText;0;2018-09-27 14:20:03.520;2026-05-20 11:44:14.577
+dbo;T_Fertigungsmittel;218;2018-09-27 14:19:59.127;2026-05-20 11:44:14.667
+dbo;T_FertigungsmittelAdditive;16;2018-09-27 14:19:59.083;2026-05-20 11:44:14.600
+dbo;T_FertigungsmittelGruppen;89;2018-09-27 14:19:59.710;2026-05-20 11:44:14.630
+dbo;T_FibuKonten;18;2018-09-27 14:19:59.100;2026-05-20 11:44:14.663
+dbo;T_FuellLinien;0;2018-09-27 14:20:01.133;2026-05-20 11:44:14.693
+dbo;T_FuellLose;0;2018-09-27 14:20:01.130;2026-05-20 11:44:14.767
+dbo;T_FuellLose_ProdPlanung;0;2018-09-27 14:20:00.463;2026-05-20 11:44:14.737
+dbo;T_FuellLoseJeProdTag;0;2018-09-27 14:20:01.153;2026-05-20 11:44:14.810
+dbo;T_FuellLosHistorie;0;2018-09-27 14:20:01.963;2026-05-20 11:44:14.897
+dbo;T_GravurNummern;1678;2018-09-27 14:20:01.170;2026-05-20 11:44:14.850
+dbo;T_HistorieProtokoll;0;2018-09-27 14:20:03.523;2026-05-20 11:44:14.880
+dbo;T_HistoryEK;563;2018-09-27 14:19:59.627;2026-05-20 11:44:15.000
+dbo;T_HistoryEKImport;0;2018-09-27 14:20:02.070;2026-05-20 11:44:14.973
+dbo;T_HistoryEKKunden;3;2018-09-27 14:19:59.623;2026-05-20 11:44:14.997
+dbo;T_HistoryEKProtokoll;0;2018-09-27 14:20:01.813;2026-05-20 11:44:15.090
+dbo;T_HistoryEKStaffel;0;2018-09-27 14:20:02.573;2026-05-20 11:44:15.107
+dbo;T_HistoryProduktiondatenDetails;101006;2018-09-27 14:20:02.310;2026-05-20 11:44:15.077
+dbo;T_HistoryProduktionsdaten;101006;2018-09-27 14:20:02.317;2026-05-20 11:44:15.133
+dbo;T_HistoryStillstandsereignis;5010;2018-09-27 14:20:03.527;2026-05-20 11:44:15.157
+dbo;T_HistoryTransportkosten;0;2018-09-27 14:20:01.110;2026-05-20 11:44:15.240
+dbo;T_HistoryVK;1018;2018-09-27 14:19:59.443;2026-05-20 11:44:15.570
+dbo;T_HistoryVKImport;0;2018-09-27 14:20:01.163;2026-05-20 11:44:15.423
+dbo;T_HistoryVKProtokoll;0;2018-09-27 14:20:02.540;2026-05-20 11:44:15.613
+dbo;T_Identifikation;0;2018-09-27 14:19:59.540;2026-05-20 11:44:15.417
+dbo;T_Identifikation_EtikettenHistorie;0;2018-09-27 14:20:01.173;2026-05-20 11:44:15.443
+dbo;T_IncomingGoodCustomerReturnAdditionalDefects;9;2020-03-14 09:37:33.980;2026-05-20 11:44:15.490
+dbo;T_IncomingGoodCustomerReturns;22;2020-03-14 09:37:33.957;2026-05-20 11:44:15.597
+dbo;T_InhouseBewegungen;0;2018-09-27 14:20:02.370;2026-05-20 11:44:15.630
+dbo;T_InhouseLieferungen;0;2018-09-27 14:20:02.223;2026-05-20 11:44:15.707
+dbo;T_Inventuren;2785;2018-09-27 14:20:00.980;2026-05-20 11:44:15.673
+dbo;T_InventurPositionen;6965;2018-09-27 14:19:59.477;2026-05-20 11:44:15.733
+dbo;T_Kalender;0;2018-09-27 14:20:03.150;2026-05-20 11:44:15.740
+dbo;T_KalenderwochenSchichtdefinitionen;1884;2018-09-27 14:20:00.477;2026-05-20 11:44:15.893
+dbo;T_Keykunden;549;2018-09-27 14:19:59.920;2026-05-20 11:44:15.933
+dbo;T_KomponentenAusgaben;3050;2018-09-27 14:20:00.583;2026-05-20 11:44:16.027
+dbo;T_KonsignationsBewegungen;0;2018-09-27 14:20:02.110;2026-05-20 11:44:16.107
+dbo;T_Konten;2167;2018-09-27 14:19:59.300;2026-05-20 11:44:16.133
+dbo;T_KontenHistorie;401802;2018-09-27 14:20:00.650;2026-05-20 11:44:16.173
+dbo;T_KundenAbrufBestaetigungen;0;2018-09-27 14:20:02.823;2026-05-20 11:44:16.280
+dbo;T_KundenAbrufe;0;2018-09-27 14:20:01.867;2026-05-20 11:44:16.443
+dbo;T_KundenAbrufeHistorie;0;2018-09-27 14:20:02.943;2026-05-20 11:44:16.547
+dbo;T_KundenBestand;0;2018-09-27 14:20:01.387;2026-05-20 11:44:16.680
+dbo;T_KundenBestandHistorie;0;2018-09-27 14:20:02.453;2026-05-20 11:44:16.713
+dbo;T_KundenBeziehungen;110;2018-09-27 14:20:01.253;2026-05-20 11:44:16.737
+dbo;T_LadeAuftraege;6461;2018-09-27 14:19:59.507;2026-05-20 11:44:16.907
+dbo;T_LadeEinheiten;5;2018-09-27 14:19:59.240;2026-05-20 11:44:16.760
+dbo;T_LadePlanungen;6970;2018-09-27 14:19:59.520;2026-05-20 11:44:16.967
+dbo;T_LadePositionen;127639;2018-09-27 14:20:00.330;2026-05-20 11:44:16.870
+dbo;T_Lager;1;2018-09-27 14:20:01.947;2026-05-20 11:44:16.857
+dbo;T_LagerabgleichBarcodes;0;2018-09-27 14:20:00.913;2026-05-20 11:44:16.907
+dbo;T_LagerabgleichBarcodesExtern;0;2018-09-27 14:20:02.080;2026-05-20 11:44:16.913
+dbo;T_LagerabgleichBarcodesIntern;0;2018-09-27 14:20:00.510;2026-05-20 11:44:16.950
+dbo;T_LagerAbteilungen;10232;2018-09-27 14:19:59.220;2026-05-20 11:44:17.150
+dbo;T_LagerAbteilungenInventuren;155;2018-09-27 14:20:00.180;2026-05-20 11:44:17.067
+dbo;T_Lagerbestand;37;2018-09-27 14:20:03.307;2026-05-20 11:44:17.107
+dbo;T_LagerBestandsHistorie;547911;2018-09-27 14:19:59.850;2026-05-20 11:44:17.180
+dbo;T_LagerBuchungen;1091127;2018-09-27 14:19:59.637;2026-05-20 11:44:17.337
+dbo;T_LagerFehler;857;2018-09-27 14:20:03.530;2026-05-20 11:44:17.230
+dbo;T_LagerKonten;2221;2018-09-27 14:20:00.790;2026-05-20 11:44:17.297
+dbo;T_LagerKontenArchiv;0;2018-09-27 14:20:03.537;2026-05-20 11:44:17.320
+dbo;T_LagerLose;386679;2018-09-27 14:20:01.440;2026-05-20 11:44:17.280
+dbo;T_LagerPlanungen;90683;2018-09-27 14:20:00.307;2026-05-20 11:44:17.460
+dbo;T_LagerPositionen;12033;2018-09-27 14:19:59.863;2026-05-20 11:44:17.513
+dbo;T_Layout;9;2018-09-27 14:20:01.283;2026-05-20 11:44:17.537
+dbo;T_LBW;57667;2018-09-27 14:20:01.623;2026-05-20 11:44:17.503
+dbo;T_LBW_Archiv;0;2018-09-27 14:20:03.367;2026-05-20 11:44:17.533
+dbo;T_LBWTyp;8;2018-09-27 14:20:02.010;2026-05-20 11:44:17.547
+dbo;T_Leistungseinheit;0;2018-09-27 14:20:03.540;2026-05-20 11:44:17.560
+dbo;T_LeistungsVorlagen;1;2018-09-27 14:20:00.050;2026-05-20 11:44:17.660
+dbo;T_LieferantenbewertungAbgrenzung;0;2018-09-27 14:20:00.263;2026-05-20 11:44:17.637
+dbo;T_LieferantenBewertungen;0;2018-09-27 14:20:01.403;2026-05-20 11:44:17.793
+dbo;T_LieferantenBewertungenHistorie;0;2018-09-27 14:20:03.547;2026-05-20 11:44:17.740
+dbo;T_LieferantenReklamationen;0;2018-09-27 14:20:01.640;2026-05-20 11:44:17.750
+dbo;T_LieferantenReklamationsPositionen;0;2018-09-27 14:20:01.643;2026-05-20 11:44:17.867
+dbo;T_LieferBuchungen;189551;2018-09-27 14:19:59.743;2026-05-20 11:44:18.023
+dbo;T_Lieferkonditionen;1;2018-09-27 14:19:59.593;2026-05-20 11:44:17.880
+dbo;T_LieferKonten;623;2018-09-27 14:19:59.590;2026-05-20 11:44:17.990
+dbo;T_LieferKontenArchiv;0;2018-09-27 14:20:03.540;2026-05-20 11:44:17.977
+dbo;T_LieferPositionen;127588;2018-09-27 14:19:59.387;2026-05-20 11:44:18.157
+dbo;T_Lieferscheine;0;2018-09-27 14:19:59.673;2026-05-20 11:44:18.143
+dbo;T_LieferscheinLayouts;0;2018-09-27 14:20:03.380;2026-05-20 11:44:18.087
+dbo;T_LieferscheinPositionen;0;2018-09-27 14:20:01.660;2026-05-20 11:44:18.160
+dbo;T_Lieferungen;6224;2018-09-27 14:20:01.050;2026-05-20 11:44:18.217
+dbo;T_LKWTypen;1;2018-09-27 14:20:01.107;2026-05-20 11:44:18.180
+dbo;T_Localizer;5866;2018-09-27 14:20:03.560;2026-05-20 11:44:18.200
+dbo;T_LocalizerDetail;84165;2018-09-27 14:20:03.550;2026-05-20 11:44:18.233
+dbo;T_LocalizerNamespace;7225;2018-09-27 14:20:03.553;2026-05-20 11:44:18.227
+dbo;T_LogBenutzer;6370;2018-09-27 14:20:00.283;2026-05-20 11:44:18.367
+dbo;T_LogEUROLOG;0;2018-09-27 14:20:03.563;2026-05-20 11:44:18.363
+dbo;T_LogHistorizeStocks;363408;2018-09-27 14:20:00.647;2026-05-20 11:44:18.337
+dbo;T_LS_ArtikelKlassifizierung;0;2018-09-27 14:20:01.830;2026-05-20 11:44:18.407
+dbo;T_LS_Reservierungen;0;2018-09-27 14:20:02.657;2026-05-20 11:44:18.463
+dbo;T_LS_Steuerung;8;2018-09-27 14:20:01.310;2026-05-20 11:44:18.470
+dbo;T_LS_SteuerungFIFO;0;2018-09-27 14:20:02.480;2026-05-20 11:44:18.507
+dbo;T_Maschine;5;2018-09-27 14:20:00.120;2026-05-20 11:44:18.603
+dbo;T_Maschine_Blaskopf;0;2018-09-27 14:20:01.690;2026-05-20 11:44:18.563
+dbo;T_Maschine_EtikettenDrucker;12;2018-09-27 14:20:02.960;2026-05-20 11:44:18.590
+dbo;T_Maschine_Werkzeug;6;2018-09-27 14:20:01.680;2026-05-20 11:44:18.627
+dbo;T_Maschinen_FuellLinien;0;2018-09-27 14:20:02.207;2026-05-20 11:44:18.660
+dbo;T_Maschinen_ProdPlanungen;8;2018-09-27 14:20:00.500;2026-05-20 11:44:18.933
+dbo;T_MaschinenAnzahl;39;2018-09-27 14:20:00.950;2026-05-20 11:44:18.757
+dbo;T_Maschinentyp;2;2018-09-27 14:20:00.970;2026-05-20 11:44:18.820
+dbo;T_MaschinenTyp_eReporting;17;2018-09-27 14:20:00.963;2026-05-20 11:44:18.783
+dbo;T_MaterialBedarf;0;2018-09-27 14:20:02.247;2026-05-20 11:44:18.953
+dbo;T_MaterialPreparations;5;2021-08-29 16:10:38.707;2026-05-20 11:44:18.863
+dbo;T_MaterialProdPlanungenJeProdTag;49649;2018-09-27 14:20:00.060;2026-05-20 11:44:18.967
+dbo;T_MaterialReservierungen;246;2018-09-27 14:20:01.737;2026-05-20 11:44:19.030
+dbo;T_Mengeneinheit;2;2018-09-27 14:19:59.110;2026-05-20 11:44:19.193
+dbo;T_Module;18;2018-09-27 14:20:01.290;2026-05-20 11:44:19.280
+dbo;T_ModulParameter;1;2018-09-27 14:20:03.567;2026-05-20 11:44:19.313
+dbo;T_MPBBerechTyp;3;2018-09-27 14:20:03.370;2026-05-20 11:44:19.323
+dbo;T_Mwst;2;2018-09-27 14:20:00.597;2026-05-20 11:44:19.373
+dbo;T_PA_Werkzeug;60;2018-09-27 14:19:59.967;2026-05-20 11:44:19.410
+dbo;T_PartnerWerke;0;2018-09-27 14:20:02.283;2026-05-20 11:44:19.427
+dbo;T_PDE;140001;2018-09-27 14:19:59.397;2026-05-20 11:44:19.583
+dbo;T_PDInputFehler;0;2018-09-27 14:20:03.260;2026-05-20 11:44:19.550
+dbo;T_PDLBW;5353;2018-09-27 14:20:03.343;2026-05-20 11:44:19.517
+dbo;T_PreformNummern;3241;2018-09-27 14:20:00.233;2026-05-20 11:44:19.563
+dbo;T_Preiseinheit;2;2018-09-27 14:19:59.107;2026-05-20 11:44:19.603
+dbo;T_ProdArtikel;40;2018-09-27 14:19:59.160;2026-05-20 11:44:19.740
+dbo;T_ProdArtikelgruppe;3;2018-09-27 14:19:59.940;2026-05-20 11:44:19.697
+dbo;T_ProdBereich;8;2018-09-27 14:19:59.153;2026-05-20 11:44:19.807
+dbo;T_ProdBereich_eReporting;10;2018-09-27 14:19:59.890;2026-05-20 11:44:19.793
+dbo;T_ProdDaten;25993;2018-09-27 14:19:59.980;2026-05-20 11:44:20.097
+dbo;T_ProdDaten_Archiv;0;2018-09-27 14:20:03.250;2026-05-20 11:44:20.143
+dbo;T_ProdPlanung;1950;2018-09-27 14:20:00.013;2026-05-20 11:44:20.317
+dbo;T_ProdPlanungenJeProdTag;10473;2018-09-27 14:20:00.920;2026-05-20 11:44:20.297
+dbo;T_ProdPlanungHistory;126612;2018-09-27 14:20:03.570;2026-05-20 11:44:20.630
+dbo;T_ProdSchichten;41;2018-09-27 14:20:00.473;2026-05-20 11:44:20.393
+dbo;T_ProductionFigures;0;2021-08-29 16:10:38.670;2026-05-20 11:44:20.413
+dbo;T_ProduktionInKundenperiode;0;2018-09-27 14:20:03.580;2026-05-20 11:44:20.467
+dbo;T_ProduktionsBuchungen;285245;2018-09-27 14:20:00.540;2026-05-20 11:44:20.653
+dbo;T_ProduktionsKonten;257;2018-09-27 14:20:00.797;2026-05-20 11:44:20.557
+dbo;T_ProduktionsKontenArchiv;0;2018-09-27 14:20:03.583;2026-05-20 11:44:20.590
+dbo;T_Produktionslose;1950;2018-09-27 14:20:00.153;2026-05-20 11:44:20.733
+dbo;T_ProduktionsPositionen;15;2018-09-27 14:19:59.603;2026-05-20 11:44:20.783
+dbo;T_ProduktionsRueckmeldungDaten;22500;2018-09-27 14:20:01.757;2026-05-20 11:44:20.777
+dbo;T_ProduktionsRueckmeldungDatenDetail;29078;2018-09-27 14:20:03.410;2026-05-20 11:44:20.737
+dbo;T_ProduktionsRueckmeldungen;3723;2018-09-27 14:20:01.763;2026-05-20 11:44:20.817
+dbo;T_ProduktionsRueckmeldungTagesStatus;3154;2018-09-27 14:20:03.590;2026-05-20 11:44:20.793
+dbo;T_Prognosen;0;2018-09-27 14:20:01.260;2026-05-20 11:44:20.907
+dbo;T_PrognosenHistorie;0;2018-09-27 14:20:01.603;2026-05-20 11:44:20.950
+dbo;T_Prozess_EtikettenDrucker;24;2023-06-19 08:31:38.517;2023-06-19 08:31:38.517
+dbo;T_QueueExterneOperationen;0;2018-09-27 14:20:03.590;2026-05-20 11:44:20.967
+dbo;T_QueueLagerOperationen;0;2018-09-27 14:20:03.597;2026-05-20 11:44:20.977
+dbo;T_RahmenBestellung;0;2018-09-27 14:20:02.500;2026-05-20 11:44:21.050
+dbo;T_RahmenBestellungPosition;0;2018-09-27 14:20:02.680;2026-05-20 11:44:21.117
+dbo;T_Rampen;0;2018-09-27 14:19:59.500;2026-05-20 11:44:21.100
+dbo;T_Ressourcen;0;2018-09-27 14:20:00.133;2026-05-20 11:44:21.123
+dbo;T_RessourcenBedarf;0;2018-09-27 14:20:02.783;2026-05-20 11:44:21.193
+dbo;T_RessourcenBedarfMaschine;0;2018-09-27 14:20:00.130;2026-05-20 11:44:21.180
+dbo;T_Retourwaren;0;2018-09-27 14:20:00.093;2026-05-20 11:44:21.250
+dbo;T_ReworkOrders;47;2018-09-27 14:19:59.070;2026-05-20 11:44:21.243
+dbo;T_Rez;223;2018-09-27 14:19:59.147;2026-05-20 11:44:21.323
+dbo;T_RezPos;472;2018-09-27 14:20:00.030;2026-05-20 11:44:21.350
+dbo;T_Ruecknahmen;0;2018-09-27 14:20:00.257;2026-05-20 11:44:21.393
+dbo;T_Scanner;1;2018-09-27 14:19:59.493;2024-05-28 15:41:29.710
+dbo;T_ScannerKommandos;62;2018-09-27 14:20:02.430;2024-05-28 15:41:29.630
+dbo;T_ScannerTyp;5;2018-09-27 14:20:02.433;2024-05-28 15:41:29.583
+dbo;T_SchichtDefinitionen;47;2018-09-27 14:20:00.493;2026-05-20 11:44:21.400
+dbo;T_Schichten;8;2018-09-27 14:20:00.010;2026-05-20 11:44:21.413
+dbo;T_Schnittstellen;1;2018-09-27 14:20:01.473;2026-05-20 11:44:21.470
+dbo;T_SekundaereZentraleVerpackungen;0;2022-05-08 16:08:32.013;2026-05-20 11:44:21.463
+dbo;T_SetupTypen;268;2018-09-27 14:20:01.000;2026-05-20 11:44:21.590
+dbo;T_SetupTypMerkmale;203;2018-09-27 14:19:59.577;2026-05-20 11:44:21.560
+dbo;T_SetupTypMerkmalTypen;58;2018-09-27 14:19:59.580;2026-05-20 11:44:21.590
+dbo;T_SetupTypMerkmalTypGruppen;33;2018-09-27 14:19:59.583;2026-05-20 11:44:21.613
+dbo;T_SperrAuftraege;0;2018-09-27 14:20:02.987;2026-05-20 11:44:21.637
+dbo;T_Sperrgruende;4;2018-09-27 14:20:00.367;2026-05-20 11:44:21.747
+dbo;T_SperrJournal;3264;2018-09-27 14:20:01.347;2026-05-20 11:44:21.837
+dbo;T_Spez_StkJePalette;0;2018-09-27 14:20:03.160;2026-05-20 11:44:21.783
+dbo;T_Sprachen;17;2018-09-27 14:20:00.983;2026-05-20 11:44:21.810
+dbo;T_Staaten;244;2018-09-27 14:19:59.090;2026-05-20 11:44:21.890
+dbo;T_Staatengruppe;3;2018-09-27 14:20:01.567;2026-05-20 11:44:21.903
+dbo;T_Stapler;1;2018-09-27 14:19:59.497;2026-05-20 11:44:21.973
+dbo;T_Statistik;115;2018-09-27 14:20:03.070;2026-05-20 11:44:21.973
+dbo;T_Stillstandsereignis;9419;2018-09-27 14:20:03.177;2026-05-20 11:44:22.020
+dbo;T_StoerGruende;133;2018-09-27 14:20:00.713;2026-05-20 11:44:22.063
+dbo;T_StoerGruendeProdBereich;840;2018-09-27 14:20:00.947;2026-05-20 11:44:22.073
+dbo;T_StoerGruendeSetupTypen;1318;2018-09-27 14:20:02.327;2026-05-20 11:44:22.103
+dbo;T_StoerGruppen;15;2018-09-27 14:20:00.573;2026-05-20 11:44:22.133
+dbo;T_StoerMerkmale;10;2018-09-27 14:20:01.140;2026-05-20 11:44:22.163
+dbo;T_StoerTyp;11;2018-09-27 14:19:59.913;2026-05-20 11:44:22.193
+dbo;T_Stoerung;11;2018-09-27 14:19:59.663;2026-05-20 11:44:22.250
+dbo;T_SystemParameter;35;2018-09-27 14:20:00.697;2026-05-20 11:44:22.267
+dbo;T_TabellenNr;77;2018-09-27 14:20:03.600;2026-05-20 11:44:22.267
+dbo;T_TEMP_INVOICE;0;2018-09-27 14:20:03.600;2018-09-27 14:20:03.600
+dbo;T_TextVorlagen;2;2018-09-27 14:20:01.520;2026-05-20 11:44:22.347
+dbo;T_tmpAlplaPlanning_Materialvorschau;0;2018-09-27 14:20:03.037;2018-09-27 14:20:03.037
+dbo;T_tmpAmoWerkzeug;0;2018-09-27 14:20:03.133;2018-09-27 14:20:03.133
+dbo;T_TmpArtikelliste;0;2018-09-27 14:20:03.180;2018-09-27 14:20:03.180
+dbo;T_tmpArtikelRezeptur;0;2018-09-27 14:20:03.350;2018-09-27 14:20:03.350
+dbo;T_tmpBarcode_EtikettenStatistik;0;2018-09-27 14:20:03.067;2018-09-27 14:20:03.067
+dbo;T_TmpBewertFM;0;2018-09-27 14:20:03.227;2018-09-27 14:20:03.227
+dbo;T_TmpBewertPA;0;2018-09-27 14:20:03.357;2018-09-27 14:20:03.357
+dbo;T_tmpBudget_eMis_Maschinentypen;2;2018-09-27 14:20:03.023;2026-05-20 11:44:22.393
+dbo;T_tmpBudget_eMis_Positionen;18;2018-09-27 14:20:03.283;2026-05-20 11:44:23.337
+dbo;T_tmpBudget_eMis_Summen;1;2018-09-27 14:20:03.110;2026-05-20 11:44:22.627
+dbo;T_tmpBudget_eMis_WerkzeugAMO;0;2018-09-27 14:20:03.043;2026-05-20 11:44:22.667
+dbo;T_tmpBudgetAbsatzplan;0;2018-09-27 14:20:03.170;2026-05-20 11:44:22.613
+dbo;T_tmpBudgetAbsatzplanBlaskopf;0;2018-09-27 14:20:03.230;2026-05-20 11:44:22.700
+dbo;T_tmpBudgetAbsatzplanDaten;0;2018-09-27 14:20:03.340;2026-05-20 11:44:22.730
+dbo;T_tmpBudgetAbsatzplanSelect;0;2018-09-27 14:20:03.350;2018-09-27 14:20:03.350
+dbo;T_tmpBudgetAbsatzplanUebersicht;0;2018-09-27 14:20:03.207;2018-09-27 14:20:03.207
+dbo;T_tmpBudgetAmo;0;2018-09-27 14:20:03.360;2018-09-27 14:20:03.360
+dbo;T_tmpBudgetArtikelRezeptur;0;2018-09-27 14:20:03.203;2018-09-27 14:20:03.203
+dbo;T_tmpBudgetASP;0;2018-09-27 14:20:03.100;2026-05-20 11:44:22.733
+dbo;T_tmpBudgetBlaskopfBedarf;0;2018-09-27 14:20:03.170;2018-09-27 14:20:03.170
+dbo;T_tmpBudgetMaschinenBedarf;0;2018-09-27 14:20:03.327;2018-09-27 14:20:03.327
+dbo;T_tmpBudgetMaterialverbrauch;0;2018-09-27 14:20:03.387;2018-09-27 14:20:03.387
+dbo;T_tmpBudgetParameter;0;2018-09-27 14:20:03.183;2018-09-27 14:20:03.183
+dbo;T_tmpBudgetPETSpritzereiWKZ;0;2018-09-27 14:20:03.610;2026-05-20 11:44:22.783
+dbo;T_tmpBudgetPlanquote;0;2018-09-27 14:20:03.237;2026-05-20 11:44:22.947
+dbo;T_tmpBudgetSkontoBonus;0;2018-09-27 14:20:03.193;2018-09-27 14:20:03.193
+dbo;T_tmpBudgetVerpackungFracht;0;2018-09-27 14:20:03.127;2018-09-27 14:20:03.127
+dbo;T_tmpBudgetVerpackungsverbrauch;0;2018-09-27 14:20:03.273;2018-09-27 14:20:03.273
+dbo;T_tmpBudgetWerkzeugBedarf;0;2018-09-27 14:20:03.150;2018-09-27 14:20:03.150
+dbo;T_tmpBudgetWerkzeugliste;0;2018-09-27 14:20:03.213;2018-09-27 14:20:03.213
+dbo;T_TmpEkPreisErhoehung;0;2018-09-27 14:20:03.390;2018-09-27 14:20:03.397
+dbo;T_TmpEkPreisProt;0;2018-09-27 14:20:03.140;2018-09-27 14:20:03.140
+dbo;T_tmpEMIS_MD_Ressourcen;0;2018-09-27 14:20:03.617;2018-09-27 14:20:03.617
+dbo;T_TmpFertigungsmittel;0;2018-09-27 14:20:03.157;2018-09-27 14:20:03.157
+dbo;T_TmpHauptMat;0;2018-09-27 14:20:03.217;2018-09-27 14:20:03.217
+dbo;T_TmpKdArtPreise;2;2018-09-27 14:20:03.327;2018-09-27 14:20:03.327
+dbo;T_TmpMatVerbrauch;0;2018-09-27 14:20:03.080;2018-09-27 14:20:03.080
+dbo;T_TmpMBV;0;2018-09-27 14:20:03.013;2018-09-27 14:20:03.013
+dbo;T_TmpMPB;0;2018-09-27 14:20:03.073;2026-05-20 11:44:22.897
+dbo;T_TmpMPBProt;0;2018-09-27 14:20:03.323;2018-09-27 14:20:03.323
+dbo;T_TmpPDDruckerei;0;2018-09-27 14:20:03.103;2026-05-20 11:44:22.980
+dbo;T_TmpPreislisteVK;0;2018-09-27 14:20:03.200;2018-09-27 14:20:03.200
+dbo;T_TmpProdBericht;337;2018-09-27 14:20:03.123;2018-09-27 14:20:03.123
+dbo;T_TmpProdInformation;5;2018-09-27 14:20:03.210;2018-09-27 14:20:03.210
+dbo;T_tmpProdTagParameter;1;2018-09-27 14:20:03.280;2018-09-27 14:20:03.283
+dbo;T_TmpRezeptur;0;2018-09-27 14:20:03.320;2018-09-27 14:20:03.320
+dbo;T_TmpRezPos;0;2018-09-27 14:20:03.603;2018-09-27 14:20:03.607
+dbo;T_TmpStatistik;96;2018-09-27 14:20:03.020;2026-05-20 11:44:22.973
+dbo;T_TmpStoerTyp;0;2018-09-27 14:20:03.137;2026-05-20 11:44:22.987
+dbo;T_TmpSumUmsatzHMT;0;2018-09-27 14:20:03.607;2018-09-27 14:20:03.607
+dbo;T_tmpVPKKontoAusnahmen;0;2018-09-27 14:20:03.617;2026-05-20 11:44:23.033
+dbo;T_tmpVpkVorschrift;0;2018-09-27 14:20:03.263;2018-09-27 14:20:03.263
+dbo;T_TmpZaehlFM;0;2018-09-27 14:20:03.610;2018-09-27 14:20:03.610
+dbo;T_TmpZaehlPA;0;2018-09-27 14:20:03.610;2018-09-27 14:20:03.610
+dbo;T_TradeUnitBlockingInformation;0;2025-06-16 08:30:13.230;2025-06-30 08:30:24.793
+dbo;T_Traegerstoffe;6;2018-09-27 14:20:00.993;2026-05-20 11:44:23.073
+dbo;T_TransferQueue;0;2025-10-20 08:29:59.987;2025-10-20 08:29:59.987
+dbo;T_TransportTypen;13;2018-09-27 14:20:02.253;2026-05-20 11:44:23.120
+dbo;T_Umlagerungen;0;2018-09-27 14:20:01.820;2026-05-20 11:44:23.203
+dbo;T_Update_History;2323;2018-09-27 14:20:03.190;2026-05-20 11:44:23.190
+dbo;T_VerfuegbarerLagerbestand;112;2018-09-27 14:20:02.760;2026-05-20 11:44:23.217
+dbo;T_VerkaufsMaerkte;16;2018-09-27 14:19:59.440;2026-05-20 11:44:23.260
+dbo;T_VerkaufsMaerkte_VerkaufsMarktSegmente;55;2018-09-27 14:20:01.840;2026-05-20 11:44:23.303
+dbo;T_VerkaufsMarktSegmente;54;2018-09-27 14:20:02.613;2026-05-20 11:44:23.320
+dbo;T_VerkaufsProdukte;11;2018-09-27 14:19:59.060;2026-05-20 11:44:23.350
+dbo;T_Vpk;133;2018-09-27 14:19:59.270;2026-05-20 11:44:23.430
+dbo;T_VpkDimensionen;133;2018-09-27 14:20:01.563;2026-05-20 11:44:23.447
+dbo;T_VpkEtiketten;133;2018-09-27 14:19:59.257;2026-05-20 11:44:23.520
+dbo;T_VpkKontenAusnahmen;7;2018-09-27 14:20:02.130;2026-05-20 11:44:23.497
+dbo;T_VpkPos;549;2018-09-27 14:19:59.260;2026-05-20 11:44:23.567
+dbo;T_VpkVorschrift_LadeEinheiten;133;2018-09-27 14:19:59.243;2026-05-20 11:44:23.553
+dbo;T_VpkVorschriftAlt;1;2018-09-27 14:20:02.333;2026-05-20 11:44:23.873
+dbo;T_Waehrung;3;2018-09-27 14:19:59.947;2026-05-20 11:44:23.670
+dbo;T_Wareneingaenge;2716;2018-09-27 14:19:59.350;2026-05-20 11:44:23.913
+dbo;T_WareneingangAuftraege;2471;2018-09-27 14:20:00.250;2026-05-20 11:44:23.877
+dbo;T_WareneingangBewertungen;2548;2018-09-27 14:19:59.210;2026-05-20 11:44:23.823
+dbo;T_WareneingangPlanungen;2617;2018-09-27 14:19:59.233;2026-05-20 11:44:24.030
+dbo;T_WareneingangPositionen;57591;2018-09-27 14:20:00.827;2026-05-20 11:44:23.943
+dbo;T_WarenLager;20;2018-09-27 14:19:59.230;2026-05-20 11:44:24.047
+dbo;T_Werke;536;2018-09-27 14:20:00.243;2026-05-20 11:44:24.173
+dbo;T_Werkzeug;31;2018-09-27 14:19:59.880;2026-05-20 11:44:24.217
+dbo;T_Werkzeug_Blaskopf;0;2018-09-27 14:20:01.090;2026-05-20 11:44:24.087
+dbo;T_Zahlkond;5;2018-09-27 14:19:59.950;2026-05-20 11:44:24.150
+dbo;T_ZentraleFertigungsmittel;13856;2018-09-27 14:19:59.073;2026-05-20 11:44:24.390
+dbo;T_ZentraleLieferanten;909;2019-06-29 08:24:21.093;2026-05-20 11:44:24.233
+dbo;T_ZentraleRessourcen;1659;2018-09-27 14:20:01.890;2026-05-20 11:44:24.247
+dbo;T_ZentraleRessourcenBeziehungen;9064;2018-09-27 14:20:00.107;2026-05-20 11:44:24.267
+dbo;T_ZentraleTollingVariante;1;2023-02-27 07:31:37.020;2023-02-27 07:31:37.020
+dbo;T_ZentraleWerkzeuge;18717;2020-07-26 16:26:37.923;2026-05-20 11:44:24.330
+dbo;T_ZolltarifNummern;1;2018-09-27 14:20:00.687;2026-05-20 11:44:24.333
+
+(421 rows affected)
+SchemaName;TableName;ApproxRowCount;CreatedDate
+----------;---------;--------------;-----------
+dbo;T_LagerBuchungen;1091127;2018-09-27 14:19:59.637
+dbo;T_LagerBestandsHistorie;547911;2018-09-27 14:19:59.850
+dbo;T_KontenHistorie;401802;2018-09-27 14:20:00.650
+dbo;T_LagerLose;386679;2018-09-27 14:20:01.440
+dbo;T_LogHistorizeStocks;363408;2018-09-27 14:20:00.647
+dbo;T_ProduktionsBuchungen;285245;2018-09-27 14:20:00.540
+dbo;T_EtikettenHistorie;194598;2018-09-27 14:19:59.417
+dbo;T_LieferBuchungen;189551;2018-09-27 14:19:59.743
+dbo;T_EtikettenGedruckt;178745;2018-09-27 14:19:59.363
+dbo;T_PDE;140001;2018-09-27 14:19:59.397
+dbo;T_EAIJournalLieferPosition;129885;2018-09-27 14:20:01.217
+dbo;T_LadePositionen;127639;2018-09-27 14:20:00.330
+dbo;T_LieferPositionen;127588;2018-09-27 14:19:59.387
+dbo;T_ProdPlanungHistory;126612;2018-09-27 14:20:03.570
+dbo;T_HistoryProduktiondatenDetails;101006;2018-09-27 14:20:02.310
+dbo;T_HistoryProduktionsdaten;101006;2018-09-27 14:20:02.317
+dbo;T_LagerPlanungen;90683;2018-09-27 14:20:00.307
+dbo;T_LocalizerDetail;84165;2018-09-27 14:20:03.550
+dbo;T_LBW;57667;2018-09-27 14:20:01.623
+dbo;T_WareneingangPositionen;57591;2018-09-27 14:20:00.827
+dbo;T_EAIJournalAdresse;50560;2018-09-27 14:19:59.837
+dbo;T_MaterialProdPlanungenJeProdTag;49649;2018-09-27 14:20:00.060
+dbo;T_ProduktionsRueckmeldungDatenDetail;29078;2018-09-27 14:20:03.410
+dbo;T_ProdDaten;25993;2018-09-27 14:19:59.980
+dbo;T_ProduktionsRueckmeldungDaten;22500;2018-09-27 14:20:01.757
+dbo;T_EtikettenPalettenKartons;21866;2018-09-27 14:19:59.430
+dbo;T_ZentraleWerkzeuge;18717;2020-07-26 16:26:37.923
+dbo;T_EDIPositionDetails;16638;2018-09-27 14:20:01.790
+dbo;T_EtikettenGemappt;15784;2018-09-27 14:20:00.360
+dbo;T_EAIJournalWarenPosition;14433;2018-09-27 14:20:00.863
+dbo;T_EAIJournalPosition;13901;2018-09-27 14:19:59.560
+dbo;T_ZentraleFertigungsmittel;13856;2018-09-27 14:19:59.073
+dbo;T_EAIJournal;12640;2018-09-27 14:19:59.547
+dbo;T_LagerPositionen;12033;2018-09-27 14:19:59.863
+dbo;T_EAIJournalSynch;11882;2018-09-27 14:20:00.427
+dbo;T_ProdPlanungenJeProdTag;10473;2018-09-27 14:20:00.920
+dbo;T_LagerAbteilungen;10232;2018-09-27 14:19:59.220
+dbo;T_Stillstandsereignis;9419;2018-09-27 14:20:03.177
+dbo;T_ZentraleRessourcenBeziehungen;9064;2018-09-27 14:20:00.107
+dbo;T_LocalizerNamespace;7225;2018-09-27 14:20:03.553
+dbo;T_LadePlanungen;6970;2018-09-27 14:19:59.520
+dbo;T_InventurPositionen;6965;2018-09-27 14:19:59.477
+dbo;T_LadeAuftraege;6461;2018-09-27 14:19:59.507
+dbo;T_LogBenutzer;6370;2018-09-27 14:20:00.283
+dbo;T_Lieferungen;6224;2018-09-27 14:20:01.050
+dbo;T_Localizer;5866;2018-09-27 14:20:03.560
+dbo;T_EDIUpload;5462;2018-09-27 14:19:59.907
+dbo;T_PDLBW;5353;2018-09-27 14:20:03.343
+dbo;T_BlaskopfNummern;5289;2018-09-27 14:20:00.673
+dbo;T_HistoryStillstandsereignis;5010;2018-09-27 14:20:03.527
+
+(50 rows affected)
+SchemaName;TableName;ApproxRowCount
+----------;---------;--------------
+dbo;T_Abrufe;4041
+dbo;T_AdressBeziehungen;220
+dbo;T_Adressen;111
+dbo;T_Adressentyp;4
+dbo;T_AktuellerLagerBestand;814
+dbo;T_ArtikelKlassifikationen;9
+dbo;T_Artikeltyp;6
+dbo;T_Artikelvarianten;454
+dbo;T_ArtikelvariantenTyp;36
+dbo;T_ArtikelvariantenTyp_LadeEinheiten;0
+dbo;T_AuftragsAbrufe;4041
+dbo;T_AuftragsAbrufeHistorie;24
+dbo;T_AxIncasTransferQueueEntry;0
+dbo;T_AxTransferQueueEntry;0
+dbo;T_BestellMengenGrenzen;0
+dbo;T_Bestellpositionen;2623
+dbo;T_BestellPositionenBewertungen;0
+dbo;T_Bestellung;0
+dbo;T_Bestellungen;2436
+dbo;T_BestellungenJournal;2411
+dbo;T_Bestellvorschlaege;0
+dbo;T_BlockingOrders;116
+dbo;T_BlockingOrders_Positions;1602
+dbo;T_BlockingOrdersAdditionalDefects;4
+dbo;T_EAIJournal;12640
+dbo;T_EAIJournalAdresse;50560
+dbo;T_EAIJournalAmo;0
+dbo;T_EAIJournalBeleg;0
+dbo;T_EAIJournalBestellPosition;4392
+dbo;T_EAIJournalEx;0
+dbo;T_EAIJournalLayout;0
+dbo;T_EAIJournalLeistungsPosition;0
+dbo;T_EAIJournalLeistungsVorlageZuordnung;0
+dbo;T_EAIJournalLieferPosition;129885
+dbo;T_EAIJournalPosition;13901
+dbo;T_EAIJournalSynch;11882
+dbo;T_EAIJournalText;0
+dbo;T_EAIJournalTextPosition;0
+dbo;T_EAIJournalTextVorlageZuordnung;0
+dbo;T_EAIJournalWarenPosition;14433
+dbo;T_EAIKundenAbrufBestaetigungen;0
+dbo;T_EAIKundenAbrufe;0
+dbo;T_EAIKundenBestand;0
+dbo;T_EDIDifferenzen;0
+dbo;T_EDIDokumente;1222
+dbo;T_EDIDokumentPositionen;1457
+dbo;T_EDIKonfigurationen;3
+dbo;T_EDIPositionDetails;16638
+dbo;T_EDIRouting;3
+dbo;T_EDIUpload;5462
+dbo;T_EntladeAuftraege;0
+dbo;T_EntladePlanungen;0
+dbo;T_EntladePositionen;0
+dbo;T_EtikettenDefault;148
+dbo;T_EtikettenDrucker;12
+dbo;T_EtikettenDruckJobs;0
+dbo;T_EtikettenDruckJobsSystem;0
+dbo;T_EtikettenDummy;69
+dbo;T_EtikettenGedruckt;178745
+dbo;T_EtikettenGemappt;15784
+dbo;T_EtikettenHistorie;194598
+dbo;T_EtikettenLayouts;13
+dbo;T_EtikettenLog;0
+dbo;T_EtikettenPalettenKartons;21866
+dbo;T_EtikettenSperrgruende;1
+dbo;T_EtikettenVerworfen;0
+dbo;T_ExportLagerBestand;0
+dbo;T_ExportLagerDauer;0
+dbo;T_ExportPalettenBewegungenLager;0
+dbo;T_ExportPalettenBewegungenLKW;0
+dbo;T_ExportVerpackungskosten;0
+dbo;T_ExportVerpackungsVerhaeltnisse;0
+dbo;T_HistoryEKKunden;3
+dbo;T_Identifikation_EtikettenHistorie;0
+dbo;T_IncomingGoodCustomerReturnAdditionalDefects;9
+dbo;T_IncomingGoodCustomerReturns;22
+dbo;T_InhouseLieferungen;0
+dbo;T_Keykunden;549
+dbo;T_KundenAbrufBestaetigungen;0
+dbo;T_KundenAbrufe;0
+dbo;T_KundenAbrufeHistorie;0
+dbo;T_KundenBestand;0
+dbo;T_KundenBestandHistorie;0
+dbo;T_KundenBeziehungen;110
+dbo;T_LadeAuftraege;6461
+dbo;T_LadeEinheiten;5
+dbo;T_LadePlanungen;6970
+dbo;T_LadePositionen;127639
+dbo;T_Lager;1
+dbo;T_LagerabgleichBarcodes;0
+dbo;T_LagerabgleichBarcodesExtern;0
+dbo;T_LagerabgleichBarcodesIntern;0
+dbo;T_LagerAbteilungen;10232
+dbo;T_LagerAbteilungenInventuren;155
+dbo;T_Lagerbestand;37
+dbo;T_LagerBestandsHistorie;547911
+dbo;T_LagerBuchungen;1091127
+dbo;T_LagerFehler;857
+dbo;T_LagerKonten;2221
+dbo;T_LagerKontenArchiv;0
+dbo;T_LagerLose;386679
+dbo;T_LagerPlanungen;90683
+dbo;T_LagerPositionen;12033
+dbo;T_LieferantenbewertungAbgrenzung;0
+dbo;T_LieferantenBewertungen;0
+dbo;T_LieferantenBewertungenHistorie;0
+dbo;T_LieferantenReklamationen;0
+dbo;T_LieferantenReklamationsPositionen;0
+dbo;T_LieferBuchungen;189551
+dbo;T_Lieferkonditionen;1
+dbo;T_LieferKonten;623
+dbo;T_LieferKontenArchiv;0
+dbo;T_LieferPositionen;127588
+dbo;T_Lieferscheine;0
+dbo;T_LieferscheinLayouts;0
+dbo;T_LieferscheinPositionen;0
+dbo;T_Lieferungen;6224
+dbo;T_LKWTypen;1
+dbo;T_LogHistorizeStocks;363408
+dbo;T_LS_ArtikelKlassifizierung;0
+dbo;T_Maschine_EtikettenDrucker;12
+dbo;T_Maschine_Werkzeug;6
+dbo;T_PA_Werkzeug;60
+dbo;T_PartnerWerke;0
+dbo;T_ProdArtikel;40
+dbo;T_ProdArtikelgruppe;3
+dbo;T_ProduktionInKundenperiode;0
+dbo;T_Prozess_EtikettenDrucker;24
+dbo;T_QueueLagerOperationen;0
+dbo;T_RahmenBestellung;0
+dbo;T_RahmenBestellungPosition;0
+dbo;T_ReworkOrders;47
+dbo;T_SekundaereZentraleVerpackungen;0
+dbo;T_SperrJournal;3264
+dbo;T_tmpAmoWerkzeug;0
+dbo;T_TmpArtikelliste;0
+dbo;T_tmpArtikelRezeptur;0
+dbo;T_tmpBarcode_EtikettenStatistik;0
+dbo;T_tmpBudget_eMis_WerkzeugAMO;0
+dbo;T_tmpBudgetArtikelRezeptur;0
+dbo;T_tmpBudgetVerpackungFracht;0
+dbo;T_tmpBudgetVerpackungsverbrauch;0
+dbo;T_tmpBudgetWerkzeugBedarf;0
+dbo;T_tmpBudgetWerkzeugliste;0
+dbo;T_tmpVPKKontoAusnahmen;0
+dbo;T_tmpVpkVorschrift;0
+dbo;T_TransferQueue;0
+dbo;T_Umlagerungen;0
+dbo;T_VerfuegbarerLagerbestand;112
+dbo;T_Vpk;133
+dbo;T_VpkDimensionen;133
+dbo;T_VpkEtiketten;133
+dbo;T_VpkKontenAusnahmen;7
+dbo;T_VpkPos;549
+dbo;T_VpkVorschrift_LadeEinheiten;133
+dbo;T_VpkVorschriftAlt;1
+dbo;T_Wareneingaenge;2716
+dbo;T_WareneingangAuftraege;2471
+dbo;T_WareneingangBewertungen;2548
+dbo;T_WareneingangPlanungen;2617
+dbo;T_WareneingangPositionen;57591
+dbo;T_WarenLager;20
+dbo;T_Werke;536
+dbo;T_Werkzeug;31
+dbo;T_Werkzeug_Blaskopf;0
+dbo;T_ZentraleLieferanten;909
+dbo;T_ZentraleWerkzeuge;18717
+
+(167 rows affected)
+SchemaName;ViewName;CreatedDate;LastModifiedDate
+----------;--------;-----------;----------------
+AlplaAPP;V_AppBenutzerRechte;2026-05-20 11:11:01.170;2026-05-20 11:11:01.240
+AlplaAPP;V_AppBenutzerRechteEffektiv;2026-05-20 11:11:01.173;2026-05-20 11:11:01.243
+AlplaAPP;V_AppHygieneStatus;2026-05-20 11:11:01.180;2026-05-20 11:11:01.247
+AlplaAPP;V_AppHygieneStatusAlle;2026-05-20 11:11:01.187;2026-05-20 11:11:01.250
+AlplaAPP;V_AppLadeAuftraege;2026-05-20 11:11:01.147;2026-05-20 11:11:01.223
+AlplaAPP;V_AppLieferplan;2026-05-20 11:11:01.150;2026-05-20 11:11:01.227
+AlplaAPP;V_AppModuleThemenRechte;2026-05-20 11:11:01.170;2026-05-20 11:11:01.240
+AlplaAPP;V_AppOcpClient;2026-05-20 11:11:01.107;2026-05-20 11:11:01.220
+AlplaAPP;V_AppOcpService;2026-05-20 11:11:01.103;2026-05-20 11:11:01.213
+AlplaAPP;V_AppStaplerAufgaben;2026-05-20 11:11:01.157;2026-05-20 11:11:01.233
+AlplaAPP;V_AppStaplerInventuren;2026-05-20 11:11:01.167;2026-05-20 11:11:01.233
+AlplaAPP;V_AppStaplerPlanungen;2026-05-20 11:11:01.197;2026-05-20 11:11:01.263
+AlplaAPP;V_AppWarenEingaenge;2026-05-20 11:11:01.190;2026-05-20 11:11:01.253
+dbo;ALPLA_ARTIKEL_KLASSIFIKATION;2018-09-27 14:20:02.937;2026-05-20 11:12:01.553
+dbo;Alpla_Blowheads;2018-09-27 14:20:02.810;2026-05-20 11:12:01.557
+dbo;ALPLA_GRAV_NUMBERS;2018-09-27 14:20:01.190;2026-05-20 11:12:03.410
+dbo;Alpla_Keykunden;2018-09-27 14:20:02.203;2026-05-20 11:12:01.557
+dbo;ALPLA_MD_EK_Fertigungsmittel;2018-09-27 14:20:00.470;2026-05-20 11:12:01.560
+dbo;ALPLA_MD_WERK;2018-09-27 14:20:02.017;2026-05-20 11:12:01.563
+dbo;ALPLA_PN_NUMBERS;2018-09-27 14:20:00.237;2026-05-20 11:12:01.563
+dbo;ALPLA_PurchasingSuppliers;2019-06-29 08:24:21.767;2026-05-20 11:12:01.567
+dbo;ALPLA_VARIANTEN_BEZ;2018-09-27 14:20:01.893;2026-05-20 11:12:01.567
+dbo;ALPLA_VARIANTEN_HT_RESS;2018-09-27 14:20:01.890;2026-05-20 11:12:01.570
+dbo;doc_loc_Artikelgruppen;2018-09-27 14:20:02.900;2026-05-20 11:12:01.573
+dbo;doc_loc_fertigungsmittel;2018-09-27 14:20:01.183;2026-05-20 11:12:01.573
+dbo;t_HMT_eReporting;2018-09-27 14:20:00.460;2026-05-20 11:12:03.410
+dbo;T_Sprachtexte;2018-09-27 14:19:59.360;2026-05-20 11:12:01.580
+dbo;T_VpkVorschrift;2018-09-27 14:19:59.280;2026-05-20 11:12:01.587
+dbo;V_AbfallAttribute;2018-09-27 14:20:02.593;2026-05-20 11:12:04.137
+dbo;V_AbfallAttribute_BASIS;2018-09-27 14:20:02.837;2026-05-20 11:12:04.143
+dbo;V_AbfallGruppen_CENTRAL;2018-09-27 14:20:03.627;2026-05-20 11:12:01.600
+dbo;V_AbfallHerkuenfte;2018-09-27 14:20:01.250;2026-05-20 11:12:01.607
+dbo;V_AbfallHerkuenfte_BASIS;2018-09-27 14:20:02.967;2026-05-20 11:12:01.607
+dbo;V_AbfallHerkuenfte_CENTRAL;2018-09-27 14:20:03.630;2026-05-20 11:12:01.613
+dbo;V_AbfallLagerBuchungen;2020-03-14 09:37:34.460;2026-05-20 11:12:03.413
+dbo;V_AbfallMaterial_CENTRAL;2018-09-27 14:20:03.630;2026-05-20 11:12:01.620
+dbo;V_AbfallmaterialGruppenHauptMaterialGruppen;2018-09-27 14:20:01.947;2026-05-20 11:12:01.627
+dbo;V_AbfallmaterialGruppenHauptMaterialGruppen_BASIS;2018-09-27 14:20:00.297;2026-05-20 11:12:01.630
+dbo;V_AbfallmaterialGruppenHauptmaterialGruppen_CENTRAL;2018-09-27 14:20:03.640;2026-05-20 11:12:01.630
+dbo;V_AbfallmaterialGruppenProdBereich;2018-09-27 14:20:01.613;2026-05-20 11:12:01.637
+dbo;V_AbfallmaterialGruppenProdBereich_BASIS;2018-09-27 14:20:02.463;2026-05-20 11:12:01.637
+dbo;V_AbfallmaterialGruppenProdBereich_CENTRAL;2018-09-27 14:20:03.640;2026-05-20 11:12:01.640
+dbo;V_AbfallNachfuellContainer;2018-09-27 14:20:00.687;2026-05-20 11:12:01.643
+dbo;V_AbfallReinheiten;2018-09-27 14:20:02.537;2026-05-20 11:12:01.643
+dbo;V_AbfallReinheiten_BASIS;2018-09-27 14:20:00.533;2026-05-20 11:12:01.647
+dbo;V_AbfallReinheiten_CENTRAL;2018-09-27 14:20:03.633;2026-05-20 11:12:01.650
+dbo;V_AbfallTypen;2018-09-27 14:20:02.020;2026-05-20 11:12:01.657
+dbo;V_AbfallTypen_BASIS;2018-09-27 14:19:59.437;2026-05-20 11:12:01.657
+dbo;V_AbfallTypen_CENTRAL;2018-09-27 14:20:03.637;2026-05-20 11:12:01.660
+dbo;V_AbfallTypenAbfallHerkuenfte;2018-09-27 14:20:01.730;2026-05-20 11:12:01.663
+dbo;V_AbfallTypenAbfallHerkuenfte_BASIS;2018-09-27 14:19:59.833;2026-05-20 11:12:01.667
+dbo;V_AbfallTypenAbfallHerkuenfte_CENTRAL;2018-09-27 14:20:03.633;2026-05-20 11:12:01.670
+dbo;V_AbfallVerwendungszwecke;2018-09-27 14:20:02.943;2026-05-20 11:12:01.670
+dbo;V_AbfallVerwendungszwecke_BASIS;2018-09-27 14:20:01.540;2026-05-20 11:12:01.673
+dbo;V_AbfallVerwendungszwecke_CENTRAL;2018-09-27 14:20:03.637;2026-05-20 11:12:01.677
+dbo;V_Abrufe;2018-09-27 14:20:02.193;2026-05-20 11:12:04.147
+dbo;V_AbrufeSuche;2018-09-27 14:20:02.847;2026-05-20 11:12:04.153
+dbo;V_AbrufeSync;2018-09-27 14:20:02.860;2026-05-20 11:12:01.683
+dbo;V_ADGruppe_BenutzerRollen_BASIS;2018-09-27 14:20:00.780;2026-05-20 11:12:01.683
+dbo;V_ADGruppe_BenutzerRollen_CENTRAL;2018-09-27 14:20:03.623;2026-05-20 11:12:01.687
+dbo;V_ADGruppe_Werk_CENTRAL;2018-09-27 14:20:03.623;2026-05-20 11:12:01.690
+dbo;V_ADGruppe_WindowsBenutzer_BASIS;2018-09-27 14:20:00.540;2026-05-20 11:12:01.693
+dbo;V_AdressBeziehungen_BASIS;2018-09-27 14:20:02.180;2026-05-20 11:12:01.697
+dbo;V_Adressen;2019-11-10 17:24:43.487;2026-05-20 11:12:01.700
+dbo;V_Adressen_BASIS;2019-11-23 09:21:16.660;2026-05-20 11:12:03.423
+dbo;V_Adressen_CENTRAL;2018-09-27 14:20:00.600;2026-05-20 11:12:01.707
+dbo;V_AdressenBeziehungen;2025-12-10 08:29:46.083;2026-05-20 11:12:01.710
+dbo;V_AdressenHauptSuche;2025-12-01 08:29:33.267;2026-05-20 11:12:01.713
+dbo;V_AdressenKomplett;2019-11-10 17:24:43.547;2026-05-20 11:12:01.713
+dbo;V_AdressenKundenGrp;2018-09-27 14:20:01.190;2026-05-20 11:12:01.723
+dbo;V_AdressenLieferantenBewertung_PURCHASE;2018-09-27 14:20:01.410;2026-05-20 11:12:01.723
+dbo;V_AdressenNebenSuche;2025-12-01 08:29:33.280;2026-05-20 11:12:01.727
+dbo;V_AdressenSuche;2018-09-27 14:20:01.403;2026-05-20 11:12:01.730
+dbo;V_AdressenTyp_BASIS;2018-09-27 14:19:59.937;2026-05-20 11:12:01.733
+dbo;V_AdrKundenGrp_CENTRAL;2018-09-27 14:20:00.600;2026-05-20 11:12:01.733
+dbo;V_AktuellerLagerBestand;2018-09-27 14:19:59.700;2026-05-20 11:12:01.737
+dbo;V_AktuellerLagerBestandDetail;2018-09-27 14:20:00.290;2026-05-20 11:12:03.430
+dbo;V_AktuellerLagerBestandVerkaufsArtikel;2018-09-27 14:20:00.147;2026-05-20 11:12:03.433
+dbo;V_AlternativHauptmaterialien;2018-09-27 14:20:02.860;2026-05-20 11:12:03.440
+dbo;V_AlternativHauptmaterialien_BASIS;2020-08-02 16:38:10.550;2026-05-20 11:12:04.163
+dbo;V_AlternativRezepturen;2018-09-27 14:20:02.737;2026-05-20 11:12:04.167
+dbo;V_AlternativRezepturen_BASIS;2018-09-27 14:19:59.210;2026-05-20 11:12:04.170
+dbo;V_ApiLog;2023-10-31 13:59:06.403;2026-05-20 11:12:01.740
+dbo;V_ArticleFetch;2025-02-10 08:29:39.310;2026-05-20 11:12:01.743
+dbo;V_Artikel;2024-11-18 08:29:23.800;2026-05-20 11:12:03.450
+dbo;V_ArtikelAdressen;2018-09-27 14:20:02.397;2026-05-20 11:12:03.463
+dbo;V_ArtikelKlassifikation_CENTRAL;2018-09-27 14:20:02.467;2026-05-20 11:12:01.747
+dbo;V_ArtikelKlassifikationen;2018-09-27 14:20:01.713;2026-05-20 11:12:01.747
+dbo;V_ArtikelKlassifikationen_BASIS;2018-09-27 14:19:59.603;2026-05-20 11:12:01.750
+dbo;V_ArtikelKlassifikationen_CENTRAL;2018-09-27 14:20:03.640;2026-05-20 11:12:01.750
+dbo;V_ArtikelKomplett;2018-09-27 14:20:00.693;2026-05-20 11:12:03.470
+dbo;V_ArtikelKomplett_IM;2022-08-15 07:09:05.483;2026-05-20 11:12:03.487
+dbo;V_ArtikelKundenSuche;2018-09-27 14:19:59.467;2026-05-20 11:12:03.493
+dbo;V_ArtikelLieferanten;2018-09-27 14:20:02.863;2026-05-20 11:12:03.497
+dbo;V_ArtikelMinimal;2018-09-27 14:20:00.040;2026-05-20 11:12:01.757
+dbo;V_ArtikelMinimal_IM;2022-08-15 07:09:05.313;2026-05-20 11:12:01.763
+dbo;V_ArtikelSuche;2019-06-29 08:24:21.710;2026-05-20 11:12:01.773
+dbo;V_Artikeltyp_BASIS;2018-09-27 14:20:02.020;2026-05-20 11:12:01.780
+dbo;V_Artikelvarianten;2023-02-27 07:31:36.947;2026-05-20 11:12:01.783
+dbo;V_Artikelvarianten_BASIS;2024-05-14 08:26:55.470;2026-05-20 11:12:03.503
+dbo;V_ArtikelvariantenTyp;2018-09-27 14:20:01.837;2026-05-20 11:12:01.787
+dbo;V_ArtikelvariantenTyp_BASIS;2019-06-29 08:24:21.550;2026-05-20 11:12:01.787
+dbo;V_ArtikelvariantenTyp_LadeEinheiten;2018-09-27 14:20:00.940;2026-05-20 11:12:01.790
+dbo;V_ArtikelvariantenTyp_PLANNING;2018-09-27 14:20:02.813;2026-05-20 11:12:01.793
+dbo;V_ArtikelVpkVorschrift;2018-09-27 14:20:02.200;2026-05-20 11:12:03.517
+dbo;V_ArtikelWerkzeuge;2018-09-27 14:20:02.323;2026-05-20 11:12:01.793
+dbo;V_ASMAdressen_CENTRAL;2018-09-27 14:20:03.627;2026-05-20 11:12:01.797
+dbo;V_ASMProdArtikel_CENTRAL;2018-09-27 14:20:01.147;2026-05-20 11:12:01.800
+dbo;V_AttachedMaterials;2021-08-29 16:10:42.113;2026-05-20 11:12:01.803
+dbo;V_Auftraege;2018-09-27 14:20:02.030;2026-05-20 11:12:01.803
+dbo;V_AuftraegeMinimal;2018-09-27 14:20:00.277;2026-05-20 11:12:01.810
+dbo;V_AuftragsAbrufe;2018-09-27 14:20:00.730;2026-05-20 11:12:03.523
+dbo;V_AuftragsAbrufeFehlend;2018-09-27 14:20:02.110;2026-05-20 11:12:01.813
+dbo;V_AuftragsAbrufeHistorie;2018-09-27 14:19:59.963;2026-05-20 11:12:03.537
+dbo;V_AuftragsAbrufeUebersicht;2018-09-27 14:20:02.640;2026-05-20 11:12:04.177
+dbo;V_AuftragsBest;2018-09-27 14:20:02.777;2026-05-20 11:12:01.813
+dbo;V_AuftragsKomponenten;2018-09-27 14:20:02.190;2026-05-20 11:12:04.187
+dbo;V_AuftragsLeistungen;2018-09-27 14:20:01.923;2026-05-20 11:12:01.817
+dbo;V_AuftragsPositionen;2024-06-24 08:29:28.183;2026-05-20 11:12:03.547
+dbo;V_AuftragsPositionsSummen;2018-09-27 14:20:00.753;2026-05-20 11:12:04.190
+dbo;V_AuftragsSuche;2018-09-27 14:20:02.570;2026-05-20 11:12:01.820
+dbo;V_AuslagerungsPositionen;2018-09-27 14:20:02.470;2026-05-20 11:12:04.200
+dbo;V_AuslagerungsPositionenBarcodes;2018-09-27 14:20:00.413;2026-05-20 11:12:03.570
+dbo;V_AxIncasTransferQueueEntry;2022-03-13 17:08:23.017;2026-05-20 11:12:01.823
+dbo;V_AxTransferQueueEntry;2021-08-15 16:07:37.993;2026-05-20 11:12:01.823
+dbo;V_AxWareneingangBewertungen;2019-06-29 08:24:22.000;2026-05-20 11:12:04.453
+dbo;V_AXWebServices;2019-06-29 08:24:21.420;2026-05-20 11:12:01.827
+dbo;V_AXWebServices_BASIS;2019-06-29 08:24:21.823;2026-05-20 11:12:01.827
+dbo;V_Benutzer_BASIS;2018-09-27 14:20:01.440;2026-05-20 11:12:01.830
+dbo;V_Benutzer_Module_BASIS;2018-09-27 14:20:02.550;2026-05-20 11:12:01.830
+dbo;V_BenutzerRollen;2018-09-27 14:20:01.307;2026-05-20 11:12:01.833
+dbo;V_BenutzerRollen_BASIS;2018-09-27 14:20:02.447;2026-05-20 11:12:01.837
+dbo;V_BereitgestellterBestandPerKontoSum;2018-09-27 14:20:01.900;2026-05-20 11:12:04.210
+dbo;V_Bereitstellungsplan;2018-09-27 14:20:01.620;2026-05-20 11:12:04.213
+dbo;V_BestandPerAVLagerAbteilungSum;2018-09-27 14:20:00.647;2026-05-20 11:12:01.847
+dbo;V_BestandPerKontoSum;2018-09-27 14:20:01.783;2026-05-20 11:12:03.577
+dbo;V_BestandsGrenzen;2018-09-27 14:20:00.250;2026-05-20 11:12:03.583
+dbo;V_BestandsGrenzenPerKonto;2018-09-27 14:20:00.217;2026-05-20 11:12:01.850
+dbo;V_BestellMengenGrenzen;2018-09-27 14:20:01.470;2026-05-20 11:12:04.220
+dbo;V_Bestellpositionen;2019-06-29 08:24:21.410;2026-05-20 11:12:04.223
+dbo;V_Bestellpositionen_PURCHASE;2018-09-27 14:20:01.780;2026-05-20 11:12:01.853
+dbo;V_BestellPositionenBewertungen;2023-03-27 06:30:33.200;2026-05-20 11:12:03.587
+dbo;V_BestellPositionenProdArtikel_PLANNING;2018-09-27 14:20:02.633;2026-05-20 11:12:03.593
+dbo;V_BestellpositionenSync;2018-09-27 14:20:02.210;2026-05-20 11:12:01.853
+dbo;V_Bestellung;2018-09-27 14:20:01.983;2026-05-20 11:12:03.593
+dbo;V_Bestellungen;2019-06-29 08:24:21.430;2026-05-20 11:12:04.230
+dbo;V_BestellungenEAIJournal;2018-09-27 14:19:59.850;2026-05-20 11:12:01.860
+dbo;V_BestellungenFehlend;2018-09-27 14:20:01.510;2026-05-20 11:12:01.863
+dbo;V_BestellungenJournal;2018-09-27 14:20:02.803;2026-05-20 11:12:01.867
+dbo;V_Bestellvorschlaege;2019-06-29 08:24:21.287;2026-05-20 11:12:03.600
+dbo;V_Blaskopf;2018-09-27 14:20:01.010;2026-05-20 11:12:01.867
+dbo;V_Blaskopf_BASIS;2018-09-27 14:20:00.580;2026-05-20 11:12:01.873
+dbo;V_Blaskopf_CENTRAL;2018-09-27 14:20:00.677;2026-05-20 11:12:01.877
+dbo;V_BlaskopfNummern;2018-09-27 14:20:01.560;2026-05-20 11:12:01.877
+dbo;V_BlaskopfNummern_BASIS;2018-09-27 14:20:02.200;2026-05-20 11:12:01.880
+dbo;V_BlaskopfNummern_CENTRAL;2018-09-27 14:20:03.643;2026-05-20 11:12:01.883
+dbo;V_BlockedItemsOfActiveReworkTasks;2020-03-14 09:37:34.500;2026-05-20 11:15:27.767
+dbo;V_BlockingDefects;2019-01-09 08:19:23.783;2026-05-20 11:12:01.883
+dbo;V_BlockingDefectsGroups;2019-01-09 08:19:23.777;2026-05-20 11:12:01.887
+dbo;V_BlockingOrders;2018-09-27 14:20:02.410;2026-05-20 11:12:01.887
+dbo;V_BlockingOrdersAdditionalDefects;2018-09-27 14:20:02.833;2026-05-20 11:12:01.890
+dbo;V_BlockingOrdersPositions;2018-09-27 14:20:02.323;2026-05-20 11:12:01.893
+dbo;V_BlockingOrdersPositionsBarcodes;2021-07-18 16:09:16.037;2026-05-20 11:12:01.893
+dbo;V_Buchungen;2022-06-19 16:08:50.550;2026-05-20 11:12:04.237
+dbo;V_CoexPos_BASIS;2020-08-02 16:38:10.597;2026-05-20 11:12:01.897
+dbo;V_CoexPos_PLANNING;2020-08-02 16:38:10.873;2026-05-20 11:12:01.903
+dbo;V_CoexSchichten;2018-09-27 14:20:02.783;2026-05-20 11:12:01.917
+dbo;V_CoexSchichten_BASIS;2018-09-27 14:20:01.487;2026-05-20 11:12:01.923
+dbo;V_ComplaintPositionBlockingDefects;2020-03-28 10:22:03.483;2026-05-20 11:12:01.933
+dbo;V_ComplaintPositions;2020-03-14 09:37:34.337;2026-05-20 11:12:01.943
+dbo;V_CurrencyData_CENTRAL;2018-09-27 14:20:03.643;2026-05-20 11:12:01.943
+dbo;V_DocumentationLinks_CENTRAL;2018-09-27 14:20:03.647;2026-05-20 11:12:01.950
+dbo;V_EAIAdressen;2019-11-10 17:24:43.707;2026-05-20 11:12:01.950
+dbo;V_EAIArtikel;2021-08-01 16:07:46.410;2026-05-20 11:12:04.243
+dbo;V_EAIJournalBasisJournal;2018-09-27 14:20:01.210;2026-05-20 11:12:01.957
+dbo;V_EAIJournalBeziehung;2018-09-27 14:19:59.573;2026-05-20 11:12:01.960
+dbo;V_EAIJournalHeader;2019-06-29 08:24:21.450;2026-05-20 11:12:01.963
+dbo;V_EAIJournalHistory;2018-09-27 14:20:01.213;2026-05-20 11:12:03.610
+dbo;V_EAIJournalHistoryHeader;2018-09-27 14:20:02.260;2026-05-20 11:12:04.253
+dbo;V_EAIJournalLayout;2018-09-27 14:20:01.527;2026-05-20 11:12:01.967
+dbo;V_EAIJournalLeistungsVorlageZuordnung;2018-09-27 14:20:00.057;2026-05-20 11:12:01.970
+dbo;V_EAIJournalLetzteJournalNummer;2018-09-27 14:20:02.027;2026-05-20 11:12:01.973
+dbo;V_EAIJournalLetzterLieferschein;2018-09-27 14:20:01.487;2026-05-20 11:12:01.973
+dbo;V_EAIJournalPositionHeader;2018-09-27 14:20:02.103;2026-05-20 11:12:01.983
+dbo;V_EAIJournalPositionSummary;2018-09-27 14:20:00.897;2026-05-20 11:12:02.000
+dbo;V_EAIJournalSynchStatus;2018-09-27 14:20:00.473;2026-05-20 11:12:02.013
+dbo;V_EAIJournalTextVorlageZuordnung;2018-09-27 14:20:02.177;2026-05-20 11:12:02.013
+dbo;V_EAIKundenAbrufBestaetigungen;2018-09-27 14:20:02.770;2026-05-20 11:12:02.017
+dbo;V_EAIKundenAbrufe;2018-09-27 14:20:01.720;2026-05-20 11:12:02.020
+dbo;V_EAIKundenBestand;2018-09-27 14:20:00.860;2026-05-20 11:12:02.023
+dbo;V_EAIPrognosen;2018-09-27 14:20:02.603;2026-05-20 11:12:02.023
+dbo;v_EAN_export_article_list;2018-09-27 14:20:01.810;2026-05-20 11:12:02.027
+dbo;V_EANBasis_Nr;2018-09-27 14:20:01.210;2026-05-20 11:12:02.030
+dbo;V_EDIDifferenzen;2019-06-15 08:08:20.657;2026-05-20 11:12:02.033
+dbo;V_EDIDokumente;2018-09-27 14:20:02.887;2026-05-20 11:12:02.033
+dbo;V_EDIDokumentPositionen;2023-02-27 07:31:41.723;2026-05-20 11:12:02.037
+dbo;V_EDIDokumentPositionen_ORDER;2018-09-27 14:20:01.880;2026-05-20 11:12:04.257
+dbo;V_EDIJournalUpload;2018-09-27 14:20:00.440;2026-05-20 11:12:03.613
+dbo;V_EDIKonfigurationen;2018-09-27 14:20:01.593;2026-05-20 11:12:02.043
+dbo;V_EDIKonfigurationen_BASIS;2018-09-27 14:20:02.933;2026-05-20 11:12:02.043
+dbo;V_EDIPositionDetails;2022-03-28 16:08:33.650;2026-05-20 11:12:02.047
+dbo;V_EDIRouting;2018-09-27 14:20:00.643;2026-05-20 11:12:02.053
+dbo;V_EDIRouting_BASIS;2018-09-27 14:20:02.087;2026-05-20 11:12:02.053
+dbo;V_EDIUpload;2020-09-27 16:35:47.240;2026-05-20 11:12:02.057
+dbo;V_EDIUploadInterfaceStatus;2020-09-27 16:35:47.287;2026-05-20 11:12:02.060
+dbo;V_EDIUploadStatus;2018-09-27 14:20:01.867;2026-05-20 11:12:02.063
+dbo;V_EingesetzteRessourcen;2018-09-27 14:20:00.140;2026-05-20 11:12:02.063
+dbo;V_EinkaufsPreise;2018-09-27 14:20:02.937;2026-05-20 11:12:03.617
+dbo;V_EinlagerungsPositionen;2018-09-27 14:20:00.203;2026-05-20 11:12:04.263
+dbo;V_eMIS_EAIJournalPositionSummary;2018-09-27 14:20:02.060;2026-05-20 11:12:03.630
+dbo;V_EntladeAuftraege;2018-09-27 14:20:01.887;2026-05-20 11:12:02.067
+dbo;V_EntladePlanungen;2018-09-27 14:20:00.563;2026-05-20 11:12:03.643
+dbo;V_EntladePositionen;2018-09-27 14:20:00.577;2026-05-20 11:12:03.643
+dbo;V_EtikettenBarcode;2018-09-27 14:20:02.143;2026-05-20 11:12:03.647
+dbo;V_EtikettenDrucker_BASIS;2018-09-27 14:20:01.733;2026-05-20 11:12:02.070
+dbo;V_EtikettenDummy;2018-09-27 14:20:01.637;2026-05-20 11:12:02.070
+dbo;V_EtikettenGedruckt;2018-09-27 14:20:02.117;2026-05-20 11:12:02.073
+dbo;V_EtikettenGedrucktSuche;2018-09-27 14:20:01.790;2026-05-20 11:12:02.083
+dbo;V_EtikettenGedrucktSum;2018-09-27 14:20:02.273;2026-05-20 11:12:03.650
+dbo;V_EtikettenGemappt;2018-09-27 14:20:00.667;2026-05-20 11:12:02.087
+dbo;V_EtikettenHistorie;2018-09-27 14:20:01.200;2026-05-20 11:12:02.090
+dbo;V_EtikettenLayouts_BASIS;2018-09-27 14:19:59.660;2026-05-20 11:12:02.093
+dbo;V_EtikettenSperrgruende;2018-09-27 14:20:02.647;2026-05-20 11:12:02.097
+dbo;V_EtikettenVerworfen;2018-09-27 14:20:00.770;2026-05-20 11:12:02.097
+dbo;V_EurologLagerbestand_CENTRAL;2018-09-27 14:20:03.647;2026-05-20 11:12:02.110
+dbo;V_ExportAktuelleLagerDauer;2018-09-27 14:20:00.817;2026-05-20 11:12:04.270
+dbo;V_ExportAktuellerLagerBestand;2018-09-27 14:20:02.897;2026-05-20 11:12:04.273
+dbo;V_ExportAktuellerLagerBestandVerpackung;2018-09-27 14:20:00.710;2026-05-20 11:12:04.277
+dbo;V_ExportAktuellerLagerBestandVpkVorschrift;2018-09-27 14:20:00.933;2026-05-20 11:12:04.280
+dbo;V_ExportLagerAbteilungenInventuren;2018-09-27 14:20:00.983;2026-05-20 11:12:04.280
+dbo;V_ExportLagerBewegungen;2018-09-27 14:20:02.987;2026-05-20 11:12:02.113
+dbo;V_ExportProduktionsBewegungen;2018-09-27 14:20:00.977;2026-05-20 11:12:02.113
+dbo;V_ExterneTools;2018-09-27 14:20:02.527;2026-05-20 11:12:02.117
+dbo;V_ExterneTools_BASIS;2018-09-27 14:20:01.123;2026-05-20 11:12:02.117
+dbo;V_ExterneToolsModule_BASIS;2018-09-27 14:20:02.490;2026-05-20 11:12:02.120
+dbo;V_Farben;2018-09-27 14:20:02.900;2026-05-20 11:12:02.123
+dbo;V_Farben_BASIS;2018-09-27 14:20:00.680;2026-05-20 11:12:03.653
+dbo;V_Farbencode;2018-09-27 14:19:59.717;2026-05-20 11:12:03.653
+dbo;V_Farbkategorien;2018-09-27 14:20:01.930;2026-05-20 11:12:02.123
+dbo;V_Farbkategorien_BASIS;2018-09-27 14:20:02.713;2026-05-20 11:12:02.123
+dbo;V_Farbkategorien_CENTRAL;2018-09-27 14:20:00.680;2026-05-20 11:12:02.127
+dbo;V_FeatureSwitch;2022-06-05 16:08:45.987;2026-05-20 11:12:02.130
+dbo;V_Fertigungsmittel_BASIS;2018-09-27 14:20:01.943;2026-05-20 11:12:02.133
+dbo;V_Fertigungsmittel_CENTRAL;2018-09-27 14:19:59.080;2026-05-20 11:12:02.147
+dbo;V_FertigungsmittelAdditive_BASIS;2018-09-27 14:20:02.427;2026-05-20 11:12:03.657
+dbo;V_FertigungsmittelGruppen;2019-06-29 08:24:21.307;2026-05-20 11:12:02.153
+dbo;V_FertigungsmittelGruppen_BASIS;2019-06-29 08:24:21.717;2026-05-20 11:12:02.153
+dbo;V_FertigungsmittelGruppen_CENTRAL;2018-09-27 14:20:03.650;2026-05-20 11:12:02.157
+dbo;V_FertigungsmittelZentralesMaterial_CENTRAL;2019-06-29 08:24:21.800;2026-05-20 11:12:02.160
+dbo;V_FibuKonten_BASIS;2018-09-27 14:20:00.327;2026-05-20 11:12:02.163
+dbo;V_FuellLinien;2018-09-27 14:20:02.540;2026-05-20 11:12:02.167
+dbo;V_FuellLinien_BASIS;2018-09-27 14:20:01.560;2026-05-20 11:12:02.170
+dbo;V_FuellLinienArtikelvariantenWerkzeuge_PLANNING;2018-09-27 14:20:01.400;2026-05-20 11:12:02.170
+dbo;V_FuellLinienMaschinenSetupTypen_PLANNING;2018-09-27 14:20:02.293;2026-05-20 11:12:02.173
+dbo;V_FuellLose;2018-09-27 14:20:01.140;2026-05-20 11:12:02.177
+dbo;V_FuellLoseGruppiert_ORDER;2018-09-27 14:20:01.813;2026-05-20 11:12:02.180
+dbo;V_FuellLoseJeProdTag;2018-09-27 14:20:01.160;2026-05-20 11:12:02.183
+dbo;V_FuellLoseProdPlanung_PLANNING;2018-09-27 14:20:00.470;2026-05-20 11:12:02.183
+dbo;V_FuellLosHistorie;2018-09-27 14:20:01.970;2026-05-20 11:12:02.187
+dbo;V_GelieferteMengenJeBestellPosition_PURCHASE;2018-09-27 14:20:02.653;2026-05-20 11:12:02.190
+dbo;V_GelieferterBestandPerKontoSum;2018-09-27 14:20:00.330;2026-05-20 11:12:04.283
+dbo;V_GeplantePositionenPerKontoAbteilungenBelegSum;2018-09-27 14:20:01.933;2026-05-20 11:12:02.193
+dbo;V_GeplanteVerpackungsRuecknahmen;2018-09-27 14:20:02.383;2026-05-20 11:12:02.197
+dbo;V_GesamtKundenBestandPerKontoLosnrProduktionsdatumPerUnitSum;2020-02-01 09:08:59.350;2026-05-20 11:12:04.293
+dbo;V_GesamtKundenBestandPerKontoLosnrProduktionsdatumSum;2020-02-01 09:08:59.387;2026-05-20 11:12:02.200
+dbo;V_GravNummer_CENTRAL;2018-09-27 14:20:02.470;2026-05-20 11:12:03.660
+dbo;V_GravurNummern;2018-09-27 14:20:01.173;2026-05-20 11:12:02.203
+dbo;V_GravurNummern_BASIS;2018-09-27 14:20:02.960;2026-05-20 11:12:02.207
+dbo;V_GravurNummern_CENTRAL;2018-09-27 14:20:03.650;2026-05-20 11:12:02.207
+dbo;V_HistoryEK;2018-09-27 14:20:02.907;2026-05-20 11:12:03.660
+dbo;V_HistoryEK_BASIS;2020-08-02 16:38:10.617;2026-05-20 11:12:02.210
+dbo;V_HistoryEK_CENTRAL;2018-09-27 14:20:03.653;2026-05-20 11:12:02.227
+dbo;V_HistoryEK_HauptmaterialTyp_BASIS;2020-08-02 16:38:10.633;2026-05-20 11:12:04.300
+dbo;V_HistoryEKAktuell;2018-09-27 14:20:00.617;2026-05-20 11:12:02.233
+dbo;V_HistoryEKGrp;2018-09-27 14:20:02.283;2026-05-20 11:12:02.237
+dbo;V_HistoryEKImport_BASIS;2018-09-27 14:20:02.077;2026-05-20 11:12:02.237
+dbo;V_HistoryEKKunden;2020-08-02 16:38:10.063;2026-05-20 11:12:02.240
+dbo;V_HistoryEKKunden_BASIS;2020-08-02 16:38:10.647;2026-05-20 11:12:02.243
+dbo;V_HistoryEKProtokoll_BASIS;2018-09-27 14:20:01.820;2026-05-20 11:12:02.247
+dbo;V_HistoryEKStaffel;2018-09-27 14:20:02.930;2026-05-20 11:12:04.307
+dbo;V_HistoryEKStaffel_BASIS;2020-08-02 16:38:10.657;2026-05-20 11:12:02.250
+dbo;V_HistoryStillstandsereignis;2021-08-29 16:10:42.100;2026-05-20 11:12:02.253
+dbo;V_HistoryTransportKosten;2018-09-27 14:20:01.117;2026-05-20 11:12:02.257
+dbo;V_HistoryTransportkosten_BASIS;2018-09-27 14:20:01.727;2026-05-20 11:12:02.260
+dbo;V_HistoryVK;2018-09-27 14:20:02.220;2026-05-20 11:12:03.670
+dbo;V_HistoryVK_AktuelleUndZukuenftigePreise_BASIS;2020-08-02 16:38:10.733;2026-05-20 11:12:03.683
+dbo;V_HistoryVK_BASIS;2020-08-02 16:38:10.710;2026-05-20 11:12:02.263
+dbo;V_HistoryVK_Hauptkunden_BASIS;2020-08-02 16:38:10.763;2026-05-20 11:12:02.273
+dbo;V_HistoryVK_HauptmaterialTyp_BASIS;2020-08-02 16:38:10.780;2026-05-20 11:12:04.313
+dbo;V_HistoryVK_HauptmaterialTypGruppiert_BASIS;2020-08-02 16:38:10.790;2026-05-20 11:12:04.460
+dbo;V_HistoryVK_Hauptverpackung_BASIS;2020-08-02 16:38:10.810;2026-05-20 11:12:02.283
+dbo;V_HistoryVKAdressenGrp;2018-09-27 14:20:02.393;2026-05-20 11:12:02.290
+dbo;V_HistoryVKAktuell;2018-09-27 14:20:00.620;2026-05-20 11:12:02.293
+dbo;V_HistoryVKAktuell_PLANNING;2018-09-27 14:19:59.980;2026-05-20 11:12:02.300
+dbo;V_HistoryVKEKGrp;2018-09-27 14:20:01.617;2026-05-20 11:12:02.300
+dbo;V_HistoryVKImport_BASIS;2018-09-27 14:20:01.167;2026-05-20 11:12:02.303
+dbo;V_HistoryVKProtokoll_BASIS;2018-09-27 14:20:02.547;2026-05-20 11:12:02.303
+dbo;V_HistoryVKVpkVorschriftGrp;2018-09-27 14:20:01.023;2026-05-20 11:12:02.310
+dbo;V_HMT_eReporting_CENTRAL;2018-09-27 14:20:03.650;2026-05-20 11:12:02.313
+dbo;V_Identifikation;2018-09-27 14:19:59.543;2026-05-20 11:12:02.313
+dbo;V_Identifikation_EtikettenHistorie;2018-09-27 14:20:01.180;2026-05-20 11:12:02.313
+dbo;V_IncomingGoodCustomerReturnAdditionalDefects;2020-03-14 09:37:34.330;2026-05-20 11:12:02.317
+dbo;V_IncomingGoodCustomerReturnIncomingGoodPositions;2021-09-26 16:33:28.730;2026-05-20 11:12:02.320
+dbo;V_IncomingGoodCustomerReturnJournalDeliveryPositions;2020-03-14 09:37:34.483;2026-05-20 11:12:02.333
+dbo;V_IncomingGoodCustomerReturns;2020-03-14 09:37:34.323;2026-05-20 11:12:02.337
+dbo;V_InhouseBewegungen;2018-09-27 14:20:02.373;2026-05-20 11:12:04.323
+dbo;V_InhouseBewegungenPerArtikelProdTag;2018-09-27 14:20:02.820;2026-05-20 11:12:04.467
+dbo;V_InhouseLieferungen;2018-09-27 14:20:02.230;2026-05-20 11:12:04.330
+dbo;V_Inventuren;2024-01-29 08:29:14.170;2026-05-20 11:12:02.340
+dbo;V_InventurPositionen;2018-09-27 14:19:59.480;2026-05-20 11:12:03.690
+dbo;V_Keykunden;2018-09-27 14:20:01.100;2026-05-20 11:12:02.343
+dbo;V_Keykunden_BASIS;2018-09-27 14:19:59.930;2026-05-20 11:12:02.347
+dbo;V_Keykunden_CENTRAL;2018-09-27 14:20:03.653;2026-05-20 11:12:02.347
+dbo;V_KomponentenAusgaben;2018-09-27 14:20:00.590;2026-05-20 11:12:03.697
+dbo;V_KonsignationsBewegungen;2018-09-27 14:20:02.113;2026-05-20 11:12:03.700
+dbo;V_Konten;2018-09-27 14:19:59.337;2026-05-20 11:12:02.353
+dbo;V_KontenHistorie;2018-09-27 14:20:01.107;2026-05-20 11:12:03.703
+dbo;V_KontenHistorieAktuell;2018-09-27 14:20:01.620;2026-05-20 11:12:03.707
+dbo;V_KritischerMaterialVerbrauchKompensiert;2021-08-29 16:10:42.107;2026-05-20 11:12:03.713
+dbo;V_KundenAbrufBestaetigungen;2018-09-27 14:20:02.830;2026-05-20 11:12:04.333
+dbo;V_KundenAbrufe;2018-09-27 14:20:01.870;2026-05-20 11:12:03.713
+dbo;V_KundenAbrufeHistorie;2018-09-27 14:20:02.950;2026-05-20 11:12:03.723
+dbo;V_KundenBestand;2018-09-27 14:20:01.400;2026-05-20 11:12:03.723
+dbo;V_KundenBestandHistorie;2018-09-27 14:20:02.460;2026-05-20 11:12:03.730
+dbo;V_KundenBestandLetzterKundenBestand;2018-09-27 14:20:02.933;2026-05-20 11:12:02.383
+dbo;V_KundenBeziehungen;2019-09-14 08:28:39.823;2026-05-20 11:12:02.383
+dbo;V_KundenBeziehungen_BASIS;2019-09-14 08:28:39.797;2026-05-20 11:12:02.387
+dbo;V_LadeAuftraege;2020-05-23 08:37:51.593;2026-05-20 11:12:02.390
+dbo;V_LadeAuftraegeSum;2018-09-27 14:20:02.823;2026-05-20 11:12:02.397
+dbo;V_Ladeeinheiten_BASIS;2018-09-27 14:20:02.053;2026-05-20 11:12:02.397
+dbo;V_LadePlanungen;2018-09-27 14:19:59.530;2026-05-20 11:12:03.733
+dbo;V_LadePlanungenGeliefertPerAbrufSum;2018-09-27 14:20:01.597;2026-05-20 11:12:02.400
+dbo;V_LadePlanungenLadeAuftragAbruf;2018-09-27 14:20:02.740;2026-05-20 11:12:03.737
+dbo;V_LadePlanungenLadePositionenSum;2018-09-27 14:20:02.260;2026-05-20 11:12:02.400
+dbo;V_LadePlanungenLagerPlanungenPerAbrufSum;2018-09-27 14:20:00.323;2026-05-20 11:12:02.403
+dbo;V_LadePlanungenLagerPlanungenPerLadePlanSum;2018-09-27 14:20:02.583;2026-05-20 11:12:02.407
+dbo;V_LadePlanungenSum;2018-09-27 14:20:00.530;2026-05-20 11:12:04.337
+dbo;V_LadePositionen;2018-09-27 14:20:02.253;2026-05-20 11:12:02.407
+dbo;V_Lager_BASIS;2018-09-27 14:20:01.950;2026-05-20 11:12:02.410
+dbo;V_LagerabgleichBarcodes;2018-09-27 14:20:02.587;2026-05-20 11:12:02.413
+dbo;V_LagerabgleichBarcodesExtern;2018-09-27 14:20:02.083;2026-05-20 11:12:02.413
+dbo;V_LagerabgleichBarcodesIntern;2018-09-27 14:20:00.513;2026-05-20 11:12:02.417
+dbo;V_LagerabgleichInventurJournal;2018-09-27 14:20:00.917;2026-05-20 11:12:02.417
+dbo;V_LagerAbteilungen;2024-06-03 08:30:45.440;2026-05-20 11:12:02.420
+dbo;V_LagerAbteilungenBelegungen;2018-09-27 14:20:01.897;2026-05-20 11:12:03.747
+dbo;V_LagerAbteilungenInventuren;2018-09-27 14:20:01.560;2026-05-20 11:12:02.423
+dbo;V_LagerAbteilungenMaschinen;2018-09-27 14:20:02.817;2026-05-20 11:12:02.423
+dbo;V_LagerAbteilungenMax;2018-09-27 14:20:00.813;2026-05-20 11:12:02.427
+dbo;V_LagerAbteilungenSum;2018-09-27 14:20:01.880;2026-05-20 11:12:02.427
+dbo;V_LagerBelegungen;2018-09-27 14:20:02.480;2026-05-20 11:12:02.430
+dbo;V_LagerBerechnung;2018-09-27 14:20:00.220;2026-05-20 11:12:03.750
+dbo;V_LagerBestand;2018-09-27 14:20:02.500;2026-05-20 11:12:03.753
+dbo;V_LagerBestandsHistorie;2018-09-27 14:20:01.787;2026-05-20 11:12:03.757
+dbo;V_LagerBestandsHistorieAktuell;2018-09-27 14:20:02.880;2026-05-20 11:12:03.760
+dbo;V_LagerBuchungen;2018-09-27 14:20:01.063;2026-05-20 11:12:03.763
+dbo;V_LagerBuchungenEinkaufsPreise;2018-09-27 14:20:01.940;2026-05-20 11:12:03.773
+dbo;V_LagerKonten;2018-09-27 14:20:00.793;2026-05-20 11:12:03.777
+dbo;V_LagerKontenBuchungen;2018-09-27 14:20:02.143;2026-05-20 11:12:03.783
+dbo;V_LagerKontenGeplantSum;2018-09-27 14:19:59.933;2026-05-20 11:12:02.433
+dbo;V_LagerKontenGesperrtSum;2018-09-27 14:20:00.227;2026-05-20 11:12:02.433
+dbo;V_LagerKontenPositionenProduktionSum;2018-09-27 14:20:01.600;2026-05-20 11:12:03.790
+dbo;V_LagerKontenTotalSum;2018-09-27 14:19:59.877;2026-05-20 11:12:02.437
+dbo;V_LagerLose;2018-09-27 14:20:01.443;2026-05-20 11:12:02.437
+dbo;V_LagerPlanungen;2018-09-27 14:20:00.523;2026-05-20 11:12:03.800
+dbo;V_LagerPlanungenAbrufe;2018-09-27 14:20:00.570;2026-05-20 11:12:04.340
+dbo;V_LagerPlanungenOffen;2018-09-27 14:20:01.047;2026-05-20 11:12:02.440
+dbo;V_LagerPositionen;2018-09-27 14:20:00.707;2026-05-20 11:12:03.810
+dbo;V_LagerPositionenBarcodes;2018-09-27 14:20:00.400;2026-05-20 11:12:02.453
+dbo;V_LagerPositionenBarcodesInventuren;2018-09-27 14:20:01.977;2026-05-20 11:12:04.350
+dbo;V_LagerPositionenGeplantSum;2018-09-27 14:20:00.167;2026-05-20 11:12:02.467
+dbo;V_LagerPositionenGesperrtSum;2018-09-27 14:20:00.177;2026-05-20 11:12:02.470
+dbo;V_LagerPositionenInventuren;2018-09-27 14:20:02.050;2026-05-20 11:12:04.357
+dbo;V_LagerPositionenPlanungen;2023-02-27 07:31:41.870;2026-05-20 11:12:03.823
+dbo;V_LagerPositionenSumAbteilungen;2018-09-27 14:20:02.867;2026-05-20 11:12:02.470
+dbo;V_LagerPositionenTotalSum;2018-09-27 14:20:00.180;2026-05-20 11:12:02.473
+dbo;V_Layout;2018-09-27 14:20:01.290;2026-05-20 11:12:02.473
+dbo;V_LBW_BASIS;2018-09-27 14:20:01.637;2026-05-20 11:12:02.480
+dbo;V_LeistungsVorlagen;2018-09-27 14:20:02.690;2026-05-20 11:12:02.480
+dbo;V_LieferantenbewertungAbgrenzung;2018-09-27 14:20:00.277;2026-05-20 11:12:02.483
+dbo;V_LieferantenBewertungen;2018-09-27 14:20:01.417;2026-05-20 11:12:02.483
+dbo;V_LieferantenBewertungsJahre;2018-09-27 14:20:01.900;2026-05-20 11:12:02.490
+dbo;V_LieferantenReklamationen;2018-09-27 14:20:01.643;2026-05-20 11:12:02.490
+dbo;V_LieferantenReklamationsPositionen;2018-09-27 14:20:01.650;2026-05-20 11:12:03.837
+dbo;V_LieferBuchungen;2018-09-27 14:19:59.763;2026-05-20 11:12:03.840
+dbo;V_Lieferkonditionen_BASIS;2018-09-27 14:19:59.597;2026-05-20 11:12:02.493
+dbo;V_LieferKonten;2018-09-27 14:20:00.787;2026-05-20 11:12:03.850
+dbo;V_LieferKontenBuchungen;2018-09-27 14:20:01.127;2026-05-20 11:12:03.857
+dbo;V_LieferKontenPerAVSum;2018-09-27 14:20:02.633;2026-05-20 11:12:03.863
+dbo;V_LieferPositionen;2018-09-27 14:20:00.670;2026-05-20 11:12:03.867
+dbo;V_Lieferscheine;2018-09-27 14:19:59.690;2026-05-20 11:12:02.493
+dbo;V_LieferscheinPositionen;2018-09-27 14:20:01.670;2026-05-20 11:12:04.363
+dbo;V_Lieferungen;2018-09-27 14:20:01.053;2026-05-20 11:12:04.367
+dbo;V_LieferungenFromEAIJournal;2025-01-27 08:29:35.983;2026-05-20 11:12:04.370
+dbo;V_LKWKompositionen_CENTRAL;2018-09-27 14:20:03.657;2026-05-20 11:12:02.503
+dbo;V_LKWTypen;2018-09-27 14:20:02.347;2026-05-20 11:12:02.510
+dbo;V_LKWTypen_BASIS;2018-09-27 14:20:01.120;2026-05-20 11:12:02.510
+dbo;V_LKWTypen_CENTRAL;2018-09-27 14:20:03.660;2026-05-20 11:12:02.513
+dbo;V_LogBenutzer;2018-09-27 14:20:00.290;2026-05-20 11:12:02.513
+dbo;V_LS_ArtikelKlassifizierung;2018-09-27 14:20:01.830;2026-05-20 11:12:04.377
+dbo;V_LS_Reservierungen;2018-09-27 14:20:02.663;2026-05-20 11:12:02.517
+dbo;V_LS_Steuerung;2018-09-27 14:20:01.323;2026-05-20 11:12:02.520
+dbo;V_LS_SteuerungFIFO;2018-09-27 14:20:02.483;2026-05-20 11:12:04.380
+dbo;V_MachineFetch;2023-03-27 06:30:32.887;2026-05-20 11:12:02.523
+dbo;V_MachineProductionLotAssignment;2024-08-26 08:29:32.467;2026-05-20 11:12:02.523
+dbo;V_MaintenanceMessdaten;2021-03-14 17:07:05.317;2026-05-20 11:12:02.530
+dbo;V_MaintenanceMessdatenStillstaende;2021-03-14 17:07:05.347;2026-05-20 11:12:02.530
+dbo;V_Maschine;2022-02-28 09:53:12.380;2026-05-20 11:12:02.533
+dbo;V_Maschine_BASIS;2022-02-28 09:53:12.390;2026-05-20 11:12:02.533
+dbo;V_Maschine_Blaskopf;2018-09-27 14:20:02.637;2026-05-20 11:12:02.537
+dbo;V_Maschine_Blaskopf_BASIS;2018-09-27 14:20:01.697;2026-05-20 11:12:02.540
+dbo;V_Maschine_EtikettenDrucker_BASIS;2018-09-27 14:20:02.963;2026-05-20 11:12:02.543
+dbo;V_Maschine_Werkzeug;2018-09-27 14:20:01.687;2026-05-20 11:12:02.550
+dbo;V_Maschine_Werkzeug_BASIS;2018-09-27 14:20:02.630;2026-05-20 11:12:02.553
+dbo;V_Maschinen_CENTRAL;2018-09-27 14:20:03.660;2026-05-20 11:12:02.583
+dbo;V_Maschinen_EXTERNAL;2019-01-22 09:57:25.597;2026-05-20 11:12:02.593
+dbo;V_Maschinen_FuellLinien_BASIS;2018-09-27 14:20:02.210;2026-05-20 11:12:02.593
+dbo;V_Maschinen_ProdPlanungen;2024-08-26 08:29:32.453;2026-05-20 11:12:03.873
+dbo;V_MaschinenAnzahl_BASIS;2018-09-27 14:20:00.957;2026-05-20 11:12:02.650
+dbo;V_MaschinenAnzahlCount_BASIS;2018-09-27 14:20:02.840;2026-05-20 11:12:02.653
+dbo;V_Maschinentyp_BASIS;2018-09-27 14:20:02.913;2026-05-20 11:12:03.877
+dbo;V_MaschinenTyp_CENTRAL;2018-09-27 14:20:02.910;2026-05-20 11:12:02.657
+dbo;V_MaschinenTyp_eReporting_BASIS;2018-09-27 14:20:01.840;2026-05-20 11:12:02.663
+dbo;V_MaterialBedarf;2018-09-27 14:20:02.533;2026-05-20 11:12:02.663
+dbo;V_MaterialJeProdTag;2018-09-27 14:20:01.437;2026-05-20 11:12:02.667
+dbo;V_MaterialPreparations;2021-08-29 16:10:42.090;2026-05-20 11:12:02.670
+dbo;V_MaterialReservierungen;2018-09-27 14:20:01.740;2026-05-20 11:12:02.673
+dbo;V_MaterialSiloBelegung;2022-03-28 16:08:40.947;2026-05-20 11:12:02.677
+dbo;v_MD_addresses;2018-09-27 14:20:02.780;2026-05-20 11:12:02.677
+dbo;v_MD_article_variants;2018-09-27 14:20:01.433;2026-05-20 11:12:03.880
+dbo;v_MD_machines;2018-09-27 14:20:00.977;2026-05-20 11:12:02.683
+dbo;v_MD_means_of_production;2018-09-27 14:20:02.467;2026-05-20 11:12:03.883
+dbo;v_MD_moulds;2018-09-27 14:20:00.710;2026-05-20 11:12:02.683
+dbo;v_MD_packaging_instructions;2018-09-27 14:20:02.627;2026-05-20 11:12:03.887
+dbo;v_MD_Profitcenters;2018-09-27 14:20:02.213;2026-05-20 11:12:02.690
+dbo;v_MD_purchase_price_list;2018-09-27 14:20:00.207;2026-05-20 11:12:02.690
+dbo;v_MD_recipes;2018-09-27 14:20:01.593;2026-05-20 11:12:02.693
+dbo;v_MD_relation_article_mould;2018-09-27 14:20:02.610;2026-05-20 11:12:02.697
+dbo;v_MD_sales_price_list;2018-09-27 14:20:01.000;2026-05-20 11:12:02.697
+dbo;V_Mengeneinheit;2018-09-27 14:20:02.290;2026-05-20 11:12:02.700
+dbo;V_Mengeneinheit_BASIS;2018-09-27 14:20:00.143;2026-05-20 11:12:02.700
+dbo;V_MES_AP_Addresses;2018-09-27 14:20:01.533;2026-05-20 11:12:02.703
+dbo;V_MES_ArticleVariant;2018-09-27 14:20:02.820;2026-05-20 11:12:02.707
+dbo;V_MES_Compounds;2018-09-27 14:20:02.203;2026-05-20 11:12:02.710
+dbo;V_MES_CustomerArticles;2022-09-07 12:25:45.623;2022-09-26 15:56:00.537
+dbo;V_MES_Downtime_Characteristics;2018-09-27 14:20:01.143;2026-05-20 11:12:02.713
+dbo;V_MES_Downtime_Groups;2018-09-27 14:20:02.380;2026-05-20 11:12:02.717
+dbo;V_MES_Downtime_Reasons;2018-09-27 14:20:02.917;2026-05-20 11:12:02.717
+dbo;V_MES_Downtime_Reasons_PFC;2018-09-27 14:20:02.977;2026-05-20 11:12:02.720
+dbo;V_MES_Machines;2018-09-27 14:20:01.103;2026-05-20 11:12:02.720
+dbo;V_MES_Mould_to_ArticleVariant;2022-05-10 07:18:29.260;2022-05-10 07:18:29.260
+dbo;V_MES_Moulds;2022-05-10 07:18:29.020;2022-05-10 07:18:29.020
+dbo;V_MES_PDC_Data;2018-09-27 14:20:01.550;2026-05-20 11:12:02.723
+dbo;V_MES_Planned_Shifts;2022-05-10 07:18:29.480;2022-05-10 07:18:29.480
+dbo;V_MES_ProdArticle;2018-09-27 14:20:00.957;2026-05-20 11:12:02.727
+dbo;V_MES_ProductionLots;2018-09-27 14:20:02.243;2026-05-20 11:12:04.383
+dbo;V_MES_Profitcenter;2018-09-27 14:20:00.853;2026-05-20 11:12:02.727
+dbo;V_MES_Setup_Types;2018-09-27 14:20:02.883;2026-05-20 11:12:02.730
+dbo;V_MES_Shift_Definition;2018-09-27 14:20:02.940;2026-05-20 11:12:02.730
+dbo;V_Module_BASIS;2018-09-27 14:20:01.553;2026-05-20 11:12:02.733
+dbo;V_MT_SCS_Artikelstammdaten;2018-09-27 14:20:01.750;2026-05-20 11:12:03.893
+dbo;V_Mwst_BASIS;2018-09-27 14:20:02.510;2026-05-20 11:12:02.747
+dbo;V_NiceLabel_Automation;2018-09-27 14:20:01.277;2018-09-27 14:20:01.277
+dbo;V_NiceLabel_Automation_v2;2020-06-08 09:38:08.533;2020-06-08 09:38:08.533
+dbo;V_PA_Werkzeug;2018-09-27 14:20:01.150;2026-05-20 11:12:02.750
+dbo;V_PA_Werkzeug_BASIS;2018-09-27 14:19:59.973;2026-05-20 11:12:02.753
+dbo;V_PackagingInstructionFetch;2023-04-17 07:58:47.860;2026-05-20 11:12:02.757
+dbo;V_PartnerWerke;2018-09-27 14:20:02.287;2026-05-20 11:12:02.763
+dbo;v_PD_production_figures;2018-09-27 14:20:01.690;2026-05-20 11:12:02.763
+dbo;v_PD_stock_movements;2018-09-27 14:20:02.017;2026-05-20 11:12:02.767
+dbo;V_PDE;2018-09-27 14:20:02.400;2026-05-20 11:12:02.767
+dbo;V_PDE_ProduktionsDaten;2018-09-27 14:20:02.440;2026-05-20 11:12:03.903
+dbo;V_PDEProdLosBasierendSumProdTag_PLANNING;2018-09-27 14:20:02.167;2026-05-20 11:12:02.773
+dbo;V_PDEProdLosSum;2018-09-27 14:20:01.090;2026-05-20 11:12:02.773
+dbo;V_PDEProdLosSumProdTag;2018-09-27 14:20:01.227;2026-05-20 11:12:02.777
+dbo;V_PDEProduktionstagMax;2018-09-27 14:20:02.720;2026-05-20 11:12:02.780
+dbo;V_PDEProduktionstagMin;2018-09-27 14:20:01.193;2026-05-20 11:12:02.780
+dbo;V_PDEProduktionstagSum;2018-09-27 14:19:59.977;2026-05-20 11:12:02.780
+dbo;V_PDESchichtSum;2018-09-27 14:20:01.850;2026-05-20 11:12:02.783
+dbo;V_PlanungsFehler_CENTRAL;2018-09-27 14:20:03.663;2026-05-20 11:12:02.787
+dbo;V_PNNumbers_CENTRAL;2018-09-27 14:20:00.907;2026-05-20 11:12:02.790
+dbo;V_Positionen;2022-06-19 16:08:50.587;2026-05-20 11:12:03.907
+dbo;V_PreformNummern;2018-09-27 14:20:01.533;2026-05-20 11:12:02.793
+dbo;V_PreformNummern_BASIS;2018-09-27 14:20:02.820;2026-05-20 11:12:02.793
+dbo;V_PreformNummern_CENTRAL;2018-09-27 14:20:03.663;2026-05-20 11:12:02.797
+dbo;V_Preiseinheit;2018-09-27 14:20:02.673;2026-05-20 11:12:02.797
+dbo;V_Preiseinheit_BASIS;2018-09-27 14:20:01.543;2026-05-20 11:12:02.800
+dbo;V_ProdArtikel;2018-09-27 14:19:59.943;2026-05-20 11:12:02.800
+dbo;V_ProdArtikel_BASIS;2018-09-27 14:20:01.150;2026-05-20 11:12:03.917
+dbo;V_ProdArtikelgruppe_BASIS;2018-09-27 14:20:00.463;2026-05-20 11:12:02.803
+dbo;V_ProdArtikelKundenSuche;2018-09-27 14:20:00.640;2026-05-20 11:12:02.807
+dbo;V_ProdBereich;2018-09-27 14:20:02.857;2026-05-20 11:12:02.810
+dbo;V_ProdBereich_BASIS;2018-09-27 14:20:02.390;2026-05-20 11:12:03.923
+dbo;V_ProdBereich_CENTRAL;2018-09-27 14:20:01.513;2026-05-20 11:12:02.810
+dbo;V_ProdBereich_eReporting_BASIS;2018-09-27 14:20:02.670;2026-05-20 11:12:02.813
+dbo;V_ProdBereichMaschinen_PLANNING;2018-09-27 14:20:02.327;2026-05-20 11:12:02.813
+dbo;V_ProdBereichSchichtDauer;2018-09-27 14:20:01.590;2026-05-20 11:12:02.817
+dbo;V_ProdDaten;2018-09-27 14:20:01.833;2026-05-20 11:12:03.923
+dbo;V_ProdDaten_BASIS;2018-09-27 14:20:02.733;2026-05-20 11:12:02.817
+dbo;V_ProdLosArtikelvarianten_PLANNING;2018-09-27 14:20:00.720;2026-05-20 11:12:02.823
+dbo;V_ProdLosKomponenten_PLANNING;2018-09-27 14:20:01.990;2026-05-20 11:12:03.933
+dbo;V_ProdLosMaterialJeProdTag_PLANNING;2018-09-27 14:20:00.927;2026-05-20 11:12:02.827
+dbo;V_ProdLosMaterialJeProdTagGruppiert;2018-09-27 14:20:02.290;2026-05-20 11:12:02.833
+dbo;V_ProdLosMaterialJeProdTagGruppiert_PLANNING;2018-09-27 14:20:02.790;2026-05-20 11:12:02.837
+dbo;V_ProdLosProduktionJeProdTag_PLANNING;2018-09-27 14:20:02.367;2026-05-20 11:12:02.843
+dbo;V_ProdLosProduktionJeProdTagGruppiert_PLANNING;2018-09-27 14:20:02.270;2026-05-20 11:12:02.847
+dbo;V_ProdlosVerpackungen_PLANNING;2018-09-27 14:20:01.777;2026-05-20 11:12:02.850
+dbo;V_ProdPlanung;2018-09-27 14:20:01.860;2026-05-20 11:12:03.940
+dbo;V_ProdPlanungHistoryGruppiert;2024-03-11 08:29:00.060;2026-05-20 11:12:02.853
+dbo;V_ProdPlanungHistoryProtokoll;2019-04-13 08:27:51.973;2026-05-20 11:12:02.857
+dbo;V_ProdPlanungJeProdTag_PLANNING;2018-09-27 14:20:00.943;2026-05-20 11:12:02.863
+dbo;V_ProdPlanungMaschinen_PLANNING;2018-09-27 14:20:01.530;2026-05-20 11:12:03.947
+dbo;V_ProdPlanungSetupTypen_PLANNING;2018-09-27 14:20:01.020;2026-05-20 11:12:03.953
+dbo;V_ProdPlanungSuche;2018-09-27 14:20:01.000;2026-05-20 11:12:02.867
+dbo;V_ProdSchichten;2018-09-27 14:20:02.040;2026-05-20 11:12:02.870
+dbo;V_ProdSchichten_BASIS;2018-09-27 14:20:02.840;2026-05-20 11:12:02.873
+dbo;V_ProductionFigures;2025-05-05 08:36:31.420;2026-05-20 11:12:02.873
+dbo;V_ProductionReportData;2025-11-03 08:36:40.660;2026-05-20 11:12:02.877
+dbo;V_ProduktionLagerLieferBuchungen;2018-09-27 14:20:02.310;2026-05-20 11:12:04.390
+dbo;V_ProduktionLagerPositionen;2018-09-27 14:20:01.653;2026-05-20 11:12:03.960
+dbo;V_ProduktionLagerPositionenAusgaben;2018-09-27 14:20:01.660;2026-05-20 11:12:04.397
+dbo;V_ProduktionsBuchungen;2018-09-27 14:20:01.070;2026-05-20 11:12:03.967
+dbo;V_ProduktionsKonten;2018-09-27 14:20:00.800;2026-05-20 11:12:03.977
+dbo;V_ProduktionsKontenBereitgestelltSum;2018-09-27 14:20:01.557;2026-05-20 11:12:02.877
+dbo;V_ProduktionsKontenBuchungen;2018-09-27 14:20:00.850;2026-05-20 11:12:03.983
+dbo;V_ProduktionsKontenGeplantSum;2018-09-27 14:19:59.707;2026-05-20 11:12:02.880
+dbo;V_ProduktionsKontenGesperrtSum;2018-09-27 14:19:59.663;2026-05-20 11:12:02.880
+dbo;V_ProduktionsKontenPositionenSum;2018-09-27 14:20:02.810;2026-05-20 11:12:03.990
+dbo;V_ProduktionsKontenTotalSum;2018-09-27 14:19:59.620;2026-05-20 11:12:02.883
+dbo;V_Produktionslose;2023-04-17 07:58:47.983;2026-05-20 11:12:03.997
+dbo;V_ProduktionsloseFehlend;2018-09-27 14:20:02.890;2026-05-20 11:12:02.883
+dbo;V_ProduktionsloseMinimal;2020-03-14 09:37:34.350;2026-05-20 11:12:02.887
+dbo;V_ProduktionsPositionen;2018-09-27 14:20:00.700;2026-05-20 11:12:04.003
+dbo;V_ProduktionsPositionenGeplantSum;2018-09-27 14:20:00.163;2026-05-20 11:12:02.887
+dbo;V_ProduktionsPositionenGesperrtSum;2018-09-27 14:20:00.163;2026-05-20 11:12:02.890
+dbo;V_ProduktionsPositionenRuecknahmen;2018-09-27 14:20:02.893;2026-05-20 11:12:04.403
+dbo;V_ProduktionsPositionenTotalSum;2018-09-27 14:20:00.167;2026-05-20 11:12:02.893
+dbo;V_ProduktionsRueckmeldungDaten;2019-07-20 08:25:55.430;2026-05-20 11:12:02.893
+dbo;V_ProduktionsRueckmeldungen;2019-07-20 08:25:55.420;2026-05-20 11:12:02.897
+dbo;V_ProduktionsRueckmeldungenJeProdLosJeProdTagLive;2018-09-27 14:20:02.917;2026-05-20 11:12:02.897
+dbo;V_ProduktionsRueckmeldungenJeProdLosJeProdTagManuel;2018-09-27 14:20:01.537;2026-05-20 11:12:02.900
+dbo;V_ProduktionsRueckmeldungenJeProdLosJeProdTagPDC;2018-09-27 14:20:02.587;2026-05-20 11:12:02.903
+dbo;V_ProduktionsRueckmeldungenJeProdLosJeProdTagPDCLive;2018-09-27 14:20:01.847;2026-05-20 11:12:02.907
+dbo;V_ProduktionsRueckmeldungenJeProdLosLive;2018-09-27 14:20:02.320;2026-05-20 11:12:02.910
+dbo;V_ProduktionsRueckmeldungenJeProdLosManuel;2018-09-27 14:20:00.030;2026-05-20 11:12:02.913
+dbo;V_ProduktionsRueckmeldungenJeProdLosPDC;2018-09-27 14:20:01.160;2026-05-20 11:12:02.913
+dbo;V_ProduktionsRueckmeldungenJeProdLosPDCLive;2018-09-27 14:20:01.767;2026-05-20 11:12:02.917
+dbo;V_ProduktionsRueckmeldungenJeProdLosQuellen;2019-06-15 08:08:20.763;2026-05-20 11:12:02.920
+dbo;V_ProduktionsRueckmeldungenKomplett;2018-09-27 14:20:02.477;2026-05-20 11:12:02.930
+dbo;V_ProduktionsRueckmeldungenKomplettSumProTag;2018-09-27 14:20:02.853;2026-05-20 11:12:02.933
+dbo;V_Prognosen;2018-09-27 14:20:01.263;2026-05-20 11:12:04.010
+dbo;V_PrognosenHistorie;2018-09-27 14:20:01.607;2026-05-20 11:12:04.013
+dbo;V_PrognosenLetzteEAIPrognose;2018-09-27 14:20:02.480;2026-05-20 11:12:02.940
+dbo;V_Prozess_EtikettenDrucker;2023-06-19 08:31:38.593;2026-05-20 11:12:02.943
+dbo;V_Prozess_EtikettenDrucker_Links;2023-07-03 08:31:15.950;2026-05-20 11:12:02.943
+dbo;V_PurchaseMaterialBedarfLetzteAktualisierung;2018-09-27 14:20:02.250;2026-05-20 11:12:02.947
+dbo;V_RahmenBestellung;2018-09-27 14:20:02.507;2026-05-20 11:12:02.947
+dbo;V_RahmenBestellungPosition;2018-09-27 14:20:02.687;2026-05-20 11:12:04.410
+dbo;V_Rampen;2018-09-27 14:20:00.217;2026-05-20 11:12:02.953
+dbo;V_Ressourcen;2018-09-27 14:20:02.673;2026-05-20 11:12:02.957
+dbo;V_Ressourcen_BASIS;2018-09-27 14:20:00.280;2026-05-20 11:12:02.960
+dbo;V_Ressourcen_CENTRAL;2018-09-27 14:20:01.897;2026-05-20 11:12:04.020
+dbo;V_RessourcenBedarf;2018-09-27 14:20:02.787;2026-05-20 11:12:02.963
+dbo;V_RessourcenBedarfMaschine;2018-09-27 14:20:01.447;2026-05-20 11:12:02.963
+dbo;V_RessourcenBedarfMaschineEingesetzteRessourcen_PLANNING;2018-09-27 14:20:01.850;2026-05-20 11:12:02.963
+dbo;V_RessourcenGruppen_CENTRAL;2018-09-27 14:20:02.553;2026-05-20 11:12:02.967
+dbo;V_RessourcenVerpackungsBedarf_PLANNING;2018-09-27 14:20:00.063;2026-05-20 11:12:02.967
+dbo;V_RestfulGetStockPositions;2025-10-20 08:30:00.743;2026-05-20 11:12:02.980
+dbo;V_Retourwaren;2018-09-27 14:20:00.103;2026-05-20 11:12:04.023
+dbo;V_ReworkOrders;2018-09-27 14:19:59.073;2026-05-20 11:12:02.993
+dbo;V_Rez;2018-09-27 14:20:01.180;2026-05-20 11:12:02.993
+dbo;V_Rez_BASIS;2018-09-27 14:20:02.160;2026-05-20 11:12:02.997
+dbo;V_RezPos;2020-08-02 16:38:10.187;2026-05-20 11:12:03.000
+dbo;V_RezPos_BASIS;2020-08-02 16:38:10.827;2026-05-20 11:12:03.003
+dbo;V_RezPosArtikel;2019-01-22 09:57:25.583;2026-05-20 11:12:03.010
+dbo;V_RezUndRezAlternativen;2018-09-27 14:20:01.903;2026-05-20 11:12:03.020
+dbo;V_Ruecknahmen;2018-09-27 14:20:01.343;2026-05-20 11:12:04.027
+dbo;V_Scanner;2018-09-27 14:20:02.437;2026-05-20 11:12:03.023
+dbo;V_SchichtDefinitionen;2018-09-27 14:20:01.587;2026-05-20 11:12:03.023
+dbo;V_SchichtDefinitionen_BASIS;2018-09-27 14:20:01.207;2026-05-20 11:12:03.027
+dbo;V_SchichtDefinitionenKalenderwochen;2018-09-27 14:20:00.500;2026-05-20 11:12:03.030
+dbo;V_Schichten;2018-09-27 14:20:02.860;2026-05-20 11:12:03.033
+dbo;V_Schichten_BASIS;2018-09-27 14:20:02.383;2026-05-20 11:12:03.033
+dbo;V_Schnittstellen_BASIS;2018-09-27 14:20:01.480;2026-05-20 11:12:03.037
+dbo;v_SD_plant_id;2018-09-27 14:20:00.700;2026-05-20 11:12:03.037
+dbo;V_SekundaereZentraleVerpackungen;2022-05-08 16:08:32.040;2026-05-20 11:12:03.040
+dbo;V_SetupTypen;2018-09-27 14:20:01.007;2026-05-20 11:12:03.040
+dbo;V_SetupTypen_BASIS;2018-09-27 14:20:01.083;2026-05-20 11:12:03.043
+dbo;V_SetupTypen_CENTRAL;2018-09-27 14:20:03.670;2026-05-20 11:12:03.047
+dbo;V_SetupTypMerkmale_BASIS;2018-09-27 14:19:59.587;2026-05-20 11:12:03.053
+dbo;V_SetupTypMerkmale_CENTRAL;2018-09-27 14:20:03.670;2026-05-20 11:12:03.053
+dbo;V_SetupTypMerkmalTypen_BASIS;2018-09-27 14:20:00.940;2026-05-20 11:12:03.057
+dbo;V_SetupTypMerkmalTypen_CENTRAL;2018-09-27 14:20:03.667;2026-05-20 11:12:03.060
+dbo;V_SetupTypMerkmalTypGruppen_BASIS;2018-09-27 14:20:00.593;2026-05-20 11:12:03.063
+dbo;V_SetupTypMerkmalTypGruppen_CENTRAL;2018-09-27 14:20:03.663;2026-05-20 11:12:03.063
+dbo;V_SperrAuftraege;2018-09-27 14:20:02.990;2026-05-20 11:12:03.067
+dbo;V_Sperrgruende;2018-09-27 14:20:00.817;2026-05-20 11:12:03.070
+dbo;V_SperrJournal;2018-09-27 14:20:01.360;2026-05-20 11:12:04.030
+dbo;V_SperrJournalAktuell;2023-05-22 08:31:14.223;2026-05-20 11:12:04.033
+dbo;V_Sprachtexte;2018-09-27 14:20:01.547;2026-05-20 11:12:04.043
+dbo;V_SprachtexteLetzteNummer;2018-09-27 14:20:01.547;2026-05-20 11:12:04.413
+dbo;V_Staaten_BASIS;2018-09-27 14:20:02.777;2026-05-20 11:12:03.070
+dbo;V_Staaten_CENTRAL;2018-09-27 14:20:03.670;2026-05-20 11:12:03.073
+dbo;V_Staatengruppe_BASIS;2018-09-27 14:20:02.127;2026-05-20 11:12:03.077
+dbo;V_Stapler;2018-09-27 14:20:02.370;2026-05-20 11:12:03.077
+dbo;V_StaplerterminalLadepositionen_FORKLIFT;2018-09-27 14:20:02.883;2026-05-20 11:12:03.080
+dbo;V_StaplerterminalListe_FORKLIFT;2018-09-27 14:20:00.903;2026-05-20 11:12:03.080
+dbo;V_StaplerterminalPicklist_FORKLIFT;2018-09-27 14:20:01.810;2026-05-20 11:12:03.083
+dbo;V_StaplerterminaPlans_FORKLIFT;2018-09-27 14:20:02.537;2026-05-20 11:12:04.413
+dbo;V_StockSyncCheck_PLANNING;2018-09-27 14:20:02.673;2026-05-20 11:12:03.087
+dbo;V_StoerGruende;2018-09-27 14:20:00.717;2026-05-20 11:12:03.087
+dbo;V_StoerGruende_BASIS;2018-09-27 14:20:02.877;2026-05-20 11:12:03.090
+dbo;V_StoerGruende_CENTRAL;2018-09-27 14:20:03.677;2026-05-20 11:12:03.097
+dbo;V_StoerGruendeProdBereich;2018-09-27 14:20:01.730;2026-05-20 11:12:03.100
+dbo;V_StoerGruendeProdBereich_BASIS;2018-09-27 14:20:00.950;2026-05-20 11:12:03.103
+dbo;V_StoerGruendeProdBereich_CENTRAL;2018-09-27 14:20:03.673;2026-05-20 11:12:03.107
+dbo;V_StoerGruendeSetupTypen;2018-09-27 14:20:02.890;2026-05-20 11:12:03.107
+dbo;V_StoerGruendeSetupTypen_BASIS;2018-09-27 14:20:02.330;2026-05-20 11:12:03.110
+dbo;V_StoerGruendeSetupTypen_CENTRAL;2018-09-27 14:20:03.673;2026-05-20 11:12:03.113
+dbo;V_StoerGruppen;2018-09-27 14:20:02.657;2026-05-20 11:12:03.113
+dbo;V_StoerGruppen_BASIS;2018-09-27 14:20:00.577;2026-05-20 11:12:03.117
+dbo;V_StoerGruppen_CENTRAL;2018-09-27 14:20:03.680;2026-05-20 11:12:03.117
+dbo;V_StoerMerkmale;2018-09-27 14:20:01.453;2026-05-20 11:12:03.120
+dbo;V_StoerMerkmale_BASIS;2018-09-27 14:20:02.217;2026-05-20 11:12:03.123
+dbo;V_StoerMerkmale_CENTRAL;2018-09-27 14:20:03.680;2026-05-20 11:12:03.127
+dbo;V_Stoertyp_BASIS;2018-09-27 14:19:59.920;2026-05-20 11:12:03.130
+dbo;V_Stoerung;2018-09-27 14:20:01.550;2026-05-20 11:12:03.130
+dbo;V_Stoerung_BASIS;2018-09-27 14:19:59.670;2026-05-20 11:12:03.133
+dbo;V_TextVorlagen;2018-09-27 14:20:02.800;2026-05-20 11:12:03.133
+dbo;V_TrackerAuftragsAbrufe;2018-09-27 14:20:01.187;2026-05-20 11:12:03.137
+dbo;V_TrackerAuftragsAbrufeSumAktuell;2018-09-27 14:20:02.413;2026-05-20 11:12:03.140
+dbo;V_TrackerBarcodeSperrHistorie;2018-09-27 14:20:02.623;2026-05-20 11:12:04.043
+dbo;V_TrackerBestellPositionen;2018-09-27 14:20:02.893;2026-05-20 11:12:03.143
+dbo;V_TrackerEtikettenGedruckt;2018-09-27 14:20:02.980;2026-05-20 11:12:04.047
+dbo;V_TrackerEtikettenGedrucktProduktionslosSum;2018-09-27 14:20:00.223;2026-05-20 11:12:03.147
+dbo;V_TrackerEtikettenGemappt;2018-09-27 14:20:02.607;2026-05-20 11:12:03.147
+dbo;V_TrackerEtikettenKartons;2018-09-27 14:20:00.343;2026-05-20 11:12:03.150
+dbo;V_TrackerEtikettenKartonsPaletten;2018-09-27 14:20:00.460;2026-05-20 11:12:03.153
+dbo;V_TrackerEtikettenPaletten;2018-09-27 14:20:01.863;2026-05-20 11:12:03.157
+dbo;V_TrackerEtikettenPalettenKartons;2018-09-27 14:19:59.437;2026-05-20 11:12:03.160
+dbo;V_TrackerEtikettenVerworfen;2018-09-27 14:20:00.777;2026-05-20 11:12:04.053
+dbo;V_TrackerGelieferteMengenJeBestellPosition;2018-09-27 14:20:01.470;2026-05-20 11:12:03.160
+dbo;V_TrackerLagerBestand;2018-09-27 14:20:02.563;2026-05-20 11:12:04.417
+dbo;V_TrackerLagerBestandFertigwaren;2018-09-27 14:20:01.673;2026-05-20 11:12:04.420
+dbo;V_TrackerLagerBuchungenBarcode;2018-09-27 14:20:02.443;2026-05-20 11:12:03.163
+dbo;V_TrackerLagerBuchungenBarcodeBelegSum;2018-09-27 14:20:02.380;2026-05-20 11:12:04.063
+dbo;V_TrackerLagerBuchungenBeleg;2018-09-27 14:20:00.220;2026-05-20 11:12:04.067
+dbo;V_TrackerLagerBuchungenBelegBarcodeSum;2018-09-27 14:20:00.823;2026-05-20 11:12:03.170
+dbo;V_TrackerLagerBuchungenBelegProduktionslosSuchgrenzen;2018-09-27 14:20:02.170;2026-05-20 11:12:03.170
+dbo;V_TrackerLagerBuchungenBelegProduktionslosSum;2018-09-27 14:20:01.187;2026-05-20 11:12:04.067
+dbo;V_TrackerLagerBuchungenBelegSuchgrenzen;2018-09-27 14:19:59.653;2026-05-20 11:12:03.173
+dbo;V_TrackerLagerBuchungenProduktionslosBarcode;2018-09-27 14:20:02.527;2026-05-20 11:12:04.070
+dbo;V_TrackerLagerBuchungenProduktionslosBelegSum;2018-09-27 14:20:00.560;2026-05-20 11:12:04.073
+dbo;V_TrackerLieferscheinLieferPositionen;2018-09-27 14:20:01.220;2026-05-20 11:12:04.423
+dbo;V_TrackerPDE;2018-09-27 14:20:02.780;2026-05-20 11:12:03.173
+dbo;V_TrackerPDEProdLosSum;2018-09-27 14:20:01.610;2026-05-20 11:12:04.080
+dbo;V_TrackerProdPlanungen;2018-09-27 14:20:02.170;2026-05-20 11:12:04.080
+dbo;V_TradeUnitInformations;2025-06-30 08:30:24.813;2026-05-20 11:12:03.177
+dbo;V_Traegerstoffe_BASIS;2018-09-27 14:20:00.997;2026-05-20 11:12:03.180
+dbo;V_TransferQueue;2025-11-03 08:36:40.630;2026-05-20 11:12:03.180
+dbo;V_TransportTypen;2018-09-27 14:20:02.257;2026-05-20 11:12:03.183
+dbo;V_TransportTypen_BASIS;2018-09-27 14:20:02.690;2026-05-20 11:12:03.183
+dbo;V_TransportTypen_CENTRAL;2018-09-27 14:20:03.680;2026-05-20 11:12:03.187
+dbo;V_Umlagerungen;2018-09-27 14:20:01.827;2026-05-20 11:12:04.083
+dbo;V_UmlagerungenFehlend;2018-09-27 14:20:02.430;2026-05-20 11:12:03.190
+dbo;V_UmlaufVerpackungenSuche;2018-09-27 14:20:02.400;2026-05-20 11:12:03.193
+dbo;V_VerfuegbarePositionenPerKontoAbteilungenBelegSum;2018-09-27 14:20:00.567;2026-05-20 11:12:03.193
+dbo;V_VerfuegbarerBestandPerAVLagerAbteilungSum;2018-09-27 14:20:00.820;2026-05-20 11:12:03.197
+dbo;V_VerfuegbarerBestandPerAVSum;2018-09-27 14:19:59.900;2026-05-20 11:12:03.200
+dbo;V_VerfuegbarerBestandPerKontoSum;2018-09-27 14:20:00.230;2026-05-20 11:12:04.090
+dbo;V_VerfuegbarerInhouseBestandPerAVSum;2018-09-27 14:20:00.047;2026-05-20 11:12:04.100
+dbo;V_VerfuegbarerKundenBestandPerKontoLosnrProduktionsdatumPerUnitSum;2018-09-27 14:20:02.410;2026-05-20 11:12:04.427
+dbo;V_VerfuegbarerKundenBestandPerKontoLosnrProduktionsdatumSum;2018-09-27 14:20:00.520;2026-05-20 11:12:03.203
+dbo;V_VerfuegbarerKundenBestandPerKontoSum;2018-09-27 14:20:02.797;2026-05-20 11:12:03.207
+dbo;V_VerfuegbarerLagerbestand;2018-09-27 14:20:02.763;2026-05-20 11:12:04.100
+dbo;V_VerkaufsMaerkte_BASIS;2018-09-27 14:19:59.443;2026-05-20 11:12:03.213
+dbo;V_VerkaufsMaerkte_CENTRAL;2018-09-27 14:20:03.683;2026-05-20 11:12:03.213
+dbo;V_VerkaufsMaerkte_VerkaufsMarktSegmente_BASIS;2018-09-27 14:20:01.843;2026-05-20 11:12:03.220
+dbo;V_VerkaufsMaerkte_VerkaufsMarktSegmente_CENTRAL;2018-09-27 14:20:03.687;2026-05-20 11:12:03.220
+dbo;V_VerkaufsMarktSegmente_BASIS;2018-09-27 14:20:02.617;2026-05-20 11:12:03.223
+dbo;V_VerkaufsMarktSegmente_CENTRAL;2018-09-27 14:20:03.687;2026-05-20 11:12:03.227
+dbo;V_VerkaufsProdukte_BASIS;2018-09-27 14:19:59.067;2026-05-20 11:12:03.230
+dbo;V_VerkaufsProdukte_CENTRAL;2018-09-27 14:20:03.690;2026-05-20 11:12:03.233
+dbo;V_VerpackungsBewegungenGeliefert;2018-09-27 14:20:00.783;2026-05-20 11:12:04.103
+dbo;V_VerpackungsBewegungenRuecknahmen;2018-09-27 14:20:00.260;2026-05-20 11:12:04.110
+dbo;V_VerpackungsBewegungenSum;2018-09-27 14:20:02.873;2026-05-20 11:12:04.433
+dbo;V_VerpackungsKontenPerAVSum;2018-09-27 14:19:59.593;2026-05-20 11:12:03.237
+dbo;V_Vpk;2018-09-27 14:20:02.533;2026-05-20 11:12:03.240
+dbo;V_Vpk_BASIS;2023-08-28 08:31:56.960;2026-05-20 11:12:03.243
+dbo;V_VpkConvertCheck_BASIS;2018-09-27 14:20:02.343;2026-05-20 11:12:04.113
+dbo;V_VpkDimensionen;2018-09-27 14:20:01.567;2026-05-20 11:12:03.247
+dbo;V_VpkDimensionen_BASIS;2018-09-27 14:20:02.607;2026-05-20 11:12:03.250
+dbo;V_VpkEtiketten;2018-09-27 14:20:00.517;2026-05-20 11:12:03.253
+dbo;V_VpkEtiketten_BASIS;2018-09-27 14:20:01.850;2026-05-20 11:12:03.257
+dbo;V_VpkKontenAusnahmen;2018-09-27 14:20:02.967;2026-05-20 11:12:03.260
+dbo;V_VpkKontenAusnahmen_BASIS;2020-08-02 16:38:10.837;2026-05-20 11:12:03.260
+dbo;V_VpkPos;2018-09-27 14:20:02.650;2026-05-20 11:12:03.263
+dbo;V_VpkPos_BASIS;2020-08-02 16:38:10.847;2026-05-20 11:12:03.270
+dbo;V_VpkPos_PLANNING;2020-08-02 16:38:10.887;2026-05-20 11:12:03.273
+dbo;V_VpkVorschrift_BASIS;2018-09-27 14:20:01.743;2026-05-20 11:12:04.117
+dbo;V_VpkVorschrift_Fertigungsmittel_BASIS;2018-09-27 14:20:02.600;2026-05-20 11:12:04.123
+dbo;V_VpkVorschrift_LadeEinheiten;2018-09-27 14:20:02.530;2026-05-20 11:12:04.127
+dbo;V_VpkVorschrift_LadeEinheiten_BASIS;2018-09-27 14:20:00.580;2026-05-20 11:12:03.280
+dbo;V_VpkVorschriftKomponenten;2018-09-27 14:20:00.637;2026-05-20 11:12:04.437
+dbo;V_Waehrung;2018-09-27 14:20:01.737;2026-05-20 11:12:03.283
+dbo;V_Waehrung_BASIS;2018-09-27 14:20:02.727;2026-05-20 11:12:03.283
+dbo;V_Waehrung_CENTRAL;2018-09-27 14:20:03.690;2026-05-20 11:12:03.287
+dbo;V_Wareneingaenge;2018-09-27 14:20:00.443;2026-05-20 11:12:04.440
+dbo;V_WareneingangAuftraege;2018-09-27 14:20:00.450;2026-05-20 11:12:03.287
+dbo;V_WareneingangBewertungen;2018-09-27 14:20:02.270;2026-05-20 11:12:03.293
+dbo;V_WareneingangPlanungen;2018-09-27 14:19:59.343;2026-05-20 11:12:04.130
+dbo;V_WareneingangPlanungenSum;2018-09-27 14:20:00.440;2026-05-20 11:12:03.293
+dbo;V_WareneingangPositionen;2018-09-27 14:20:01.223;2026-05-20 11:12:03.297
+dbo;V_WareneingangsBewertungenPerBestellPositionen_PURCHASE;2018-09-27 14:19:59.360;2026-05-20 11:12:04.450
+dbo;V_WareneingangsPlanungenJeLieferantBestellPosition_PURCHASE;2018-09-27 14:20:02.303;2026-05-20 11:12:03.297
+dbo;V_WarenLager;2018-09-27 14:20:00.350;2026-05-20 11:12:03.300
+dbo;V_Werk_CENTRAL;2018-09-27 14:20:00.787;2026-05-20 11:12:03.303
+dbo;V_Werke;2024-09-09 08:29:23.453;2026-05-20 11:12:03.303
+dbo;V_Werke_BASIS;2024-09-09 08:29:23.470;2026-05-20 11:12:03.307
+dbo;V_Werke_CENTRAL;2020-11-08 17:17:43.807;2026-05-20 11:12:03.313
+dbo;V_Werkzeug;2018-09-27 14:20:00.530;2026-05-20 11:12:03.313
+dbo;V_Werkzeug_Artikelvarianten_BASIS;2018-09-27 14:20:02.123;2026-05-20 11:12:03.317
+dbo;V_Werkzeug_BASIS;2021-06-06 16:07:32.663;2026-05-20 11:12:03.327
+dbo;V_Werkzeug_Blaskopf;2018-09-27 14:20:01.100;2026-05-20 11:12:03.333
+dbo;V_Werkzeug_Blaskopf_BASIS;2018-09-27 14:20:01.587;2026-05-20 11:12:03.347
+dbo;V_WerkzeugSuche;2018-09-27 14:20:02.393;2026-05-20 11:12:03.350
+dbo;V_Zahlkond_BASIS;2018-09-27 14:20:02.720;2026-05-20 11:12:03.353
+dbo;V_ZahlungsKonditionen;2018-09-27 14:20:00.850;2026-05-20 11:12:03.353
+dbo;V_ZentraleFertigungsmittel;2018-09-27 14:20:02.597;2026-05-20 11:12:03.357
+dbo;V_ZentraleFertigungsmittel_BASIS;2018-09-27 14:20:02.803;2026-05-20 11:12:03.360
+dbo;V_ZentraleFertigungsmittel_CENTRAL;2018-09-27 14:20:03.693;2026-05-20 11:12:03.363
+dbo;V_ZentraleLieferanten;2019-06-29 08:24:21.293;2026-05-20 11:12:03.367
+dbo;V_ZentraleLieferanten_BASIS;2019-06-29 08:24:21.720;2026-05-20 11:12:03.367
+dbo;V_ZentraleLieferanten_CENTRAL;2019-06-29 08:24:21.750;2026-05-20 11:12:03.370
+dbo;V_ZentraleMaterialien_CENTRAL;2019-06-29 08:24:21.813;2026-05-20 11:12:03.373
+dbo;V_ZentraleRessourcen;2018-09-27 14:20:01.930;2026-05-20 11:12:03.377
+dbo;V_ZentraleRessourcen_BASIS;2018-09-27 14:20:02.197;2026-05-20 11:12:03.377
+dbo;V_ZentraleRessourcen_CENTRAL;2018-09-27 14:20:03.700;2026-05-20 11:12:03.387
+dbo;V_ZentraleRessourcenBeziehungen;2018-09-27 14:20:00.110;2026-05-20 11:12:03.387
+dbo;V_ZentraleRessourcenBeziehungen_BASIS;2018-09-27 14:20:00.593;2026-05-20 11:12:03.390
+dbo;V_ZentraleRessourcenBeziehungen_CENTRAL;2018-09-27 14:20:03.697;2026-05-20 11:12:03.390
+dbo;V_ZentraleTollingVariante;2023-02-27 07:31:40.903;2026-05-20 11:12:03.393
+dbo;V_ZentraleWerkzeuge;2021-10-10 16:07:30.397;2026-05-20 11:12:03.393
+dbo;V_ZentraleWerkzeuge_BASIS;2021-10-10 16:07:30.513;2026-05-20 11:12:03.397
+dbo;V_ZentraleWerkzeuge_CENTRAL;2021-10-10 16:07:30.493;2026-05-20 11:12:03.400
+dbo;V_ZolltarifNummern_BASIS;2018-09-27 14:20:01.860;2026-05-20 11:12:03.403
+dbo;View_Einkauf_Lief_Mat;2018-09-27 14:20:03.700;2026-05-20 11:12:03.407
+dbo;View_EK_Price_Data_Home_Cur;2018-09-27 14:20:03.700;2026-05-20 11:12:03.407
+
+(747 rows affected)
+SchemaName;ProcedureName;CreatedDate;LastModifiedDate
+----------;-------------;-----------;----------------
+
+(0 rows affected)
+ObjectType;ObjectCount
+----------;-----------
+Tables;421
+Views;747
+Stored Procedures;0
+Functions;2
+
+(4 rows affected)

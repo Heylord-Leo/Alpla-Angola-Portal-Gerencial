@@ -12,7 +12,9 @@ using AlplaPortal.Infrastructure.Services.Integration;
 using AlplaPortal.Infrastructure.Services.Auth;
 using AlplaPortal.Infrastructure.Services.Approvals;
 using AlplaPortal.Application.Interfaces.MonthlyChanges;
+using AlplaPortal.Application.Interfaces.Operations;
 using AlplaPortal.Infrastructure.Services.MonthlyChanges;
+using AlplaPortal.Infrastructure.Services.Integration.Operations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -46,6 +48,16 @@ builder.Services.AddScoped<IIntegrationProvider, PrimaveraIntegrationProvider>()
 builder.Services.AddScoped<IIntegrationProvider, InnuxIntegrationProvider>();
 builder.Services.AddScoped<IIntegrationProvider, SmtpIntegrationProvider>();
 builder.Services.AddScoped<IIntegrationProvider, OpenAiIntegrationProvider>();
+builder.Services.AddScoped<AlplaProdConnectionFactory>();
+builder.Services.AddScoped<IIntegrationProvider, AlplaProdIntegrationProvider>();
+
+// Operations Module — Phase 2 Timeline + Phase 4 Transfer List + Phase 6 Details + Phase Live 2 Live Board
+builder.Services.AddScoped<IOperationsPipelineDetector, OperationsPipelineDetector>();
+builder.Services.AddScoped<IOperationsTimelineService, OperationsTimelineService>();
+builder.Services.AddScoped<IOperationsTransferListService, OperationsTransferListService>();
+builder.Services.AddScoped<IOperationsTransferDetailService, OperationsTransferDetailService>();
+builder.Services.AddScoped<IOperationsLiveBoardService, OperationsLiveBoardService>();
+
 builder.Services.AddScoped<IIntegrationHealthService, IntegrationHealthService>();
 builder.Services.AddScoped<IIntegrationSettingsService, IntegrationSettingsService>();
 builder.Services.AddScoped<PrimaveraConnectionFactory>();

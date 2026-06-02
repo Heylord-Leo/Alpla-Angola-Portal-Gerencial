@@ -1,0 +1,721 @@
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+T_Bestellungen;Status;1;62;1/4/2024 9:48:10 AM;5/29/2026 9:46:05 AM;1054;3561
+T_Bestellungen;Status;2;33;8/6/2025 1:51:05 PM;5/29/2026 9:49:21 AM;2574;3566
+T_Bestellungen;Status;3;3;10/11/2023 11:44:53 AM;8/7/2025 5:29:36 PM;26;2585
+T_Bestellungen;Status;4;12;1/6/2025 6:23:03 PM;5/16/2026 11:18:56 AM;2078;3455
+T_Bestellungen;Status;5;26;8/7/2025 9:06:27 AM;5/26/2026 5:36:37 PM;2579;3510
+T_Bestellungen;Status;6;833;8/4/2025 4:57:41 PM;5/29/2026 7:24:52 PM;2566;3567
+T_Bestellungen;Status;7;141;7/5/2023 9:25:46 AM;5/15/2026 1:09:54 PM;1;3451
+T_Bestellungen;Status;8;1325;7/5/2023 10:57:12 AM;2/11/2026 12:04:05 PM;3;3172
+T_Bestellungen;Status;11;1;2/26/2025 9:42:49 AM;2/26/2025 10:19:21 AM;2232;2232
+
+(9 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+T_Bestellungen;UebermittlungsStatus;1;2436;7/5/2023 9:25:46 AM;5/29/2026 7:24:52 PM;1;3567
+
+(1 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+T_Bestellungen;Bestaetigt;0;967;10/11/2023 11:44:53 AM;5/29/2026 7:24:52 PM;26;3567
+T_Bestellungen;Bestaetigt;1;1469;7/5/2023 9:25:46 AM;5/20/2026 1:01:31 PM;1;3488
+
+(2 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_Bestellungen;Revision;-1;61;1/4/2024 9:48:10 AM;5/29/2026 9:46:05 AM
+T_Bestellungen;Revision;1;2341;7/5/2023 9:25:46 AM;5/29/2026 7:24:52 PM
+T_Bestellungen;Revision;2;32;8/2/2023 3:38:30 PM;5/26/2026 5:36:37 PM
+T_Bestellungen;Revision;3;2;6/7/2024 3:26:05 PM;9/3/2024 6:21:23 PM
+
+(4 rows affected)
+
+IdBestellung;Status;UebermittlungsStatus;Bestaetigt;Revision;IdJournal;JournalNummer;Add_User;Add_Date;Upd_User;Upd_Date
+------------;------;--------------------;----------;--------;---------;-------------;--------;--------;--------;--------
+3567;6;1;0;1;20617;102411;ALPLA\Francisco005;5/29/2026 9:51:28 AM;ALPLA\Francisco005;5/29/2026 7:24:52 PM
+3566;2;1;0;1;20616;102410;ALPLA\Francisco005;5/29/2026 9:49:00 AM;ALPLA\Francisco005;5/29/2026 9:49:21 AM
+3565;2;1;0;1;20615;102409;ALPLA\Francisco005;5/29/2026 9:48:28 AM;ALPLA\Francisco005;5/29/2026 9:48:51 AM
+3564;2;1;0;1;20614;102408;ALPLA\Francisco005;5/29/2026 9:47:57 AM;ALPLA\Francisco005;5/29/2026 9:48:20 AM
+3563;2;1;0;1;20613;102407;ALPLA\Francisco005;5/29/2026 9:47:28 AM;ALPLA\Francisco005;5/29/2026 9:47:49 AM
+3562;6;1;0;1;20612;102406;ALPLA\Francisco005;5/29/2026 9:46:16 AM;ALPLA\Francisco005;5/29/2026 6:43:03 PM
+3561;1;1;0;-1;-1;;ALPLA\Francisco005;5/29/2026 9:45:29 AM;ALPLA\Francisco005;5/29/2026 9:46:05 AM
+3560;6;1;0;1;20606;102405;ALPLA\Francisco005;5/28/2026 2:56:09 PM;ALPLA\Francisco005;5/28/2026 7:26:31 PM
+3559;6;1;0;1;20605;102404;ALPLA\Francisco005;5/28/2026 2:54:52 PM;ALPLA\Francisco005;5/28/2026 7:25:01 PM
+3558;6;1;0;1;20593;102403;ALPLA\Francisco005;5/28/2026 11:44:56 AM;*AlplaEAI*;5/28/2026 11:54:49 AM
+3557;6;1;0;1;20592;102402;ALPLA\Francisco005;5/28/2026 11:44:32 AM;*AlplaEAI*;5/28/2026 11:55:59 AM
+3556;6;1;0;1;20591;102401;ALPLA\Francisco005;5/28/2026 11:44:08 AM;*AlplaEAI*;5/28/2026 11:56:52 AM
+3555;6;1;0;1;20590;102400;ALPLA\Francisco005;5/28/2026 11:43:11 AM;*AlplaEAI*;5/28/2026 11:57:55 AM
+3554;6;1;0;1;20588;102399;ALPLA\Francisco005;5/28/2026 9:26:32 AM;ALPLA\Francisco005;5/28/2026 2:16:09 PM
+3553;6;1;0;1;20579;102398;ALPLA\Francisco005;5/27/2026 7:02:06 PM;*AlplaEAI*;5/27/2026 7:08:26 PM
+3552;6;1;0;1;20578;102397;ALPLA\Francisco005;5/27/2026 7:01:26 PM;*AlplaEAI*;5/27/2026 7:06:37 PM
+3551;6;1;0;1;20551;102396;ALPLA\Francisco005;5/27/2026 5:06:38 PM;*AlplaEAI*;5/27/2026 6:47:02 PM
+3550;6;1;0;1;20550;102395;ALPLA\Francisco005;5/27/2026 5:06:19 PM;*AlplaEAI*;5/27/2026 6:30:08 PM
+3549;6;1;0;1;20549;102394;ALPLA\Francisco005;5/27/2026 5:05:55 PM;*AlplaEAI*;5/27/2026 6:28:04 PM
+3548;6;1;0;1;20548;102393;ALPLA\Francisco005;5/27/2026 5:05:32 PM;*AlplaEAI*;5/27/2026 6:26:49 PM
+
+(20 rows affected)
+
+Status;UebermittlungsStatus;Bestaetigt;Cnt
+------;--------------------;----------;---
+1;1;0;62
+2;1;0;33
+3;1;0;3
+4;1;0;12
+5;1;0;26
+6;1;0;830
+6;1;1;3
+7;1;1;141
+8;1;1;1325
+11;1;0;1
+
+(10 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_BestellungenJournal;Revision;1;2375;7/5/2023 9:32:03 AM;5/29/2026 9:52:03 AM
+T_BestellungenJournal;Revision;2;34;8/2/2023 5:52:54 PM;5/21/2026 8:14:16 PM
+T_BestellungenJournal;Revision;3;2;6/7/2024 3:35:12 PM;9/3/2024 6:02:24 PM
+
+(3 rows affected)
+
+IdBestellungJournal;IdBestellung;IdJournal;Revision;Add_User;Add_Date;Upd_User;Upd_Date
+-------------------;------------;---------;--------;--------;--------;--------;--------
+3410;3567;20617;1;ALPLA\Francisco005;5/29/2026 9:52:03 AM;ALPLA\Francisco005;5/29/2026 9:52:03 AM
+3409;3566;20616;1;ALPLA\Francisco005;5/29/2026 9:49:21 AM;ALPLA\Francisco005;5/29/2026 9:49:21 AM
+3408;3565;20615;1;ALPLA\Francisco005;5/29/2026 9:48:51 AM;ALPLA\Francisco005;5/29/2026 9:48:51 AM
+3407;3564;20614;1;ALPLA\Francisco005;5/29/2026 9:48:20 AM;ALPLA\Francisco005;5/29/2026 9:48:20 AM
+3406;3563;20613;1;ALPLA\Francisco005;5/29/2026 9:47:49 AM;ALPLA\Francisco005;5/29/2026 9:47:49 AM
+3405;3562;20612;1;ALPLA\Francisco005;5/29/2026 9:46:40 AM;ALPLA\Francisco005;5/29/2026 9:46:40 AM
+3404;3560;20606;1;ALPLA\Francisco005;5/28/2026 2:57:25 PM;ALPLA\Francisco005;5/28/2026 2:57:25 PM
+3403;3559;20605;1;ALPLA\Francisco005;5/28/2026 2:55:15 PM;ALPLA\Francisco005;5/28/2026 2:55:15 PM
+3402;3558;20593;1;ALPLA\Francisco005;5/28/2026 11:45:11 AM;ALPLA\Francisco005;5/28/2026 11:45:11 AM
+3401;3557;20592;1;ALPLA\Francisco005;5/28/2026 11:44:46 AM;ALPLA\Francisco005;5/28/2026 11:44:46 AM
+3400;3556;20591;1;ALPLA\Francisco005;5/28/2026 11:44:23 AM;ALPLA\Francisco005;5/28/2026 11:44:23 AM
+3399;3555;20590;1;ALPLA\Francisco005;5/28/2026 11:43:59 AM;ALPLA\Francisco005;5/28/2026 11:43:59 AM
+3398;3554;20588;1;ALPLA\Francisco005;5/28/2026 9:26:48 AM;ALPLA\Francisco005;5/28/2026 9:26:48 AM
+3397;3553;20579;1;ALPLA\Francisco005;5/27/2026 7:02:23 PM;ALPLA\Francisco005;5/27/2026 7:02:23 PM
+3396;3552;20578;1;ALPLA\Francisco005;5/27/2026 7:01:47 PM;ALPLA\Francisco005;5/27/2026 7:01:47 PM
+3395;3551;20551;1;ALPLA\Francisco005;5/27/2026 5:06:58 PM;ALPLA\Francisco005;5/27/2026 5:06:58 PM
+3394;3550;20550;1;ALPLA\Francisco005;5/27/2026 5:06:31 PM;ALPLA\Francisco005;5/27/2026 5:06:31 PM
+3393;3549;20549;1;ALPLA\Francisco005;5/27/2026 5:06:09 PM;ALPLA\Francisco005;5/27/2026 5:06:09 PM
+3392;3548;20548;1;ALPLA\Francisco005;5/27/2026 5:05:47 PM;ALPLA\Francisco005;5/27/2026 5:05:47 PM
+3391;3547;20547;1;ALPLA\Francisco005;5/27/2026 5:05:24 PM;ALPLA\Francisco005;5/27/2026 5:05:24 PM
+
+(20 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+T_EAIJournal;IdJournalStatus;11;1477;1/7/2023 11:44:28 AM;5/20/2026 12:59:43 PM;81;20381
+T_EAIJournal;IdJournalStatus;12;3;1/16/2023 10:39:08 AM;9/2/2024 5:10:01 PM;97;10391
+T_EAIJournal;IdJournalStatus;62;8592;11/17/2022 9:59:51 AM;5/29/2026 9:48:54 PM;1;20631
+T_EAIJournal;IdJournalStatus;64;156;2/9/2023 5:06:18 PM;5/21/2026 12:58:27 PM;140;20410
+T_EAIJournal;IdJournalStatus;91;940;8/2/2023 3:48:29 PM;5/29/2026 9:52:02 AM;1413;20617
+T_EAIJournal;IdJournalStatus;92;141;7/5/2023 9:32:02 AM;5/15/2026 1:09:37 PM;1361;20276
+T_EAIJournal;IdJournalStatus;93;5;10/11/2023 11:45:30 AM;5/20/2026 12:50:52 PM;4563;20379
+T_EAIJournal;IdJournalStatus;94;1325;7/5/2023 11:15:00 AM;2/11/2026 11:02:30 AM;1365;17863
+T_EAIJournal;IdJournalStatus;101;2;6/19/2024 9:55:17 AM;7/15/2024 5:34:35 PM;9473;9716
+
+(9 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_EAIJournal;IdJournalTyp;1;1480;1/7/2023 11:44:28 AM;5/20/2026 12:59:43 PM
+T_EAIJournal;IdJournalTyp;6;8748;11/17/2022 9:59:51 AM;5/29/2026 9:48:54 PM
+T_EAIJournal;IdJournalTyp;9;2411;7/5/2023 9:32:02 AM;5/29/2026 9:52:02 AM
+T_EAIJournal;IdJournalTyp;10;2;6/19/2024 9:55:17 AM;7/15/2024 5:34:35 PM
+
+(4 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_EAIJournal;IdJournalQuellModul;-1;1471;7/5/2023 10:49:52 AM;5/20/2026 12:59:43 PM
+T_EAIJournal;IdJournalQuellModul;5;8750;11/17/2022 9:59:51 AM;5/29/2026 9:48:54 PM
+T_EAIJournal;IdJournalQuellModul;10;9;1/7/2023 11:44:28 AM;9/2/2024 5:10:01 PM
+T_EAIJournal;IdJournalQuellModul;14;2411;7/5/2023 9:32:02 AM;5/29/2026 9:52:02 AM
+
+(4 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinJournalDate;MaxJournalDate;MinExportDate;MaxExportDate
+---------;-----------;-----------;---;--------------;--------------;-------------;-------------
+T_EAIJournal;Exportiert;SET (exported);12641;11/17/2022 9:59:51 AM;5/29/2026 9:48:54 PM;1/1/1900 12:00:00 AM;1/1/1900 12:00:00 AM
+
+(1 rows affected)
+
+IdJournalStatus;IdJournalTyp;IdJournalQuellModul;Cnt;MinDate;MaxDate
+---------------;------------;-------------------;---;-------;-------
+11;1;-1;1471;7/5/2023 10:49:52 AM;5/20/2026 12:59:43 PM
+11;1;10;6;1/7/2023 11:44:28 AM;2/9/2024 6:26:55 PM
+12;1;10;3;1/16/2023 10:39:08 AM;9/2/2024 5:10:01 PM
+62;6;5;8592;11/17/2022 9:59:51 AM;5/29/2026 9:48:54 PM
+64;6;5;156;2/9/2023 5:06:18 PM;5/21/2026 12:58:27 PM
+91;9;14;940;8/2/2023 3:48:29 PM;5/29/2026 9:52:02 AM
+92;9;14;141;7/5/2023 9:32:02 AM;5/15/2026 1:09:37 PM
+93;9;14;5;10/11/2023 11:45:30 AM;5/20/2026 12:50:52 PM
+94;9;14;1325;7/5/2023 11:15:00 AM;2/11/2026 11:02:30 AM
+101;10;5;2;6/19/2024 9:55:17 AM;7/15/2024 5:34:35 PM
+
+(10 rows affected)
+
+IdJournal;JournalNummer;IdJournalStatus;IdJournalTyp;IdJournalQuellModul;Exportiert;JournalDatum;IdLadeAuftrag;IdBestellVorschlag;Add_User;Add_Date;Upd_User;Upd_Date
+---------;-------------;---------------;------------;-------------------;----------;------------;-------------;------------------;--------;--------;--------;--------
+20631;108748;62;6;5;1/1/1900 12:00:00 AM;5/29/2026 9:48:54 PM;15980;-1;*ALPLAPROD_RS*;5/29/2026 9:48:54 PM;*ALPLAPROD_RS*;5/29/2026 9:48:54 PM
+20630;108747;62;6;5;1/1/1900 12:00:00 AM;5/29/2026 7:29:38 PM;15979;-1;ALPLA\Francisco005;5/29/2026 7:29:41 PM;ALPLA\Francisco005;5/29/2026 7:29:41 PM
+20629;108746;62;6;5;1/1/1900 12:00:00 AM;5/29/2026 7:27:24 PM;15978;-1;ALPLA\Francisco005;5/29/2026 7:27:27 PM;ALPLA\Francisco005;5/29/2026 7:27:27 PM
+20628;108745;62;6;5;1/1/1900 12:00:00 AM;5/29/2026 7:24:52 PM;3677;-1;ALPLA\Francisco005;5/29/2026 7:24:52 PM;ALPLA\Francisco005;5/29/2026 7:24:52 PM
+20627;108744;62;6;5;1/1/1900 12:00:00 AM;5/29/2026 7:23:33 PM;15977;-1;ALPLA\Francisco005;5/29/2026 7:23:37 PM;ALPLA\Francisco005;5/29/2026 7:23:37 PM
+20626;108743;62;6;5;1/1/1900 12:00:00 AM;5/29/2026 6:52:43 PM;15974;-1;*ALPLAPROD_RS*;5/29/2026 6:52:43 PM;*ALPLAPROD_RS*;5/29/2026 6:52:43 PM
+20625;108742;62;6;5;1/1/1900 12:00:00 AM;5/29/2026 6:44:54 PM;15975;-1;*ALPLAPROD_RS*;5/29/2026 6:44:54 PM;*ALPLAPROD_RS*;5/29/2026 6:44:54 PM
+20624;108741;62;6;5;1/1/1900 12:00:00 AM;5/29/2026 6:43:02 PM;3676;-1;ALPLA\Francisco005;5/29/2026 6:43:03 PM;ALPLA\Francisco005;5/29/2026 6:43:03 PM
+20623;108740;62;6;5;1/1/1900 12:00:00 AM;5/29/2026 5:26:05 PM;15973;-1;*ALPLAPROD_RS*;5/29/2026 5:26:05 PM;*ALPLAPROD_RS*;5/29/2026 5:26:05 PM
+20622;108739;62;6;5;1/1/1900 12:00:00 AM;5/29/2026 5:09:48 PM;15972;-1;*ALPLAPROD_RS*;5/29/2026 5:09:48 PM;*ALPLAPROD_RS*;5/29/2026 5:09:48 PM
+20621;108738;62;6;5;1/1/1900 12:00:00 AM;5/29/2026 2:13:08 PM;15970;-1;*ALPLAPROD_RS*;5/29/2026 2:13:08 PM;*ALPLAPROD_RS*;5/29/2026 2:13:08 PM
+20620;108737;62;6;5;1/1/1900 12:00:00 AM;5/29/2026 11:47:10 AM;15969;-1;*ALPLAPROD_RS*;5/29/2026 11:47:10 AM;*ALPLAPROD_RS*;5/29/2026 11:47:10 AM
+20619;108736;62;6;5;1/1/1900 12:00:00 AM;5/29/2026 11:43:21 AM;15968;-1;*ALPLAPROD_RS*;5/29/2026 11:43:21 AM;*ALPLAPROD_RS*;5/29/2026 11:43:21 AM
+20618;108735;62;6;5;1/1/1900 12:00:00 AM;5/29/2026 11:07:12 AM;15967;-1;*ALPLAPROD_RS*;5/29/2026 11:07:12 AM;*ALPLAPROD_RS*;5/29/2026 11:07:12 AM
+20617;102411;91;9;14;1/1/1900 12:00:00 AM;5/29/2026 9:52:02 AM;-1;3567;ALPLA\Francisco005;5/29/2026 9:52:03 AM;ALPLA\Francisco005;5/29/2026 9:52:03 AM
+20616;102410;91;9;14;1/1/1900 12:00:00 AM;5/29/2026 9:49:20 AM;-1;3566;ALPLA\Francisco005;5/29/2026 9:49:21 AM;ALPLA\Francisco005;5/29/2026 9:49:21 AM
+20615;102409;91;9;14;1/1/1900 12:00:00 AM;5/29/2026 9:48:50 AM;-1;3565;ALPLA\Francisco005;5/29/2026 9:48:51 AM;ALPLA\Francisco005;5/29/2026 9:48:51 AM
+20614;102408;91;9;14;1/1/1900 12:00:00 AM;5/29/2026 9:48:19 AM;-1;3564;ALPLA\Francisco005;5/29/2026 9:48:20 AM;ALPLA\Francisco005;5/29/2026 9:48:20 AM
+20613;102407;91;9;14;1/1/1900 12:00:00 AM;5/29/2026 9:47:48 AM;-1;3563;ALPLA\Francisco005;5/29/2026 9:47:49 AM;ALPLA\Francisco005;5/29/2026 9:47:49 AM
+20612;102406;91;9;14;1/1/1900 12:00:00 AM;5/29/2026 9:46:39 AM;-1;3562;ALPLA\Francisco005;5/29/2026 9:46:40 AM;ALPLA\Francisco005;5/29/2026 9:46:40 AM
+
+(20 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+T_EAIJournalSynch;Status;0;2;5/29/2026 6:43:03 PM;5/29/2026 7:24:52 PM;13875;13879
+T_EAIJournalSynch;Status;1;11879;6/1/2023 5:42:36 PM;5/29/2026 9:48:54 PM;1;13882
+T_EAIJournalSynch;Status;2;2;11/19/2024 6:57:59 AM;1/20/2026 12:38:47 PM;5411;10800
+
+(3 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_EAIJournalSynch;Aktion;1;5465;6/1/2023 5:42:36 PM;5/29/2026 9:48:54 PM
+T_EAIJournalSynch;Aktion;2;2322;7/30/2023 10:53:17 AM;5/29/2026 7:24:52 PM
+T_EAIJournalSynch;Aktion;3;4096;7/5/2023 9:32:03 AM;5/29/2026 9:52:03 AM
+
+(3 rows affected)
+
+Status;Aktion;Cnt;MinDate;MaxDate
+------;------;---;-------;-------
+0;2;2;5/29/2026 6:43:03 PM;5/29/2026 7:24:52 PM
+1;1;5463;6/1/2023 5:42:36 PM;5/29/2026 9:48:54 PM
+1;2;2320;7/30/2023 10:53:17 AM;5/29/2026 9:46:40 AM
+1;3;4096;7/5/2023 9:32:03 AM;5/29/2026 9:52:03 AM
+2;1;2;11/19/2024 6:57:59 AM;1/20/2026 12:38:47 PM
+
+(5 rows affected)
+
+IdEAIJournalSynch;IdJournal;IdEDIKonfiguration;Status;Aktion;TransaktionUID;Dateiname;Plandatum;Fehler;Bemerkung;Add_User;Add_Date;Upd_User;Upd_Date
+-----------------;---------;------------------;------;------;--------------;---------;---------;------;---------;--------;--------;--------;--------
+13882;20631;29;1;1;f044fcb4-ac27-42f3-b54b-44dffd80ea21;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia1\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia3_DESADV-in_00061-AlplaViana3(SOPRO)_2026052921485439.xml;5/29/2026 9:48:54 PM;;;*ALPLAPROD_RS*;5/29/2026 9:48:54 PM;*AlplaEAI*;5/29/2026 9:48:54 PM
+13881;20630;29;1;1;dba6a8f7-d862-492b-875b-b96f8bf180c9;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia1\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia3_DESADV-in_00061-AlplaViana3(SOPRO)_2026052919294193.xml;5/29/2026 7:29:38 PM;;;ALPLA\Francisco005;5/29/2026 7:29:41 PM;ALPLA\Francisco005;5/29/2026 7:29:42 PM
+13880;20629;29;1;1;d5224eab-e009-4f40-9e92-10b97ff6214a;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia1\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia3_DESADV-in_00061-AlplaViana3(SOPRO)_2026052919272812.xml;5/29/2026 7:27:24 PM;;;ALPLA\Francisco005;5/29/2026 7:27:27 PM;ALPLA\Francisco005;5/29/2026 7:27:28 PM
+13879;20628;-1;0;2;00000000-0000-0000-0000-000000000000;;5/29/2026 7:24:52 PM;;;ALPLA\Francisco005;5/29/2026 7:24:52 PM;ALPLA\Francisco005;5/29/2026 7:24:52 PM
+13878;20627;29;1;1;ca38ff00-7eeb-4b4c-bd30-8e048a9015bf;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia1\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia3_DESADV-in_00061-AlplaViana3(SOPRO)_2026052919233819.xml;5/29/2026 7:23:33 PM;;;ALPLA\Francisco005;5/29/2026 7:23:38 PM;ALPLA\Francisco005;5/29/2026 7:23:39 PM
+13877;20626;29;1;1;be42d90e-ea66-4760-a9c2-5bb8fcf47b25;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia1\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia3_DESADV-in_00061-AlplaViana3(SOPRO)_2026052918524370.xml;5/29/2026 6:52:43 PM;;;*ALPLAPROD_RS*;5/29/2026 6:52:43 PM;*AlplaEAI*;5/29/2026 6:52:43 PM
+13876;20625;29;1;1;6a1f2614-37ab-48d7-b693-cc29a6e02826;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia1\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia3_DESADV-in_00061-AlplaViana3(SOPRO)_2026052918445427.xml;5/29/2026 6:44:54 PM;;;*ALPLAPROD_RS*;5/29/2026 6:44:54 PM;*AlplaEAI*;5/29/2026 6:44:54 PM
+13875;20624;-1;0;2;00000000-0000-0000-0000-000000000000;;5/29/2026 6:43:02 PM;;;ALPLA\Francisco005;5/29/2026 6:43:03 PM;ALPLA\Francisco005;5/29/2026 6:43:03 PM
+13874;20620;29;1;1;3e3dade7-b8a1-4afd-b85c-79f329e643cf;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia1\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia3_DESADV-in_00061-AlplaViana3(SOPRO)_2026052911471029.xml;5/29/2026 11:47:10 AM;;;*ALPLAPROD_RS*;5/29/2026 11:47:10 AM;*AlplaEAI*;5/29/2026 11:47:10 AM
+13873;20617;32;1;1;9aa1145e-674e-4732-8c88-43b637b6e70a;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia1\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia2_ORDERS-in_00052-AlplaViana2(ZEE)_2026052909520419.xml;5/29/2026 9:52:03 AM;;;ALPLA\Francisco005;5/29/2026 9:52:03 AM;*ALPLAPROD_RS*;5/29/2026 9:52:04 AM
+13872;20617;-1;1;3;00000000-0000-0000-0000-000000000000;;5/29/2026 9:52:03 AM;;;ALPLA\Francisco005;5/29/2026 9:52:03 AM;*ALPLAPROD_RS*;5/29/2026 9:52:03 AM
+13871;20616;32;1;1;ef12136c-ea46-4642-b22d-288c8eed0ad6;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia1\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia2_ORDERS-in_00052-AlplaViana2(ZEE)_2026052909492209.xml;5/29/2026 9:49:21 AM;;;ALPLA\Francisco005;5/29/2026 9:49:21 AM;*ALPLAPROD_RS*;5/29/2026 9:49:22 AM
+13870;20616;-1;1;3;00000000-0000-0000-0000-000000000000;;5/29/2026 9:49:21 AM;;;ALPLA\Francisco005;5/29/2026 9:49:21 AM;*ALPLAPROD_RS*;5/29/2026 9:49:21 AM
+13869;20615;32;1;1;f23d0d93-dfe4-4027-a543-61dbade8c34e;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia1\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia2_ORDERS-in_00052-AlplaViana2(ZEE)_2026052909485234.xml;5/29/2026 9:48:51 AM;;;ALPLA\Francisco005;5/29/2026 9:48:51 AM;*ALPLAPROD_RS*;5/29/2026 9:48:52 AM
+13868;20615;-1;1;3;00000000-0000-0000-0000-000000000000;;5/29/2026 9:48:51 AM;;;ALPLA\Francisco005;5/29/2026 9:48:51 AM;*ALPLAPROD_RS*;5/29/2026 9:48:51 AM
+13867;20614;32;1;1;53ad4989-7fbb-4537-ba6d-4ea89503497d;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia1\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia2_ORDERS-in_00052-AlplaViana2(ZEE)_2026052909482086.xml;5/29/2026 9:48:20 AM;;;ALPLA\Francisco005;5/29/2026 9:48:20 AM;*ALPLAPROD_RS*;5/29/2026 9:48:20 AM
+13866;20614;-1;1;3;00000000-0000-0000-0000-000000000000;;5/29/2026 9:48:20 AM;;;ALPLA\Francisco005;5/29/2026 9:48:20 AM;*ALPLAPROD_RS*;5/29/2026 9:48:20 AM
+13865;20613;32;1;1;4428cf41-a940-44af-8fcb-ac45380851ca;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia1\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia2_ORDERS-in_00052-AlplaViana2(ZEE)_2026052909475009.xml;5/29/2026 9:47:49 AM;;;ALPLA\Francisco005;5/29/2026 9:47:49 AM;*ALPLAPROD_RS*;5/29/2026 9:47:50 AM
+13864;20613;-1;1;3;00000000-0000-0000-0000-000000000000;;5/29/2026 9:47:49 AM;;;ALPLA\Francisco005;5/29/2026 9:47:49 AM;*ALPLAPROD_RS*;5/29/2026 9:47:49 AM
+13863;20612;32;1;1;bbe08fb8-1acf-4f4d-b622-3cbc4f01e345;C:\Program Files\AlplaPROD\AlplaPROD_RS\aovia1\AlplaPROD_Interface$\Export\EDI\PLANT\Upload\aovia2_ORDERS-in_00052-AlplaViana2(ZEE)_2026052909464114.xml;5/29/2026 9:46:40 AM;;;ALPLA\Francisco005;5/29/2026 9:46:40 AM;*ALPLAPROD_RS*;5/29/2026 9:46:41 AM
+
+(20 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+T_Abrufe;Status;0;4041;11/1/2022 9:45:23 AM;5/29/2026 7:04:52 PM;20;6137
+
+(1 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_Abrufe;AbrufStatus;1;2646;8/14/2024 12:21:23 PM;5/29/2026 7:04:52 PM
+T_Abrufe;AbrufStatus;2;1160;11/1/2022 9:45:23 AM;2/24/2026 12:00:00 AM
+T_Abrufe;AbrufStatus;3;235;8/18/2023 12:08:34 PM;5/15/2026 12:00:00 AM
+
+(3 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_Abrufe;LadeStatus;0;385;1/1/1900 12:00:00 AM;5/29/2026 3:26:09 PM
+T_Abrufe;LadeStatus;1;7;4/25/2025 11:32:49 PM;5/14/2026 10:58:13 AM
+T_Abrufe;LadeStatus;10;433;11/21/2022 9:00:00 AM;5/29/2026 8:00:58 PM
+T_Abrufe;LadeStatus;11;3030;11/19/2022 9:00:00 AM;5/29/2026 8:04:28 PM
+T_Abrufe;LadeStatus;12;186;11/16/2022 12:00:00 PM;5/22/2026 5:00:10 PM
+
+(5 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_Abrufe;LieferStatus;0;384;1/1/1900 12:00:00 AM;1/1/1900 12:00:00 AM
+T_Abrufe;LieferStatus;1;5;10/10/2025 10:18:31 AM;1/1/1900 12:00:00 AM
+T_Abrufe;LieferStatus;6;2;4/25/2025 11:32:49 PM;1/1/1900 12:00:00 AM
+T_Abrufe;LieferStatus;11;5;7/30/2025 6:53:29 PM;1/1/1900 12:00:00 AM
+T_Abrufe;LieferStatus;20;466;11/21/2022 9:00:00 AM;5/29/2026 7:23:33 PM
+T_Abrufe;LieferStatus;21;3009;11/19/2022 9:00:00 AM;5/29/2026 9:48:54 PM
+T_Abrufe;LieferStatus;22;170;11/16/2022 12:00:00 PM;5/22/2026 4:45:11 PM
+
+(7 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_Abrufe;AbgleichStatus;0;3216;11/1/2022 9:56:25 AM;5/29/2026 7:04:52 PM
+T_Abrufe;AbgleichStatus;1;235;11/16/2022 2:59:21 PM;5/29/2026 2:26:34 PM
+T_Abrufe;AbgleichStatus;2;590;11/1/2022 9:45:23 AM;5/28/2026 7:48:26 PM
+
+(3 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_Abrufe;AbgleichTyp;1;4041;11/1/2022 9:45:23 AM;5/29/2026 7:04:52 PM
+
+(1 rows affected)
+
+Status;AbrufStatus;LadeStatus;LieferStatus;AbgleichStatus;Cnt
+------;-----------;----------;------------;--------------;---
+0;1;0;0;0;56
+0;1;0;0;1;51
+0;1;0;11;0;1
+0;1;1;1;0;1
+0;1;1;6;0;2
+0;1;10;11;0;1
+0;1;10;20;0;125
+0;1;11;11;0;2
+0;1;11;20;0;17
+0;1;11;21;0;2313
+0;1;11;21;2;2
+0;1;12;11;0;1
+0;1;12;20;0;13
+0;1;12;22;0;61
+0;2;0;0;0;14
+0;2;0;0;1;40
+0;2;10;20;0;148
+0;2;10;20;2;154
+0;2;11;20;0;1
+0;2;11;20;2;1
+0;2;11;21;0;328
+0;2;11;21;2;364
+0;2;12;20;0;2
+0;2;12;22;0;39
+0;2;12;22;2;69
+0;3;0;0;0;79
+0;3;0;0;1;144
+0;3;1;1;0;4
+0;3;10;20;0;5
+0;3;11;21;0;2
+0;3;12;22;0;1
+
+(31 rows affected)
+
+IdAbrufe;IdAuftragsAbruf;Status;AbrufStatus;LadeStatus;LieferStatus;AbgleichStatus;AbgleichTyp;AbrufDatum;LadeDatum;Lieferdatum;LetztesLieferDatum;Abrufnummer;Menge;LadeMenge;PlanMenge;Add_User;Add_Date;Upd_User;Upd_Date
+--------;---------------;------;-----------;----------;------------;--------------;-----------;----------;---------;-----------;------------------;-----------;-----;---------;---------;--------;--------;--------;--------
+6137;6139;0;1;11;21;0;1;5/29/2026 7:04:52 PM;5/29/2026 8:04:28 PM;5/29/2026 8:04:28 PM;5/29/2026 7:29:38 PM;2524;235008;235008;235008;*ALPLAPROD_RS*;5/29/2026 7:04:53 PM;*ALPLAPROD_RS*;5/29/2026 7:30:28 PM
+6136;6138;0;1;11;21;0;1;5/29/2026 7:04:17 PM;5/29/2026 8:03:49 PM;5/29/2026 8:03:49 PM;5/29/2026 9:48:54 PM;2523;144480;144480;144480;*ALPLAPROD_RS*;5/29/2026 7:04:17 PM;*AlplaEAI*;5/29/2026 9:48:54 PM
+6135;6137;0;1;0;0;1;1;5/29/2026 2:26:34 PM;5/29/2026 3:26:09 PM;5/29/2026 3:26:09 PM;1/1/1900 12:00:00 AM;907;22000;0;0;*ALPLAPROD_RS*;5/29/2026 2:26:35 PM;*ALPLAPROD_RS*;5/29/2026 2:26:35 PM
+6134;6136;0;1;10;20;0;1;5/29/2026 12:00:00 AM;5/29/2026 8:00:58 PM;5/29/2026 8:00:58 PM;5/29/2026 5:26:05 PM;3300002180;10000896;574464;574464;*ALPLAPROD_RS*;5/29/2026 10:48:26 AM;*AlplaEAI*;5/29/2026 5:26:05 PM
+6133;6135;0;1;11;21;0;1;5/29/2026 10:32:06 AM;5/29/2026 11:31:45 AM;5/29/2026 11:31:45 AM;5/29/2026 6:52:43 PM;2522;21600;21600;21600;*ALPLAPROD_RS*;5/29/2026 10:32:06 AM;*AlplaEAI*;5/29/2026 6:52:43 PM
+6132;6134;0;1;11;21;0;1;5/29/2026 10:31:33 AM;5/29/2026 11:31:04 AM;5/29/2026 11:31:04 AM;5/29/2026 7:27:24 PM;2521;261120;261120;261120;*ALPLAPROD_RS*;5/29/2026 10:31:34 AM;*ALPLAPROD_RS*;5/29/2026 7:30:28 PM
+6131;6133;0;1;11;21;0;1;5/29/2026 10:30:53 AM;5/29/2026 11:30:31 AM;5/29/2026 11:30:31 AM;5/29/2026 11:47:10 AM;2520;61920;61920;61920;*ALPLAPROD_RS*;5/29/2026 10:30:53 AM;*AlplaEAI*;5/29/2026 11:47:10 AM
+6130;6132;0;1;11;21;0;1;5/29/2026 10:30:12 AM;5/29/2026 11:29:40 AM;5/29/2026 11:29:40 AM;5/29/2026 6:44:54 PM;2519;192000;192000;192000;*ALPLAPROD_RS*;5/29/2026 10:30:13 AM;*AlplaEAI*;5/29/2026 6:44:54 PM
+6129;6131;0;1;11;20;0;1;5/29/2026 12:14:40 AM;5/29/2026 1:14:02 AM;5/29/2026 1:14:02 AM;5/29/2026 7:23:33 PM;2518;391680;391680;391680;*ALPLAPROD_RS*;5/29/2026 12:14:41 AM;ALPLA\Francisco005;5/29/2026 7:23:39 PM
+6128;6130;0;1;11;21;0;1;5/29/2026 12:13:52 AM;5/29/2026 1:12:40 AM;5/29/2026 1:12:40 AM;5/29/2026 2:45:02 AM;2517;123840;123840;123840;*ALPLAPROD_RS*;5/29/2026 12:13:52 AM;*AlplaEAI*;5/29/2026 2:45:03 AM
+6127;6129;0;1;11;21;2;1;5/28/2026 7:48:26 PM;5/28/2026 8:47:00 PM;5/28/2026 8:47:00 PM;5/28/2026 10:07:42 PM;2516;28800;28800;28800;*ALPLAPROD_RS*;5/28/2026 7:48:27 PM;ALPLA\narciso002;5/29/2026 4:37:39 AM
+6126;6128;0;1;10;20;0;1;5/28/2026 12:00:00 AM;5/28/2026 8:00:35 PM;5/28/2026 8:00:35 PM;5/29/2026 11:07:12 AM;;237600;158400;158400;*ALPLAPROD_RS*;5/28/2026 5:59:37 PM;*AlplaEAI*;5/29/2026 11:07:12 AM
+6125;6127;0;1;0;0;0;1;5/28/2026 12:00:00 AM;5/28/2026 8:00:15 PM;5/28/2026 8:00:15 PM;1/1/1900 12:00:00 AM;;237600;0;0;*ALPLAPROD_RS*;5/28/2026 4:29:19 PM;ALPLA\Francisco005;5/28/2026 5:58:36 PM
+6124;6126;0;1;11;21;0;1;5/28/2026 12:25:38 PM;5/28/2026 1:25:15 PM;5/28/2026 1:25:15 PM;5/28/2026 2:18:40 PM;906;22000;22000;22000;*ALPLAPROD_RS*;5/28/2026 12:25:39 PM;*AlplaEAI*;5/28/2026 2:18:40 PM
+6123;6125;0;1;11;21;0;1;5/28/2026 12:06:57 PM;5/28/2026 1:06:36 PM;5/28/2026 1:06:36 PM;5/28/2026 1:12:13 PM;905;22000;22000;22000;*ALPLAPROD_RS*;5/28/2026 12:06:57 PM;*AlplaEAI*;5/28/2026 1:12:13 PM
+6122;6124;0;1;11;21;0;1;5/28/2026 12:06:29 PM;5/28/2026 1:05:27 PM;5/28/2026 1:05:27 PM;5/28/2026 1:13:02 PM;904;22000;22000;22000;*ALPLAPROD_RS*;5/28/2026 12:06:30 PM;*AlplaEAI*;5/28/2026 1:13:02 PM
+6121;6123;0;1;11;21;0;1;5/28/2026 9:35:38 AM;5/28/2026 10:34:39 AM;5/28/2026 10:34:39 AM;5/28/2026 2:20:01 PM;2515;261120;261120;261120;*ALPLAPROD_RS*;5/28/2026 9:35:38 AM;*ALPLAPROD_RS*;5/28/2026 2:22:24 PM
+6120;6122;0;1;11;21;0;1;5/28/2026 9:34:21 AM;5/28/2026 10:33:05 AM;5/28/2026 10:33:05 AM;5/28/2026 12:50:46 PM;2514;123840;123840;123840;*ALPLAPROD_RS*;5/28/2026 9:34:21 AM;*AlplaEAI*;5/28/2026 12:50:46 PM
+6119;6121;0;1;11;21;0;1;5/28/2026 9:32:52 AM;5/28/2026 10:32:10 AM;5/28/2026 10:32:10 AM;5/28/2026 11:47:26 AM;2513;288000;288000;288000;*ALPLAPROD_RS*;5/28/2026 9:32:52 AM;*AlplaEAI*;5/28/2026 11:47:27 AM
+6118;6120;0;1;11;21;0;1;5/27/2026 7:49:53 PM;5/27/2026 8:49:03 PM;5/27/2026 8:49:03 PM;5/27/2026 9:19:40 PM;2512;25200;25200;25200;*ALPLAPROD_RS*;5/27/2026 7:49:53 PM;*AlplaEAI*;5/27/2026 9:19:40 PM
+
+(20 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+T_LadePlanungen;Status;1;18;7/6/2025 10:41:39 AM;5/25/2026 4:37:45 PM;13499;16633
+T_LadePlanungen;Status;6;10;3/29/2025 7:47:31 AM;5/18/2026 4:58:23 PM;12823;16564
+T_LadePlanungen;Status;11;59;11/27/2022 10:29:31 AM;5/29/2026 7:18:11 PM;74;16696
+T_LadePlanungen;Status;21;6883;11/17/2022 9:28:30 AM;5/29/2026 9:48:54 PM;24;16700
+
+(4 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_LadePlanungen;LadeStatus;0;1;5/1/2026 4:57:36 AM;5/1/2026 4:57:36 AM
+T_LadePlanungen;LadeStatus;1;26;3/29/2025 7:47:31 AM;5/25/2026 4:37:45 PM
+T_LadePlanungen;LadeStatus;10;86;11/18/2022 11:48:55 AM;4/30/2026 1:23:17 PM
+T_LadePlanungen;LadeStatus;11;6830;11/17/2022 9:28:30 AM;5/29/2026 9:48:54 PM
+T_LadePlanungen;LadeStatus;12;27;11/24/2022 12:36:10 PM;5/28/2026 9:24:21 PM
+
+(5 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_LadePlanungen;Typ;10;6970;11/17/2022 9:28:30 AM;5/29/2026 9:48:54 PM
+
+(1 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_LadePlanungen;PlanLogik;2;6970;11/17/2022 9:28:30 AM;5/29/2026 9:48:54 PM
+
+(1 rows affected)
+
+Status;LadeStatus;Typ;PlanLogik;Cnt
+------;----------;---;---------;---
+1;0;10;2;1
+1;1;10;2;16
+1;11;10;2;1
+6;1;10;2;10
+11;10;10;2;2
+11;11;10;2;46
+11;12;10;2;11
+21;10;10;2;84
+21;11;10;2;6783
+21;12;10;2;16
+
+(10 rows affected)
+
+IdLadePlanung;IdAbrufe;IdLadeAuftrag;IdLieferschein;Status;LadeStatus;Typ;PlanLogik;LieferDatum;Menge;LadeMenge;Add_User;Add_Date;Upd_User;Upd_Date
+-------------;--------;-------------;--------------;------;----------;---;---------;-----------;-----;---------;--------;--------;--------;--------
+16700;6136;15980;20631;21;11;10;2;5/29/2026 9:48:54 PM;144480;144480;ALPLA\Francisco005;5/29/2026 8:04:19 PM;*AlplaEAI*;5/29/2026 9:48:54 PM
+16699;6137;15979;20630;21;11;10;2;5/29/2026 7:29:38 PM;235008;235008;ALPLA\Francisco005;5/29/2026 7:28:37 PM;ALPLA\Francisco005;5/29/2026 7:29:42 PM
+16698;6132;15978;20629;21;11;10;2;5/29/2026 7:27:24 PM;261120;261120;ALPLA\Francisco005;5/29/2026 7:25:45 PM;ALPLA\Francisco005;5/29/2026 7:27:29 PM
+16697;6129;15977;20627;21;11;10;2;5/29/2026 7:23:33 PM;391680;391680;ALPLA\Francisco005;5/29/2026 7:20:16 PM;ALPLA\Francisco005;5/29/2026 7:23:39 PM
+16696;6129;15976;-1;11;11;10;2;1/1/1900 12:00:00 AM;0;0;ALPLA\Francisco005;5/29/2026 7:18:06 PM;ALPLA\Francisco005;5/29/2026 7:18:11 PM
+16695;6130;15975;20625;21;11;10;2;5/29/2026 6:44:54 PM;192000;192000;ALPLA\Francisco005;5/29/2026 6:37:33 PM;*AlplaEAI*;5/29/2026 6:44:54 PM
+16694;6133;15974;20626;21;11;10;2;5/29/2026 6:52:43 PM;21600;21600;ALPLA\Francisco005;5/29/2026 6:36:52 PM;*AlplaEAI*;5/29/2026 6:52:43 PM
+16693;6134;15973;20623;21;11;10;2;5/29/2026 5:26:05 PM;287232;287232;ALPLA\Francisco005;5/29/2026 4:30:01 PM;*AlplaEAI*;5/29/2026 5:26:05 PM
+16692;6099;15972;20622;21;11;10;2;5/29/2026 5:09:48 PM;227040;227040;ALPLA\Francisco005;5/29/2026 4:29:05 PM;*AlplaEAI*;5/29/2026 5:09:48 PM
+16690;6134;15970;20621;21;11;10;2;5/29/2026 2:13:08 PM;287232;287232;ALPLA\Francisco005;5/29/2026 1:26:26 PM;*AlplaEAI*;5/29/2026 2:13:08 PM
+16689;6131;15969;20620;21;11;10;2;5/29/2026 11:47:10 AM;61920;61920;ALPLA\Francisco005;5/29/2026 11:16:04 AM;*AlplaEAI*;5/29/2026 11:47:10 AM
+16688;6053;15968;20619;21;11;10;2;5/29/2026 11:43:21 AM;221760;221760;ALPLA\Francisco005;5/29/2026 10:58:30 AM;*AlplaEAI*;5/29/2026 11:43:21 AM
+16687;6126;15967;20618;21;11;10;2;5/29/2026 11:07:12 AM;79200;79200;ALPLA\Francisco005;5/29/2026 10:56:42 AM;*AlplaEAI*;5/29/2026 11:07:12 AM
+16685;6128;15965;20611;21;11;10;2;5/29/2026 2:45:02 AM;123840;123840;ALPLA\narciso002;5/29/2026 2:22:21 AM;*AlplaEAI*;5/29/2026 2:45:03 AM
+16684;6127;15964;20610;21;11;10;2;5/28/2026 10:07:42 PM;28800;28800;ALPLA\narciso002;5/28/2026 9:48:31 PM;*AlplaEAI*;5/28/2026 10:07:42 PM
+16683;6104;15963;-1;11;12;10;2;1/1/1900 12:00:00 AM;1764000;1800000;ALPLA\Francisco005;5/28/2026 7:27:15 PM;*ALPLAPROD_RS*;5/28/2026 9:24:21 PM
+16682;6126;15962;20607;21;11;10;2;5/28/2026 6:08:47 PM;79200;79200;ALPLA\Francisco005;5/28/2026 5:59:58 PM;*AlplaEAI*;5/28/2026 6:08:48 PM
+16677;6121;15957;20604;21;11;10;2;5/28/2026 2:20:01 PM;261120;261120;ALPLA\Francisco005;5/28/2026 2:18:15 PM;ALPLA\Francisco005;5/28/2026 2:20:06 PM
+16676;6124;15956;20603;21;11;10;2;5/28/2026 2:18:40 PM;22000;22000;ALPLA\shd_aovia1_apuser;5/28/2026 2:11:35 PM;*AlplaEAI*;5/28/2026 2:18:40 PM
+16675;6122;15955;20601;21;11;10;2;5/28/2026 1:13:02 PM;22000;22000;ALPLA\Francisco005;5/28/2026 1:01:56 PM;*AlplaEAI*;5/28/2026 1:13:02 PM
+
+(20 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+T_LadeAuftraege;Status;0;85;2/10/2024 12:00:00 PM;5/15/2026 9:02:48 PM;8950;15821
+T_LadeAuftraege;Status;1;17;5/31/2025 6:04:08 PM;5/25/2026 5:00:04 PM;12838;15913
+T_LadeAuftraege;Status;6;10;3/1/2025 1:00:00 AM;5/18/2026 7:00:00 PM;12169;15847
+T_LadeAuftraege;Status;11;59;11/27/2022 11:00:00 AM;5/29/2026 1:14:02 AM;53;15976
+T_LadeAuftraege;Status;21;6290;11/16/2022 12:00:00 PM;5/29/2026 8:04:28 PM;23;15980
+
+(5 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_LadeAuftraege;LadeStatus;0;85;2/10/2024 12:00:00 PM;5/15/2026 9:02:48 PM
+T_LadeAuftraege;LadeStatus;1;26;3/1/2025 1:00:00 AM;5/25/2026 5:00:04 PM
+T_LadeAuftraege;LadeStatus;10;70;11/16/2022 12:00:00 PM;4/30/2026 5:00:29 PM
+T_LadeAuftraege;LadeStatus;11;6253;11/16/2022 12:00:00 PM;5/29/2026 8:04:28 PM
+T_LadeAuftraege;LadeStatus;12;27;11/24/2022 1:00:00 PM;5/26/2026 8:00:08 PM
+
+(5 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_LadeAuftraege;LKWStatus;-1;2;2/8/2023 9:00:00 AM;2/3/2025 12:33:00 PM
+T_LadeAuftraege;LKWStatus;0;6459;11/16/2022 12:00:00 PM;5/29/2026 8:04:28 PM
+
+(2 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_LadeAuftraege;LieferplanStatus;0;6459;11/16/2022 12:00:00 PM;5/29/2026 8:04:28 PM
+T_LadeAuftraege;LieferplanStatus;20;2;6/7/2024 12:00:00 PM;7/15/2024 5:35:00 PM
+
+(2 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_LadeAuftraege;WAAvisoStatus;0;6458;11/16/2022 12:00:00 PM;5/29/2026 8:04:28 PM
+T_LadeAuftraege;WAAvisoStatus;20;2;1/16/2023 4:40:00 PM;11/1/2024 7:19:05 PM
+T_LadeAuftraege;WAAvisoStatus;40;1;7/21/2023 11:56:31 AM;7/21/2023 11:56:31 AM
+
+(3 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_LadeAuftraege;LieferAvisoStatus;0;2135;11/16/2022 12:00:00 PM;5/29/2026 8:00:58 PM
+T_LadeAuftraege;LieferAvisoStatus;20;4326;6/1/2023 5:18:06 PM;5/29/2026 8:04:28 PM
+
+(2 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_LadeAuftraege;SpedAnfrageStatus;0;6461;11/16/2022 12:00:00 PM;5/29/2026 8:04:28 PM
+
+(1 rows affected)
+
+Status;LadeStatus;LKWStatus;LieferplanStatus;Cnt
+------;----------;---------;----------------;---
+0;0;-1;0;1
+0;0;0;0;82
+0;0;0;20;2
+1;1;0;0;16
+1;11;0;0;1
+6;1;0;0;10
+11;10;0;0;2
+11;11;0;0;46
+11;12;0;0;11
+21;10;0;0;68
+21;11;-1;0;1
+21;11;0;0;6205
+21;12;0;0;16
+
+(13 rows affected)
+
+IdLadeAuftrag;Status;LadeStatus;LKWStatus;LieferplanStatus;WAAvisoStatus;LieferAvisoStatus;SpedAnfrageStatus;LadeDatum;LKWNummer;LKWBezeichnung;Add_User;Add_Date;Upd_User;Upd_Date
+-------------;------;----------;---------;----------------;-------------;-----------------;-----------------;---------;---------;--------------;--------;--------;--------;--------
+15980;21;11;0;0;0;20;0;5/29/2026 8:03:49 PM;;Tour 12;ALPLA\Francisco005;5/29/2026 8:04:19 PM;*AlplaEAI*;5/29/2026 9:48:54 PM
+15979;21;11;0;0;0;20;0;5/29/2026 8:04:28 PM;;Tour 11;ALPLA\Francisco005;5/29/2026 7:28:37 PM;ALPLA\Francisco005;5/29/2026 7:29:42 PM
+15978;21;11;0;0;0;20;0;5/29/2026 11:31:04 AM;;Tour 10;ALPLA\Francisco005;5/29/2026 7:25:45 PM;ALPLA\Francisco005;5/29/2026 7:27:29 PM
+15977;21;11;0;0;0;20;0;5/29/2026 1:14:02 AM;;Tour 9;ALPLA\Francisco005;5/29/2026 7:20:16 PM;ALPLA\Francisco005;5/29/2026 7:23:39 PM
+15976;11;11;0;0;0;0;0;5/29/2026 1:14:02 AM;;Tour 8;ALPLA\Francisco005;5/29/2026 7:18:06 PM;ALPLA\Francisco005;5/29/2026 7:18:11 PM
+15975;21;11;0;0;0;20;0;5/29/2026 11:29:40 AM;;Tour 7;ALPLA\Francisco005;5/29/2026 6:37:33 PM;*ALPLAPROD_RS*;5/29/2026 6:51:36 PM
+15974;21;11;0;0;0;20;0;5/29/2026 11:31:45 AM;;Tour 6;ALPLA\Francisco005;5/29/2026 6:36:52 PM;*AlplaEAI*;5/29/2026 6:52:43 PM
+15973;21;11;0;0;0;0;0;5/29/2026 8:00:58 PM;;Tour 5;ALPLA\Francisco005;5/29/2026 4:30:01 PM;*AlplaEAI*;5/29/2026 5:26:05 PM
+15972;21;11;0;0;0;0;0;5/26/2026 5:00:08 PM;;Tour 16;ALPLA\Francisco005;5/29/2026 4:29:05 PM;*ALPLAPROD_RS*;5/29/2026 5:22:55 PM
+15970;21;11;0;0;0;0;0;5/29/2026 8:00:58 PM;;Tour 4;ALPLA\Francisco005;5/29/2026 1:26:26 PM;*ALPLAPROD_RS*;5/29/2026 4:32:02 PM
+15969;21;11;0;0;0;20;0;5/29/2026 11:30:31 AM;;Tour 3;ALPLA\Francisco005;5/29/2026 11:16:04 AM;*ALPLAPROD_RS*;5/29/2026 6:41:40 PM
+15968;21;11;0;0;0;0;0;5/20/2026 7:00:40 PM;;Tour 9;ALPLA\Francisco005;5/29/2026 10:58:29 AM;*ALPLAPROD_RS*;5/29/2026 2:09:25 PM
+15967;21;11;0;0;0;0;0;5/28/2026 8:00:35 PM;;Tour 9;ALPLA\Francisco005;5/29/2026 10:56:42 AM;*ALPLAPROD_RS*;5/29/2026 11:39:44 AM
+15965;21;11;0;0;0;20;0;5/29/2026 1:12:40 AM;;Tour 1;ALPLA\narciso002;5/29/2026 2:22:21 AM;*ALPLAPROD_RS*;5/29/2026 10:59:49 AM
+15964;21;11;0;0;0;20;0;5/28/2026 8:47:00 PM;;Tour 8;ALPLA\narciso002;5/28/2026 9:48:31 PM;*ALPLAPROD_RS*;5/29/2026 2:36:06 AM
+15963;11;12;0;0;0;0;0;5/26/2026 8:00:08 PM;;Tour 15;ALPLA\Francisco005;5/28/2026 7:27:15 PM;*ALPLAPROD_RS*;5/29/2026 9:47:12 PM
+15962;21;11;0;0;0;0;0;5/28/2026 8:00:35 PM;;Tour 7;ALPLA\Francisco005;5/28/2026 5:59:58 PM;*ALPLAPROD_RS*;5/29/2026 11:46:15 AM
+15957;21;11;0;0;0;20;0;5/28/2026 10:34:39 AM;;Tour 6;ALPLA\Francisco005;5/28/2026 2:18:15 PM;ALPLA\Francisco005;5/28/2026 2:20:06 PM
+15956;21;11;0;0;0;20;0;5/28/2026 2:25:00 PM;;Tour 5;ALPLA\shd_aovia1_apuser;5/28/2026 2:11:35 PM;*ALPLAPROD_RS*;5/28/2026 9:57:25 PM
+15955;21;11;0;0;0;20;0;5/28/2026 1:05:27 PM;;Tour 4;ALPLA\Francisco005;5/28/2026 1:01:56 PM;*ALPLAPROD_RS*;5/28/2026 6:01:29 PM
+
+(20 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+T_Wareneingaenge;Status;0;256;7/5/2023 9:31:09 AM;5/29/2026 11:49:00 AM;1;3722
+T_Wareneingaenge;Status;1;4;1/28/2025 1:39:53 PM;5/21/2026 8:13:33 PM;2302;3666
+T_Wareneingaenge;Status;6;3;3/8/2025 12:18:25 PM;5/16/2026 10:06:00 AM;2368;3618
+T_Wareneingaenge;Status;11;12;8/2/2023 3:42:07 PM;5/13/2026 5:09:00 PM;32;3608
+T_Wareneingaenge;Status;21;2441;7/30/2023 9:51:35 AM;5/29/2026 11:51:28 AM;4;3723
+
+(5 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_Wareneingaenge;AbgleichStatus;0;157;9/22/2023 12:15:12 PM;5/27/2026 5:06:19 PM
+T_Wareneingaenge;AbgleichStatus;1;28;8/8/2025 12:02:33 PM;5/29/2026 11:49:00 AM
+T_Wareneingaenge;AbgleichStatus;2;2531;7/5/2023 9:31:09 AM;5/29/2026 11:51:28 AM
+
+(3 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_Wareneingaenge;BestellPositionStatus;-1;97;9/22/2023 12:15:12 PM;5/13/2026 5:09:00 PM
+T_Wareneingaenge;BestellPositionStatus;2;40;3/26/2024 9:25:08 AM;5/29/2026 11:49:00 AM
+T_Wareneingaenge;BestellPositionStatus;4;57;10/11/2023 11:44:53 AM;5/27/2026 5:06:19 PM
+T_Wareneingaenge;BestellPositionStatus;5;23;9/12/2025 4:47:20 PM;5/5/2026 8:49:48 AM
+T_Wareneingaenge;BestellPositionStatus;6;799;4/29/2024 10:02:47 AM;5/29/2026 11:51:28 AM
+T_Wareneingaenge;BestellPositionStatus;7;1550;7/5/2023 11:14:43 AM;2/11/2026 11:02:16 AM
+T_Wareneingaenge;BestellPositionStatus;8;150;7/5/2023 9:31:09 AM;5/15/2026 2:09:00 PM
+
+(7 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_Wareneingaenge;EurologStatus;-1;2716;7/5/2023 9:31:09 AM;5/29/2026 11:51:28 AM
+
+(1 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_Wareneingaenge;Typ;20;2619;7/5/2023 9:31:09 AM;5/29/2026 11:51:28 AM
+T_Wareneingaenge;Typ;21;2;6/3/2025 4:29:00 PM;5/13/2026 5:09:00 PM
+T_Wareneingaenge;Typ;22;73;10/1/2025 4:34:00 PM;4/27/2026 5:09:00 PM
+T_Wareneingaenge;Typ;30;22;9/22/2023 12:15:12 PM;2/24/2026 4:33:17 PM
+
+(4 rows affected)
+
+Status;AbgleichStatus;BestellPositionStatus;EurologStatus;Typ;Cnt
+------;--------------;---------------------;-------------;---;---
+0;0;-1;-1;22;22
+0;0;-1;-1;30;9
+0;0;7;-1;20;1
+0;1;2;-1;20;28
+0;2;2;-1;20;7
+0;2;7;-1;20;39
+0;2;8;-1;20;150
+1;2;4;-1;20;4
+6;0;4;-1;20;3
+11;0;-1;-1;21;1
+11;0;-1;-1;30;1
+11;0;4;-1;20;7
+11;2;4;-1;20;2
+11;2;7;-1;20;1
+21;0;-1;-1;21;1
+21;0;-1;-1;22;51
+21;0;-1;-1;30;12
+21;0;2;-1;20;5
+21;0;4;-1;20;41
+21;0;6;-1;20;1
+21;0;7;-1;20;2
+21;2;5;-1;20;23
+21;2;6;-1;20;798
+21;2;7;-1;20;1507
+
+(24 rows affected)
+
+IdWareneingang;IdBestellung;IdBestellPosition;IdJournal;IdAuftragsAbruf;Status;AbgleichStatus;BestellPositionStatus;EurologStatus;Typ;Datum;SollMenge;IstMenge;Add_User;Add_Date;Upd_User;Upd_Date
+--------------;------------;-----------------;---------;---------------;------;--------------;---------------------;-------------;---;-----;---------;--------;--------;--------;--------;--------
+3723;3567;3661;20617;-1;21;2;6;-1;20;5/29/2026 11:51:28 AM;287232;0;ALPLA\Francisco005;5/29/2026 9:52:03 AM;ALPLA\Francisco005;5/29/2026 7:24:53 PM
+3722;3566;3660;20616;-1;0;1;2;-1;20;5/29/2026 11:49:00 AM;287232;0;ALPLA\Francisco005;5/29/2026 9:49:21 AM;ALPLA\Francisco005;5/29/2026 9:49:21 AM
+3721;3565;3659;20615;-1;0;1;2;-1;20;5/29/2026 11:48:28 AM;287232;0;ALPLA\Francisco005;5/29/2026 9:48:51 AM;ALPLA\Francisco005;5/29/2026 9:48:51 AM
+3720;3564;3658;20614;-1;0;1;2;-1;20;5/29/2026 10:47:57 AM;287232;0;ALPLA\Francisco005;5/29/2026 9:48:20 AM;ALPLA\Francisco005;5/29/2026 9:48:20 AM
+3719;3563;3657;20613;-1;0;1;2;-1;20;5/29/2026 11:47:28 AM;287232;0;ALPLA\Francisco005;5/29/2026 9:47:49 AM;ALPLA\Francisco005;5/29/2026 9:47:49 AM
+3718;3562;3656;20612;-1;21;2;6;-1;20;5/29/2026 9:46:16 AM;287232;0;ALPLA\Francisco005;5/29/2026 9:46:40 AM;ALPLA\Francisco005;5/29/2026 6:43:04 PM
+3717;3560;3655;20606;-1;21;2;6;-1;20;5/28/2026 2:56:09 PM;2772000;0;ALPLA\Francisco005;5/28/2026 2:57:26 PM;ALPLA\Francisco005;5/28/2026 7:26:31 PM
+3716;3559;3654;20605;-1;21;2;6;-1;20;5/28/2026 4:54:52 PM;287232;0;ALPLA\Francisco005;5/28/2026 2:55:16 PM;ALPLA\Francisco005;5/28/2026 7:25:01 PM
+3715;3558;3653;20593;-1;21;2;6;-1;20;5/28/2026 11:44:56 AM;22000;0;ALPLA\Francisco005;5/28/2026 11:45:11 AM;ALPLA\Francisco005;5/28/2026 11:59:25 AM
+3714;3557;3652;20592;-1;21;2;6;-1;20;5/28/2026 11:44:32 AM;22000;0;ALPLA\Francisco005;5/28/2026 11:44:46 AM;ALPLA\Francisco005;5/28/2026 11:59:25 AM
+3713;3556;3651;20591;-1;21;2;6;-1;20;5/28/2026 11:44:08 AM;22000;0;ALPLA\Francisco005;5/28/2026 11:44:23 AM;ALPLA\Francisco005;5/28/2026 11:59:25 AM
+3712;3555;3650;20590;-1;21;2;6;-1;20;5/28/2026 11:43:11 AM;22000;0;ALPLA\Francisco005;5/28/2026 11:43:59 AM;ALPLA\Francisco005;5/28/2026 11:59:25 AM
+3711;3554;3649;20588;-1;21;2;6;-1;20;5/28/2026 9:26:32 AM;287232;0;ALPLA\Francisco005;5/28/2026 9:26:48 AM;ALPLA\Francisco005;5/28/2026 2:16:09 PM
+3710;3553;3648;20579;-1;21;2;6;-1;20;5/27/2026 7:02:07 PM;22000;0;ALPLA\Francisco005;5/27/2026 7:02:23 PM;ALPLA\Francisco005;5/27/2026 7:08:36 PM
+3709;3552;3647;20578;-1;21;2;6;-1;20;5/27/2026 7:01:26 PM;22000;0;ALPLA\Francisco005;5/27/2026 7:01:47 PM;ALPLA\Francisco005;5/27/2026 7:06:46 PM
+3708;3551;3646;20551;-1;21;2;6;-1;20;5/27/2026 5:06:38 PM;22000;0;ALPLA\Francisco005;5/27/2026 5:06:58 PM;ALPLA\Francisco005;5/27/2026 7:02:33 PM
+3707;3550;3645;20550;-1;21;0;4;-1;20;5/27/2026 5:06:19 PM;22000;0;ALPLA\Francisco005;5/27/2026 5:06:32 PM;*AlplaEAI*;5/27/2026 6:30:08 PM
+3706;3549;3644;20549;-1;21;0;4;-1;20;5/27/2026 5:05:55 PM;22000;0;ALPLA\Francisco005;5/27/2026 5:06:09 PM;*AlplaEAI*;5/27/2026 6:28:04 PM
+3705;3548;3643;20548;-1;21;0;4;-1;20;5/27/2026 5:05:32 PM;22000;0;ALPLA\Francisco005;5/27/2026 5:05:47 PM;*AlplaEAI*;5/27/2026 6:26:49 PM
+3704;3547;3642;20547;-1;21;0;4;-1;20;5/27/2026 5:05:11 PM;22000;0;ALPLA\Francisco005;5/27/2026 5:05:24 PM;*AlplaEAI*;5/27/2026 6:25:20 PM
+
+(20 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate;MinPK;MaxPK
+---------;-----------;-----------;---;-------;-------;-----;-----
+T_WareneingangPlanungen;Status;1;20;12/1/2023 9:58:28 AM;5/26/2026 5:36:36 PM;1138;3828
+T_WareneingangPlanungen;Status;6;7;3/10/2025 6:33:00 PM;5/20/2026 1:34:41 PM;2466;3790
+T_WareneingangPlanungen;Status;11;17;8/2/2023 6:13:59 PM;5/21/2026 7:55:30 PM;48;3788
+T_WareneingangPlanungen;Status;21;2573;1/13/2023 7:49:53 PM;5/29/2026 7:24:52 PM;1;3872
+
+(4 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_WareneingangPlanungen;LadeStatus;0;22;10/31/2024 3:24:45 PM;5/26/2026 5:36:36 PM
+T_WareneingangPlanungen;LadeStatus;1;3;1/13/2023 7:49:53 PM;9/21/2024 11:28:22 AM
+T_WareneingangPlanungen;LadeStatus;10;39;4/13/2024 10:34:13 AM;2/26/2026 9:32:53 AM
+T_WareneingangPlanungen;LadeStatus;11;2527;1/13/2023 7:49:53 PM;5/29/2026 7:24:52 PM
+T_WareneingangPlanungen;LadeStatus;12;26;2/5/2024 4:55:24 PM;5/21/2026 12:56:29 PM
+
+(5 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+T_WareneingangPlanungen;Typ;10;59;1/13/2023 7:49:53 PM;4/30/2026 3:28:25 PM
+T_WareneingangPlanungen;Typ;20;2490;7/30/2023 10:37:35 AM;5/29/2026 7:24:52 PM
+T_WareneingangPlanungen;Typ;21;2;6/3/2025 4:29:36 PM;5/21/2026 7:55:30 PM
+T_WareneingangPlanungen;Typ;22;51;10/9/2025 4:52:45 PM;4/27/2026 5:11:33 PM
+T_WareneingangPlanungen;Typ;30;15;10/22/2024 12:02:18 PM;2/27/2026 12:55:17 PM
+
+(5 rows affected)
+
+IdWareneingangPlanung;IdWareneingang;IdWareneingangAuftrag;IdJournal;IdLadePlanung;Status;LadeStatus;Typ;Menge;EntladeMenge;Add_User;Add_Date;Upd_User;Upd_Date
+---------------------;--------------;---------------------;---------;-------------;------;----------;---;-----;------------;--------;--------;--------;--------
+3872;3723;3677;-1;-1;21;11;20;287232;287232;ALPLA\Francisco005;5/29/2026 7:23:59 PM;ALPLA\Francisco005;5/29/2026 7:24:52 PM
+3871;3718;3676;-1;-1;21;11;20;52224;52224;ALPLA\Francisco005;5/29/2026 6:41:49 PM;ALPLA\Francisco005;5/29/2026 6:43:03 PM
+3870;3718;3676;-1;-1;21;11;20;235008;235008;ALPLA\Francisco005;5/29/2026 6:41:49 PM;ALPLA\Francisco005;5/29/2026 6:43:03 PM
+3869;3717;3675;-1;-1;21;11;20;900000;900000;ALPLA\Francisco005;5/28/2026 7:25:10 PM;ALPLA\Francisco005;5/28/2026 7:26:31 PM
+3868;3717;3675;-1;-1;21;11;20;3060000;3060000;ALPLA\Francisco005;5/28/2026 7:25:10 PM;ALPLA\Francisco005;5/28/2026 7:26:30 PM
+3867;3716;3674;-1;-1;21;11;20;287232;287232;ALPLA\Francisco005;5/28/2026 7:24:00 PM;ALPLA\Francisco005;5/28/2026 7:25:00 PM
+3866;3711;3673;-1;-1;21;11;20;287232;287232;ALPLA\Francisco005;5/28/2026 2:10:07 PM;ALPLA\Francisco005;5/28/2026 2:16:09 PM
+3865;3712;3672;-1;-1;21;11;20;22000;22000;ALPLA\Francisco005;5/28/2026 11:53:08 AM;*AlplaEAI*;5/28/2026 11:57:55 AM
+3864;3713;3671;-1;-1;21;11;20;22000;22000;ALPLA\Francisco005;5/28/2026 11:52:37 AM;*AlplaEAI*;5/28/2026 11:56:52 AM
+3863;3714;3670;-1;-1;21;11;20;22000;22000;ALPLA\Francisco005;5/28/2026 11:52:01 AM;*AlplaEAI*;5/28/2026 11:55:59 AM
+3862;3715;3669;-1;-1;21;11;20;22000;22000;ALPLA\Francisco005;5/28/2026 11:50:00 AM;*AlplaEAI*;5/28/2026 11:54:49 AM
+3861;3710;3668;-1;-1;21;11;20;22000;22000;ALPLA\Francisco005;5/27/2026 7:06:48 PM;*AlplaEAI*;5/27/2026 7:08:26 PM
+3860;3709;3667;-1;-1;21;11;20;22000;22000;ALPLA\Francisco005;5/27/2026 7:02:38 PM;*AlplaEAI*;5/27/2026 7:06:37 PM
+3859;3708;3666;-1;-1;21;11;20;22000;22000;ALPLA\Francisco005;5/27/2026 5:52:40 PM;*AlplaEAI*;5/27/2026 6:47:02 PM
+3858;3707;3665;-1;-1;21;11;20;22000;22000;ALPLA\Francisco005;5/27/2026 5:51:49 PM;*AlplaEAI*;5/27/2026 6:30:08 PM
+3857;3706;3664;-1;-1;21;11;20;22000;22000;ALPLA\Francisco005;5/27/2026 5:51:20 PM;*AlplaEAI*;5/27/2026 6:28:04 PM
+3856;3705;3663;-1;-1;21;11;20;22000;22000;ALPLA\Francisco005;5/27/2026 5:50:48 PM;*AlplaEAI*;5/27/2026 6:26:49 PM
+3855;3704;3662;-1;-1;21;11;20;22000;22000;ALPLA\Francisco005;5/27/2026 5:50:06 PM;*AlplaEAI*;5/27/2026 6:25:20 PM
+3854;3703;3661;-1;-1;21;11;20;22000;22000;ALPLA\Francisco005;5/27/2026 5:49:38 PM;*AlplaEAI*;5/27/2026 6:24:15 PM
+3853;3702;3660;-1;-1;21;11;20;22000;22000;ALPLA\Francisco005;5/27/2026 5:49:08 PM;*AlplaEAI*;5/27/2026 6:22:57 PM
+
+(20 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinProdTag;MaxProdTag;MinAddDate;MaxUpdDate
+---------;-----------;-----------;---;----------;----------;----------;----------
+T_InhouseLieferungen;RowSummary;ALL;0;;;;
+
+(1 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+
+(0 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinDate;MaxDate
+---------;-----------;-----------;---;-------;-------
+
+(0 rows affected)
+
+IdInhouseLieferung;ProdTag;IdArtikelVariante;IdVpkVorschrift;IdHauptmaterial;IdAdresse;LieferMenge;BufferRetourMenge;LieferMengeVereinbart;IdJournal;JournalNummer;JournalPositionGuid;SammelGuid;LieferscheinDatum;KundenAuftragsNummer;KundenPositionsNummer;Add_User;Add_Date;Upd_User;Upd_Date
+------------------;-------;-----------------;---------------;---------------;---------;-----------;-----------------;---------------------;---------;-------------;-------------------;----------;-----------------;--------------------;---------------------;--------;--------;--------;--------
+
+(0 rows affected)
+
+TableName;StatusField;StatusValue;Cnt;MinProdTag;MaxProdTag;MinAddDate;MaxUpdDate
+---------;-----------;-----------;---;----------;----------;----------;----------
+T_InhouseBewegungen;RowSummary;ALL;0;;;;
+
+(1 rows affected)
+
+IdInhouseBewegung;ProdTag;IdArtikelVariante;ProduzierteMenge;FehlMenge;BufferEinlagerungsMenge;BufferLieferMenge;BufferRetourMenge;LieferMenge;Add_User;Add_Date;Upd_User;Upd_Date
+-----------------;-------;-----------------;----------------;---------;-----------------------;-----------------;-----------------;-----------;--------;--------;--------;--------
+
+(0 rows affected)
+
+TABLE_CATALOG;TABLE_SCHEMA;TABLE_NAME;COLUMN_NAME;ORDINAL_POSITION;COLUMN_DEFAULT;IS_NULLABLE;DATA_TYPE;CHARACTER_MAXIMUM_LENGTH;CHARACTER_OCTET_LENGTH;NUMERIC_PRECISION;NUMERIC_PRECISION_RADIX;NUMERIC_SCALE;DATETIME_PRECISION;CHARACTER_SET_CATALOG;CHARACTER_SET_SCHEMA;CHARACTER_SET_NAME;COLLATION_CATALOG;COLLATION_SCHEMA;COLLATION_NAME;DOMAIN_CATALOG;DOMAIN_SCHEMA;DOMAIN_NAME
+-------------;------------;----------;-----------;----------------;--------------;-----------;---------;------------------------;----------------------;-----------------;-----------------------;-------------;------------------;---------------------;--------------------;------------------;-----------------;----------------;--------------;--------------;-------------;-----------
+
+(0 rows affected)
+
+TableName;ApproxRowCount
+---------;--------------
+T_AppHygieneStatus;0
+T_ProduktionsRueckmeldungTagesStatus;3154
+
+(2 rows affected)
+
+TABLE_NAME;COLUMN_NAME;ORDINAL_POSITION;DATA_TYPE;CHARACTER_MAXIMUM_LENGTH;IS_NULLABLE
+----------;-----------;----------------;---------;------------------------;-----------
+
+(0 rows affected)
+
+
