@@ -10,13 +10,13 @@
 # URL:            https://portalgerencial.alpla.net
 #
 # This script prepares the server-side Production environment.
-# It is idempotent — running it multiple times will not create duplicates
+# It is idempotent - running it multiple times will not create duplicates
 # or break existing configuration.
 #
 # IMPORTANT:
 # - Must be run as Administrator on AOVIA1VMS011.
-# - Does NOT create databases — that is a manual DBA task.
-# - Does NOT store secrets — connection strings and certificates
+# - Does NOT create databases - that is a manual DBA task.
+# - Does NOT store secrets - connection strings and certificates
 #   are provided via parameters or configured manually.
 # - Does NOT modify the Test environment in any way.
 #
@@ -92,7 +92,6 @@ Log-Info "=========================================="
 Log-Info "Production Environment Bootstrap Starting"
 Log-Info "=========================================="
 
-# Verify running as Administrator
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Log-Error "This script must be run as Administrator."
@@ -102,7 +101,7 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
 # Hostname check (informational)
 $ComputerName = $env:COMPUTERNAME
 if ($ComputerName -ne "AOVIA1VMS011") {
-    Log-Warn "Running on '$ComputerName' — expected 'AOVIA1VMS011'. Proceeding anyway."
+    Log-Warn "Running on '$ComputerName' - expected 'AOVIA1VMS011'. Proceeding anyway."
 }
 
 # =============================================================================
@@ -142,7 +141,7 @@ if ($portInUse) {
             Log-Warn "Port $ApiPort is in use by PID: $procId (process details unavailable)"
         }
     }
-    # Don't fail — the port might be in use by the Prod API itself (script re-run)
+    # Don't fail - the port might be in use by the Prod API itself (script re-run)
     Log-Warn "Port $ApiPort is currently in use. If this is the Production API, this is expected on re-run."
 } else {
     Log-Info "Port $ApiPort is available."
@@ -332,7 +331,7 @@ Log-Info "--- Step 8: Creating Production frontend web.config ---"
 
 $prodWebConfig = Join-Path $ProdWebPath "web.config"
 
-# Only create if it does not already exist — never overwrite a manually configured file
+# Only create if it does not already exist - never overwrite a manually configured file
 if (-not (Test-Path $prodWebConfig)) {
     if ($PSCmdlet.ShouldProcess($prodWebConfig, "Create Production web.config")) {
         $webConfigContent = @"
@@ -477,7 +476,7 @@ if (-not [string]::IsNullOrWhiteSpace($ConnectionString)) {
                 $conn.Close()
                 exit 1
             } else {
-                Log-Warn "Connected to database [$dbName] — expected [$DatabaseName]."
+                Log-Warn "Connected to database [$dbName] - expected [$DatabaseName]."
             }
         }
         $reader.Close()

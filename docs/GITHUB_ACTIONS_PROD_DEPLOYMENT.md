@@ -140,6 +140,17 @@ A GitHub Environment named **`production`** must be configured in the repository
 
 Before the first deployment, run the bootstrap script on `AOVIA1VMS011` as Administrator:
 
+3. **Transfer the files to AOVIA1VMS011**
+   - Copy `setup-production-environment.ps1` and `validate-production-environment.ps1` to the server (e.g. `C:\temp\deploy-scripts\`).
+   - *Important:* Ensure the files are copied exactly as UTF-8. You can validate they didn't get corrupted during transfer by running this on the server:
+     ```powershell
+     $t=$null; $e=$null; [System.Management.Automation.Language.Parser]::ParseFile("setup-production-environment.ps1", [ref]$t, [ref]$e) | Out-Null; $e
+     ```
+     (This should return absolutely nothing if the file is intact).
+
+4. **Run the bootstrap script**
+   - Open PowerShell **as Administrator**.:
+
 ```powershell
 cd C:\path\to\scripts\server
 .\setup-production-environment.ps1

@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # Alpla Angola - Portal Gerencial
 # Production Environment Validation Script
 # =============================================================================
@@ -18,7 +18,7 @@ function Write-Check {
     $status = if ($Pass) { "[PASS]" } else { "[FAIL]" }
     $color  = if ($Pass) { "Green" } else { "Red" }
     $line   = "$status $Name"
-    if ($Detail) { $line += " — $Detail" }
+    if ($Detail) { $line += " - $Detail" }
     Write-Host $line -ForegroundColor $color
     return $Pass
 }
@@ -125,13 +125,13 @@ if ($null -ne $portListeners) {
     }
     if (Write-Check "Port 5002 listener" $true $detail) { $passedChecks++ }
 } else {
-    Write-Check "Port 5002 listener" $false "Not listening — API may not be running yet"
+    Write-Check "Port 5002 listener" $false "Not listening - API may not be running yet"
 }
 
 # Verify port 5001 is NOT used by Production (it belongs to Test)
 $totalChecks++
 $port5001 = Get-NetTCPConnection -LocalPort 5001 -State Listen -ErrorAction SilentlyContinue
-$detail5001 = if ($null -ne $port5001) { "In use (expected — this is the Test API)" } else { "Not in use" }
+$detail5001 = if ($null -ne $port5001) { "In use (expected - this is the Test API)" } else { "Not in use" }
 if (Write-Check "Port 5001 (Test) not used by Prod" $true $detail5001) { $passedChecks++ }
 
 # =============================================================================
@@ -206,7 +206,7 @@ if (Test-Path $appSettingsPath) {
         if (Write-Check "Connection string target" $true "Does not reference Test database") { $passedChecks++ }
     }
 } else {
-    Write-Check "appsettings.Production.json" $false "File not found — must be created before first deploy"
+    Write-Check "appsettings.Production.json" $false "File not found - must be created before first deploy"
 }
 
 # =============================================================================
