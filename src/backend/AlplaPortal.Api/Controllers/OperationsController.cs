@@ -84,6 +84,7 @@ public class OperationsController : ControllerBase
     ///   GET /api/operations/live-board?plant=VIANA1&amp;refreshSeconds=30&amp;maxInbound=3
     ///   GET /api/operations/live-board?plant=VIANA1&amp;includeRecentlyCompleted=true&amp;completedWindowHours=8
     /// </summary>
+    [AllowAnonymous]
     [HttpGet("live-board")]
     public async Task<IActionResult> GetLiveBoard(
         [FromQuery] string? plant,

@@ -287,7 +287,7 @@ function AppContent() {
 
                 {/* Operations Workspace */}
                 <Route path="/operations/transfers" element={<AdminRoute allowedRoles={[ROLES.OPERATIONS]}><Suspense fallback={<LoadingSkeleton />}><OperationsTransfersPage /></Suspense></AdminRoute>} />
-                <Route path="/operations/live-board/:plant" element={<ProtectedRoute><Suspense fallback={<LoadingSkeleton />}><OperationsLiveBoardPage /></Suspense></ProtectedRoute>} />
+                <Route path="/operations/live-board/:plant" element={<Suspense fallback={<LoadingSkeleton />}><OperationsLiveBoardPage /></Suspense>} />
 
                 {/* HR Workspace */}
                 <Route path="/hr" element={<HRRoute><Suspense fallback={<LoadingSkeleton />}><HRLandingPage /></Suspense></HRRoute>}>

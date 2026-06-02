@@ -2,6 +2,16 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.182.0] - 2026-06-02
+
+### Changed — Operations: Anonymous Access for Live Board
+
+**Scope:** Backend and Frontend access control for Operations Live Board.
+
+- Made the Live Board route (`/operations/live-board/:plant`) accessible without login for TV/kiosk display usage.
+- Added `[AllowAnonymous]` to the `GetLiveBoard` API endpoint while keeping all other Operations endpoints protected.
+- Verified that no sensitive data (financials, usernames) is exposed in the Live Board DTOs.
+
 ## [v2.181.0] - 2026-06-02
 
 ### Fixed — Operations: RBAC in User Management

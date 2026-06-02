@@ -724,14 +724,14 @@ Attention transfers get:
 
 | Aspect | Recommendation |
 |--------|---------------|
-| API endpoint | **Protected** — requires Bearer token like all other endpoints |
-| TV/kiosk access | Requires authenticated session |
-| Future: kiosk token | Design a `display-only` role or time-limited kiosk token |
-| Public access | **Never** — do not expose without deliberate security design |
+| API endpoint | **Anonymous (`[AllowAnonymous]`)** — specific Live Board endpoint only |
+| TV/kiosk access | Public access via `/operations/live-board/:plant` |
+| Future: kiosk token | Consider kiosk tokens if further restrictions are needed |
+| Public access | **Allowed only for Live Board** — all other endpoints remain protected |
 
-**MVP approach**: Use a service account with a `Display Viewer` role (read-only, operations data only). The TV browser maintains a logged-in session.
+**MVP approach**: The Live Board UI route (`/operations/live-board/:plant`) and the specific backend endpoint (`GET /api/operations/live-board`) are explicitly marked for anonymous access. No sensitive data (financials, usernames) is returned by this endpoint.
 
-**Future approach**: Generate time-limited display tokens via admin panel, usable without interactive login.
+**Future approach**: Generate time-limited display tokens via admin panel, usable without interactive login, if further security controls are required.
 
 ### 15.3 Role Requirements
 
