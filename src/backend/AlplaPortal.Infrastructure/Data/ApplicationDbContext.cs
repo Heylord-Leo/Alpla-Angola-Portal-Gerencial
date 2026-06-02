@@ -1013,8 +1013,8 @@ public class ApplicationDbContext : DbContext
                 ConnectionType = "SQL",
                 Description = "AlplaPROD 1.0 production databases — Viana 1, Viana 2, Viana 3",
                 Environment = "PRODUCTION",
-                IsEnabled = false,
-                IsPlanned = true,
+                IsEnabled = true,
+                IsPlanned = false,
                 DisplayOrder = 40,
                 Capabilities = "[\"OPERATIONS\",\"TRANSFERS\",\"LOGISTICS\"]",
                 CreatedAtUtc = new DateTime(2026, 5, 31, 0, 0, 0, DateTimeKind.Utc)
@@ -1027,7 +1027,7 @@ public class ApplicationDbContext : DbContext
             new IntegrationConnectionStatus { Id = 2, IntegrationProviderId = 2, CurrentStatus = IntegrationStatusCodes.Planned },
             new IntegrationConnectionStatus { Id = 3, IntegrationProviderId = 3, CurrentStatus = IntegrationStatusCodes.NotConfigured },
             new IntegrationConnectionStatus { Id = 4, IntegrationProviderId = 4, CurrentStatus = IntegrationStatusCodes.NotConfigured },
-            new IntegrationConnectionStatus { Id = 5, IntegrationProviderId = 5, CurrentStatus = IntegrationStatusCodes.Planned }
+            new IntegrationConnectionStatus { Id = 5, IntegrationProviderId = 5, CurrentStatus = IntegrationStatusCodes.NotConfigured }
         );
 
         // Seed: HR Leave Types

@@ -156,8 +156,10 @@ public class IntegrationHealthService : IIntegrationHealthService
             };
         }
 
-        // Use DB status strictly, bypassing for Primavera to let its custom validation handle the disabled message
-        bool isEnabled = providerCode.Equals("PRIMAVERA", StringComparison.OrdinalIgnoreCase) || dbProvider.IsEnabled;
+        // Use DB status strictly, bypassing for Primavera/AlplaPROD to let their custom validation handle the disabled message
+        bool isEnabled = providerCode.Equals("PRIMAVERA", StringComparison.OrdinalIgnoreCase)
+            || providerCode.Equals("ALPLAPROD", StringComparison.OrdinalIgnoreCase)
+            || dbProvider.IsEnabled;
 
         if (!isEnabled)
         {
@@ -203,6 +205,11 @@ public class IntegrationHealthService : IIntegrationHealthService
                 {
                     throw new ArgumentException($"Empresa '{companyKey}' inválida para o Primavera.");
                 }
+            }
+            else if (providerCode.Equals("ALPLAPROD", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(companyKey))
+            {
+                var alplaProdProvider = (AlplaProdIntegrationProvider)implementation;
+                testResult = await alplaProdProvider.TestPlantConnectionAsync(companyKey, ct);
             }
             else
             {

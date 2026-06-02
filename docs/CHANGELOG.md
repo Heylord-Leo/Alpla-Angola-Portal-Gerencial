@@ -2,6 +2,40 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.184.0] - 2026-06-02
+
+### Added — Integration: AlplaPROD 1.0 Multi-Plant Configuration
+
+**Scope:** Backend, Frontend, and Database migration for AlplaPROD multi-plant connection management.
+
+**Root Cause:** AlplaPROD 1.0 was seeded as a planned/future provider with `IsPlanned=true`, `IsEnabled=false`, and `CurrentStatus=PLANNED`. This blocked all connection testing with the message "This provider is planned for a future phase."
+
+**Changes:**
+
+- **Migration (`ActivateAlplaProdProvider`):** Sets `IsPlanned=false`, `IsEnabled=true`, and `CurrentStatus=NOT_CONFIGURED` for the ALPLAPROD provider (Id=5). Follows the established activation pattern from Primavera and Innux providers.
+- **HasData Seed (`ApplicationDbContext`):** Updated ALPLAPROD seed data to match the activated state, ensuring future database recreations start with the provider active.
+- **Backend — DTOs:** Added `AlplaProdPlantSettingsDto`, `UpdateAlplaProdPlantDto`, `ReplaceAlplaProdPlantSecretDto`.
+- **Backend — Service:** `UpdateAlplaProdPlantAsync()` and `ReplaceAlplaProdPlantSecretAsync()` methods with cascade credential fallback.
+- **Backend — Controller:** `PUT ALPLAPROD/plant` and `POST ALPLAPROD/plant/secret` endpoints.
+- **Backend — Provider:** Added `TestPlantConnectionAsync(plantKey)` for per-plant connection testing.
+- **Backend — Health Service:** Per-plant routing for ALPLAPROD when `companyKey` is provided; bypass `IsEnabled` global check (same pattern as Primavera).
+- **Frontend — Types:** 3 new TypeScript interfaces + `alplaProdPlants` on main DTO.
+- **Frontend — API Client:** `updateAlplaProdPlant()` and `replaceAlplaProdPlantSecret()` methods.
+- **Frontend — UI:** Per-plant cards in ProviderCard (server, database, username, password status, configure, replace password, test connection), `AlplaProdPlantConfigModal`, `AlplaProdPlantSecretModal`.
+
+**Files Changed:**
+- `src/backend/AlplaPortal.Infrastructure/Data/Migrations/20260602104846_ActivateAlplaProdProvider.cs` [NEW]
+- `src/backend/AlplaPortal.Infrastructure/Data/ApplicationDbContext.cs` [MODIFIED]
+- `src/backend/AlplaPortal.Application/DTOs/Integration/IntegrationSettingsDtos.cs` [MODIFIED]
+- `src/backend/AlplaPortal.Application/Interfaces/Integration/IIntegrationSettingsService.cs` [MODIFIED]
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/IntegrationSettingsService.cs` [MODIFIED]
+- `src/backend/AlplaPortal.Api/Controllers/Admin/IntegrationSettingsController.cs` [MODIFIED]
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/AlplaProdIntegrationProvider.cs` [MODIFIED]
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/IntegrationHealthService.cs` [MODIFIED]
+- `src/frontend/src/types/index.ts` [MODIFIED]
+- `src/frontend/src/lib/api.ts` [MODIFIED]
+- `src/frontend/src/pages/Admin/IntegrationSettings.tsx` [MODIFIED]
+
 ## [v2.183.0] - 2026-06-02
 
 ### Fixed — Operations: Public Route

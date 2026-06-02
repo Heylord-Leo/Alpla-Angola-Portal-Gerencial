@@ -399,6 +399,84 @@ public class IntegrationSettingsService : IIntegrationSettingsService
             }
         }
 
+        if (provider.Code == "ALPLAPROD")
+        {
+            dto.AlplaProdPlants = new List<AlplaProdPlantSettingsDto>();
+
+            // Read global AlplaPROD credentials from appsettings
+            var alpplaProdSec = _configuration.GetSection("Integrations:AlplaProd");
+            var globalUsername = alpplaProdSec["Username"];
+            var globalHasPassword = !string.IsNullOrEmpty(alpplaProdSec["Password"]);
+
+            // Parse DB-backed per-plant config if present
+            AlplaProdAdditionalConfig? alplaProdConfig = null;
+            if (settings != null && !string.IsNullOrWhiteSpace(settings.AdditionalConfig))
+            {
+                try
+                {
+                    alplaProdConfig = System.Text.Json.JsonSerializer.Deserialize<AlplaProdAdditionalConfig>(
+                        settings.AdditionalConfig,
+                        new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                }
+                catch
+                {
+                    // ignore malformed JSON in DB
+                }
+            }
+
+            foreach (var plant in System.Enum.GetValues<AlplaPortal.Domain.Enums.AlplaProdPlant>())
+            {
+                var plantKey = plant.ToString();
+                var plantSection = _configuration.GetSection($"Integrations:AlplaProd:Plants:{plantKey}");
+
+                var plantDto = new AlplaProdPlantSettingsDto
+                {
+                    PlantKey = plantKey,
+                    Server = plantSection["Server"],
+                    DatabaseName = plantSection["DatabaseName"],
+                    Enabled = true, // default
+                    SecretVersion = 0
+                };
+
+                // Enabled from config
+                if (plantSection["Enabled"] != null)
+                {
+                    plantDto.Enabled = plantSection.GetValue<bool>("Enabled");
+                }
+
+                // Pipeline model (read-only)
+                plantDto.PipelineModel = plantSection["PipelineModel"] ?? "STANDARD";
+
+                // Per-plant username/password defaults from global
+                plantDto.Username = plantSection["Username"];
+                bool plantHasPassword = !string.IsNullOrEmpty(plantSection["Password"]);
+
+                // DB override
+                if (alplaProdConfig?.Plants != null && alplaProdConfig.Plants.TryGetValue(plantKey, out var plantConfig))
+                {
+                    plantDto.Server = plantConfig.Server ?? plantDto.Server;
+                    plantDto.DatabaseName = plantConfig.DatabaseName ?? plantDto.DatabaseName;
+                    plantDto.Enabled = plantConfig.Enabled;
+                    plantDto.Username = plantConfig.Username ?? plantDto.Username;
+                    plantHasPassword = !string.IsNullOrEmpty(plantConfig.EncryptedPassword) || plantHasPassword;
+                    plantDto.SecretVersion = plantConfig.SecretVersion;
+                }
+
+                // Determine fallback behavior
+                bool usesGlobal = string.IsNullOrEmpty(plantDto.Username);
+                if (usesGlobal)
+                {
+                    plantDto.Username = globalUsername;
+                    plantHasPassword = plantHasPassword || globalHasPassword;
+                }
+
+                plantDto.HasPassword = plantHasPassword;
+                plantDto.UsesGlobalCredentials = usesGlobal;
+
+                dto.AlplaProdPlants.Add(plantDto);
+            }
+        }
+
         return dto;
     }
 
@@ -551,6 +629,157 @@ public class IntegrationSettingsService : IIntegrationSettingsService
             $"Secret rotated for Primavera company: {companyKey}");
     }
 
+    public async Task UpdateAlplaProdPlantAsync(UpdateAlplaProdPlantDto dto, int userId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(dto.PlantKey))
+            throw new ArgumentException("O código da planta é obrigatório.");
+
+        if (!System.Enum.TryParse<AlplaPortal.Domain.Enums.AlplaProdPlant>(dto.PlantKey, true, out _))
+            throw new ArgumentException($"Planta '{dto.PlantKey}' inválida.");
+
+        var provider = await _db.IntegrationProviders
+            .Include(p => p.Settings)
+            .FirstOrDefaultAsync(p => p.Code == "ALPLAPROD", ct);
+
+        if (provider == null)
+            throw new ArgumentException("Provedor ALPLAPROD não encontrado.");
+
+        var settings = provider.Settings;
+        if (settings == null)
+        {
+            settings = new IntegrationProviderSettings
+            {
+                IntegrationProviderId = provider.Id,
+                CreatedAtUtc = DateTime.UtcNow
+            };
+            _db.IntegrationProviderSettings.Add(settings);
+        }
+
+        // Parse existing config
+        var config = new AlplaProdAdditionalConfig { Plants = new Dictionary<string, AlplaProdPlantConfig>() };
+        if (!string.IsNullOrWhiteSpace(settings.AdditionalConfig))
+        {
+            try
+            {
+                config = System.Text.Json.JsonSerializer.Deserialize<AlplaProdAdditionalConfig>(
+                    settings.AdditionalConfig,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? config;
+            }
+            catch
+            {
+                // overwrite if malformed
+            }
+        }
+
+        config.Plants ??= new Dictionary<string, AlplaProdPlantConfig>();
+
+        var plantKey = dto.PlantKey.ToUpperInvariant();
+        if (!config.Plants.TryGetValue(plantKey, out var plantSettings))
+        {
+            plantSettings = new AlplaProdPlantConfig { Enabled = true };
+            config.Plants[plantKey] = plantSettings;
+        }
+
+        // Update properties
+        plantSettings.Server = dto.Server;
+        plantSettings.DatabaseName = dto.DatabaseName;
+        plantSettings.Enabled = dto.Enabled;
+        plantSettings.Username = dto.Username;
+
+        settings.AdditionalConfig = System.Text.Json.JsonSerializer.Serialize(config, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        settings.UpdatedAtUtc = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation("AlplaPROD plant settings updated for {Plant} by user {UserId}", plantKey, userId);
+
+        await _logWriter.WriteAsync(
+            "Information",
+            "IntegrationSettings",
+            "SETTINGS_UPDATED",
+            $"AlplaPROD plant settings updated for: {plantKey}",
+            payload: System.Text.Json.JsonSerializer.Serialize(new
+            {
+                plantKey,
+                server = dto.Server,
+                databaseName = dto.DatabaseName,
+                enabled = dto.Enabled,
+                username = dto.Username
+            }));
+    }
+
+    public async Task ReplaceAlplaProdPlantSecretAsync(ReplaceAlplaProdPlantSecretDto dto, int userId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(dto.PlantKey))
+            throw new ArgumentException("O código da planta é obrigatório.");
+
+        if (!System.Enum.TryParse<AlplaPortal.Domain.Enums.AlplaProdPlant>(dto.PlantKey, true, out _))
+            throw new ArgumentException($"Planta '{dto.PlantKey}' inválida.");
+
+        if (string.IsNullOrWhiteSpace(dto.NewPassword))
+            throw new ArgumentException("A nova senha não pode ser vazia.");
+
+        var provider = await _db.IntegrationProviders
+            .Include(p => p.Settings)
+            .FirstOrDefaultAsync(p => p.Code == "ALPLAPROD", ct);
+
+        if (provider == null)
+            throw new ArgumentException("Provedor ALPLAPROD não encontrado.");
+
+        var settings = provider.Settings;
+        if (settings == null)
+        {
+            settings = new IntegrationProviderSettings
+            {
+                IntegrationProviderId = provider.Id,
+                CreatedAtUtc = DateTime.UtcNow
+            };
+            _db.IntegrationProviderSettings.Add(settings);
+        }
+
+        // Parse existing config
+        var config = new AlplaProdAdditionalConfig { Plants = new Dictionary<string, AlplaProdPlantConfig>() };
+        if (!string.IsNullOrWhiteSpace(settings.AdditionalConfig))
+        {
+            try
+            {
+                config = System.Text.Json.JsonSerializer.Deserialize<AlplaProdAdditionalConfig>(
+                    settings.AdditionalConfig,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? config;
+            }
+            catch
+            {
+                // overwrite if malformed
+            }
+        }
+
+        config.Plants ??= new Dictionary<string, AlplaProdPlantConfig>();
+
+        var plantKey = dto.PlantKey.ToUpperInvariant();
+        if (!config.Plants.TryGetValue(plantKey, out var plantSettings))
+        {
+            plantSettings = new AlplaProdPlantConfig { Enabled = true };
+            config.Plants[plantKey] = plantSettings;
+        }
+
+        // Encrypt and save secret
+        plantSettings.EncryptedPassword = AesEncryptionHelper.Encrypt(dto.NewPassword, EncryptionKey);
+        plantSettings.SecretVersion++;
+
+        settings.AdditionalConfig = System.Text.Json.JsonSerializer.Serialize(config, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        settings.UpdatedAtUtc = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation("AlplaPROD plant password rotated for {Plant} by user {UserId}", plantKey, userId);
+
+        await _logWriter.WriteAsync(
+            "Warning",
+            "IntegrationSettings",
+            "SECRET_ROTATED",
+            $"Secret rotated for AlplaPROD plant: {plantKey}");
+    }
+
     private class PrimaveraAdditionalConfig
     {
         public Dictionary<string, PrimaveraCompanyConfig>? Companies { get; set; }
@@ -558,6 +787,21 @@ public class IntegrationSettingsService : IIntegrationSettingsService
 
     private class PrimaveraCompanyConfig
     {
+        public string? DatabaseName { get; set; }
+        public bool Enabled { get; set; } = true;
+        public string? Username { get; set; }
+        public string? EncryptedPassword { get; set; }
+        public int SecretVersion { get; set; }
+    }
+
+    private class AlplaProdAdditionalConfig
+    {
+        public Dictionary<string, AlplaProdPlantConfig>? Plants { get; set; }
+    }
+
+    private class AlplaProdPlantConfig
+    {
+        public string? Server { get; set; }
         public string? DatabaseName { get; set; }
         public bool Enabled { get; set; } = true;
         public string? Username { get; set; }

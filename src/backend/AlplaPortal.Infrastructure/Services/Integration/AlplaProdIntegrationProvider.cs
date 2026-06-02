@@ -225,6 +225,82 @@ public class AlplaProdIntegrationProvider : IIntegrationProvider
         }
     }
 
+    /// <summary>
+    /// Tests connectivity to a single AlplaPROD plant database, identified by plant key string.
+    /// Used by the admin UI for per-plant connection testing.
+    /// </summary>
+    public async Task<IntegrationConnectionTestResult> TestPlantConnectionAsync(
+        string plantKey, CancellationToken ct = default)
+    {
+        var sw = Stopwatch.StartNew();
+
+        if (!Enum.TryParse<AlplaPortal.Domain.Enums.AlplaProdPlant>(plantKey, true, out var plant))
+        {
+            return new IntegrationConnectionTestResult
+            {
+                Success = false,
+                Message = $"Planta '{plantKey}' inválida para o AlplaPROD.",
+                ResponseTimeMs = (int)sw.ElapsedMilliseconds
+            };
+        }
+
+        try
+        {
+            var configuredServer = _connectionFactory.GetPlantServer(plant) ?? "(não configurado)";
+            var configuredDb = _connectionFactory.GetPlantDatabaseName(plant) ?? "(não configurado)";
+
+            await using var connection = await _connectionFactory.CreateConnectionAsync(plant, ct);
+            await using var command = connection.CreateCommand();
+
+            command.CommandText = DiagnosticQuery;
+            command.CommandTimeout = 15;
+
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            if (await reader.ReadAsync(ct))
+            {
+                sw.Stop();
+                var serverName = reader.GetString(0);
+                var dbName = reader.GetString(1);
+                var sqlUser = reader.GetString(2);
+
+                _logger.LogInformation(
+                    "AlplaPROD per-plant test OK: {Plant} → {ServerName}/{DbName} (user: {SqlUser})",
+                    plantKey, serverName, dbName, sqlUser);
+
+                return new IntegrationConnectionTestResult
+                {
+                    Success = true,
+                    Message = $"{plantKey}: {serverName}/{dbName} (user: {sqlUser}) ✓",
+                    ResponseTimeMs = (int)sw.ElapsedMilliseconds
+                };
+            }
+            else
+            {
+                sw.Stop();
+                return new IntegrationConnectionTestResult
+                {
+                    Success = false,
+                    Message = $"{plantKey}: Consulta de diagnóstico não retornou resultado.",
+                    ResponseTimeMs = (int)sw.ElapsedMilliseconds
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            _logger.LogWarning(ex,
+                "AlplaPROD per-plant test failed for {Plant}: {Message}",
+                plantKey, ex.Message);
+
+            return new IntegrationConnectionTestResult
+            {
+                Success = false,
+                Message = $"{plantKey}: {ex.Message}",
+                ResponseTimeMs = (int)sw.ElapsedMilliseconds
+            };
+        }
+    }
+
     // ── Private helpers ──
 
     /// <summary>

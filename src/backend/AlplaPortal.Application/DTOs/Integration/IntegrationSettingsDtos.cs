@@ -46,6 +46,9 @@ public class IntegrationSettingsDto
     // Company-specific settings for Primavera
     public List<PrimaveraCompanySettingsDto>? PrimaveraCompanies { get; set; }
 
+    // Plant-specific settings for AlplaPROD
+    public List<AlplaProdPlantSettingsDto>? AlplaProdPlants { get; set; }
+
     // Audit
     public string? UpdatedByUserName { get; set; }
     public DateTime? UpdatedAt { get; set; }
@@ -59,6 +62,25 @@ public class PrimaveraCompanySettingsDto
     public string? Username { get; set; }
     public bool HasPassword { get; set; }
     public int SecretVersion { get; set; }
+}
+
+/// <summary>
+/// Response DTO for AlplaPROD per-plant settings — NEVER includes secrets.
+/// </summary>
+public class AlplaProdPlantSettingsDto
+{
+    public string PlantKey { get; set; } = string.Empty;
+    public string? Server { get; set; }
+    public string? DatabaseName { get; set; }
+    public bool Enabled { get; set; }
+    public string? Username { get; set; }
+    /// <summary>Whether a per-plant password override is configured (true) or falls back to global (false).</summary>
+    public bool HasPassword { get; set; }
+    /// <summary>Indicates if credentials come from per-plant config or global AlplaPROD fallback.</summary>
+    public bool UsesGlobalCredentials { get; set; }
+    public int SecretVersion { get; set; }
+    /// <summary>Read-only pipeline model from configuration.</summary>
+    public string? PipelineModel { get; set; }
 }
 
 /// <summary>
@@ -105,5 +127,28 @@ public class UpdatePrimaveraCompanyDto
 public class ReplacePrimaveraCompanySecretDto
 {
     public string CompanyKey { get; set; } = string.Empty;
+    public string NewPassword { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Request DTO for updating non-secret AlplaPROD per-plant settings.
+/// Uses plantKey terminology for domain clarity.
+/// </summary>
+public class UpdateAlplaProdPlantDto
+{
+    public string PlantKey { get; set; } = string.Empty;
+    public string? Server { get; set; }
+    public string? DatabaseName { get; set; }
+    public bool Enabled { get; set; }
+    public string? Username { get; set; }
+}
+
+/// <summary>
+/// Request DTO for replacing the per-plant AlplaPROD password.
+/// If set, overrides the global AlplaPROD credentials for this plant.
+/// </summary>
+public class ReplaceAlplaProdPlantSecretDto
+{
+    public string PlantKey { get; set; } = string.Empty;
     public string NewPassword { get; set; } = string.Empty;
 }
