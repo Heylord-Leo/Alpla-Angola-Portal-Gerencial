@@ -88,6 +88,30 @@ If the deployment causes critical issues:
 
 ---
 
+## Production Environment Specifics
+
+> [!IMPORTANT]
+> The Production environment runs on `AOVIA1VMS011` alongside the Test environment.
+> Production uses **completely separate** paths, ports, IIS sites, and database.
+
+| Aspect | Value |
+|:---|:---|
+| API Port | **5002** (NOT 5000 or 5001) |
+| Database | **`[Portal-Gerencial]`** (NOT `Portal-Gerencial-Test`) |
+| API Path | `C:\Apps\AlplaPortal\Prod\api` |
+| Web Path | `C:\Apps\AlplaPortal\Prod\web` |
+| URL | `https://portalgerencial.alpla.net` |
+| ASP.NET Environment | `Production` |
+| IIS API Pool | `AlplaPortal-Prod-Api-Pool` |
+| IIS Web Pool | `AlplaPortal-Prod-Web-Pool` |
+| Configuration | `appsettings.Production.json` (server-side only) |
+
+For the full Production deployment guide, see [GITHUB_ACTIONS_PROD_DEPLOYMENT.md](file:///c:/dev/alpla-portal/docs/GITHUB_ACTIONS_PROD_DEPLOYMENT.md).  
+For Production rollback, see [ROLLBACK_PROCEDURE_PROD.md](file:///c:/dev/alpla-portal/docs/ROLLBACK_PROCEDURE_PROD.md).  
+For Production post-deploy validation, see [POST_DEPLOYMENT_CHECKLIST_PROD.md](file:///c:/dev/alpla-portal/docs/POST_DEPLOYMENT_CHECKLIST_PROD.md).
+
+---
+
 ## Local Development Database
 
 > [!NOTE]

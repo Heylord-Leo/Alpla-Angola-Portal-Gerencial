@@ -2,7 +2,15 @@
 
 ## Current Version
 
-v2.184.2
+v2.185.0
+
+## [v2.185.0] - 2026-06-02
+
+### Added
+- **Production Deployment Automation**: Complete CI/CD infrastructure for Production environment — workflow, bootstrap, validation, deployment guide, rollback procedures, and post-deployment checklist.
+
+### Fixed
+- **PowerShell `$pid` Collision**: Renamed `$pid` to `$procId` in server scripts.
 
 ## [v2.184.2] - 2026-06-02
 
