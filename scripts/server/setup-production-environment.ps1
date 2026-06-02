@@ -313,7 +313,7 @@ if ([string]::IsNullOrWhiteSpace($CertificateThumbprint)) {
         Log-Manual "Import the certificate first, then re-run this script with the correct thumbprint."
         $ManualActions.Add("Import SSL certificate with thumbprint $CertificateThumbprint")
     } else {
-        Log-Info "Certificate found: Subject=$($cert.Subject), Expires=$($cert.NotAfter)"
+        Log-Info ("Certificate found: Subject={0}, Expires={1}" -f $cert.Subject, $cert.NotAfter)
 
         if (-not (Test-Path "IIS:\Sites\$WebSiteName")) {
             Log-Warn "IIS Site '$WebSiteName' does not exist (likely due to -WhatIf). Skipping HTTPS binding configuration."

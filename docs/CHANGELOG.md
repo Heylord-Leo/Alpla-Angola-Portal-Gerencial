@@ -2,6 +2,11 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.185.3] - 2026-06-02
+
+### Fixed
+- **IDE PowerShell Extension Lexer Error**: Refactored string interpolation in `setup-production-environment.ps1` to use the `-f` format operator. This resolves a known issue where VS Code's PowerShell extension (and PSScriptAnalyzer) misinterprets nested subexpressions inside double quotes as an unterminated string, which incorrectly flags a "Missing closing '}' in statement block" error later in the file.
+
 ## [v2.185.2] - 2026-06-02
 
 ### Fixed
