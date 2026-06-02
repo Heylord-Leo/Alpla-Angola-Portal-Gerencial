@@ -131,6 +131,14 @@ const ITEquipmentPage = React.lazy(() =>
     import('./pages/IT/ITEquipmentPage')
 );
 
+// Operations pages
+const OperationsTransfersPage = React.lazy(() =>
+    import('./pages/Operations/OperationsTransfersPage')
+);
+const OperationsLiveBoardPage = React.lazy(() =>
+    import('./pages/Operations/OperationsLiveBoardPage')
+);
+
 // Admin pages (isolated, rarely visited)
 const MasterData = React.lazy(() =>
     import('./pages/Settings/MasterData').then(m => ({ default: m.MasterData }))
@@ -276,6 +284,10 @@ function AppContent() {
                 <Route path="/contracts/:id/edit" element={<AdminRoute allowedRoles={[ROLES.CONTRACTS]}><Suspense fallback={<LoadingSkeleton />}><ContractCreate /></Suspense></AdminRoute>} />
                 <Route path="/contracts/:id" element={<AdminRoute allowedRoles={[ROLES.CONTRACTS]}><Suspense fallback={<LoadingSkeleton />}><ContractDetail /></Suspense></AdminRoute>} />
                 <Route path="/contracts/fichas/:id" element={<AdminRoute allowedRoles={[ROLES.CONTRACTS]}><Suspense fallback={<LoadingSkeleton />}><SupplierFichaDetail /></Suspense></AdminRoute>} />
+
+                {/* Operations Workspace */}
+                <Route path="/operations/transfers" element={<AdminRoute allowedRoles={[ROLES.OPERATIONS]}><Suspense fallback={<LoadingSkeleton />}><OperationsTransfersPage /></Suspense></AdminRoute>} />
+                <Route path="/operations/live-board/:plant" element={<ProtectedRoute><Suspense fallback={<LoadingSkeleton />}><OperationsLiveBoardPage /></Suspense></ProtectedRoute>} />
 
                 {/* HR Workspace */}
                 <Route path="/hr" element={<HRRoute><Suspense fallback={<LoadingSkeleton />}><HRLandingPage /></Suspense></HRRoute>}>

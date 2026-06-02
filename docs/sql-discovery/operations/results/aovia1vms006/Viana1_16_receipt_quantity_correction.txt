@@ -1,0 +1,2 @@
+mssql: login error: Login failed for user 'ALPLA\cintra01'.
+mssql: login error: Login failed for user 'ALPLA\cintra01'.

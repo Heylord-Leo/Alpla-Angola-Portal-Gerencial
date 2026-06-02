@@ -2,6 +2,679 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.181.0] - 2026-06-02
+
+### Fixed — Operations: RBAC in User Management
+
+- **User Management UI**: Fixed missing translation mapping in `roles.ts` which prevented `OPERATIONS` role from appearing in the user management role assignment list. Display name is now `Operações`.
+
+## [v2.180.0] - 2026-06-02
+
+### Added — Operations: RBAC for Live Board
+
+- **Route access**: Added role-based access control for `/operations/live-board/:plant`.
+- **Role requirement**: Only users with `Operations` or `System Administrator` roles can access the TV Signage page.
+- **Kiosk display**: Added specific exception for public kiosk displays (to be implemented via secure token in next phase).
+- **Backend security**: Added `[Authorize]` attributes with specific role enforcement to `OperationsController` endpoints (list, details, timeline), excluding the live board endpoint.
+- **User Management**: Exposed the new `Operations` role in the UI for administrators to assign and remove.
+
+## [v2.179.0] - 2026-06-01
+
+### Changed — Operations Live Board: TV Signage UX Redesign
+
+- **KPI Summary**: 4 large icon-driven cards (📥 Entradas, 🚚 Saídas, ⚠️ Atenção, ✅ Concluídos) replace old text-only footer.
+- **Card redesign**: Compact layout — large PO# (24px), short route (V2→V1), single-line material, inline quantity, short attention message.
+- **SVG timeline icons**: 5 distinct SVG icons per step (document/truck/inbox/half-circle/check-circle) with color states and active glow animation.
+- **Auto-paging carousel**: Max 4 visible cards per column, 8s automatic page rotation, page dots, "+N em fila" overflow indicator. No scrollbars.
+- **Attention visualization**: Stronger pulse animation (20px/6px glow), bold amber "⚠ 5h aguardando" short messages instead of long text.
+- **Empty states**: Large centered SVG icon + message per column instead of italic text.
+- **Typography**: Larger sizes (24px PO, 20px headers, 32px KPI values), uppercase headers with letter-spacing.
+- **Background**: Deeper gradient (#0a0f1e → #111827) for higher TV contrast.
+- **Bottom bar**: Clean version + query time footer.
+- **No backend changes**. No barcode tracking. No ALL plant aggregation. No deployment changes.
+
+## [v2.178.0] - 2026-06-01
+
+### Added — Operations Phase Live 3: Frontend TV Page
+
+- **Route**: `/operations/live-board/:plant` — TV-ready Live Transfer Board page.
+- **Layout**: Two-column (Inbound/Outbound) dark-themed page with header, countdown bar, transfer cards, and summary footer.
+- **Transfer cards**: PO number, stage badge, route (origin → destination), material name, quantity progress, mini-timeline, age indicator.
+- **Mini-timeline**: 5-stage visual (done/active/pending) — backend is source of truth, no re-derivation.
+- **Auto-refresh**: Server-driven interval (default 60s, clamp 30–300s) with animated countdown bar.
+- **Fullscreen mode**: `?fullscreen=true` — fixed overlay, z-index 9999, larger fonts, hides AppShell chrome.
+- **Stale data**: Green/amber/red freshness dot (thresholds: 5min warning, 15min error).
+- **Error resilience**: Retains last known data on API failures, shows error banner.
+- **Attention indicators**: Amber/red borders, subtle pulse animation, reason text for delayed transfers.
+- **Types**: `OperationsLiveBoardResponse`, `OperationsLiveBoardSummary`, `OperationsLiveBoardTransfer`, `OperationsLiveBoardStep`.
+- **API client**: `fetchOperationsLiveBoard()` added to `operationsApi.ts`.
+- **Query params**: `refresh`, `maxInbound`, `maxOutbound`, `fullscreen`, `completedWindowHours`.
+- **No backend changes**. No barcode tracking. No ALL plant aggregation. No deployment changes.
+
+## [v2.177.0] - 2026-06-01
+
+### Added — Operations Phase Live 2: Live Board Backend Endpoint
+
+- **Scope**: Backend endpoint only — no frontend TV screen.
+- **Endpoint**: `GET /api/operations/live-board?plant=VIANA1` — TV-ready response with pre-classified inbound/outbound transfer cards.
+- **Query params**: `plant` (required), `refreshSeconds` (30–300), `maxInbound`/`maxOutbound` (1–12), `includeRecentlyCompleted` (bool), `completedWindowHours` (1–24).
+- **Stage mapping**: 5 simplified stages: `ORDERED → SENT → RECEIVING → PARTIAL → COMPLETED` (+ `ERROR`).
+- **Stage labels**: Portuguese (Pedido criado, Enviado, Aguardando recebimento, Parcialmente recebido, Concluído, Atenção).
+- **Mini-timeline**: 5-step array per transfer with `done`/`active`/`pending` states.
+- **Attention detection**: 4h receiving, 8h partial, 24h ordered, 48h critical thresholds.
+- **Direction**: MVP heuristic based on known plant routes (VIANA2→VIANA1 inbound, VIANA1→VIANA3 outbound).
+- **Received quantity**: Uses `T_WareneingangPlanungen.EntladeMenge` (consistent with Phase 7.1).
+- **Summary counters**: Inbound/outbound totals, active counts, attention, completed.
+- **Security**: `[Authorize]`, no financial values, no usernames, no raw SQL/traces.
+- **Error handling**: 400/503/500 with Portuguese messages.
+- **Files created**: `OperationsLiveBoardDtos.cs`, `IOperationsLiveBoardService.cs`, `OperationsLiveBoardQueryBuilder.cs`, `OperationsLiveBoardService.cs`.
+- **Files modified**: `OperationsController.cs`, `Program.cs`, `config.ts`, `VERSION.md`, `CHANGELOG.md`.
+
+## [v2.176.0] - 2026-06-01
+
+### Added — Operations Phase 8: Live Transfer Board Design
+
+- **Scope**: Design document only — no code implementation.
+- **Document**: `docs/OPERATIONS_LIVE_TRANSFER_BOARD_DESIGN.md` — TV/kiosk visual board for inter-plant material transfers.
+- **Concept**: Two-column inbound/outbound layout, 5-stage simplified timeline, auto-refresh, dark mode, plant-contextual direction.
+- **Endpoint**: `GET /api/operations/live-board?plant=VIANA1` (proposed, not implemented).
+- **Files**: `OPERATIONS_LIVE_TRANSFER_BOARD_DESIGN.md` (new), `OPERATIONS_MODULE_TECHNICAL_DESIGN.md`, `config.ts`, `VERSION.md`, `CHANGELOG.md`.
+
+## [v2.175.0] - 2026-06-01
+
+### Fixed — Operations Phase 7.2: Partial Receipt Stage Derivation
+
+- **Problem**: `GR_COMPLETED` always showed `Recebimento concluído`, even for partially delivered POs. A transfer can have completed receipt transactions but still be partially received at PO level.
+- **Fix**: `deriveCurrentStage` now uses PO status + detail quantity data to distinguish partial from full receipt.
+- **Rules**: PO `Parcialmente entregue` or `receivedQty < orderedQty` → `Parcialmente recebido`. Full receipt only when PO `Concluído` or `receivedQty >= orderedQty` or `openQty = 0`.
+- **SummaryCard**: Now accepts optional `detailData` prop for quantity-aware stage derivation in drawer context.
+- **References**: PO `#3429` (partial), `#3579` (completed), `#3581` (pending). PO `#3425` retired (finalized).
+- **Files**: `OperationsTransfersPage.tsx`, `config.ts`, `VERSION.md`, `CHANGELOG.md`.
+
+## [v2.174.0] - 2026-06-01
+
+### Fixed — Operations Phase 7.1: Receipt Quantity Correction
+
+- **Problem**: PO #3579 showed `Qtd. recebida: 0` despite completed receipt (`Nº recebimentos: 1`). Misleading zero worse than null.
+- **Root cause**: `T_Wareneingaenge.IstMenge` is always `0` in AlplaPROD — column exists but not populated.
+- **Fix**: Aggregate `SUM(T_WareneingangPlanungen.EntladeMenge)` instead of `SUM(T_Wareneingaenge.IstMenge)` in both Standard and Inhouse query pipelines.
+- **Recalculation**: `openQuantity = orderedQuantity - receivedQuantity` (NULL-safe).
+- **Files**: `OperationsTransferDetailQueryBuilder.cs`, `config.ts`, `VERSION.md`, `CHANGELOG.md`.
+
+## [v2.173.0] - 2026-06-01
+
+### Changed — Operations Phase 7: Drawer Runtime Visual Validation & UX Refinement
+
+**Scope:** Runtime visual validation of Quick Viewer Drawer with real AlplaPROD data. Frontend-only changes.
+
+**Issues found and fixed (from code review):**
+
+1. **Missing "Informações do Pedido" card**
+   - The `detailData.header` DTO was completely unused — no card rendered for order info (notes, created/updated by, dates, status).
+   - Added `DetailHeaderCard` as the first detail card in the drawer sequence.
+
+2. **`formatDateShort` → `DetailRow` inconsistency**
+   - `formatDateShort(null)` returned `'—'` (string), but `DetailRow` checked `value === '—'` and hid those rows.
+   - This caused null dates to silently vanish from detail cards instead of being handled properly.
+   - Fixed: `formatDateShort` now returns `null` for null dates, `DetailRow` only checks `null`/`''`.
+
+3. **Inaccurate "Paletes" label**
+   - `BestellMengeVPK` is "packaging unit quantity" (VPK = Verpackung), not pallets.
+   - Renamed to "Qtd. embalagem (VPK)".
+
+4. **Loading card labels too generic**
+   - "Status" → "Status carregamento" (avoids ambiguity with order status)
+   - "Camião" → "Nº camião" (consistent with other Nº fields)
+   - "Descrição" → "Descrição camião" (specifies what it describes)
+   - "Nº guia" → "Nº guia de remessa" (full Portuguese term for delivery note)
+
+5. **Removed deferred `Data entrega` row**
+   - `deliveryDate` is always null (deferred from Phase 6.1) — `formatDateShort` returned `'—'` and `DetailRow` hid it.
+   - Now explicitly removed from the loading card to avoid confusion.
+
+6. **Technical IDs in body font**
+   - Added `mono` prop to `DetailRow` for monospace rendering of IDs (`#1234`).
+   - Applied to variant IDs, inhouse delivery IDs.
+
+7. **Table cell null dates showing empty**
+   - Table list cells for `createdDate`/`updatedDate` now show `'—'` consistently.
+
+**Files Modified:**
+- `src/frontend/src/pages/Operations/OperationsTransfersPage.tsx` — 7 UX refinements
+- `src/frontend/src/config.ts` — APP_VERSION → `2.173.0`
+- `docs/VERSION.md`, `docs/CHANGELOG.md`
+
+**What is NOT included:**
+- No barcode tracking
+- No `ALL` plant aggregation
+- No deployment changes
+- No new endpoints or backend changes
+- No write operations to AlplaPROD
+- No new SQL inspection scripts
+
+---
+
+## [v2.172.0] - 2026-06-01
+
+### Fixed — Operations Phase 6.1: Transfer Details Schema Correction
+
+**Problem:**
+Phase 6 assumed AlplaPROD column names that do not exist (`Farbe`, `PalettenMenge`, `LieferscheinNummer`, `LieferscheinDatum`, `Menge`). These were replaced with `NULL AS` placeholders during Phase 6, causing partially empty detail cards in the Quick Viewer Drawer.
+
+**Research method:**
+Cross-referenced existing SQL discovery files (`Viana{1,2,3}_02_column_search_german_labels.txt`, `Viana{1,2,3}_10_article_variant_trace.txt`) to find correct column names. No new SQL inspection script was needed — all answers were in existing Phase 1-2 discovery data.
+
+**Resolved mappings (6 of 7):**
+
+| DTO Field | Wrong Column | Correct Column | Table | Plants |
+|-----------|-------------|----------------|-------|--------|
+| `material.color` | `av.Farbe` | `av.Farbbezeichnung` | `T_Artikelvarianten` | All |
+| `quantity.palletQuantity` | `bp.PalettenMenge` | `bp.BestellMengeVPK` | `T_Bestellpositionen` | All |
+| `loading.truckNumber` | NULL placeholder | `la.LKWNummer` | `T_LadeAuftraege` | Viana 1/2 |
+| `loading.truckDescription` | NULL placeholder | `la.LKWBezeichnung` | `T_LadeAuftraege` | Viana 1/2 |
+| `loading.deliveryNumber` | `la.LieferscheinNummer` | `la.ExtLieferscheinNummer` | `T_LadeAuftraege` | Viana 1/2 |
+| `quantity.receivedQuantity` | `w.Menge` | `SUM(w.IstMenge)` | `T_Wareneingaenge` | All |
+
+**Still deferred (1 of 7):**
+- `loading.deliveryDate` — No equivalent column in `T_LadeAuftraege`. Remains NULL.
+
+**Key schema findings:**
+- `T_Artikelvarianten` uses `Farbbezeichnung` (color name, nvarchar 100), not `Farbe`
+- `T_Bestellpositionen` uses `BestellMengeVPK` (packaging unit qty, float), not `PalettenMenge`
+- `T_LadeAuftraege` uses `ExtLieferscheinNummer` (external delivery note, nvarchar 50), not `LieferscheinNummer`
+- `T_Wareneingaenge` uses `IstMenge` (actual received qty, float) and `SollMenge` (expected qty), not `Menge`
+- `LKWNummer` and `LKWBezeichnung` were confirmed to exist but had been defensively set to NULL during Phase 6
+
+**Files Modified:**
+- `src/backend/.../OperationsTransferDetailQueryBuilder.cs` — 6 NULL→real column corrections (Standard + Inhouse queries)
+- `src/frontend/src/config.ts` — APP_VERSION → `2.172.0`
+- `docs/VERSION.md`, `docs/CHANGELOG.md`
+
+**What is NOT included:**
+- No barcode tracking
+- No `ALL` plant aggregation
+- No deployment changes
+- No new screens or endpoints
+- No write operations to AlplaPROD
+- No new SQL inspection script (existing discovery was sufficient)
+
+---
+
+## [v2.171.0] - 2026-06-01
+
+### Added — Operations Phase 6: Transfer Details in Quick Viewer Drawer
+
+**Problem:**
+The Quick Viewer Drawer only showed summary and timeline data. Users needed material information, quantities, loading/delivery details, and goods receipt status — all requiring a separate detail endpoint.
+
+**Backend — New endpoint:**
+`GET /api/operations/transfers/{plant}/{idBestellung}/details`
+
+Returns a single `OperationsTransferDetail` DTO with 7 nested sections:
+- `purchaseOrder` — PO date, status, journal reference
+- `material` — Material name, article alias, color, type, classification, variant ID
+- `quantity` — Ordered, received, open quantities, pallets, packaging
+- `loading` — Standard: load date, truck, delivery number; Inhouse: delivery ID, production date
+- `goodsReceipt` — Receipt status, count, dates, completion flag
+- `technicalReferences` — All internal IDs for debugging
+
+**Architecture:**
+- `OperationsTransferDetailQueryBuilder` — Separate SQL for Standard (VIANA1/2) and Inhouse (VIANA3) pipelines. Uses `OUTER APPLY TOP 1` for representative material/position/loading rows.
+- `OperationsTransferDetailService` — Orchestrates connection, query execution, row mapping with `ReadNullableX` DBNull helpers.
+- Error hierarchy: 400 → 404 → 503 → 500 (Portuguese messages, no secrets exposed).
+
+**Frontend — Parallel loading:**
+- `handleSelectTransfer` now uses `Promise.allSettled([details, timeline])` — each loads independently with its own error handling.
+- Detail and timeline spinners are independent.
+
+**Frontend — 5 detail cards:**
+1. **Material / Artigo** — Material name (highlighted), alias, color, type, classification, variant ID
+2. **Quantidades** — Ordered (highlighted), received, open (amber warning), pallets, packaging
+3. **Carregamento / Entrega** — Standard: load date, status, truck, delivery number; Inhouse: delivery ID, dates, journal
+4. **Recebimento de Mercadoria** — Completion badge (green/amber), received quantity, receipt count, dates
+5. **Referências Técnicas** — Collapsed by default, expandable with chevron animation, shows all internal IDs in mono font
+
+**Drawer layout (top to bottom):**
+Summary Card → Detail Cards → Timeline Section
+
+**Files Created:**
+- `src/backend/AlplaPortal.Application/DTOs/Operations/OperationsTransferDetailDto.cs`
+- `src/backend/AlplaPortal.Application/Interfaces/Operations/IOperationsTransferDetailService.cs`
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/Operations/OperationsTransferDetailQueryBuilder.cs`
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/Operations/OperationsTransferDetailService.cs`
+
+**Files Modified:**
+- `src/backend/AlplaPortal.Api/Controllers/OperationsController.cs` — New details endpoint
+- `src/backend/AlplaPortal.Api/Program.cs` — DI registration
+- `src/frontend/src/types/operations.types.ts` — 6 detail interfaces
+- `src/frontend/src/lib/operationsApi.ts` — `fetchOperationsTransferDetails()`
+- `src/frontend/src/pages/Operations/OperationsTransfersPage.tsx` — Parallel loading, 5 detail cards
+- `src/frontend/src/config.ts` — APP_VERSION → `2.171.0`
+- `docs/VERSION.md`, `docs/CHANGELOG.md`
+
+**What is NOT included:**
+- No barcode tracking
+- No `ALL` plant aggregation
+- No deployment changes
+- No write operations to AlplaPROD
+
+---
+
+## [v2.170.0] - 2026-06-01
+
+### Changed — Operations List: Stage Column + Filter Extension
+
+**Problem:**
+The transfer list only showed the administrative PO status (e.g., `Submetido`) but not the operational situation. Users needed to open each drawer to understand the actual stage. Also, filter options lacked `Submetidos` and `Parcialmente entregues`.
+
+**Frontend changes:**
+
+1. **New column `Situação`**: Shows approximated operational stage per list row using `deriveListStage()`. Color-coded badge based on `mainStatus`:
+   - `7, 8` → `Concluído` (green)
+   - `5` → `Parcialmente entregue` (amber)
+   - `2` → `Aguardando recebimento` (blue)
+   - `6` → `Em processamento` (indigo)
+   - `3` → `Cancelado` (red)
+   - `1` → `Pendente` (gray)
+   - default → `A verificar` (gray)
+
+2. **Column rename**: `Status` → `Status PO`
+
+3. **Filter label rename**: `Status` → `Status do pedido`
+
+4. **New filter options**: `Submetidos` (SUBMITTED), `Parcialmente entregues` (PARTIALLY_DELIVERED)
+
+5. **Eventos column simplified**: Shows count only (removed "Esperados:" prefix)
+
+**Backend changes:**
+
+Extended `OperationsTransferListQueryBuilder`:
+- `SUBMITTED` → `Status IN (2)`
+- `PARTIALLY_DELIVERED` → `Status IN (5)`
+- `ACTIVE` unchanged: `Status IN (1, 2, 6)` for backward compatibility
+
+**Important:** List-level `Situação` is an approximation. The drawer timeline remains the source of truth for exact operational stage.
+
+**Files Modified:**
+- `src/frontend/src/pages/Operations/OperationsTransfersPage.tsx` — Table, filters, `deriveListStage()`
+- `src/frontend/src/config.ts` — APP_VERSION → `2.170.0`
+- `src/backend/.../OperationsTransferListQueryBuilder.cs` — Filter mapping
+- `docs/VERSION.md`, `docs/CHANGELOG.md`
+
+**What is NOT included:**
+- No transfer details endpoint
+- No barcode tracking
+- No `ALL` plant aggregation
+- No deployment changes
+
+---
+
+## [v2.169.0] - 2026-06-01
+
+### Changed — Operations Stage Derivation: Status-Aware Logic
+
+**Problem:**
+`Etapa atual` only considered completed events (`isCompleted === true`). This produced misleading results: a transfer with a pending `GR_CREATED` and completed `EDI_SYNCED` events showed `EDI sincronizado` instead of `Aguardando recebimento`.
+
+**Root cause:**
+The previous `deriveCurrentStage` function filtered events by `isCompleted` before checking priority. This ignored pending events that represent a more advanced operational stage.
+
+**New logic:**
+Stage derivation now considers ALL events in the timeline regardless of completion status. The most advanced event by priority determines the stage. The label is then resolved considering whether that event is completed or pending.
+
+**Status-aware labels:**
+
+| Event Code | Completed | Label |
+|------------|-----------|-------|
+| `GR_COMPLETED` | — | `Recebimento concluído` |
+| `GR_CREATED` | ✅ | `Recebimento concluído` |
+| `GR_CREATED` | ❌ | `Aguardando recebimento` |
+| `INHOUSE_DELIVERY` | — | `Entrega interna criada` |
+| `LOADING_ORDER` | ✅ | `Carregamento concluído` |
+| `LOADING_ORDER` | ❌ | `Carregamento em andamento` |
+| `LOADING_PLANNED` | — | `Carregamento planejado` |
+| `CALLOFF_CREATED` | — | `Abruf criado` |
+| `EDI_SYNCED` | — | `Enviado para planta solicitante` |
+| `EDI_EXPORTED` | — | `EDI exportado` |
+| `EDI_CREATED` | — | `Documento EDI criado` |
+| `PO_REVISION` | — | `Pedido revisado` |
+| `PO_CREATED` | — | `Pedido criado` |
+| (no events) | — | `Sem eventos encontrados` |
+
+Completion check uses: `isCompleted || mainStatus === 21 || statusMeaning === 'Concluído'`.
+
+**Status do pedido remains unchanged** — still derived from `PO_CREATED.statusMeaning`.
+
+**Files Modified:**
+- `src/frontend/src/pages/Operations/OperationsTransfersPage.tsx` — `deriveCurrentStage`, `resolveStageLabel`, `isEventStatusCompleted` functions.
+- `src/frontend/src/config.ts` — APP_VERSION → `2.169.0`.
+- `docs/VERSION.md` — v2.169.0.
+- `docs/CHANGELOG.md` — This entry.
+
+**What is NOT included:**
+- No backend endpoint changes
+- No transfer details endpoint
+- No barcode tracking
+- No `ALL` plant aggregation
+- No deployment changes
+
+---
+
+## [v2.168.0] - 2026-06-01
+
+### Changed — Operations Summary Card: Business-Oriented UX
+
+**Problem:**
+The summary card showed `Eventos concluídos: 6 / 10 (60%)` with a progress bar, even for business-complete POs. This confused users into thinking the process was incomplete.
+
+**Root cause:**
+`ExpectedEventCount` represents the maximum possible timeline steps for the pipeline model, not a business completion denominator. Some steps may never occur depending on the operational path.
+
+**Removed:**
+- `Eventos concluídos: X / Y (%)` ratio field
+- Progress bar based on `CompletedEventCount / ExpectedEventCount`
+- `Eventos esperados` as a primary metadata field
+
+**Added:**
+- **Status do pedido** — Derived from the `PO_CREATED` event's `statusMeaning` field (backend-resolved from `T_Bestellungen.Status`). Shows business labels like `Concluído`, `Submetido`, `Parcialmente entregue`, `Cancelado`. Displayed as a color-coded badge using existing severity mapping.
+- **Etapa atual** — Derived from the most advanced completed business event in the timeline. Uses a priority order from `PO_CREATED` (lowest) to `GR_COMPLETED` (highest). Shows Portuguese business labels like `Recebimento concluído`, `EDI sincronizado`.
+- **Eventos encontrados** — Simple count of `events.length`. No misleading comparison to expected.
+- **Etapas possíveis do modelo** — De-emphasized footnote (`opacity: 0.7`, small text, border-top separator) showing the pipeline model's maximum step count for technical reference only.
+
+**Derivation logic (frontend-only):**
+
+Status do pedido:
+1. Find event with `eventCode === 'PO_CREATED'`
+2. Use `event.statusMeaning` + `event.severity`
+3. Fallback: `Desconhecido` / `info`
+
+Etapa atual (priority, highest = most advanced):
+1. `GR_COMPLETED` → Recebimento concluído
+2. `GR_CREATED` → Recebimento criado
+3. `INHOUSE_DELIVERY` → Entrega interna criada
+4. `LOADING_ORDER` → Ordem de carregamento
+5. `LOADING_PLANNED` → Carregamento planejado
+6. `CALLOFF_CREATED` → Abruf criado
+7. `EDI_SYNCED` → EDI sincronizado
+8. `EDI_EXPORTED` → EDI exportado
+9. `EDI_CREATED` → Documento EDI criado
+10. `PO_REVISION` → Pedido revisado
+11. `PO_CREATED` → Pedido criado
+- No completed events → `Sem eventos encontrados`
+
+**Files Modified:**
+- `src/frontend/src/pages/Operations/OperationsTransfersPage.tsx` — SummaryCard refactored with business logic.
+- `src/frontend/src/config.ts` — APP_VERSION → `2.168.0`.
+- `docs/VERSION.md` — v2.168.0.
+- `docs/CHANGELOG.md` — This entry.
+
+**What is NOT included:**
+- No backend endpoint changes
+- No transfer details endpoint
+- No barcode tracking
+- No `ALL` plant aggregation
+- No deployment changes
+
+---
+
+## [v2.167.0] - 2026-06-01
+
+### Changed — Operations Module: Quick Viewer Drawer + Status 5 Fix
+
+**UX Change — Quick Viewer Drawer:**
+Timeline viewing moved from a below-list panel to a right-side Quick Viewer Drawer. Improvements:
+- Clicking a transfer row opens a 600px slide-in drawer from the right (full-width on small screens).
+- Backdrop overlay dims the page behind the drawer.
+- Spring animation for smooth open/close transitions.
+- Keyboard dismiss: `Escape` key closes the drawer.
+- Body scroll lock while drawer is open.
+- Drawer header: PO number, journal number, plant, pipeline badge (STANDARD/INHOUSE/PARTIAL), status badge.
+- Drawer body: SummaryCard + TimelineSection (reused from Phase 3).
+- Close button with hover state. Clicking backdrop also closes.
+- Closing drawer clears selection.
+- Selected row remains highlighted in the list.
+
+**Bug Fix — Status 5 mapping (`T_Bestellungen.Status = 5`):**
+- Previously displayed as `Desconhecido (5)`.
+- Now correctly mapped to `Parcialmente entregue` with severity `warning`.
+- `isCompleted = false` — the PO is not terminal in this status.
+- Validated against PO 3425 in AlplaPURCHASE, where the order appears as partially delivered/fulfilled.
+
+**Files Modified:**
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/Operations/OperationsStatusMapper.cs` — Added status 5 → `Parcialmente entregue` (warning).
+- `src/frontend/src/pages/Operations/OperationsTransfersPage.tsx` — Replaced `TimelinePanel` with `QuickViewerDrawer`.
+- `src/frontend/src/config.ts` — APP_VERSION → `2.167.0`.
+- `docs/VERSION.md` — v2.167.0.
+- `docs/CHANGELOG.md` — This entry.
+
+**What is NOT included:**
+- No transfer details endpoint.
+- No barcode tracking.
+- No `ALL` plant aggregation.
+- No deployment changes.
+
+---
+
+## [v2.166.0] - 2026-06-01
+
+### Added — Operations Module Phase 5: Frontend List Integration
+
+Frontend list integration for the `/operations/transfers` page. Evolves the page from manual-lookup-only to a full filter → list → timeline experience.
+
+**Page Layout (top to bottom):**
+1. **Filter panel** — Plant dropdown (VIANA1/2/3), date range inputs (required, max 90 days), status filter (Todos/Ativos/Concluídos/Cancelados), PO/journal search, material search, page size selector.
+2. **Paginated transfer list** — Table with pipeline badges (STANDARD/INHOUSE/PARTIAL), severity-colored status badges, dates, material name, quantity, expected event count.
+3. **Timeline panel** — Loads when user clicks a transfer row. Uses existing `GET /api/operations/transfers/{plant}/{id}/timeline`.
+4. **Manual lookup fallback** — Collapsible section retaining the Phase 3 manual lookup. Includes test hint: "VIANA1/26, VIANA2/26, VIANA3/5".
+
+**API Client:**
+- `fetchOperationsTransfers(filters)` — Builds query string from filters, calls `GET /api/operations/transfers`. Trims whitespace, omits empty optional params.
+
+**TypeScript Types:**
+- `OperationsTransferListItem` — 21-field DTO matching backend `OperationsTransferListItemDto`.
+- `OperationsTransferListResponse` — Paginated wrapper with metadata.
+- `OperationsTransferListFilters` — Filter form state.
+
+**Behavior:**
+- No auto-search on page load — user must click "Pesquisar transferências".
+- Filter change resets page to 1.
+- New search clears selected transfer and previous timeline.
+- `completedEventCount = null` rendered as "Esperados: N" — no false progress bar.
+- `packagingName = null` and `articleVariantType = null` rendered as `—`.
+- Client-side validation: plant required, dates required, dateFrom ≤ dateTo, max 90 days.
+- Error handling: 400 (API message), 503 (integration unavailable), 500 (generic). All Portuguese. No secrets/SQL/traces.
+
+**Files Modified:**
+- `src/frontend/src/types/operations.types.ts` — Added 3 list types.
+- `src/frontend/src/lib/operationsApi.ts` — Added `fetchOperationsTransfers()`.
+- `src/frontend/src/pages/Operations/OperationsTransfersPage.tsx` — Full rewrite.
+- `src/frontend/src/config.ts` — APP_VERSION → `2.166.0`.
+- `docs/VERSION.md` — v2.166.0.
+- `docs/CHANGELOG.md` — This entry.
+
+**What is NOT included:**
+- No backend changes.
+- No transfer details endpoint or page.
+- No barcode tracking.
+- No `ALL` plant aggregation.
+- No deployment changes.
+
+---
+
+## [v2.165.0] - 2026-06-01
+
+### Added — Operations Module Phase 4: Transfer List API
+
+Backend endpoint for paginated, filterable listing of purchase orders/transfers from AlplaPROD.
+
+**Endpoint:**
+- `GET /api/operations/transfers?plant=VIANA1&dateFrom=2026-05-01&dateTo=2026-05-31&page=1&pageSize=25`
+
+**Query Parameters:**
+- `plant` (required): VIANA1, VIANA2, VIANA3
+- `dateFrom` / `dateTo` (required): date range filter on `T_Bestellungen.Add_Date`, max 90 days
+- `status` (optional): ACTIVE (1,2,6), COMPLETED (7,8), CANCELLED (3)
+- `articleSearch` (optional): LIKE search on `T_Artikelvarianten.Bezeichnung` / `Alias`
+- `poSearch` (optional): LIKE search on `IdBestellung` / `JournalNummer`
+- `page` / `pageSize` (optional): pagination, default 1/25, max pageSize 100
+
+**Files Created:**
+- `src/backend/AlplaPortal.Application/DTOs/Operations/OperationsTransferListItemDto.cs`
+- `src/backend/AlplaPortal.Application/DTOs/Operations/OperationsTransferListResponseDto.cs`
+- `src/backend/AlplaPortal.Application/Interfaces/Operations/IOperationsTransferListService.cs`
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/Operations/OperationsTransferListQueryBuilder.cs`
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/Operations/OperationsTransferListService.cs`
+
+**Files Modified:**
+- `src/backend/AlplaPortal.Api/Controllers/OperationsController.cs` — Added `GetTransferList` action.
+- `src/backend/AlplaPortal.Api/Program.cs` — Registered `IOperationsTransferListService`.
+- `src/frontend/src/config.ts` — APP_VERSION → `2.165.0`.
+- `docs/VERSION.md` — v2.165.0.
+- `docs/CHANGELOG.md` — This entry.
+
+**Design decisions (documented):**
+- `CompletedEventCount` = null in list results — too expensive per-row; use timeline endpoint.
+- `PackagingName` = null — `T_VpkVorschrift` join deferred until validated.
+- `QuantityUnit` = null — `T_Bestellpositionen` has no unit column.
+- `ALL` plant value deferred — requires multi-server aggregation.
+- OUTER APPLY TOP 1 for `T_Bestellpositionen` — guarantees 1 row per PO.
+
+**What is NOT included:**
+- No frontend list UI.
+- No transfer details endpoint.
+- No barcode tracking.
+- No `ALL` plant aggregation.
+- No deployment changes.
+
+---
+
+## [v2.164.0] - 2026-05-31
+
+### Added — Operations Module Phase 3: Frontend MVP — Transferências Logísticas
+
+First user-facing Operations screen at `/operations/transfers`. Manual timeline lookup UI for querying transfer timelines from AlplaPROD.
+
+**Page Features:**
+- Search panel: plant dropdown (VIANA1/VIANA2/VIANA3) + IdBestellung input + search button.
+- Summary card: plant info, pipeline model badge, event completion progress bar, query duration.
+- Timeline: severity-colored event cards with completion icons, `Técnico` badges for technical events.
+- Renders all events in API order — does not collapse events at same `sortOrder`.
+- Client-side validation: plant required, IdBestellung must be positive integer.
+- Error states: 400 (API message), 404 (not found), 503 (integration unavailable), 500 (generic). All in Portuguese.
+- Loading and empty states with framer-motion animations.
+
+**Files Created:**
+- `src/frontend/src/types/operations.types.ts` — TypeScript DTOs.
+- `src/frontend/src/lib/operationsApi.ts` — API client helper.
+- `src/frontend/src/pages/Operations/OperationsTransfersPage.tsx` — Page component.
+
+**Files Modified:**
+- `src/frontend/src/constants/navigation.tsx` — Added `Operações > Transferências Logísticas`.
+- `src/frontend/src/components/layout/Sidebar.tsx` — Added tour attribute.
+- `src/frontend/src/App.tsx` — Lazy import + route with `AdminRoute` guard.
+- `src/frontend/src/styles/globals.css` — Added `.spin-icon` utility.
+- `src/frontend/src/config.ts` — APP_VERSION → `2.164.0`.
+- `docs/VERSION.md` — v2.164.0.
+- `docs/CHANGELOG.md` — This entry.
+
+**Security Fix:**
+- Added `[Authorize]` attribute to `OperationsController` — endpoint was unprotected. Now requires JWT authentication, matching all other controllers in the project.
+
+**What is NOT included:**
+- No transfer list endpoint.
+- No transfer details endpoint.
+- No barcode tracking.
+- No backend business changes.
+- No deployment changes.
+
+---
+
+## [v2.163.0] - 2026-05-31
+
+### Added — Operations Module Phase 2: Timeline API
+
+Backend API endpoint for querying transfer timelines from AlplaPROD production databases.
+
+**Endpoint:**
+- `GET /api/operations/transfers/{plant}/{idBestellung}/timeline`
+
+**DTOs:**
+- `OperationsTimelineEventDto` — normalized event with status mapping, severity, entity references.
+- `OperationsTimelineResponseDto` — timeline wrapper with pipeline model, event counts, query metrics.
+
+**Services:**
+- `IOperationsTimelineService` / `OperationsTimelineService` — orchestrates connection, query, and mapping.
+- `IOperationsPipelineDetector` / `OperationsPipelineDetector` — config-based pipeline model detection.
+- `OperationsTimelineQueryBuilder` — parameterized SQL for Standard (10 events) and Inhouse (7 events).
+- `OperationsStatusMapper` — Portuguese status labels + severity from confirmed Script 14 rules.
+
+**Controller:**
+- `OperationsController` — timeline endpoint with proper error handling (400/404/503/500).
+
+**Architecture:**
+- `AlplaProdPlant` and `AlplaProdPipelineModel` enums relocated to `AlplaPortal.Domain.Enums` for cross-layer accessibility.
+- Infrastructure re-exports via `global using` for backward compatibility.
+
+**Error handling:**
+- Invalid plant → 400 Bad Request
+- Integration disabled / plant disabled / missing credentials → 503 Service Unavailable
+- Transfer not found → 404 Not Found
+- SQL timeout / connection failure → 503 Service Unavailable
+- All error messages in Portuguese. No secrets, connection strings, or stack traces in responses.
+
+**What is NOT included:**
+- No transfer list endpoint.
+- No transfer details endpoint.
+- No frontend screens.
+- No deployment changes.
+- AlplaPROD access remains strictly read-only (SELECT only).
+
+---
+
+## [v2.162.0] - 2026-05-31
+
+### Added — Operations Module Phase 1: AlplaPROD Backend Foundation
+
+Backend infrastructure for the future Operations module connecting to AlplaPROD 1.0 production databases (Viana 1, Viana 2, Viana 3).
+
+**What is included:**
+- `AlplaProdPlant` enum — `VIANA1`, `VIANA2`, `VIANA3` plant routing.
+- `AlplaProdPipelineModel` enum — `STANDARD`, `INHOUSE`, `PARTIAL` pipeline models.
+- `AlplaProdConnectionFactory` — Read-only, multi-server, multi-database connection factory with per-plant server/database configuration.
+- `AlplaProdIntegrationProvider` — `IIntegrationProvider` health check that tests ALL enabled plants and aggregates results.
+- `appsettings.json` — `Integrations:AlplaProd` section with placeholder configuration (no real credentials).
+- Seed data — `IntegrationProvider` Id=5 (Code=`ALPLAPROD`, DisplayOrder=40, IsPlanned=true, IsEnabled=false).
+- Seed data — `IntegrationConnectionStatus` Id=5 (Status=`PLANNED`).
+- DI registration — `AlplaProdConnectionFactory` + `AlplaProdIntegrationProvider` registered in `Program.cs`.
+
+**What is NOT included:**
+- No timeline API, no transfer list API, no transfer details API.
+- No OperationsController.
+- No timeline SQL queries or query builders.
+- No frontend screens.
+- No deployment changes.
+- AlplaPROD access remains strictly read-only.
+
+**Health check diagnostic query (read-only):**
+```sql
+SELECT @@SERVERNAME, DB_NAME(), SYSTEM_USER, GETDATE();
+```
+
+**Files Created:**
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/AlplaProdPlant.cs`
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/AlplaProdPipelineModel.cs`
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/AlplaProdConnectionFactory.cs`
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/AlplaProdIntegrationProvider.cs`
+
+**Files Modified:**
+- `src/backend/AlplaPortal.Api/appsettings.json` — Added `Integrations:AlplaProd` section.
+- `src/backend/AlplaPortal.Api/Program.cs` — DI registration.
+- `src/backend/AlplaPortal.Infrastructure/Data/ApplicationDbContext.cs` — Seed data.
+- `docs/OPERATIONS_MODULE_TECHNICAL_DESIGN.md` — Phase 1 status updated.
+- `docs/VERSION.md` — Bumped to v2.162.0.
+- `docs/CHANGELOG.md` — This entry.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.162.0".
+
 ## [v2.161.0] - 2026-05-29
 
 ### Added — Quotation Management Live Guide (v1.0.0)

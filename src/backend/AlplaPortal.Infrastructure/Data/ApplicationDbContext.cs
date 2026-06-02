@@ -865,7 +865,8 @@ public class ApplicationDbContext : DbContext
             new Role { Id = 10, RoleName = "Import" },
             new Role { Id = 11, RoleName = "Viewer / Management" },
             new Role { Id = 12, RoleName = "HR" },
-            new Role { Id = 13, RoleName = "IT" }
+            new Role { Id = 13, RoleName = "IT" },
+            new Role { Id = 14, RoleName = AlplaPortal.Domain.Constants.RoleConstants.Operations }
         );
 
         // Initial Users & Roles Seed
@@ -1002,6 +1003,21 @@ public class ApplicationDbContext : DbContext
                 DisplayOrder = 4,
                 Capabilities = "[\"EMAIL_NOTIFICATIONS\",\"ALERTS\"]",
                 CreatedAtUtc = new DateTime(2026, 5, 25, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new IntegrationProvider
+            {
+                Id = 5,
+                Code = "ALPLAPROD",
+                Name = "AlplaPROD 1.0 (Production)",
+                ProviderType = "PRODUCTION",
+                ConnectionType = "SQL",
+                Description = "AlplaPROD 1.0 production databases — Viana 1, Viana 2, Viana 3",
+                Environment = "PRODUCTION",
+                IsEnabled = false,
+                IsPlanned = true,
+                DisplayOrder = 40,
+                Capabilities = "[\"OPERATIONS\",\"TRANSFERS\",\"LOGISTICS\"]",
+                CreatedAtUtc = new DateTime(2026, 5, 31, 0, 0, 0, DateTimeKind.Utc)
             }
         );
 
@@ -1010,7 +1026,8 @@ public class ApplicationDbContext : DbContext
             new IntegrationConnectionStatus { Id = 1, IntegrationProviderId = 1, CurrentStatus = IntegrationStatusCodes.NotConfigured },
             new IntegrationConnectionStatus { Id = 2, IntegrationProviderId = 2, CurrentStatus = IntegrationStatusCodes.Planned },
             new IntegrationConnectionStatus { Id = 3, IntegrationProviderId = 3, CurrentStatus = IntegrationStatusCodes.NotConfigured },
-            new IntegrationConnectionStatus { Id = 4, IntegrationProviderId = 4, CurrentStatus = IntegrationStatusCodes.NotConfigured }
+            new IntegrationConnectionStatus { Id = 4, IntegrationProviderId = 4, CurrentStatus = IntegrationStatusCodes.NotConfigured },
+            new IntegrationConnectionStatus { Id = 5, IntegrationProviderId = 5, CurrentStatus = IntegrationStatusCodes.Planned }
         );
 
         // Seed: HR Leave Types

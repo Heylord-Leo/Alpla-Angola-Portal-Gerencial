@@ -76,6 +76,15 @@ public class IntegrationHealthService : IIntegrationHealthService
                 hasSettings = smtpSettings != null && !string.IsNullOrEmpty(smtpSettings.Server);
             }
 
+            // ALPLAPROD uses nested Plants config, not a flat Server key
+            if (dbProvider.Code.Equals("ALPLAPROD", StringComparison.OrdinalIgnoreCase))
+            {
+                var alplaProdSec = _configuration.GetSection("Integrations:AlplaProd");
+                hasSettings = !string.IsNullOrEmpty(alplaProdSec["Plants:VIANA1:Server"])
+                           || !string.IsNullOrEmpty(alplaProdSec["Plants:VIANA2:Server"])
+                           || !string.IsNullOrEmpty(alplaProdSec["Plants:VIANA3:Server"]);
+            }
+
             var hasImpl = implementation != null;
             var isEnabled = dbProvider.IsEnabled;
 
@@ -393,6 +402,34 @@ public class IntegrationHealthService : IIntegrationHealthService
             var senderEmail = smtp?.SenderEmail ?? configSec["SenderEmail"];
 
             isConfigured = !string.IsNullOrEmpty(server) && portVal > 0 && !string.IsNullOrEmpty(senderEmail);
+        }
+        else if (provider.Code.Equals("ALPLAPROD", StringComparison.OrdinalIgnoreCase))
+        {
+            var configSec = configuration.GetSection("Integrations:AlplaProd");
+            var authMode = configSec["AuthenticationMode"]?.ToUpperInvariant() ?? "SQL";
+            var username = configSec["Username"];
+            var hasPassword = !string.IsNullOrEmpty(configSec["Password"]);
+
+            // At least one plant must have Server + DatabaseName configured
+            bool hasAnyPlant = false;
+            foreach (var plantName in new[] { "VIANA1", "VIANA2", "VIANA3" })
+            {
+                var plantSec = configSec.GetSection($"Plants:{plantName}");
+                var plantEnabled = plantSec["Enabled"];
+                if (bool.TryParse(plantEnabled, out var pe) && !pe)
+                    continue;
+
+                var plantServer = plantSec["Server"];
+                var plantDb = plantSec["DatabaseName"];
+                if (!string.IsNullOrEmpty(plantServer) && !string.IsNullOrEmpty(plantDb))
+                {
+                    hasAnyPlant = true;
+                    break;
+                }
+            }
+
+            isConfigured = hasAnyPlant &&
+                           (authMode == "WINDOWS" || (!string.IsNullOrEmpty(username) && hasPassword));
         }
 
         if (!isConfigured) 

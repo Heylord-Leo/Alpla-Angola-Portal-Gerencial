@@ -15,7 +15,16 @@ export const ROLES = {
     CONTRACTS: 'Contracts',
     VIEWER_MANAGEMENT: 'Viewer / Management',
     HR: 'HR',
-    IT: 'IT'
+    IT: 'IT',
+    OPERATIONS: 'OPERATIONS'
+};
+
+/**
+ * Centralized mapping for UI display names.
+ * Used when the backend technical name should be formatted differently for users.
+ */
+export const ROLE_DISPLAY_NAMES: Record<string, string> = {
+    [ROLES.OPERATIONS]: 'Operações'
 };
 
 /**
@@ -35,5 +44,6 @@ export const ROLE_DESCRIPTIONS: Record<string, string> = {
     [ROLES.SYSTEM_ADMINISTRATOR]: 'Possui permissões administrativas amplas no sistema.',
     [ROLES.VIEWER_MANAGEMENT]: 'Pode consultar informações conforme o escopo permitido, sem atuar diretamente no processo.',
     [ROLES.HR]: 'Acede às funcionalidades de Recursos Humanos (cadastro, crachás) dentro do escopo de planta e departamento atribuído.',
-    [ROLES.IT]: 'Gere o inventário de equipamentos de T.I, incluindo atribuições, devoluções, manutenções e histórico de movimentações.'
+    [ROLES.IT]: 'Gere o inventário de equipamentos de T.I, incluindo atribuições, devoluções, manutenções e histórico de movimentações.',
+    [ROLES.OPERATIONS]: 'Acesso ao módulo de Operações e transferências logísticas'
 };
