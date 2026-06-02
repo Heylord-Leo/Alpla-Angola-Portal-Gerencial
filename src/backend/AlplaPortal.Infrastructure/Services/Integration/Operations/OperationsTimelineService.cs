@@ -44,7 +44,7 @@ public class OperationsTimelineService : IOperationsTimelineService
         AlplaProdPlant plant, int idBestellung, CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
-        var pipelineModel = _pipelineDetector.DetectPipelineModel(plant);
+        var pipelineModel = await _pipelineDetector.DetectPipelineModelAsync(plant, ct);
         var expectedCount = _pipelineDetector.GetExpectedEventCount(pipelineModel);
 
         _logger.LogInformation(
@@ -113,8 +113,8 @@ public class OperationsTimelineService : IOperationsTimelineService
         return new OperationsTimelineResponseDto
         {
             Plant = plant.ToString(),
-            PlantServer = _factory.GetPlantServer(plant),
-            PlantDatabase = _factory.GetPlantDatabaseName(plant),
+            PlantServer = await _factory.GetPlantServerAsync(plant, ct),
+            PlantDatabase = await _factory.GetPlantDatabaseNameAsync(plant, ct),
             IdBestellung = idBestellung,
             JournalNummer = journalNummer,
             PipelineModel = pipelineModel.ToString(),

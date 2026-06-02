@@ -42,7 +42,7 @@ public class OperationsTransferDetailService : IOperationsTransferDetailService
         AlplaProdPlant plant, int idBestellung, CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
-        var pipelineModel = _pipelineDetector.DetectPipelineModel(plant);
+        var pipelineModel = await _pipelineDetector.DetectPipelineModelAsync(plant, ct);
 
         _logger.LogInformation(
             "[Operations] Transfer detail requested: Plant={Plant}, IdBestellung={Id}, Pipeline={Pipeline}",
@@ -83,8 +83,8 @@ public class OperationsTransferDetailService : IOperationsTransferDetailService
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
 
-        var plantServer = _factory.GetPlantServer(plant);
-        var plantDatabase = _factory.GetPlantDatabaseName(plant);
+        var plantServer = await _factory.GetPlantServerAsync(plant, ct);
+        var plantDatabase = await _factory.GetPlantDatabaseNameAsync(plant, ct);
 
         OperationsTransferDetailDto? result = null;
 

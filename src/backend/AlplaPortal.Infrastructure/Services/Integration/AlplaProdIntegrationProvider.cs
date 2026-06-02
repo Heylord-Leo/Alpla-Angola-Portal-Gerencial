@@ -73,7 +73,7 @@ public class AlplaProdIntegrationProvider : IIntegrationProvider
         {
             // ─── Step 1: Provider enabled ───
 
-            if (!_connectionFactory.IsGloballyEnabled())
+            if (!await _connectionFactory.IsGloballyEnabledAsync(ct))
             {
                 return new IntegrationConnectionTestResult
                 {
@@ -85,7 +85,7 @@ public class AlplaProdIntegrationProvider : IIntegrationProvider
 
             // ─── Step 2: At least one plant configured ───
 
-            var configuredPlants = _connectionFactory.GetConfiguredPlants();
+            var configuredPlants = await _connectionFactory.GetConfiguredPlantsAsync(ct);
             if (configuredPlants.Count == 0)
             {
                 return new IntegrationConnectionTestResult
@@ -134,8 +134,8 @@ public class AlplaProdIntegrationProvider : IIntegrationProvider
             foreach (var plant in configuredPlants)
             {
                 var plantKey = plant.ToString();
-                var configuredServer = _connectionFactory.GetPlantServer(plant) ?? "(não configurado)";
-                var configuredDb = _connectionFactory.GetPlantDatabaseName(plant) ?? "(não configurado)";
+                var configuredServer = await _connectionFactory.GetPlantServerAsync(plant, ct) ?? "(não configurado)";
+                var configuredDb = await _connectionFactory.GetPlantDatabaseNameAsync(plant, ct) ?? "(não configurado)";
 
                 try
                 {
@@ -246,8 +246,8 @@ public class AlplaProdIntegrationProvider : IIntegrationProvider
 
         try
         {
-            var configuredServer = _connectionFactory.GetPlantServer(plant) ?? "(não configurado)";
-            var configuredDb = _connectionFactory.GetPlantDatabaseName(plant) ?? "(não configurado)";
+            var configuredServer = await _connectionFactory.GetPlantServerAsync(plant, ct) ?? "(não configurado)";
+            var configuredDb = await _connectionFactory.GetPlantDatabaseNameAsync(plant, ct) ?? "(não configurado)";
 
             await using var connection = await _connectionFactory.CreateConnectionAsync(plant, ct);
             await using var command = connection.CreateCommand();
