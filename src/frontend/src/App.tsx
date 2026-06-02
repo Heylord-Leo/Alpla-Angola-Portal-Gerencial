@@ -241,6 +241,7 @@ function AppContent() {
         <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/operations/live-board/:plant" element={<Suspense fallback={<LoadingSkeleton />}><OperationsLiveBoardPage /></Suspense>} />
             
             <Route element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
                 <Route path="/change-password" element={<ChangePasswordPage />} />
@@ -287,7 +288,6 @@ function AppContent() {
 
                 {/* Operations Workspace */}
                 <Route path="/operations/transfers" element={<AdminRoute allowedRoles={[ROLES.OPERATIONS]}><Suspense fallback={<LoadingSkeleton />}><OperationsTransfersPage /></Suspense></AdminRoute>} />
-                <Route path="/operations/live-board/:plant" element={<Suspense fallback={<LoadingSkeleton />}><OperationsLiveBoardPage /></Suspense>} />
 
                 {/* HR Workspace */}
                 <Route path="/hr" element={<HRRoute><Suspense fallback={<LoadingSkeleton />}><HRLandingPage /></Suspense></HRRoute>}>

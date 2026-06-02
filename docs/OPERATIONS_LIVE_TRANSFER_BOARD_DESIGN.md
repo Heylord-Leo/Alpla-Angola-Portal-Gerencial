@@ -896,3 +896,10 @@ Create the Live Board screen:
 | [OPERATIONS_MODULE_TECHNICAL_DESIGN.md](file:///c:/dev/alpla-portal/docs/OPERATIONS_MODULE_TECHNICAL_DESIGN.md) | Core Operations module design (timeline, status mapping, pipeline detection) |
 | [OPERATIONS_MODULE_ALPLAPROD_DISCOVERY.md](file:///c:/dev/alpla-portal/docs/OPERATIONS_MODULE_ALPLAPROD_DISCOVERY.md) | AlplaPROD schema discovery, entity relationships |
 | [OPERATIONS_ENTITY_MAP.md](file:///c:/dev/alpla-portal/docs/OPERATIONS_ENTITY_MAP.md) | Entity-to-table mapping |
+
+## 19. Authentication and Access
+
+- **Public Standalone Route**: The Live Board route (`/operations/live-board/:plant`) operates entirely outside the `ProtectedRoute` and `AppShell` boundaries. It is accessible by anyone on the network.
+- **Anonymous API**: The `GET /api/operations/live-board` endpoint uses `[AllowAnonymous]` to serve requests without requiring a JWT `Authorization` header.
+- **Data Safety**: Only the Live Board endpoint is public; the rest of the Operations endpoints (`transfers`, `timeline`, `details`) remain protected and will return `401 Unauthorized` without a valid session. The Live Board DTO is strictly stripped of sensitive PII or financial data.
+- **No Kiosk Token**: In the current phase, no kiosk token or basic auth proxy is required.

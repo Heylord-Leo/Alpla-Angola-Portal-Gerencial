@@ -2,6 +2,15 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.183.0] - 2026-06-02
+
+### Fixed — Operations: Public Route
+
+**Scope:** Frontend routing for Operations Live Board.
+
+- **Frontend Issue:** The Live Board route (`/operations/live-board/:plant`) was nested inside the `ProtectedRoute` wrapper in `App.tsx`, which caused the page to require authentication regardless of API settings.
+- **Resolution:** Moved the Live Board route outside of `ProtectedRoute` and `AppShell` entirely, rendering it as a standalone, public page. 
+
 ## [v2.182.0] - 2026-06-02
 
 ### Changed — Operations: Anonymous Access for Live Board

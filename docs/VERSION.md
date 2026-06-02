@@ -2,7 +2,14 @@
 
 ## Current Version
 
-v2.182.0
+v2.183.0
+
+## [2.183.0] - 2026-06-02
+
+### Fixed — Operations: Public Route
+
+- Moved `OperationsLiveBoardPage` outside of `ProtectedRoute` and `AppShell`.
+- This allows the Live Board to be displayed as a standalone page without requiring user login, while still preserving standard `apiFetch` behavior.
 
 ## [2.182.0] - 2026-06-02
 
