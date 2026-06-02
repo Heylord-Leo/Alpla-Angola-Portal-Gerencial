@@ -44,17 +44,17 @@ $ErrorActionPreference = "Stop"
 # =============================================================================
 function Log-Info {
     param([string]$Message)
-    Write-Host "[INFO] $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $Message" -ForegroundColor Green
+    Write-Host ('[INFO] {0} - {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message) -ForegroundColor Green
 }
 
 function Log-Warn {
     param([string]$Message)
-    Write-Host "[WARN] $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $Message" -ForegroundColor Yellow
+    Write-Host ('[WARN] {0} - {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message) -ForegroundColor Yellow
 }
 
 function Log-Error {
     param([string]$Message)
-    Write-Host "[ERROR] $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $Message" -ForegroundColor Red
+    Write-Host ('[ERROR] {0} - {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message) -ForegroundColor Red
 }
 
 function Log-Manual {
@@ -137,7 +137,7 @@ if ($portInUse) {
     foreach ($procId in $processIds) {
         try {
             $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
-            Log-Warn "Port $ApiPort is in use by process: $($proc.ProcessName) (PID: $procId)"
+            Log-Warn ('Port {0} is in use by process: {1} (PID: {2})' -f $ApiPort, $proc.ProcessName, $procId)
         } catch {
             Log-Warn "Port $ApiPort is in use by PID: $procId (process details unavailable)"
         }
@@ -539,7 +539,7 @@ Write-Host ""
 
 if ($ManualActions.Count -gt 0) {
     Write-Host "============================================" -ForegroundColor Cyan
-    Write-Host "  MANUAL ACTIONS REQUIRED ($($ManualActions.Count))" -ForegroundColor Cyan
+    Write-Host ('  MANUAL ACTIONS REQUIRED ({0})' -f $ManualActions.Count) -ForegroundColor Cyan
     Write-Host "============================================" -ForegroundColor Cyan
     $i = 1
     foreach ($action in $ManualActions) {
