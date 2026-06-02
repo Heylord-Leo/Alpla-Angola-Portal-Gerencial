@@ -2,6 +2,21 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.185.0] - 2026-06-02
+
+### Added
+- **Production Deployment Automation**: Complete CI/CD infrastructure for the Production environment on AOVIA1VMS011.
+  - `deploy-prod.yml`: GitHub Actions workflow with `workflow_dispatch` trigger, database name validation (`[Portal-Gerencial]`), SQL backup, config file preservation, `web.config` preservation (port 5002), smoke test, and Test environment integrity check.
+  - `setup-production-environment.ps1`: Idempotent bootstrap script — creates folder structure, IIS App Pools (`AlplaPortal-Prod-Api-Pool`, `AlplaPortal-Prod-Web-Pool`), IIS Sites, NTFS permissions, environment variables, HTTPS binding, and Production `web.config` (reverse proxy to `localhost:5002`).
+  - `validate-production-environment.ps1`: Read-only validation script with 20+ checks covering folders, IIS, ports, certificates, config, and Test isolation.
+  - `GITHUB_ACTIONS_PROD_DEPLOYMENT.md`: Comprehensive deployment guide (architecture, prerequisites, GitHub configuration, how-to, troubleshooting).
+  - `POST_DEPLOYMENT_CHECKLIST_PROD.md`: Post-deployment validation checklist (automated and manual).
+  - `ROLLBACK_PROCEDURE_PROD.md`: Step-by-step rollback procedures (application-only and full app + database).
+  - `DEPLOYMENT_CHECKLIST.md`: Added Production Environment section with port, database, path, and IIS configuration reference.
+
+### Fixed
+- **PowerShell `$pid` Collision**: Renamed `$pid` to `$procId` in both server scripts to avoid conflict with PowerShell's readonly automatic variable.
+
 ## [v2.184.2] - 2026-06-02
 
 ### Fixed
