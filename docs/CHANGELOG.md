@@ -2,6 +2,11 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.185.1] - 2026-06-02
+
+### Fixed
+- **PowerShell Parser Error**: Replaced UTF-8 em-dash (`—`) characters with hyphens (`-`) in `setup-production-environment.ps1` and `validate-production-environment.ps1`, and enforced UTF-8 BOM encoding. This resolves an issue where Windows PowerShell 5.1 misinterpreted the characters under Windows-1252 encoding, leading to fatal string parsing errors (`The string is missing the terminator: "`).
+
 ## [v2.185.0] - 2026-06-02
 
 ### Added

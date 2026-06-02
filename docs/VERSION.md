@@ -2,9 +2,15 @@
 
 ## Current Version
 
-v2.185.0
+v2.185.1
+
+## [v2.185.1] - 2026-06-02
+
+### Fixed
+- **PowerShell Parser Error**: Replaced UTF-8 em-dash characters with hyphens and enforced UTF-8 BOM encoding in server scripts.
 
 ## [v2.185.0] - 2026-06-02
+
 
 ### Added
 - **Production Deployment Automation**: Complete CI/CD infrastructure for Production environment — workflow, bootstrap, validation, deployment guide, rollback procedures, and post-deployment checklist.
