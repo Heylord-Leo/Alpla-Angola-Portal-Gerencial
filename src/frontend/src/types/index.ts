@@ -883,6 +883,9 @@ export interface IntegrationSettingsDto {
     // Company-specific settings for Primavera
     primaveraCompanies?: PrimaveraCompanySettingsDto[];
 
+    // Plant-specific settings for AlplaPROD
+    alplaProdPlants?: AlplaProdPlantSettingsDto[];
+
     // Audit
     updatedByUserName?: string;
     updatedAt?: string;
@@ -906,6 +909,31 @@ export interface UpdatePrimaveraCompanyDto {
 
 export interface ReplacePrimaveraCompanySecretDto {
     companyKey: string;
+    newPassword: string;
+}
+
+export interface AlplaProdPlantSettingsDto {
+    plantKey: string;
+    server?: string;
+    databaseName?: string;
+    enabled: boolean;
+    username?: string;
+    hasPassword: boolean;
+    usesGlobalCredentials: boolean;
+    secretVersion: number;
+    pipelineModel?: string;
+}
+
+export interface UpdateAlplaProdPlantDto {
+    plantKey: string;
+    server?: string;
+    databaseName?: string;
+    enabled: boolean;
+    username?: string;
+}
+
+export interface ReplaceAlplaProdPlantSecretDto {
+    plantKey: string;
     newPassword: string;
 }
 

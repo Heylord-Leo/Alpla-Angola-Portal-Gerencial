@@ -129,6 +129,44 @@ public class IntegrationSettingsController : ControllerBase
         }
     }
 
+    /// <summary>Update AlplaPROD plant-specific settings (server, database, username, enabled).</summary>
+    [HttpPut("ALPLAPROD/plant")]
+    public async Task<IActionResult> UpdateAlplaProdPlant([FromBody] UpdateAlplaProdPlantDto dto, CancellationToken ct)
+    {
+        try
+        {
+            await _settingsService.UpdateAlplaProdPlantAsync(dto, 0, ct);
+            return NoContent();
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(403, new { message = ex.Message });
+        }
+    }
+
+    /// <summary>Replace AlplaPROD plant-specific password override.</summary>
+    [HttpPost("ALPLAPROD/plant/secret")]
+    public async Task<IActionResult> ReplaceAlplaProdPlantSecret([FromBody] ReplaceAlplaProdPlantSecretDto dto, CancellationToken ct)
+    {
+        try
+        {
+            await _settingsService.ReplaceAlplaProdPlantSecretAsync(dto, 0, ct);
+            return Ok(new { message = "Senha da planta AlplaPROD atualizada com sucesso." });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(403, new { message = ex.Message });
+        }
+    }
+
     /// <summary>Enable a provider.</summary>
     [HttpPost("{code}/enable")]
     public async Task<IActionResult> Enable(string code, CancellationToken ct)

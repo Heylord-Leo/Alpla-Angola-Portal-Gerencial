@@ -2,7 +2,16 @@
 
 ## Current Version
 
-v2.183.0
+v2.184.0
+
+## [2.184.0] - 2026-06-02
+
+### Added — Integration: AlplaPROD 1.0 Multi-Plant Configuration
+
+- Activated ALPLAPROD provider via EF migration (was previously planned/future-blocked).
+- Added per-plant connection configuration (VIANA1, VIANA2, VIANA3) with independent server, database, username, password, and test connectivity.
+- Added `TestPlantConnectionAsync` for per-plant connection testing via admin UI.
+- Full UI for per-plant cards with configure, replace password, and test connection actions.
 
 ## [2.183.0] - 2026-06-02
 

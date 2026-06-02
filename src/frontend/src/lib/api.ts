@@ -1,4 +1,4 @@
-import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto, IntegrationSettingsDto, IntegrationConnectionTestResultDto, UpdateIntegrationSettingsDto, UpdatePrimaveraCompanyDto, ReplacePrimaveraCompanySecretDto } from '../types';
+import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto, IntegrationSettingsDto, IntegrationConnectionTestResultDto, UpdateIntegrationSettingsDto, UpdatePrimaveraCompanyDto, ReplacePrimaveraCompanySecretDto, UpdateAlplaProdPlantDto, ReplaceAlplaProdPlantSecretDto } from '../types';
 import { logger, FrontendComponentKey } from './logger';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
@@ -1706,6 +1706,23 @@ export const api = {
                     body: JSON.stringify(data),
                 });
                 if (!response.ok) return handleApiError(response, 'Falha ao atualizar senha da empresa Primavera.', 'AdminApi');
+                return response.json();
+            },
+            updateAlplaProdPlant: async (data: UpdateAlplaProdPlantDto): Promise<void> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings/ALPLAPROD/plant`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao atualizar configurações da planta AlplaPROD.', 'AdminApi');
+            },
+            replaceAlplaProdPlantSecret: async (data: ReplaceAlplaProdPlantSecretDto): Promise<{ message: string }> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/integration-settings/ALPLAPROD/plant/secret`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao atualizar senha da planta AlplaPROD.', 'AdminApi');
                 return response.json();
             },
             enable: async (code: string): Promise<{ message: string }> => {

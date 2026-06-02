@@ -29,4 +29,10 @@ public interface IIntegrationSettingsService
 
     /// <summary>Replace Primavera company-specific password.</summary>
     Task ReplacePrimaveraCompanySecretAsync(ReplacePrimaveraCompanySecretDto dto, int userId, CancellationToken ct = default);
+
+    /// <summary>Update AlplaPROD plant-specific settings (server, database, username, enabled).</summary>
+    Task UpdateAlplaProdPlantAsync(UpdateAlplaProdPlantDto dto, int userId, CancellationToken ct = default);
+
+    /// <summary>Replace AlplaPROD plant-specific password override.</summary>
+    Task ReplaceAlplaProdPlantSecretAsync(ReplaceAlplaProdPlantSecretDto dto, int userId, CancellationToken ct = default);
 }
