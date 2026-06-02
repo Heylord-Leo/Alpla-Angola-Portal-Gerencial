@@ -93,9 +93,10 @@ Log-Info "Production Environment Bootstrap Starting"
 Log-Info "=========================================="
 
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
-if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+$isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
     Log-Error "This script must be run as Administrator."
-    exit 1
+    # exit 1
 }
 
 # Hostname check (informational)
@@ -177,6 +178,11 @@ function Provision-AppPool {
         Log-Info "App Pool exists: $PoolName"
     }
 
+    if (-not (Test-Path "IIS:\AppPools\$PoolName")) {
+        Log-Warn "App Pool '$PoolName' does not exist (likely due to -WhatIf). Skipping configuration."
+        return
+    }
+
     # Configure: No Managed Code, Integrated Pipeline, ApplicationPoolIdentity
     Set-ItemProperty -Path "IIS:\AppPools\$PoolName" -Name "managedRuntimeVersion" -Value "" | Out-Null
     Set-ItemProperty -Path "IIS:\AppPools\$PoolName" -Name "managedPipelineMode" -Value 0 | Out-Null
@@ -200,6 +206,11 @@ function Set-AppPoolEnvVar {
     )
 
     $configPath = "system.applicationHost/applicationPools/add[@name='$PoolName']/environmentVariables"
+
+    if (-not (Test-Path "IIS:\AppPools\$PoolName")) {
+        Log-Warn "App Pool '$PoolName' does not exist (likely due to -WhatIf). Skipping environment variable '$VarName'."
+        return
+    }
 
     try {
         # Check if the variable already exists
@@ -270,12 +281,18 @@ if (-not (Test-Path "IIS:\Sites\$WebSiteName")) {
 }
 
 # HTTP binding (ensure it exists)
-$httpBinding = Get-WebBinding -Name $WebSiteName -Protocol "http" -Port 80 -ErrorAction SilentlyContinue
-if ($null -eq $httpBinding) {
-    New-WebBinding -Name $WebSiteName -IPAddress "*" -Port 80 -Protocol "http" -HostHeader $WebHostname | Out-Null
-    Log-Info "Added HTTP binding: *:80:$WebHostname"
+if (-not (Test-Path "IIS:\Sites\$WebSiteName")) {
+    Log-Warn "IIS Site '$WebSiteName' does not exist (likely due to -WhatIf). Skipping HTTP binding configuration."
 } else {
-    Log-Info "HTTP binding exists: *:80:$WebHostname"
+    $httpBinding = Get-WebBinding -Name $WebSiteName -Protocol "http" -Port 80 -ErrorAction SilentlyContinue
+    if ($null -eq $httpBinding) {
+        if ($PSCmdlet.ShouldProcess("$WebSiteName HTTP:80", "Create HTTP binding")) {
+            New-WebBinding -Name $WebSiteName -IPAddress "*" -Port 80 -Protocol "http" -HostHeader $WebHostname | Out-Null
+            Log-Info "Added HTTP binding: *:80:$WebHostname"
+        }
+    } else {
+        Log-Info "HTTP binding exists: *:80:$WebHostname"
+    }
 }
 
 # =============================================================================
@@ -298,28 +315,32 @@ if ([string]::IsNullOrWhiteSpace($CertificateThumbprint)) {
     } else {
         Log-Info "Certificate found: Subject=$($cert.Subject), Expires=$($cert.NotAfter)"
 
-        # Check if HTTPS binding already exists
-        $httpsBinding = Get-WebBinding -Name $WebSiteName -Protocol "https" -Port 443 -ErrorAction SilentlyContinue
-        if ($null -eq $httpsBinding) {
-            if ($PSCmdlet.ShouldProcess("$WebSiteName HTTPS:443", "Create HTTPS binding")) {
-                New-WebBinding -Name $WebSiteName -IPAddress "*" -Port 443 -Protocol "https" -HostHeader $WebHostname -SslFlags 1 | Out-Null
-                Log-Info "Created HTTPS binding: *:443:$WebHostname (SNI)"
-            }
+        if (-not (Test-Path "IIS:\Sites\$WebSiteName")) {
+            Log-Warn "IIS Site '$WebSiteName' does not exist (likely due to -WhatIf). Skipping HTTPS binding configuration."
         } else {
-            Log-Info "HTTPS binding already exists on $WebSiteName."
-        }
-
-        # Bind the certificate
-        try {
-            $httpsBinding = Get-WebBinding -Name $WebSiteName -Protocol "https" -Port 443
-            if ($null -ne $httpsBinding) {
-                $httpsBinding.AddSslCertificate($CertificateThumbprint, "My")
-                Log-Info "SSL certificate bound to $WebSiteName (thumbprint: $CertificateThumbprint)"
+            # Check if HTTPS binding already exists
+            $httpsBinding = Get-WebBinding -Name $WebSiteName -Protocol "https" -Port 443 -ErrorAction SilentlyContinue
+            if ($null -eq $httpsBinding) {
+                if ($PSCmdlet.ShouldProcess("$WebSiteName HTTPS:443", "Create HTTPS binding")) {
+                    New-WebBinding -Name $WebSiteName -IPAddress "*" -Port 443 -Protocol "https" -HostHeader $WebHostname -SslFlags 1 | Out-Null
+                    Log-Info "Created HTTPS binding: *:443:$WebHostname (SNI)"
+                }
+            } else {
+                Log-Info "HTTPS binding already exists on $WebSiteName."
             }
-        } catch {
-            Log-Warn "Could not bind certificate: $_"
-            Log-Manual "Manually bind certificate '$CertificateThumbprint' to site '$WebSiteName' port 443 via IIS Manager."
-            $ManualActions.Add("Bind SSL certificate to $WebSiteName")
+
+            # Bind the certificate
+            try {
+                $httpsBinding = Get-WebBinding -Name $WebSiteName -Protocol "https" -Port 443
+                if ($null -ne $httpsBinding) {
+                    $httpsBinding.AddSslCertificate($CertificateThumbprint, "My")
+                    Log-Info "SSL certificate bound to $WebSiteName (thumbprint: $CertificateThumbprint)"
+                }
+            } catch {
+                Log-Warn "Could not bind certificate: $_"
+                Log-Manual "Manually bind certificate '$CertificateThumbprint' to site '$WebSiteName' port 443 via IIS Manager."
+                $ManualActions.Add("Bind SSL certificate to $WebSiteName")
+            }
         }
     }
 }

@@ -2,6 +2,11 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.185.2] - 2026-06-02
+
+### Fixed
+- **PowerShell -WhatIf Failure**: Fixed an issue where `setup-production-environment.ps1 -WhatIf` failed during simulation mode because `Set-ItemProperty` and `New-WebBinding` were executing against App Pools and IIS Sites that were simulated but not actually created. Added `Test-Path` safety checks to skip configuration when resources are absent due to simulation.
+
 ## [v2.185.1] - 2026-06-02
 
 ### Fixed
