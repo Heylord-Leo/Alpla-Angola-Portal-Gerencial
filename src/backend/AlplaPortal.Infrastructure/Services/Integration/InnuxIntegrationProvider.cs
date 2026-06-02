@@ -22,6 +22,7 @@ namespace AlplaPortal.Infrastructure.Services.Integration;
 public class InnuxIntegrationProvider : IIntegrationProvider
 {
     private readonly InnuxConnectionFactory _connectionFactory;
+    private readonly IntegrationConfigResolver _configResolver;
     private readonly IConfiguration _configuration;
     private readonly ILogger<InnuxIntegrationProvider> _logger;
 
@@ -33,23 +34,38 @@ public class InnuxIntegrationProvider : IIntegrationProvider
 
     public InnuxIntegrationProvider(
         InnuxConnectionFactory connectionFactory,
+        IntegrationConfigResolver configResolver,
         IConfiguration configuration,
         ILogger<InnuxIntegrationProvider> logger)
     {
         _connectionFactory = connectionFactory;
+        _configResolver = configResolver;
         _configuration = configuration;
         _logger = logger;
     }
 
     public async Task<IntegrationConnectionTestResult> TestConnectionAsync(CancellationToken ct = default)
     {
-        var section = _configuration.GetSection("Integrations:Innux");
+        var resolved = await _configResolver.ResolveSqlSettingsAsync("INNUX", "Integrations:Innux", ct);
 
         // ─── Validate required configuration ───
 
-        var server = section["Server"];
-        var databaseName = section["DatabaseName"];
-        var enabledRaw = section["Enabled"];
+        if (!resolved.IsEnabled)
+        {
+            return new IntegrationConnectionTestResult
+            {
+                Success = false,
+                Message = "A integração Innux está desativada.",
+                ResponseTimeMs = 0
+            };
+        }
+
+        var server = resolved.Server;
+        var databaseName = resolved.DatabaseName;
+        if (resolved.Source == "CONFIGURATION" && string.IsNullOrWhiteSpace(databaseName))
+        {
+            databaseName = _configuration["Integrations:Innux:DatabaseName"];
+        }
 
         if (string.IsNullOrWhiteSpace(server) || string.IsNullOrWhiteSpace(databaseName))
         {
@@ -57,16 +73,6 @@ public class InnuxIntegrationProvider : IIntegrationProvider
             {
                 Success = false,
                 Message = "Innux connection settings are incomplete. Required: Server, DatabaseName.",
-                ResponseTimeMs = 0
-            };
-        }
-
-        if (!bool.TryParse(enabledRaw, out var isEnabled) || !isEnabled)
-        {
-            return new IntegrationConnectionTestResult
-            {
-                Success = false,
-                Message = "Innux provider is not enabled in configuration.",
                 ResponseTimeMs = 0
             };
         }
@@ -83,7 +89,7 @@ public class InnuxIntegrationProvider : IIntegrationProvider
             // Read-only, no business tables, no writes.
             await using var command = new SqlCommand(
                 "SELECT @@SERVERNAME AS ServerName, DB_NAME() AS DatabaseName", connection);
-            command.CommandTimeout = InnuxConnectionFactory.GetTimeoutSeconds(section);
+            command.CommandTimeout = resolved.TimeoutSeconds > 0 ? resolved.TimeoutSeconds : 15;
 
             await using var reader = await command.ExecuteReaderAsync(ct);
 
