@@ -2,7 +2,17 @@
 
 ## Current Version
 
-v2.184.0
+v2.184.2
+
+## [v2.184.2] - 2026-06-02
+
+### Fixed
+- **Innux Integration Testing**: Replaced direct configuration reads with database-first cascade resolution via `IntegrationConfigResolver`, resolving false-negative "connection settings are incomplete" validation errors.
+
+## [v2.184.1] - 2026-06-02
+
+### Fixed
+- **AlplaPROD Integration Testing**: Restored database configuration cascade priority, fixing false 'disabled' validation errors and synchronizing the factory logic.
 
 ## [2.184.0] - 2026-06-02
 

@@ -2,6 +2,16 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.184.2] - 2026-06-02
+
+### Fixed
+- **Innux Integration Testing**: Replaced direct configuration reads with database-first cascade resolution via `IntegrationConfigResolver`, resolving false-negative "connection settings are incomplete" validation errors.
+
+## [v2.184.1] - 2026-06-02
+
+### Fixed
+- **AlplaPROD Integration Testing**: Restored database configuration cascade priority, fixing false 'disabled' validation errors and synchronizing the factory logic.
+
 ## [v2.184.0] - 2026-06-02
 
 ### Added — Integration: AlplaPROD 1.0 Multi-Plant Configuration
