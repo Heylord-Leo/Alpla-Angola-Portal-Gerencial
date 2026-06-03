@@ -2,6 +2,41 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.185.8] - 2026-06-03
+
+### Fixed
+- **Supplier PortalCode D6 Standardization (DEC-136)**: Fixed `Cannot insert duplicate key row in object 'dbo.Suppliers' with unique index 'IX_Suppliers_PortalCode'` error when creating suppliers from the OCR/proforma flow (QuickSupplierModal).
+
+  **Root Cause**: Two interacting bugs:
+  1. `SyncController.SupplierImport` and `SupplierImportReviewed` generated PortalCodes in D4 format (`SUP-0003`, 8 chars), while `LookupsController.GetNextPortalCodeAsync` generated D6 format (`SUP-000003`, 10 chars).
+  2. The self-healing parser in `GetNextPortalCodeAsync` required `maxCodeStr.Length == 10`, silently ignoring any D4 codes in the database. This caused the counter to regress to 0, generating `SUP-000001`/`SUP-000002` which collided with seed data.
+
+  **Changes**:
+  - **Flexible parser**: `ParsePortalCodeSequence()` static helper handles any `SUP-XXXX` numeric format (D4, D5, D6+). Materializes all codes client-side and finds the numeric max, avoiding SQL alphabetic ordering issues with mixed-length codes.
+  - **Retry logic**: `CreateSupplier` retries up to 3 times on `IX_Suppliers_PortalCode` collision, detaching the failed entity and regenerating the code. Error messages are sanitized — raw SQL constraint names are never exposed to the frontend.
+  - **D6 standardization**: `SupplierImport` and `SupplierImportReviewed` now use `$"SUP-{nextSeq:D6}"` instead of `D4`.
+  - **SystemCounters alignment**: Both import endpoints now update the `SUPPLIER_PORTAL_CODE` counter after batch saves, keeping `GetNextPortalCodeAsync` synchronized.
+  - **ILogger injection**: Added `ILogger<LookupsController>` to support structured warning/error logging in the retry flow.
+
+  **Files Changed**:
+  - `src/backend/AlplaPortal.Api/Controllers/LookupsController.cs` — Fixed `GetNextPortalCodeAsync`, added retry logic to `CreateSupplier`, added `ParsePortalCodeSequence` helper, injected `ILogger`.
+  - `src/backend/AlplaPortal.Api/Controllers/SyncController.cs` — D4→D6 in `SupplierImport` and `SupplierImportReviewed`, fixed max-code parser, added SystemCounters alignment.
+  - `src/frontend/src/config.ts` — APP_VERSION → `v2.185.8`.
+  - `docs/VERSION.md` — v2.185.8.
+  - `docs/CHANGELOG.md` — This entry.
+  - `docs/DECISIONS.md` — DEC-136.
+
+## [v2.185.7] - 2026-06-03
+
+### Fixed
+- **Production Email Config Script — Schema Correction**: Regenerated `scripts/db/configure-production-email.sql` from the validated AOVIA1VMS011 schema. Corrected table name `IntegrationConnectionStatuses` (plural, EF convention), replaced nonexistent columns (`LastTestedAtUtc`, `LastSuccessAtUtc`) with actual columns (`LastSuccessUtc`, `LastFailureUtc`, `LastResponseTimeMs`, `LastErrorMessage`, `ConsecutiveFailures`, `LastTestedByEmail`, `LastCheckedAtUtc`), standardized FK references to `IntegrationProviderId`, added schema guard checks that abort execution if required tables/columns are missing, and ensured final validation outputs counts/status only without exposing encrypted values.
+
+## [v2.185.6] - 2026-06-03
+
+### Added
+- **Production Email Configuration Script**: Created `scripts/db/configure-production-email.sql` — a safe, idempotent SQL script that copies SMTP settings from the Test database to Production. Includes diagnostic comparison, pre-change backup (SQL Express compatible), masked sensitive output, and post-configuration validation.
+- **Deployment Checklist Update**: Added "Email / SMTP Configuration (Production)" section to `docs/DEPLOYMENT_CHECKLIST.md` documenting where email settings are stored, how to initialize them from Test, encryption key prerequisites, and safe validation procedures.
+
 ## [v2.185.5] - 2026-06-03
 
 ### Fixed

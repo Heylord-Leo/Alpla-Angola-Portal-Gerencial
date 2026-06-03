@@ -10,10 +10,12 @@ namespace AlplaPortal.Api.Controllers;
 public class LookupsController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
+    private readonly ILogger<LookupsController> _logger;
 
-    public LookupsController(ApplicationDbContext context)
+    public LookupsController(ApplicationDbContext context, ILogger<LookupsController> logger)
     {
         _context = context;
+        _logger = logger;
     }
 
     [HttpGet("units")]
@@ -775,6 +777,18 @@ public class LookupsController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// Extracts the numeric suffix from a PortalCode string like "SUP-000003" or "SUP-0003".
+    /// Returns 0 if the code is null, doesn't start with "SUP-", or the suffix is not numeric.
+    /// Handles any zero-padding width (D4, D5, D6, etc.).
+    /// </summary>
+    private static int ParsePortalCodeSequence(string? code)
+    {
+        if (code == null || !code.StartsWith("SUP-") || code.Length <= 4)
+            return 0;
+        return int.TryParse(code.Substring(4), out int parsed) ? parsed : 0;
+    }
+
     private async Task<string> GetNextPortalCodeAsync()
     {
         var counterKey = "SUPPLIER_PORTAL_CODE";
@@ -790,19 +804,19 @@ public class LookupsController : ControllerBase
                     .FromSqlRaw("SELECT * FROM SystemCounters WITH (UPDLOCK, ROWLOCK) WHERE Id = {0}", counterKey)
                     .FirstOrDefaultAsync();
 
-                // 2. Perform robust "Self-healing": always check the actual database state
-                // This protects against sequence regressions if SystemCounters is reset or out of sync.
-                var maxCodeStr = await _context.Suppliers
+                // 2. Perform robust "Self-healing": always check the actual database state.
+                // Materialize all SUP- codes and find the max numerically on the client side.
+                // This avoids SQL alphabetic ordering issues with mixed-length codes
+                // (e.g. "SUP-0003" sorts higher than "SUP-000002" alphabetically but is lower numerically).
+                var allPortalCodes = await _context.Suppliers
                     .Where(s => s.PortalCode != null && s.PortalCode.StartsWith("SUP-"))
-                    .OrderByDescending(s => s.PortalCode)
-                    .Select(s => s.PortalCode)
-                    .FirstOrDefaultAsync();
+                    .Select(s => s.PortalCode!)
+                    .ToListAsync();
 
-                int maxInDb = 0;
-                if (maxCodeStr != null && maxCodeStr.Length == 10 && int.TryParse(maxCodeStr.Substring(4), out int parsed))
-                {
-                    maxInDb = parsed;
-                }
+                int maxInDb = allPortalCodes
+                    .Select(ParsePortalCodeSequence)
+                    .DefaultIfEmpty(0)
+                    .Max();
 
                 if (counter == null)
                 {
@@ -817,7 +831,7 @@ public class LookupsController : ControllerBase
                 }
                 else
                 {
-                    // If the counter lagging behind the actual data, force it to catch up
+                    // If the counter is lagging behind the actual data, force it to catch up
                     if (counter.CurrentValue < maxInDb)
                     {
                         counter.CurrentValue = maxInDb;
@@ -841,7 +855,7 @@ public class LookupsController : ControllerBase
             }
         }
 
-        // Return precisely formatted code: SUP- + 6 zero-padded digits
+        // Return precisely formatted code: SUP- + 6 zero-padded digits (canonical D6 standard)
         return $"SUP-{seqNumber:D6}";
     }
 
@@ -865,34 +879,64 @@ public class LookupsController : ControllerBase
             }
         }
 
-        // 1. Generate Portal Code automatically
-        var portalCode = await GetNextPortalCodeAsync();
-
         var actorId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        const int maxRetries = 3;
 
-        var entity = new Domain.Entities.Supplier 
-        { 
-            PortalCode = portalCode,
-            PrimaveraCode = dto.PrimaveraCode?.Trim().ToUpper(),
-            Name = dto.Name.Trim(), 
-            TaxId = dto.TaxId?.Trim(),
-            IsActive = true,
-            RegistrationStatus = "DRAFT",
-            CreatedAtUtc = DateTime.UtcNow,
-            CreatedByUserId = actorId
-        };
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            // Generate Portal Code automatically (with self-healing from DB state)
+            var portalCode = await GetNextPortalCodeAsync();
 
-        _context.Suppliers.Add(entity);
-        
-        try
-        {
-            await _context.SaveChangesAsync();
-            return Created($"/api/v1/lookups/suppliers/{entity.Id}", new { entity.Id, entity.PortalCode, entity.PrimaveraCode, entity.Name, entity.TaxId, entity.IsActive, entity.RegistrationStatus });
+            var entity = new Domain.Entities.Supplier 
+            { 
+                PortalCode = portalCode,
+                PrimaveraCode = dto.PrimaveraCode?.Trim().ToUpper(),
+                Name = dto.Name.Trim(), 
+                TaxId = dto.TaxId?.Trim(),
+                IsActive = true,
+                RegistrationStatus = "DRAFT",
+                CreatedAtUtc = DateTime.UtcNow,
+                CreatedByUserId = actorId
+            };
+
+            _context.Suppliers.Add(entity);
+
+            try
+            {
+                await _context.SaveChangesAsync();
+                return Created($"/api/v1/lookups/suppliers/{entity.Id}", new { entity.Id, entity.PortalCode, entity.PrimaveraCode, entity.Name, entity.TaxId, entity.IsActive, entity.RegistrationStatus });
+            }
+            catch (DbUpdateException ex) when (
+                attempt < maxRetries &&
+                ex.InnerException?.Message?.Contains("IX_Suppliers_PortalCode", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                // PortalCode collision — detach the failed entity and retry with a new code.
+                // This can happen in rare race conditions or if SystemCounters is out of sync.
+                _logger.LogWarning("PortalCode collision on attempt {Attempt}: '{PortalCode}'. Retrying...", attempt, portalCode);
+                _context.Entry(entity).State = Microsoft.EntityFrameworkCore.EntityState.Detached;
+                continue;
+            }
+            catch (DbUpdateException ex)
+            {
+                // All retries exhausted or non-PortalCode error — log and return sanitized message
+                var innerMsg = ex.InnerException?.Message ?? ex.Message;
+                _logger.LogError(ex, "Failed to create supplier after {MaxRetries} attempts. Inner: {InnerMessage}", maxRetries, innerMsg);
+                return StatusCode(500, new ProblemDetails
+                {
+                    Title = "Erro ao criar Fornecedor",
+                    Detail = "Ocorreu um erro ao salvar o fornecedor. Tente novamente ou contacte o administrador.",
+                    Status = 500
+                });
+            }
         }
-        catch (DbUpdateException ex)
+
+        // Should never reach here, but safety fallback
+        return StatusCode(500, new ProblemDetails
         {
-            return StatusCode(500, new ProblemDetails { Title = "Erro ao criar Fornecedor", Detail = ex.InnerException?.Message ?? ex.Message });
-        }
+            Title = "Erro ao criar Fornecedor",
+            Detail = "Não foi possível gerar um código único para o fornecedor após múltiplas tentativas.",
+            Status = 500
+        });
     }
 
     [HttpPut("suppliers/{id}")]

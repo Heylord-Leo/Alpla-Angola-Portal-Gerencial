@@ -110,6 +110,44 @@ For the full Production deployment guide, see [GITHUB_ACTIONS_PROD_DEPLOYMENT.md
 For Production rollback, see [ROLLBACK_PROCEDURE_PROD.md](file:///c:/dev/alpla-portal/docs/ROLLBACK_PROCEDURE_PROD.md).  
 For Production post-deploy validation, see [POST_DEPLOYMENT_CHECKLIST_PROD.md](file:///c:/dev/alpla-portal/docs/POST_DEPLOYMENT_CHECKLIST_PROD.md).
 
+### Email / SMTP Configuration (Production)
+
+> [!IMPORTANT]
+> A new Production database has **no email settings by default**. Password reset, workflow notifications, and proforma deadline alerts will fail silently until SMTP is configured.
+
+**Where email settings are stored:**
+
+| Table | Purpose |
+|:---|:---|
+| `SmtpSettings` | Primary SMTP config — server, port, sender email, sender name, SSL, AES-encrypted password |
+| `IntegrationProviders` (Code=`SMTP`) | Integration dashboard record |
+| `IntegrationConnectionStatus` (SMTP) | Last test result and connection status |
+| `IntegrationProviderSettings` (SMTP) | Optional extended settings for the SMTP provider |
+
+**How to initialize Production email from Test:**
+
+1. Run `scripts/db/configure-production-email.sql` on AOVIA1VMS011 using SSMS.
+2. The script copies `SmtpSettings` and integration status from `[Portal-Gerencial-Test]` to `[Portal-Gerencial]`.
+3. Creates a backup before making changes (SQL Express — no compression).
+
+**Prerequisites:**
+
+- Both environments must share the same `AppConfig:EncryptionKey` in their respective `appsettings.{Environment}.json` files. The SMTP password is AES-encrypted with this key. If the keys differ, the Production API will fail to decrypt the password copied from Test.
+
+**How to validate email sending:**
+
+1. Open Production Portal > Administração > Integrações.
+2. Locate the **Email / SMTP Service** provider.
+3. Click **Testar Conexão** — this sends a test email to the sender address.
+4. If successful, trigger a password reset for a known user (e.g., `leonardo.cintra@alpla.com`).
+5. Verify the email arrives in the inbox.
+
+**Security notes:**
+
+- Never log, print, or commit the SMTP password or `EncryptionKey`.
+- The `SmtpSettings.EncryptedPassword` column is AES-encrypted and never exposed via the API.
+- The SQL migration script masks all sensitive values in its output.
+
 ---
 
 ## Local Development Database

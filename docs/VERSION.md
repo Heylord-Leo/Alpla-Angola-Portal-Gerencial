@@ -2,7 +2,23 @@
 
 ## Current Version
 
-v2.185.5
+v2.185.8
+
+## [v2.185.8] - 2026-06-03
+
+### Fixed
+- **Supplier PortalCode D6 Standardization**: Fixed `IX_Suppliers_PortalCode` duplicate key collision when creating suppliers from the OCR/proforma flow. Root cause: `SyncController` generated D4 codes (`SUP-0003`) while `LookupsController` generated D6 codes (`SUP-000003`), and the self-healing parser required `Length == 10` which silently ignored D4 codes. Changes: (1) flexible parser in `GetNextPortalCodeAsync` handles any `SUP-XXXX` format, (2) `CreateSupplier` retries up to 3 times on PortalCode collision with sanitized error messages, (3) both `SupplierImport` and `SupplierImportReviewed` now use D6 format, (4) `SystemCounters` aligned after batch imports. See DEC-136.
+
+## [v2.185.7] - 2026-06-03
+
+### Fixed
+- **Production Email Config Script — Schema Correction**: Regenerated `scripts/db/configure-production-email.sql` with validated AOVIA1VMS011 schema (correct table names, columns, FKs, schema guards).
+
+## [v2.185.6] - 2026-06-03
+
+### Added
+- **Production Email Configuration Script**: Created `scripts/db/configure-production-email.sql` for safe SMTP settings migration from Test to Production.
+- **Deployment Checklist Update**: Added email/SMTP configuration documentation to `DEPLOYMENT_CHECKLIST.md`.
 
 ## [v2.185.5] - 2026-06-03
 
