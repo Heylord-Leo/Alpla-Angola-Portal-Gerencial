@@ -2,7 +2,12 @@
 
 ## Current Version
 
-v2.185.3
+v2.185.4
+
+## [v2.185.4] - 2026-06-03
+
+### Fixed
+- **Cascading IDE Lexer Errors**: Completely eliminated all VS Code PowerShell extension lexer false positives in `setup-production-environment.ps1` by rewriting log functions to pre-compute formatted strings in variables, replacing all `-f` operator calls, and switching the XML here-string from double quotes (`@"..."@`) to single quotes (`@'...'@`). This resolves spurious "Unexpected token" and "Missing closing '}'" errors reported by the IDE.
 
 ## [v2.185.3] - 2026-06-02
 
