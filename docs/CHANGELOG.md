@@ -2,6 +2,12 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.185.5] - 2026-06-03
+
+### Fixed
+- **SQL Express Backup Compatibility**: The `deploy-prod.yml` database backup step now detects SQL Server Edition at runtime via `SERVERPROPERTY('Edition')`. If Express Edition is detected, the backup runs without `COMPRESSION` (which Express does not support). Other editions continue to use `COMPRESSION` for faster, smaller backups.
+- **Connection String Diagnostics**: Added pre-parse validation for `PROD_DB_CONNECTION_STRING` to detect common issues (newlines, leading/trailing whitespace, BOM characters) before attempting `SqlConnection`. When the error "Format of the initialization string does not conform to specification" occurs, the workflow now prints actionable guidance for correcting the GitHub secret.
+
 ## [v2.185.4] - 2026-06-03
 
 ### Fixed
