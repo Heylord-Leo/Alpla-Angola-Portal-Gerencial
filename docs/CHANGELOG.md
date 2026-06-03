@@ -2,6 +2,30 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.185.8] - 2026-06-03
+
+### Fixed
+- **Supplier PortalCode D6 Standardization (DEC-136)**: Fixed `Cannot insert duplicate key row in object 'dbo.Suppliers' with unique index 'IX_Suppliers_PortalCode'` error when creating suppliers from the OCR/proforma flow (QuickSupplierModal).
+
+  **Root Cause**: Two interacting bugs:
+  1. `SyncController.SupplierImport` and `SupplierImportReviewed` generated PortalCodes in D4 format (`SUP-0003`, 8 chars), while `LookupsController.GetNextPortalCodeAsync` generated D6 format (`SUP-000003`, 10 chars).
+  2. The self-healing parser in `GetNextPortalCodeAsync` required `maxCodeStr.Length == 10`, silently ignoring any D4 codes in the database. This caused the counter to regress to 0, generating `SUP-000001`/`SUP-000002` which collided with seed data.
+
+  **Changes**:
+  - **Flexible parser**: `ParsePortalCodeSequence()` static helper handles any `SUP-XXXX` numeric format (D4, D5, D6+). Materializes all codes client-side and finds the numeric max, avoiding SQL alphabetic ordering issues with mixed-length codes.
+  - **Retry logic**: `CreateSupplier` retries up to 3 times on `IX_Suppliers_PortalCode` collision, detaching the failed entity and regenerating the code. Error messages are sanitized — raw SQL constraint names are never exposed to the frontend.
+  - **D6 standardization**: `SupplierImport` and `SupplierImportReviewed` now use `$"SUP-{nextSeq:D6}"` instead of `D4`.
+  - **SystemCounters alignment**: Both import endpoints now update the `SUPPLIER_PORTAL_CODE` counter after batch saves, keeping `GetNextPortalCodeAsync` synchronized.
+  - **ILogger injection**: Added `ILogger<LookupsController>` to support structured warning/error logging in the retry flow.
+
+  **Files Changed**:
+  - `src/backend/AlplaPortal.Api/Controllers/LookupsController.cs` — Fixed `GetNextPortalCodeAsync`, added retry logic to `CreateSupplier`, added `ParsePortalCodeSequence` helper, injected `ILogger`.
+  - `src/backend/AlplaPortal.Api/Controllers/SyncController.cs` — D4→D6 in `SupplierImport` and `SupplierImportReviewed`, fixed max-code parser, added SystemCounters alignment.
+  - `src/frontend/src/config.ts` — APP_VERSION → `v2.185.8`.
+  - `docs/VERSION.md` — v2.185.8.
+  - `docs/CHANGELOG.md` — This entry.
+  - `docs/DECISIONS.md` — DEC-136.
+
 ## [v2.185.7] - 2026-06-03
 
 ### Fixed

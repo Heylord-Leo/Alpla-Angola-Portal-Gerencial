@@ -2,6 +2,23 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-136 — Supplier PortalCode D6 Standardization
+
+- **Date:** 2026-06-03
+- **Status:** Accepted
+- **Context:** Creating a supplier from the OCR/proforma flow (QuickSupplierModal) failed with `Cannot insert duplicate key row in object 'dbo.Suppliers' with unique index 'IX_Suppliers_PortalCode'`. Investigation revealed two interacting bugs: (1) `SyncController` import endpoints generated PortalCodes in D4 format (`SUP-0003`, 8 chars) while `LookupsController.GetNextPortalCodeAsync` generated D6 format (`SUP-000003`, 10 chars), and (2) the self-healing parser in `GetNextPortalCodeAsync` required `maxCodeStr.Length == 10`, silently ignoring any D4 codes already in the database. This caused the SystemCounters to regress and produce codes that collided with seed data.
+- **Decision:**
+    1. **D6 as canonical standard**: All PortalCode generation paths now use `$"SUP-{seq:D6}"` — producing 10-character codes like `SUP-000001`. This applies to `LookupsController.GetNextPortalCodeAsync`, `SyncController.SupplierImport`, and `SyncController.SupplierImportReviewed`.
+    2. **Flexible parser**: A new `ParsePortalCodeSequence()` helper handles any `SUP-XXXX` numeric suffix format (D4, D5, D6+) by extracting `Substring(4)` and parsing numerically. The previous rigid `Length == 10` check was the root cause of the silent failure.
+    3. **Client-side max resolution**: The self-healing query now materializes all `SUP-` codes and finds the numeric max on the client side, avoiding SQL alphabetic ordering issues with mixed-length strings (e.g., `SUP-0003` sorts higher than `SUP-000002` alphabetically but is numerically lower).
+    4. **Retry-on-collision**: `CreateSupplier` wraps the save in a retry loop (max 3 attempts) that catches `IX_Suppliers_PortalCode` collisions, detaches the failed entity, and regenerates the code. This handles rare race conditions.
+    5. **Sanitized error messages**: `DbUpdateException` messages are logged server-side but never exposed to the frontend. The UI receives a generic Portuguese error message.
+    6. **SystemCounters alignment**: Both `SupplierImport` and `SupplierImportReviewed` now update the `SUPPLIER_PORTAL_CODE` SystemCounter after batch saves, ensuring subsequent calls to `GetNextPortalCodeAsync` don't regress.
+- **Alternatives considered:** (1) Creating a data migration to normalize existing D4 codes in development to D6 (rejected: only dev has D4 data, TEST and PRODUCTION are empty). (2) Extracting code generation to a shared service class (rejected: the scope is limited to two controllers, and the SystemCounters self-healing pattern is already robust enough after the parser fix).
+- **Consequences:** PortalCode generation is now safe against format inconsistencies and race conditions. The D6 format is the project standard. Existing D4 codes in development environments remain valid and are correctly parsed.
+
+---
+
 ## DEC-135 — Security Incident Response & Unified SMTP Integration Consolidation
 
 - **Date:** 2026-05-25
