@@ -2,17 +2,23 @@
 
 ## Current Version
 
-v2.185.4
+v2.185.5
+
+## [v2.185.5] - 2026-06-03
+
+### Fixed
+- **SQL Express Backup Compatibility**: The `deploy-prod.yml` database backup step now detects SQL Server Edition at runtime via `SERVERPROPERTY('Edition')`. If Express Edition is detected, the backup runs without `COMPRESSION` (which Express does not support). Other editions continue to use `COMPRESSION` for faster, smaller backups.
+- **Connection String Diagnostics**: Added pre-parse validation for `PROD_DB_CONNECTION_STRING` to detect common issues (newlines, leading/trailing whitespace, BOM characters) before attempting `SqlConnection`. When the error "Format of the initialization string does not conform to specification" occurs, the workflow now prints actionable guidance for correcting the GitHub secret.
 
 ## [v2.185.4] - 2026-06-03
 
 ### Fixed
-- **Cascading IDE Lexer Errors**: Completely eliminated all VS Code PowerShell extension lexer false positives in `setup-production-environment.ps1` by rewriting log functions to pre-compute formatted strings in variables, replacing all `-f` operator calls, and switching the XML here-string from double quotes (`@"..."@`) to single quotes (`@'...'@`). This resolves spurious "Unexpected token" and "Missing closing '}'" errors reported by the IDE.
+- **Cascading IDE Lexer Errors**: Completely eliminated all VS Code PowerShell extension lexer false positives in `setup-production-environment.ps1` by rewriting log functions to pre-compute formatted strings in variables, replacing all `-f` operator calls, and switching the XML here-string from double quotes to single quotes.
 
 ## [v2.185.3] - 2026-06-02
 
 ### Fixed
-- **IDE PowerShell Extension Lexer Error**: Refactored string interpolation in `setup-production-environment.ps1` to use the `-f` format operator. This resolves a known issue where VS Code's PowerShell extension (and PSScriptAnalyzer) misinterprets nested subexpressions inside double quotes as an unterminated string, which incorrectly flags a "Missing closing '}' in statement block" error later in the file.
+- **IDE PowerShell Extension Lexer Error**: Refactored string interpolation in `setup-production-environment.ps1` to use the `-f` format operator.
 
 ## [v2.185.2] - 2026-06-02
 

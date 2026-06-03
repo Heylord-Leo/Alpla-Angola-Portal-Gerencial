@@ -198,6 +198,18 @@ jobs:
             exit 0
           }
 
+          # Diagnostic: detect common connection string issues before attempting to connect
+          $connStrTrimmed = $connStr.Trim()
+          if ($connStrTrimmed -ne $connStr) {
+            Write-Host "::warning::PROD_DB_CONNECTION_STRING has leading/trailing whitespace. This may cause parsing failures."
+            $connStr = $connStrTrimmed
+          }
+          if ($connStr -match '[\r\n]') {
+            Write-Host "::error::PROD_DB_CONNECTION_STRING contains newline characters. GitHub secrets must be a single line."
+            Write-Host "::error::Go to GitHub > Settings > Secrets > PROD_DB_CONNECTION_STRING and re-enter it as a single line."
+            throw "Connection string contains newline characters — cannot parse."
+          }
+
           try {
             $conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
             $conn.Open()
@@ -230,6 +242,15 @@ jobs:
             if ($_.Exception.Message -match "SAFETY CHECK") {
               throw
             }
+            # Provide actionable guidance for connection string parsing errors
+            if ($_.Exception.Message -match "Format of the initialization string") {
+              Write-Host "::error::The PROD_DB_CONNECTION_STRING secret could not be parsed by SqlConnection."
+              Write-Host "::error::Common causes:"
+              Write-Host "::error::  1. Password contains an unescaped semicolon (;) — wrap the password in single quotes in the connection string."
+              Write-Host "::error::  2. The secret was pasted with line breaks or invisible Unicode characters."
+              Write-Host "::error::  3. The secret has trailing whitespace or BOM characters."
+              Write-Host "::error::Fix: Go to GitHub > Repository > Settings > Secrets and re-enter PROD_DB_CONNECTION_STRING as a single, clean line."
+            }
             Write-Host "::warning::Database connection test failed: $_"
             Write-Host "::warning::Deployment will continue — the application will validate on startup."
           }
@@ -254,9 +275,26 @@ jobs:
           try {
             $conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
             $conn.Open()
+
+            # Detect SQL Server edition to decide if COMPRESSION is supported
+            $editionCmd = $conn.CreateCommand()
+            $editionCmd.CommandText = "SELECT SERVERPROPERTY('Edition') AS Edition"
+            $editionResult = $editionCmd.ExecuteScalar()
+            $edition = [string]$editionResult
+            Write-Host "::notice::SQL Server Edition: $edition"
+
+            # Express Edition does not support BACKUP WITH COMPRESSION
+            if ($edition -match 'Express') {
+              $backupSql = "BACKUP DATABASE [Portal-Gerencial] TO DISK = '$backupFile' WITH FORMAT, NAME = 'Pre-Deploy Backup ${{ inputs.version }}'"
+              Write-Host "::notice::Using backup WITHOUT compression (Express Edition detected)."
+            } else {
+              $backupSql = "BACKUP DATABASE [Portal-Gerencial] TO DISK = '$backupFile' WITH FORMAT, COMPRESSION, NAME = 'Pre-Deploy Backup ${{ inputs.version }}'"
+              Write-Host "::notice::Using backup WITH compression."
+            }
+
             $cmd = $conn.CreateCommand()
             $cmd.CommandTimeout = 300
-            $cmd.CommandText = "BACKUP DATABASE [Portal-Gerencial] TO DISK = '$backupFile' WITH FORMAT, COMPRESSION, NAME = 'Pre-Deploy Backup ${{ inputs.version }}'"
+            $cmd.CommandText = $backupSql
             $cmd.ExecuteNonQuery() | Out-Null
             $conn.Close()
             Write-Host "::notice::Database backup created: $backupFile"
