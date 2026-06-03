@@ -1,333 +1,511 @@
 -- =============================================================================
 -- Alpla Angola - Portal Gerencial
--- Production Email Configuration Script
+-- Production Email Configuration Script  (v2.185.7)
 -- =============================================================================
 --
 -- Purpose:  Copy working SMTP/email configuration from Test DB to Production DB
--- Source:   [Portal-Gerencial-Test]
--- Target:   [Portal-Gerencial]
+-- Source:   [Portal-Gerencial-Test]   (READ-ONLY — no modifications)
+-- Target:   [Portal-Gerencial]        (INSERT/UPDATE only email tables)
 -- Server:   AOVIA1VMS011 (SQL Server Express)
 --
 -- SAFETY:
--- - All sensitive values (passwords, API keys) are masked in SELECT output
--- - Backup is created BEFORE any changes
--- - No user accounts or passwords are modified
--- - No data outside email configuration is touched
--- - Script is idempotent (safe to re-run)
+--   * All sensitive values (passwords, API keys) are MASKED in output
+--   * Backup is created BEFORE any changes (SQL Express — no COMPRESSION)
+--   * No user accounts or passwords are modified
+--   * No data outside email configuration is touched
+--   * Test database is NEVER written to
+--   * Script is idempotent (safe to re-run)
+--
+-- SCHEMA VALIDATED AGAINST AOVIA1VMS011 2026-06-03:
+--   * IntegrationConnectionStatuses  (plural — EF convention)
+--   * IntegrationProviderSettings    (FK: IntegrationProviderId)
+--   * SmtpSettings
 --
 -- INSTRUCTIONS:
--- Run this script on AOVIA1VMS011 using SSMS or sqlcmd.
--- Execute each section in order. Review output before proceeding.
+--   Run on AOVIA1VMS011 using SSMS or sqlcmd.
+--   Execute each step in order. Review output before proceeding.
 -- =============================================================================
 
--- ─── STEP 0: Verify we are on the correct server ───
+SET NOCOUNT ON
+GO
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 0: Environment Verification
+-- ═══════════════════════════════════════════════════════════════════════════════
 PRINT '============================================='
 PRINT '  STEP 0: Environment Verification'
 PRINT '============================================='
+PRINT ''
 
-SELECT 
-    SERVERPROPERTY('ServerName') AS ServerName,
-    SERVERPROPERTY('Edition') AS Edition,
+SELECT
+    SERVERPROPERTY('ServerName')     AS ServerName,
+    SERVERPROPERTY('Edition')        AS Edition,
     SERVERPROPERTY('ProductVersion') AS ProductVersion
 GO
 
--- ─── STEP 1: Diagnostic — Compare SmtpSettings between Test and Production ───
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 1: Schema Guard Checks
+-- ═══════════════════════════════════════════════════════════════════════════════
 PRINT ''
 PRINT '============================================='
-PRINT '  STEP 1: SmtpSettings Comparison'
+PRINT '  STEP 1: Schema Guard Checks'
+PRINT '============================================='
+PRINT ''
+
+DECLARE @errors INT = 0
+
+-- 1a) SmtpSettings must exist in BOTH databases
+IF NOT EXISTS (
+    SELECT 1 FROM [Portal-Gerencial-Test].INFORMATION_SCHEMA.TABLES
+    WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'SmtpSettings'
+)
+BEGIN
+    PRINT '[FAIL] Table [Portal-Gerencial-Test].dbo.SmtpSettings does not exist.'
+    SET @errors = @errors + 1
+END
+ELSE
+    PRINT '[OK]   [Portal-Gerencial-Test].dbo.SmtpSettings exists.'
+
+IF NOT EXISTS (
+    SELECT 1 FROM [Portal-Gerencial].INFORMATION_SCHEMA.TABLES
+    WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'SmtpSettings'
+)
+BEGIN
+    PRINT '[FAIL] Table [Portal-Gerencial].dbo.SmtpSettings does not exist.'
+    SET @errors = @errors + 1
+END
+ELSE
+    PRINT '[OK]   [Portal-Gerencial].dbo.SmtpSettings exists.'
+
+-- 1b) IntegrationConnectionStatuses must exist with IntegrationProviderId
+IF NOT EXISTS (
+    SELECT 1 FROM [Portal-Gerencial].INFORMATION_SCHEMA.TABLES
+    WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'IntegrationConnectionStatuses'
+)
+BEGIN
+    PRINT '[FAIL] Table [Portal-Gerencial].dbo.IntegrationConnectionStatuses does not exist.'
+    SET @errors = @errors + 1
+END
+ELSE
+    PRINT '[OK]   [Portal-Gerencial].dbo.IntegrationConnectionStatuses exists.'
+
+IF NOT EXISTS (
+    SELECT 1 FROM [Portal-Gerencial].INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = 'dbo'
+      AND TABLE_NAME   = 'IntegrationConnectionStatuses'
+      AND COLUMN_NAME  = 'IntegrationProviderId'
+)
+BEGIN
+    PRINT '[FAIL] Column IntegrationConnectionStatuses.IntegrationProviderId does not exist.'
+    SET @errors = @errors + 1
+END
+ELSE
+    PRINT '[OK]   IntegrationConnectionStatuses.IntegrationProviderId exists.'
+
+-- 1c) IntegrationProviderSettings must exist with IntegrationProviderId
+IF NOT EXISTS (
+    SELECT 1 FROM [Portal-Gerencial].INFORMATION_SCHEMA.TABLES
+    WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'IntegrationProviderSettings'
+)
+BEGIN
+    PRINT '[FAIL] Table [Portal-Gerencial].dbo.IntegrationProviderSettings does not exist.'
+    SET @errors = @errors + 1
+END
+ELSE
+    PRINT '[OK]   [Portal-Gerencial].dbo.IntegrationProviderSettings exists.'
+
+IF NOT EXISTS (
+    SELECT 1 FROM [Portal-Gerencial].INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = 'dbo'
+      AND TABLE_NAME   = 'IntegrationProviderSettings'
+      AND COLUMN_NAME  = 'IntegrationProviderId'
+)
+BEGIN
+    PRINT '[FAIL] Column IntegrationProviderSettings.IntegrationProviderId does not exist.'
+    SET @errors = @errors + 1
+END
+ELSE
+    PRINT '[OK]   IntegrationProviderSettings.IntegrationProviderId exists.'
+
+-- 1d) IntegrationProviders must exist
+IF NOT EXISTS (
+    SELECT 1 FROM [Portal-Gerencial].INFORMATION_SCHEMA.TABLES
+    WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'IntegrationProviders'
+)
+BEGIN
+    PRINT '[FAIL] Table [Portal-Gerencial].dbo.IntegrationProviders does not exist.'
+    SET @errors = @errors + 1
+END
+ELSE
+    PRINT '[OK]   [Portal-Gerencial].dbo.IntegrationProviders exists.'
+
+-- Abort if any guard failed
+IF @errors > 0
+BEGIN
+    PRINT ''
+    PRINT '*** ABORTING: ' + CAST(@errors AS VARCHAR) + ' schema guard check(s) failed. Fix the schema before re-running. ***'
+    RETURN
+END
+
+PRINT ''
+PRINT 'All schema guard checks passed.'
+GO
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 2: Diagnostic — Compare SmtpSettings (Test vs Production)
+-- ═══════════════════════════════════════════════════════════════════════════════
+PRINT ''
+PRINT '============================================='
+PRINT '  STEP 2: SmtpSettings Comparison'
 PRINT '============================================='
 
 PRINT ''
-PRINT '--- Test Database SmtpSettings (source) ---'
-SELECT 
+PRINT '--- Test Database (source) ---'
+SELECT
     Id,
     [Server],
     Port,
     SenderEmail,
     SenderName,
     EnableSsl,
-    CASE 
-        WHEN EncryptedPassword IS NOT NULL AND LEN(EncryptedPassword) > 0 
+    CASE
+        WHEN EncryptedPassword IS NOT NULL AND LEN(EncryptedPassword) > 0
         THEN '***ENCRYPTED(' + CAST(LEN(EncryptedPassword) AS VARCHAR) + ' chars)***'
         ELSE '(empty)'
-    END AS EncryptedPassword_Masked,
+    END AS EncryptedPassword_Status,
     CreatedAtUtc,
     UpdatedAtUtc
 FROM [Portal-Gerencial-Test].dbo.SmtpSettings
 
 PRINT ''
-PRINT '--- Production Database SmtpSettings (target — before changes) ---'
-SELECT 
+PRINT '--- Production Database (target — before changes) ---'
+SELECT
     Id,
     [Server],
     Port,
     SenderEmail,
     SenderName,
     EnableSsl,
-    CASE 
-        WHEN EncryptedPassword IS NOT NULL AND LEN(EncryptedPassword) > 0 
+    CASE
+        WHEN EncryptedPassword IS NOT NULL AND LEN(EncryptedPassword) > 0
         THEN '***ENCRYPTED(' + CAST(LEN(EncryptedPassword) AS VARCHAR) + ' chars)***'
         ELSE '(empty)'
-    END AS EncryptedPassword_Masked,
+    END AS EncryptedPassword_Status,
     CreatedAtUtc,
     UpdatedAtUtc
 FROM [Portal-Gerencial].dbo.SmtpSettings
 GO
 
--- ─── STEP 2: Diagnostic — Compare IntegrationProviders (SMTP provider) ───
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 3: Diagnostic — Compare IntegrationProviders (SMTP row)
+-- ═══════════════════════════════════════════════════════════════════════════════
 PRINT ''
 PRINT '============================================='
-PRINT '  STEP 2: IntegrationProviders SMTP Comparison'
+PRINT '  STEP 3: IntegrationProviders SMTP Comparison'
 PRINT '============================================='
 
 PRINT ''
-PRINT '--- Test SMTP Provider ---'
+PRINT '--- Test ---'
 SELECT Id, Code, Name, IsEnabled, Environment, ConnectionType
 FROM [Portal-Gerencial-Test].dbo.IntegrationProviders
 WHERE Code = 'SMTP'
 
 PRINT ''
-PRINT '--- Production SMTP Provider ---'
+PRINT '--- Production ---'
 SELECT Id, Code, Name, IsEnabled, Environment, ConnectionType
 FROM [Portal-Gerencial].dbo.IntegrationProviders
 WHERE Code = 'SMTP'
 GO
 
--- ─── STEP 3: Diagnostic — Compare IntegrationConnectionStatus (SMTP) ───
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 4: Diagnostic — Compare IntegrationConnectionStatuses (SMTP)
+-- ═══════════════════════════════════════════════════════════════════════════════
 PRINT ''
 PRINT '============================================='
-PRINT '  STEP 3: IntegrationConnectionStatus SMTP'
+PRINT '  STEP 4: IntegrationConnectionStatuses SMTP'
 PRINT '============================================='
 
 PRINT ''
-PRINT '--- Test SMTP Connection Status ---'
-SELECT ics.Id, ics.IntegrationProviderId, ics.CurrentStatus, ics.LastTestedAtUtc, ics.LastSuccessAtUtc
-FROM [Portal-Gerencial-Test].dbo.IntegrationConnectionStatus ics
-INNER JOIN [Portal-Gerencial-Test].dbo.IntegrationProviders ip ON ip.Id = ics.IntegrationProviderId
+PRINT '--- Test ---'
+SELECT
+    ics.Id,
+    ics.IntegrationProviderId,
+    ics.CurrentStatus,
+    ics.LastSuccessUtc,
+    ics.LastFailureUtc,
+    ics.LastResponseTimeMs,
+    ics.ConsecutiveFailures,
+    ics.LastTestedByEmail,
+    ics.LastCheckedAtUtc
+FROM [Portal-Gerencial-Test].dbo.IntegrationConnectionStatuses ics
+INNER JOIN [Portal-Gerencial-Test].dbo.IntegrationProviders ip
+    ON ip.Id = ics.IntegrationProviderId
 WHERE ip.Code = 'SMTP'
 
 PRINT ''
-PRINT '--- Production SMTP Connection Status ---'
-SELECT ics.Id, ics.IntegrationProviderId, ics.CurrentStatus, ics.LastTestedAtUtc, ics.LastSuccessAtUtc
-FROM [Portal-Gerencial].dbo.IntegrationConnectionStatus ics
-INNER JOIN [Portal-Gerencial].dbo.IntegrationProviders ip ON ip.Id = ics.IntegrationProviderId
+PRINT '--- Production ---'
+SELECT
+    ics.Id,
+    ics.IntegrationProviderId,
+    ics.CurrentStatus,
+    ics.LastSuccessUtc,
+    ics.LastFailureUtc,
+    ics.LastResponseTimeMs,
+    ics.ConsecutiveFailures,
+    ics.LastTestedByEmail,
+    ics.LastCheckedAtUtc
+FROM [Portal-Gerencial].dbo.IntegrationConnectionStatuses ics
+INNER JOIN [Portal-Gerencial].dbo.IntegrationProviders ip
+    ON ip.Id = ics.IntegrationProviderId
 WHERE ip.Code = 'SMTP'
 GO
 
--- ─── STEP 4: Diagnostic — Compare IntegrationProviderSettings (SMTP) ───
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 5: Diagnostic — Compare IntegrationProviderSettings (SMTP)
+-- ═══════════════════════════════════════════════════════════════════════════════
 PRINT ''
 PRINT '============================================='
-PRINT '  STEP 4: IntegrationProviderSettings SMTP'
+PRINT '  STEP 5: IntegrationProviderSettings SMTP'
 PRINT '============================================='
 
 PRINT ''
-PRINT '--- Test SMTP Provider Settings ---'
-SELECT 
-    ips.Id, 
+PRINT '--- Test ---'
+SELECT
+    ips.Id,
     ips.IntegrationProviderId,
     ips.[Server],
     ips.DatabaseName,
     ips.AuthenticationMode,
     ips.Username,
-    CASE 
-        WHEN ips.EncryptedPassword IS NOT NULL AND LEN(ips.EncryptedPassword) > 0 
-        THEN '***MASKED***'
-        ELSE '(empty)'
-    END AS EncryptedPassword_Masked,
+    CASE
+        WHEN ips.EncryptedPassword IS NOT NULL AND LEN(ips.EncryptedPassword) > 0
+        THEN '***MASKED***' ELSE '(empty)'
+    END AS EncryptedPassword_Status,
     ips.ApiBaseUrl,
-    CASE 
-        WHEN ips.ApiKeyEncrypted IS NOT NULL AND LEN(ips.ApiKeyEncrypted) > 0 
-        THEN '***MASKED***'
-        ELSE '(empty)'
-    END AS ApiKey_Masked,
+    CASE
+        WHEN ips.ApiKeyEncrypted IS NOT NULL AND LEN(ips.ApiKeyEncrypted) > 0
+        THEN '***MASKED***' ELSE '(empty)'
+    END AS ApiKey_Status,
     ips.TimeoutSeconds,
     ips.AdditionalConfig,
     ips.IsReadOnly,
     ips.SecretVersion
 FROM [Portal-Gerencial-Test].dbo.IntegrationProviderSettings ips
-INNER JOIN [Portal-Gerencial-Test].dbo.IntegrationProviders ip ON ip.Id = ips.IntegrationProviderId
+INNER JOIN [Portal-Gerencial-Test].dbo.IntegrationProviders ip
+    ON ip.Id = ips.IntegrationProviderId
 WHERE ip.Code = 'SMTP'
 
 PRINT ''
-PRINT '--- Production SMTP Provider Settings ---'
-SELECT 
-    ips.Id, 
+PRINT '--- Production ---'
+SELECT
+    ips.Id,
     ips.IntegrationProviderId,
     ips.[Server],
     ips.DatabaseName,
     ips.AuthenticationMode,
     ips.Username,
-    CASE 
-        WHEN ips.EncryptedPassword IS NOT NULL AND LEN(ips.EncryptedPassword) > 0 
-        THEN '***MASKED***'
-        ELSE '(empty)'
-    END AS EncryptedPassword_Masked,
+    CASE
+        WHEN ips.EncryptedPassword IS NOT NULL AND LEN(ips.EncryptedPassword) > 0
+        THEN '***MASKED***' ELSE '(empty)'
+    END AS EncryptedPassword_Status,
     ips.ApiBaseUrl,
-    CASE 
-        WHEN ips.ApiKeyEncrypted IS NOT NULL AND LEN(ips.ApiKeyEncrypted) > 0 
-        THEN '***MASKED***'
-        ELSE '(empty)'
-    END AS ApiKey_Masked,
+    CASE
+        WHEN ips.ApiKeyEncrypted IS NOT NULL AND LEN(ips.ApiKeyEncrypted) > 0
+        THEN '***MASKED***' ELSE '(empty)'
+    END AS ApiKey_Status,
     ips.TimeoutSeconds,
     ips.AdditionalConfig,
     ips.IsReadOnly,
     ips.SecretVersion
 FROM [Portal-Gerencial].dbo.IntegrationProviderSettings ips
-INNER JOIN [Portal-Gerencial].dbo.IntegrationProviders ip ON ip.Id = ips.IntegrationProviderId
+INNER JOIN [Portal-Gerencial].dbo.IntegrationProviders ip
+    ON ip.Id = ips.IntegrationProviderId
 WHERE ip.Code = 'SMTP'
 GO
 
--- ─── STEP 5: Create Production backup (SQL Express — NO COMPRESSION) ───
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 6: Production Database Backup (SQL Express — NO COMPRESSION)
+-- ═══════════════════════════════════════════════════════════════════════════════
 PRINT ''
 PRINT '============================================='
-PRINT '  STEP 5: Production Database Backup'
+PRINT '  STEP 6: Production Database Backup'
 PRINT '============================================='
 
--- Ensure backup directory exists (run in PowerShell first if needed):
--- New-Item -ItemType Directory -Force -Path "C:\Apps\AlplaPortal\Prod\backups\db"
+-- Prerequisite: ensure backup directory exists on the server.
+-- PowerShell: New-Item -ItemType Directory -Force -Path "C:\Apps\AlplaPortal\Prod\backups\db"
 
 DECLARE @backupPath NVARCHAR(500)
-DECLARE @timestamp NVARCHAR(20)
-SET @timestamp = REPLACE(REPLACE(REPLACE(CONVERT(NVARCHAR(20), GETDATE(), 120), '-', ''), ':', ''), ' ', '_')
-SET @backupPath = 'C:\Apps\AlplaPortal\Prod\backups\db\Portal-Gerencial_before_email_config_' + @timestamp + '.bak'
+DECLARE @timestamp  NVARCHAR(20)
+SET @timestamp  = REPLACE(REPLACE(REPLACE(
+                      CONVERT(NVARCHAR(20), GETDATE(), 120), '-', ''), ':', ''), ' ', '_')
+SET @backupPath = 'C:\Apps\AlplaPortal\Prod\backups\db\Portal-Gerencial_before_email_config_'
+                  + @timestamp + '.bak'
 
 PRINT 'Creating backup at: ' + @backupPath
 
-BACKUP DATABASE [Portal-Gerencial] 
+BACKUP DATABASE [Portal-Gerencial]
 TO DISK = @backupPath
 WITH FORMAT, NAME = 'Pre-Email-Config Backup'
 
 PRINT 'Backup completed successfully.'
 GO
 
--- ─── STEP 6: Copy SmtpSettings from Test to Production ───
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 7: Copy SmtpSettings from Test to Production
+-- ═══════════════════════════════════════════════════════════════════════════════
 PRINT ''
 PRINT '============================================='
-PRINT '  STEP 6: Copy SmtpSettings to Production'
+PRINT '  STEP 7: Copy SmtpSettings to Production'
 PRINT '============================================='
 
--- Check if Production already has SmtpSettings
 IF NOT EXISTS (SELECT 1 FROM [Portal-Gerencial].dbo.SmtpSettings)
 BEGIN
-    PRINT 'Production has NO SmtpSettings. Copying from Test...'
-    
+    PRINT 'Production has NO SmtpSettings rows. Inserting from Test...'
+
     SET IDENTITY_INSERT [Portal-Gerencial].dbo.SmtpSettings ON
-    
-    INSERT INTO [Portal-Gerencial].dbo.SmtpSettings 
-        (Id, [Server], Port, SenderEmail, SenderName, EnableSsl, EncryptedPassword, CreatedAtUtc, UpdatedAtUtc)
-    SELECT 
-        Id, [Server], Port, SenderEmail, SenderName, EnableSsl, EncryptedPassword, GETUTCDATE(), GETUTCDATE()
+
+    INSERT INTO [Portal-Gerencial].dbo.SmtpSettings
+        (Id, [Server], Port, SenderEmail, SenderName, EnableSsl, EncryptedPassword,
+         CreatedAtUtc, UpdatedAtUtc)
+    SELECT
+        Id, [Server], Port, SenderEmail, SenderName, EnableSsl, EncryptedPassword,
+        GETUTCDATE(), GETUTCDATE()
     FROM [Portal-Gerencial-Test].dbo.SmtpSettings
-    
+
     SET IDENTITY_INSERT [Portal-Gerencial].dbo.SmtpSettings OFF
-    
-    PRINT 'SmtpSettings copied successfully.'
+
+    PRINT 'SmtpSettings inserted from Test.'
 END
 ELSE
 BEGIN
     PRINT 'Production already has SmtpSettings. Updating from Test...'
-    
+
     UPDATE prod
-    SET 
-        prod.[Server] = test.[Server],
-        prod.Port = test.Port,
-        prod.SenderEmail = test.SenderEmail,
-        prod.SenderName = test.SenderName,
-        prod.EnableSsl = test.EnableSsl,
-        prod.EncryptedPassword = test.EncryptedPassword,
-        prod.UpdatedAtUtc = GETUTCDATE()
+    SET
+        prod.[Server]            = src.[Server],
+        prod.Port                = src.Port,
+        prod.SenderEmail         = src.SenderEmail,
+        prod.SenderName          = src.SenderName,
+        prod.EnableSsl           = src.EnableSsl,
+        prod.EncryptedPassword   = src.EncryptedPassword,
+        prod.UpdatedAtUtc        = GETUTCDATE()
     FROM [Portal-Gerencial].dbo.SmtpSettings prod
     CROSS JOIN (
         SELECT TOP 1 * FROM [Portal-Gerencial-Test].dbo.SmtpSettings ORDER BY Id DESC
-    ) test
-    WHERE prod.Id = (SELECT TOP 1 Id FROM [Portal-Gerencial].dbo.SmtpSettings ORDER BY Id DESC)
-    
-    PRINT 'SmtpSettings updated successfully.'
+    ) src
+    WHERE prod.Id = (
+        SELECT TOP 1 Id FROM [Portal-Gerencial].dbo.SmtpSettings ORDER BY Id DESC
+    )
+
+    PRINT 'SmtpSettings updated from Test.'
 END
 GO
 
--- ─── STEP 7: Update IntegrationConnectionStatus for SMTP provider ───
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 8: Update IntegrationConnectionStatuses for SMTP provider
+-- ═══════════════════════════════════════════════════════════════════════════════
 PRINT ''
 PRINT '============================================='
-PRINT '  STEP 7: Update SMTP Integration Status'
+PRINT '  STEP 8: Update SMTP IntegrationConnectionStatuses'
 PRINT '============================================='
 
--- Copy the connection status from Test (typically "Connected" if SMTP is working)
 UPDATE prod_ics
-SET 
-    prod_ics.CurrentStatus = test_ics.CurrentStatus,
-    prod_ics.LastTestedAtUtc = test_ics.LastTestedAtUtc,
-    prod_ics.LastSuccessAtUtc = test_ics.LastSuccessAtUtc
-FROM [Portal-Gerencial].dbo.IntegrationConnectionStatus prod_ics
-INNER JOIN [Portal-Gerencial].dbo.IntegrationProviders prod_ip ON prod_ip.Id = prod_ics.IntegrationProviderId
-INNER JOIN [Portal-Gerencial-Test].dbo.IntegrationConnectionStatus test_ics ON 1=1
-INNER JOIN [Portal-Gerencial-Test].dbo.IntegrationProviders test_ip ON test_ip.Id = test_ics.IntegrationProviderId
-WHERE prod_ip.Code = 'SMTP' AND test_ip.Code = 'SMTP'
+SET
+    prod_ics.CurrentStatus      = test_ics.CurrentStatus,
+    prod_ics.LastSuccessUtc     = test_ics.LastSuccessUtc,
+    prod_ics.LastFailureUtc     = test_ics.LastFailureUtc,
+    prod_ics.LastResponseTimeMs = test_ics.LastResponseTimeMs,
+    prod_ics.LastErrorMessage   = test_ics.LastErrorMessage,
+    prod_ics.ConsecutiveFailures = test_ics.ConsecutiveFailures,
+    prod_ics.LastTestedByEmail  = test_ics.LastTestedByEmail,
+    prod_ics.LastCheckedAtUtc   = test_ics.LastCheckedAtUtc
+FROM [Portal-Gerencial].dbo.IntegrationConnectionStatuses prod_ics
+INNER JOIN [Portal-Gerencial].dbo.IntegrationProviders prod_ip
+    ON prod_ip.Id = prod_ics.IntegrationProviderId
+INNER JOIN [Portal-Gerencial-Test].dbo.IntegrationProviders test_ip
+    ON test_ip.Code = 'SMTP'
+INNER JOIN [Portal-Gerencial-Test].dbo.IntegrationConnectionStatuses test_ics
+    ON test_ics.IntegrationProviderId = test_ip.Id
+WHERE prod_ip.Code = 'SMTP'
 
-PRINT 'SMTP IntegrationConnectionStatus updated.'
+PRINT 'IntegrationConnectionStatuses SMTP row updated.'
 GO
 
--- ─── STEP 8: Copy IntegrationProviderSettings for SMTP (if exists in Test) ───
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 9: Copy IntegrationProviderSettings for SMTP (if present in Test)
+-- ═══════════════════════════════════════════════════════════════════════════════
 PRINT ''
 PRINT '============================================='
-PRINT '  STEP 8: Copy SMTP IntegrationProviderSettings'
+PRINT '  STEP 9: Copy SMTP IntegrationProviderSettings'
 PRINT '============================================='
 
-DECLARE @testSmtpProviderId INT
-DECLARE @prodSmtpProviderId INT
+DECLARE @testSmtpId INT
+DECLARE @prodSmtpId INT
 
-SELECT @testSmtpProviderId = Id FROM [Portal-Gerencial-Test].dbo.IntegrationProviders WHERE Code = 'SMTP'
-SELECT @prodSmtpProviderId = Id FROM [Portal-Gerencial].dbo.IntegrationProviders WHERE Code = 'SMTP'
+SELECT @testSmtpId = Id
+FROM [Portal-Gerencial-Test].dbo.IntegrationProviders
+WHERE Code = 'SMTP'
 
-IF @testSmtpProviderId IS NOT NULL AND EXISTS (
-    SELECT 1 FROM [Portal-Gerencial-Test].dbo.IntegrationProviderSettings 
-    WHERE IntegrationProviderId = @testSmtpProviderId
-)
+SELECT @prodSmtpId = Id
+FROM [Portal-Gerencial].dbo.IntegrationProviders
+WHERE Code = 'SMTP'
+
+IF @testSmtpId IS NOT NULL
+   AND EXISTS (
+       SELECT 1
+       FROM [Portal-Gerencial-Test].dbo.IntegrationProviderSettings
+       WHERE IntegrationProviderId = @testSmtpId
+   )
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM [Portal-Gerencial].dbo.IntegrationProviderSettings 
-        WHERE IntegrationProviderId = @prodSmtpProviderId
+        SELECT 1
+        FROM [Portal-Gerencial].dbo.IntegrationProviderSettings
+        WHERE IntegrationProviderId = @prodSmtpId
     )
     BEGIN
-        PRINT 'Copying SMTP IntegrationProviderSettings from Test to Production...'
-        
+        PRINT 'Inserting SMTP IntegrationProviderSettings from Test...'
+
         INSERT INTO [Portal-Gerencial].dbo.IntegrationProviderSettings
-            (IntegrationProviderId, [Server], DatabaseName, InstanceName, AuthenticationMode, 
-             Username, EncryptedPassword, ApiBaseUrl, ApiKeyEncrypted, TimeoutSeconds, 
-             AdditionalConfig, IsReadOnly, SecretVersion, CreatedAtUtc, UpdatedAtUtc)
-        SELECT 
-            @prodSmtpProviderId, [Server], DatabaseName, InstanceName, AuthenticationMode,
-            Username, EncryptedPassword, ApiBaseUrl, ApiKeyEncrypted, TimeoutSeconds,
-            AdditionalConfig, IsReadOnly, SecretVersion, GETUTCDATE(), GETUTCDATE()
+            (IntegrationProviderId, [Server], DatabaseName, InstanceName,
+             AuthenticationMode, Username, EncryptedPassword,
+             ApiBaseUrl, ApiKeyEncrypted, TimeoutSeconds,
+             AdditionalConfig, IsReadOnly, SecretVersion,
+             CreatedAtUtc, UpdatedAtUtc)
+        SELECT
+            @prodSmtpId, [Server], DatabaseName, InstanceName,
+            AuthenticationMode, Username, EncryptedPassword,
+            ApiBaseUrl, ApiKeyEncrypted, TimeoutSeconds,
+            AdditionalConfig, IsReadOnly, SecretVersion,
+            GETUTCDATE(), GETUTCDATE()
         FROM [Portal-Gerencial-Test].dbo.IntegrationProviderSettings
-        WHERE IntegrationProviderId = @testSmtpProviderId
-        
-        PRINT 'SMTP IntegrationProviderSettings copied.'
+        WHERE IntegrationProviderId = @testSmtpId
+
+        PRINT 'IntegrationProviderSettings SMTP inserted.'
     END
     ELSE
     BEGIN
-        PRINT 'Production already has SMTP IntegrationProviderSettings. Updating...'
-        
+        PRINT 'Updating existing SMTP IntegrationProviderSettings...'
+
         UPDATE prod_ips
-        SET 
-            prod_ips.[Server] = test_ips.[Server],
-            prod_ips.DatabaseName = test_ips.DatabaseName,
-            prod_ips.InstanceName = test_ips.InstanceName,
-            prod_ips.AuthenticationMode = test_ips.AuthenticationMode,
-            prod_ips.Username = test_ips.Username,
-            prod_ips.EncryptedPassword = test_ips.EncryptedPassword,
-            prod_ips.ApiBaseUrl = test_ips.ApiBaseUrl,
-            prod_ips.ApiKeyEncrypted = test_ips.ApiKeyEncrypted,
-            prod_ips.TimeoutSeconds = test_ips.TimeoutSeconds,
-            prod_ips.AdditionalConfig = test_ips.AdditionalConfig,
-            prod_ips.SecretVersion = test_ips.SecretVersion,
-            prod_ips.UpdatedAtUtc = GETUTCDATE()
+        SET
+            prod_ips.[Server]            = test_ips.[Server],
+            prod_ips.DatabaseName        = test_ips.DatabaseName,
+            prod_ips.InstanceName        = test_ips.InstanceName,
+            prod_ips.AuthenticationMode  = test_ips.AuthenticationMode,
+            prod_ips.Username            = test_ips.Username,
+            prod_ips.EncryptedPassword   = test_ips.EncryptedPassword,
+            prod_ips.ApiBaseUrl          = test_ips.ApiBaseUrl,
+            prod_ips.ApiKeyEncrypted     = test_ips.ApiKeyEncrypted,
+            prod_ips.TimeoutSeconds      = test_ips.TimeoutSeconds,
+            prod_ips.AdditionalConfig    = test_ips.AdditionalConfig,
+            prod_ips.SecretVersion       = test_ips.SecretVersion,
+            prod_ips.UpdatedAtUtc        = GETUTCDATE()
         FROM [Portal-Gerencial].dbo.IntegrationProviderSettings prod_ips
-        CROSS JOIN [Portal-Gerencial-Test].dbo.IntegrationProviderSettings test_ips
-        WHERE prod_ips.IntegrationProviderId = @prodSmtpProviderId
-          AND test_ips.IntegrationProviderId = @testSmtpProviderId
-        
-        PRINT 'SMTP IntegrationProviderSettings updated.'
+        INNER JOIN [Portal-Gerencial-Test].dbo.IntegrationProviderSettings test_ips
+            ON test_ips.IntegrationProviderId = @testSmtpId
+        WHERE prod_ips.IntegrationProviderId = @prodSmtpId
+
+        PRINT 'IntegrationProviderSettings SMTP updated.'
     END
 END
 ELSE
@@ -336,77 +514,75 @@ BEGIN
 END
 GO
 
--- ─── STEP 9: Validation — Verify Production email config ───
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 10: Final Validation
+-- ═══════════════════════════════════════════════════════════════════════════════
 PRINT ''
 PRINT '============================================='
-PRINT '  STEP 9: Post-Configuration Validation'
+PRINT '  STEP 10: Final Validation'
 PRINT '============================================='
 
+-- 10a) SmtpSettings row count and non-sensitive fields
 PRINT ''
-PRINT '--- Production SmtpSettings (after changes) ---'
-SELECT 
-    Id,
-    [Server],
-    Port,
-    SenderEmail,
-    SenderName,
-    EnableSsl,
-    CASE 
-        WHEN EncryptedPassword IS NOT NULL AND LEN(EncryptedPassword) > 0 
-        THEN 'YES (' + CAST(LEN(EncryptedPassword) AS VARCHAR) + ' chars)'
+PRINT '--- Production SmtpSettings (counts and status) ---'
+SELECT
+    COUNT(*)                                                        AS RowCount,
+    MAX([Server])                                                   AS SmtpServer,
+    MAX(Port)                                                       AS SmtpPort,
+    MAX(SenderEmail)                                                AS SenderEmail,
+    MAX(SenderName)                                                 AS SenderName,
+    MAX(CAST(EnableSsl AS INT))                                     AS EnableSsl,
+    CASE
+        WHEN MAX(LEN(EncryptedPassword)) > 0 THEN 'YES'
         ELSE 'NO — PASSWORD MISSING'
-    END AS HasPassword,
-    CreatedAtUtc,
-    UpdatedAtUtc
+    END                                                             AS HasEncryptedPassword
 FROM [Portal-Gerencial].dbo.SmtpSettings
 
-PRINT ''
-PRINT '--- Validation: No Test URLs in Production SmtpSettings ---'
-IF EXISTS (
-    SELECT 1 FROM [Portal-Gerencial].dbo.SmtpSettings 
-    WHERE [Server] LIKE '%test%' 
-       OR SenderEmail LIKE '%test%'
-       OR SenderName LIKE '%test%'
-)
-BEGIN
-    PRINT '*** WARNING: Test-related values found in Production SmtpSettings! ***'
-    SELECT 'FAIL' AS ValidationResult, 'Test references found in SmtpSettings' AS Detail
-END
-ELSE
-BEGIN
-    PRINT 'PASS: No Test URLs found in Production SmtpSettings.'
-END
-
-PRINT ''
-PRINT '--- Validation: No Portal-Gerencial-Test references in Production ---'
-IF EXISTS (
-    SELECT 1 FROM [Portal-Gerencial].dbo.IntegrationProviderSettings ips
-    INNER JOIN [Portal-Gerencial].dbo.IntegrationProviders ip ON ip.Id = ips.IntegrationProviderId
-    WHERE ip.Code = 'SMTP'
-      AND (ips.[Server] LIKE '%Portal-Gerencial-Test%' 
-        OR ips.DatabaseName LIKE '%Portal-Gerencial-Test%'
-        OR ips.ApiBaseUrl LIKE '%test%')
-)
-BEGIN
-    PRINT '*** WARNING: Portal-Gerencial-Test references found in Production! ***'
-END
-ELSE
-BEGIN
-    PRINT 'PASS: No Portal-Gerencial-Test references in SMTP settings.'
-END
-
+-- 10b) SMTP IntegrationConnectionStatuses
 PRINT ''
 PRINT '--- Production SMTP Integration Status ---'
-SELECT 
+SELECT
     ip.Code,
     ip.Name,
     ip.IsEnabled,
     ics.CurrentStatus,
-    ics.LastTestedAtUtc,
-    ics.LastSuccessAtUtc
+    ics.LastSuccessUtc,
+    ics.LastCheckedAtUtc,
+    ics.ConsecutiveFailures
 FROM [Portal-Gerencial].dbo.IntegrationProviders ip
-LEFT JOIN [Portal-Gerencial].dbo.IntegrationConnectionStatus ics ON ics.IntegrationProviderId = ip.Id
+LEFT JOIN [Portal-Gerencial].dbo.IntegrationConnectionStatuses ics
+    ON ics.IntegrationProviderId = ip.Id
 WHERE ip.Code = 'SMTP'
+
+-- 10c) SMTP IntegrationProviderSettings (count only, no secrets)
+PRINT ''
+PRINT '--- Production SMTP Provider Settings (count) ---'
+SELECT
+    COUNT(*) AS SettingsRowCount
+FROM [Portal-Gerencial].dbo.IntegrationProviderSettings ips
+INNER JOIN [Portal-Gerencial].dbo.IntegrationProviders ip
+    ON ip.Id = ips.IntegrationProviderId
+WHERE ip.Code = 'SMTP'
+
+-- 10d) Safety: no Test-environment references leaked into Production
+PRINT ''
+IF EXISTS (
+    SELECT 1 FROM [Portal-Gerencial].dbo.SmtpSettings
+    WHERE [Server] LIKE '%test%'
+       OR SenderEmail LIKE '%test%'
+       OR SenderName LIKE '%test%'
+)
+    PRINT '[WARN] Test-related values detected in Production SmtpSettings!'
+ELSE
+    PRINT '[OK]   No Test references in Production SmtpSettings.'
+
+-- 10e) Verify Test database was NOT modified
+PRINT ''
+PRINT '--- Test SmtpSettings (unchanged verification) ---'
+SELECT
+    COUNT(*) AS TestSmtpRowCount,
+    MAX(UpdatedAtUtc) AS TestLastUpdatedUtc
+FROM [Portal-Gerencial-Test].dbo.SmtpSettings
 
 PRINT ''
 PRINT '============================================='
@@ -414,13 +590,9 @@ PRINT '  Configuration Complete'
 PRINT '============================================='
 PRINT ''
 PRINT 'NEXT STEPS:'
-PRINT '  1. Go to Production Portal > Administracao > Integracoes'
-PRINT '  2. Click "Testar Conexao" on the SMTP provider'
+PRINT '  1. Open Production Portal > Administracao > Integracoes'
+PRINT '  2. Click "Testar Conexao" on the Email / SMTP Service provider'
 PRINT '  3. If test passes, trigger a password reset for leonardo.cintra@alpla.com'
 PRINT '  4. Check inbox for the reset email'
 PRINT ''
-PRINT 'NOTE: The SMTP password is AES-encrypted with the same EncryptionKey'
-PRINT 'used in appsettings.Production.json. Both Test and Production must share'
-PRINT 'the same AppConfig:EncryptionKey for the encrypted password to be'
-PRINT 'decryptable in both environments.'
 GO

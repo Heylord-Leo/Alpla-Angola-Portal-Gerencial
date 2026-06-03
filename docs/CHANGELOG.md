@@ -2,6 +2,11 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.185.7] - 2026-06-03
+
+### Fixed
+- **Production Email Config Script — Schema Correction**: Regenerated `scripts/db/configure-production-email.sql` from the validated AOVIA1VMS011 schema. Corrected table name `IntegrationConnectionStatuses` (plural, EF convention), replaced nonexistent columns (`LastTestedAtUtc`, `LastSuccessAtUtc`) with actual columns (`LastSuccessUtc`, `LastFailureUtc`, `LastResponseTimeMs`, `LastErrorMessage`, `ConsecutiveFailures`, `LastTestedByEmail`, `LastCheckedAtUtc`), standardized FK references to `IntegrationProviderId`, added schema guard checks that abort execution if required tables/columns are missing, and ensured final validation outputs counts/status only without exposing encrypted values.
+
 ## [v2.185.6] - 2026-06-03
 
 ### Added

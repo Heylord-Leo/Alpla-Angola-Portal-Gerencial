@@ -2,7 +2,12 @@
 
 ## Current Version
 
-v2.185.6
+v2.185.7
+
+## [v2.185.7] - 2026-06-03
+
+### Fixed
+- **Production Email Config Script — Schema Correction**: Regenerated `scripts/db/configure-production-email.sql` with validated AOVIA1VMS011 schema (correct table names, columns, FKs, schema guards).
 
 ## [v2.185.6] - 2026-06-03
 
