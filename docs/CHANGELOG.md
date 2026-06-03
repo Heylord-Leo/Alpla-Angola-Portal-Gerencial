@@ -2,6 +2,21 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.185.4] - 2026-06-03
+
+### Fixed
+- **Cascading IDE Lexer Errors**: Completely eliminated all VS Code PowerShell extension lexer false positives in `setup-production-environment.ps1` by rewriting log functions to pre-compute formatted strings in variables, replacing all `-f` operator calls, and switching the XML here-string from double quotes (`@"..."@`) to single quotes (`@'...'@`). This resolves spurious "Unexpected token" and "Missing closing '}'" errors reported by the IDE.
+
+## [v2.185.3] - 2026-06-02
+
+### Fixed
+- **IDE PowerShell Extension Lexer Error**: Refactored string interpolation in `setup-production-environment.ps1` to use the `-f` format operator. This resolves a known issue where VS Code's PowerShell extension (and PSScriptAnalyzer) misinterprets nested subexpressions inside double quotes as an unterminated string, which incorrectly flags a "Missing closing '}' in statement block" error later in the file.
+
+## [v2.185.2] - 2026-06-02
+
+### Fixed
+- **PowerShell -WhatIf Failure**: Fixed an issue where `setup-production-environment.ps1 -WhatIf` failed during simulation mode because `Set-ItemProperty` and `New-WebBinding` were executing against App Pools and IIS Sites that were simulated but not actually created. Added `Test-Path` safety checks to skip configuration when resources are absent due to simulation.
+
 ## [v2.185.1] - 2026-06-02
 
 ### Fixed
