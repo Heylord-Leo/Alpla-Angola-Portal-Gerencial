@@ -2,7 +2,13 @@
 
 ## Current Version
 
-v2.185.5
+v2.185.6
+
+## [v2.185.6] - 2026-06-03
+
+### Added
+- **Production Email Configuration Script**: Created `scripts/db/configure-production-email.sql` for safe SMTP settings migration from Test to Production.
+- **Deployment Checklist Update**: Added email/SMTP configuration documentation to `DEPLOYMENT_CHECKLIST.md`.
 
 ## [v2.185.5] - 2026-06-03
 

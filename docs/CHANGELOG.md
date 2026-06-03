@@ -2,6 +2,12 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.185.6] - 2026-06-03
+
+### Added
+- **Production Email Configuration Script**: Created `scripts/db/configure-production-email.sql` — a safe, idempotent SQL script that copies SMTP settings from the Test database to Production. Includes diagnostic comparison, pre-change backup (SQL Express compatible), masked sensitive output, and post-configuration validation.
+- **Deployment Checklist Update**: Added "Email / SMTP Configuration (Production)" section to `docs/DEPLOYMENT_CHECKLIST.md` documenting where email settings are stored, how to initialize them from Test, encryption key prerequisites, and safe validation procedures.
+
 ## [v2.185.5] - 2026-06-03
 
 ### Fixed
