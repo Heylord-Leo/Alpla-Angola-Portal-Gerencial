@@ -13,17 +13,78 @@
 - [ ] Back up the target database before deployment
 - [ ] Review CHANGELOG.md for breaking changes in this release
 
+## EF Core Migration Checklist (Mandatory Before Deploy)
+
+> [!IMPORTANT]
+> **Since v2.185.9 (DEC-137)**, `Database.Migrate()` is **disabled** in non-Development environments.
+> The IIS runtime identity does NOT have DDL permissions.
+> Migrations must be applied manually using a DBA account **before** deploying the new build.
+> The deployment workflow will **block** startup if pending migrations are detected.
+
+> [!WARNING]
+> **When adding a new EF Core migration**, the expected migration list must be updated in the **same task/release** in all three locations:
+> 1. `scripts/db/check-pending-migrations.ps1` — hardcoded `$expectedMigrations` array
+> 2. `.github/workflows/deploy-test.yml` — inline `$expected` array in the "Check for pending EF Core migrations" step
+> 3. `.github/workflows/deploy-prod.yml` — inline `$expected` array in the "Check for pending EF Core migrations" step
+>
+> Failure to update these lists will cause the deployment workflow to report the new migration as "unknown" or miss it during the pending check.
+> A future improvement may auto-generate this list from the Migrations folder.
+
+### 1. Check for Pending Migrations
+
+From your development workstation, compare the expected migrations against the target database:
+
+```powershell
+# Check TEST
+.\scripts\db\check-pending-migrations.ps1 -ConnectionString "Server=AOVIA1VMS011;Database=Portal-Gerencial-Test;User Id=...;Password=...;TrustServerCertificate=True"
+
+# Check PRODUCTION
+.\scripts\db\check-pending-migrations.ps1 -ConnectionString "Server=AOVIA1VMS011;Database=Portal-Gerencial;User Id=...;Password=...;TrustServerCertificate=True"
+```
+
+If the script outputs `RESULT: PASS`, no migration action is needed.
+
+### 2. Generate Migration SQL Script
+
+If pending migrations are detected:
+
+```powershell
+# Generate idempotent SQL script from the last applied migration
+dotnet ef migrations script <last-applied-migration-id> -i -o scripts/db/apply-migrations.sql `
+  --project src/backend/AlplaPortal.Infrastructure `
+  --startup-project src/backend/AlplaPortal.Api
+```
+
+### 3. Review and Apply
+
+1. **Back up the target database** using SSMS or `BACKUP DATABASE`.
+2. **Review** the generated SQL script for safety.
+3. **Apply** the script to the target database using SSMS or `sqlcmd` with a DBA-level account.
+4. **Verify** `__EFMigrationsHistory` contains all expected migration IDs.
+5. Re-run `check-pending-migrations.ps1` to confirm `RESULT: PASS`.
+
+### 4. Deploy and Verify
+
+1. Run the GitHub Actions deployment workflow.
+2. The workflow's "Check for pending EF Core migrations" step will verify the database.
+3. If all migrations are applied, the App Pools will start and the smoke test will run.
+4. If any migrations are pending, the deployment will fail with a clear error message.
+
+---
+
 ## Deployment Steps
 
-1. **Stop the IIS Application Pool** for the target site
-2. **Deploy the new build artifacts** to the target directory on the server
-3. **Start the IIS Application Pool**
-4. **Monitor startup logs** — the application will:
-   - Run `Database.Migrate()` automatically
-   - Validate critical table existence post-migration
-   - **Crash on failure** in TEST/PRODUCTION (by design — prevents ghost migration issues)
-5. **If startup fails:**
-   - Check the console/event log for `[STARTUP] CRITICAL:` messages
+1. **Complete the EF Core Migration Checklist above** (if the release includes schema changes)
+2. **Stop the IIS Application Pool** for the target site
+3. **Deploy the new build artifacts** to the target directory on the server
+4. **Start the IIS Application Pool**
+5. **Monitor startup logs** — the application will:
+   - Detect any remaining pending migrations (safety net)
+   - Validate critical table existence
+   - **Crash with a descriptive message** if pending migrations are found (by design in TEST/PRODUCTION)
+6. **If startup fails:**
+   - Check the console/event log for `[STARTUP] FATAL:` or `[STARTUP] PENDING:` messages
+   - Apply the missing migrations manually and restart
    - Run `docs/POST_INSTALL_DATABASE_VALIDATION.sql` against the database to diagnose
    - Do NOT manually force the app to start — fix the root cause first
 
@@ -72,8 +133,8 @@ For databases that already have the schema (e.g., TEST after manual repair):
        PRINT '[SKIP] ConsolidatedBaseline already registered.';
    END
    ```
-2. Deploy the new build. Only new migrations (after the last recorded one) will be applied.
-3. If the baseline is NOT registered before startup, EF Core will try to recreate existing tables and **crash** (by design in TEST/PRODUCTION).
+2. Apply any pending migrations using the procedure in the **EF Core Migration Checklist** above.
+3. Deploy the new build. The application will verify that all migrations are applied on startup.
 
 ## Emergency Rollback
 
@@ -268,7 +329,11 @@ In Development mode (`ASPNETCORE_ENVIRONMENT=Development`), the application will
 - **Log a warning** if migration fails (does NOT crash — unlike TEST/PRODUCTION)
 - Continue running to allow local debugging
 
-This means you can start the backend with `dotnet run` and it will attempt to apply migrations automatically. However, if your local database is severely out of sync, manually running `dotnet ef database update` first gives better error messages.
+> [!IMPORTANT]
+> Since v2.185.9 (DEC-137), `Database.Migrate()` is **only** executed in Development.
+> In TEST, Staging, and Production, the application **detects** pending migrations
+> and **crashes with a descriptive message** listing each missing migration ID.
+> It never attempts DDL operations in non-Development environments.
 
 ### Local Quick-Start After v2.156.0
 
