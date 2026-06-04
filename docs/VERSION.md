@@ -2,7 +2,13 @@
 
 ## Current Version
 
-v2.185.9
+v2.185.10
+
+## [v2.185.10] - 2026-06-04
+
+### Changed
+- **Pending Approvals Notification**: Reverted sidebar-based approval highlighting in favor of a non-intrusive floating sticker (`PendingApprovalsSticker.tsx`).
+- **Feedback Notification Style**: Adopted the bottom-right portal notification pattern to alert users of pending approvals. Includes sessionStorage persistence so the sticker remains hidden after manual dismissal.
 
 ## [v2.185.9] - 2026-06-04
 

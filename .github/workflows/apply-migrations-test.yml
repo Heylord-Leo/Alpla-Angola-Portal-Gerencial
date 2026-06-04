@@ -1,0 +1,149 @@
+# =============================================================================
+# Alpla Angola - Portal Gerencial
+# GitHub Actions Workflow: Apply TEST Migrations
+# =============================================================================
+#
+# Target Server:      AOVIA1VMS011
+# Target Database:    Portal-Gerencial-Test
+# Target Environment: TEST
+#
+# This workflow applies pending EF Core migrations to the TEST database
+# in a controlled, automated manner. It does NOT modify the application
+# startup behavior or grant DDL permissions to IIS runtime users.
+#
+# DEC-139: Automated migration execution via GitHub Actions.
+# DEC-137: Database.Migrate() remains disabled in non-Development environments.
+#
+# SAFETY:
+# - Manual trigger only (workflow_dispatch).
+# - Detects pending migrations before taking any action.
+# - Creates a database backup before applying changes.
+# - Generates idempotent SQL via dotnet ef.
+# - Validates the generated SQL covers all pending migrations.
+# - Verifies __EFMigrationsHistory after application.
+# - Does NOT start or stop IIS App Pools.
+# - Does NOT deploy application files.
+#
+# IMPORTANT:
+# - After this workflow succeeds, run "Deploy to TEST" to deploy the application.
+# - If no pending migrations exist, the workflow exits successfully with a notice.
+# =============================================================================
+
+name: Apply TEST Migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v2.186.0)'
+        required: true
+        type: string
+
+# Prevent concurrent migration applications
+concurrency:
+  group: apply-migrations-test
+  cancel-in-progress: false
+
+jobs:
+  apply-migrations:
+    name: Apply TEST Migrations (${{ inputs.version }})
+    runs-on: [self-hosted, Windows, X64, iis, test, alpla-portal-test]
+    timeout-minutes: 15
+    environment: test
+
+    steps:
+      # --- Checkout Repository ---
+      # Required for: migration folder scan, dotnet ef script generation
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # --- Setup .NET 8 SDK ---
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # --- Ensure dotnet-ef tool is available ---
+      - name: Install dotnet-ef tool
+        shell: pwsh
+        run: |
+          $efCheck = dotnet ef --version 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Installing dotnet-ef global tool..."
+            dotnet tool install --global dotnet-ef
+          } else {
+            Write-Host "dotnet-ef is available: $efCheck"
+          }
+
+      # --- Restore and Build ---
+      # Required for dotnet ef migrations script to resolve the DbContext
+      - name: Restore backend dependencies
+        run: dotnet restore src/backend/AlplaPortal.sln
+
+      - name: Build backend
+        run: dotnet build src/backend/AlplaPortal.sln --configuration Release --no-restore
+
+      # --- Read Connection String ---
+      - name: Read TEST connection string
+        id: connstr
+        shell: pwsh
+        run: |
+          $apiDeploy = "${{ vars.API_DEPLOY_PATH }}"
+          $configFile = Join-Path $apiDeploy "appsettings.Test.json"
+
+          if (-not (Test-Path $configFile)) {
+            Write-Host "::error::appsettings.Test.json not found at $configFile."
+            Write-Host "::error::Deploy the API at least once before running migrations."
+            throw "appsettings.Test.json not found."
+          }
+
+          $config = Get-Content $configFile -Raw | ConvertFrom-Json
+          $connStr = $config.ConnectionStrings.DefaultConnection
+
+          if ([string]::IsNullOrWhiteSpace($connStr)) {
+            throw "DefaultConnection is empty in appsettings.Test.json."
+          }
+
+          # Mask the connection string in logs
+          Write-Host "::add-mask::$connStr"
+          # Pass to next steps via environment file
+          "MIGRATION_CONN_STR=$connStr" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "::notice::Connection string loaded from appsettings.Test.json"
+
+      # --- Apply Migrations ---
+      - name: Apply pending migrations
+        shell: pwsh
+        run: |
+          $backupDir = "${{ vars.BACKUP_PATH }}"
+          if ([string]::IsNullOrWhiteSpace($backupDir)) {
+            $backupDir = "C:\Apps\AlplaPortal\Test\backups\db"
+          } else {
+            $backupDir = Join-Path $backupDir "db"
+          }
+
+          & "${{ github.workspace }}\scripts\db\apply-migrations.ps1" `
+            -ConnectionString $env:MIGRATION_CONN_STR `
+            -Environment TEST `
+            -BackupDir $backupDir `
+            -RepoRoot "${{ github.workspace }}" `
+            -ExpectedDatabase "Portal-Gerencial-Test"
+
+      # --- Summary ---
+      - name: Migration summary
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "============================================="
+          Write-Host "  TEST Migration Summary"
+          Write-Host "============================================="
+          Write-Host "Version:      ${{ inputs.version }}"
+          Write-Host "Database:     Portal-Gerencial-Test"
+          Write-Host "Server:       AOVIA1VMS011"
+          Write-Host "============================================="
+          Write-Host ""
+          Write-Host "If migrations were applied successfully:"
+          Write-Host "  -> Run 'Deploy to TEST' workflow with version ${{ inputs.version }}"
+          Write-Host ""
+          Write-Host "If no migrations were pending:"
+          Write-Host "  -> Proceed directly to 'Deploy to TEST'"
+          Write-Host "============================================="

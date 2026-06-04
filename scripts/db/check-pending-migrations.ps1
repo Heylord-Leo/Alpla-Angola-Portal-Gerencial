@@ -47,74 +47,25 @@ $ErrorActionPreference = "Stop"
 # 1. Determine expected migrations
 # ─────────────────────────────────────────────────────────────────────────────
 
-$expectedMigrations = @()
-
 if ($MigrationListFile -and (Test-Path $MigrationListFile)) {
     Write-Host "[INFO] Loading expected migrations from: $MigrationListFile"
     $expectedMigrations = Get-Content $MigrationListFile | Where-Object { $_ -match '\S' } | ForEach-Object { $_.Trim() }
 } else {
-    # Hardcoded list — maintained in sync with src/backend/AlplaPortal.Infrastructure/Data/Migrations/
-    # IMPORTANT: When adding a new EF Core migration, update this list AND the inline
-    # $expected arrays in BOTH workflow files in the SAME task/release:
-    #   1. scripts/db/check-pending-migrations.ps1  (this file)
-    #   2. .github/workflows/deploy-test.yml        ("Check for pending EF Core migrations" step)
-    #   3. .github/workflows/deploy-prod.yml        ("Check for pending EF Core migrations" step)
-    # Last updated: v2.185.9 (2026-06-04)
-    $expectedMigrations = @(
-        "20260225000000_ConsolidatedBaseline",
-        "20260402135031_AddUserSecurityFields",
-        "20260404175519_AddCompanyFinalApprover",
-        "20260405161107_RelaxLineItemOptionalFieldsForDrafts",
-        "20260406224450_AddFileHashToRequestAttachment",
-        "20260407130710_AddWaitingPoCorrection",
-        "20260407143223_AddScheduledDateUtcToRequest",
-        "20260409224009_AddDiscountToRequestLineItem",
-        "20260409232127_AddDiscountToQuotationLineItem",
-        "20260410001219_AddGlobalDiscountToRequest",
-        "20260411203134_AddPasswordResetToken",
-        "20260411214226_AddSmtpSettings",
-        "20260411225207_AddEventCorrelationIdToNotification",
-        "20260412105910_AddItemCatalog",
-        "20260412124049_AddOcrExtractedItemsAndReconciliation",
-        "20260412134150_AddCatalogExtraCodes",
-        "20260413144217_AddOcrOriginalGrandTotal",
-        "20260414131442_AddIntegrationFoundation",
-        "20260414135507_ActivatePrimaveraProvider",
-        "20260414155609_ActivateInnuxProvider",
-        "20260415230618_AddHRRole",
-        "20260416082410_AddHRLeaveModule",
-        "20260416125755_AddDepartmentMasterContext",
-        "20260416212736_AddExplicitDecimalPrecision",
-        "20260417075354_AddFinancialSnapshotAndPaymentFields",
-        "20260418145257_AddBadgeLayouts",
-        "20260418182142_AddAnnualBudget",
-        "20260418182254_AddAnnualBudgetMVP",
-        "20260419164828_AddContractsModule",
-        "20260420084823_AddContractPaymentRules",
-        "20260420133310_AddTwoStepContractApproval",
-        "20260421093518_AddContractOcrTables",
-        "20260421155149_AddContractDocumentSoftDelete",
-        "20260423143831_AddMonthlyChangesMiddleware",
-        "20260423150625_AddMCSchemaRefinements",
-        "20260423151640_AddMCSnapshotScheduleStartTime",
-        "20260425101500_AddAttendanceJustifications",
-        "20260425160644_AddSupplierRegistrationFields",
-        "20260425170632_AddSupplierApprovalWorkflow",
-        "20260425234031_AddRequestPerformanceIndexes",
-        "20260426214414_AddHierarchicalBudgetScope",
-        "20260515094146_AddProformaDeadlineAlerts",
-        "20260519125443_AddAnnualBudgetTotalAmountPrecision",
-        "20260520092813_AddPlantSuggestionFields",
-        "20260520220145_AddITEquipmentModule",
-        "20260520231019_AddAssignmentEmailAndDocumentLink",
-        "20260525094929_AddIntegrationManagement",
-        "20260531184415_AddAlplaProdIntegrationProvider",
-        "20260602082548_SeedOperationsRole",
-        "20260602104846_ActivateAlplaProdProvider",
-        "20260603151258_AddItemCatalogSourceCompany",
-        "20260603152331_AddItemCatalogSourceCompanyFix"
-    )
-    Write-Host "[INFO] Using hardcoded expected migration list ($($expectedMigrations.Count) migrations)."
+    # Auto-generate from the EF Core migrations folder (DEC-139)
+    $getExpectedScript = Join-Path $PSScriptRoot "get-expected-migrations.ps1"
+    if (Test-Path $getExpectedScript) {
+        Write-Host "[INFO] Auto-generating expected migration list from migrations folder (DEC-139)..."
+        $expectedMigrations = & $getExpectedScript -RepoRoot (Resolve-Path (Join-Path $PSScriptRoot "..\.."))
+        if (-not $expectedMigrations -or $expectedMigrations.Count -eq 0) {
+            Write-Error "get-expected-migrations.ps1 returned no migrations. Check the migrations folder."
+            exit 1
+        }
+        Write-Host "[INFO] Auto-generated $($expectedMigrations.Count) expected migrations from filesystem."
+    } else {
+        Write-Error "get-expected-migrations.ps1 not found at $getExpectedScript. Cannot determine expected migrations."
+        Write-Host "[INFO] Use -MigrationListFile to provide a text file with expected migration IDs."
+        exit 1
+    }
 }
 
 Write-Host "[INFO] Expected migrations: $($expectedMigrations.Count)"

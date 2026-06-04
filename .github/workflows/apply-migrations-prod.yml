@@ -1,0 +1,190 @@
+# =============================================================================
+# Alpla Angola - Portal Gerencial
+# GitHub Actions Workflow: Apply PRODUCTION Migrations
+# =============================================================================
+#
+# Target Server:      AOVIA1VMS011
+# Target Database:    Portal-Gerencial
+# Target Environment: PRODUCTION
+#
+# This workflow applies pending EF Core migrations to the PRODUCTION database
+# in a controlled, automated manner. It does NOT modify the application
+# startup behavior or grant DDL permissions to IIS runtime users.
+#
+# DEC-139: Automated migration execution via GitHub Actions.
+# DEC-137: Database.Migrate() remains disabled in non-Development environments.
+#
+# SAFETY:
+# - Manual trigger only (workflow_dispatch).
+# - Requires explicit YES-PROD confirmation input.
+# - Validates the target database is Portal-Gerencial (NOT Portal-Gerencial-Test).
+# - GitHub environment 'production' with approval gates.
+# - Creates a database backup before applying changes.
+# - Generates idempotent SQL via dotnet ef.
+# - Validates the generated SQL covers all pending migrations.
+# - Verifies __EFMigrationsHistory after application.
+# - Does NOT start or stop IIS App Pools.
+# - Does NOT deploy application files.
+#
+# IMPORTANT:
+# - After this workflow succeeds, run "Deploy to PRODUCTION" to deploy the application.
+# - If no pending migrations exist, the workflow exits successfully with a notice.
+# =============================================================================
+
+name: Apply PRODUCTION Migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v2.186.0)'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type YES-PROD to confirm production migration'
+        required: true
+        type: string
+
+# Prevent concurrent migration applications
+concurrency:
+  group: apply-migrations-prod
+  cancel-in-progress: false
+
+jobs:
+  apply-migrations:
+    name: Apply PRODUCTION Migrations (${{ inputs.version }})
+    runs-on: [self-hosted, Windows, X64, iis]
+    timeout-minutes: 20
+    environment: production
+
+    steps:
+      # --- Confirmation Gate ---
+      - name: Verify confirmation input
+        shell: pwsh
+        run: |
+          $confirmation = "${{ inputs.confirmation }}"
+          if ($confirmation -ne "YES-PROD") {
+            Write-Host "::error::Confirmation failed. Expected 'YES-PROD', got '$confirmation'."
+            Write-Host "::error::PRODUCTION migration execution BLOCKED."
+            throw "PRODUCTION migration blocked: confirmation input was not 'YES-PROD'."
+          }
+          Write-Host "::notice::Confirmation verified: YES-PROD"
+
+      # --- Checkout Repository ---
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # --- Setup .NET 8 SDK ---
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # --- Ensure dotnet-ef tool is available ---
+      - name: Install dotnet-ef tool
+        shell: pwsh
+        run: |
+          $efCheck = dotnet ef --version 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Installing dotnet-ef global tool..."
+            dotnet tool install --global dotnet-ef
+          } else {
+            Write-Host "dotnet-ef is available: $efCheck"
+          }
+
+      # --- Restore and Build ---
+      - name: Restore backend dependencies
+        run: dotnet restore src/backend/AlplaPortal.sln
+
+      - name: Build backend
+        run: dotnet build src/backend/AlplaPortal.sln --configuration Release --no-restore
+
+      # --- Read Connection String ---
+      - name: Read PRODUCTION connection string
+        id: connstr
+        shell: pwsh
+        run: |
+          $connStr = "${{ secrets.PROD_DB_CONNECTION_STRING }}"
+
+          if ([string]::IsNullOrWhiteSpace($connStr)) {
+            # Fallback: try reading from deployed appsettings.Production.json
+            $apiDeploy = "${{ vars.API_DEPLOY_PATH }}"
+            $configFile = Join-Path $apiDeploy "appsettings.Production.json"
+            if (Test-Path $configFile) {
+              $config = Get-Content $configFile -Raw | ConvertFrom-Json
+              $connStr = $config.ConnectionStrings.DefaultConnection
+            }
+          }
+
+          if ([string]::IsNullOrWhiteSpace($connStr)) {
+            throw "No PRODUCTION connection string available. Set PROD_DB_CONNECTION_STRING secret or deploy appsettings.Production.json first."
+          }
+
+          # Mask the connection string in logs
+          Write-Host "::add-mask::$connStr"
+          "MIGRATION_CONN_STR=$connStr" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "::notice::PRODUCTION connection string loaded."
+
+      # --- Pre-flight Database Safety Check ---
+      - name: Validate target database identity
+        shell: pwsh
+        run: |
+          $conn = New-Object System.Data.SqlClient.SqlConnection($env:MIGRATION_CONN_STR)
+          $conn.Open()
+          $cmd = $conn.CreateCommand()
+          $cmd.CommandText = "SELECT DB_NAME()"
+          $dbName = $cmd.ExecuteScalar()
+          $conn.Close()
+
+          Write-Host "::notice::Pre-flight check: connected to [$dbName]"
+
+          if ($dbName -eq "Portal-Gerencial-Test") {
+            Write-Host "::error::CRITICAL SAFETY CHECK FAILED: Connection resolves to TEST database!"
+            Write-Host "::error::PRODUCTION migration BLOCKED. Fix the connection string."
+            throw "PRODUCTION migration blocked: target is Portal-Gerencial-Test."
+          }
+
+          if ($dbName -ne "Portal-Gerencial") {
+            Write-Host "::error::SAFETY CHECK FAILED: Expected [Portal-Gerencial], got [$dbName]."
+            throw "PRODUCTION migration blocked: unexpected database name."
+          }
+
+          Write-Host "::notice::Database identity verified: [Portal-Gerencial]"
+
+      # --- Apply Migrations ---
+      - name: Apply pending migrations
+        shell: pwsh
+        run: |
+          $backupDir = "${{ vars.BACKUP_PATH }}"
+          if ([string]::IsNullOrWhiteSpace($backupDir)) {
+            $backupDir = "C:\Apps\AlplaPortal\Prod\backups\db"
+          } else {
+            $backupDir = Join-Path $backupDir "db"
+          }
+
+          & "${{ github.workspace }}\scripts\db\apply-migrations.ps1" `
+            -ConnectionString $env:MIGRATION_CONN_STR `
+            -Environment PROD `
+            -BackupDir $backupDir `
+            -RepoRoot "${{ github.workspace }}" `
+            -ExpectedDatabase "Portal-Gerencial"
+
+      # --- Summary ---
+      - name: Migration summary
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "============================================="
+          Write-Host "  PRODUCTION Migration Summary"
+          Write-Host "============================================="
+          Write-Host "Version:      ${{ inputs.version }}"
+          Write-Host "Database:     Portal-Gerencial"
+          Write-Host "Server:       AOVIA1VMS011"
+          Write-Host "============================================="
+          Write-Host ""
+          Write-Host "If migrations were applied successfully:"
+          Write-Host "  -> Run 'Deploy to PRODUCTION' workflow with version ${{ inputs.version }}"
+          Write-Host ""
+          Write-Host "If no migrations were pending:"
+          Write-Host "  -> Proceed directly to 'Deploy to PRODUCTION'"
+          Write-Host "============================================="

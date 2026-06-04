@@ -121,6 +121,19 @@ jobs:
           Write-Host "  JS files: $($jsFiles.Count)"
           Write-Host "  CSS files: $($cssFiles.Count)"
 
+      # --- Generate Expected Migration List (DEC-139) ---
+      - name: Generate expected migration list
+        shell: pwsh
+        run: |
+          $migrationsPath = "src/backend/AlplaPortal.Infrastructure/Data/Migrations"
+          $outputFile = "${{ github.workspace }}/artifacts/api/expected-migrations.txt"
+          $migrations = Get-ChildItem -Path $migrationsPath -Filter "*.cs" -Name |
+            Where-Object { $_ -notmatch '\.Designer\.cs$' -and $_ -notmatch 'Snapshot\.cs$' } |
+            ForEach-Object { $_ -replace '\.cs$', '' } |
+            Sort-Object
+          $migrations | Set-Content -Path $outputFile -Encoding UTF8
+          Write-Host "Generated expected-migrations.txt with $($migrations.Count) migrations"
+
       # --- Upload Artifacts ---
       - name: Upload API artifact
         uses: actions/upload-artifact@v4
@@ -468,10 +481,12 @@ jobs:
           # Reset exit code
           $global:LASTEXITCODE = 0
 
-      # --- Check for Pending EF Core Migrations (DEC-137) ---
+      # --- Check for Pending EF Core Migrations (DEC-137 + DEC-139) ---
       # This step detects pending migrations BEFORE starting the App Pools.
       # If any migrations are missing, the deployment fails early with a clear
       # message instead of letting the API crash with HTTP 500.30.
+      # The expected migration list is auto-generated from the migrations folder
+      # and packaged in expected-migrations.txt during the build job (DEC-139).
       - name: Check for pending EF Core migrations
         shell: pwsh
         run: |
@@ -520,64 +535,17 @@ jobs:
 
             Write-Host "Applied migrations in [$dbName]: $($applied.Count)"
 
-            # Expected migrations — must match src/backend/.../Data/Migrations/
-            # IMPORTANT: When adding a new migration, update this list AND:
-            #   - scripts/db/check-pending-migrations.ps1
-            #   - .github/workflows/deploy-test.yml
-            $expected = @(
-              "20260225000000_ConsolidatedBaseline",
-              "20260402135031_AddUserSecurityFields",
-              "20260404175519_AddCompanyFinalApprover",
-              "20260405161107_RelaxLineItemOptionalFieldsForDrafts",
-              "20260406224450_AddFileHashToRequestAttachment",
-              "20260407130710_AddWaitingPoCorrection",
-              "20260407143223_AddScheduledDateUtcToRequest",
-              "20260409224009_AddDiscountToRequestLineItem",
-              "20260409232127_AddDiscountToQuotationLineItem",
-              "20260410001219_AddGlobalDiscountToRequest",
-              "20260411203134_AddPasswordResetToken",
-              "20260411214226_AddSmtpSettings",
-              "20260411225207_AddEventCorrelationIdToNotification",
-              "20260412105910_AddItemCatalog",
-              "20260412124049_AddOcrExtractedItemsAndReconciliation",
-              "20260412134150_AddCatalogExtraCodes",
-              "20260413144217_AddOcrOriginalGrandTotal",
-              "20260414131442_AddIntegrationFoundation",
-              "20260414135507_ActivatePrimaveraProvider",
-              "20260414155609_ActivateInnuxProvider",
-              "20260415230618_AddHRRole",
-              "20260416082410_AddHRLeaveModule",
-              "20260416125755_AddDepartmentMasterContext",
-              "20260416212736_AddExplicitDecimalPrecision",
-              "20260417075354_AddFinancialSnapshotAndPaymentFields",
-              "20260418145257_AddBadgeLayouts",
-              "20260418182142_AddAnnualBudget",
-              "20260418182254_AddAnnualBudgetMVP",
-              "20260419164828_AddContractsModule",
-              "20260420084823_AddContractPaymentRules",
-              "20260420133310_AddTwoStepContractApproval",
-              "20260421093518_AddContractOcrTables",
-              "20260421155149_AddContractDocumentSoftDelete",
-              "20260423143831_AddMonthlyChangesMiddleware",
-              "20260423150625_AddMCSchemaRefinements",
-              "20260423151640_AddMCSnapshotScheduleStartTime",
-              "20260425101500_AddAttendanceJustifications",
-              "20260425160644_AddSupplierRegistrationFields",
-              "20260425170632_AddSupplierApprovalWorkflow",
-              "20260425234031_AddRequestPerformanceIndexes",
-              "20260426214414_AddHierarchicalBudgetScope",
-              "20260515094146_AddProformaDeadlineAlerts",
-              "20260519125443_AddAnnualBudgetTotalAmountPrecision",
-              "20260520092813_AddPlantSuggestionFields",
-              "20260520220145_AddITEquipmentModule",
-              "20260520231019_AddAssignmentEmailAndDocumentLink",
-              "20260525094929_AddIntegrationManagement",
-              "20260531184415_AddAlplaProdIntegrationProvider",
-              "20260602082548_SeedOperationsRole",
-              "20260602104846_ActivateAlplaProdProvider",
-              "20260603151258_AddItemCatalogSourceCompany",
-              "20260603152331_AddItemCatalogSourceCompanyFix"
-            )
+            # Load expected migrations from auto-generated file (DEC-139)
+            $apiDeploy = "${{ vars.API_DEPLOY_PATH }}"
+            $migrationListFile = Join-Path $apiDeploy "expected-migrations.txt"
+            if (Test-Path $migrationListFile) {
+              $expected = Get-Content $migrationListFile | Where-Object { $_ -match '\S' } | ForEach-Object { $_.Trim() }
+              Write-Host "::notice::Loaded $($expected.Count) expected migrations from expected-migrations.txt (DEC-139)"
+            } else {
+              Write-Host "::error::expected-migrations.txt not found at $migrationListFile."
+              Write-Host "::error::This file is generated during the build step. Ensure the build includes the migration list generation step (DEC-139)."
+              throw "expected-migrations.txt not found — cannot verify database migrations."
+            }
 
             $pending = @()
             foreach ($m in $expected) {
@@ -592,8 +560,8 @@ jobs:
               }
               Write-Host ""
               Write-Host "::error::REMEDIATION:"
-              Write-Host "::error::  1. Generate an idempotent migration script from your dev machine."
-              Write-Host "::error::  2. Apply it to [$dbName] using SSMS or sqlcmd with a DBA account."
+              Write-Host "::error::  1. Run the 'Apply PRODUCTION Migrations' workflow first."
+              Write-Host "::error::  2. Or apply migrations manually using SSMS/sqlcmd with a DBA account."
               Write-Host "::error::  3. Re-run this deployment after migrations are applied."
               Write-Host "::error::  See: docs/DEPLOYMENT_CHECKLIST.md"
               throw "DEPLOYMENT BLOCKED: $($pending.Count) pending EF Core migration(s) in PRODUCTION [$dbName]. Apply migrations before deploying."
@@ -709,7 +677,7 @@ jobs:
           Write-Host "API Port:     5002"
           Write-Host "============================================="
           Write-Host ""
-          Write-Host "EF Core migrations must be applied MANUALLY before deployment."
-          Write-Host "The workflow checks for pending migrations and will BLOCK"
-          Write-Host "startup if any are found. See: docs/DEPLOYMENT_CHECKLIST.md"
+          Write-Host "If pending migrations are detected, this workflow will BLOCK"
+          Write-Host "startup. Run 'Apply PRODUCTION Migrations' workflow first."
+          Write-Host "See: docs/DEPLOYMENT_CHECKLIST.md"
           Write-Host "============================================="
