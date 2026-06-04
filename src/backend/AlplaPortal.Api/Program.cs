@@ -226,17 +226,65 @@ var app = builder.Build();
 // Correlation ID middleware — must run first so all downstream services can access the ID.
 app.UseMiddleware<CorrelationIdMiddleware>();
 
-// Initialize database — apply pending migrations
+// =========================================================================
+// Database Initialization — Environment-Aware Migration Handling (DEC-137)
+// =========================================================================
+// Development:  Run Database.Migrate() automatically (local iteration).
+// Non-Dev:      Do NOT run Database.Migrate(). Detect pending migrations
+//               and fail fast with a descriptive message listing each
+//               missing migration ID. The IIS runtime identity must NOT
+//               have DDL/db_owner permissions — all schema changes are
+//               applied manually via controlled SQL scripts before deploy.
+// =========================================================================
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
     try
     {
         var context = services.GetRequiredService<ApplicationDbContext>();
-        context.Database.Migrate();
-        Console.WriteLine("[STARTUP] Database initialized and migrations applied successfully.");
 
-        // Post-migration schema validation: verify critical tables exist
+        if (app.Environment.IsDevelopment())
+        {
+            // --- Development: automatic migration (unchanged behavior) ---
+            context.Database.Migrate();
+            Console.WriteLine("[STARTUP] Database initialized and migrations applied successfully (Development).");
+        }
+        else
+        {
+            // --- Non-Development: detect pending migrations, never apply ---
+            Console.WriteLine($"[STARTUP] Environment: {app.Environment.EnvironmentName} — automatic migrations DISABLED.");
+            Console.WriteLine("[STARTUP] Checking for pending EF Core migrations...");
+
+            var pendingMigrations = context.Database.GetPendingMigrations().ToList();
+
+            if (pendingMigrations.Count > 0)
+            {
+                Console.WriteLine($"[STARTUP] FATAL: {pendingMigrations.Count} pending migration(s) detected.");
+                Console.WriteLine("[STARTUP] The following migrations have NOT been applied to the database:");
+                foreach (var migrationId in pendingMigrations)
+                {
+                    Console.WriteLine($"[STARTUP]   PENDING: {migrationId}");
+                }
+                Console.WriteLine("[STARTUP] REMEDIATION:");
+                Console.WriteLine("[STARTUP]   1. Generate an idempotent SQL script:");
+                Console.WriteLine("[STARTUP]      dotnet ef migrations script <last-applied> -i -o migration.sql");
+                Console.WriteLine("[STARTUP]   2. Review and apply the script using SSMS or sqlcmd with a DBA account.");
+                Console.WriteLine("[STARTUP]   3. Verify __EFMigrationsHistory matches the expected list.");
+                Console.WriteLine("[STARTUP]   4. Restart the API App Pool.");
+                Console.WriteLine("[STARTUP]   See: docs/DEPLOYMENT_CHECKLIST.md for the full procedure.");
+
+                throw new InvalidOperationException(
+                    $"[STARTUP] FATAL: {pendingMigrations.Count} pending EF Core migration(s) detected " +
+                    $"in {app.Environment.EnvironmentName} environment. " +
+                    $"Missing: {string.Join(", ", pendingMigrations)}. " +
+                    "Migrations must be applied manually before the API can start. " +
+                    "See docs/DEPLOYMENT_CHECKLIST.md for instructions.");
+            }
+
+            Console.WriteLine("[STARTUP] All EF Core migrations are up to date.");
+        }
+
+        // Post-migration schema validation: verify critical tables exist (all environments)
         var criticalTables = new[] { "Users", "Roles", "Plants", "Departments", "Companies",
             "RequestTypes", "RequestStatuses", "IvaRates", "Currencies", "Units",
             "NeedLevels", "LineItemStatuses", "SystemCounters", "CostCenters" };

@@ -2,6 +2,41 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.185.9] - 2026-06-04
+
+### Changed
+- **Preventive EF Core Migration Handling (DEC-137)**: Disabled automatic `Database.Migrate()` execution in non-Development environments to prevent HTTP 500.30 startup failures caused by the IIS runtime identity lacking DDL permissions (v2.185.8 incident).
+
+  **New Behavior**:
+  - **Development**: `Database.Migrate()` still runs automatically on startup (unchanged).
+  - **TEST / Staging / Production**: The application calls `GetPendingMigrations()` instead of `Migrate()`. If pending migrations are detected, it logs each missing migration ID (`[STARTUP] PENDING: <id>`) and crashes with a descriptive `InvalidOperationException` listing all missing IDs and remediation steps. It never attempts DDL operations.
+
+  **GitHub Actions Workflow Changes**:
+  - Both `deploy-test.yml` and `deploy-prod.yml` now include a "Check for pending EF Core migrations" step that runs **before** the App Pools are started.
+  - The step reads the connection string from the preserved `appsettings.*.json`, queries `__EFMigrationsHistory`, and compares against the expected migration list.
+  - If pending migrations are found, the deployment fails with `::error::` annotations listing each missing migration and remediation instructions.
+  - The `deploy-prod.yml` step also includes a safety check that blocks deployment if the connection string resolves to `[Portal-Gerencial-Test]`.
+
+  **New Script**: `scripts/db/check-pending-migrations.ps1` — reusable migration comparison script that can be run manually against any database. Reports applied, pending, and unknown migrations. Returns exit code 0 on pass, 1 on fail.
+
+  **Documentation Updated**:
+  - `docs/DEPLOYMENT_CHECKLIST.md` — Added mandatory "EF Core Migration Checklist" section with step-by-step procedure.
+  - `docs/GITHUB_ACTIONS_TEST_DEPLOYMENT.md` — Updated Section 7 (Database Migrations) and Section 10.3 (Database Requirements).
+  - `docs/GITHUB_ACTIONS_PROD_DEPLOYMENT.md` — Updated Section 7 (Database Migrations) and Section 10 (Troubleshooting).
+
+  **Files Changed**:
+  - `src/backend/AlplaPortal.Api/Program.cs` — Environment-aware migration handling.
+  - `.github/workflows/deploy-test.yml` — Pre-start migration check step + updated summary.
+  - `.github/workflows/deploy-prod.yml` — Pre-start migration check step + updated summary + header comment.
+  - `scripts/db/check-pending-migrations.ps1` — New reusable migration comparison script.
+  - `docs/DEPLOYMENT_CHECKLIST.md` — Mandatory migration checklist.
+  - `docs/GITHUB_ACTIONS_TEST_DEPLOYMENT.md` — Updated migration sections.
+  - `docs/GITHUB_ACTIONS_PROD_DEPLOYMENT.md` — Updated migration sections.
+  - `docs/DECISIONS.md` — DEC-137.
+  - `docs/CHANGELOG.md` — This entry.
+  - `docs/VERSION.md` — v2.185.9.
+  - `src/frontend/src/config.ts` — APP_VERSION → `v2.185.9`.
+
 ## [v2.185.8] - 2026-06-03
 
 ### Fixed

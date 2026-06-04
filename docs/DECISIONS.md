@@ -2,6 +2,22 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-137 — Disable Automatic Database.Migrate() in Non-Development Environments
+
+- **Date:** 2026-06-04
+- **Status:** Accepted
+- **Context:** In v2.185.8, both TEST and PRODUCTION on AOVIA1VMS011 failed with `HTTP Error 500.30 — ASP.NET Core app failed to start`. Root cause: `Program.cs` calls `context.Database.Migrate()` on startup, but the IIS runtime identity (`usr_portalgerencial_test` / `usr_portalgerencial`) does not have DDL/db_owner permissions on the target database. The migration attempt crashed the ASP.NET Core process before Kestrel could start, producing an opaque 500.30 error with no diagnostic output (stdout logging was disabled in `web.config`). The issue was compounded by the lack of pre-deployment migration validation in the GitHub Actions workflows.
+- **Decision:**
+    1. **Environment-aware migration handling in `Program.cs`**: In Development, keep `Database.Migrate()` for local iteration. In all other environments (Test, Staging, Production), do NOT call `Database.Migrate()`. Instead, call `context.Database.GetPendingMigrations()` to detect unapplied migrations. If pending migrations exist, log each missing migration ID and crash with a descriptive `InvalidOperationException` that includes remediation instructions. The application never attempts DDL operations outside Development.
+    2. **GitHub Actions pre-start migration check**: Both `deploy-test.yml` and `deploy-prod.yml` now include a "Check for pending EF Core migrations" step that runs **before** starting the IIS App Pools. The step reads the connection string from the preserved `appsettings.*.json`, queries `__EFMigrationsHistory`, compares against the expected migration list, and fails the deployment with `::error::` annotations if any migrations are pending. The production workflow also includes a safety check that blocks deployment if the connection string resolves to `[Portal-Gerencial-Test]`.
+    3. **Reusable migration comparison script**: `scripts/db/check-pending-migrations.ps1` compares expected migrations (hardcoded list maintained in sync with the Migrations folder) against the database's `__EFMigrationsHistory`. Reports applied, pending, and unknown migrations. Returns exit code 0/1.
+    4. **No DDL permissions for IIS runtime**: The IIS runtime identity only needs `db_datareader` and `db_datawriter`. All schema changes are applied manually using a DBA-level account via SSMS or `sqlcmd` before deployment.
+    5. **Manual migration workflow**: Developers must (a) run `check-pending-migrations.ps1` to identify pending migrations, (b) generate an idempotent SQL script via `dotnet ef migrations script`, (c) review and apply via SSMS/sqlcmd, (d) verify `__EFMigrationsHistory`, (e) deploy via GitHub Actions. The workflow validates the result before starting the App Pool.
+- **Alternatives considered:** (1) Granting db_owner/DDL to the IIS runtime identity (rejected: violates least-privilege principle and creates security risk). (2) Running migrations in the GitHub Actions workflow with a separate DBA connection string (rejected: adds complexity, requires new secrets management, and the team prefers manual review of SQL scripts before execution). (3) Warn-and-continue behavior (rejected: an API running against a stale schema would produce unpredictable data errors that are harder to diagnose than a clear startup crash).
+- **Consequences:** The API will never start with a stale schema. Deployment failures caused by missing migrations now produce clear, actionable diagnostics instead of opaque 500.30 errors. The tradeoff is that every release with schema changes requires a manual migration step before deployment. The deployment workflow provides a safety net to catch missed migrations.
+
+---
+
 ## DEC-136 — Supplier PortalCode D6 Standardization
 
 - **Date:** 2026-06-03

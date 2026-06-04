@@ -193,21 +193,34 @@ To manually rollback:
 
 ## 7. Database Migrations
 
-> **EF Core database migrations are intentionally NOT automated in this workflow.**
+> **EF Core database migrations are intentionally NOT automated in this workflow (DEC-137).**
 
-Migrations are a critical operation that can cause data loss or schema corruption if executed incorrectly. For this reason, they are handled in a separate controlled phase:
+Since v2.185.9, the API application **does not** call `Database.Migrate()` in non-Development environments. The IIS runtime identity does not have DDL permissions, and automatic migration attempts caused HTTP 500.30 startup failures (v2.185.8 incident).
 
-1. **Before deployment:** If the release includes schema changes, the DBA or administrator must review the migration SQL.
-2. **Manual execution:** Migrations are run manually using `sqlcmd` or SSMS with Windows Authentication against the `[Portal-Gerencial-Test]` database.
-3. **After deployment:** The application is verified to ensure compatibility with the current database schema.
+### Migration Workflow
 
-This approach ensures:
-- Full visibility into what schema changes are applied
-- Ability to review and test migrations independently
-- Controlled rollback procedures
-- No accidental schema changes to production
+1. **Before deployment:** If the release includes schema changes, apply migrations manually:
+   - Run `scripts/db/check-pending-migrations.ps1` against `[Portal-Gerencial-Test]` to identify pending migrations.
+   - Generate an idempotent SQL script: `dotnet ef migrations script <from> -i -o migration.sql`
+   - Review and apply the script using SSMS or `sqlcmd` with a DBA account.
+2. **During deployment:** The workflow includes a "Check for pending EF Core migrations" step that:
+   - Reads the connection string from `appsettings.Test.json` on the server.
+   - Queries `__EFMigrationsHistory` and compares against the expected migration list.
+   - **Fails the deployment** with a clear error message if any migrations are pending.
+   - This check runs **before** the App Pools are started, preventing 500.30 errors.
+3. **At application startup:** The API performs a secondary check:
+   - Calls `GetPendingMigrations()` to detect any remaining unapplied migrations.
+   - If pending migrations exist, logs each missing migration ID and crashes with a descriptive exception.
+   - If all migrations are applied, proceeds to critical table validation.
 
-A future workflow enhancement may automate migrations with proper safeguards (dry-run, approval gates, rollback scripts).
+### Safety Guarantees
+
+- The IIS runtime identity (`usr_portalgerencial_test`) does NOT need DDL/db_owner permissions.
+- No schema changes are ever executed by the application process.
+- The deployment workflow provides early detection before the API even starts.
+- Full visibility into what schema changes are pending, with remediation instructions.
+
+For the detailed migration procedure, see [DEPLOYMENT_CHECKLIST.md](file:///c:/dev/alpla-portal/docs/DEPLOYMENT_CHECKLIST.md).
 
 ---
 
@@ -342,9 +355,10 @@ Required contents (minimum):
 ### 10.3 Database Requirements
 
 - The `[Portal-Gerencial-Test]` database must exist on the SQL Server instance.
-- EF Core migrations must be applied manually before the API can process requests.
-- The SQL login used in the connection string must have `db_owner` permissions on the database.
-- Migrations are run manually via `sqlcmd` or SSMS — **never automated** by the workflow.
+- EF Core migrations must be applied manually **before** the API can start (DEC-137).
+- The SQL login used in the connection string needs `db_datareader` and `db_datawriter` permissions — it does NOT need `db_owner` or DDL permissions.
+- Migrations are applied using a separate DBA account via SSMS or `sqlcmd`.
+- The deployment workflow checks for pending migrations and blocks startup if any are found.
 
 ---
 
@@ -386,7 +400,7 @@ Get-ChildItem "C\Apps\AlplaPortal\Test\web\assets" -Filter "*.css"
 | 4 | Database exists | `sqlcmd -S . -d "Portal-Gerencial-Test" -Q "SELECT 1"` |
 | 5 | Migrations are applied | Check Event Viewer or API startup logs for migration errors |
 | 6 | JWT secret is configured | Check `appsettings.Test.json` → `Jwt.Secret` (min 32 chars) |
-| 7 | SQL permissions are correct | Verify the SQL login has `db_owner` on `[Portal-Gerencial-Test]` |
+| 7 | SQL permissions are correct | Verify the SQL login has `db_datareader` and `db_datawriter` on `[Portal-Gerencial-Test]` (NOT `db_owner` — DEC-137) |
 | 8 | Event Viewer errors | Event Viewer → Windows Logs → Application → Source: IIS AspNetCore Module |
 | 9 | IIS stdout logs | Check `C:\Apps\AlplaPortal\Test\api\logs\stdout_*.log` (enable in web.config if needed) |
 

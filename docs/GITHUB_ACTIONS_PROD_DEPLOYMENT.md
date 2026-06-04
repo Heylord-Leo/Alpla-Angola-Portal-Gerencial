@@ -29,7 +29,7 @@ The workflow:
 > - Use port 5000 (reserved) or port 5001 (Test)
 > - Commit or expose any secrets
 > - Drop or recreate the Production database
-> - Run a separate migration step (migrations run on app startup)
+> - Execute `Database.Migrate()` — migrations must be applied manually (DEC-137)
 
 ---
 
@@ -204,15 +204,27 @@ This is different from Test (`localhost:5001`). The same build artifact works fo
 
 ## 7. Database Migrations
 
-Migrations run **automatically on application startup** via `Database.Migrate()` in `Program.cs`.
+> **EF Core database migrations are NOT automated in this workflow (DEC-137).**
 
-The Production workflow adds safety layers:
+Since v2.185.9, the API application **does not** call `Database.Migrate()` in non-Development environments. The IIS runtime identity does not have DDL permissions. Automatic migration attempts caused HTTP 500.30 startup failures in v2.185.8.
 
-1. **Pre-deploy validation:** Confirms the connection string targets `[Portal-Gerencial]` (blocks if it resolves to `[Portal-Gerencial-Test]`)
-2. **Pre-deploy backup:** Creates a compressed SQL backup to `C:\Apps\AlplaPortal\Prod\backups\db\`
-3. **Startup migration:** The application applies pending EF Core migrations on startup
-4. **Crash on failure:** In non-Development environments, the application crashes if migration fails (by design)
-5. **Smoke test detection:** The workflow detects startup failure via the health check
+The Production workflow includes the following safety layers:
+
+1. **Pre-deploy database validation:** Confirms the connection string targets `[Portal-Gerencial]` (blocks if it resolves to `[Portal-Gerencial-Test]`)
+2. **Pre-deploy database backup:** Creates a compressed SQL backup to `C:\Apps\AlplaPortal\Prod\backups\db\`
+3. **Pre-start migration check:** The "Check for pending EF Core migrations" step queries `__EFMigrationsHistory` and compares against the expected migration list. If pending migrations are found, the deployment **fails with a clear error** before the App Pools are started.
+4. **Application startup check:** The API performs a secondary check using `GetPendingMigrations()`. If any migrations remain, it logs each missing ID and crashes with a descriptive exception.
+5. **Smoke test:** The workflow verifies the API health endpoint responds with HTTP 200.
+
+### How to Apply Migrations Before Deployment
+
+1. Run `scripts/db/check-pending-migrations.ps1` against `[Portal-Gerencial]` to identify pending migrations.
+2. Generate an idempotent SQL script: `dotnet ef migrations script <from> -i -o migration.sql`
+3. Review and apply the script using SSMS or `sqlcmd` with a DBA account.
+4. Re-run the migration check to confirm `RESULT: PASS`.
+5. Deploy via the GitHub Actions workflow.
+
+For the detailed migration procedure, see [DEPLOYMENT_CHECKLIST.md](file:///c:/dev/alpla-portal/docs/DEPLOYMENT_CHECKLIST.md).
 
 ---
 
@@ -263,7 +275,8 @@ This file must exist at `C:\Apps\AlplaPortal\Prod\api\appsettings.Production.jso
 ## 10. Troubleshooting
 
 ### Smoke test fails after deployment
-- The API may need time to apply migrations on first startup.
+- Check if the "Check for pending EF Core migrations" step passed. If it failed, apply the listed migrations and re-deploy.
+- Look for `[STARTUP] FATAL:` or `[STARTUP] PENDING:` messages in stdout logs.
 - Check Event Viewer → Windows Logs → Application → Source: IIS AspNetCore Module.
 - Check `C:\Apps\AlplaPortal\Prod\api\logs\` for startup logs.
 

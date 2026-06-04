@@ -2,7 +2,12 @@
 
 ## Current Version
 
-v2.185.8
+v2.185.9
+
+## [v2.185.9] - 2026-06-04
+
+### Changed
+- **Preventive EF Core Migration Handling (DEC-137)**: Disabled automatic `Database.Migrate()` in non-Development environments. The API now detects pending migrations and crashes with a descriptive diagnostic listing each missing migration ID, instead of attempting DDL operations that fail with 500.30 under restricted IIS identity. GitHub Actions workflows now check for pending migrations before starting App Pools. New reusable migration comparison script: `scripts/db/check-pending-migrations.ps1`.
 
 ## [v2.185.8] - 2026-06-03
 
