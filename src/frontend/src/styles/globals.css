@@ -438,6 +438,92 @@ tr:hover td {
 }
 
 /* ─────────────────────────────────────────────────────── */
+/*  Environment Banner — TEST/non-PROD visual indicator    */
+/*  (DEC-140) Fixed amber strip at the top of viewport.    */
+/*  Uses --env-banner-height for layout offset.            */
+/* ─────────────────────────────────────────────────────── */
+
+:root {
+    --env-banner-height: 32px;
+}
+
+.env-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--env-banner-height);
+    background: linear-gradient(90deg, #d97706, #f59e0b, #d97706);
+    color: #451a03;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-family: var(--font-family-body);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    z-index: 10000;
+    border-bottom: 2px solid #b45309;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 1rem;
+}
+
+.env-banner strong {
+    font-weight: 900;
+    letter-spacing: 0.08em;
+}
+
+.env-banner-separator {
+    opacity: 0.6;
+}
+
+.env-banner-text {
+    opacity: 0.85;
+    font-weight: 600;
+}
+
+/* Compact variant for fullscreen/live-board pages */
+.env-banner--compact {
+    font-size: 0.6rem;
+    height: 24px;
+}
+
+/* Layout offset when banner is visible */
+.has-env-banner [data-tour="topbar"] {
+    top: var(--env-banner-height);
+}
+
+/* Sidebar badge for TEST environment */
+.env-test-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #d97706;
+    border-radius: var(--radius-sm, 4px);
+    padding: 2px 8px;
+    font-size: 0.6rem;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    line-height: 1;
+}
+
+@media (max-width: 768px) {
+    .env-banner-text {
+        display: none;
+    }
+    .env-banner-separator {
+        display: none;
+    }
+}
+
+/* ─────────────────────────────────────────────────────── */
 /*  Global Print Rules — Minimal App Shell Override        */
 /*  Hides sidebar, topbar, and flattens the grid layout    */
 /*  so printable content fills the entire page.            */
@@ -453,7 +539,8 @@ tr:hover td {
 
     /* Hide app chrome */
     .app-shell > header,
-    .app-shell-sidebar {
+    .app-shell-sidebar,
+    .env-banner {
         display: none !important;
     }
 

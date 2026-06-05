@@ -2,6 +2,63 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.186.0] - 2026-06-05
+
+### Added — Automatic Visual Environment Differentiation (DEC-140)
+
+**Scope:** Backend configuration + frontend visual indicators across all pages.
+
+The application now automatically detects whether it is running in TEST or PRODUCTION and applies visual indicators accordingly. A single codebase serves both environments — no separate builds or environment variables at build time.
+
+**Backend:**
+- New `AppEnvironmentOptions` config model (`Code`, `Name`, `ShowBanner`).
+- New anonymous endpoint `GET /api/app/environment` — returns environment config without authentication (required for login/public pages).
+- Default configuration in `appsettings.json` = PROD (no banner). TEST overrides via IIS environment variables or `appsettings.Development.json` (gitignored).
+
+**Frontend — TEST indicators:**
+- **Fixed amber banner** at top of all pages: *"AMBIENTE DE TESTE — Use apenas para validações e simulações. Dados e ações deste ambiente não representam o ambiente produtivo."*
+- **Sidebar TEST badge**: Amber pill badge near the system logo.
+- **Browser title prefix**: `[TEST] Portal Gerencial`.
+- **Fullscreen/LiveBoard**: Compact 24px inline amber strip (non-overlapping).
+- **Print safety**: Banner hidden in `@media print`.
+
+**Frontend — PROD behavior:**
+- No banner, no badge, no title prefix. Layout completely unchanged.
+
+**Layout mechanics:**
+- CSS variable `--env-banner-height: 32px` offsets topbar, sidebar, and main content when banner is visible.
+- `EnvironmentContext.tsx` fetches from API with URL-based fallback detection (`localhost`/`test` hostname → TEST).
+
+**IIS Configuration (TEST deployment):**
+```
+AppEnvironment__Code = TEST
+AppEnvironment__Name = Ambiente de Teste
+AppEnvironment__ShowBanner = true
+```
+PROD requires no IIS changes.
+
+**Files Created:**
+- `src/backend/AlplaPortal.Application/Models/Configuration/AppEnvironmentOptions.cs` — Config model.
+- `src/backend/AlplaPortal.Api/Controllers/AppController.cs` — Anonymous endpoint.
+- `src/frontend/src/contexts/EnvironmentContext.tsx` — Context + provider + hook.
+- `src/frontend/src/components/ui/EnvironmentBanner.tsx` — Fixed amber banner.
+
+**Files Modified:**
+- `src/backend/AlplaPortal.Api/Program.cs` — DI registration.
+- `src/backend/AlplaPortal.Api/appsettings.json` — PROD default section.
+- `src/frontend/src/App.tsx` — `EnvironmentProvider` wrapper.
+- `src/frontend/src/styles/globals.css` — Banner CSS, badge CSS, print rules, CSS variables.
+- `src/frontend/src/layouts/AppShell.tsx` — Banner integration + layout offset.
+- `src/frontend/src/components/layout/Topbar.tsx` — Sticky offset.
+- `src/frontend/src/components/layout/Sidebar.tsx` — TEST badge.
+- `src/frontend/src/pages/LoginPage.tsx` — Banner on public page.
+- `src/frontend/src/pages/ResetPasswordPage.tsx` — Banner on public page.
+- `src/frontend/src/pages/Operations/OperationsLiveBoardPage.tsx` — Compact amber strip.
+- `docs/DECISIONS.md` — DEC-140.
+- `docs/CHANGELOG.md` — This entry.
+- `docs/VERSION.md` — v2.186.0.
+- `src/frontend/src/config.ts` — APP_VERSION → `2.186.0`.
+
 ## [v2.185.10] - 2026-06-04
 
 ### Changed

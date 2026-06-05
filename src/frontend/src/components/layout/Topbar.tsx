@@ -3,6 +3,7 @@ import { GlobalSearch } from './GlobalSearch';
 import { UserDropdown } from './UserDropdown';
 import { NotificationBell } from './NotificationBell';
 import { GuidedTourButton } from '../../features/guided-tour/GuidedTourButton';
+import { useEnvironment } from '../../contexts/EnvironmentContext';
 
 /**
  * Topbar Redesign (Shell 2.0)
@@ -11,6 +12,8 @@ import { GuidedTourButton } from '../../features/guided-tour/GuidedTourButton';
  * 3. Right: Help + Notifications + User Account Dropdown
  */
 export function Topbar() {
+    const { showBanner } = useEnvironment();
+
     return (
         <header data-tour="topbar" style={{
             height: '64px',
@@ -21,7 +24,7 @@ export function Topbar() {
             justifyContent: 'space-between',
             padding: '0 3rem',
             position: 'sticky',
-            top: 0,
+            top: showBanner ? 'var(--env-banner-height)' : 0,
             zIndex: Z_INDEX.TOPBAR as any, // Elevated for dropdowns
             color: 'var(--color-bg-surface)',
             fontFamily: 'var(--font-family-display)',

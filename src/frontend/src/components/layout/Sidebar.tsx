@@ -8,10 +8,18 @@ import { DropdownPortal } from '../ui/DropdownPortal';
 import { useAuth } from '../../features/auth/AuthContext';
 import { getNavigationConfig, NavItem } from '../../constants/navigation';
 import { APP_VERSION } from '../../config';
+import { useEnvironment } from '../../contexts/EnvironmentContext';
 
 interface SidebarProps {
     isExpanded: boolean;
     onToggle: () => void;
+}
+
+/** Small amber pill badge rendered in the sidebar header for non-PROD environments (DEC-140). */
+function TestBadge() {
+    const { isTest } = useEnvironment();
+    if (!isTest) return null;
+    return <span className="env-test-badge">TEST</span>;
 }
 
 export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
@@ -135,6 +143,8 @@ export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
                             />
                         )}
                     </AnimatePresence>
+                    {/* TEST environment badge (DEC-140) */}
+                    {isExpanded && <TestBadge />}
                 </div>
 
                 {/* Top Zone: Main Navigation (Scrollable) */}
@@ -249,7 +259,7 @@ export function Sidebar({ isExpanded, onToggle }: SidebarProps) {
                             textTransform: 'uppercase',
                             opacity: 0.6
                         }}>
-                            v{APP_VERSION}
+                            {APP_VERSION}
                         </div>
                     )}
                 </div>

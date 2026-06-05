@@ -2,6 +2,27 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-140 — Automatic Visual Environment Differentiation (TEST vs PROD)
+
+- **Date:** 2026-06-05
+- **Status:** Accepted
+- **Context:** The same application codebase is deployed to both TEST (`portalgerencial-test.alpla.net`) and PRODUCTION (`portal.alpla.com`) environments. Users — especially administrators and testers — had no visual indication of which environment they were using, creating a risk of performing real operations (approvals, payments, data modifications) in PRODUCTION while believing they were in TEST. The system needed an automatic, non-invasive visual differentiation mechanism without duplicating frontend logic or creating separate builds.
+- **Decision:**
+    1. **Backend-driven configuration:** A new `AppEnvironment` section in `appsettings.json` defines `Code` (PROD/TEST), `Name` (display label), and `ShowBanner` (boolean). PROD defaults are: `Code = "PROD"`, `ShowBanner = false`. TEST overrides are applied via IIS environment variables (`AppEnvironment__Code = TEST`, `AppEnvironment__ShowBanner = true`) or `appsettings.Development.json` (gitignored).
+    2. **Anonymous API endpoint:** `GET /api/app/environment` (in `AppController.cs`) returns the environment configuration without requiring authentication, enabling the login and password-reset pages to display the banner before user login.
+    3. **Frontend URL fallback:** `EnvironmentContext.tsx` first fetches from the API. If the API is unreachable (e.g., during initial load), it falls back to URL-based detection (`localhost` or `test` in hostname → TEST). This ensures the banner appears even if the backend is slow to respond.
+    4. **Single rendering path:** `EnvironmentBanner.tsx` is a fixed-position amber banner at the top of the viewport. It is rendered once per context: `AppShell.tsx` for authenticated pages, and directly in `LoginPage.tsx` / `ResetPasswordPage.tsx` for public pages. No duplication.
+    5. **Layout offset via CSS variable:** `--env-banner-height: 32px` offsets the topbar, sidebar, and main content area when the banner is visible. PROD layout is completely unchanged (variable set to `0`).
+    6. **Sidebar TEST badge:** An amber pill badge with "TEST" text appears in the sidebar header area.
+    7. **Browser title prefix:** `[TEST] Portal Gerencial` is set via `useEffect` in the context provider.
+    8. **Fullscreen/LiveBoard support:** `OperationsLiveBoardPage.tsx` renders a compact 24px amber inline strip instead of the full fixed banner.
+    9. **Print safety:** The banner is hidden in `@media print` rules.
+    10. **PROD is always the default:** If no `AppEnvironment` section exists in configuration, the system behaves as PROD (no banner, no badge, no title prefix).
+- **Alternatives considered:** (1) Build-time environment variables (`VITE_ENV=TEST`) injected during CI/CD (rejected: requires separate builds per environment, violates single-codebase principle). (2) URL-only detection without backend (rejected: fragile — URL patterns can change, and the backend is the authoritative source). (3) A watermark overlay instead of a banner (rejected: less visible, harder to read, and may interfere with screenshots/reports).
+- **Consequences:** Users immediately see which environment they are in upon page load. PROD remains visually clean. The IIS deployment team must set 3 environment variables for TEST; PROD requires no changes. The banner and badge are purely informational — they do not affect application logic or data flow.
+
+---
+
 ## DEC-137 — Disable Automatic Database.Migrate() in Non-Development Environments
 
 - **Date:** 2026-06-04

@@ -28,6 +28,7 @@ import type {
     OperationsLiveBoardTransfer,
     OperationsLiveBoardStep,
 } from '../../types/operations.types';
+import { useEnvironment } from '../../contexts/EnvironmentContext';
 
 // ─── Constants ───
 
@@ -620,8 +621,21 @@ export default function OperationsLiveBoardPage() {
     const plantName = data?.plantName || effectivePlant;
     const summary = data?.summary;
 
+    const { isTest } = useEnvironment();
+
     return (
         <div style={rootStyle} id="operations-live-board">
+
+            {/* Compact TEST indicator for signage (DEC-140) */}
+            {isTest && (
+                <div style={{
+                    height: '24px', background: 'linear-gradient(90deg, #d97706, #f59e0b, #d97706)',
+                    color: '#451a03', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '11px', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase' as const,
+                }}>
+                    AMBIENTE DE TESTE
+                </div>
+            )}
 
             {/* ── Top bar: Plant + Freshness + Countdown ── */}
             <div style={{

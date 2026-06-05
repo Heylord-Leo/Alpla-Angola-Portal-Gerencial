@@ -3,6 +3,8 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { AlertCircle, Lock, Loader2, Eye, EyeOff, CheckCircle } from 'lucide-react';
 import { APP_VERSION } from '../config';
+import { EnvironmentBanner } from '../components/ui/EnvironmentBanner';
+import { useEnvironment } from '../contexts/EnvironmentContext';
 
 const ResetPasswordPage: React.FC = () => {
     const [searchParams] = useSearchParams();
@@ -82,8 +84,12 @@ const ResetPasswordPage: React.FC = () => {
         successBox: { backgroundColor: 'rgba(34, 197, 94, 0.05)', border: '1px solid #22c55e', padding: '14px 16px', display: 'flex', alignItems: 'flex-start', gap: '12px', color: '#16a34a', fontSize: '0.85rem', fontWeight: 600, borderRadius: 'var(--radius-md)' }
     };
 
+    const { showBanner } = useEnvironment();
+
     return (
-        <div style={s.page}>
+        <>
+            <EnvironmentBanner />
+            <div style={{...s.page, paddingTop: showBanner ? 'calc(24px + var(--env-banner-height))' : '24px'}}>
             <div style={s.card}>
                 <div style={s.header}>
                     <img src="/login-animation-960w.gif" alt="ALPLA Logo" style={{ maxWidth: '180px', margin: '0 auto' }} />
@@ -191,10 +197,11 @@ const ResetPasswordPage: React.FC = () => {
 
                 <div style={{ textAlign: 'center', marginTop: '32px', opacity: 0.5, fontSize: '0.65rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
                     &copy; {new Date().getFullYear()} ALPLA.<br />
-                    v{APP_VERSION}
+                    {APP_VERSION}
                 </div>
             </div>
         </div>
+        </>
     );
 };
 

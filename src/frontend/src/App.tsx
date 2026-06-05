@@ -5,6 +5,7 @@ import { AppShell } from './layouts/AppShell';
 import { LoadingSkeleton } from './components/ui/LoadingSkeleton';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import { ROLES } from './constants/roles';
+import { EnvironmentProvider } from './contexts/EnvironmentContext';
 
 // ─── Eagerly loaded (critical path / small) ───
 import LoginPage from './pages/LoginPage';
@@ -344,9 +345,11 @@ function AppContent() {
 export default function App() {
     return (
         <BrowserRouter>
-            <AuthProvider>
-                <AppContent />
-            </AuthProvider>
+            <EnvironmentProvider>
+                <AuthProvider>
+                    <AppContent />
+                </AuthProvider>
+            </EnvironmentProvider>
         </BrowserRouter>
     );
 }

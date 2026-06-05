@@ -3,6 +3,8 @@ import { useAuth } from '../features/auth/AuthContext';
 import { api } from '../lib/api';
 import { AlertCircle, Lock, Mail, Loader2, Eye, EyeOff } from 'lucide-react';
 import { APP_VERSION } from '../config';
+import { EnvironmentBanner } from '../components/ui/EnvironmentBanner';
+import { useEnvironment } from '../contexts/EnvironmentContext';
 
 const LoginPage: React.FC = () => {
     const [email, setEmail] = useState('');
@@ -56,8 +58,12 @@ const LoginPage: React.FC = () => {
         footer: { textAlign: 'center' as const, pt: '16px' }
     };
 
+    const { showBanner } = useEnvironment();
+
     return (
-        <div style={s.page}>
+        <>
+            <EnvironmentBanner />
+            <div style={{...s.page, paddingTop: showBanner ? 'calc(24px + var(--env-banner-height))' : '24px'}}>
             <div style={s.card}>
                 <div style={s.header}>
                     <img src="/login-animation-960w.gif" alt="ALPLA Logo" style={s.logo} />
@@ -155,10 +161,11 @@ const LoginPage: React.FC = () => {
 
                 <div style={{ textAlign: 'center', marginTop: '32px', opacity: 0.5, fontSize: '0.65rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
                     &copy; {new Date().getFullYear()} ALPLA. Todos os direitos reservados.
-                    <div style={{ marginTop: '8px' }}>v{APP_VERSION}</div>
+                    <div style={{ marginTop: '8px' }}>{APP_VERSION}</div>
                 </div>
             </div>
         </div>
+        </>
     );
 };
 
