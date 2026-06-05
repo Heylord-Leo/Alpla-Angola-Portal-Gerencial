@@ -2,6 +2,24 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.186.1] - 2026-06-05
+
+### Fixed — TEST Environment Banner Not Appearing on Server (DEC-140)
+
+**Root cause:** The TEST server's `appsettings.Test.json` did not contain the `AppEnvironment` section introduced in v2.186.0. Since the base `appsettings.json` defaults to PROD (`ShowBanner: false`), the TEST API endpoint `/api/app/environment` returned PROD values.
+
+**Fix:**
+- Created `scripts/server/configure-test-environment-banner.ps1` — sets `AppEnvironment__Code`, `AppEnvironment__Name`, and `AppEnvironment__ShowBanner` as IIS App Pool environment variables on `AlplaPortal-Test-Api-Pool`.
+- Updated `GITHUB_ACTIONS_TEST_DEPLOYMENT.md` — added `AppEnvironment__*` variables to the IIS App Pool configuration section and updated the `appsettings.Test.json` template.
+- No frontend changes — the frontend was already working correctly; only the backend configuration was missing.
+
+**Configuration applied to TEST server:**
+| Variable | Value |
+|:---|:---|
+| `AppEnvironment__Code` | `TEST` |
+| `AppEnvironment__Name` | `Ambiente de Teste` |
+| `AppEnvironment__ShowBanner` | `true` |
+
 ## [v2.186.0] - 2026-06-05
 
 ### Added — Automatic Visual Environment Differentiation (DEC-140)
