@@ -2,7 +2,14 @@
 
 ## Current Version
 
-v2.186.1
+v2.187.0
+
+## [v2.187.0] - 2026-06-05
+
+### Security — HR Attendance API Access-Control Hardening (DEC-140)
+- **Removed anonymous test endpoint**: Deleted `[AllowAnonymous]` diagnostic endpoint `GET /api/hr/attendance/test-verify/{innuxEmployeeId}/{date}` that exposed attendance data without authentication and leaked stack traces. This endpoint was a development artifact that should not have reached production.
+- **Added HR module entitlement checks**: All production attendance endpoints (`GetCalendar`, `GetDayDetail`, `GetAbsenceCodes`, `GetWorkCodes`) now require `HasHRModuleAccess()` before execution. Previously, any authenticated user could call these endpoints (data was scoped, but the entitlement gate was missing). The entitlement check mirrors `HRLeaveController.HasHRModuleAccess()` exactly: System Administrator, HR, Local Manager, Department Manager, or self-calendar (email-matched HREmployee).
+- **No sidebar changes**: "Gestão da Equipa" visibility for Viewer / Management users remains unchanged. This is by design and will be evaluated separately.
 
 ## [v2.186.1] - 2026-06-05
 

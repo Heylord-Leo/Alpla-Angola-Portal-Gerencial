@@ -2,6 +2,21 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-140 — HR Attendance API Access-Control Hardening
+
+- **Date:** 2026-06-05
+- **Status:** Accepted
+- **Context:** The DEC-140 investigation report (HR Module Access Control) identified a critical security finding: `HRAttendanceController` had an `[AllowAnonymous]` diagnostic endpoint (`GET /api/hr/attendance/test-verify/{id}/{date}`) that exposed attendance data for any employee without authentication and leaked full stack traces. Additionally, all production attendance endpoints (`GetCalendar`, `GetDayDetail`, lookup endpoints) lacked explicit HR module entitlement checks — they relied only on `[Authorize]` (any authenticated user) plus data scoping, which was inconsistent with `HRLeaveController` that has `HasHRModuleAccess()` gates.
+- **Decision:**
+    1. **Remove the anonymous test endpoint entirely.** It was a development artifact that should not exist in production code. The production `GetDayDetail` endpoint provides the same data with proper authentication and scope validation.
+    2. **Add `HasHRModuleAccess()` to HRAttendanceController**, mirroring the exact logic from `HRLeaveController`: System Administrator, HR, Local Manager, Department Manager, or self-calendar (email-matched HREmployee record). Applied as the first check in `GetCalendar`, `GetDayDetail`, `GetAbsenceCodes`, and `GetWorkCodes`.
+    3. **Do not change sidebar behavior.** The "Gestão da Equipa" menu visibility for `Viewer / Management` users is intentional and will be evaluated as a separate decision. The backend correctly scopes data to self-only for these users.
+    4. **Do not change diagnostic endpoints.** The Portal-side diagnostic endpoints (`portal/resolve-schedule`, `portal/interpret-punches`, `portal/compare`, `portal/compare-range`) already have proper inline `IsAdminOrHR` role checks. The monthly report endpoint already has `[Authorize(Roles = "System Administrator,HR")]`.
+- **Alternatives considered:** (1) Restrict the test endpoint to System Administrator only instead of removing it (rejected: the production `GetDayDetail` endpoint serves the same purpose with proper auth and scope). (2) Add `[Authorize(Roles = "System Administrator,HR,...")]` at controller level instead of per-endpoint `HasHRModuleAccess()` checks (rejected: too coarse — would block self-calendar users who need `GetCalendar` and `GetDayDetail`). (3) Create a shared base class or middleware for `HasHRModuleAccess()` (deferred: keeping it as a private method in each controller mirrors the existing pattern and avoids architectural changes in a security-focused patch).
+- **Consequences:** Unauthenticated users can no longer access any HR attendance endpoint. Authenticated users without HR module entitlement receive 403 Forbidden. Existing behavior for System Administrator, HR, Local Manager, Department Manager, and Viewer/Management (self-calendar) users is unchanged. No frontend changes, no sidebar changes, no database changes.
+
+---
+
 ## DEC-140 — Automatic Visual Environment Differentiation (TEST vs PROD)
 
 - **Date:** 2026-06-05

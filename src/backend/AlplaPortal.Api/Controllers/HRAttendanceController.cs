@@ -22,11 +22,14 @@ namespace AlplaPortal.Api.Controllers;
 /// independent evolution of the attendance module.
 ///
 /// Authorization model (mirrors HRLeaveController pattern):
-/// 1. Feature entitlement: Any authenticated user can access (self-calendar).
-///    Broader visibility requires System Administrator, HR role, Local Manager,
-///    or Department Manager status.
+/// 1. Feature entitlement: HasHRModuleAccess() gates all production endpoints.
+///    Requires System Administrator, HR, Local Manager, Department Manager,
+///    or a matching HREmployee record (self-calendar). Users without entitlement
+///    receive 403 Forbidden.
 /// 2. Data scope: Resolved via GetScopedEmployeesQuery() → InnuxEmployeeId bridge.
 ///    Innux services receive only pre-filtered employee IDs and are scope-agnostic.
+/// 3. Diagnostic endpoints: Restricted to System Administrator and HR only
+///    via inline role checks.
 ///
 /// Read-only: This controller exposes attendance data from Innux.
 /// No writes to Innux. No writes to Primavera. All Innux access is SELECT-only.
@@ -83,6 +86,9 @@ public class HRAttendanceController : ControllerBase
         [FromQuery] DateTime endDate,
         [FromQuery] string attendanceActivity = "active")
     {
+        if (!await HasHRModuleAccess())
+            return Forbid();
+
         if (startDate == default || endDate == default)
             return BadRequest(new { message = "startDate and endDate are required." });
 
@@ -265,6 +271,9 @@ public class HRAttendanceController : ControllerBase
     [HttpGet("detail/{innuxEmployeeId:int}/{date:datetime}")]
     public async Task<IActionResult> GetDayDetail(int innuxEmployeeId, DateTime date)
     {
+        if (!await HasHRModuleAccess())
+            return Forbid();
+
         try
         {
             // Verify the requested employee is within scope
@@ -291,20 +300,6 @@ public class HRAttendanceController : ControllerBase
         }
     }
 
-    [AllowAnonymous]
-    [HttpGet("test-verify/{innuxEmployeeId:int}/{date:datetime}")]
-    public async Task<IActionResult> TestVerifyAffected(int innuxEmployeeId, DateTime date)
-    {
-        try
-        {
-            var detail = await _attendanceService.GetDayDetailAsync(innuxEmployeeId, date.Date);
-            return Ok(detail);
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, ex.ToString());
-        }
-    }
 
     /// <summary>
     /// Generates the Monthly Attendance Report by Department, mimicking the Innux
@@ -920,11 +915,13 @@ public class HRAttendanceController : ControllerBase
     /// <summary>
     /// Returns all absence codes from Innux.
     /// Reference data — cached 1 hour server-side.
-    /// Available to any authenticated user (codes are not scoped).
+    /// Requires HR module access (same entitlement as other attendance endpoints).
     /// </summary>
     [HttpGet("lookup/absence-codes")]
     public async Task<IActionResult> GetAbsenceCodes()
     {
+        if (!await HasHRModuleAccess())
+            return Forbid();
         try
         {
             var codes = await _lookupService.GetAbsenceCodesAsync();
@@ -945,11 +942,13 @@ public class HRAttendanceController : ControllerBase
     /// <summary>
     /// Returns all work codes from Innux.
     /// Reference data — cached 1 hour server-side.
-    /// Available to any authenticated user (codes are not scoped).
+    /// Requires HR module access (same entitlement as other attendance endpoints).
     /// </summary>
     [HttpGet("lookup/work-codes")]
     public async Task<IActionResult> GetWorkCodes()
     {
+        if (!await HasHRModuleAccess())
+            return Forbid();
         try
         {
             var codes = await _lookupService.GetWorkCodesAsync();
@@ -967,7 +966,7 @@ public class HRAttendanceController : ControllerBase
         }
     }
 
-    // ─── Scoping (mirrors HRLeaveController pattern) ───
+    // ─── Scoping & Entitlement (mirrors HRLeaveController pattern) ───
 
     private Guid CurrentUserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? Guid.Empty.ToString());
@@ -982,6 +981,42 @@ public class HRAttendanceController : ControllerBase
             var roles = CurrentUserRoles;
             return roles.Contains(RoleConstants.SystemAdministrator) || roles.Contains(RoleConstants.HR);
         }
+    }
+
+    /// <summary>
+    /// Checks if current user has HR module access.
+    ///
+    /// Mirrors HRLeaveController.HasHRModuleAccess() exactly.
+    /// Broadened to include Local Manager, Department Manager, and self-calendar users.
+    /// Safety: ALL endpoints that use this gate also apply GetScopedEmployeesQuery()
+    /// internally, which limits data to the user's scope. A non-manager user
+    /// will only ever see their own HREmployee record. This does NOT grant
+    /// write access to HR-admin functions — those have separate IsAdminOrHR checks.
+    /// </summary>
+    private async Task<bool> HasHRModuleAccess()
+    {
+        if (IsAdminOrHR) return true;
+
+        var userId = CurrentUserId;
+        var roles = CurrentUserRoles;
+
+        // Local Manager has HR module access (scoped by UserPlantScopes + UserDepartmentScopes)
+        if (roles.Contains(RoleConstants.LocalManager)) return true;
+
+        // Department Manager (ResponsibleUser of at least one department)
+        if (await _context.Departments.AnyAsync(d => d.ResponsibleUserId == userId))
+            return true;
+
+        // Self-calendar: any active user with a matching HREmployee record (by email)
+        var email = User.FindFirstValue(ClaimTypes.Email);
+        if (!string.IsNullOrEmpty(email))
+        {
+            var emailLower = email.ToLower();
+            return await _context.HREmployees.AnyAsync(
+                e => e.Email != null && e.Email.ToLower() == emailLower && e.IsActive);
+        }
+
+        return false;
     }
 
     /// <summary>

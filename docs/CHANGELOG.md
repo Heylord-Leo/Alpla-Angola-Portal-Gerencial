@@ -2,6 +2,31 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.187.0] - 2026-06-05
+
+### Security — HR Attendance API Access-Control Hardening (DEC-140)
+
+**Scope:** Backend authorization hardening for `HRAttendanceController`. No frontend or sidebar changes.
+
+**Critical fix — Anonymous test endpoint removed:**
+- Deleted the `[AllowAnonymous]` diagnostic endpoint `GET /api/hr/attendance/test-verify/{innuxEmployeeId:int}/{date:datetime}`. This endpoint bypassed all authentication and exposed attendance data for any employee by Innux ID. It also leaked full exception stack traces on error. The endpoint was a development artifact that should not have reached production code.
+
+**Entitlement alignment — `HasHRModuleAccess()` added:**
+- Added explicit `HasHRModuleAccess()` entitlement checks to all production attendance endpoints: `GetCalendar`, `GetDayDetail`, `GetAbsenceCodes`, `GetWorkCodes`.
+- Previously, these endpoints relied solely on `[Authorize]` (any authenticated user) plus data scoping via `GetScopedEmployeesQuery()`. While data was safely scoped, the missing entitlement gate was inconsistent with `HRLeaveController`, which has the same check.
+- The `HasHRModuleAccess()` method mirrors `HRLeaveController.HasHRModuleAccess()` exactly: System Administrator, HR, Local Manager, Department Manager, or self-calendar (email-matched HREmployee).
+- Diagnostic endpoints (`portal/resolve-schedule`, `portal/interpret-punches`, `portal/compare`, `portal/compare-range`) and the monthly report endpoint already had proper role-based restrictions and were not changed.
+
+**No sidebar changes:**
+- "Gestão da Equipa" visibility for Viewer / Management users remains unchanged. This is by design — the future HR permission matrix will be evaluated separately.
+
+**Files Changed:**
+- `src/backend/AlplaPortal.Api/Controllers/HRAttendanceController.cs` — Removed anonymous endpoint, added `HasHRModuleAccess()` method, added entitlement checks to 4 endpoints, updated XML doc.
+- `src/frontend/src/config.ts` — APP_VERSION → "2.187.0".
+- `docs/VERSION.md` — Bumped to v2.187.0.
+- `docs/CHANGELOG.md` — This entry.
+- `docs/DECISIONS.md` — DEC-140 HR access-control hardening decision.
+
 ## [v2.186.1] - 2026-06-05
 
 ### Fixed — TEST Environment Banner Not Appearing on Server (DEC-140)
