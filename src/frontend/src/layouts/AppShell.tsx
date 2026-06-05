@@ -5,6 +5,7 @@ import { Topbar } from '../components/layout/Topbar';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { motion } from 'framer-motion';
 import { GuidedTourProvider } from '../features/guided-tour/GuidedTourProvider';
+import { PendingApprovalsSticker } from '../components/ui/PendingApprovalsSticker';
 
 interface AppShellProps {
     children?: ReactNode;
@@ -80,6 +81,9 @@ export function AppShell({ children }: AppShellProps) {
                         {children || <ErrorBoundary fallbackName="AppShell.Outlet"><Outlet /></ErrorBoundary>}
                     </motion.main>
                 </div>
+
+                {/* Right-side sticker for pending approvals */}
+                <PendingApprovalsSticker />
             </div>
         </GuidedTourProvider>
     );

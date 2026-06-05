@@ -22,9 +22,17 @@ The workflow:
 
 > **This workflow does NOT:**
 > - Touch Production in any way
-> - Automate EF Core database migrations
+> - Execute EF Core database migrations (use the **Apply TEST Migrations** workflow instead)
 > - Commit or expose any secrets
 > - Use port 5000 (reserved by another application on AOVIA1VMS011)
+
+> [!TIP]
+> **Apply TEST Migrations Workflow (DEC-139)**
+>
+> A separate workflow **"Apply TEST Migrations"** (`apply-migrations-test.yml`) handles
+> database schema changes. Run it **before** this deploy workflow when a release includes
+> new EF Core migrations. See [DEPLOYMENT_CHECKLIST.md](file:///c:/dev/alpla-portal/docs/DEPLOYMENT_CHECKLIST.md)
+> for the full release flow.
 
 ---
 

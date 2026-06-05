@@ -18,6 +18,54 @@ Purpose: record important technical and process decisions so future work preserv
 
 ---
 
+## DEC-138 — Missing .Designer.cs Files for Two EF Core Migrations (Technical Debt)
+
+- **Date:** 2026-06-04
+- **Status:** Accepted (Technical Debt)
+- **Context:** During the v2.185.9 TEST migration application, `dotnet ef migrations script --idempotent` generated a script with only 50 of 52 expected migration INSERTs. Investigation revealed that two migration files are missing their corresponding `.Designer.cs` partial class files:
+    - `20260421155149_AddContractDocumentSoftDelete.cs` — missing `20260421155149_AddContractDocumentSoftDelete.Designer.cs`
+    - `20260425101500_AddAttendanceJustifications.cs` — missing `20260425101500_AddAttendanceJustifications.Designer.cs`
+    
+    Without the Designer file (which contains the model snapshot at that point in the migration chain), EF Core tooling cannot include these migrations in auto-generated scripts. The likely cause is that these migrations were manually created or their Designer files were accidentally deleted/not committed.
+- **Decision:** Manually craft idempotent SQL scripts derived directly from the migration `Up()` methods for environments that need these migrations applied. Do NOT regenerate the Designer files or consolidate migrations at this time to avoid disrupting the migration chain. Document as technical debt for future resolution.
+- **Impact:**
+    - `dotnet ef migrations script --idempotent` will skip these two migrations until resolved.
+    - Future full-idempotent script generation will always produce 50/52 INSERTs unless Designer files are restored.
+    - Manual migration scripts (`scripts/db/apply-test-missing-migrations-v2-185-9.sql`) are the workaround.
+- **Future resolution options:** (1) Regenerate Designer files for both migrations (requires careful snapshot alignment). (2) Include both migrations' DDL in a future consolidation migration. (3) Accept the current state since the manual scripts work correctly.
+- **Related files:**
+    - `scripts/db/apply-test-missing-migrations-v2-185-9.sql` — manually crafted idempotent SQL
+    - `scripts/db/apply-test-v2-185-9-server.ps1` — server-side automation script
+
+---
+
+## DEC-139 — Automated EF Core Migration Workflows via GitHub Actions
+
+- **Date:** 2026-06-04
+- **Status:** Accepted
+- **Context:** After DEC-137 disabled `Database.Migrate()` in non-Development environments, every release with schema changes required manual RDP access to AOVIA1VMS011, manual SQL script crafting, and manual `sqlcmd` execution. This process was error-prone (as demonstrated by COMPRESSION and RAISERROR syntax issues during v2.185.9 TEST/PROD migration) and slow. Additionally, the expected migration list was hardcoded in three separate files (`check-pending-migrations.ps1`, `deploy-test.yml`, `deploy-prod.yml`), requiring manual synchronization for every new migration.
+- **Decision:**
+    1. **Auto-generated migration list (eliminates hardcoded arrays):** A new script `scripts/db/get-expected-migrations.ps1` scans the EF Core migrations folder (`src/backend/AlplaPortal.Infrastructure/Data/Migrations/`) and derives the expected migration IDs from filenames. It excludes `*.Designer.cs` and `*Snapshot.cs` files. The build step in `deploy-test.yml` and `deploy-prod.yml` now generates an `expected-migrations.txt` file packaged with the API artifact. The deploy jobs read from this file instead of inline arrays. `check-pending-migrations.ps1` also calls the auto-generation script.
+    2. **Apply TEST Migrations workflow (`apply-migrations-test.yml`):** Manual-dispatch GitHub Actions workflow. Checks out the repo, builds the backend, detects pending migrations, backs up `Portal-Gerencial-Test`, generates idempotent SQL via `dotnet ef`, validates the SQL covers all pending migrations (DEC-138 protection), applies via `sqlcmd`, and verifies `__EFMigrationsHistory`. Exits successfully with a notice if no migrations are pending.
+    3. **Apply PRODUCTION Migrations workflow (`apply-migrations-prod.yml`):** Same logic as TEST but with additional safety: requires `YES-PROD` confirmation input, validates the target database is `Portal-Gerencial` (blocks if it detects `Portal-Gerencial-Test`), and uses the GitHub `production` environment with approval gates.
+    4. **Reusable `apply-migrations.ps1` script:** Shared by both workflows. Accepts environment, connection string, backup directory, and expected database name as parameters. Implements the full lifecycle: detect → backup → generate → validate → apply → verify.
+    5. **DEC-138 protection:** Before applying any SQL, the workflow validates that the generated idempotent script references all pending migration IDs. If any are missing (e.g., due to missing `.Designer.cs` files), the workflow fails with a clear error pointing to DEC-138.
+    6. **Deploy workflows remain safety nets:** The existing pending migration checks in `deploy-test.yml` and `deploy-prod.yml` remain active. They block deployment if any migrations are pending, regardless of whether the Apply Migrations workflow was used.
+- **Invariants preserved (DEC-137):**
+    - `Database.Migrate()` remains disabled in non-Development environments.
+    - IIS runtime identities remain `db_datareader` + `db_datawriter` only.
+    - Deploy workflows still block on pending migrations.
+    - Production requires explicit `YES-PROD` confirmation and database identity validation.
+- **Alternatives considered:** (1) Re-enabling `Database.Migrate()` with a DBA connection string at startup (rejected: violates DEC-137 principle of no auto-migration). (2) Using GitHub Actions secrets for inline SQL execution (rejected: less auditable than `dotnet ef` generated scripts). (3) Keeping hardcoded migration lists (rejected: error-prone, already caused maintenance burden).
+- **Consequences:** Migration application is now a one-click GitHub Actions workflow instead of a multi-step RDP process. New migrations only require adding the file to the Migrations folder — no manual list updates needed. The DEC-138 validation gate prevents silent failures from missing Designer files.
+- **Related files:**
+    - `scripts/db/get-expected-migrations.ps1` — auto-generates migration list from filesystem
+    - `scripts/db/apply-migrations.ps1` — reusable migration application script
+    - `.github/workflows/apply-migrations-test.yml` — TEST migration workflow
+    - `.github/workflows/apply-migrations-prod.yml` — PRODUCTION migration workflow
+
+---
+
 ## DEC-136 — Supplier PortalCode D6 Standardization
 
 - **Date:** 2026-06-03

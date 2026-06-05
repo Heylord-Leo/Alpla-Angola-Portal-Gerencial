@@ -444,6 +444,7 @@ tr:hover td {
 /*  Report-specific print styles live in their own CSS.    */
 /* ─────────────────────────────────────────────────────── */
 
+
 @media print {
     html, body {
         background: white !important;

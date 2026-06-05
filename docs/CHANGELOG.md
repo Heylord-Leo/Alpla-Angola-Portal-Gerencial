@@ -2,6 +2,12 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.185.10] - 2026-06-04
+
+### Changed
+- **Pending Approvals Notification**: Reverted sidebar-based approval highlighting in favor of a non-intrusive floating sticker (`PendingApprovalsSticker.tsx`).
+- **Feedback Notification Style**: Adopted the bottom-right portal notification pattern to alert users of pending approvals. Includes sessionStorage persistence so the sticker remains hidden after manual dismissal.
+
 ## [v2.185.9] - 2026-06-04
 
 ### Changed

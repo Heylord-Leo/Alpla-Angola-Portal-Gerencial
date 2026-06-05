@@ -18,57 +18,65 @@
 > [!IMPORTANT]
 > **Since v2.185.9 (DEC-137)**, `Database.Migrate()` is **disabled** in non-Development environments.
 > The IIS runtime identity does NOT have DDL permissions.
-> Migrations must be applied manually using a DBA account **before** deploying the new build.
 > The deployment workflow will **block** startup if pending migrations are detected.
 
-> [!WARNING]
-> **When adding a new EF Core migration**, the expected migration list must be updated in the **same task/release** in all three locations:
-> 1. `scripts/db/check-pending-migrations.ps1` — hardcoded `$expectedMigrations` array
-> 2. `.github/workflows/deploy-test.yml` — inline `$expected` array in the "Check for pending EF Core migrations" step
-> 3. `.github/workflows/deploy-prod.yml` — inline `$expected` array in the "Check for pending EF Core migrations" step
->
-> Failure to update these lists will cause the deployment workflow to report the new migration as "unknown" or miss it during the pending check.
-> A future improvement may auto-generate this list from the Migrations folder.
+> [!TIP]
+> **Since DEC-139**, migrations can be applied automatically via GitHub Actions workflows
+> instead of manual RDP + sqlcmd execution. The expected migration list is auto-generated
+> from the EF Core migrations folder — no more hardcoded arrays to maintain.
 
-### 1. Check for Pending Migrations
+### Release Flow: Without Migrations
 
-From your development workstation, compare the expected migrations against the target database:
+If the release does NOT include database schema changes:
 
-```powershell
-# Check TEST
-.\scripts\db\check-pending-migrations.ps1 -ConnectionString "Server=AOVIA1VMS011;Database=Portal-Gerencial-Test;User Id=...;Password=...;TrustServerCertificate=True"
+1. `task-publish`
+2. Run **Deploy to TEST** workflow
+3. Validate TEST
+4. Run **Deploy to PRODUCTION** workflow
 
-# Check PRODUCTION
-.\scripts\db\check-pending-migrations.ps1 -ConnectionString "Server=AOVIA1VMS011;Database=Portal-Gerencial;User Id=...;Password=...;TrustServerCertificate=True"
-```
+### Release Flow: With Migrations
 
-If the script outputs `RESULT: PASS`, no migration action is needed.
+If the release includes database schema changes:
 
-### 2. Generate Migration SQL Script
+1. `task-publish`
+2. Run **Apply TEST Migrations** workflow
+3. Run **Deploy to TEST** workflow
+4. Validate TEST
+5. Run **Apply PRODUCTION Migrations** workflow (requires `YES-PROD` confirmation)
+6. Run **Deploy to PRODUCTION** workflow
+7. Validate PRODUCTION
 
-If pending migrations are detected:
+### How to Identify If a Release Includes Migrations
 
-```powershell
-# Generate idempotent SQL script from the last applied migration
-dotnet ef migrations script <last-applied-migration-id> -i -o scripts/db/apply-migrations.sql `
-  --project src/backend/AlplaPortal.Infrastructure `
-  --startup-project src/backend/AlplaPortal.Api
-```
+- **New files** in `src/backend/AlplaPortal.Infrastructure/Data/Migrations/`
+- **CHANGELOG.md** mentions database/schema changes
+- **Deploy workflow** reports pending migrations and blocks startup
+- **`check-pending-migrations.ps1`** reports pending migrations
+- **Apply Migrations workflow** detects and reports pending count
 
-### 3. Review and Apply
+### Manual Migration Fallback
+
+If the automated workflow cannot apply a migration (e.g., missing `.Designer.cs` — see DEC-138):
 
 1. **Back up the target database** using SSMS or `BACKUP DATABASE`.
-2. **Review** the generated SQL script for safety.
+2. **Generate** or craft an idempotent SQL script manually.
 3. **Apply** the script to the target database using SSMS or `sqlcmd` with a DBA-level account.
 4. **Verify** `__EFMigrationsHistory` contains all expected migration IDs.
 5. Re-run `check-pending-migrations.ps1` to confirm `RESULT: PASS`.
 
-### 4. Deploy and Verify
+### Migration List Maintenance (DEC-139)
 
-1. Run the GitHub Actions deployment workflow.
-2. The workflow's "Check for pending EF Core migrations" step will verify the database.
-3. If all migrations are applied, the App Pools will start and the smoke test will run.
-4. If any migrations are pending, the deployment will fail with a clear error message.
+The expected migration list is now **auto-generated** from the EF Core migrations folder.
+When you add a new migration, you only need to:
+
+1. Add the migration file to `src/backend/AlplaPortal.Infrastructure/Data/Migrations/`
+2. Ensure it includes a proper `.Designer.cs` file (for `dotnet ef` compatibility)
+
+The following files are auto-generated and no longer need manual updates:
+- `expected-migrations.txt` — generated during build, packaged with the API artifact
+- `get-expected-migrations.ps1` — scans the migrations folder at runtime
+- Deploy workflow migration checks — read from `expected-migrations.txt`
+
 
 ---
 

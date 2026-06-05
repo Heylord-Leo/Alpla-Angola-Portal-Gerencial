@@ -29,7 +29,16 @@ The workflow:
 > - Use port 5000 (reserved) or port 5001 (Test)
 > - Commit or expose any secrets
 > - Drop or recreate the Production database
-> - Execute `Database.Migrate()` — migrations must be applied manually (DEC-137)
+> - Execute EF Core migrations (use the **Apply PRODUCTION Migrations** workflow instead — DEC-139)
+
+> [!TIP]
+> **Apply PRODUCTION Migrations Workflow (DEC-139)**
+>
+> A separate workflow **"Apply PRODUCTION Migrations"** (`apply-migrations-prod.yml`) handles
+> database schema changes. It requires a `YES-PROD` confirmation input and validates the
+> target database identity before executing. Run it **before** this deploy workflow when a
+> release includes new EF Core migrations. See [DEPLOYMENT_CHECKLIST.md](file:///c:/dev/alpla-portal/docs/DEPLOYMENT_CHECKLIST.md)
+> for the full release flow.
 
 ---
 
