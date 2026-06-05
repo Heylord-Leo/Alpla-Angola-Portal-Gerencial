@@ -2,7 +2,12 @@
 
 ## Current Version
 
-v2.185.10
+v2.186.0
+
+## [v2.186.0] - 2026-06-05
+
+### Added
+- **Automatic Visual Environment Differentiation (DEC-140)**: Backend-driven environment detection with frontend visual indicators. TEST environment shows a fixed amber banner, sidebar badge, and browser title prefix. PROD remains visually clean. Single codebase, no separate builds. Layout offset via CSS variable `--env-banner-height`.
 
 ## [v2.185.10] - 2026-06-04
 

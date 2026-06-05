@@ -117,6 +117,20 @@ To prevent UI layering conflicts (e.g., modals appearing behind drawers or heade
    - This escapes parent stacking contexts (like `AppShell` or `overflow: hidden` containers) and ensures predictable layering across the entire application.
 4. **Stacking Context Protection**: The `AppShell` main content area must NOT define a numeric `zIndex` (unless strictly isolated), to avoid trapping fixed-position children in a lower stacking context than the shell's headers.
 
+## Environment Visual Differentiation (DEC-140, v2.186.0)
+
+The application automatically detects whether it is running in TEST or PRODUCTION and applies visual indicators accordingly, using a single codebase.
+
+1. **Backend-Driven Configuration**: `GET /api/app/environment` (anonymous) returns `code`, `name`, and `showBanner`. PROD defaults to no banner. TEST is configured via IIS environment variables (`AppEnvironment__Code`, `AppEnvironment__Name`, `AppEnvironment__ShowBanner`).
+2. **EnvironmentContext**: `src/frontend/src/contexts/EnvironmentContext.tsx` fetches from the API with a URL-based fallback (`localhost`/`test` hostname → TEST). Provides `useEnvironment()` hook returning `{ code, name, showBanner, isTest }`.
+3. **EnvironmentBanner**: `src/frontend/src/components/ui/EnvironmentBanner.tsx` — fixed amber banner at `z-index: 10000` (above all other elements). Rendered once: via `AppShell` for authenticated pages, or directly in `LoginPage`/`ResetPasswordPage` for public pages.
+4. **Layout Offset**: CSS variable `--env-banner-height` (32px when TEST, 0 when PROD) offsets the topbar, sidebar, and main content. Applied in `globals.css`.
+5. **Sidebar TEST Badge**: An amber pill badge in the sidebar header area, visible only in TEST.
+6. **Browser Title Prefix**: `[TEST] Portal Gerencial` set via `useEffect` in the context provider.
+7. **LiveBoard Compact Strip**: `OperationsLiveBoardPage.tsx` renders a compact 24px inline amber strip instead of the full fixed banner.
+8. **Print Safety**: The banner is hidden in `@media print` rules.
+9. **PROD Default**: If no `AppEnvironment` section exists in configuration, the system behaves as PROD (no visual changes).
+
 ## Request & Plant Model (v1.1.25)
 
 To support multi-plant allocation while maintaining institutional boundaries, the project uses a **Company-Level Request** model.

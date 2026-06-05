@@ -6,6 +6,8 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { motion } from 'framer-motion';
 import { GuidedTourProvider } from '../features/guided-tour/GuidedTourProvider';
 import { PendingApprovalsSticker } from '../components/ui/PendingApprovalsSticker';
+import { EnvironmentBanner } from '../components/ui/EnvironmentBanner';
+import { useEnvironment } from '../contexts/EnvironmentContext';
 
 interface AppShellProps {
     children?: ReactNode;
@@ -25,9 +27,15 @@ export function AppShell({ children }: AppShellProps) {
         });
     };
 
+    const { showBanner } = useEnvironment();
+    const bannerOffset = showBanner ? 'var(--env-banner-height)' : '0px';
+
     return (
         <GuidedTourProvider>
-            <div className="app-shell" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: 'var(--color-bg-page)' }}>
+            <div className={`app-shell${showBanner ? ' has-env-banner' : ''}`} style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: 'var(--color-bg-page)', paddingTop: showBanner ? 'var(--env-banner-height)' : undefined }}>
+                {/* Environment indicator — rendered once for authenticated pages */}
+                <EnvironmentBanner />
+
                 {/* Topbar acts as the solid, heavy corporate anchor */}
                 <Topbar />
 
@@ -47,8 +55,8 @@ export function AppShell({ children }: AppShellProps) {
                     {/* Full-height sidebar container with independent scroll support */}
                     <div className="app-shell-sidebar" style={{ 
                         position: 'sticky', 
-                        top: 'calc(64px + 2rem)', 
-                        height: 'calc(100vh - 64px - 4rem)',
+                        top: `calc(64px + 2rem + ${bannerOffset})`, 
+                        height: `calc(100vh - 64px - 4rem - ${bannerOffset})`,
                         display: 'flex',
                         flexDirection: 'column',
                         transition: 'width 0.3s ease-in-out'

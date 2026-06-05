@@ -103,6 +103,9 @@ builder.Services.AddHostedService<ProformaDeadlineAlertService>();
 builder.Services.AddScoped<IContractOcrNormalisationService, ContractOcrNormalisationService>();
 builder.Services.AddScoped<ContractOcrBackgroundProcessor>();
 
+// Application Environment — visual differentiation between TEST and PROD (DEC-140)
+builder.Services.Configure<AppEnvironmentOptions>(builder.Configuration.GetSection("AppEnvironment"));
+
 // Auth Services
 builder.Services.Configure<SecurityOptions>(builder.Configuration.GetSection("Security"));
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
