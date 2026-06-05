@@ -2,7 +2,12 @@
 
 ## Current Version
 
-v2.186.0
+v2.186.1
+
+## [v2.186.1] - 2026-06-05
+
+### Fixed
+- **TEST Environment Banner Configuration (DEC-140)**: Created `scripts/server/configure-test-environment-banner.ps1` to set `AppEnvironment__*` IIS App Pool environment variables on the TEST server. Updated `GITHUB_ACTIONS_TEST_DEPLOYMENT.md` with the required variables and `appsettings.Test.json` template. No frontend changes.
 
 ## [v2.186.0] - 2026-06-05
 

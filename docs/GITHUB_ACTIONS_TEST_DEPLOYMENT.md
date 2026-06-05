@@ -334,9 +334,14 @@ Or edit via `applicationHost.config`:
 <add name="AlplaPortal-Test-Api-Pool">
   <environmentVariables>
     <add name="ASPNETCORE_ENVIRONMENT" value="Test" />
+    <add name="AppEnvironment__Code" value="TEST" />
+    <add name="AppEnvironment__Name" value="Ambiente de Teste" />
+    <add name="AppEnvironment__ShowBanner" value="true" />
   </environmentVariables>
 </add>
 ```
+
+> **DEC-140 (v2.186.0):** The `AppEnvironment__*` variables control the visual environment differentiation banner, sidebar badge, and browser title prefix. Without these, the TEST environment looks identical to PROD. Apply them using `scripts/server/configure-test-environment-banner.ps1` or manually via IIS Manager.
 
 ### 10.2 appsettings.Test.json
 
@@ -354,9 +359,16 @@ Required contents (minimum):
   },
   "AppConfig": {
     "FrontendBaseUrl": "https://portalgerencial-test.alpla.net"
+  },
+  "AppEnvironment": {
+    "Code": "TEST",
+    "Name": "Ambiente de Teste",
+    "ShowBanner": true
   }
 }
 ```
+
+> **Note:** The `AppEnvironment` section can alternatively be set via IIS App Pool environment variables (`AppEnvironment__Code`, etc.), which take precedence over JSON configuration. See Section 10.1.
 
 > **IMPORTANT:** The workflow preserves this file during deployment. If it is accidentally deleted, it must be recreated manually with the correct secrets.
 
