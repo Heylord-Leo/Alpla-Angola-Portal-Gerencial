@@ -2,6 +2,85 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.189.0] - 2026-06-08
+
+### Added — I.T Equipment Assignment: Availability Date & Visual Signature PDF
+
+Exposed the existing `AssignedDate` field as "Data de disponibilização ao utilizador" in the assignment modal. The field is required, defaults to today's date, and can be changed for historical assignments. **No database migration needed** — reuses the existing `ITEquipmentAssignment.AssignedDate` column.
+
+**Assignment Agreement PDF:**
+- Two separate date lines: availability date (date only) and document generation date (date+time UTC)
+- `Data de disponibilização` added to the info table
+- Visual cursive signature: transparent PNG generated server-side using `System.Drawing.Common` with Segoe Script font (fallback: Lucida Handwriting → Freestyle Script → Arial Italic)
+- Enhanced signature block layout: cursive PNG → signature line → printed name → role label
+- Electronic generation statement: "Documento gerado eletronicamente no Portal Gerencial." with audit metadata (user, email, asset tag, responsible, timestamp)
+
+**Return Document PDF:**
+- Same enhanced signature blocks and electronic generation statement for consistency
+
+**Design decisions:**
+- Uses "gerado eletronicamente" (not "aceite") because no real user acceptance action exists yet
+- PNG generation uses existing `System.Drawing.Common` v10.0.5 dependency — no new packages added
+- Signature image rendered at 24pt in dark navy (#002D72) with transparent background
+
+**Signature Behavior Corrections:**
+- Assignment & Return PDFs: User signature block is now an empty area for manual signing (no generated cursive PNG).
+- Assignment & Return PDFs: I.T Responsible signature block retains the generated cursive PNG.
+- Electronic generation statement wording updated to "Documento gerado eletronicamente no Portal Gerencial pelo responsável de T.I."
+- Availability date is now included in the audit metadata footer.
+
+### Added — I.T Equipment Signed Term Upload
+
+Added the ability to upload manually signed Assignment and Return Agreements.
+- Added new document types: `SIGNED_ASSIGNMENT_AGREEMENT` and `SIGNED_RETURN_AGREEMENT`.
+- Added new movement type: `SIGNED_TERM_UPLOADED`.
+- Updated backend upload API to accept an `assignmentId` and restricted file extensions for signed terms to PDF, JPG, and PNG.
+- Updated the "Atribuições" tab in `EquipmentQuickViewDrawer`:
+  - Added visual indicators for generated terms (blue) and signed terms (green if uploaded, orange if pending).
+  - Added action buttons to view generated terms, upload/replace signed terms, and view uploaded signed terms.
+
+## [v2.188.0] - 2026-06-08
+
+### Added — Supplier Ficha Primavera Import Enrichment (DEC-141)
+
+Extended the Primavera supplier import to automatically populate Address, Primary Contact, Banking, and Payment Terms in the Supplier Ficha, using data from the Primavera `Fornecedores` table.
+
+**New Primavera fields mapped:**
+- **Address**: Composite from `Morada`, `Morada1`, `Local`, `Cp`, `Pais` (joined with ", ")
+- **Primary Contact**: `Contacto` → ContactName1, `Cargo` → ContactRole1, `Telemovel` (fallback to `Tel`) → ContactPhone1, `Email` → ContactEmail1
+- **Banking**: `IBAN`, `Swift`, `NumCB` → BankIban, BankSwift, BankAccountNumber
+- **Payment Terms**: `CondPag` → PaymentTerms, `ModoPag` → PaymentMethod
+
+**Not available from Primavera** (remain empty, manually editable):
+- Secondary contact (ContactName2, ContactPhone2, ContactEmail2)
+
+**Safe update rule**: When re-importing an existing supplier in DRAFT or PENDING_COMPLETION status, only empty Portal fields are filled from Primavera. Manually entered values are never overwritten. Suppliers in ACTIVE, PENDING_APPROVAL, or ADJUSTMENT_REQUESTED status are not modified.
+
+**Safe column detection**: Uses a two-query approach — attempts extended columns (banking/payment/contact) first. If any column is missing in the Primavera installation, falls back to the base column set automatically.
+
+**Diagnostic logging**: Each supplier import/update logs a structured line showing which data groups were found/missing.
+
+### Fixed — I.T Equipment PDF Layout & Readability
+
+Fixed a formatting issue in the automatically generated I.T Equipment Responsibility Term (PDF) where policy text and clause titles were stretched across the full page width with excessive spaces between words.
+
+- Replaced `XParagraphAlignment.Justify` with `XParagraphAlignment.Left` to prevent text stretching on short lines.
+- Improved the rendering of bulleted lists within the policy text by properly breaking inline bullet characters (`•`) into formatted, indented multi-line structures for better readability.
+- Applied the same alignment correction to the Return Document (Termo de Devolução).
+
+**Files Changed:**
+- `src/backend/AlplaPortal.Application/DTOs/Integration/PrimaveraSupplierDto.cs`
+- `src/backend/AlplaPortal.Infrastructure/Services/Integration/PrimaveraSupplierService.cs`
+- `src/backend/AlplaPortal.Api/Controllers/SyncController.cs`
+- `src/backend/AlplaPortal.Infrastructure/Services/ITEquipmentPdfService.cs`
+- `src/frontend/src/pages/Settings/MasterData.tsx`
+- `src/frontend/src/pages/Contracts/SupplierFichaList.tsx`
+- `src/frontend/src/pages/Settings/SyncWorkspace.tsx`
+- `docs/VERSION.md`
+- `docs/CHANGELOG.md`
+- `docs/DECISIONS.md`
+- `src/frontend/src/config.ts`
+
 ## [v2.187.0] - 2026-06-05
 
 ### Security — HR Attendance API Access-Control Hardening (DEC-140)

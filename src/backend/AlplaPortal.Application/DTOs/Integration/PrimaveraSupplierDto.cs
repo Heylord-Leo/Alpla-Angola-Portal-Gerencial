@@ -3,20 +3,17 @@ namespace AlplaPortal.Application.DTOs.Integration;
 /// <summary>
 /// DTO for Primavera supplier master data (read-only).
 ///
-/// Source: Primavera table [Fornecedores] (116 columns; ~14 exposed here).
+/// Source: Primavera table [Fornecedores] (116 columns; ~19 exposed here).
 ///
-/// This DTO intentionally excludes financial, banking, tax-reconciliation,
-/// and transactional fields. It focuses on supplier identity and contact
-/// information suitable for lookup, search, and future procurement workflows.
+/// This DTO covers supplier identity, contact information, address,
+/// banking details, and payment terms for Supplier Ficha enrichment.
 ///
-/// Phase 4B scope — first supplier master-data DTO.
+/// Phase 4B+: extended to include banking and payment fields for
+/// Supplier Ficha auto-population during Primavera sync/import.
 ///
 /// Deferred fields:
-/// - CondPag (payment terms)
-/// - ModoPag (payment method)
 /// - TotalDeb / LimiteCred (credit/balance)
 /// - Notas (ntext remarks)
-/// - Bank/IBAN/Swift details
 /// - B2B integration fields
 /// - Retention/withholding fields
 /// - eGAR waste management fields
@@ -70,6 +67,36 @@ public class PrimaveraSupplierDto
 
     /// <summary>Record creation date. Source: Fornecedores.DataCriacao</summary>
     public DateTime? CreatedAt { get; set; }
+
+    // ─── Contact Person (Supplier Ficha enrichment) ───
+
+    /// <summary>Primary contact person name. Source: Fornecedores.Contacto</summary>
+    public string? ContactPerson { get; set; }
+
+    /// <summary>Contact person mobile phone. Source: Fornecedores.Telemovel</summary>
+    public string? MobilePhone { get; set; }
+
+    /// <summary>Contact person role/title. Source: Fornecedores.Cargo</summary>
+    public string? ContactRole { get; set; }
+
+    // ─── Banking (Supplier Ficha enrichment) ───
+
+    /// <summary>IBAN. Source: Fornecedores.IBAN</summary>
+    public string? IBAN { get; set; }
+
+    /// <summary>SWIFT/BIC code. Source: Fornecedores.Swift</summary>
+    public string? Swift { get; set; }
+
+    /// <summary>Bank account number. Source: Fornecedores.NumCB</summary>
+    public string? BankAccountNumber { get; set; }
+
+    // ─── Payment Terms (Supplier Ficha enrichment) ───
+
+    /// <summary>Payment terms code. Source: Fornecedores.CondPag</summary>
+    public string? PaymentTerms { get; set; }
+
+    /// <summary>Payment method code. Source: Fornecedores.ModoPag</summary>
+    public string? PaymentMethod { get; set; }
 
     /// <summary>Which Primavera company this supplier belongs to.</summary>
     public string SourceCompany { get; set; } = string.Empty;

@@ -11,22 +11,22 @@ namespace AlplaPortal.Infrastructure.Services.Integration;
 /// Uses PrimaveraConnectionFactory to resolve connections for the requested
 /// company/database target. Every call requires an explicit PrimaveraCompany.
 ///
-/// Source: Primavera table [Fornecedores] (116 columns; ~15 exposed in DTO).
+/// Source: Primavera table [Fornecedores] (116 columns; ~20 exposed in DTO).
 ///
 /// This service handles supplier-specific queries only.
 /// Connection resolution, credential validation, and database targeting
 /// are delegated to the shared PrimaveraConnectionFactory.
 ///
-/// Phase 4B scope:
+/// Phase 4B+ scope:
 /// - lookup by supplier code
 /// - search by name or code fragment
-/// - no financial, banking, or transactional queries
+/// - banking details (IBAN, Swift, NumCB) for Supplier Ficha enrichment
+/// - payment terms (CondPag, ModoPag) for Supplier Ficha enrichment
 /// - no supplier-article relationship logic
 /// - no sync or writeback
 ///
-/// Unlike the Artigo table, the Fornecedores table has consistent columns
-/// across ALPLAPLASTICO and ALPLASOPRO (both 116 columns, same CDU set).
-/// No adaptive column detection is needed for this table.
+/// Uses a safe two-query approach: attempts extended columns first (including
+/// banking/payment). If any column is missing, falls back to the base set.
 /// </summary>
 public class PrimaveraSupplierService : IPrimaveraSupplierService
 {
@@ -36,7 +36,8 @@ public class PrimaveraSupplierService : IPrimaveraSupplierService
     private const int MaxSearchResults = 50;
     private const int MinQueryLength = 2;
 
-    private const string SelectColumns = @"
+    // Base columns (always present in Fornecedores)
+    private const string BaseSelectColumns = @"
         Fornecedor      AS Code,
         Nome            AS Name,
         NomeFiscal      AS FiscalName,
@@ -54,6 +55,25 @@ public class PrimaveraSupplierService : IPrimaveraSupplierService
         Moeda           AS Currency,
         DataCriacao     AS CreatedAt";
 
+    // Extended columns for Supplier Ficha enrichment (contact + banking + payment terms).
+    // These may not exist in all Primavera installations.
+    // If any column is missing, the service falls back to BaseSelectColumns only.
+    private const string ExtendedSelectColumns = BaseSelectColumns + @",
+        Contacto        AS ContactPerson,
+        Telemovel       AS MobilePhone,
+        Cargo           AS ContactRole,
+        IBAN            AS IBAN,
+        Swift           AS Swift,
+        NumCB           AS BankAccountNumber,
+        CondPag         AS PaymentTerms,
+        ModoPag         AS PaymentMethod";
+
+    /// <summary>
+    /// Whether extended columns (contact/banking/payment) are available.
+    /// Determined on first query attempt; cached for the lifetime of this service instance.
+    /// </summary>
+    private bool? _useExtendedColumns;
+
     public PrimaveraSupplierService(
         PrimaveraConnectionFactory connectionFactory,
         ILogger<PrimaveraSupplierService> logger)
@@ -61,6 +81,12 @@ public class PrimaveraSupplierService : IPrimaveraSupplierService
         _connectionFactory = connectionFactory;
         _logger = logger;
     }
+
+    /// <summary>
+    /// Resolves which column set to use. Tries extended first; falls back on error.
+    /// </summary>
+    private string GetSelectColumns() =>
+        _useExtendedColumns == false ? BaseSelectColumns : ExtendedSelectColumns;
 
     public async Task<PrimaveraSupplierDto?> GetSupplierByCodeAsync(
         PrimaveraCompany company, string code)
@@ -72,34 +98,15 @@ public class PrimaveraSupplierService : IPrimaveraSupplierService
 
         try
         {
-            await using var connection = await _connectionFactory.CreateConnectionAsync(company);
-
-            var query = $@"
-                SELECT
-                    {SelectColumns}
-                FROM Fornecedores
-                WHERE Fornecedor = @code";
-
-            await using var cmd = new SqlCommand(query, connection);
-            cmd.Parameters.AddWithValue("@code", trimmedCode);
-
-            await using var reader = await cmd.ExecuteReaderAsync();
-
-            if (!await reader.ReadAsync())
-            {
-                _logger.LogInformation(
-                    "Primavera supplier not found. Code: {Code}, Company: {Company}",
-                    trimmedCode, company);
-                return null;
-            }
-
-            var dto = MapSupplier(reader, company);
-
-            _logger.LogInformation(
-                "Primavera supplier found. Code: {Code}, Name: {Name}, Company: {Company}",
-                dto.Code, dto.Name, company);
-
-            return dto;
+            return await ExecuteSupplierByCodeQuery(company, trimmedCode);
+        }
+        catch (SqlException ex) when (_useExtendedColumns != false && IsInvalidColumnError(ex))
+        {
+            _logger.LogWarning(
+                "Extended columns not available in Primavera Fornecedores. Falling back to base columns. Company: {Company}, Error: {Message}",
+                company, ex.Message);
+            _useExtendedColumns = false;
+            return await ExecuteSupplierByCodeQuery(company, trimmedCode);
         }
         catch (SqlException ex)
         {
@@ -108,6 +115,40 @@ public class PrimaveraSupplierService : IPrimaveraSupplierService
                 trimmedCode, company);
             throw;
         }
+    }
+
+    private async Task<PrimaveraSupplierDto?> ExecuteSupplierByCodeQuery(
+        PrimaveraCompany company, string trimmedCode)
+    {
+        await using var connection = await _connectionFactory.CreateConnectionAsync(company);
+
+        var query = $@"
+            SELECT
+                {GetSelectColumns()}
+            FROM Fornecedores
+            WHERE Fornecedor = @code";
+
+        await using var cmd = new SqlCommand(query, connection);
+        cmd.Parameters.AddWithValue("@code", trimmedCode);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+
+        if (!await reader.ReadAsync())
+        {
+            _logger.LogInformation(
+                "Primavera supplier not found. Code: {Code}, Company: {Company}",
+                trimmedCode, company);
+            return null;
+        }
+
+        var dto = MapSupplier(reader, company);
+        if (_useExtendedColumns == null) _useExtendedColumns = true;
+
+        _logger.LogInformation(
+            "Primavera supplier found. Code: {Code}, Name: {Name}, Company: {Company}",
+            dto.Code, dto.Name, company);
+
+        return dto;
     }
 
     public async Task<List<PrimaveraSupplierDto>> SearchSuppliersAsync(
@@ -127,34 +168,15 @@ public class PrimaveraSupplierService : IPrimaveraSupplierService
 
         try
         {
-            await using var connection = await _connectionFactory.CreateConnectionAsync(company);
-
-            var sql = $@"
-                SELECT TOP (@limit)
-                    {SelectColumns}
-                FROM Fornecedores
-                WHERE Fornecedor LIKE @pattern
-                   OR Nome LIKE @pattern
-                   OR NomeFiscal LIKE @pattern
-                   OR NumContrib LIKE @pattern
-                ORDER BY Fornecedor";
-
-            await using var cmd = new SqlCommand(sql, connection);
-            cmd.Parameters.AddWithValue("@pattern", $"%{trimmedQuery}%");
-            cmd.Parameters.AddWithValue("@limit", boundedLimit);
-
-            await using var reader = await cmd.ExecuteReaderAsync();
-
-            while (await reader.ReadAsync())
-            {
-                results.Add(MapSupplier(reader, company));
-            }
-
-            _logger.LogInformation(
-                "Primavera supplier search completed. Query: {Query}, Company: {Company}, Results: {Count}",
-                trimmedQuery, company, results.Count);
-
-            return results;
+            return await ExecuteSearchQuery(company, trimmedQuery, boundedLimit);
+        }
+        catch (SqlException ex) when (_useExtendedColumns != false && IsInvalidColumnError(ex))
+        {
+            _logger.LogWarning(
+                "Extended columns not available during search. Falling back. Company: {Company}",
+                company);
+            _useExtendedColumns = false;
+            return await ExecuteSearchQuery(company, trimmedQuery, boundedLimit);
         }
         catch (SqlException ex)
         {
@@ -175,49 +197,15 @@ public class PrimaveraSupplierService : IPrimaveraSupplierService
 
         try
         {
-            await using var connection = await _connectionFactory.CreateConnectionAsync(company);
-
-            // Build WHERE clause
-            var whereConditions = new List<string> { "FornecedorAnulado = 0" };
-            if (!string.IsNullOrWhiteSpace(search) && search.Trim().Length >= MinQueryLength)
-            {
-                whereConditions.Add("(Fornecedor LIKE @pattern OR Nome LIKE @pattern OR NomeFiscal LIKE @pattern OR NumContrib LIKE @pattern)");
-            }
-            var whereClause = string.Join(" AND ", whereConditions);
-
-            // Count total matching records
-            var countSql = $"SELECT COUNT(*) FROM Fornecedores WHERE {whereClause}";
-            await using var countCmd = new SqlCommand(countSql, connection);
-            if (!string.IsNullOrWhiteSpace(search) && search.Trim().Length >= MinQueryLength)
-                countCmd.Parameters.AddWithValue("@pattern", $"%{search.Trim()}%");
-            var totalCount = Convert.ToInt32(await countCmd.ExecuteScalarAsync());
-
-            // Fetch page
-            var sql = $@"
-                SELECT
-                    {SelectColumns}
-                FROM Fornecedores
-                WHERE {whereClause}
-                ORDER BY Fornecedor
-                OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY";
-
-            await using var cmd = new SqlCommand(sql, connection);
-            if (!string.IsNullOrWhiteSpace(search) && search.Trim().Length >= MinQueryLength)
-                cmd.Parameters.AddWithValue("@pattern", $"%{search.Trim()}%");
-            cmd.Parameters.AddWithValue("@offset", offset);
-            cmd.Parameters.AddWithValue("@pageSize", boundedPageSize);
-
-            await using var reader = await cmd.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
-            {
-                results.Add(MapSupplier(reader, company));
-            }
-
-            _logger.LogInformation(
-                "Primavera supplier list completed. Company: {Company}, Search: {Search}, Page: {Page}, PageSize: {PageSize}, Total: {Total}, Returned: {Count}",
-                company, search ?? "(all)", boundedPage, boundedPageSize, totalCount, results.Count);
-
-            return (results, totalCount);
+            return await ExecuteListQuery(company, search, offset, boundedPageSize, boundedPage);
+        }
+        catch (SqlException ex) when (_useExtendedColumns != false && IsInvalidColumnError(ex))
+        {
+            _logger.LogWarning(
+                "Extended columns not available during list. Falling back. Company: {Company}",
+                company);
+            _useExtendedColumns = false;
+            return await ExecuteListQuery(company, search, offset, boundedPageSize, boundedPage);
         }
         catch (SqlException ex)
         {
@@ -256,7 +244,7 @@ public class PrimaveraSupplierService : IPrimaveraSupplierService
 
     private static PrimaveraSupplierDto MapSupplier(SqlDataReader reader, PrimaveraCompany company)
     {
-        return new PrimaveraSupplierDto
+        var dto = new PrimaveraSupplierDto
         {
             Code = reader["Code"]?.ToString() ?? string.Empty,
             Name = reader["Name"] is DBNull ? null : reader["Name"]?.ToString(),
@@ -277,5 +265,130 @@ public class PrimaveraSupplierService : IPrimaveraSupplierService
             SourceCompany = company.ToString(),
             Source = "PRIMAVERA"
         };
+
+        // Contact person columns (standard Fornecedores columns)
+        dto.ContactPerson = SafeReadString(reader, "ContactPerson");
+        dto.MobilePhone = SafeReadString(reader, "MobilePhone");
+        dto.ContactRole = SafeReadString(reader, "ContactRole");
+
+        // Extended columns (banking + payment) — only present when using ExtendedSelectColumns
+        dto.IBAN = SafeReadString(reader, "IBAN");
+        dto.Swift = SafeReadString(reader, "Swift");
+        dto.BankAccountNumber = SafeReadString(reader, "BankAccountNumber");
+        dto.PaymentTerms = SafeReadString(reader, "PaymentTerms");
+        dto.PaymentMethod = SafeReadString(reader, "PaymentMethod");
+
+        return dto;
+    }
+
+    /// <summary>
+    /// Safely reads a string column that may not exist in the result set.
+    /// Returns null if the column is missing or DBNull.
+    /// </summary>
+    private static string? SafeReadString(SqlDataReader reader, string columnName)
+    {
+        try
+        {
+            var ordinal = reader.GetOrdinal(columnName);
+            return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+        }
+        catch (IndexOutOfRangeException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Checks if a SqlException indicates an invalid column name.
+    /// </summary>
+    private static bool IsInvalidColumnError(SqlException ex) =>
+        ex.Number == 207 || ex.Message.Contains("Invalid column name", StringComparison.OrdinalIgnoreCase);
+
+    // ─── Private query execution helpers ───
+
+    private async Task<List<PrimaveraSupplierDto>> ExecuteSearchQuery(
+        PrimaveraCompany company, string trimmedQuery, int boundedLimit)
+    {
+        var results = new List<PrimaveraSupplierDto>();
+        await using var connection = await _connectionFactory.CreateConnectionAsync(company);
+
+        var sql = $@"
+            SELECT TOP (@limit)
+                {GetSelectColumns()}
+            FROM Fornecedores
+            WHERE Fornecedor LIKE @pattern
+               OR Nome LIKE @pattern
+               OR NomeFiscal LIKE @pattern
+               OR NumContrib LIKE @pattern
+            ORDER BY Fornecedor";
+
+        await using var cmd = new SqlCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@pattern", $"%{trimmedQuery}%");
+        cmd.Parameters.AddWithValue("@limit", boundedLimit);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            results.Add(MapSupplier(reader, company));
+        }
+
+        if (_useExtendedColumns == null) _useExtendedColumns = true;
+
+        _logger.LogInformation(
+            "Primavera supplier search completed. Query: {Query}, Company: {Company}, Results: {Count}",
+            trimmedQuery, company, results.Count);
+
+        return results;
+    }
+
+    private async Task<(List<PrimaveraSupplierDto> Items, int TotalCount)> ExecuteListQuery(
+        PrimaveraCompany company, string? search, int offset, int boundedPageSize, int boundedPage)
+    {
+        var results = new List<PrimaveraSupplierDto>();
+        await using var connection = await _connectionFactory.CreateConnectionAsync(company);
+
+        // Build WHERE clause
+        var whereConditions = new List<string> { "FornecedorAnulado = 0" };
+        if (!string.IsNullOrWhiteSpace(search) && search.Trim().Length >= MinQueryLength)
+        {
+            whereConditions.Add("(Fornecedor LIKE @pattern OR Nome LIKE @pattern OR NomeFiscal LIKE @pattern OR NumContrib LIKE @pattern)");
+        }
+        var whereClause = string.Join(" AND ", whereConditions);
+
+        // Count total matching records
+        var countSql = $"SELECT COUNT(*) FROM Fornecedores WHERE {whereClause}";
+        await using var countCmd = new SqlCommand(countSql, connection);
+        if (!string.IsNullOrWhiteSpace(search) && search.Trim().Length >= MinQueryLength)
+            countCmd.Parameters.AddWithValue("@pattern", $"%{search.Trim()}%");
+        var totalCount = Convert.ToInt32(await countCmd.ExecuteScalarAsync());
+
+        // Fetch page
+        var sql = $@"
+            SELECT
+                {GetSelectColumns()}
+            FROM Fornecedores
+            WHERE {whereClause}
+            ORDER BY Fornecedor
+            OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY";
+
+        await using var cmd = new SqlCommand(sql, connection);
+        if (!string.IsNullOrWhiteSpace(search) && search.Trim().Length >= MinQueryLength)
+            cmd.Parameters.AddWithValue("@pattern", $"%{search.Trim()}%");
+        cmd.Parameters.AddWithValue("@offset", offset);
+        cmd.Parameters.AddWithValue("@pageSize", boundedPageSize);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            results.Add(MapSupplier(reader, company));
+        }
+
+        if (_useExtendedColumns == null) _useExtendedColumns = true;
+
+        _logger.LogInformation(
+            "Primavera supplier list completed. Company: {Company}, Search: {Search}, Page: {Page}, PageSize: {PageSize}, Total: {Total}, Returned: {Count}",
+            company, search ?? "(all)", boundedPage, boundedPageSize, totalCount, results.Count);
+
+        return (results, totalCount);
     }
 }

@@ -11,10 +11,12 @@ export function AssignEquipmentModal({ equipmentId, onClose, onSuccess }: Props)
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [warnings, setWarnings] = useState<string[]>([]);
+    const todayISO = new Date().toISOString().slice(0, 10);
     const [form, setForm] = useState({
         assignedToUserId: undefined as string | undefined,
         assignedToName: '',
         assignedToEmail: '',
+        assignedDate: todayISO,
         assignedToDepartment: '',
         assignedToPlant: '',
         notes: ''
@@ -130,12 +132,14 @@ export function AssignEquipmentModal({ equipmentId, onClose, onSuccess }: Props)
         e.preventDefault();
         if (!form.assignedToName.trim()) { setError('Nome do utilizador é obrigatório.'); return; }
         if (!form.assignedToEmail.trim()) { setError('Email do utilizador é obrigatório para gerar o Termo de Responsabilidade.'); return; }
+        if (!form.assignedDate) { setError('Data de disponibilização é obrigatória.'); return; }
         try {
             setSaving(true); setError(''); setWarnings([]);
             const result = await itEquipmentApi.assign(equipmentId, {
                 assignedToUserId: form.assignedToUserId || undefined,
                 assignedToName: form.assignedToName,
                 assignedToEmail: form.assignedToEmail,
+                assignedDate: form.assignedDate ? new Date(form.assignedDate + 'T00:00:00Z').toISOString() : undefined,
                 assignedToDepartment: form.assignedToDepartment || undefined,
                 assignedToPlant: form.assignedToPlant || undefined,
                 notes: form.notes || undefined
@@ -218,6 +222,20 @@ export function AssignEquipmentModal({ equipmentId, onClose, onSuccess }: Props)
                     value={form.assignedToEmail}
                     onChange={v => set('assignedToEmail', v)}
                 />
+
+                <div>
+                    <label style={labelStyle}>Data de disponibilização ao utilizador *</label>
+                    <input
+                        type="date"
+                        value={form.assignedDate}
+                        onChange={e => set('assignedDate', e.target.value)}
+                        required
+                        style={inputStyle}
+                    />
+                    <span style={{ fontSize: 11, color: '#888', marginTop: 2, display: 'block' }}>
+                        Data em que o equipamento foi/será disponibilizado ao utilizador.
+                    </span>
+                </div>
 
                 <Row>
                     <div style={{ flex: 1 }}>

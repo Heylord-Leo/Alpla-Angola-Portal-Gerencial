@@ -185,7 +185,8 @@ export const MOVEMENT_TYPE_LABELS: Record<string, string> = {
     RETURN_EMAIL_FAILED: 'Falha E-mail de Devolução',
     USER_CHANGED: 'Troca de Utilizador',
     USER_CHANGE_RETURNED: 'Devolução (Troca)',
-    USER_CHANGE_ASSIGNED: 'Atribuição (Troca)'
+    USER_CHANGE_ASSIGNED: 'Atribuição (Troca)',
+    SIGNED_TERM_UPLOADED: 'Termo Assinado Carregado'
 };
 
 export const ASSIGNMENT_STATUS_CONFIG: Record<string, { label: string; color: string; bgColor: string }> = {
@@ -206,5 +207,7 @@ export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
     DELIVERY_NOTE: 'Guia de Entrega',
     ASSIGNMENT_AGREEMENT: 'Termo de Responsabilidade',
     RETURN_AGREEMENT: 'Termo de Devolução',
+    SIGNED_ASSIGNMENT_AGREEMENT: 'Termo de Responsabilidade Assinado',
+    SIGNED_RETURN_AGREEMENT: 'Termo de Devolução Assinado',
     OTHER: 'Outro'
 };

@@ -1,4 +1,8 @@
 using System;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Drawing.Text;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -32,6 +36,7 @@ public class ITEquipmentPdfService
     private static readonly XFont SmallFont = new("Arial", 7.5, XFontStyle.Regular);
     private static readonly XFont SmallBoldFont = new("Arial", 7.5, XFontStyle.Bold);
     private static readonly XFont HeaderFont = new("Arial", 8, XFontStyle.Regular);
+    private static readonly XFont AcceptanceFont = new("Arial", 6.5, XFontStyle.Italic);
 
     // Colors
     private static readonly XColor PrimaryColor = XColor.FromArgb(0, 45, 114); // #002D72
@@ -110,10 +115,14 @@ public class ITEquipmentPdfService
             y = DrawBrandedHeader(gfx, page, y, contentWidth,
                 "TERMO DE ENTREGA E RESPONSABILIDADE DE EQUIPAMENTO DE T.I");
 
-            // ── Date line ──
+            // ── Date lines ──
+            var documentGeneratedAt = DateTime.UtcNow;
             y += 6;
-            gfx.DrawString($"Data: {data.AssignedDate:dd/MM/yyyy HH:mm} UTC",
+            gfx.DrawString($"Data de disponibilização ao utilizador: {data.AssignedDate:dd/MM/yyyy}",
                 NormalFont, XBrushes.Black, new XPoint(PageMargin, y));
+            y += 14;
+            gfx.DrawString($"Data do documento: {documentGeneratedAt:dd/MM/yyyy HH:mm} UTC",
+                NormalFont, XBrushes.Gray, new XPoint(PageMargin, y));
             y += 18;
 
             // ── Equipment description ──
@@ -127,6 +136,7 @@ public class ITEquipmentPdfService
                 ("E-mail do Utilizador", data.AssigneeEmail),
                 ("Departamento", data.AssigneeDepartment),
                 ("Planta", data.AssigneePlant),
+                ("Data de disponibilização", $"{data.AssignedDate:dd/MM/yyyy}"),
                 ("Asset Tag", data.AssetTag),
                 ("Hostname", data.Hostname ?? "—"),
                 ("Tipo de Equipamento", typeLabel),
@@ -158,16 +168,28 @@ public class ITEquipmentPdfService
             // ── Policy text ──
             y = DrawPolicyText(document, gfx, ref page, y, contentWidth, policyLines);
 
-            // ── Signature lines ──
-            y = EnsureSpace(document, ref page, ref gfx, y, 120, contentWidth);
-            y += 30;
+            // ── Signature blocks ──
+            y = EnsureSpace(document, ref page, ref gfx, y, 200, contentWidth);
+            y += 20;
 
-            DrawSignatureLine(gfx, page, y, contentWidth,
+            // User: empty signature area for manual signing
+            y = DrawEmptySignatureBlock(gfx, page, y, contentWidth,
                 data.AssigneeName, "Utilizador");
-            y += 60;
+            y += 20;
 
-            DrawSignatureLine(gfx, page, y, contentWidth,
+            // I.T Responsible: generated visual signature
+            y = DrawEnhancedSignatureBlock(gfx, page, y, contentWidth,
                 data.AssignedByName, "Responsável — Departamento de T.I");
+            y += 16;
+
+            // ── Electronic generation statement ──
+            y = EnsureSpace(document, ref page, ref gfx, y, 70, contentWidth);
+            gfx.DrawLine(new XPen(LightBorderColor, 0.5), PageMargin, y, PageMargin + contentWidth, y);
+            y += 8;
+            DrawElectronicStatement(gfx, y, contentWidth,
+                data.AssigneeName, data.AssigneeEmail, data.AssetTag,
+                data.AssignedByName, data.AssignedByEmail,
+                documentGeneratedAt, data.AssignedDate);
 
             // ── Footer ──
             DrawFooter(gfx, page);
@@ -276,28 +298,37 @@ public class ITEquipmentPdfService
             y += 14;
 
             // ── Formal declaration ──
-            var tf = new XTextFormatter(gfx) { Alignment = XParagraphAlignment.Justify };
-
             var decl1 = "Declara-se que o equipamento acima identificado foi devolvido ao departamento de T.I na data e hora indicadas neste documento.";
-            var rect1 = new XRect(PageMargin, y, contentWidth, 40);
-            tf.DrawString(decl1, NormalFont, XBrushes.Black, rect1);
-            y += 30;
+            y = DrawWrappedText(document, ref page, ref gfx, decl1, NormalFont, y, PageMargin, contentWidth);
+            y += 15;
 
             var decl2 = "A condição do equipamento foi registada conforme informado no momento da devolução. Caso sejam identificados danos, inconsistências ou pendências após análise técnica, o departamento de T.I poderá atualizar o histórico do equipamento e tomar as medidas aplicáveis conforme as políticas internas da empresa.";
-            var rect2 = new XRect(PageMargin, y, contentWidth, 60);
-            tf.DrawString(decl2, NormalFont, XBrushes.Black, rect2);
-            y += 50;
+            y = DrawWrappedText(document, ref page, ref gfx, decl2, NormalFont, y, PageMargin, contentWidth);
+            y += 30;
 
-            // ── Signature lines ──
-            y = EnsureSpace(document, ref page, ref gfx, y, 120, contentWidth);
+            // ── Signature blocks ──
+            var returnDocGeneratedAt = DateTime.UtcNow;
+            y = EnsureSpace(document, ref page, ref gfx, y, 200, contentWidth);
             y += 20;
 
-            DrawSignatureLine(gfx, page, y, contentWidth,
+            // User: empty signature area for manual signing
+            y = DrawEmptySignatureBlock(gfx, page, y, contentWidth,
                 data.UserName, "Utilizador que devolveu o equipamento");
-            y += 60;
+            y += 20;
 
-            DrawSignatureLine(gfx, page, y, contentWidth,
+            // I.T Responsible: generated visual signature
+            y = DrawEnhancedSignatureBlock(gfx, page, y, contentWidth,
                 data.ReceivedByName, "Recebido por (Departamento de T.I)");
+            y += 16;
+
+            // ── Electronic generation statement ──
+            y = EnsureSpace(document, ref page, ref gfx, y, 70, contentWidth);
+            gfx.DrawLine(new XPen(LightBorderColor, 0.5), PageMargin, y, PageMargin + contentWidth, y);
+            y += 8;
+            DrawElectronicStatement(gfx, y, contentWidth,
+                data.UserName, data.UserEmail, data.AssetTag,
+                data.ReceivedByName, data.ReceivedByEmail,
+                returnDocGeneratedAt, null);
 
             // ── Footer ──
             DrawFooter(gfx, page);
@@ -427,26 +458,71 @@ public class ITEquipmentPdfService
         {
             if (string.IsNullOrWhiteSpace(line))
             {
-                y += 6; // blank line spacing
+                y += 8; // blank line spacing
                 continue;
             }
 
-            // Estimate text height (approx 12pt per line of text, ~80 chars per line at font size 7.5)
-            int estimatedLines = Math.Max(1, (int)Math.Ceiling(line.Length / 95.0));
-            double blockHeight = estimatedLines * 11;
-
-            y = EnsureSpace(document, ref page, ref gfx, y, blockHeight, contentWidth);
-
-            // Determine if this is a section header (starts with a number followed by a period)
-            bool isHeader = line.Length > 2 && char.IsDigit(line[0]) && line.Contains('.');
-            var font = isHeader ? SmallBoldFont : SmallFont;
-
-            var tf = new XTextFormatter(gfx) { Alignment = XParagraphAlignment.Justify };
-            var rect = new XRect(PageMargin, y, contentWidth, blockHeight + 4);
-            tf.DrawString(line, font, XBrushes.Black, rect);
-            y += blockHeight + 2;
+            if (line.Contains('•'))
+            {
+                var parts = line.Split('•');
+                if (!string.IsNullOrWhiteSpace(parts[0]))
+                {
+                    y = DrawWrappedText(document, ref page, ref gfx, parts[0].TrimEnd(), SmallFont, y, PageMargin, contentWidth);
+                }
+                for (int i = 1; i < parts.Length; i++)
+                {
+                    y = DrawWrappedText(document, ref page, ref gfx, "• " + parts[i].TrimEnd(), SmallFont, y, PageMargin + 15, contentWidth - 15);
+                }
+                y += 4; // slight padding after bullet list
+            }
+            else
+            {
+                string trimmedLine = line.Trim();
+                bool isHeader = trimmedLine.Length > 2 && char.IsDigit(trimmedLine[0]) && trimmedLine.Split(' ')[0].Contains('.');
+                var font = isHeader ? SmallBoldFont : SmallFont;
+                
+                y = DrawWrappedText(document, ref page, ref gfx, trimmedLine, font, y, PageMargin, contentWidth);
+                y += 4; // slight padding after paragraphs
+            }
         }
+        return y;
+    }
 
+    /// <summary>
+    /// Manually wraps and draws text to avoid PdfSharpCore XTextFormatter justification bugs.
+    /// </summary>
+    private double DrawWrappedText(PdfDocument document, ref PdfPage page, ref XGraphics gfx,
+        string text, XFont font, double y, double x, double width)
+    {
+        var words = text.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+        string currentLine = "";
+        double lineHeight = font.GetHeight() * 1.2; // 20% line spacing
+        
+        foreach (var word in words)
+        {
+            string testLine = string.IsNullOrEmpty(currentLine) ? word : currentLine + " " + word;
+            double lineWidth = gfx.MeasureString(testLine, font).Width;
+            
+            if (lineWidth > width && !string.IsNullOrEmpty(currentLine))
+            {
+                y = EnsureSpace(document, ref page, ref gfx, y, lineHeight, page.Width - 2 * PageMargin);
+                gfx.DrawString(currentLine, font, XBrushes.Black, new XRect(x, y, width, lineHeight), XStringFormats.TopLeft);
+                y += lineHeight;
+                currentLine = word;
+            }
+            else
+            {
+                currentLine = testLine;
+            }
+        }
+        
+        if (!string.IsNullOrEmpty(currentLine))
+        {
+            y = EnsureSpace(document, ref page, ref gfx, y, lineHeight, page.Width - 2 * PageMargin);
+            gfx.DrawString(currentLine, font, XBrushes.Black, new XRect(x, y, width, lineHeight), XStringFormats.TopLeft);
+            y += lineHeight;
+        }
+        
         return y;
     }
 
@@ -469,23 +545,182 @@ public class ITEquipmentPdfService
     }
 
     /// <summary>
-    /// Draws a signature line with name and role label, centered.
+    /// Draws an enhanced signature block: cursive PNG signature + line + printed name + role label.
+    /// Returns the Y position after the block.
     /// </summary>
-    private void DrawSignatureLine(XGraphics gfx, PdfPage page, double y, double contentWidth,
-        string name, string roleLabel)
+    private double DrawEnhancedSignatureBlock(XGraphics gfx, PdfPage page, double y, double contentWidth,
+        string fullName, string roleLabel)
     {
-        double lineWidth = 250;
-        double centerX = PageMargin + (contentWidth - lineWidth) / 2;
+        double blockCenterX = PageMargin + contentWidth / 2;
+        double lineWidth = 260;
+        double lineStartX = blockCenterX - lineWidth / 2;
 
-        gfx.DrawLine(new XPen(XColors.Black, 0.5), centerX, y, centerX + lineWidth, y);
-        y += 4;
+        // ── Cursive signature image ──
+        try
+        {
+            using var signatureStream = GenerateSignatureImage(fullName);
+            using var signatureImage = XImage.FromStream(() => signatureStream);
 
-        gfx.DrawString(name, SmallBoldFont, XBrushes.Black,
+            // Scale: max 220px wide, max 36px tall, maintain aspect ratio
+            double maxW = 220, maxH = 36;
+            double scale = Math.Min(maxW / signatureImage.PixelWidth, maxH / signatureImage.PixelHeight);
+            double imgW = signatureImage.PixelWidth * scale;
+            double imgH = signatureImage.PixelHeight * scale;
+            double imgX = blockCenterX - imgW / 2;
+
+            gfx.DrawImage(signatureImage, imgX, y, imgW, imgH);
+            y += imgH + 2;
+        }
+        catch (Exception)
+        {
+            // Fallback: draw name in italic if image generation fails
+            var fallbackFont = new XFont("Arial", 14, XFontStyle.Italic);
+            gfx.DrawString(fullName, fallbackFont, new XSolidBrush(PrimaryColor),
+                new XRect(PageMargin, y, contentWidth, 20), XStringFormats.TopCenter);
+            y += 22;
+        }
+
+        // ── Signature line ──
+        gfx.DrawLine(new XPen(XColors.Black, 0.5), lineStartX, y, lineStartX + lineWidth, y);
+        y += 5;
+
+        // ── Printed name ──
+        gfx.DrawString(fullName, SmallBoldFont, XBrushes.Black,
             new XRect(PageMargin, y, contentWidth, 12), XStringFormats.TopCenter);
         y += 12;
 
+        // ── Role label ──
         gfx.DrawString(roleLabel, SmallFont, XBrushes.Gray,
             new XRect(PageMargin, y, contentWidth, 12), XStringFormats.TopCenter);
+        y += 14;
+
+        return y;
+    }
+
+    /// <summary>
+    /// Generates a transparent PNG image with the full name rendered in a cursive/script font.
+    /// Uses System.Drawing.Common (GDI+) for reliable font rendering on Windows.
+    /// </summary>
+    private static MemoryStream GenerateSignatureImage(string fullName)
+    {
+        // Font fallback chain: Segoe Script → Lucida Handwriting → Freestyle Script → Arial (italic)
+        var fontFamilies = new[] { "Segoe Script", "Lucida Handwriting", "Freestyle Script" };
+        System.Drawing.Font? selectedFont = null;
+
+        foreach (var familyName in fontFamilies)
+        {
+            try
+            {
+                var testFont = new System.Drawing.Font(familyName, 24f, System.Drawing.FontStyle.Regular);
+                // Verify the font was actually found (GDI+ substitutes silently)
+                if (testFont.Name.Equals(familyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    selectedFont = testFont;
+                    break;
+                }
+                testFont.Dispose();
+            }
+            catch
+            {
+                // Font not available, try next
+            }
+        }
+
+        // Last resort: Arial Italic
+        selectedFont ??= new System.Drawing.Font("Arial", 24f, System.Drawing.FontStyle.Italic);
+
+        // Measure the text to create a tight-fitting image
+        SizeF textSize;
+        using (var measureBmp = new Bitmap(1, 1))
+        using (var measureGfx = Graphics.FromImage(measureBmp))
+        {
+            textSize = measureGfx.MeasureString(fullName, selectedFont);
+        }
+
+        int imgWidth = (int)Math.Ceiling(textSize.Width) + 10;
+        int imgHeight = (int)Math.Ceiling(textSize.Height) + 6;
+
+        // Create the signature bitmap with transparent background
+        using var bitmap = new Bitmap(imgWidth, imgHeight, PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(bitmap))
+        {
+            g.Clear(System.Drawing.Color.Transparent);
+            g.SmoothingMode = SmoothingMode.HighQuality;
+            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+
+            // Draw in dark navy blue matching the PDF primary color (#002D72)
+            using var brush = new SolidBrush(System.Drawing.Color.FromArgb(0, 45, 114));
+            g.DrawString(fullName, selectedFont, brush, 4f, 2f);
+        }
+
+        selectedFont.Dispose();
+
+        var ms = new MemoryStream();
+        bitmap.Save(ms, ImageFormat.Png);
+        ms.Position = 0;
+        return ms;
+    }
+
+    /// <summary>
+    /// Draws the electronic generation statement with audit metadata.
+    /// </summary>
+    private void DrawElectronicStatement(XGraphics gfx, double y, double contentWidth,
+        string userName, string userEmail, string assetTag,
+        string responsibleName, string responsibleEmail, DateTime generatedAt,
+        DateTime? availabilityDate)
+    {
+        var lines = new List<string>
+        {
+            "Documento gerado eletronicamente no Portal Gerencial pelo responsável de T.I.",
+            $"Utilizador: {userName} ({userEmail})",
+            $"Equipamento: {assetTag}",
+            $"Responsável de T.I: {responsibleName} ({responsibleEmail})",
+            $"Data do documento: {generatedAt:dd/MM/yyyy HH:mm} UTC"
+        };
+
+        if (availabilityDate.HasValue)
+        {
+            lines.Add($"Data de disponibilização: {availabilityDate.Value:dd/MM/yyyy}");
+        }
+
+        foreach (var line in lines)
+        {
+            gfx.DrawString(line, AcceptanceFont, XBrushes.Gray,
+                new XRect(PageMargin, y, contentWidth, 10), XStringFormats.TopCenter);
+            y += 10;
+        }
+    }
+
+    /// <summary>
+    /// Draws an empty signature block for manual signing: empty space + signature line + printed name + role label.
+    /// No generated cursive signature image.
+    /// </summary>
+    private double DrawEmptySignatureBlock(XGraphics gfx, PdfPage page, double y, double contentWidth,
+        string fullName, string roleLabel)
+    {
+        double blockCenterX = PageMargin + contentWidth / 2;
+        double lineWidth = 260;
+        double lineStartX = blockCenterX - lineWidth / 2;
+
+        // ── Empty space for manual signature ──
+        y += 30;
+
+        // ── Signature line ──
+        gfx.DrawLine(new XPen(XColors.Black, 0.5), lineStartX, y, lineStartX + lineWidth, y);
+        y += 5;
+
+        // ── Printed name ──
+        gfx.DrawString(fullName, SmallBoldFont, XBrushes.Black,
+            new XRect(PageMargin, y, contentWidth, 12), XStringFormats.TopCenter);
+        y += 12;
+
+        // ── Role label ──
+        gfx.DrawString(roleLabel, SmallFont, XBrushes.Gray,
+            new XRect(PageMargin, y, contentWidth, 12), XStringFormats.TopCenter);
+        y += 14;
+
+        return y;
     }
 
     /// <summary>

@@ -2,6 +2,27 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-141 — Supplier Ficha Primavera Import Enrichment & Safe Update Rule
+
+- **Date:** 2026-06-08
+- **Status:** Accepted
+- **Context:** Suppliers imported from Primavera via the Sync module were created with only Name, NIF, and PrimaveraCode. The Supplier Ficha detail screen already had UI sections for Address, Primary/Secondary Contact, Banking, and Payment Terms, but these were always empty after import. Investigation of the Primavera `Fornecedores` table confirmed that address (`Morada`, `Morada1`, `Local`, `Cp`, `Pais`), contact (`Tel`, `Email`), banking (`IBAN`, `Swift`, `NumCB`), and payment (`CondPag`, `ModoPag`) columns are available. Contact person name/role and secondary contact are NOT available from Primavera.
+- **Decision:**
+    1. **Extended DTO & SQL**: `PrimaveraSupplierDto` extended with 5 banking/payment properties. `PrimaveraSupplierService` SQL query extended with 12 additional columns (address, contact, banking, payment). A safe column detection mechanism attempts extended columns first; on `SqlException 207` (invalid column name), it falls back to the base column set and caches the result for the service lifetime.
+    2. **Composite address**: Address is built by joining non-empty parts of Morada, Morada1, Local, Cp, Pais with ", " separator. Stored as a single string in `Supplier.Address`.
+    3. **Import enrichment**: Both `/suppliers/import` and `/suppliers/import-reviewed` endpoints now populate all available enrichment fields when creating new suppliers. The reviewed import re-fetches the full Primavera record to access enrichment data that was not part of the review DTO.
+    4. **Safe update rule**: When re-importing a supplier whose PrimaveraCode already exists in the Portal:
+       - If status is `DRAFT` or `PENDING_COMPLETION`: only empty/null Portal fields are filled from Primavera. Manually entered values are never overwritten.
+       - If status is `ACTIVE`, `PENDING_APPROVAL`, or `ADJUSTMENT_REQUESTED`: the supplier is skipped entirely (no modifications).
+       - Each safe-update logs which fields were filled and which were skipped (already had manual data).
+    5. **Unavailable fields**: Contact person name (`ContactName1/2`), contact role (`ContactRole1/2`), and secondary contact (`ContactName2`, `ContactPhone2`, `ContactEmail2`) are documented as unavailable from Primavera and remain empty for manual entry.
+    6. **Diagnostic logging**: Each import/update logs a structured `[SYNC]` line showing data group availability (Address yes/no, Phone yes/no, IBAN yes/no, etc.).
+    7. **No frontend changes**: The existing Supplier Ficha detail screen already binds to all enrichment entity properties.
+- **Alternatives considered:** (1) Adding new Primavera tables/views to get contact person name (rejected: not available in the standard Fornecedores scope; would require Primavera customization). (2) Overwriting all fields on re-import (rejected: would destroy manually entered data). (3) Creating a separate "enrich" endpoint (rejected: unnecessary — the safe-update logic integrates cleanly into the existing import flow).
+- **Consequences:** Newly imported suppliers will have richer data from day one. Existing DRAFT/PENDING_COMPLETION suppliers can be re-imported to fill gaps without losing manual work. The safe column detection ensures compatibility with different Primavera installations that may not have all columns.
+
+---
+
 ## DEC-140 — HR Attendance API Access-Control Hardening
 
 - **Date:** 2026-06-05
@@ -2049,4 +2070,21 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
 - **Alternatives considered:** Converting the form into a wizard (rejected: user must see and use the full form), building a separate tooltip system without Joyride (rejected: duplicates spotlight/overlay/positioning logic), using `data-tour` for both systems (rejected: namespace collision risk).
 - **Consequences:** Establishes a scalable pattern for adding interactive task guides to any page. First implementation: Request Creation (10-step guide with field validation). The system can be extended to other complex forms (contracts, items, etc.) by adding new guide definitions.
 - **Related:** [GUIDED_TOUR_SYSTEM.md](GUIDED_TOUR_SYSTEM.md) § 19
+
+---
+
+## DEC-137 — Supplier Import Relocation (Dados Mestres → Fichas de Fornecedor)
+
+- **Date:** 2026-06-08
+- **Status:** Accepted
+- **Context:** The Primavera supplier import was located under Configurações → Dados Mestres → Fornecedores. The business process requires imported suppliers to enter as DRAFT fichas for the Contracts team to review and complete registration. Hosting the import entry point in a settings/maintenance screen did not align with this workflow.
+- **Decision:**
+    1. **Remove** the "Sincronizar com Primavera" entry point from `MasterData.tsx` (Dados Mestres → Fornecedores tab).
+    2. **Add** an "Importar do Primavera" button to `SupplierFichaList.tsx` (Contratos → Fichas de Fornecedor).
+    3. **Add** a new route `/contracts/sync/:entityType` in `App.tsx`, guarded by `ROLES.CONTRACTS`, reusing the existing `SyncWorkspace` component.
+    4. **Make** `SyncWorkspace.tsx` back-navigation context-aware: when accessed from `/contracts/`, the back button navigates to `/contracts/fichas` with label "Fichas de Fornecedor"; from `/settings/`, it navigates to `/settings/master-data` with label "Dados Mestres".
+    5. **Preserve** the `/settings/sync/:entityType` route for catalog sync (Dados Mestres → Catálogo de Itens).
+    6. **No backend changes**: The existing API already enforces `RegistrationStatus = DRAFT` for synced suppliers, enriches fields from Primavera, and performs duplicate detection by PrimaveraCode and NIF.
+- **Alternatives considered:** Creating a new dedicated sync component inside the Contracts module (rejected: unnecessary duplication; the existing SyncWorkspace is generic and reusable via route parameterization).
+- **Consequences:** The supplier import flow now aligns with the business workflow where Contracts reviews and completes supplier fichas. Dados Mestres retains its CRUD maintenance focus without sync operations for suppliers. Catalog sync remains unaffected.
 

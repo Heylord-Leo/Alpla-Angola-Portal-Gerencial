@@ -286,6 +286,7 @@ function AppContent() {
                 <Route path="/contracts/:id/edit" element={<AdminRoute allowedRoles={[ROLES.CONTRACTS]}><Suspense fallback={<LoadingSkeleton />}><ContractCreate /></Suspense></AdminRoute>} />
                 <Route path="/contracts/:id" element={<AdminRoute allowedRoles={[ROLES.CONTRACTS]}><Suspense fallback={<LoadingSkeleton />}><ContractDetail /></Suspense></AdminRoute>} />
                 <Route path="/contracts/fichas/:id" element={<AdminRoute allowedRoles={[ROLES.CONTRACTS]}><Suspense fallback={<LoadingSkeleton />}><SupplierFichaDetail /></Suspense></AdminRoute>} />
+                <Route path="/contracts/sync/:entityType" element={<AdminRoute allowedRoles={[ROLES.CONTRACTS]}><Suspense fallback={<LoadingSkeleton />}><SyncWorkspace /></Suspense></AdminRoute>} />
 
                 {/* Operations Workspace */}
                 <Route path="/operations/transfers" element={<AdminRoute allowedRoles={[ROLES.OPERATIONS]}><Suspense fallback={<LoadingSkeleton />}><OperationsTransfersPage /></Suspense></AdminRoute>} />

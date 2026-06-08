@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, FileText, Clock, CheckCircle, AlertTriangle, Ban, ChevronLeft, ChevronRight, ClipboardList } from 'lucide-react';
+import { Search, FileText, Clock, CheckCircle, AlertTriangle, Ban, ChevronLeft, ChevronRight, ClipboardList, Database } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Feedback } from '../../components/ui/Feedback';
 import './SupplierFicha.css';
@@ -135,24 +135,57 @@ const SupplierFichaList: React.FC = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', paddingTop: '1.5rem' }}>
-      {/* Section Header (smaller, inside Contracts workspace) */}
-      <div>
-        <h2 style={{
-          fontSize: '1.1rem',
-          fontWeight: 800,
-          color: 'var(--color-primary)',
-          margin: 0,
-        }}>
-          Fichas de Fornecedor
-        </h2>
-        <p style={{
-          fontSize: '0.8rem',
-          color: 'var(--color-text-muted)',
-          margin: '4px 0 0',
-          fontWeight: 500,
-        }}>
-          Controle de cadastro, documentação e aprovação de fornecedores
-        </p>
+      {/* Section Header with Import action */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+        <div>
+          <h2 style={{
+            fontSize: '1.1rem',
+            fontWeight: 800,
+            color: 'var(--color-primary)',
+            margin: 0,
+          }}>
+            Fichas de Fornecedor
+          </h2>
+          <p style={{
+            fontSize: '0.8rem',
+            color: 'var(--color-text-muted)',
+            margin: '4px 0 0',
+            fontWeight: 500,
+          }}>
+            Controle de cadastro, documentação e aprovação de fornecedores
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => navigate('/contracts/sync/suppliers')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 18px',
+            backgroundColor: 'rgba(var(--color-primary-rgb), 0.06)',
+            border: '1.5px solid var(--color-primary)',
+            borderRadius: 'var(--radius-md)',
+            fontWeight: 700,
+            fontSize: '0.8rem',
+            cursor: 'pointer',
+            color: 'var(--color-primary)',
+            fontFamily: 'var(--font-family-body)',
+            transition: 'all 0.15s ease',
+            whiteSpace: 'nowrap',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.backgroundColor = 'var(--color-primary)';
+            e.currentTarget.style.color = '#fff';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.backgroundColor = 'rgba(var(--color-primary-rgb), 0.06)';
+            e.currentTarget.style.color = 'var(--color-primary)';
+          }}
+        >
+          <Database size={16} />
+          Importar do Primavera
+        </button>
       </div>
 
       {/* KPI Cards — clickable as filters */}

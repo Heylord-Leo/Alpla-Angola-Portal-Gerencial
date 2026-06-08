@@ -47,7 +47,7 @@ public class ITEquipmentDocumentsController : BaseController
 
     // ─── POST /api/it/equipment/{equipmentId}/documents/upload ───
     [HttpPost("upload")]
-    public async Task<IActionResult> Upload(Guid equipmentId, [FromForm] IFormFile file, [FromForm] string documentType, [FromForm] string? notes, [FromForm] Guid? acquisitionId)
+    public async Task<IActionResult> Upload(Guid equipmentId, [FromForm] IFormFile file, [FromForm] string documentType, [FromForm] string? notes, [FromForm] Guid? acquisitionId, [FromForm] Guid? assignmentId)
     {
         if (!HasITAccess()) return Forbid();
 
@@ -60,9 +60,26 @@ public class ITEquipmentDocumentsController : BaseController
         if (file.Length > 25 * 1024 * 1024)
             return BadRequest("O ficheiro excede o limite de 25MB.");
 
+        // Validate file extension for signed terms: PDF, JPG, JPEG, PNG only
+        var allowedSignedExtensions = new[] { ".pdf", ".jpg", ".jpeg", ".png" };
+        var isSignedTermType = documentType == ITEquipmentConstants.DocumentType.SignedAssignmentAgreement
+                            || documentType == ITEquipmentConstants.DocumentType.SignedReturnAgreement;
+        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+
+        if (isSignedTermType && !allowedSignedExtensions.Contains(extension))
+            return BadRequest("Formato de ficheiro não permitido para termos assinados. Utilize PDF, JPG ou PNG.");
+
+        // Validate assignmentId exists when uploading signed terms
+        if (isSignedTermType && assignmentId.HasValue)
+        {
+            var assignmentExists = await _context.ITEquipmentAssignments
+                .AnyAsync(a => a.Id == assignmentId.Value && a.EquipmentId == equipmentId);
+            if (!assignmentExists)
+                return BadRequest("Atribuição não encontrada para este equipamento.");
+        }
+
         var userId = CurrentUserId;
         var fileId = Guid.NewGuid();
-        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
         var storageFileName = $"{fileId}{extension}";
         var filePath = Path.Combine(_storagePath, storageFileName);
 
@@ -86,6 +103,7 @@ public class ITEquipmentDocumentsController : BaseController
             Id = fileId,
             EquipmentId = equipmentId,
             AcquisitionId = acquisitionId,
+            AssignmentId = assignmentId,
             DocumentType = documentType ?? ITEquipmentConstants.DocumentType.Other,
             FileName = sanitizedName,
             StorageReference = storageFileName,

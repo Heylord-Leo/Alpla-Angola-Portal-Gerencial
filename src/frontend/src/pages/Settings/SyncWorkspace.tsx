@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../lib/api';
 import {
     CatalogSyncPreviewDto,
@@ -164,6 +164,12 @@ export function SyncWorkspace() {
     const navigate = useNavigate();
     const entity: EntityType = entityType === 'suppliers' ? 'suppliers' : 'catalog';
     const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const location = useLocation();
+
+    // ─── Context-aware back navigation ──────────────────────────────────
+    const isContractsContext = location.pathname.startsWith('/contracts/');
+    const backLabel = isContractsContext ? 'Fichas de Fornecedor' : 'Dados Mestres';
+    const backPath = isContractsContext ? '/contracts/fichas' : '/settings/master-data';
 
     // ─── State ──────────────────────────────────────────────────────────
     const [companyId, setCompanyId] = useState<number>(1);
@@ -390,11 +396,11 @@ export function SyncWorkspace() {
             <div className="sync-header">
                 <button
                     className="sync-back-btn"
-                    onClick={() => navigate('/settings/master-data')}
-                    title="Voltar para Dados Mestres"
+                    onClick={() => navigate(backPath)}
+                    title={`Voltar para ${backLabel}`}
                 >
                     <ArrowLeft size={18} />
-                    <span>Dados Mestres</span>
+                    <span>{backLabel}</span>
                 </button>
                 <div className="sync-header-content">
                     <div className="sync-header-title">
