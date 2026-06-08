@@ -983,7 +983,8 @@ public class SyncController : ControllerBase
 
     /// <summary>
     /// Import selected Primavera suppliers into the Portal.
-    /// Create-only V1: only records matched as 'New' are importable.
+    /// V2: Creates new suppliers enriched with address, contact, banking, and payment data.
+    /// For existing DRAFT/PENDING_COMPLETION suppliers, fills only empty Portal fields (safe update).
     /// </summary>
     [HttpPost("suppliers/import")]
     public async Task<ActionResult<SyncImportResultDto>> SuppliersImport(
@@ -1012,13 +1013,13 @@ public class SyncController : ControllerBase
                     result.Errors.Add($"Fornecedor '{code}' não encontrado no Primavera.");
             }
 
-            // Check existing Portal suppliers
-            var existingByCodes = await _context.Set<Supplier>()
+            // Check existing Portal suppliers (load entities for safe-update)
+            var existingSuppliers = await _context.Set<Supplier>()
                 .Where(s => s.PrimaveraCode != null)
-                .Select(s => s.PrimaveraCode!)
                 .ToListAsync();
-            var existingCodeSet = new HashSet<string>(
-                existingByCodes.Select(c => c.Trim().ToUpperInvariant()));
+            var existingByCode = existingSuppliers
+                .Where(s => s.PrimaveraCode != null)
+                .ToDictionary(s => s.PrimaveraCode!.Trim().ToUpperInvariant(), s => s);
 
             var existingByTaxId = await _context.Set<Supplier>()
                 .Where(s => s.TaxId != null && s.TaxId != "")
@@ -1045,11 +1046,66 @@ public class SyncController : ControllerBase
             foreach (var supplier in primaveraSuppliers)
             {
                 var codeKey = supplier.Code.Trim().ToUpperInvariant();
+                var compositeAddress = BuildCompositeAddress(supplier);
 
-                // Skip if PrimaveraCode already exists
-                if (existingCodeSet.Contains(codeKey))
+                // ── Safe update: existing supplier in DRAFT/PENDING_COMPLETION ──
+                if (existingByCode.TryGetValue(codeKey, out var existing))
                 {
-                    result.Skipped++;
+                    var updatableStatuses = new[] { SupplierConstants.Statuses.Draft, "PENDING_COMPLETION" };
+                    if (updatableStatuses.Contains(existing.RegistrationStatus))
+                    {
+                        var filled = new List<string>();
+                        var skippedFields = new List<string>();
+
+                        void SafeFill(string fieldName, Func<Supplier, string?> getter, Action<Supplier, string?> setter, string? primaveraValue)
+                        {
+                            var trimmed = primaveraValue?.Trim();
+                            if (string.IsNullOrWhiteSpace(trimmed)) return;
+                            if (!string.IsNullOrWhiteSpace(getter(existing)))
+                            {
+                                skippedFields.Add(fieldName);
+                                return;
+                            }
+                            setter(existing, trimmed);
+                            filled.Add(fieldName);
+                        }
+
+                        SafeFill("Address", s => s.Address, (s, v) => s.Address = v, compositeAddress);
+                        SafeFill("ContactName1", s => s.ContactName1, (s, v) => s.ContactName1 = v, supplier.ContactPerson);
+                        SafeFill("ContactRole1", s => s.ContactRole1, (s, v) => s.ContactRole1 = v, supplier.ContactRole);
+                        SafeFill("ContactPhone1", s => s.ContactPhone1, (s, v) => s.ContactPhone1 = v,
+                            supplier.MobilePhone?.Trim() ?? supplier.Phone?.Trim());
+                        SafeFill("ContactEmail1", s => s.ContactEmail1, (s, v) => s.ContactEmail1 = v, supplier.Email);
+                        SafeFill("BankAccountNumber", s => s.BankAccountNumber, (s, v) => s.BankAccountNumber = v, supplier.BankAccountNumber);
+                        SafeFill("BankIban", s => s.BankIban, (s, v) => s.BankIban = v, supplier.IBAN);
+                        SafeFill("BankSwift", s => s.BankSwift, (s, v) => s.BankSwift = v, supplier.Swift);
+                        SafeFill("PaymentTerms", s => s.PaymentTerms, (s, v) => s.PaymentTerms = v, supplier.PaymentTerms);
+                        SafeFill("PaymentMethod", s => s.PaymentMethod, (s, v) => s.PaymentMethod = v, supplier.PaymentMethod);
+
+                        if (filled.Count > 0)
+                        {
+                            existing.LastSyncedAtUtc = now;
+                            existing.UpdatedAtUtc = now;
+                            result.Updated++;
+                            _logger.LogInformation(
+                                "[SYNC] Supplier {Code} \"{Name}\" — SafeUpdate | Filled: {Filled} | Skipped (manual): {Skipped}",
+                                supplier.Code, supplier.Name, string.Join(", ", filled), string.Join(", ", skippedFields));
+                        }
+                        else
+                        {
+                            result.Skipped++;
+                            _logger.LogInformation(
+                                "[SYNC] Supplier {Code} \"{Name}\" — Skipped (no empty fields to fill)",
+                                supplier.Code, supplier.Name);
+                        }
+                    }
+                    else
+                    {
+                        result.Skipped++;
+                        _logger.LogInformation(
+                            "[SYNC] Supplier {Code} \"{Name}\" — Skipped (status: {Status})",
+                            supplier.Code, supplier.Name, existing.RegistrationStatus);
+                    }
                     continue;
                 }
 
@@ -1059,9 +1115,11 @@ public class SyncController : ControllerBase
                 {
                     result.Skipped++;
                     result.Errors.Add($"Fornecedor '{supplier.Code}' ignorado: NIF '{supplier.TaxId}' já existe no Portal.");
+                    LogSupplierDiagnostic(_logger, supplier, compositeAddress, "Skipped (NIF conflict)");
                     continue;
                 }
 
+                // ── Create new supplier with full enrichment ──
                 var newSupplier = new Supplier
                 {
                     Name = supplier.Name ?? supplier.FiscalName ?? supplier.Code,
@@ -1071,15 +1129,29 @@ public class SyncController : ControllerBase
                     Origin = "SYNCED_PRIMAVERA",
                     SourceCompany = companyName,
                     LastSyncedAtUtc = now,
-                    IsActive = true
+                    IsActive = true,
+                    RegistrationStatus = SupplierConstants.Statuses.Draft,
+                    // ── Enrichment from Primavera ──
+                    Address = string.IsNullOrWhiteSpace(compositeAddress) ? null : compositeAddress,
+                    ContactName1 = supplier.ContactPerson?.Trim(),
+                    ContactRole1 = supplier.ContactRole?.Trim(),
+                    ContactPhone1 = supplier.MobilePhone?.Trim() ?? supplier.Phone?.Trim(),
+                    ContactEmail1 = supplier.Email?.Trim(),
+                    BankAccountNumber = supplier.BankAccountNumber?.Trim(),
+                    BankIban = supplier.IBAN?.Trim(),
+                    BankSwift = supplier.Swift?.Trim(),
+                    PaymentTerms = supplier.PaymentTerms?.Trim(),
+                    PaymentMethod = supplier.PaymentMethod?.Trim(),
                 };
 
                 _context.Set<Supplier>().Add(newSupplier);
-                existingCodeSet.Add(codeKey);
+                existingByCode[codeKey] = newSupplier;
                 if (!string.IsNullOrWhiteSpace(supplier.TaxId))
                     existingTaxIdSet.Add(supplier.TaxId.Trim().ToUpperInvariant());
                 result.Created++;
                 nextSeq++;
+
+                LogSupplierDiagnostic(_logger, supplier, compositeAddress, "Created");
             }
 
             await _context.SaveChangesAsync();
@@ -1141,8 +1213,8 @@ public class SyncController : ControllerBase
     /// <summary>
     /// Import reviewed suppliers into the Portal.
     /// V2 endpoint: accepts user-edited data (Name, TaxId, Notes) from the review modal.
+    /// Re-fetches the full Primavera record to enrich with address, contact, banking, and payment data.
     /// All suppliers are created as DRAFT with Origin = SYNCED_PRIMAVERA.
-    /// The existing /import endpoint remains unchanged for backward compatibility.
     /// </summary>
     [HttpPost("suppliers/import-reviewed")]
     public async Task<ActionResult<SyncImportResultDto>> SuppliersImportReviewed(
@@ -1219,6 +1291,22 @@ public class SyncController : ControllerBase
                     continue;
                 }
 
+                // Re-fetch the full Primavera record to get enrichment fields
+                PrimaveraSupplierDto? primaveraRecord = null;
+                try
+                {
+                    primaveraRecord = await _supplierService.GetSupplierByCodeAsync(
+                        company.Value, reviewed.PrimaveraCode.Trim());
+                }
+                catch (Exception refetchEx)
+                {
+                    _logger.LogWarning(refetchEx,
+                        "[SYNC] Could not re-fetch Primavera data for enrichment. Code: {Code}. Proceeding without enrichment.",
+                        reviewed.PrimaveraCode);
+                }
+
+                var compositeAddr = primaveraRecord != null ? BuildCompositeAddress(primaveraRecord) : null;
+
                 var newSupplier = new Supplier
                 {
                     Name = reviewed.Name.Trim(),
@@ -1230,8 +1318,22 @@ public class SyncController : ControllerBase
                     LastSyncedAtUtc = now,
                     IsActive = true,
                     RegistrationStatus = SupplierConstants.Statuses.Draft,
-                    Notes = string.IsNullOrWhiteSpace(reviewed.Notes) ? null : reviewed.Notes.Trim()
+                    Notes = string.IsNullOrWhiteSpace(reviewed.Notes) ? null : reviewed.Notes.Trim(),
+                    // ── Enrichment from Primavera ──
+                    Address = string.IsNullOrWhiteSpace(compositeAddr) ? null : compositeAddr,
+                    ContactName1 = primaveraRecord?.ContactPerson?.Trim(),
+                    ContactRole1 = primaveraRecord?.ContactRole?.Trim(),
+                    ContactPhone1 = primaveraRecord?.MobilePhone?.Trim() ?? primaveraRecord?.Phone?.Trim(),
+                    ContactEmail1 = primaveraRecord?.Email?.Trim(),
+                    BankAccountNumber = primaveraRecord?.BankAccountNumber?.Trim(),
+                    BankIban = primaveraRecord?.IBAN?.Trim(),
+                    BankSwift = primaveraRecord?.Swift?.Trim(),
+                    PaymentTerms = primaveraRecord?.PaymentTerms?.Trim(),
+                    PaymentMethod = primaveraRecord?.PaymentMethod?.Trim(),
                 };
+
+                if (primaveraRecord != null)
+                    LogSupplierDiagnostic(_logger, primaveraRecord, compositeAddr, "Created (reviewed)");
 
                 _context.Set<Supplier>().Add(newSupplier);
                 existingCodeSet.Add(codeKey);
@@ -1297,7 +1399,55 @@ public class SyncController : ControllerBase
         }
     }
 
-    // ─── HELPERS ────────────────────────────────────────────────────────────────
+    // ─── SUPPLIER ENRICHMENT HELPERS ────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a composite address from Primavera address components.
+    /// Joins non-empty parts with ", ", skipping blanks.
+    /// Example: "Rua Principal 123, Luanda, Angola"
+    /// </summary>
+    private static string? BuildCompositeAddress(PrimaveraSupplierDto supplier)
+    {
+        var parts = new[]
+        {
+            supplier.Address?.Trim(),
+            supplier.Address2?.Trim(),
+            supplier.City?.Trim(),
+            supplier.PostalCode?.Trim(),
+            supplier.Country?.Trim()
+        };
+
+        var nonEmpty = parts.Where(p => !string.IsNullOrWhiteSpace(p)).ToArray();
+        return nonEmpty.Length > 0 ? string.Join(", ", nonEmpty) : null;
+    }
+
+    /// <summary>
+    /// Logs a structured diagnostic line for each supplier import/update.
+    /// </summary>
+    private static void LogSupplierDiagnostic(
+        ILogger logger,
+        PrimaveraSupplierDto supplier,
+        string? compositeAddress,
+        string action)
+    {
+        var hasAddr = !string.IsNullOrWhiteSpace(compositeAddress) ? "yes" : "no";
+        var hasContactPerson = !string.IsNullOrWhiteSpace(supplier.ContactPerson) ? "yes" : "no";
+        var hasContactRole = !string.IsNullOrWhiteSpace(supplier.ContactRole) ? "yes" : "no";
+        var hasMobile = !string.IsNullOrWhiteSpace(supplier.MobilePhone) ? "yes" : "no";
+        var hasPhone = !string.IsNullOrWhiteSpace(supplier.Phone) ? "yes" : "no";
+        var hasEmail = !string.IsNullOrWhiteSpace(supplier.Email) ? "yes" : "no";
+        var hasIban = !string.IsNullOrWhiteSpace(supplier.IBAN) ? "yes" : "no";
+        var hasSwift = !string.IsNullOrWhiteSpace(supplier.Swift) ? "yes" : "no";
+        var hasAccount = !string.IsNullOrWhiteSpace(supplier.BankAccountNumber) ? "yes" : "no";
+        var hasPayment = !string.IsNullOrWhiteSpace(supplier.PaymentTerms) || !string.IsNullOrWhiteSpace(supplier.PaymentMethod) ? "yes" : "no";
+
+        logger.LogInformation(
+            "[SYNC] Supplier {Code} \"{Name}\" — {Action} | Address: {Addr} | ContactPerson: {ContactPerson}, Role: {ContactRole}, Mobile: {Mobile}, Phone: {Phone}, Email: {Email} | Banking: IBAN {IBAN}, Swift {Swift}, Account {Account} | Payment: {Payment}",
+            supplier.Code, supplier.Name, action,
+            hasAddr, hasContactPerson, hasContactRole, hasMobile, hasPhone, hasEmail, hasIban, hasSwift, hasAccount, hasPayment);
+    }
+
+    // ─── GENERAL HELPERS ────────────────────────────────────────────────────────
 
     /// <summary>
     /// Maps companyId (Portal Company.Id) to PrimaveraCompany enum.

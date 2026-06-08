@@ -2,7 +2,66 @@
 
 ## Current Version
 
-v2.187.0
+v2.189.0
+
+## [v2.189.0] - 2026-06-08
+
+### Added — I.T Equipment Assignment: Availability Date & Visual Signature PDF
+
+Exposed the `AssignedDate` field as "Data de disponibilização ao utilizador" in the assignment modal (required, defaults to today, user-changeable for historical assignments). No database migration — uses existing `ITEquipmentAssignment.AssignedDate` column.
+
+**Assignment Agreement PDF enhancements:**
+- Two separate date lines: `Data de disponibilização ao utilizador: DD/MM/YYYY` and `Data do documento: DD/MM/YYYY HH:mm UTC`
+- Availability date added to the initial information table
+- Visual cursive signature generated as transparent PNG using `System.Drawing.Common` (GDI+) with Segoe Script font
+- Enhanced signature block: cursive PNG → signature line → printed name → role label
+- Electronic generation statement with audit metadata (user, email, asset tag, responsible, timestamp)
+- Statement uses "Documento gerado eletronicamente" (not "aceite") since no real user acceptance action exists yet
+
+**Return Document PDF enhancements:**
+- Same enhanced signature blocks and electronic generation statement applied for consistency
+
+**Signature font fallback chain:** Segoe Script → Lucida Handwriting → Freestyle Script → Arial Italic (last resort)
+
+**No new dependencies:** Uses existing `System.Drawing.Common` v10.0.5 reference in the Infrastructure project.
+
+**Files Changed:**
+- `src/frontend/src/components/it/AssignEquipmentModal.tsx` — Added availability date input field
+- `src/backend/AlplaPortal.Infrastructure/Services/ITEquipmentPdfService.cs` — Signature PNG generation, enhanced blocks, date labels, electronic statement
+- `src/frontend/src/config.ts` — APP_VERSION → "v2.189.0"
+- `docs/VERSION.md` — v2.189.0
+- `docs/CHANGELOG.md` — This entry
+
+## [v2.188.0] - 2026-06-08
+
+### Added — Supplier Ficha Primavera Import Enrichment
+
+Extended the Primavera supplier import to automatically populate Address, Primary Contact, Banking, and Payment Terms in the Supplier Ficha, using data from the Primavera `Fornecedores` table.
+
+**New Primavera fields mapped:**
+- **Address**: Composite from `Morada`, `Morada1`, `Local`, `Cp`, `Pais` (joined with ", ")
+- **Primary Contact**: `Tel` → ContactPhone1, `Email` → ContactEmail1
+- **Banking**: `IBAN`, `Swift`, `NumCB` → BankIban, BankSwift, BankAccountNumber
+- **Payment Terms**: `CondPag` → PaymentTerms, `ModoPag` → PaymentMethod
+
+**Not available from Primavera** (remain empty, manually editable):
+- Contact person Name and Role (ContactName1/2, ContactRole1/2)
+- Secondary contact (ContactName2, ContactPhone2, ContactEmail2)
+
+**Safe update rule**: When re-importing an existing supplier in DRAFT or PENDING_COMPLETION status, only empty Portal fields are filled from Primavera. Manually entered values are never overwritten. Suppliers in ACTIVE, PENDING_APPROVAL, or ADJUSTMENT_REQUESTED status are not modified.
+
+**Safe column detection**: Uses a two-query approach — attempts extended columns (banking/payment) first. If any column is missing in the Primavera installation, falls back to the base column set automatically.
+
+**Diagnostic logging**: Each supplier import/update logs a structured line showing which data groups were found/missing.
+
+**Files Changed:**
+- `PrimaveraSupplierDto.cs` — +5 properties (IBAN, Swift, BankAccountNumber, PaymentTerms, PaymentMethod)
+- `PrimaveraSupplierService.cs` — Extended SQL columns + safe fallback + SafeReadString helper
+- `SyncController.cs` — Import enrichment + safe update + BuildCompositeAddress + LogSupplierDiagnostic
+- `docs/VERSION.md` — v2.188.0
+- `docs/CHANGELOG.md` — This entry
+- `docs/DECISIONS.md` — DEC-141: Safe Update Rule
+- `src/frontend/src/config.ts` — APP_VERSION → "2.188.0"
 
 ## [v2.187.0] - 2026-06-05
 

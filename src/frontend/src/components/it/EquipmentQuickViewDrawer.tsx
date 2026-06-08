@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Edit3, UserPlus, RotateCcw, Wrench, AlertTriangle, BookmarkCheck, Archive, Loader2, Download, FileText, Clock, User, Cpu, RefreshCw } from 'lucide-react';
+import { X, Edit3, UserPlus, RotateCcw, Wrench, AlertTriangle, BookmarkCheck, Archive, Loader2, Download, Upload, FileText, FileCheck, FileX, Clock, User, Cpu, RefreshCw } from 'lucide-react';
 import { itEquipmentApi } from '../../lib/itEquipmentApi';
 import { EQUIPMENT_STATUS_CONFIG, EQUIPMENT_TYPE_CONFIG, MOVEMENT_TYPE_LABELS, ASSIGNMENT_STATUS_CONFIG, DOCUMENT_TYPE_LABELS } from '../../types/itEquipment';
 import type { ITEquipmentDetail } from '../../types/itEquipment';
@@ -141,7 +141,7 @@ export function EquipmentQuickViewDrawer({ equipmentId, onClose, onRefresh }: Pr
                     ) : detail && activeTab === 'info' ? (
                         <InfoTab detail={detail} />
                     ) : detail && activeTab === 'assignments' ? (
-                        <AssignmentsTab assignments={detail.assignments} />
+                        <AssignmentsTab assignments={detail.assignments} equipmentId={detail.id} documents={detail.documents} onRefresh={load} />
                     ) : detail && activeTab === 'movements' ? (
                         <MovementsTab movements={detail.movements} />
                     ) : null}
@@ -292,14 +292,115 @@ function InfoTab({ detail }: { detail: ITEquipmentDetail }) {
     );
 }
 
-function AssignmentsTab({ assignments }: { assignments: ITEquipmentDetail['assignments'] }) {
+function AssignmentsTab({ assignments, equipmentId, documents, onRefresh }: {
+    assignments: ITEquipmentDetail['assignments'];
+    equipmentId: string;
+    documents: ITEquipmentDetail['documents'];
+    onRefresh: () => void;
+}) {
+    const [uploading, setUploading] = useState<string | null>(null);
+    const [uploadError, setUploadError] = useState<string | null>(null);
+
     if (!assignments || assignments.length === 0) {
         return <EmptyState text="Nenhuma atribuição registada." />;
     }
+
+    const getSignedDoc = (assignmentId: string) => {
+        return documents?.find(d =>
+            d.assignmentId === assignmentId &&
+            (d.documentType === 'SIGNED_ASSIGNMENT_AGREEMENT' || d.documentType === 'SIGNED_RETURN_AGREEMENT')
+        );
+    };
+
+    const getGeneratedDoc = (assignmentId: string) => {
+        return documents?.find(d =>
+            d.assignmentId === assignmentId &&
+            (d.documentType === 'ASSIGNMENT_AGREEMENT' || d.documentType === 'RETURN_AGREEMENT')
+        );
+    };
+
+    const handleUploadSignedTerm = async (assignmentId: string, assignmentStatus: string) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.pdf,.jpg,.jpeg,.png';
+        input.onchange = async (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (!file) return;
+
+            setUploading(assignmentId);
+            setUploadError(null);
+            try {
+                const docType = assignmentStatus === 'RETURNED'
+                    ? 'SIGNED_RETURN_AGREEMENT'
+                    : 'SIGNED_ASSIGNMENT_AGREEMENT';
+                await itEquipmentApi.documents.upload(
+                    equipmentId, file, docType, 'Termo assinado pelo utilizador', undefined, assignmentId
+                );
+                onRefresh();
+            } catch (err: any) {
+                setUploadError(err?.message || 'Falha ao carregar o termo assinado.');
+            } finally {
+                setUploading(null);
+            }
+        };
+        input.click();
+    };
+
+    const handleDownloadSignedTerm = async (docId: string, fileName: string) => {
+        try {
+            const blob = await itEquipmentApi.documents.download(equipmentId, docId);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = fileName; a.click();
+            URL.revokeObjectURL(url);
+        } catch { }
+    };
+
+    const handleReplaceSignedTerm = async (existingDocId: string, assignmentId: string, assignmentStatus: string) => {
+        // Delete old, then upload new
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.pdf,.jpg,.jpeg,.png';
+        input.onchange = async (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (!file) return;
+
+            setUploading(assignmentId);
+            setUploadError(null);
+            try {
+                await itEquipmentApi.documents.delete(equipmentId, existingDocId);
+                const docType = assignmentStatus === 'RETURNED'
+                    ? 'SIGNED_RETURN_AGREEMENT'
+                    : 'SIGNED_ASSIGNMENT_AGREEMENT';
+                await itEquipmentApi.documents.upload(
+                    equipmentId, file, docType, 'Termo assinado pelo utilizador (substituído)', undefined, assignmentId
+                );
+                onRefresh();
+            } catch (err: any) {
+                setUploadError(err?.message || 'Falha ao substituir o termo assinado.');
+            } finally {
+                setUploading(null);
+            }
+        };
+        input.click();
+    };
+
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {uploadError && (
+                <div style={{
+                    padding: '8px 12px', borderRadius: 6, fontSize: '0.8rem',
+                    backgroundColor: '#fef2f2', color: '#ef4444', border: '1px solid #fecaca'
+                }}>
+                    {uploadError}
+                </div>
+            )}
             {assignments.map(a => {
                 const cfg = ASSIGNMENT_STATUS_CONFIG[a.assignmentStatus] || ASSIGNMENT_STATUS_CONFIG['ACTIVE'];
+                const signedDoc = getSignedDoc(a.id);
+                const generatedDoc = getGeneratedDoc(a.id);
+                const isUploading = uploading === a.id;
+
                 return (
                     <div key={a.id} style={{
                         padding: 12, border: '1px solid var(--color-border)', borderRadius: 8,
@@ -321,6 +422,88 @@ function AssignmentsTab({ assignments }: { assignments: ITEquipmentDetail['assig
                             {a.assignedToPlant && <span>Planta: {a.assignedToPlant}</span>}
                         </div>
                         {a.notes && <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: 6, fontStyle: 'italic' }}>{a.notes}</p>}
+
+                        {/* ── Document actions section ── */}
+                        <div style={{
+                            marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--color-border)',
+                            display: 'flex', flexDirection: 'column', gap: 6
+                        }}>
+                            {/* Generated term */}
+                            {generatedDoc && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem' }}>
+                                    <FileText size={13} style={{ color: '#3b82f6', flexShrink: 0 }} />
+                                    <span style={{ color: 'var(--color-text-muted)' }}>Termo gerado:</span>
+                                    <button
+                                        onClick={() => handleDownloadSignedTerm(generatedDoc.id, generatedDoc.fileName)}
+                                        style={{
+                                            background: 'none', border: 'none', cursor: 'pointer',
+                                            color: '#3b82f6', fontSize: '0.78rem', padding: 0,
+                                            display: 'flex', alignItems: 'center', gap: 3
+                                        }}
+                                    >
+                                        <Download size={12} /> Baixar
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Signed term status + actions */}
+                            {signedDoc ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem' }}>
+                                    <FileCheck size={13} style={{ color: '#10b981', flexShrink: 0 }} />
+                                    <span style={{ color: '#10b981', fontWeight: 600 }}>Termo assinado:</span>
+                                    <span style={{ color: 'var(--color-text-muted)', fontSize: '0.72rem' }}>
+                                        {signedDoc.fileName}
+                                        {signedDoc.uploadedByName && ` • por ${signedDoc.uploadedByName}`}
+                                    </span>
+                                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                                        <button
+                                            onClick={() => handleDownloadSignedTerm(signedDoc.id, signedDoc.fileName)}
+                                            style={{
+                                                background: 'none', border: 'none', cursor: 'pointer',
+                                                color: '#3b82f6', fontSize: '0.75rem', padding: 0,
+                                                display: 'flex', alignItems: 'center', gap: 2
+                                            }}
+                                        >
+                                            <Download size={11} /> Ver
+                                        </button>
+                                        <button
+                                            onClick={() => handleReplaceSignedTerm(signedDoc.id, a.id, a.assignmentStatus)}
+                                            disabled={isUploading}
+                                            style={{
+                                                background: 'none', border: 'none', cursor: 'pointer',
+                                                color: '#f59e0b', fontSize: '0.75rem', padding: 0,
+                                                display: 'flex', alignItems: 'center', gap: 2,
+                                                opacity: isUploading ? 0.5 : 1
+                                            }}
+                                        >
+                                            <Upload size={11} /> Substituir
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem' }}>
+                                    <FileX size={13} style={{ color: '#f97316', flexShrink: 0 }} />
+                                    <span style={{ color: '#f97316' }}>Termo assinado: pendente</span>
+                                    <button
+                                        onClick={() => handleUploadSignedTerm(a.id, a.assignmentStatus)}
+                                        disabled={isUploading}
+                                        style={{
+                                            marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4,
+                                            padding: '3px 10px', borderRadius: 5,
+                                            border: '1px solid #3b82f630', background: '#3b82f608',
+                                            color: '#3b82f6', cursor: 'pointer', fontSize: '0.75rem',
+                                            fontWeight: 600, opacity: isUploading ? 0.5 : 1
+                                        }}
+                                    >
+                                        {isUploading ? (
+                                            <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Carregando...</>
+                                        ) : (
+                                            <><Upload size={11} /> Carregar termo assinado</>
+                                        )}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 );
             })}

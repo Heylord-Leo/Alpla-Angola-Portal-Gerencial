@@ -203,12 +203,13 @@ export const itEquipmentApi = {
             return response.json();
         },
 
-        upload: async (equipmentId: string, file: File, documentType: string, notes?: string, acquisitionId?: string): Promise<{ id: string; fileName: string }> => {
+        upload: async (equipmentId: string, file: File, documentType: string, notes?: string, acquisitionId?: string, assignmentId?: string): Promise<{ id: string; fileName: string }> => {
             const formData = new FormData();
             formData.append('file', file);
             formData.append('documentType', documentType);
             if (notes) formData.append('notes', notes);
             if (acquisitionId) formData.append('acquisitionId', acquisitionId);
+            if (assignmentId) formData.append('assignmentId', assignmentId);
             const response = await apiFetch(`${BASE}/${equipmentId}/documents/upload`, {
                 method: 'POST',
                 body: formData

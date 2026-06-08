@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+
 import { api } from '../../lib/api';
 import { LookupDto, CurrencyDto, UserDto } from '../../types';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { KebabMenu } from '../../components/ui/KebabMenu';
 import { ROLES } from '../../constants/roles';
-import { Edit2, Power, PowerOff, Database, Search } from 'lucide-react';
+import { Edit2, Power, PowerOff, Search, Database } from 'lucide-react';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { CatalogItemsPanel } from './CatalogItemsPanel';
@@ -19,7 +19,7 @@ function debounce<T extends (...args: any[]) => void>(fn: T, delay: number) {
 }
 
 export function MasterData() {
-    const navigate = useNavigate();
+
     const [units, setUnits] = useState<LookupDto[]>([]);
     const [currencies, setCurrencies] = useState<CurrencyDto[]>([]);
     const [needLevels, setNeedLevels] = useState<LookupDto[]>([]);
@@ -716,42 +716,6 @@ export function MasterData() {
                     </form>
                 </div>
 
-                {/* Primavera Sync Navigation — Suppliers */}
-                {activeTab === 'suppliers' && (
-                    <div style={{
-                        backgroundColor: 'var(--color-bg-surface)',
-                        padding: '16px 24px',
-                        borderRadius: 'var(--radius-lg)',
-                        border: '1px solid var(--color-border)',
-                    }}>
-                        <button
-                            type="button"
-                            onClick={() => navigate('/settings/sync/suppliers')}
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                padding: '12px 16px',
-                                backgroundColor: 'rgba(var(--color-primary-rgb), 0.06)',
-                                border: '1px solid rgba(var(--color-primary-rgb), 0.15)',
-                                borderRadius: 'var(--radius-md)',
-                                fontWeight: 600,
-                                fontSize: '0.8rem',
-                                cursor: 'pointer',
-                                color: 'var(--color-primary)',
-                                width: '100%',
-                                justifyContent: 'center',
-                                transition: 'all 0.15s ease'
-                            }}
-                        >
-                            <Database size={16} />
-                            Sincronizar com Primavera
-                        </button>
-                        <p style={{ marginTop: '8px', fontSize: '0.7rem', color: 'var(--color-text-muted)', lineHeight: 1.4 }}>
-                            Compare e importe fornecedores do Primavera de forma controlada.
-                        </p>
-                    </div>
-                )}
                 </div> {/* End Left Column Wrapper */}
 
                 {/* Right Column (Table) */}

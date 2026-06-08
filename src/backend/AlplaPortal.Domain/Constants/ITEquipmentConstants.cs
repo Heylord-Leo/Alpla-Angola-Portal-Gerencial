@@ -79,6 +79,7 @@ public static class ITEquipmentConstants
         public const string UserChanged = "USER_CHANGED";
         public const string UserChangeReturned = "USER_CHANGE_RETURNED";
         public const string UserChangeAssigned = "USER_CHANGE_ASSIGNED";
+        public const string SignedTermUploaded = "SIGNED_TERM_UPLOADED";
     }
 
     /// <summary>Assignment lifecycle statuses.</summary>
@@ -111,6 +112,8 @@ public static class ITEquipmentConstants
         public const string DeliveryNote = "DELIVERY_NOTE";
         public const string AssignmentAgreement = "ASSIGNMENT_AGREEMENT";
         public const string ReturnAgreement = "RETURN_AGREEMENT";
+        public const string SignedAssignmentAgreement = "SIGNED_ASSIGNMENT_AGREEMENT";
+        public const string SignedReturnAgreement = "SIGNED_RETURN_AGREEMENT";
         public const string Other = "OTHER";
 
         public static string DisplayName(string code) => code switch
@@ -124,6 +127,8 @@ public static class ITEquipmentConstants
             DeliveryNote => "Guia de Entrega",
             AssignmentAgreement => "Termo de Responsabilidade",
             ReturnAgreement => "Termo de Devolução",
+            SignedAssignmentAgreement => "Termo de Responsabilidade Assinado",
+            SignedReturnAgreement => "Termo de Devolução Assinado",
             Other => "Outro",
             _ => code
         };
