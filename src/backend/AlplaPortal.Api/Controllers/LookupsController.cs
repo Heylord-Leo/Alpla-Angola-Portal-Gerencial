@@ -863,6 +863,22 @@ public class LookupsController : ControllerBase
     [Authorize(Roles = "System Administrator,Buyer,Finance,Contracts,Local Manager")]
     public async Task<IActionResult> CreateSupplier([FromBody] CreateSupplierDto dto)
     {
+        // Name uniqueness guard — case-insensitive check (IX_Suppliers_Name)
+        {
+            var normalizedName = dto.Name.Trim().ToUpper();
+            var existingByName = await _context.Suppliers
+                .FirstOrDefaultAsync(s => s.Name.ToUpper() == normalizedName);
+            if (existingByName != null)
+            {
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Nome já registado",
+                    Detail = $"Já existe um fornecedor com o nome '{dto.Name.Trim()}': {existingByName.PortalCode}. Utilize o fornecedor existente ou altere o nome.",
+                    Status = 409
+                });
+            }
+        }
+
         // NIF uniqueness guard — when provided, check for existing supplier
         if (!string.IsNullOrWhiteSpace(dto.TaxId))
         {
@@ -918,9 +934,50 @@ public class LookupsController : ControllerBase
             }
             catch (DbUpdateException ex)
             {
-                // All retries exhausted or non-PortalCode error — log and return sanitized message
                 var innerMsg = ex.InnerException?.Message ?? ex.Message;
-                _logger.LogError(ex, "Failed to create supplier after {MaxRetries} attempts. Inner: {InnerMessage}", maxRetries, innerMsg);
+
+                // Safety net: Name unique constraint violation (race condition — pre-check passed but another request inserted first)
+                if (innerMsg.Contains("IX_Suppliers_Name", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogWarning(ex, "Supplier Name unique constraint violation (race condition). Name: {Name}", dto.Name.Trim());
+                    _context.Entry(entity).State = Microsoft.EntityFrameworkCore.EntityState.Detached;
+                    return Conflict(new ProblemDetails
+                    {
+                        Title = "Nome já registado",
+                        Detail = $"Já existe um fornecedor com o nome '{dto.Name.Trim()}'. Utilize o fornecedor existente ou altere o nome.",
+                        Status = 409
+                    });
+                }
+
+                // Safety net: TaxId unique constraint violation (race condition)
+                if (innerMsg.Contains("IX_Suppliers_TaxId", StringComparison.OrdinalIgnoreCase) ||
+                    (innerMsg.Contains("TaxId", StringComparison.OrdinalIgnoreCase) && innerMsg.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase)))
+                {
+                    _logger.LogWarning(ex, "Supplier TaxId unique constraint violation (race condition). TaxId: {TaxId}", dto.TaxId?.Trim());
+                    _context.Entry(entity).State = Microsoft.EntityFrameworkCore.EntityState.Detached;
+                    return Conflict(new ProblemDetails
+                    {
+                        Title = "NIF já registado",
+                        Detail = $"Já existe um fornecedor com o NIF '{dto.TaxId?.Trim()}'. Utilize o fornecedor existente.",
+                        Status = 409
+                    });
+                }
+
+                // PortalCode collision on last attempt
+                if (innerMsg.Contains("IX_Suppliers_PortalCode", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogError(ex, "PortalCode collision exhausted all {MaxRetries} retries. Inner: {InnerMessage}", maxRetries, innerMsg);
+                    _context.Entry(entity).State = Microsoft.EntityFrameworkCore.EntityState.Detached;
+                    return StatusCode(500, new ProblemDetails
+                    {
+                        Title = "Erro ao criar Fornecedor",
+                        Detail = "Não foi possível gerar um código único para o fornecedor após múltiplas tentativas. Tente novamente.",
+                        Status = 500
+                    });
+                }
+
+                // Truly unexpected DB error
+                _logger.LogError(ex, "Failed to create supplier. Inner: {InnerMessage}", innerMsg);
                 return StatusCode(500, new ProblemDetails
                 {
                     Title = "Erro ao criar Fornecedor",

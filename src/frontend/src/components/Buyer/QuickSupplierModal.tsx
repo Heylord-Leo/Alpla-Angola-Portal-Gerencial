@@ -64,10 +64,22 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
             }, 300);
         } catch (err: any) {
             if (err instanceof ApiError) {
-                // Handle 409 Conflict — NIF duplicate
+                // Handle 409 Conflict — distinguish Name vs NIF duplicate
                 if (err.status === 409) {
-                    setFieldErrors({ TaxId: [err.message || 'NIF já registado no sistema.'] });
-                    setFeedback({ type: 'warning', message: err.message || 'Já existe um fornecedor com este NIF. Utilize o fornecedor existente.' });
+                    const detail = err.message || '';
+                    const isNameDuplicate = detail.includes('nome') || detail.includes('Nome');
+                    const isNifDuplicate = detail.includes('NIF') || detail.includes('nif');
+
+                    if (isNameDuplicate) {
+                        setFieldErrors({ Name: [detail || 'Já existe um fornecedor com este nome.'] });
+                        setFeedback({ type: 'warning', message: detail || 'Já existe um fornecedor com este nome. Utilize o fornecedor existente ou altere o nome.' });
+                    } else if (isNifDuplicate) {
+                        setFieldErrors({ TaxId: [detail || 'NIF já registado no sistema.'] });
+                        setFeedback({ type: 'warning', message: detail || 'Já existe um fornecedor com este NIF. Utilize o fornecedor existente.' });
+                    } else {
+                        // Generic 409 — show as warning
+                        setFeedback({ type: 'warning', message: detail || 'Já existe um fornecedor com estes dados. Utilize o fornecedor existente.' });
+                    }
                     setIsSaving(false);
                     return;
                 }
@@ -164,18 +176,45 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
                             <input
                                 type="text"
                                 value={name}
-                                onChange={(e) => setName(e.target.value)}
+                                onChange={(e) => {
+                                    setName(e.target.value);
+                                    // Clear Name duplicate error when user types
+                                    if (fieldErrors.Name) {
+                                        setFieldErrors(prev => {
+                                            const next = { ...prev };
+                                            delete next.Name;
+                                            return next;
+                                        });
+                                        setFeedback({ type: 'error', message: null });
+                                    }
+                                }}
                                 placeholder="Ex: Alpla Portugal, Lda"
                                 style={{
                                     ...inputStyle,
-                                    borderColor: fieldErrors.Name ? 'var(--color-status-red)' : 'var(--color-border)'
+                                    borderColor: fieldErrors.Name ? '#F59E0B' : 'var(--color-border)'
                                 }}
                                 autoFocus
                             />
                             {fieldErrors.Name && (
-                                <p style={{ color: 'var(--color-status-red)', fontSize: '0.75rem', marginTop: '4px', fontWeight: 600 }}>
-                                    {fieldErrors.Name[0]}
-                                </p>
+                                <motion.div
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    style={{
+                                        marginTop: '8px',
+                                        padding: '10px 12px',
+                                        backgroundColor: '#FFFBEB',
+                                        border: '1px solid #F59E0B',
+                                        borderRadius: 'var(--radius-sm)',
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                        gap: '8px'
+                                    }}
+                                >
+                                    <AlertCircle size={16} style={{ color: '#D97706', flexShrink: 0, marginTop: '1px' }} />
+                                    <p style={{ color: '#92400E', fontSize: '0.75rem', fontWeight: 600, margin: 0, lineHeight: '1.4' }}>
+                                        {fieldErrors.Name[0]}
+                                    </p>
+                                </motion.div>
                             )}
                         </div>
 

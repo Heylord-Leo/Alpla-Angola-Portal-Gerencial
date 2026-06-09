@@ -2,6 +2,42 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.189.1] - 2026-06-09
+
+### Fixed — Supplier Creation 500 Error (Duplicate Name)
+
+**Root cause:** The `POST api/v1/lookups/suppliers` endpoint validated NIF/TaxId uniqueness before saving, but did NOT validate Supplier Name uniqueness. The database has a unique index `IX_Suppliers_Name`, so when a supplier with the same name already existed, the `DbUpdateException` was either caught generically (returning a 500 with the controller's custom message) or escaped to the global exception handler (returning the default ASP.NET Core ProblemDetails 500 with no useful detail).
+
+**Backend fix** (`LookupsController.CreateSupplier`):
+- Added explicit Name uniqueness pre-check (case-insensitive `ToUpper()` comparison) before save, returning **409 Conflict** with ProblemDetails containing the existing supplier's PortalCode.
+- Improved `DbUpdateException` catch block to detect specific constraint violations:
+  - `IX_Suppliers_Name` → 409 Conflict (race condition safety net)
+  - `IX_Suppliers_TaxId` → 409 Conflict (race condition safety net)
+  - `IX_Suppliers_PortalCode` → 500 with clear retry message
+  - Unknown → 500 with generic message
+- Entity is properly detached on known duplicate errors to keep the change tracker clean.
+
+**Frontend fix** (`QuickSupplierModal.tsx`):
+- 409 Conflict handler now distinguishes Name vs NIF duplicates by inspecting the backend detail message.
+- Name duplicates show an amber warning box below the Name field (matching the NIF duplicate UX pattern).
+- NIF duplicates continue to show the existing amber warning box.
+- Name field `onChange` now clears duplicate errors when the user edits, matching the NIF field behavior.
+
+**No migration created.** The `IX_Suppliers_Name` unique index already exists in the database.
+
+**Business rules preserved:**
+- PortalCode generated automatically
+- PrimaveraCode optional
+- New supplier created as DRAFT
+- Internal status codes stable (English/no accents)
+
+**Files Changed:**
+- `src/backend/AlplaPortal.Api/Controllers/LookupsController.cs` — Name uniqueness pre-check + improved DbUpdateException handling
+- `src/frontend/src/components/Buyer/QuickSupplierModal.tsx` — 409 conflict handling for Name and NIF duplicates
+- `src/frontend/src/config.ts` — APP_VERSION → "v2.189.1"
+- `docs/VERSION.md` — v2.189.1
+- `docs/CHANGELOG.md` — This entry
+
 ## [v2.189.0] - 2026-06-08
 
 ### Added — I.T Equipment Assignment: Availability Date & Visual Signature PDF

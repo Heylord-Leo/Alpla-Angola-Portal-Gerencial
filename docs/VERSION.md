@@ -2,7 +2,20 @@
 
 ## Current Version
 
-v2.189.0
+v2.189.1
+
+## [v2.189.1] - 2026-06-09
+
+### Fixed — Supplier Creation 500 Error (Duplicate Name)
+
+Fixed an unhandled `DbUpdateException` when creating a supplier with a name that already exists in the database. The `IX_Suppliers_Name` unique constraint violation was not caught by the `CreateSupplier` endpoint, causing a generic 500 error. Added Name uniqueness pre-check (case-insensitive) returning 409 Conflict with a clear ProblemDetails message. Improved `DbUpdateException` handling to detect `IX_Suppliers_Name`, TaxId, and `IX_Suppliers_PortalCode` constraint violations separately. Frontend `QuickSupplierModal` now handles 409 Conflict for both Name and NIF duplicates with field-level warning feedback.
+
+**Files Changed:**
+- `src/backend/AlplaPortal.Api/Controllers/LookupsController.cs` — Name uniqueness pre-check + improved DbUpdateException handling
+- `src/frontend/src/components/Buyer/QuickSupplierModal.tsx` — 409 conflict handling for Name and NIF duplicates
+- `src/frontend/src/config.ts` — APP_VERSION → "v2.189.1"
+- `docs/VERSION.md` — v2.189.1
+- `docs/CHANGELOG.md` — This entry
 
 ## [v2.189.0] - 2026-06-08
 
