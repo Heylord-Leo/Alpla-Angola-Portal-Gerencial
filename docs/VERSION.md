@@ -2,9 +2,24 @@
 
 ## Current Version
 
-v2.189.1
+v2.189.2
+
+## [v2.189.2] - 2026-06-10
+
+### Fixed — Supplier Creation: Unhandled Exception Safety Net
+
+Added an outer try-catch around the entire `CreateSupplier` method body to prevent unhandled exceptions (from EF Core queries, `GetNextPortalCodeAsync`, or other non-`DbUpdateException` errors) from reaching the global `UseExceptionHandler` middleware and producing the generic "An error occurred while processing your request." message. The outer catch logs the actual exception type, message, and inner message, then returns a specific ProblemDetails response with the real error detail so the frontend can display meaningful diagnostic information instead of a generic error.
+
+**Root Cause Analysis:** The v2.189.1 fix correctly handled `DbUpdateException` inside the save retry loop but left the Name/NIF pre-check queries, `GetNextPortalCodeAsync()`, and entity construction outside any catch block. Any non-`DbUpdateException` thrown by these operations (e.g., EF Core model mismatch, SQL connection timeout, transaction failure) would escape to the ASP.NET Core `UseExceptionHandler()` middleware, which returns a sanitized generic 500 ProblemDetails with no actionable detail.
+
+**Files Changed:**
+- `src/backend/AlplaPortal.Api/Controllers/LookupsController.cs` — Outer try-catch in `CreateSupplier`
+- `src/frontend/src/config.ts` — APP_VERSION → "v2.189.2"
+- `docs/VERSION.md` — v2.189.2
+- `docs/CHANGELOG.md` — This entry
 
 ## [v2.189.1] - 2026-06-09
+
 
 ### Fixed — Supplier Creation 500 Error (Duplicate Name)
 
