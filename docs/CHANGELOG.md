@@ -2,6 +2,28 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.189.4] - 2026-06-10
+
+### Fixed — Migration Application: QUOTED_IDENTIFIER Session Option (Msg 1934)
+
+**Problem:** Applying migration `20260610083347_AddSupplierSyncColumns` via `sqlcmd` failed with SQL Server Msg 1934: `UPDATE failed because the following SET options have incorrect settings: 'QUOTED_IDENTIFIER'`.
+
+**Root cause:** `sqlcmd` defaults to `QUOTED_IDENTIFIER OFF` per ODBC specification. The `dbo.Suppliers` table (or related objects) requires `QUOTED_IDENTIFIER ON` for DDL/DML operations — this is enforced by SQL Server when tables have filtered indexes, indexed views, computed columns, or XML type methods.
+
+The v2.189.3 fix injected SET options at the top of the generated SQL file, but `sqlcmd` itself starts the session with `QUOTED_IDENTIFIER OFF` before reading the file. Additionally, EF Core idempotent scripts may contain their own `SET QUOTED_IDENTIFIER OFF` statements that override the header.
+
+**Fix:** Updated `scripts/db/apply-migrations.ps1`:
+1. All `sqlcmd` invocations now include the `-I` flag (forces `QUOTED_IDENTIFIER ON` at session level)
+2. Any `SET QUOTED_IDENTIFIER OFF` in EF-generated SQL is automatically replaced with `SET QUOTED_IDENTIFIER ON`
+3. Added preflight check: `SELECT SESSIONPROPERTY('QUOTED_IDENTIFIER')` must return `1` before migration execution
+4. Added diagnostic logging: first 20 lines of SQL file, sqlcmd authentication mode, QUOTED_IDENTIFIER OFF scan
+
+**Files Changed:**
+- `scripts/db/apply-migrations.ps1` — Robust sqlcmd session options
+- `src/frontend/src/config.ts` — APP_VERSION → "v2.189.4"
+- `docs/VERSION.md` — v2.189.4
+- `docs/CHANGELOG.md` — This entry
+
 ## [v2.189.3] - 2026-06-10
 
 ### Fixed — Missing Supplier Columns: Origin, SourceCompany, LastSyncedAtUtc

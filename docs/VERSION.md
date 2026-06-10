@@ -2,7 +2,24 @@
 
 ## Current Version
 
-v2.189.3
+v2.189.4
+
+## [v2.189.4] - 2026-06-10
+
+### Fixed — Migration Application: QUOTED_IDENTIFIER Session Option
+
+Updated `scripts/db/apply-migrations.ps1` to fix Msg 1934 (`QUOTED_IDENTIFIER OFF`) when applying EF Core migrations via `sqlcmd`.
+
+**Root cause:** `sqlcmd` defaults to `QUOTED_IDENTIFIER OFF`. Tables with filtered indexes, indexed views, or computed columns require `QUOTED_IDENTIFIER ON` for any DDL or DML operations.
+
+**Changes:**
+- All `sqlcmd` invocations now use the `-I` flag (`QUOTED_IDENTIFIER ON` at session level)
+- Injected SET options header now also strips any `SET QUOTED_IDENTIFIER OFF` from EF-generated SQL
+- Added preflight check: `SESSIONPROPERTY('QUOTED_IDENTIFIER')` must return `1` before proceeding
+- Added diagnostic logging: first 20 lines of SQL, sqlcmd mode, QUOTED_IDENTIFIER scan results
+
+**Files Changed:**
+- `scripts/db/apply-migrations.ps1` — Robust sqlcmd session options
 
 ## [v2.189.3] - 2026-06-10
 
