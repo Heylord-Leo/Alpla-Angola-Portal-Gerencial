@@ -2,6 +2,25 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.189.5] - 2026-06-10
+
+### Fixed — Quotation Save HTTP 500: Missing `ItemCatalogId` Column on `QuotationItems`
+
+**Problem:** Saving a quotation via `POST api/v1/requests/{id}/quotations` returned HTTP 500 with `SqlException: Invalid column name 'ItemCatalogId'` on the `QuotationItems` table.
+
+**Root cause:** The `QuotationItem` entity class and EF Core configuration both reference `ItemCatalogId` (nullable FK to `ItemCatalogItems`), and the model snapshot already included this column. However, **no migration ever added the column to the physical database table**. This is a snapshot-vs-database desync introduced when the `ItemCatalog` feature was added — the `AddItemCatalog` migration (20260412105910) only added `ItemCatalogId` to `RequestLineItems`, not to `QuotationItems`.
+
+**Fix:** Created migration `20260610134920_AddItemCatalogToQuotationItems` that manually adds:
+1. `ItemCatalogId` (nullable `int`) column to `QuotationItems`
+2. Index `IX_QuotationItems_ItemCatalogId`
+3. FK `FK_QuotationItems_ItemCatalogItems_ItemCatalogId` → `ItemCatalogItems.Id` (SetNull)
+
+**Files Changed:**
+- `src/backend/.../Migrations/20260610134920_AddItemCatalogToQuotationItems.cs` — Manual schema fix migration
+- `src/frontend/src/config.ts` — APP_VERSION → "v2.189.5"
+- `docs/VERSION.md` — v2.189.5
+- `docs/CHANGELOG.md` — This entry
+
 ## [v2.189.4] - 2026-06-10
 
 ### Fixed — Migration Application: QUOTED_IDENTIFIER Session Option (Msg 1934)

@@ -2,7 +2,15 @@
 
 ## Current Version
 
-v2.189.4
+v2.189.5
+
+## [v2.189.5] - 2026-06-10
+
+### Fixed — Quotation Save HTTP 500: Missing `ItemCatalogId` Column
+
+- Added migration `20260610134920_AddItemCatalogToQuotationItems` to fix snapshot-vs-database desync
+- Adds `ItemCatalogId` (nullable int FK) to `QuotationItems` table
+- Resolves `SqlException: Invalid column name 'ItemCatalogId'` on quotation save
 
 ## [v2.189.4] - 2026-06-10
 
