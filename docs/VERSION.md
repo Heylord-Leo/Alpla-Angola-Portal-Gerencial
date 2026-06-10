@@ -2,9 +2,37 @@
 
 ## Current Version
 
-v2.189.2
+v2.189.3
+
+## [v2.189.3] - 2026-06-10
+
+### Fixed — Missing Supplier Columns: Origin, SourceCompany, LastSyncedAtUtc
+
+Created EF Core migration `20260610083347_AddSupplierSyncColumns` to add 3 columns to the `Suppliers` table that existed in the entity model and DbContext snapshot but were never added by any migration to existing databases.
+
+**Root cause:** The `AddSupplierRegistrationFields` migration (20260425) was scaffolded after these entity properties were added, so the `Designer.cs` snapshot included them. However, the generated `Up()` method did not include `AddColumn` calls for `Origin`, `SourceCompany`, and `LastSyncedAtUtc`. The v2.156.3 fix corrected the `ConsolidatedBaseline` for clean installs but explicitly stated "No New Migration Required" — which left the TEST database missing these columns.
+
+**Columns added:**
+- `Origin` (nvarchar(max), NOT NULL, default `'MANUAL'`) — record origin traceability
+- `SourceCompany` (nvarchar(max), nullable) — source Primavera company
+- `LastSyncedAtUtc` (datetime2, nullable) — last synchronization timestamp
+
+**SQL applied to Portal-Gerencial-Test:**
+```sql
+ALTER TABLE [Suppliers] ADD [Origin] nvarchar(max) NOT NULL DEFAULT N'MANUAL';
+ALTER TABLE [Suppliers] ADD [SourceCompany] nvarchar(max) NULL;
+ALTER TABLE [Suppliers] ADD [LastSyncedAtUtc] datetime2 NULL;
+```
+
+**Files Changed:**
+- `src/backend/AlplaPortal.Infrastructure/Data/Migrations/20260610083347_AddSupplierSyncColumns.cs` — [NEW] Migration
+- `src/backend/AlplaPortal.Infrastructure/Data/Migrations/20260610083347_AddSupplierSyncColumns.Designer.cs` — [NEW] Snapshot
+- `src/frontend/src/config.ts` — APP_VERSION → "v2.189.3"
+- `docs/VERSION.md` — v2.189.3
+- `docs/CHANGELOG.md` — This entry
 
 ## [v2.189.2] - 2026-06-10
+
 
 ### Fixed — Supplier Creation: Unhandled Exception Safety Net
 

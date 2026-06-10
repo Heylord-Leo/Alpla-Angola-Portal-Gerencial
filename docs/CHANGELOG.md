@@ -2,7 +2,30 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.189.3] - 2026-06-10
+
+### Fixed — Missing Supplier Columns: Origin, SourceCompany, LastSyncedAtUtc
+
+**Problem:** The v2.189.2 diagnostic revealed the real backend exception: `Invalid column name 'LastSyncedAtUtc'. Invalid column name 'Origin'. Invalid column name 'SourceCompany'.` — EF Core was querying columns that did not exist in the TEST database.
+
+**Root cause:** The `Supplier` entity model includes `Origin`, `SourceCompany`, and `LastSyncedAtUtc` properties. The `AddSupplierRegistrationFields` migration (20260425) was scaffolded after these properties were added to the model, so its `Designer.cs` snapshot includes them. However, the generated `Up()` method never included `AddColumn` calls for these 3 properties. The v2.156.3 release fixed the `ConsolidatedBaseline` for clean database installs but did not create a standalone migration for existing databases.
+
+**Fix:** New EF Core migration `20260610083347_AddSupplierSyncColumns`:
+- `Origin` — nvarchar(max), NOT NULL, DEFAULT `'MANUAL'` (safe for existing rows)
+- `SourceCompany` — nvarchar(max), nullable
+- `LastSyncedAtUtc` — datetime2, nullable
+
+**Database:** Migration must be applied to `Portal-Gerencial-Test` via `Apply TEST Migrations` workflow before deploying.
+
+**Files Changed:**
+- `src/backend/AlplaPortal.Infrastructure/Data/Migrations/20260610083347_AddSupplierSyncColumns.cs` — [NEW] Migration
+- `src/backend/AlplaPortal.Infrastructure/Data/Migrations/20260610083347_AddSupplierSyncColumns.Designer.cs` — [NEW] Snapshot
+- `src/frontend/src/config.ts` — APP_VERSION → "v2.189.3"
+- `docs/VERSION.md` — v2.189.3
+- `docs/CHANGELOG.md` — This entry
+
 ## [v2.189.2] - 2026-06-10
+
 
 ### Fixed — Supplier Creation: Unhandled Exception Safety Net
 
