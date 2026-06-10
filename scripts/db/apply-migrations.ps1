@@ -237,8 +237,39 @@ if (-not (Test-Path $sqlOutputFile)) {
 }
 
 $sqlContent = Get-Content $sqlOutputFile -Raw
+
+# Ensure SQL Server SET options are correct for indexes/computed columns (Fix for QUOTED_IDENTIFIER error)
+$setOptions = @"
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_PADDING ON;
+SET ANSI_WARNINGS ON;
+SET CONCAT_NULL_YIELDS_NULL ON;
+SET ARITHABORT ON;
+SET NUMERIC_ROUNDABORT OFF;
+GO
+"@
+$sqlContent = $setOptions + "`r`n" + $sqlContent
+
+# Remove any SET QUOTED_IDENTIFIER OFF injected by EF Core scaffolding (critical fix)
+$qiOffCount = ([regex]::Matches($sqlContent, 'SET\s+QUOTED_IDENTIFIER\s+OFF', 'IgnoreCase')).Count
+if ($qiOffCount -gt 0) {
+    Write-Host "WARNING: Found $qiOffCount occurrence(s) of 'SET QUOTED_IDENTIFIER OFF' in generated SQL. Replacing with ON." -ForegroundColor Yellow
+    $sqlContent = [regex]::Replace($sqlContent, 'SET\s+QUOTED_IDENTIFIER\s+OFF', 'SET QUOTED_IDENTIFIER ON', 'IgnoreCase')
+} else {
+    Write-Host "OK - No 'SET QUOTED_IDENTIFIER OFF' found in generated SQL." -ForegroundColor Green
+}
+
+Set-Content -Path $sqlOutputFile -Value $sqlContent -Encoding UTF8
+
 $sqlSize = (Get-Item $sqlOutputFile).Length
 Write-Host "Generated SQL script: $sqlOutputFile ($sqlSize bytes)"
+
+# Diagnostic: print first 20 lines of the SQL file
+Write-Host ""
+Write-Host "--- SQL file first 20 lines ---" -ForegroundColor Cyan
+Get-Content $sqlOutputFile -TotalCount 20 | ForEach-Object { Write-Host "  $_" }
+Write-Host "--- end preview ---" -ForegroundColor Cyan
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 5. Validate generated SQL covers all pending migrations (DEC-138 protection)
@@ -275,7 +306,7 @@ Write-Host "OK - All $($pending.Count) pending migrations are covered in the gen
 Write-Host ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. Apply migrations via sqlcmd
+# 6. Apply migrations via sqlcmd (with -I for QUOTED_IDENTIFIER ON)
 # ─────────────────────────────────────────────────────────────────────────────
 
 Write-Host "STEP 5 - Applying migrations to [$dbName]..." -ForegroundColor Yellow
@@ -286,12 +317,48 @@ $connBuilder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder($Conn
 $server = $connBuilder.DataSource
 $database = $connBuilder.InitialCatalog
 
+# --- Preflight check: verify QUOTED_IDENTIFIER is ON with -I flag ---
+Write-Host ""
+Write-Host "Preflight: verifying QUOTED_IDENTIFIER session option..." -ForegroundColor Yellow
+
 if ($connBuilder.IntegratedSecurity) {
-    sqlcmd -S $server -d $database -i $sqlOutputFile -b -E
+    Write-Host "  sqlcmd mode: Windows Authentication (-E -I) | Server: $server | Database: $database"
+    $preflightResult = sqlcmd -S $server -d $database -E -I -h -1 -W -Q "SELECT SESSIONPROPERTY('QUOTED_IDENTIFIER') AS QI;" 2>&1
 } else {
     $userId = $connBuilder.UserID
     $password = $connBuilder.Password
-    sqlcmd -S $server -d $database -i $sqlOutputFile -b -U $userId -P $password
+    Write-Host "  sqlcmd mode: SQL Authentication (-U ***) | Server: $server | Database: $database"
+    $preflightResult = sqlcmd -S $server -d $database -U $userId -P $password -I -h -1 -W -Q "SELECT SESSIONPROPERTY('QUOTED_IDENTIFIER') AS QI;" 2>&1
+}
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "::error::Preflight QUOTED_IDENTIFIER check failed. sqlcmd returned exit code $LASTEXITCODE." -ForegroundColor Red
+    Write-Host "::error::Output: $preflightResult" -ForegroundColor Red
+    exit 1
+}
+
+# Parse the result (should be "1" for ON)
+$qiValue = ($preflightResult | Where-Object { $_ -match '^\d+$' } | Select-Object -First 1)
+if ($null -eq $qiValue) { $qiValue = "$preflightResult".Trim() }
+Write-Host "  QUOTED_IDENTIFIER = $qiValue"
+
+if ("$qiValue" -ne "1") {
+    Write-Host ""
+    Write-Host "::error::PREFLIGHT FAILED: QUOTED_IDENTIFIER is OFF ($qiValue) even with -I flag." -ForegroundColor Red
+    Write-Host "::error::Cannot apply migrations safely. The database server or ODBC driver may override session SET options." -ForegroundColor Red
+    Write-Host "::error::Investigate the sqlcmd version, ODBC driver, and SQL Server login defaults." -ForegroundColor Red
+    Remove-Item $sqlOutputFile -ErrorAction SilentlyContinue
+    exit 1
+}
+
+Write-Host "OK - Preflight passed: QUOTED_IDENTIFIER = 1 (ON)" -ForegroundColor Green
+Write-Host ""
+
+# --- Execute the migration SQL with -I (QUOTED_IDENTIFIER ON) ---
+if ($connBuilder.IntegratedSecurity) {
+    sqlcmd -S $server -d $database -E -I -b -i $sqlOutputFile
+} else {
+    sqlcmd -S $server -d $database -U $userId -P $password -I -b -i $sqlOutputFile
 }
 
 if ($LASTEXITCODE -ne 0) {
