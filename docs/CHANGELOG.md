@@ -2,7 +2,29 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.189.2] - 2026-06-10
+
+### Fixed — Supplier Creation: Unhandled Exception Safety Net
+
+**Problem:** Despite the v2.189.1 fix, the TEST environment still returned the generic "An error occurred while processing your request." (HTTP 500) when creating a supplier. This generic message comes from the ASP.NET Core `UseExceptionHandler()` middleware, indicating an **unhandled exception** escaping the controller.
+
+**Root cause:** The v2.189.1 fix added a `DbUpdateException` catch block inside the save retry loop, but the Name/NIF pre-check queries, `GetNextPortalCodeAsync()`, and entity construction were **outside** any try-catch. Any non-`DbUpdateException` (e.g., EF Core model mismatch, SQL connection timeout, transaction error) would propagate unhandled to the global exception handler.
+
+**Fix:** Wrapped the entire `CreateSupplier` method body in an outer `try-catch(Exception)` that:
+- Logs the full exception type, message, and inner message via `_logger.LogError`
+- Returns a ProblemDetails response with the actual error detail (`"Erro inesperado: {innerMsg}"`)
+- Prevents the generic `UseExceptionHandler` middleware from swallowing the real error
+
+This makes the actual error visible in the frontend Feedback component, enabling diagnosis without needing direct server log access.
+
+**Files Changed:**
+- `src/backend/AlplaPortal.Api/Controllers/LookupsController.cs` — Outer try-catch in `CreateSupplier`
+- `src/frontend/src/config.ts` — APP_VERSION → "v2.189.2"
+- `docs/VERSION.md` — v2.189.2
+- `docs/CHANGELOG.md` — This entry
+
 ## [v2.189.1] - 2026-06-09
+
 
 ### Fixed — Supplier Creation 500 Error (Duplicate Name)
 

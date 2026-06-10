@@ -863,6 +863,8 @@ public class LookupsController : ControllerBase
     [Authorize(Roles = "System Administrator,Buyer,Finance,Contracts,Local Manager")]
     public async Task<IActionResult> CreateSupplier([FromBody] CreateSupplierDto dto)
     {
+      try
+      {
         // Name uniqueness guard — case-insensitive check (IX_Suppliers_Name)
         {
             var normalizedName = dto.Name.Trim().ToUpper();
@@ -994,6 +996,22 @@ public class LookupsController : ControllerBase
             Detail = "Não foi possível gerar um código único para o fornecedor após múltiplas tentativas.",
             Status = 500
         });
+      }
+      catch (Exception ex)
+      {
+          // Outer safety net: catch ANY unhandled exception to prevent the generic
+          // UseExceptionHandler middleware from swallowing the real error message.
+          // This ensures the frontend always receives a meaningful error.
+          var innerMsg = ex.InnerException?.Message ?? ex.Message;
+          _logger.LogError(ex, "Unhandled exception in CreateSupplier. Type: {ExType}, Message: {Message}, Inner: {InnerMessage}",
+              ex.GetType().Name, ex.Message, innerMsg);
+          return StatusCode(500, new ProblemDetails
+          {
+              Title = "Erro ao criar Fornecedor",
+              Detail = $"Erro inesperado: {innerMsg}",
+              Status = 500
+          });
+      }
     }
 
     [HttpPut("suppliers/{id}")]
