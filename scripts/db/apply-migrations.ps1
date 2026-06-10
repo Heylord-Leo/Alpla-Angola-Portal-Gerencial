@@ -237,6 +237,21 @@ if (-not (Test-Path $sqlOutputFile)) {
 }
 
 $sqlContent = Get-Content $sqlOutputFile -Raw
+
+# Ensure SQL Server SET options are correct for indexes/computed columns (Fix for QUOTED_IDENTIFIER error)
+$setOptions = @"
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_PADDING ON;
+SET ANSI_WARNINGS ON;
+SET CONCAT_NULL_YIELDS_NULL ON;
+SET ARITHABORT ON;
+SET NUMERIC_ROUNDABORT OFF;
+GO
+"@
+$sqlContent = $setOptions + "`r`n" + $sqlContent
+Set-Content -Path $sqlOutputFile -Value $sqlContent
+
 $sqlSize = (Get-Item $sqlOutputFile).Length
 Write-Host "Generated SQL script: $sqlOutputFile ($sqlSize bytes)"
 
