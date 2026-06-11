@@ -43,7 +43,17 @@ public class SmtpSettingsService : ISmtpSettingsService
             SenderName = dbSettings?.SenderName ?? _configuration["SmtpSettings:SenderName"] ?? "",
             EnableSsl = dbSettings?.EnableSsl ?? (bool.TryParse(_configuration["SmtpSettings:EnableSsl"], out var ssl) ? ssl : true),
             HasPassword = !string.IsNullOrEmpty(dbSettings?.EncryptedPassword) || !string.IsNullOrEmpty(_configuration["SmtpSettings:Password"]),
-            Password = null // Never return the password
+            Password = null, // Never return the password
+
+            // Email Environment Identification
+            EnableSubjectPrefix = dbSettings?.EnableSubjectPrefix ?? false,
+            SubjectPrefixText = dbSettings?.SubjectPrefixText,
+            EnableBodyWarningBanner = dbSettings?.EnableBodyWarningBanner ?? false,
+            WarningBannerText = dbSettings?.WarningBannerText,
+            RedirectAllToTestRecipient = dbSettings?.RedirectAllToTestRecipient ?? false,
+            TestRecipientEmail = dbSettings?.TestRecipientEmail,
+            ShowOriginalRecipientsInBody = dbSettings?.ShowOriginalRecipientsInBody ?? false,
+            AllowRealRecipientsInNonProduction = dbSettings?.AllowRealRecipientsInNonProduction ?? false
         };
     }
 
@@ -57,7 +67,17 @@ public class SmtpSettingsService : ISmtpSettingsService
             Port = dbSettings?.Port ?? (int.TryParse(_configuration["SmtpSettings:Port"], out var p) ? p : 587),
             SenderEmail = dbSettings?.SenderEmail ?? _configuration["SmtpSettings:SenderEmail"] ?? "",
             SenderName = dbSettings?.SenderName ?? _configuration["SmtpSettings:SenderName"] ?? "",
-            EnableSsl = dbSettings?.EnableSsl ?? (bool.TryParse(_configuration["SmtpSettings:EnableSsl"], out var ssl) ? ssl : true)
+            EnableSsl = dbSettings?.EnableSsl ?? (bool.TryParse(_configuration["SmtpSettings:EnableSsl"], out var ssl) ? ssl : true),
+
+            // Email Environment Identification
+            EnableSubjectPrefix = dbSettings?.EnableSubjectPrefix ?? false,
+            SubjectPrefixText = dbSettings?.SubjectPrefixText,
+            EnableBodyWarningBanner = dbSettings?.EnableBodyWarningBanner ?? false,
+            WarningBannerText = dbSettings?.WarningBannerText,
+            RedirectAllToTestRecipient = dbSettings?.RedirectAllToTestRecipient ?? false,
+            TestRecipientEmail = dbSettings?.TestRecipientEmail,
+            ShowOriginalRecipientsInBody = dbSettings?.ShowOriginalRecipientsInBody ?? false,
+            AllowRealRecipientsInNonProduction = dbSettings?.AllowRealRecipientsInNonProduction ?? false
         };
 
         // Password resolution: DB (encrypted) → appsettings (plaintext)
@@ -115,6 +135,16 @@ public class SmtpSettingsService : ISmtpSettingsService
             _logger.LogInformation("SMTP password updated (encrypted).");
         }
 
+        // Email Environment Identification
+        dbSettings.EnableSubjectPrefix = dto.EnableSubjectPrefix;
+        dbSettings.SubjectPrefixText = dto.SubjectPrefixText;
+        dbSettings.EnableBodyWarningBanner = dto.EnableBodyWarningBanner;
+        dbSettings.WarningBannerText = dto.WarningBannerText;
+        dbSettings.RedirectAllToTestRecipient = dto.RedirectAllToTestRecipient;
+        dbSettings.TestRecipientEmail = dto.TestRecipientEmail;
+        dbSettings.ShowOriginalRecipientsInBody = dto.ShowOriginalRecipientsInBody;
+        dbSettings.AllowRealRecipientsInNonProduction = dto.AllowRealRecipientsInNonProduction;
+
         await _dbContext.SaveChangesAsync(ct);
         _logger.LogInformation("SMTP settings updated. Server: {Server}, Port: {Port}", dto.Server, dto.Port);
     }
@@ -155,11 +185,20 @@ public class SmtpSettingsService : ISmtpSettingsService
 
             // Send a NOOP-equivalent by connecting (SmtpClient connects lazily on first send).
             // We'll send a real test message to the sender's own address.
+            var testSubject = "ALPLA Portal - Teste de Conexão SMTP";
+
+            // In non-production environments, prefix the test email subject
+            var envCode = _configuration["AppEnvironment:Code"]?.Trim().ToUpperInvariant() ?? "PROD";
+            if (envCode != "PROD")
+            {
+                testSubject = $"[{envCode} - SMTP TEST] {testSubject}";
+            }
+
             using var message = new MailMessage(
                 new MailAddress(effective.SenderEmail, effective.SenderName),
                 new MailAddress(effective.SenderEmail))
             {
-                Subject = "ALPLA Portal - Teste de Conexão SMTP",
+                Subject = testSubject,
                 Body = "Este é um e-mail de teste automático gerado pelo Portal Gerencial ALPLA para validar as configurações SMTP.",
                 IsBodyHtml = false
             };

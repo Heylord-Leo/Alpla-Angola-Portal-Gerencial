@@ -717,6 +717,17 @@ function ConnectionConfigureModal({ provider, onClose, onSuccess }: {
     const [senderEmail, setSenderEmail] = useState(provider.senderEmail || '');
     const [senderName, setSenderName] = useState(provider.senderName || '');
 
+    // SMTP Email Environment Identification
+    const [enableSubjectPrefix, setEnableSubjectPrefix] = useState(provider.enableSubjectPrefix ?? false);
+    const [subjectPrefixText, setSubjectPrefixText] = useState(provider.subjectPrefixText || '');
+    const [enableBodyWarningBanner, setEnableBodyWarningBanner] = useState(provider.enableBodyWarningBanner ?? false);
+    const [warningBannerText, setWarningBannerText] = useState(provider.warningBannerText || '');
+    const [redirectAllToTestRecipient, setRedirectAllToTestRecipient] = useState(provider.redirectAllToTestRecipient ?? false);
+    const [testRecipientEmail, setTestRecipientEmail] = useState(provider.testRecipientEmail || '');
+    const [showOriginalRecipientsInBody, setShowOriginalRecipientsInBody] = useState(provider.showOriginalRecipientsInBody ?? false);
+    const [allowRealRecipientsInNonProduction, setAllowRealRecipientsInNonProduction] = useState(provider.allowRealRecipientsInNonProduction ?? false);
+    const [envSectionExpanded, setEnvSectionExpanded] = useState(false);
+
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
 
@@ -747,6 +758,15 @@ function ConnectionConfigureModal({ provider, onClose, onSuccess }: {
                 payload.enableSsl = enableSsl;
                 payload.senderEmail = senderEmail;
                 payload.senderName = senderName;
+                // Email Environment Identification
+                payload.enableSubjectPrefix = enableSubjectPrefix;
+                payload.subjectPrefixText = subjectPrefixText || undefined;
+                payload.enableBodyWarningBanner = enableBodyWarningBanner;
+                payload.warningBannerText = warningBannerText || undefined;
+                payload.redirectAllToTestRecipient = redirectAllToTestRecipient;
+                payload.testRecipientEmail = testRecipientEmail || undefined;
+                payload.showOriginalRecipientsInBody = showOriginalRecipientsInBody;
+                payload.allowRealRecipientsInNonProduction = allowRealRecipientsInNonProduction;
             }
 
             await api.admin.integrationSettings.update(provider.code, payload);
@@ -1016,6 +1036,169 @@ function ConnectionConfigureModal({ provider, onClose, onSuccess }: {
                                     <label style={labelStyle}>Nome Remetente</label>
                                     <input type="text" value={senderName} onChange={e => setSenderName(e.target.value)} placeholder="ALPLA Portal" style={inputStyle} />
                                 </div>
+                            </div>
+                            {/* ── Email Environment Identification ── */}
+                            <div style={{
+                                marginTop: '1.5rem',
+                                borderTop: '2px solid color-mix(in srgb, #FFC107 40%, var(--color-border))',
+                                paddingTop: '1rem'
+                            }}>
+                                <button
+                                    type="button"
+                                    onClick={() => setEnvSectionExpanded(!envSectionExpanded)}
+                                    style={{
+                                        background: 'none', border: 'none', cursor: 'pointer',
+                                        display: 'flex', alignItems: 'center', gap: '0.5rem',
+                                        width: '100%', padding: '0.5rem 0',
+                                        fontSize: '0.875rem', fontWeight: 800,
+                                        textTransform: 'uppercase' as const,
+                                        color: '#856404'
+                                    }}
+                                >
+                                    <span style={{ fontSize: '1.1rem' }}>⚠️</span>
+                                    Identificação de Ambiente de E-mail
+                                    <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                                        {envSectionExpanded ? '▲' : '▼'}
+                                    </span>
+                                </button>
+                                <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                                    Em ambientes não-produção (TEST/DEV), avisos são aplicados automaticamente.
+                                    Estas configurações permitem personalizar o comportamento.
+                                </p>
+
+                                {envSectionExpanded && (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                        {/* Subject Prefix */}
+                                        <div style={{
+                                            padding: '1rem',
+                                            backgroundColor: 'color-mix(in srgb, #FFC107 8%, transparent)',
+                                            borderRadius: 'var(--radius-sm)',
+                                            border: '1px solid color-mix(in srgb, #FFC107 30%, var(--color-border))'
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={enableSubjectPrefix}
+                                                    onChange={e => setEnableSubjectPrefix(e.target.checked)}
+                                                    style={{ width: '16px', height: '16px' }}
+                                                    id="smtp-env-subject-prefix"
+                                                />
+                                                <label htmlFor="smtp-env-subject-prefix" style={{ fontSize: '0.8125rem', fontWeight: 600, cursor: 'pointer' }}>
+                                                    Ativar prefixo personalizado no assunto
+                                                </label>
+                                            </div>
+                                            <input
+                                                type="text"
+                                                value={subjectPrefixText}
+                                                onChange={e => setSubjectPrefixText(e.target.value)}
+                                                placeholder="[TEST - IGNORE]"
+                                                style={{ ...inputStyle, opacity: enableSubjectPrefix ? 1 : 0.5 }}
+                                                disabled={!enableSubjectPrefix}
+                                            />
+                                            <p style={{ margin: '0.25rem 0 0', fontSize: '0.7rem', color: '#856404' }}>
+                                                Deixe vazio para usar o padrão automático: [AMBIENTE - IGNORE]
+                                            </p>
+                                        </div>
+
+                                        {/* Body Warning Banner */}
+                                        <div style={{
+                                            padding: '1rem',
+                                            backgroundColor: 'color-mix(in srgb, #FFC107 8%, transparent)',
+                                            borderRadius: 'var(--radius-sm)',
+                                            border: '1px solid color-mix(in srgb, #FFC107 30%, var(--color-border))'
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={enableBodyWarningBanner}
+                                                    onChange={e => setEnableBodyWarningBanner(e.target.checked)}
+                                                    style={{ width: '16px', height: '16px' }}
+                                                    id="smtp-env-body-banner"
+                                                />
+                                                <label htmlFor="smtp-env-body-banner" style={{ fontSize: '0.8125rem', fontWeight: 600, cursor: 'pointer' }}>
+                                                    Ativar banner de aviso personalizado no corpo
+                                                </label>
+                                            </div>
+                                            <textarea
+                                                value={warningBannerText}
+                                                onChange={e => setWarningBannerText(e.target.value)}
+                                                placeholder="Esta mensagem foi gerada pelo ambiente TEST do ALPLA Portal. Não representa um pedido real e nenhuma ação é necessária."
+                                                style={{ ...inputStyle, minHeight: '60px', fontFamily: 'inherit', opacity: enableBodyWarningBanner ? 1 : 0.5 }}
+                                                disabled={!enableBodyWarningBanner}
+                                            />
+                                            <p style={{ margin: '0.25rem 0 0', fontSize: '0.7rem', color: '#856404' }}>
+                                                Deixe vazio para usar o texto de aviso padrão do sistema.
+                                            </p>
+                                        </div>
+
+                                        {/* Redirect Section */}
+                                        <div style={{
+                                            padding: '1rem',
+                                            backgroundColor: 'color-mix(in srgb, #1565C0 6%, transparent)',
+                                            borderRadius: 'var(--radius-sm)',
+                                            border: '1px solid color-mix(in srgb, #1565C0 25%, var(--color-border))'
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={redirectAllToTestRecipient}
+                                                    onChange={e => setRedirectAllToTestRecipient(e.target.checked)}
+                                                    style={{ width: '16px', height: '16px' }}
+                                                    id="smtp-env-redirect"
+                                                />
+                                                <label htmlFor="smtp-env-redirect" style={{ fontSize: '0.8125rem', fontWeight: 600, cursor: 'pointer' }}>
+                                                    Redirecionar todos os e-mails para destinatário de teste
+                                                </label>
+                                            </div>
+                                            <input
+                                                type="email"
+                                                value={testRecipientEmail}
+                                                onChange={e => setTestRecipientEmail(e.target.value)}
+                                                placeholder="teste@empresa.com"
+                                                style={{ ...inputStyle, marginBottom: '0.75rem', opacity: redirectAllToTestRecipient ? 1 : 0.5 }}
+                                                disabled={!redirectAllToTestRecipient}
+                                            />
+                                            {redirectAllToTestRecipient && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={showOriginalRecipientsInBody}
+                                                        onChange={e => setShowOriginalRecipientsInBody(e.target.checked)}
+                                                        style={{ width: '16px', height: '16px' }}
+                                                        id="smtp-env-show-original"
+                                                    />
+                                                    <label htmlFor="smtp-env-show-original" style={{ fontSize: '0.8125rem', cursor: 'pointer' }}>
+                                                        Mostrar destinatários originais no corpo do e-mail
+                                                    </label>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Safety Override */}
+                                        <div style={{
+                                            padding: '1rem',
+                                            backgroundColor: 'color-mix(in srgb, var(--color-status-red) 6%, transparent)',
+                                            borderRadius: 'var(--radius-sm)',
+                                            border: '1px solid color-mix(in srgb, var(--color-status-red) 25%, var(--color-border))'
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={allowRealRecipientsInNonProduction}
+                                                    onChange={e => setAllowRealRecipientsInNonProduction(e.target.checked)}
+                                                    style={{ width: '16px', height: '16px' }}
+                                                    id="smtp-env-allow-real"
+                                                />
+                                                <label htmlFor="smtp-env-allow-real" style={{ fontSize: '0.8125rem', fontWeight: 600, cursor: 'pointer', color: 'var(--color-status-red)' }}>
+                                                    Permitir envio para destinatários reais em ambiente de teste
+                                                </label>
+                                            </div>
+                                            <p style={{ margin: '0.5rem 0 0 1.5rem', fontSize: '0.7rem', color: 'var(--color-status-red)' }}>
+                                                ⚠️ ATENÇÃO: Ao ativar, os e-mails serão enviados para os destinatários reais mesmo em TEST/DEV.
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </>
                     )}

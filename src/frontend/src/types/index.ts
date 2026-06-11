@@ -869,6 +869,16 @@ export interface IntegrationSettingsDto {
     senderEmail?: string;
     senderName?: string;
 
+    // SMTP Email Environment Identification
+    enableSubjectPrefix?: boolean;
+    subjectPrefixText?: string;
+    enableBodyWarningBanner?: boolean;
+    warningBannerText?: string;
+    redirectAllToTestRecipient?: boolean;
+    testRecipientEmail?: string;
+    showOriginalRecipientsInBody?: boolean;
+    allowRealRecipientsInNonProduction?: boolean;
+
     // Secret presence indicators — NEVER actual secrets
     hasPassword: boolean;
     hasApiKey: boolean;
@@ -953,6 +963,16 @@ export interface UpdateIntegrationSettingsDto {
     enableSsl?: boolean;
     senderEmail?: string;
     senderName?: string;
+
+    // SMTP Email Environment Identification
+    enableSubjectPrefix?: boolean;
+    subjectPrefixText?: string;
+    enableBodyWarningBanner?: boolean;
+    warningBannerText?: string;
+    redirectAllToTestRecipient?: boolean;
+    testRecipientEmail?: string;
+    showOriginalRecipientsInBody?: boolean;
+    allowRealRecipientsInNonProduction?: boolean;
 }
 
 /** POST request DTO for replacing an encrypted secret. */

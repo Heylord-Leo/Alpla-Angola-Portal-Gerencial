@@ -17,27 +17,40 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            // Origin: NOT NULL with default 'MANUAL' — safe for existing rows
-            migrationBuilder.AddColumn<string>(
-                name: "Origin",
-                table: "Suppliers",
-                type: "nvarchar(max)",
-                nullable: false,
-                defaultValue: "MANUAL");
+            // Idempotent: only add each column if it does not already exist.
+            // This handles databases where ConsolidatedBaseline already created
+            // these columns (e.g., Development created via clean install) but
+            // this migration was never registered in __EFMigrationsHistory.
 
-            // SourceCompany: nullable — null for manually created suppliers
-            migrationBuilder.AddColumn<string>(
-                name: "SourceCompany",
-                table: "Suppliers",
-                type: "nvarchar(max)",
-                nullable: true);
+            migrationBuilder.Sql(@"
+IF NOT EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = 'Suppliers' AND COLUMN_NAME = 'Origin'
+)
+BEGIN
+    ALTER TABLE [Suppliers] ADD [Origin] nvarchar(max) NOT NULL DEFAULT N'MANUAL';
+END
+");
 
-            // LastSyncedAtUtc: nullable — null for manually created suppliers
-            migrationBuilder.AddColumn<DateTime>(
-                name: "LastSyncedAtUtc",
-                table: "Suppliers",
-                type: "datetime2",
-                nullable: true);
+            migrationBuilder.Sql(@"
+IF NOT EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = 'Suppliers' AND COLUMN_NAME = 'SourceCompany'
+)
+BEGIN
+    ALTER TABLE [Suppliers] ADD [SourceCompany] nvarchar(max) NULL;
+END
+");
+
+            migrationBuilder.Sql(@"
+IF NOT EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = 'Suppliers' AND COLUMN_NAME = 'LastSyncedAtUtc'
+)
+BEGIN
+    ALTER TABLE [Suppliers] ADD [LastSyncedAtUtc] datetime2 NULL;
+END
+");
         }
 
         /// <inheritdoc />

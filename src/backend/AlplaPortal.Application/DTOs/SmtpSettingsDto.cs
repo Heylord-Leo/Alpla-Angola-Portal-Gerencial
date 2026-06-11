@@ -22,4 +22,14 @@ public class SmtpSettingsDto
     /// Null or empty means "keep existing password".
     /// </summary>
     public string? Password { get; set; }
+
+    // ─── Email Environment Identification ───────────────────────
+    public bool EnableSubjectPrefix { get; set; }
+    public string? SubjectPrefixText { get; set; }
+    public bool EnableBodyWarningBanner { get; set; }
+    public string? WarningBannerText { get; set; }
+    public bool RedirectAllToTestRecipient { get; set; }
+    public string? TestRecipientEmail { get; set; }
+    public bool ShowOriginalRecipientsInBody { get; set; }
+    public bool AllowRealRecipientsInNonProduction { get; set; }
 }

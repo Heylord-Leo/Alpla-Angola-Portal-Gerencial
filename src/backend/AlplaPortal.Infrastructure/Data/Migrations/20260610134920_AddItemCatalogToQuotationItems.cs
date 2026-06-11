@@ -16,24 +16,38 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<int>(
-                name: "ItemCatalogId",
-                table: "QuotationItems",
-                type: "int",
-                nullable: true);
+            // Idempotent: column, index, and FK are only created if they don't already exist.
 
-            migrationBuilder.CreateIndex(
-                name: "IX_QuotationItems_ItemCatalogId",
-                table: "QuotationItems",
-                column: "ItemCatalogId");
+            migrationBuilder.Sql(@"
+IF NOT EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = 'QuotationItems' AND COLUMN_NAME = 'ItemCatalogId'
+)
+BEGIN
+    ALTER TABLE [QuotationItems] ADD [ItemCatalogId] int NULL;
+END
+");
 
-            migrationBuilder.AddForeignKey(
-                name: "FK_QuotationItems_ItemCatalogItems_ItemCatalogId",
-                table: "QuotationItems",
-                column: "ItemCatalogId",
-                principalTable: "ItemCatalogItems",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.SetNull);
+            migrationBuilder.Sql(@"
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_QuotationItems_ItemCatalogId' AND object_id = OBJECT_ID('QuotationItems')
+)
+BEGIN
+    CREATE INDEX [IX_QuotationItems_ItemCatalogId] ON [QuotationItems] ([ItemCatalogId]);
+END
+");
+
+            migrationBuilder.Sql(@"
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = 'FK_QuotationItems_ItemCatalogItems_ItemCatalogId'
+)
+BEGIN
+    ALTER TABLE [QuotationItems] ADD CONSTRAINT [FK_QuotationItems_ItemCatalogItems_ItemCatalogId]
+        FOREIGN KEY ([ItemCatalogId]) REFERENCES [ItemCatalogItems] ([Id]) ON DELETE SET NULL;
+END
+");
         }
 
         /// <inheritdoc />

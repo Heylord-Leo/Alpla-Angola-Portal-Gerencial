@@ -33,6 +33,178 @@ public class EmailService : IEmailService
         _adminLog = adminLog;
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    //  Environment Identification — Centralized Policy
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Reads AppEnvironment:Code from configuration.
+    /// Returns "PROD" if not set (safe default).
+    /// </summary>
+    private string GetEnvironmentCode() =>
+        _config["AppEnvironment:Code"]?.Trim().ToUpperInvariant() ?? "PROD";
+
+    /// <summary>
+    /// Reads AppEnvironment:Name from configuration.
+    /// </summary>
+    private string GetEnvironmentName() =>
+        _config["AppEnvironment:Name"] ?? GetEnvironmentCode();
+
+    /// <summary>
+    /// Returns true when the current environment is NOT production.
+    /// </summary>
+    private bool IsNonProduction() => GetEnvironmentCode() != "PROD";
+
+    /// <summary>
+    /// Centralized environment policy applied to every outgoing email (except SMTP test).
+    /// In non-production environments, this method:
+    ///   1. Prepends a subject prefix (always on in non-prod, customizable via DB).
+    ///   2. Injects a styled warning banner into the email body.
+    ///   3. Redirects to a test recipient if configured.
+    ///   4. Logs original/final recipients, subject, environment, and timestamp.
+    /// In PROD, this method is a no-op unless the admin explicitly enabled overrides.
+    /// </summary>
+    private async Task ApplyEnvironmentPolicy(MailMessage message, SmtpEffectiveSettings smtp, string originalToEmail)
+    {
+        var envCode = GetEnvironmentCode();
+        var envName = GetEnvironmentName();
+        var isNonProd = envCode != "PROD";
+
+        // ── 1. Subject Prefix ──────────────────────────────────────
+        // Non-production: ALWAYS prefix, regardless of EnableSubjectPrefix flag.
+        // The flag only controls whether admin has explicitly customized it.
+        // PROD: Only prefix if admin explicitly enabled it (safeguard).
+        bool shouldPrefix = isNonProd || smtp.EnableSubjectPrefix;
+
+        if (shouldPrefix)
+        {
+            var prefix = !string.IsNullOrWhiteSpace(smtp.SubjectPrefixText)
+                ? smtp.SubjectPrefixText.Trim()
+                : $"[{envCode} - IGNORE]";
+
+            // Avoid double-prefixing
+            if (!message.Subject.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                message.Subject = $"{prefix} {message.Subject}";
+            }
+        }
+
+        // ── 2. Body Warning Banner ─────────────────────────────────
+        // Non-production: ALWAYS inject banner.
+        // PROD: Only if explicitly enabled.
+        bool shouldBanner = isNonProd || smtp.EnableBodyWarningBanner;
+
+        if (shouldBanner)
+        {
+            var warningText = !string.IsNullOrWhiteSpace(smtp.WarningBannerText)
+                ? smtp.WarningBannerText.Trim()
+                : $"Esta mensagem foi gerada pelo ambiente {envName} do ALPLA Portal. " +
+                  "Não representa um pedido real e nenhuma ação é necessária.";
+
+            var bannerHtml = $@"
+                <div style='background-color: #FFF3CD; border: 2px solid #FFC107; border-radius: 8px; padding: 16px; margin-bottom: 20px; font-family: Arial, sans-serif;'>
+                    <strong style='color: #856404; font-size: 14px;'>⚠️ {envName.ToUpperInvariant()} — IGNORE THIS EMAIL</strong>
+                    <p style='color: #856404; font-size: 13px; margin: 8px 0 0 0;'>{warningText}</p>
+                </div>";
+
+            InjectBannerIntoMessage(message, bannerHtml);
+        }
+
+        // ── 3. Recipient Redirection ───────────────────────────────
+        // Only applicable in non-production environments.
+        // In PROD, redirection is never applied (safeguard).
+        if (isNonProd && smtp.RedirectAllToTestRecipient && !string.IsNullOrWhiteSpace(smtp.TestRecipientEmail))
+        {
+            var finalRecipient = smtp.TestRecipientEmail.Trim();
+
+            // Show original recipients in body if configured
+            if (smtp.ShowOriginalRecipientsInBody)
+            {
+                var recipientInfoHtml = $@"
+                    <div style='background-color: #E8F4FD; border: 1px solid #B3D9F2; border-radius: 6px; padding: 12px; margin-bottom: 16px; font-family: Arial, sans-serif;'>
+                        <strong style='color: #1565C0; font-size: 12px;'>📧 Destinatário(s) original(is):</strong>
+                        <p style='color: #1565C0; font-size: 12px; margin: 4px 0 0 0; font-family: monospace;'>{originalToEmail}</p>
+                    </div>";
+
+                InjectBannerIntoMessage(message, recipientInfoHtml);
+            }
+
+            // Replace recipients
+            message.To.Clear();
+            message.To.Add(new MailAddress(finalRecipient));
+
+            _logger.LogWarning(
+                "EMAIL REDIRECT [{Env}]: Original={Original} → Redirected={Final}, Subject={Subject}",
+                envCode, originalToEmail, finalRecipient, message.Subject);
+        }
+
+        // ── 4. Audit Log ───────────────────────────────────────────
+        var finalTo = string.Join(", ", message.To);
+        await _adminLog.WriteAsync(
+            "Info",
+            "EmailService",
+            "EMAIL_ENV_POLICY",
+            $"[{envCode}] E-mail preparado. De: {message.From?.Address} → Para: {finalTo}. Assunto: {message.Subject}",
+            payload: $"Original: {originalToEmail}. Redirecionado: {smtp.RedirectAllToTestRecipient}. Env: {envCode}. Timestamp: {DateTime.UtcNow:O}"
+        );
+    }
+
+    /// <summary>
+    /// Special environment policy for SMTP connection test emails.
+    /// Applies subject prefix but never redirects or injects body banners.
+    /// </summary>
+    private void ApplyTestConnectionEnvironmentPolicy(MailMessage message)
+    {
+        var envCode = GetEnvironmentCode();
+
+        if (envCode != "PROD")
+        {
+            message.Subject = $"[{envCode} - SMTP TEST] {message.Subject}";
+        }
+    }
+
+    /// <summary>
+    /// Injects an HTML banner at the top of the email body.
+    /// Handles both AlternateView (CID inline images) and plain Body approaches.
+    /// </summary>
+    private static void InjectBannerIntoMessage(MailMessage message, string bannerHtml)
+    {
+        if (message.AlternateViews.Count > 0)
+        {
+            // For messages using AlternateViews (CID inline images),
+            // we need to read the existing HTML, prepend the banner, and rebuild.
+            var htmlView = message.AlternateViews[0];
+            using var reader = new StreamReader(htmlView.ContentStream);
+            var existingHtml = reader.ReadToEnd();
+            var newHtml = bannerHtml + existingHtml;
+
+            // Preserve linked resources (logo etc.)
+            var resources = new System.Collections.Generic.List<LinkedResource>();
+            foreach (var res in htmlView.LinkedResources)
+            {
+                resources.Add(res);
+            }
+
+            // Remove old view and create new one
+            message.AlternateViews.Clear();
+            var newView = AlternateView.CreateAlternateViewFromString(newHtml, null, MediaTypeNames.Text.Html);
+            foreach (var res in resources)
+            {
+                newView.LinkedResources.Add(res);
+            }
+            message.AlternateViews.Add(newView);
+        }
+        else if (message.IsBodyHtml)
+        {
+            // Simple HTML body — just prepend
+            message.Body = bannerHtml + message.Body;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Public Email Methods
+    // ═══════════════════════════════════════════════════════════════
+
     public async Task<bool> SendPasswordResetEmailAsync(string toEmail, string resetLink)
     {
         try
@@ -121,6 +293,9 @@ public class EmailService : IEmailService
                 message.Body = body;
                 message.IsBodyHtml = true;
             }
+
+            // ── Apply environment policy before sending ──
+            await ApplyEnvironmentPolicy(message, smtp, toEmail);
 
             await smtpClient.SendMailAsync(message);
             _logger.LogInformation("Password reset email dispatched to {Email}", toEmail);
@@ -217,6 +392,9 @@ public class EmailService : IEmailService
                 message.Body = body;
                 message.IsBodyHtml = true;
             }
+
+            // ── Apply environment policy before sending ──
+            await ApplyEnvironmentPolicy(message, smtp, toEmail);
 
             await smtpClient.SendMailAsync(message);
             _logger.LogInformation("Workflow notification email dispatched to {Email} (Subject: {Subject})", toEmail, subject);
@@ -336,6 +514,9 @@ public class EmailService : IEmailService
                 message.IsBodyHtml = true;
             }
 
+            // ── Apply environment policy before sending ──
+            await ApplyEnvironmentPolicy(message, smtp, toEmail);
+
             await smtpClient.SendMailAsync(message);
             _logger.LogInformation("Email with attachment dispatched to {Email} (Subject: {Subject}, File: {File})", toEmail, subject, attachmentFileName);
 
@@ -362,6 +543,11 @@ public class EmailService : IEmailService
             return false;
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Logo Resolution
+    // ═══════════════════════════════════════════════════════════════
+
     /// <summary>
     /// Resolves the physical path for the ALPLA logo asset using multiple candidate locations.
     /// Priority: 1) Explicit config override  2) Frontend public dir (dev layout)  3) wwwroot (published layout).

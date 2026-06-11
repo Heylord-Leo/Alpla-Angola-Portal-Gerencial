@@ -2,6 +2,72 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.190.1] - 2026-06-11
+
+### Fixed — Idempotent Migrations: Schema/History Desync Safe Handling
+
+**Problem:** Development backend crashed on startup with `Column name 'Origin' in table 'Suppliers' is specified more than once` when EF Core tried to apply `20260610083347_AddSupplierSyncColumns`. The columns already existed physically (created by `ConsolidatedBaseline`) but the migration was not registered in `__EFMigrationsHistory`.
+
+**Root cause:** Three migrations used `migrationBuilder.AddColumn<T>()` which generates unconditional `ALTER TABLE ADD` — no `IF NOT EXISTS` guard. Databases created via ConsolidatedBaseline already had the columns, but the migration history only tracked up to migration #50 (pre-June 2026).
+
+**Fix:** Rewrote all three recent migrations to use idempotent raw SQL with `IF NOT EXISTS` checks:
+
+| Migration | Objects Guarded |
+|---|---|
+| `20260610083347_AddSupplierSyncColumns` | 3 columns (`Origin`, `SourceCompany`, `LastSyncedAtUtc`) |
+| `20260610134920_AddItemCatalogToQuotationItems` | 1 column + 1 index + 1 FK |
+| `20260611114811_AddEmailEnvironmentIdentification` | 8 columns |
+
+All 3 migrations now safely skip existing objects and only create missing ones.
+
+**Impact on TEST and PROD:**
+- **TEST:** `AddSupplierSyncColumns` was already applied (migration #51). `AddItemCatalogToQuotationItems` was applied (migration #52). Only `AddEmailEnvironmentIdentification` is pending — now safe with `IF NOT EXISTS`.
+- **PROD:** Same as TEST. The idempotent pattern ensures no failure even if schema partially exists.
+
+**Files Changed:**
+- `src/backend/.../Migrations/20260610083347_AddSupplierSyncColumns.cs` — Idempotent `IF NOT EXISTS` for 3 columns
+- `src/backend/.../Migrations/20260610134920_AddItemCatalogToQuotationItems.cs` — Idempotent `IF NOT EXISTS` for column, index, FK
+- `src/backend/.../Migrations/20260611114811_AddEmailEnvironmentIdentification.cs` — Idempotent `IF NOT EXISTS` for 8 columns
+- `src/frontend/src/config.ts` — APP_VERSION → "v2.190.1"
+- `docs/CHANGELOG.md` — This entry
+
+## [v2.190.0] - 2026-06-11
+
+### Added — Email Environment Identification
+
+**Feature:** Global email environment warning system to prevent users from confusing TEST/DEV emails with production emails.
+
+**Behavior:**
+- **Non-production (TEST/DEV):** Subject prefix (`[TEST - IGNORE]` / `[DEV - IGNORE]`) and body warning banner are applied **automatically** to every outgoing email, regardless of admin configuration.
+- **PROD:** Email modification is disabled by default. Subject prefix and body banner are only applied if the admin explicitly enables them.
+- **SMTP Test Email:** Gets an environment-prefixed subject (`[TEST - SMTP TEST]`) but no body banner or redirect.
+- **Recipient Redirection:** In non-production, all emails can be redirected to a configured test recipient. Original recipients are optionally shown in the email body.
+- **Safety Override:** An explicit `AllowRealRecipientsInNonProduction` flag must be enabled to bypass redirection.
+- **Audit Logging:** Every email logs original recipient, final recipient, subject, environment code, and timestamp via `AdminLogWriter`.
+
+**Admin UI:** New collapsible "Identificação de Ambiente de E-mail" section in Admin → Integrações → SMTP configuration, with:
+- Subject prefix toggle and custom text
+- Body warning banner toggle and custom text
+- Recipient redirect toggle with test email input
+- Show original recipients toggle
+- Safety override toggle (red warning)
+
+**Migration:** `20260611114811_AddEmailEnvironmentIdentification` — adds 8 columns to `dbo.SmtpSettings`.
+
+**Files Changed:**
+- `src/backend/.../Domain/Entities/SmtpSettings.cs` — 8 new entity properties
+- `src/backend/.../Application/DTOs/SmtpSettingsDto.cs` — 8 new DTO fields
+- `src/backend/.../Application/DTOs/Integration/IntegrationSettingsDtos.cs` — 8 new fields in GET and PUT DTOs
+- `src/backend/.../Application/Interfaces/ISmtpSettingsService.cs` — SmtpEffectiveSettings extended
+- `src/backend/.../Infrastructure/Services/SmtpSettingsService.cs` — Map new fields + env-prefix SMTP test email
+- `src/backend/.../Infrastructure/Services/Integration/IntegrationSettingsService.cs` — Read/write 8 fields for SMTP provider
+- `src/backend/.../Infrastructure/Services/EmailService.cs` — **Rewritten** with centralized `ApplyEnvironmentPolicy`
+- `src/backend/.../Migrations/20260611114811_AddEmailEnvironmentIdentification.cs` — Schema migration
+- `src/frontend/src/types/index.ts` — 8 new fields in TS types
+- `src/frontend/src/pages/Admin/IntegrationSettings.tsx` — New email environment UI section
+- `src/frontend/src/config.ts` — APP_VERSION → "v2.190.0"
+- `docs/CHANGELOG.md` — This entry
+
 ## [v2.189.5] - 2026-06-10
 
 ### Fixed — Quotation Save HTTP 500: Missing `ItemCatalogId` Column on `QuotationItems`

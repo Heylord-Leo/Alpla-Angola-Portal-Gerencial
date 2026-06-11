@@ -99,6 +99,16 @@ public class IntegrationSettingsService : IIntegrationSettingsService
             smtpSettings.EnableSsl = dto.EnableSsl ?? true;
             smtpSettings.UpdatedAtUtc = DateTime.UtcNow;
 
+            // Email Environment Identification
+            smtpSettings.EnableSubjectPrefix = dto.EnableSubjectPrefix ?? false;
+            smtpSettings.SubjectPrefixText = dto.SubjectPrefixText;
+            smtpSettings.EnableBodyWarningBanner = dto.EnableBodyWarningBanner ?? false;
+            smtpSettings.WarningBannerText = dto.WarningBannerText;
+            smtpSettings.RedirectAllToTestRecipient = dto.RedirectAllToTestRecipient ?? false;
+            smtpSettings.TestRecipientEmail = dto.TestRecipientEmail;
+            smtpSettings.ShowOriginalRecipientsInBody = dto.ShowOriginalRecipientsInBody ?? false;
+            smtpSettings.AllowRealRecipientsInNonProduction = dto.AllowRealRecipientsInNonProduction ?? false;
+
             await _db.SaveChangesAsync(ct);
 
             _logger.LogInformation("SMTP integration settings updated by user {UserId}", userId);
@@ -349,6 +359,16 @@ public class IntegrationSettingsService : IIntegrationSettingsService
                 dto.HasPassword = !string.IsNullOrEmpty(smtp.EncryptedPassword);
                 dto.UpdatedAt = smtp.UpdatedAtUtc;
                 dto.IsReadOnly = false;
+
+                // Email Environment Identification
+                dto.EnableSubjectPrefix = smtp.EnableSubjectPrefix;
+                dto.SubjectPrefixText = smtp.SubjectPrefixText;
+                dto.EnableBodyWarningBanner = smtp.EnableBodyWarningBanner;
+                dto.WarningBannerText = smtp.WarningBannerText;
+                dto.RedirectAllToTestRecipient = smtp.RedirectAllToTestRecipient;
+                dto.TestRecipientEmail = smtp.TestRecipientEmail;
+                dto.ShowOriginalRecipientsInBody = smtp.ShowOriginalRecipientsInBody;
+                dto.AllowRealRecipientsInNonProduction = smtp.AllowRealRecipientsInNonProduction;
             }
         }
 

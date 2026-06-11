@@ -32,6 +32,16 @@ public class IntegrationSettingsDto
     public string? SenderEmail { get; set; }
     public string? SenderName { get; set; }
 
+    // SMTP Email Environment Identification
+    public bool? EnableSubjectPrefix { get; set; }
+    public string? SubjectPrefixText { get; set; }
+    public bool? EnableBodyWarningBanner { get; set; }
+    public string? WarningBannerText { get; set; }
+    public bool? RedirectAllToTestRecipient { get; set; }
+    public string? TestRecipientEmail { get; set; }
+    public bool? ShowOriginalRecipientsInBody { get; set; }
+    public bool? AllowRealRecipientsInNonProduction { get; set; }
+
     // Secret presence indicators — NEVER the actual secrets
     public bool HasPassword { get; set; }
     public bool HasApiKey { get; set; }
@@ -102,6 +112,16 @@ public class UpdateIntegrationSettingsDto
     public bool? EnableSsl { get; set; }
     public string? SenderEmail { get; set; }
     public string? SenderName { get; set; }
+
+    // SMTP Email Environment Identification
+    public bool? EnableSubjectPrefix { get; set; }
+    public string? SubjectPrefixText { get; set; }
+    public bool? EnableBodyWarningBanner { get; set; }
+    public string? WarningBannerText { get; set; }
+    public bool? RedirectAllToTestRecipient { get; set; }
+    public string? TestRecipientEmail { get; set; }
+    public bool? ShowOriginalRecipientsInBody { get; set; }
+    public bool? AllowRealRecipientsInNonProduction { get; set; }
 }
 
 /// <summary>
