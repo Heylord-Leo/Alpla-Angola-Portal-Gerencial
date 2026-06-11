@@ -2,7 +2,24 @@
 
 ## Current Version
 
-v2.189.5
+v2.190.1
+
+## [v2.190.1] - 2026-06-11
+
+### Fixed — Idempotent Migrations: Schema/History Desync Safe Handling
+
+- Rewrote 3 recent migrations to use `IF NOT EXISTS` raw SQL guards
+- Prevents `Column already exists` errors when migration history is out of sync with physical schema
+- Safe for all environments: Development, TEST, PROD
+
+## [v2.190.0] - 2026-06-11
+
+### Added — Email Environment Identification
+
+- Global email environment warning system (subject prefix, body banner, recipient redirect)
+- Auto-applied in TEST/DEV environments; admin-configurable overrides
+- New "Identificação de Ambiente de E-mail" section in Admin → Integrações → SMTP
+- Migration `20260611114811_AddEmailEnvironmentIdentification` — 8 new columns on `SmtpSettings`
 
 ## [v2.189.5] - 2026-06-10
 
