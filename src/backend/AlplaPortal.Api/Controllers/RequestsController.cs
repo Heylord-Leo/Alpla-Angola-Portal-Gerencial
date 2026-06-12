@@ -1512,6 +1512,65 @@ public class RequestsController : BaseController
                 Details = ex.InnerException?.Message ?? ex.Message 
             });
         }
+
+        // 5.1 Workflow Notification Emission for Quotation (fire-and-forget, non-blocking)
+        // Quotation requests skip DRAFT and are created directly in WAITING_QUOTATION,
+        // so they never pass through SubmitRequest → ApplyStatusChangeAndSyncItemsAsync.
+        // We must emit notifications here to replicate the dual-event pattern.
+        if (requestTypeEntity.Code == "QUOTATION")
+        {
+            try
+            {
+                var actor = await _context.Users.FindAsync(actorId);
+                var baseEvent = new WorkflowEvent
+                {
+                    EventCode = WorkflowEventCodes.QuotationAwaitingBuyer,
+                    RequestId = request.Id,
+                    RequestNumber = request.RequestNumber ?? "S/N",
+                    RequestTitle = request.Title ?? "",
+                    TargetStatusCode = initialStatusCode,
+                    ActionTaken = actionTaken,
+                    ActorUserId = actorId,
+                    ActorName = actor?.FullName ?? "Sistema",
+                    Comment = historyComment,
+                    CorrelationId = history.Id,
+                    RequesterId = request.RequesterId,
+                    BuyerId = request.BuyerId,
+                    AreaApproverId = request.AreaApproverId,
+                    FinalApproverId = request.FinalApproverId,
+                    DepartmentId = request.DepartmentId,
+                    PlantId = request.PlantId
+                };
+
+                // Primary: notify plant-scoped buyers
+                await _orchestrator.EmitAsync(baseEvent);
+
+                // Secondary: submission confirmation to requester
+                var confirmationEvent = new WorkflowEvent
+                {
+                    EventCode = WorkflowEventCodes.SubmissionConfirmed,
+                    RequestId = request.Id,
+                    RequestNumber = request.RequestNumber ?? "S/N",
+                    RequestTitle = request.Title ?? "",
+                    TargetStatusCode = initialStatusCode,
+                    ActionTaken = actionTaken,
+                    ActorUserId = actorId,
+                    ActorName = actor?.FullName ?? "Sistema",
+                    Comment = historyComment,
+                    CorrelationId = Guid.NewGuid(),
+                    RequesterId = request.RequesterId,
+                    BuyerId = request.BuyerId,
+                    AreaApproverId = request.AreaApproverId,
+                    FinalApproverId = request.FinalApproverId,
+                    PlantId = request.PlantId
+                };
+                await _orchestrator.EmitAsync(confirmationEvent);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Non-critical: workflow notification emission failed for Quotation Request {RequestId} during creation", request.Id);
+            }
+        }
         // 6. Project response
         var responseDto = new CreateRequestDraftResponseDto
         {

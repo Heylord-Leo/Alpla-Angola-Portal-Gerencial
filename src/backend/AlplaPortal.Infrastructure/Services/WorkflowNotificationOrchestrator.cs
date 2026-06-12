@@ -496,6 +496,19 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         var amount = req?.EstimatedTotalAmount ?? 0m;
         var needByDate = req?.NeedByDateUtc?.ToString("dd/MM/yyyy") ?? "Não definida";
 
+        var portalBaseUrl = _config["AppConfig:PortalBaseUrl"] ?? "";
+        var requestDetailUrl = !string.IsNullOrWhiteSpace(portalBaseUrl)
+            ? $"{portalBaseUrl.TrimEnd('/')}/requests/{evt.RequestId}?mode=view"
+            : "";
+        var ctaButtonHtml = !string.IsNullOrWhiteSpace(requestDetailUrl)
+            ? $@"<div style='text-align: left; margin: 24px 0;'>
+                    <a href='{requestDetailUrl}' 
+                       style='display:inline-block; background-color:#002D72; color:#ffffff; padding:12px 24px; text-decoration:none; border-radius:4px; font-weight:bold;'>
+                       Abrir Pedido no Portal &rarr;
+                    </a>
+                 </div>"
+            : "";
+
         var htmlBody = $@"
 <p>Um novo pedido de cotação <b>{reqRef}</b> está aguardando processamento na sua fila.</p>
 <div style='background-color:#f0f9ff; border:1px solid #bae6fd; padding:15px; border-radius:6px; margin:20px 0;'>
@@ -509,6 +522,7 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         <li><b>Data de Necessidade:</b> {needByDate}</li>
     </ul>
 </div>
+{ctaButtonHtml}
 <p>Por favor, revise o pedido e assuma a responsabilidade para dar início ao processo de cotação.</p>";
 
         var subjectOverride = $"[AÇÃO NECESSÁRIA] Novo Pedido de Cotação aguardando — {reqRef}";
@@ -599,8 +613,16 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 var currencyCode = req?.Currency?.Code ?? "AOA";
                 var totalAmt = req?.EstimatedTotalAmount ?? 0m;
 
+                var titleDisplay = !string.IsNullOrWhiteSpace(req?.Title) ? System.Net.WebUtility.HtmlEncode(req.Title) : "Sem título";
+                var descDisplay = !string.IsNullOrWhiteSpace(req?.Description) ? System.Net.WebUtility.HtmlEncode(req.Description) : "Não informado";
+
                 var bodyHtml = $"Recebemos o seu pedido <b>{reqRef}</b>{reqContext} com sucesso. O pedido foi enviado para a fila de aprovação.<br/><br/>" +
-                               $"<b>Valor Total Estimado:</b> {totalAmt:N2} {currencyCode}<br/><br/>" +
+                               $"<div style='background-color:#f0f9ff; border:1px solid #bae6fd; padding:15px; border-radius:6px; margin:16px 0;'>" +
+                               $"<h3 style='color:#0369a1; margin-top:0;'>Dados do Pedido</h3>" +
+                               $"<p style='margin:6px 0;'><b>Título:</b> {titleDisplay}</p>" +
+                               $"<p style='margin:6px 0;'><b>Descrição:</b> {descDisplay}</p>" +
+                               $"<p style='margin:6px 0;'><b>Valor Total Estimado:</b> {totalAmt:N2} {currencyCode}</p>" +
+                               $"</div>" +
                                $"<b>Resumo dos Itens:</b><br/>" + itemsTable;
 
                 return new EventConfig

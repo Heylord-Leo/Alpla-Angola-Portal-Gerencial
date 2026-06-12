@@ -2,7 +2,24 @@
 
 ## Current Version
 
-v2.191.0
+v2.191.1
+
+## [v2.191.1] - 2026-06-12
+
+### Fixed — Quotation Submission Notification Emission
+
+**Problem:** The `SUBMISSION_CONFIRMED` email was not being sent for Quotation requests because Quotation requests skip DRAFT and are created directly in `WAITING_QUOTATION`, bypassing the notification emission path.
+
+**Fix:** Added notification emission directly in the `CreateRequestDraft` endpoint for Quotation requests.
+
+### Improved — Submission Confirmation Email Content
+
+- Email body now includes Request Title and Description with fallbacks.
+- Applies to all request types (shared template).
+
+### Improved — Buyer Queue Email CTA Button
+
+- Added explicit "Abrir Pedido no Portal →" CTA button using `AppConfig:PortalBaseUrl`.
 
 ## [v2.191.0] - 2026-06-12
 

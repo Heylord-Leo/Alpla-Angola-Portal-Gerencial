@@ -2,6 +2,26 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.191.1] - 2026-06-12
+
+### Fixed — Quotation Submission Notification Emission
+
+**Problem:** The `SUBMISSION_CONFIRMED` email was not being sent for Quotation requests. The v2.191.0 mapping in `ResolveEventCode("SUBMIT", "WAITING_QUOTATION")` was correct but unreachable because Quotation requests are created directly in `WAITING_QUOTATION` status (skipping DRAFT), so they never pass through `SubmitRequest` → `ApplyStatusChangeAndSyncItemsAsync` where notifications are emitted.
+
+**Fix:** Added notification emission directly in the `CreateRequestDraft` endpoint for Quotation requests, replicating the dual-event pattern (primary `QUOTATION_AWAITING_BUYER` + secondary `SUBMISSION_CONFIRMED`).
+
+### Improved — Submission Confirmation Email Content
+
+- The `SUBMISSION_CONFIRMED` email body now includes **Request Title** and **Description** in a styled "Dados do Pedido" details card.
+- Fallbacks applied: `Sem título` for empty title, `Não informado` for empty description.
+- Applies to all request types (Payment and Quotation) since the template is shared.
+
+### Improved — Buyer Queue Email CTA Button
+
+- The `QUOTATION_AWAITING_BUYER` email now includes an explicit **"Abrir Pedido no Portal →"** CTA button using the environment-aware `AppConfig:PortalBaseUrl`.
+- Button links directly to the request detail page (`/requests/{id}?mode=view`).
+- Uses the ALPLA blue (#002D72) visual style consistent with existing portal email buttons.
+
 ## [v2.191.0] - 2026-06-12
 
 ### Added — Quotation Email Notifications
