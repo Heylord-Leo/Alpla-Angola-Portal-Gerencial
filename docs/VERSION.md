@@ -2,7 +2,16 @@
 
 ## Current Version
 
-v2.191.1
+v2.192.0
+
+## [v2.192.0] - 2026-06-12
+
+### Added — IT Equipment Module Improvements (Phase 1, 2, and 3)
+
+- **Phase 1: IT Equipment Lifecycle Improvements**: Added dynamic equipment types with prefixes, implemented reversible retirement flow, and added a detailed audit timeline for equipment items.
+- **Phase 2: Delivery Terms (Termos de Entrega)**: Created a new entity `ITEquipmentDeliveryTerm` to group multiple IT equipment assignments for a single employee into a single, signable PDF document.
+- **Phase 3: Master Data and Catalogs**: Replaced free-text equipment fields (Manufacturer, Model, Processor, Memory) with admin-managed catalogs. Connected Delivery Terms to Master Data for Company, Plant, and Department, with cascading UI dropdowns. Implemented denormalized save strategy for backward compatibility.
+- **Guided Tours**: Added a new guided tour for the IT Equipment module.
 
 ## [v2.191.1] - 2026-06-12
 

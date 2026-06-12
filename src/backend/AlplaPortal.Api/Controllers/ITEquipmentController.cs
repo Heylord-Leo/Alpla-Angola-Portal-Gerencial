@@ -19,12 +19,14 @@ public class ITEquipmentController : BaseController
     private readonly IEmailService _emailService;
     private readonly ITEquipmentAgreementService _agreementService;
     private readonly ITEquipmentPdfService _pdfService;
+    private readonly Microsoft.Extensions.Configuration.IConfiguration _configuration;
 
-    public ITEquipmentController(ApplicationDbContext context, IEmailService emailService, ITEquipmentAgreementService agreementService, ITEquipmentPdfService pdfService) : base(context)
+    public ITEquipmentController(ApplicationDbContext context, IEmailService emailService, ITEquipmentAgreementService agreementService, ITEquipmentPdfService pdfService, Microsoft.Extensions.Configuration.IConfiguration configuration) : base(context)
     {
         _emailService = emailService;
         _agreementService = agreementService;
         _pdfService = pdfService;
+        _configuration = configuration;
     }
 
     // ─── Helper: Check IT role ───
@@ -313,6 +315,9 @@ public class ITEquipmentController : BaseController
 
         await _context.SaveChangesAsync();
 
+        await NotifyITAsync(equipment.AssetTag, "Novo Equipamento Registado",
+            $"O equipamento <strong>{equipment.AssetTag}</strong> ({equipment.EquipmentType}) foi registado no inventário.");
+
         return Ok(new { id = equipment.Id, assetTag = equipment.AssetTag });
     }
 
@@ -340,26 +345,35 @@ public class ITEquipmentController : BaseController
         }
 
         var userId = CurrentUserId;
-        var changes = new List<string>();
+        // Track field-level old → new diffs for enhanced audit
+        var diffs = new List<string>();
+        var criticalChange = false;
 
-        if (request.Hostname != null && request.Hostname != eq.Hostname) { eq.Hostname = request.Hostname.Trim(); changes.Add("hostname"); }
-        if (request.Plant != null && request.Plant != eq.Plant) { eq.Plant = request.Plant.Trim(); changes.Add("planta"); }
-        if (request.EquipmentType != null && request.EquipmentType != eq.EquipmentType) { eq.EquipmentType = request.EquipmentType; changes.Add("tipo"); }
-        if (request.Manufacturer != null && request.Manufacturer != eq.Manufacturer) { eq.Manufacturer = request.Manufacturer.Trim(); changes.Add("fabricante"); }
-        if (request.Model != null && request.Model != eq.Model) { eq.Model = request.Model.Trim(); changes.Add("modelo"); }
-        if (request.SerialNumber != null) { eq.SerialNumber = request.SerialNumber.Trim(); changes.Add("serial"); }
-        if (request.MacAddress != null && request.MacAddress != eq.MacAddress) { eq.MacAddress = request.MacAddress.Trim(); changes.Add("mac"); }
-        if (request.Processor != null && request.Processor != eq.Processor) { eq.Processor = request.Processor.Trim(); changes.Add("processador"); }
-        if (request.MemoryRam != null && request.MemoryRam != eq.MemoryRam) { eq.MemoryRam = request.MemoryRam.Trim(); changes.Add("ram"); }
-        if (request.Color != null && request.Color != eq.Color) { eq.Color = request.Color.Trim(); changes.Add("cor"); }
-        if (request.BiometricMfaEnabled.HasValue && request.BiometricMfaEnabled != eq.BiometricMfaEnabled) { eq.BiometricMfaEnabled = request.BiometricMfaEnabled.Value; changes.Add("biometria"); }
-        if (request.IdCard != null && request.IdCard != eq.IdCard) { eq.IdCard = request.IdCard.Trim(); changes.Add("id card"); }
-        if (request.Notes != null && request.Notes != eq.Notes) { eq.Notes = request.Notes.Trim(); changes.Add("notas"); }
+        void TrackDiff(string label, string? oldVal, string? newVal, bool critical = false) {
+            if (newVal != null && newVal != oldVal) {
+                diffs.Add($"{label}: \"{oldVal ?? "—"}\" → \"{newVal}\"");
+                if (critical) criticalChange = true;
+            }
+        }
+
+        if (request.Hostname != null && request.Hostname != eq.Hostname) { TrackDiff("Hostname", eq.Hostname, request.Hostname.Trim()); eq.Hostname = request.Hostname.Trim(); }
+        if (request.Plant != null && request.Plant != eq.Plant) { TrackDiff("Planta", eq.Plant, request.Plant.Trim(), true); eq.Plant = request.Plant.Trim(); }
+        if (request.EquipmentType != null && request.EquipmentType != eq.EquipmentType) { TrackDiff("Tipo", eq.EquipmentType, request.EquipmentType, true); eq.EquipmentType = request.EquipmentType; }
+        if (request.Manufacturer != null && request.Manufacturer != eq.Manufacturer) { TrackDiff("Fabricante", eq.Manufacturer, request.Manufacturer.Trim()); eq.Manufacturer = request.Manufacturer.Trim(); }
+        if (request.Model != null && request.Model != eq.Model) { TrackDiff("Modelo", eq.Model, request.Model.Trim()); eq.Model = request.Model.Trim(); }
+        if (request.SerialNumber != null && request.SerialNumber.Trim() != eq.SerialNumber) { TrackDiff("Serial", eq.SerialNumber, request.SerialNumber.Trim(), true); eq.SerialNumber = request.SerialNumber.Trim(); }
+        if (request.MacAddress != null && request.MacAddress != eq.MacAddress) { TrackDiff("MAC", eq.MacAddress, request.MacAddress.Trim()); eq.MacAddress = request.MacAddress.Trim(); }
+        if (request.Processor != null && request.Processor != eq.Processor) { TrackDiff("Processador", eq.Processor, request.Processor.Trim()); eq.Processor = request.Processor.Trim(); }
+        if (request.MemoryRam != null && request.MemoryRam != eq.MemoryRam) { TrackDiff("RAM", eq.MemoryRam, request.MemoryRam.Trim()); eq.MemoryRam = request.MemoryRam.Trim(); }
+        if (request.Color != null && request.Color != eq.Color) { TrackDiff("Cor", eq.Color, request.Color.Trim()); eq.Color = request.Color.Trim(); }
+        if (request.BiometricMfaEnabled.HasValue && request.BiometricMfaEnabled != eq.BiometricMfaEnabled) { TrackDiff("Biometria", eq.BiometricMfaEnabled.ToString(), request.BiometricMfaEnabled.Value.ToString()); eq.BiometricMfaEnabled = request.BiometricMfaEnabled.Value; }
+        if (request.IdCard != null && request.IdCard != eq.IdCard) { TrackDiff("ID Card", eq.IdCard, request.IdCard.Trim()); eq.IdCard = request.IdCard.Trim(); }
+        if (request.Notes != null && request.Notes != eq.Notes) { eq.Notes = request.Notes.Trim(); diffs.Add("Notas atualizadas"); }
 
         eq.UpdatedAt = DateTime.UtcNow;
         eq.UpdatedByUserId = userId;
 
-        if (changes.Any())
+        if (diffs.Any())
         {
             _context.ITEquipmentMovementLogs.Add(new ITEquipmentMovementLog
             {
@@ -367,12 +381,20 @@ public class ITEquipmentController : BaseController
                 MovementType = ITEquipmentConstants.MovementType.Updated,
                 PreviousStatus = eq.StatusCode,
                 NewStatus = eq.StatusCode,
-                Notes = $"Campos atualizados: {string.Join(", ", changes)}",
+                Notes = string.Join("\n", diffs),
                 CreatedByUserId = userId
             });
         }
 
         await _context.SaveChangesAsync();
+
+        // Send IT notification only for critical field changes
+        if (criticalChange)
+        {
+            await NotifyITAsync(eq.AssetTag, "Atualização de Equipamento",
+                $"O equipamento <strong>{eq.AssetTag}</strong> teve campos críticos alterados:<br/>{string.Join("<br/>", diffs)}");
+        }
+
         return Ok(new { message = "Equipamento atualizado com sucesso." });
     }
 
@@ -598,6 +620,10 @@ public class ITEquipmentController : BaseController
 
             await _context.SaveChangesAsync();
         }
+
+        // IT notification for assignment
+        await NotifyITAsync(eq.AssetTag, "Equipamento Atribuído",
+            $"O equipamento <strong>{eq.AssetTag}</strong> ({eq.EquipmentType}) foi atribuído a <strong>{assignment.AssignedToName}</strong>.<br/>Departamento: {assignment.AssignedToDepartment ?? "—"}<br/>Planta: {assignment.AssignedToPlant ?? "—"}");
 
         return Ok(new
         {
@@ -844,6 +870,10 @@ public class ITEquipmentController : BaseController
 
             await _context.SaveChangesAsync();
         }
+
+        // IT notification for return
+        await NotifyITAsync(eq.AssetTag, "Equipamento Devolvido",
+            $"O equipamento <strong>{eq.AssetTag}</strong> ({eq.EquipmentType}) foi devolvido por <strong>{returningUserName}</strong>.<br/>Condição: {request.Condition ?? "GOOD"}<br/>Novo status: {ITEquipmentConstants.EquipmentStatus.DisplayName(newStatus)}");
 
         return Ok(new
         {
@@ -1131,6 +1161,10 @@ public class ITEquipmentController : BaseController
 
         await _context.SaveChangesAsync();
 
+        // IT notification for user change
+        await NotifyITAsync(eq.AssetTag, "Troca de Utilizador",
+            $"O equipamento <strong>{eq.AssetTag}</strong> ({eq.EquipmentType}) foi transferido de <strong>{prevUserName}</strong> para <strong>{newAssignment.AssignedToName}</strong>.<br/>Departamento: {newAssignment.AssignedToDepartment ?? "—"}<br/>Planta: {newAssignment.AssignedToPlant ?? "—"}");
+
         return Ok(new
         {
             success = true,
@@ -1207,6 +1241,8 @@ public class ITEquipmentController : BaseController
         });
 
         await _context.SaveChangesAsync();
+        await NotifyITAsync(eq.AssetTag, "Equipamento Enviado para Conserto",
+            $"O equipamento <strong>{eq.AssetTag}</strong> ({eq.EquipmentType}) foi enviado para conserto.<br/>Motivo: {request.Reason?.Trim() ?? "—"}<br/>Vendor: {request.RepairVendor?.Trim() ?? "—"}");
         return Ok(new { message = "Equipamento enviado para conserto." });
     }
 
@@ -1245,6 +1281,8 @@ public class ITEquipmentController : BaseController
         });
 
         await _context.SaveChangesAsync();
+        await NotifyITAsync(eq.AssetTag, "Equipamento Retornou do Conserto",
+            $"O equipamento <strong>{eq.AssetTag}</strong> ({eq.EquipmentType}) retornou do conserto.<br/>Resultado: {request.Result ?? "—"}");
         return Ok(new { message = "Equipamento retornou do conserto.", newStatus });
     }
 
@@ -1286,6 +1324,8 @@ public class ITEquipmentController : BaseController
         });
 
         await _context.SaveChangesAsync();
+        await NotifyITAsync(eq.AssetTag, "Equipamento Marcado como Perdido",
+            $"O equipamento <strong>{eq.AssetTag}</strong> ({eq.EquipmentType}) foi marcado como <strong>PERDIDO</strong>.<br/>Responsável: {request.ResponsiblePerson?.Trim() ?? "—"}");
         return Ok(new { message = "Equipamento marcado como perdido." });
     }
 
@@ -1319,6 +1359,11 @@ public class ITEquipmentController : BaseController
         });
 
         await _context.SaveChangesAsync();
+
+        // IT notification for reservation
+        await NotifyITAsync(eq.AssetTag, "Equipamento Reservado",
+            $"O equipamento <strong>{eq.AssetTag}</strong> ({eq.EquipmentType}) foi reservado.<br/>Para: {request.ReservedFor?.Trim() ?? "—"}<br/>Motivo: {request.Reason?.Trim() ?? "—"}");
+
         return Ok(new { message = "Equipamento reservado com sucesso." });
     }
 
@@ -1361,7 +1406,462 @@ public class ITEquipmentController : BaseController
         });
 
         await _context.SaveChangesAsync();
+        await NotifyITAsync(eq.AssetTag, "Equipamento Baixado",
+            $"O equipamento <strong>{eq.AssetTag}</strong> ({eq.EquipmentType}) foi baixado/retirado do inventário ativo.");
         return Ok(new { message = "Equipamento baixado com sucesso." });
+    }
+
+    // ─── POST /api/it/equipment/{id}/reactivate ───
+    [HttpPost("{id}/reactivate")]
+    public async Task<IActionResult> Reactivate(Guid id, [FromBody] ReactivateRequest request)
+    {
+        if (!HasITAccess()) return Forbid();
+
+        var eq = await _context.ITEquipments.FirstOrDefaultAsync(e => e.Id == id);
+        if (eq == null) return NotFound("Equipamento não encontrado.");
+
+        if (eq.StatusCode != ITEquipmentConstants.EquipmentStatus.Retired)
+            return BadRequest(new { detail = $"Apenas equipamentos com status 'Baixado' podem ser reativados. Status atual: '{ITEquipmentConstants.EquipmentStatus.DisplayName(eq.StatusCode)}'." });
+
+        var userId = CurrentUserId;
+        var previousStatus = eq.StatusCode;
+        var newStatus = string.IsNullOrWhiteSpace(request.NewStatus) || request.NewStatus == ITEquipmentConstants.EquipmentStatus.Retired
+            ? ITEquipmentConstants.EquipmentStatus.Available
+            : request.NewStatus;
+
+        // Validate the target status is valid
+        if (!ITEquipmentConstants.EquipmentStatus.All.Contains(newStatus) || newStatus == ITEquipmentConstants.EquipmentStatus.Retired)
+            return BadRequest(new { detail = $"Status de destino inválido: '{newStatus}'." });
+
+        eq.StatusCode = newStatus;
+        eq.IsActive = true;
+        eq.UpdatedAt = DateTime.UtcNow;
+        eq.UpdatedByUserId = userId;
+
+        _context.ITEquipmentMovementLogs.Add(new ITEquipmentMovementLog
+        {
+            EquipmentId = id,
+            MovementType = ITEquipmentConstants.MovementType.Reactivated,
+            PreviousStatus = previousStatus,
+            NewStatus = newStatus,
+            Notes = $"Equipamento reativado. Motivo: {request.Reason?.Trim() ?? "—"}\n{request.Notes?.Trim() ?? ""}".Trim(),
+            CreatedByUserId = userId
+        });
+
+        await _context.SaveChangesAsync();
+        await NotifyITAsync(eq.AssetTag, "Reativação de Equipamento",
+            $"O equipamento <strong>{eq.AssetTag}</strong> ({eq.EquipmentType}) foi reativado de <strong>Baixado</strong> para <strong>{ITEquipmentConstants.EquipmentStatus.DisplayName(newStatus)}</strong>.");
+
+        return Ok(new { message = "Equipamento reativado com sucesso.", newStatus });
+    }
+
+    // ─── Equipment Type CRUD ───
+
+    // GET /api/it/equipment/types
+    [HttpGet("types")]
+    public async Task<IActionResult> ListEquipmentTypes([FromQuery] bool? activeOnly)
+    {
+        if (!HasITAccess()) return Forbid();
+
+        var query = _context.ITEquipmentTypes.AsNoTracking().AsQueryable();
+        if (activeOnly == true)
+            query = query.Where(t => t.IsActive);
+
+        var types = await query.OrderBy(t => t.SortOrder).ThenBy(t => t.DisplayName).ToListAsync();
+        return Ok(types.Select(t => new { t.Id, t.Code, t.DisplayName, t.IsActive, t.SortOrder }));
+    }
+
+    // POST /api/it/equipment/types
+    [HttpPost("types")]
+    public async Task<IActionResult> CreateEquipmentType([FromBody] EquipmentTypeRequest request)
+    {
+        if (!HasITAccess()) return Forbid();
+
+        if (string.IsNullOrWhiteSpace(request.Code))
+            return BadRequest(new { detail = "Código do tipo é obrigatório." });
+        if (string.IsNullOrWhiteSpace(request.DisplayName))
+            return BadRequest(new { detail = "Nome de exibição é obrigatório." });
+
+        var code = request.Code.Trim().ToUpperInvariant().Replace(" ", "_");
+        var exists = await _context.ITEquipmentTypes.AnyAsync(t => t.Code == code);
+        if (exists)
+            return BadRequest(new { detail = $"Já existe um tipo com o código '{code}'." });
+
+        var maxSort = await _context.ITEquipmentTypes.MaxAsync(t => (int?)t.SortOrder) ?? 0;
+        var type = new ITEquipmentType
+        {
+            Code = code,
+            DisplayName = request.DisplayName.Trim(),
+            SortOrder = request.SortOrder ?? maxSort + 1,
+            IsActive = true
+        };
+
+        _context.ITEquipmentTypes.Add(type);
+        await _context.SaveChangesAsync();
+        return Ok(new { type.Id, type.Code, type.DisplayName, type.IsActive, type.SortOrder });
+    }
+
+    // PUT /api/it/equipment/types/{id}
+    [HttpPut("types/{id}")]
+    public async Task<IActionResult> UpdateEquipmentType(Guid id, [FromBody] EquipmentTypeRequest request)
+    {
+        if (!HasITAccess()) return Forbid();
+
+        var type = await _context.ITEquipmentTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (type == null) return NotFound("Tipo de equipamento não encontrado.");
+
+        if (!string.IsNullOrWhiteSpace(request.DisplayName))
+            type.DisplayName = request.DisplayName.Trim();
+        if (request.SortOrder.HasValue)
+            type.SortOrder = request.SortOrder.Value;
+        if (request.IsActive.HasValue)
+            type.IsActive = request.IsActive.Value;
+
+        type.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return Ok(new { type.Id, type.Code, type.DisplayName, type.IsActive, type.SortOrder });
+    }
+
+    // POST /api/it/equipment/types/{id}/toggle
+    [HttpPost("types/{id}/toggle")]
+    public async Task<IActionResult> ToggleEquipmentType(Guid id)
+    {
+        if (!HasITAccess()) return Forbid();
+
+        var type = await _context.ITEquipmentTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (type == null) return NotFound("Tipo de equipamento não encontrado.");
+
+        type.IsActive = !type.IsActive;
+        type.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return Ok(new { type.Id, type.Code, type.DisplayName, type.IsActive, type.SortOrder });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  MANUFACTURER CRUD
+    // ═══════════════════════════════════════════════════════════════
+
+    // GET /api/it/equipment/manufacturers
+    [HttpGet("manufacturers")]
+    public async Task<IActionResult> ListManufacturers([FromQuery] bool? activeOnly)
+    {
+        if (!HasITAccess()) return Forbid();
+        var query = _context.ITEquipmentManufacturers.AsNoTracking().AsQueryable();
+        if (activeOnly == true) query = query.Where(m => m.IsActive);
+        var items = await query.OrderBy(m => m.SortOrder).ThenBy(m => m.Name).ToListAsync();
+        return Ok(items.Select(m => new { m.Id, m.Name, m.IsActive, m.SortOrder }));
+    }
+
+    // POST /api/it/equipment/manufacturers
+    [HttpPost("manufacturers")]
+    public async Task<IActionResult> CreateManufacturer([FromBody] CatalogItemRequest request)
+    {
+        if (!HasITAccess()) return Forbid();
+        if (string.IsNullOrWhiteSpace(request.Name))
+            return BadRequest(new { detail = "Nome do fabricante é obrigatório." });
+
+        var name = request.Name.Trim();
+        if (await _context.ITEquipmentManufacturers.AnyAsync(m => m.Name == name))
+            return BadRequest(new { detail = $"Já existe um fabricante com o nome '{name}'." });
+
+        var maxSort = await _context.ITEquipmentManufacturers.MaxAsync(m => (int?)m.SortOrder) ?? 0;
+        var entity = new ITEquipmentManufacturer
+        {
+            Name = name,
+            SortOrder = request.SortOrder ?? maxSort + 1,
+            IsActive = true
+        };
+        _context.ITEquipmentManufacturers.Add(entity);
+        await _context.SaveChangesAsync();
+        return Ok(new { entity.Id, entity.Name, entity.IsActive, entity.SortOrder });
+    }
+
+    // PUT /api/it/equipment/manufacturers/{id}
+    [HttpPut("manufacturers/{id}")]
+    public async Task<IActionResult> UpdateManufacturer(Guid id, [FromBody] CatalogItemRequest request)
+    {
+        if (!HasITAccess()) return Forbid();
+        var entity = await _context.ITEquipmentManufacturers.FirstOrDefaultAsync(m => m.Id == id);
+        if (entity == null) return NotFound("Fabricante não encontrado.");
+
+        if (!string.IsNullOrWhiteSpace(request.Name))
+        {
+            var name = request.Name.Trim();
+            if (await _context.ITEquipmentManufacturers.AnyAsync(m => m.Name == name && m.Id != id))
+                return BadRequest(new { detail = $"Já existe um fabricante com o nome '{name}'." });
+            entity.Name = name;
+        }
+        if (request.SortOrder.HasValue) entity.SortOrder = request.SortOrder.Value;
+        if (request.IsActive.HasValue) entity.IsActive = request.IsActive.Value;
+        entity.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return Ok(new { entity.Id, entity.Name, entity.IsActive, entity.SortOrder });
+    }
+
+    // POST /api/it/equipment/manufacturers/{id}/toggle
+    [HttpPost("manufacturers/{id}/toggle")]
+    public async Task<IActionResult> ToggleManufacturer(Guid id)
+    {
+        if (!HasITAccess()) return Forbid();
+        var entity = await _context.ITEquipmentManufacturers.FirstOrDefaultAsync(m => m.Id == id);
+        if (entity == null) return NotFound("Fabricante não encontrado.");
+        entity.IsActive = !entity.IsActive;
+        entity.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return Ok(new { entity.Id, entity.Name, entity.IsActive, entity.SortOrder });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  MODEL CRUD
+    // ═══════════════════════════════════════════════════════════════
+
+    // GET /api/it/equipment/models
+    [HttpGet("models")]
+    public async Task<IActionResult> ListModels([FromQuery] bool? activeOnly, [FromQuery] Guid? manufacturerId, [FromQuery] string? equipmentTypeCode)
+    {
+        if (!HasITAccess()) return Forbid();
+        var query = _context.ITEquipmentModels.Include(m => m.Manufacturer).AsNoTracking().AsQueryable();
+        if (activeOnly == true) query = query.Where(m => m.IsActive);
+        if (manufacturerId.HasValue) query = query.Where(m => m.ManufacturerId == manufacturerId.Value);
+        if (!string.IsNullOrWhiteSpace(equipmentTypeCode)) query = query.Where(m => m.EquipmentTypeCode == equipmentTypeCode);
+        var items = await query.OrderBy(m => m.Manufacturer.Name).ThenBy(m => m.SortOrder).ThenBy(m => m.Name).ToListAsync();
+        return Ok(items.Select(m => new { m.Id, m.ManufacturerId, ManufacturerName = m.Manufacturer.Name, m.EquipmentTypeCode, m.Name, m.IsActive, m.SortOrder }));
+    }
+
+    // POST /api/it/equipment/models
+    [HttpPost("models")]
+    public async Task<IActionResult> CreateModel([FromBody] EquipmentModelRequest request)
+    {
+        if (!HasITAccess()) return Forbid();
+        if (string.IsNullOrWhiteSpace(request.Name))
+            return BadRequest(new { detail = "Nome do modelo é obrigatório." });
+        if (!request.ManufacturerId.HasValue)
+            return BadRequest(new { detail = "Fabricante é obrigatório." });
+
+        var manufacturer = await _context.ITEquipmentManufacturers.FirstOrDefaultAsync(m => m.Id == request.ManufacturerId.Value);
+        if (manufacturer == null) return BadRequest(new { detail = "Fabricante não encontrado." });
+
+        var name = request.Name.Trim();
+        if (await _context.ITEquipmentModels.AnyAsync(m => m.ManufacturerId == request.ManufacturerId.Value && m.Name == name))
+            return BadRequest(new { detail = $"Já existe um modelo '{name}' para este fabricante." });
+
+        var maxSort = await _context.ITEquipmentModels
+            .Where(m => m.ManufacturerId == request.ManufacturerId.Value)
+            .MaxAsync(m => (int?)m.SortOrder) ?? 0;
+
+        var entity = new ITEquipmentModel
+        {
+            ManufacturerId = request.ManufacturerId.Value,
+            EquipmentTypeCode = request.EquipmentTypeCode?.Trim().ToUpperInvariant(),
+            Name = name,
+            SortOrder = request.SortOrder ?? maxSort + 1,
+            IsActive = true
+        };
+        _context.ITEquipmentModels.Add(entity);
+        await _context.SaveChangesAsync();
+        return Ok(new { entity.Id, entity.ManufacturerId, ManufacturerName = manufacturer.Name, entity.EquipmentTypeCode, entity.Name, entity.IsActive, entity.SortOrder });
+    }
+
+    // PUT /api/it/equipment/models/{id}
+    [HttpPut("models/{id}")]
+    public async Task<IActionResult> UpdateModel(Guid id, [FromBody] EquipmentModelRequest request)
+    {
+        if (!HasITAccess()) return Forbid();
+        var entity = await _context.ITEquipmentModels.Include(m => m.Manufacturer).FirstOrDefaultAsync(m => m.Id == id);
+        if (entity == null) return NotFound("Modelo não encontrado.");
+
+        if (!string.IsNullOrWhiteSpace(request.Name))
+        {
+            var name = request.Name.Trim();
+            if (await _context.ITEquipmentModels.AnyAsync(m => m.ManufacturerId == entity.ManufacturerId && m.Name == name && m.Id != id))
+                return BadRequest(new { detail = $"Já existe um modelo '{name}' para este fabricante." });
+            entity.Name = name;
+        }
+        if (request.EquipmentTypeCode != null) entity.EquipmentTypeCode = request.EquipmentTypeCode.Trim().ToUpperInvariant();
+        if (request.SortOrder.HasValue) entity.SortOrder = request.SortOrder.Value;
+        if (request.IsActive.HasValue) entity.IsActive = request.IsActive.Value;
+        entity.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return Ok(new { entity.Id, entity.ManufacturerId, ManufacturerName = entity.Manufacturer.Name, entity.EquipmentTypeCode, entity.Name, entity.IsActive, entity.SortOrder });
+    }
+
+    // POST /api/it/equipment/models/{id}/toggle
+    [HttpPost("models/{id}/toggle")]
+    public async Task<IActionResult> ToggleModel(Guid id)
+    {
+        if (!HasITAccess()) return Forbid();
+        var entity = await _context.ITEquipmentModels.FirstOrDefaultAsync(m => m.Id == id);
+        if (entity == null) return NotFound("Modelo não encontrado.");
+        entity.IsActive = !entity.IsActive;
+        entity.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return Ok(new { entity.Id, entity.Name, entity.IsActive, entity.SortOrder });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  PROCESSOR CRUD
+    // ═══════════════════════════════════════════════════════════════
+
+    // GET /api/it/equipment/processors
+    [HttpGet("processors")]
+    public async Task<IActionResult> ListProcessors([FromQuery] bool? activeOnly)
+    {
+        if (!HasITAccess()) return Forbid();
+        var query = _context.ITEquipmentProcessors.AsNoTracking().AsQueryable();
+        if (activeOnly == true) query = query.Where(p => p.IsActive);
+        var items = await query.OrderBy(p => p.SortOrder).ThenBy(p => p.Name).ToListAsync();
+        return Ok(items.Select(p => new { p.Id, p.Name, p.IsActive, p.SortOrder }));
+    }
+
+    // POST /api/it/equipment/processors
+    [HttpPost("processors")]
+    public async Task<IActionResult> CreateProcessor([FromBody] CatalogItemRequest request)
+    {
+        if (!HasITAccess()) return Forbid();
+        if (string.IsNullOrWhiteSpace(request.Name))
+            return BadRequest(new { detail = "Nome do processador é obrigatório." });
+
+        var name = request.Name.Trim();
+        if (await _context.ITEquipmentProcessors.AnyAsync(p => p.Name == name))
+            return BadRequest(new { detail = $"Já existe um processador com o nome '{name}'." });
+
+        var maxSort = await _context.ITEquipmentProcessors.MaxAsync(p => (int?)p.SortOrder) ?? 0;
+        var entity = new ITEquipmentProcessor
+        {
+            Name = name,
+            SortOrder = request.SortOrder ?? maxSort + 1,
+            IsActive = true
+        };
+        _context.ITEquipmentProcessors.Add(entity);
+        await _context.SaveChangesAsync();
+        return Ok(new { entity.Id, entity.Name, entity.IsActive, entity.SortOrder });
+    }
+
+    // PUT /api/it/equipment/processors/{id}
+    [HttpPut("processors/{id}")]
+    public async Task<IActionResult> UpdateProcessor(Guid id, [FromBody] CatalogItemRequest request)
+    {
+        if (!HasITAccess()) return Forbid();
+        var entity = await _context.ITEquipmentProcessors.FirstOrDefaultAsync(p => p.Id == id);
+        if (entity == null) return NotFound("Processador não encontrado.");
+
+        if (!string.IsNullOrWhiteSpace(request.Name))
+        {
+            var name = request.Name.Trim();
+            if (await _context.ITEquipmentProcessors.AnyAsync(p => p.Name == name && p.Id != id))
+                return BadRequest(new { detail = $"Já existe um processador com o nome '{name}'." });
+            entity.Name = name;
+        }
+        if (request.SortOrder.HasValue) entity.SortOrder = request.SortOrder.Value;
+        if (request.IsActive.HasValue) entity.IsActive = request.IsActive.Value;
+        entity.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return Ok(new { entity.Id, entity.Name, entity.IsActive, entity.SortOrder });
+    }
+
+    // POST /api/it/equipment/processors/{id}/toggle
+    [HttpPost("processors/{id}/toggle")]
+    public async Task<IActionResult> ToggleProcessor(Guid id)
+    {
+        if (!HasITAccess()) return Forbid();
+        var entity = await _context.ITEquipmentProcessors.FirstOrDefaultAsync(p => p.Id == id);
+        if (entity == null) return NotFound("Processador não encontrado.");
+        entity.IsActive = !entity.IsActive;
+        entity.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return Ok(new { entity.Id, entity.Name, entity.IsActive, entity.SortOrder });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  MEMORY OPTION CRUD
+    // ═══════════════════════════════════════════════════════════════
+
+    // GET /api/it/equipment/memory-options
+    [HttpGet("memory-options")]
+    public async Task<IActionResult> ListMemoryOptions([FromQuery] bool? activeOnly)
+    {
+        if (!HasITAccess()) return Forbid();
+        var query = _context.ITEquipmentMemoryOptions.AsNoTracking().AsQueryable();
+        if (activeOnly == true) query = query.Where(m => m.IsActive);
+        var items = await query.OrderBy(m => m.SortOrder).ThenBy(m => m.DisplayName).ToListAsync();
+        return Ok(items.Select(m => new { m.Id, m.DisplayName, m.ValueInGb, m.IsActive, m.SortOrder }));
+    }
+
+    // POST /api/it/equipment/memory-options
+    [HttpPost("memory-options")]
+    public async Task<IActionResult> CreateMemoryOption([FromBody] MemoryOptionRequest request)
+    {
+        if (!HasITAccess()) return Forbid();
+        if (string.IsNullOrWhiteSpace(request.DisplayName))
+            return BadRequest(new { detail = "Nome da opção de memória é obrigatório." });
+
+        var displayName = request.DisplayName.Trim();
+        if (await _context.ITEquipmentMemoryOptions.AnyAsync(m => m.DisplayName == displayName))
+            return BadRequest(new { detail = $"Já existe uma opção de memória '{displayName}'." });
+
+        var maxSort = await _context.ITEquipmentMemoryOptions.MaxAsync(m => (int?)m.SortOrder) ?? 0;
+        var entity = new ITEquipmentMemoryOption
+        {
+            DisplayName = displayName,
+            ValueInGb = request.ValueInGb,
+            SortOrder = request.SortOrder ?? maxSort + 1,
+            IsActive = true
+        };
+        _context.ITEquipmentMemoryOptions.Add(entity);
+        await _context.SaveChangesAsync();
+        return Ok(new { entity.Id, entity.DisplayName, entity.ValueInGb, entity.IsActive, entity.SortOrder });
+    }
+
+    // PUT /api/it/equipment/memory-options/{id}
+    [HttpPut("memory-options/{id}")]
+    public async Task<IActionResult> UpdateMemoryOption(Guid id, [FromBody] MemoryOptionRequest request)
+    {
+        if (!HasITAccess()) return Forbid();
+        var entity = await _context.ITEquipmentMemoryOptions.FirstOrDefaultAsync(m => m.Id == id);
+        if (entity == null) return NotFound("Opção de memória não encontrada.");
+
+        if (!string.IsNullOrWhiteSpace(request.DisplayName))
+        {
+            var displayName = request.DisplayName.Trim();
+            if (await _context.ITEquipmentMemoryOptions.AnyAsync(m => m.DisplayName == displayName && m.Id != id))
+                return BadRequest(new { detail = $"Já existe uma opção de memória '{displayName}'." });
+            entity.DisplayName = displayName;
+        }
+        if (request.ValueInGb.HasValue) entity.ValueInGb = request.ValueInGb;
+        if (request.SortOrder.HasValue) entity.SortOrder = request.SortOrder.Value;
+        if (request.IsActive.HasValue) entity.IsActive = request.IsActive.Value;
+        entity.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return Ok(new { entity.Id, entity.DisplayName, entity.ValueInGb, entity.IsActive, entity.SortOrder });
+    }
+
+    // POST /api/it/equipment/memory-options/{id}/toggle
+    [HttpPost("memory-options/{id}/toggle")]
+    public async Task<IActionResult> ToggleMemoryOption(Guid id)
+    {
+        if (!HasITAccess()) return Forbid();
+        var entity = await _context.ITEquipmentMemoryOptions.FirstOrDefaultAsync(m => m.Id == id);
+        if (entity == null) return NotFound("Opção de memória não encontrada.");
+        entity.IsActive = !entity.IsActive;
+        entity.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return Ok(new { entity.Id, entity.DisplayName, entity.ValueInGb, entity.IsActive, entity.SortOrder });
+    }
+
+    // ─── IT Notification Helper ───
+    private async Task NotifyITAsync(string assetTag, string headline, string bodyHtml)
+    {
+        try
+        {
+            var email = _configuration["AppConfig:ITNotificationEmail"];
+            if (string.IsNullOrWhiteSpace(email)) return;
+
+            await _emailService.SendWorkflowNotificationAsync(email, "Departamento de T.I", $"{headline} — {assetTag}", headline, bodyHtml);
+        }
+        catch
+        {
+            // IT notification failure should never block the main operation
+        }
     }
 
     // ─── POST /api/it/equipment/import ── (CSV multipart upload) ───
@@ -1703,5 +2203,47 @@ public class ITEquipmentController : BaseController
         public string? NewAssignedToPlant { get; set; }
         public string? NewAssignmentNotes { get; set; }
         public DateTime? NewExpectedReturnDate { get; set; }
+    }
+
+    public class ReactivateRequest
+    {
+        public string? NewStatus { get; set; } // Target status after reactivation (defaults to AVAILABLE)
+        public string? Reason { get; set; }
+        public string? Notes { get; set; }
+    }
+
+    public class EquipmentTypeRequest
+    {
+        public string? Code { get; set; }
+        public string? DisplayName { get; set; }
+        public int? SortOrder { get; set; }
+        public bool? IsActive { get; set; }
+    }
+
+    /// <summary>Generic request for simple catalog items (manufacturers, processors).</summary>
+    public class CatalogItemRequest
+    {
+        public string? Name { get; set; }
+        public int? SortOrder { get; set; }
+        public bool? IsActive { get; set; }
+    }
+
+    /// <summary>Request for equipment model CRUD (linked to manufacturer + optional type).</summary>
+    public class EquipmentModelRequest
+    {
+        public Guid? ManufacturerId { get; set; }
+        public string? EquipmentTypeCode { get; set; }
+        public string? Name { get; set; }
+        public int? SortOrder { get; set; }
+        public bool? IsActive { get; set; }
+    }
+
+    /// <summary>Request for memory option CRUD.</summary>
+    public class MemoryOptionRequest
+    {
+        public string? DisplayName { get; set; }
+        public int? ValueInGb { get; set; }
+        public int? SortOrder { get; set; }
+        public bool? IsActive { get; set; }
     }
 }

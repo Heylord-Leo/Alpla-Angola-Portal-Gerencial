@@ -100,6 +100,13 @@ public class ApplicationDbContext : DbContext
     public DbSet<ITEquipmentMovementLog> ITEquipmentMovementLogs => Set<ITEquipmentMovementLog>();
     public DbSet<ITEquipmentAcquisition> ITEquipmentAcquisitions => Set<ITEquipmentAcquisition>();
     public DbSet<ITEquipmentDocument> ITEquipmentDocuments => Set<ITEquipmentDocument>();
+    public DbSet<ITEquipmentType> ITEquipmentTypes => Set<ITEquipmentType>();
+    public DbSet<ITEquipmentDeliveryTerm> ITEquipmentDeliveryTerms => Set<ITEquipmentDeliveryTerm>();
+    public DbSet<ITEquipmentDeliveryItem> ITEquipmentDeliveryItems => Set<ITEquipmentDeliveryItem>();
+    public DbSet<ITEquipmentManufacturer> ITEquipmentManufacturers => Set<ITEquipmentManufacturer>();
+    public DbSet<ITEquipmentModel> ITEquipmentModels => Set<ITEquipmentModel>();
+    public DbSet<ITEquipmentProcessor> ITEquipmentProcessors => Set<ITEquipmentProcessor>();
+    public DbSet<ITEquipmentMemoryOption> ITEquipmentMemoryOptions => Set<ITEquipmentMemoryOption>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -1142,7 +1149,183 @@ public class ApplicationDbContext : DbContext
             entity.HasOne(e => e.Equipment).WithMany(eq => eq.Documents).HasForeignKey(e => e.EquipmentId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(e => e.Acquisition).WithMany().HasForeignKey(e => e.AcquisitionId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(e => e.Assignment).WithMany().HasForeignKey(e => e.AssignmentId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.DeliveryTerm).WithMany().HasForeignKey(e => e.DeliveryTermId).OnDelete(DeleteBehavior.NoAction);
             entity.HasOne(e => e.UploadedByUser).WithMany().HasForeignKey(e => e.UploadedByUserId).OnDelete(DeleteBehavior.NoAction);
         });
+
+        // ITEquipmentDeliveryTerm
+        modelBuilder.Entity<ITEquipmentDeliveryTerm>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.TermNumber).IsUnique();
+            entity.HasIndex(e => e.EmployeeEmail);
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.EmployeeUserId);
+            entity.Property(e => e.TermNumber).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.EmployeeName).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.EmployeeEmail).HasMaxLength(300);
+            entity.Property(e => e.EmployeeDepartment).HasMaxLength(200);
+            entity.Property(e => e.EmployeePosition).HasMaxLength(200);
+            entity.Property(e => e.EmployeePlant).HasMaxLength(100);
+            entity.Property(e => e.Status).HasMaxLength(30).IsRequired();
+            entity.HasOne(e => e.EmployeeUser).WithMany().HasForeignKey(e => e.EmployeeUserId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.GeneratedDocument).WithMany().HasForeignKey(e => e.GeneratedDocumentId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.SignedDocument).WithMany().HasForeignKey(e => e.SignedDocumentId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.CreatedByUser).WithMany().HasForeignKey(e => e.CreatedByUserId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.UpdatedByUser).WithMany().HasForeignKey(e => e.UpdatedByUserId).OnDelete(DeleteBehavior.NoAction);
+            // Master Data FK relationships (all NoAction for safety)
+            entity.HasOne(e => e.Company).WithMany().HasForeignKey(e => e.CompanyId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.EmployeePlantRef).WithMany().HasForeignKey(e => e.EmployeePlantId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.EmployeeDepartmentRef).WithMany().HasForeignKey(e => e.EmployeeDepartmentId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        // ITEquipmentDeliveryItem
+        modelBuilder.Entity<ITEquipmentDeliveryItem>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.DeliveryTermId);
+            entity.HasIndex(e => e.EquipmentId);
+            entity.HasIndex(e => e.AssignmentId);
+            entity.HasIndex(e => e.ItemStatus);
+            entity.Property(e => e.ItemStatus).HasMaxLength(30).IsRequired();
+            entity.Property(e => e.ReturnCondition).HasMaxLength(30);
+            entity.HasOne(e => e.DeliveryTerm).WithMany(dt => dt.Items).HasForeignKey(e => e.DeliveryTermId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.Equipment).WithMany().HasForeignKey(e => e.EquipmentId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.Assignment).WithMany().HasForeignKey(e => e.AssignmentId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        // ITEquipmentType (dynamic equipment type management)
+        modelBuilder.Entity<ITEquipmentType>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Code).IsUnique();
+            entity.Property(e => e.Code).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.DisplayName).HasMaxLength(100).IsRequired();
+        });
+
+        // Seed: I.T Equipment Types
+        var seedDate = new DateTime(2026, 6, 12, 0, 0, 0, DateTimeKind.Utc);
+        modelBuilder.Entity<ITEquipmentType>().HasData(
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000001"), Code = "LAPTOP", DisplayName = "Laptop", SortOrder = 1, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000002"), Code = "DESKTOP", DisplayName = "Desktop", SortOrder = 2, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000003"), Code = "MONITOR", DisplayName = "Monitor", SortOrder = 3, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000004"), Code = "PRINTER", DisplayName = "Impressora", SortOrder = 4, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000005"), Code = "NVR", DisplayName = "NVR", SortOrder = 5, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000006"), Code = "MOUSE", DisplayName = "Rato", SortOrder = 6, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000007"), Code = "KEYBOARD", DisplayName = "Teclado", SortOrder = 7, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000008"), Code = "HEADSET", DisplayName = "Headset", SortOrder = 8, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000009"), Code = "DOCKING_STATION", DisplayName = "Docking Station", SortOrder = 9, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-00000000000a"), Code = "BAG", DisplayName = "Mala / Bolsa", SortOrder = 10, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-00000000000b"), Code = "PHONE", DisplayName = "Telemóvel", SortOrder = 11, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-00000000000c"), Code = "CHARGER", DisplayName = "Carregador", SortOrder = 12, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-00000000000d"), Code = "TABLET", DisplayName = "Tablet", SortOrder = 13, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-00000000000e"), Code = "SERVER", DisplayName = "Servidor", SortOrder = 14, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-00000000000f"), Code = "NETWORK_EQUIPMENT", DisplayName = "Equipamento de Rede", SortOrder = 15, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000010"), Code = "ACCESS_POINT", DisplayName = "Access Point", SortOrder = 16, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000011"), Code = "SWITCH", DisplayName = "Switch", SortOrder = 17, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000012"), Code = "FIREWALL", DisplayName = "Firewall", SortOrder = 18, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000013"), Code = "UPS", DisplayName = "UPS / Nobreak", SortOrder = 19, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000014"), Code = "PROJECTOR", DisplayName = "Projetor", SortOrder = 20, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000015"), Code = "SCANNER", DisplayName = "Scanner", SortOrder = 21, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000016"), Code = "ACCESSORIES", DisplayName = "Acessórios", SortOrder = 22, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000017"), Code = "UNKNOWN", DisplayName = "Desconhecido", SortOrder = 99, IsActive = true, CreatedAt = seedDate }
+        );
+
+        // ITEquipmentManufacturer
+        modelBuilder.Entity<ITEquipmentManufacturer>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Name).IsUnique();
+            entity.Property(e => e.Name).HasMaxLength(100).IsRequired();
+        });
+
+        // ITEquipmentModel
+        modelBuilder.Entity<ITEquipmentModel>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.ManufacturerId, e.Name }).IsUnique();
+            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.EquipmentTypeCode).HasMaxLength(50);
+            entity.HasOne(e => e.Manufacturer).WithMany(m => m.Models).HasForeignKey(e => e.ManufacturerId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ITEquipmentProcessor
+        modelBuilder.Entity<ITEquipmentProcessor>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Name).IsUnique();
+            entity.Property(e => e.Name).HasMaxLength(100).IsRequired();
+        });
+
+        // ITEquipmentMemoryOption
+        modelBuilder.Entity<ITEquipmentMemoryOption>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.DisplayName).IsUnique();
+            entity.Property(e => e.DisplayName).HasMaxLength(50).IsRequired();
+        });
+
+        // Seed: I.T Equipment Manufacturers
+        modelBuilder.Entity<ITEquipmentManufacturer>().HasData(
+            new ITEquipmentManufacturer { Id = Guid.Parse("b0000001-0000-0000-0000-000000000001"), Name = "HP", SortOrder = 1, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentManufacturer { Id = Guid.Parse("b0000001-0000-0000-0000-000000000002"), Name = "Dell", SortOrder = 2, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentManufacturer { Id = Guid.Parse("b0000001-0000-0000-0000-000000000003"), Name = "Lenovo", SortOrder = 3, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentManufacturer { Id = Guid.Parse("b0000001-0000-0000-0000-000000000004"), Name = "Apple", SortOrder = 4, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentManufacturer { Id = Guid.Parse("b0000001-0000-0000-0000-000000000005"), Name = "Microsoft", SortOrder = 5, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentManufacturer { Id = Guid.Parse("b0000001-0000-0000-0000-000000000006"), Name = "Samsung", SortOrder = 6, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentManufacturer { Id = Guid.Parse("b0000001-0000-0000-0000-000000000007"), Name = "LG", SortOrder = 7, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentManufacturer { Id = Guid.Parse("b0000001-0000-0000-0000-000000000008"), Name = "Brother", SortOrder = 8, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentManufacturer { Id = Guid.Parse("b0000001-0000-0000-0000-000000000009"), Name = "Canon", SortOrder = 9, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentManufacturer { Id = Guid.Parse("b0000001-0000-0000-0000-00000000000a"), Name = "Epson", SortOrder = 10, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentManufacturer { Id = Guid.Parse("b0000001-0000-0000-0000-00000000000b"), Name = "Hikvision", SortOrder = 11, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentManufacturer { Id = Guid.Parse("b0000001-0000-0000-0000-00000000000c"), Name = "Dahua", SortOrder = 12, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentManufacturer { Id = Guid.Parse("b0000001-0000-0000-0000-00000000000d"), Name = "Cisco", SortOrder = 13, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentManufacturer { Id = Guid.Parse("b0000001-0000-0000-0000-00000000000e"), Name = "Fortinet", SortOrder = 14, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentManufacturer { Id = Guid.Parse("b0000001-0000-0000-0000-00000000000f"), Name = "Ubiquiti", SortOrder = 15, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentManufacturer { Id = Guid.Parse("b0000001-0000-0000-0000-000000000010"), Name = "APC", SortOrder = 16, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentManufacturer { Id = Guid.Parse("b0000001-0000-0000-0000-000000000011"), Name = "Logitech", SortOrder = 17, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentManufacturer { Id = Guid.Parse("b0000001-0000-0000-0000-000000000012"), Name = "N/A", SortOrder = 99, IsActive = true, CreatedAt = seedDate }
+        );
+
+        // Seed: I.T Equipment Processors
+        modelBuilder.Entity<ITEquipmentProcessor>().HasData(
+            new ITEquipmentProcessor { Id = Guid.Parse("c0000001-0000-0000-0000-000000000001"), Name = "Intel Core i3", SortOrder = 1, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentProcessor { Id = Guid.Parse("c0000001-0000-0000-0000-000000000002"), Name = "Intel Core i5", SortOrder = 2, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentProcessor { Id = Guid.Parse("c0000001-0000-0000-0000-000000000003"), Name = "Intel Core i7", SortOrder = 3, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentProcessor { Id = Guid.Parse("c0000001-0000-0000-0000-000000000004"), Name = "Intel Core i9", SortOrder = 4, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentProcessor { Id = Guid.Parse("c0000001-0000-0000-0000-000000000005"), Name = "Intel Xeon", SortOrder = 5, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentProcessor { Id = Guid.Parse("c0000001-0000-0000-0000-000000000006"), Name = "AMD Ryzen 3", SortOrder = 6, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentProcessor { Id = Guid.Parse("c0000001-0000-0000-0000-000000000007"), Name = "AMD Ryzen 5", SortOrder = 7, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentProcessor { Id = Guid.Parse("c0000001-0000-0000-0000-000000000008"), Name = "AMD Ryzen 7", SortOrder = 8, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentProcessor { Id = Guid.Parse("c0000001-0000-0000-0000-000000000009"), Name = "AMD Ryzen 9", SortOrder = 9, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentProcessor { Id = Guid.Parse("c0000001-0000-0000-0000-00000000000a"), Name = "Apple M1", SortOrder = 10, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentProcessor { Id = Guid.Parse("c0000001-0000-0000-0000-00000000000b"), Name = "Apple M2", SortOrder = 11, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentProcessor { Id = Guid.Parse("c0000001-0000-0000-0000-00000000000c"), Name = "Apple M3", SortOrder = 12, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentProcessor { Id = Guid.Parse("c0000001-0000-0000-0000-00000000000d"), Name = "N/A", SortOrder = 99, IsActive = true, CreatedAt = seedDate }
+        );
+
+        // Seed: I.T Equipment Memory Options
+        modelBuilder.Entity<ITEquipmentMemoryOption>().HasData(
+            new ITEquipmentMemoryOption { Id = Guid.Parse("d0000001-0000-0000-0000-000000000001"), DisplayName = "4 GB", ValueInGb = 4, SortOrder = 1, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentMemoryOption { Id = Guid.Parse("d0000001-0000-0000-0000-000000000002"), DisplayName = "8 GB", ValueInGb = 8, SortOrder = 2, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentMemoryOption { Id = Guid.Parse("d0000001-0000-0000-0000-000000000003"), DisplayName = "16 GB", ValueInGb = 16, SortOrder = 3, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentMemoryOption { Id = Guid.Parse("d0000001-0000-0000-0000-000000000004"), DisplayName = "32 GB", ValueInGb = 32, SortOrder = 4, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentMemoryOption { Id = Guid.Parse("d0000001-0000-0000-0000-000000000005"), DisplayName = "64 GB", ValueInGb = 64, SortOrder = 5, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentMemoryOption { Id = Guid.Parse("d0000001-0000-0000-0000-000000000006"), DisplayName = "128 GB", ValueInGb = 128, SortOrder = 6, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentMemoryOption { Id = Guid.Parse("d0000001-0000-0000-0000-000000000007"), DisplayName = "N/A", ValueInGb = null, SortOrder = 99, IsActive = true, CreatedAt = seedDate }
+        );
+
+        // Seed: I.T Equipment Models (initial common models)
+        modelBuilder.Entity<ITEquipmentModel>().HasData(
+            new ITEquipmentModel { Id = Guid.Parse("e0000001-0000-0000-0000-000000000001"), ManufacturerId = Guid.Parse("b0000001-0000-0000-0000-000000000001"), Name = "ProBook 440 G10", EquipmentTypeCode = "LAPTOP", SortOrder = 1, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentModel { Id = Guid.Parse("e0000001-0000-0000-0000-000000000002"), ManufacturerId = Guid.Parse("b0000001-0000-0000-0000-000000000001"), Name = "ProBook 450 G10", EquipmentTypeCode = "LAPTOP", SortOrder = 2, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentModel { Id = Guid.Parse("e0000001-0000-0000-0000-000000000003"), ManufacturerId = Guid.Parse("b0000001-0000-0000-0000-000000000001"), Name = "E24 G5", EquipmentTypeCode = "MONITOR", SortOrder = 3, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentModel { Id = Guid.Parse("e0000001-0000-0000-0000-000000000004"), ManufacturerId = Guid.Parse("b0000001-0000-0000-0000-000000000002"), Name = "Latitude 5440", EquipmentTypeCode = "LAPTOP", SortOrder = 1, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentModel { Id = Guid.Parse("e0000001-0000-0000-0000-000000000005"), ManufacturerId = Guid.Parse("b0000001-0000-0000-0000-000000000002"), Name = "OptiPlex 7010", EquipmentTypeCode = "DESKTOP", SortOrder = 2, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentModel { Id = Guid.Parse("e0000001-0000-0000-0000-000000000006"), ManufacturerId = Guid.Parse("b0000001-0000-0000-0000-000000000002"), Name = "P2422H", EquipmentTypeCode = "MONITOR", SortOrder = 3, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentModel { Id = Guid.Parse("e0000001-0000-0000-0000-000000000007"), ManufacturerId = Guid.Parse("b0000001-0000-0000-0000-000000000002"), Name = "KB216", EquipmentTypeCode = "KEYBOARD", SortOrder = 4, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentModel { Id = Guid.Parse("e0000001-0000-0000-0000-000000000008"), ManufacturerId = Guid.Parse("b0000001-0000-0000-0000-000000000003"), Name = "ThinkPad E14", EquipmentTypeCode = "LAPTOP", SortOrder = 1, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentModel { Id = Guid.Parse("e0000001-0000-0000-0000-000000000009"), ManufacturerId = Guid.Parse("b0000001-0000-0000-0000-000000000011"), Name = "M90", EquipmentTypeCode = "MOUSE", SortOrder = 1, IsActive = true, CreatedAt = seedDate }
+        );
     }
 }

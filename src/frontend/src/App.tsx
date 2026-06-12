@@ -131,6 +131,9 @@ const HRAttendanceMonthlyReport = React.lazy(() =>
 const ITEquipmentPage = React.lazy(() =>
     import('./pages/IT/ITEquipmentPage')
 );
+const DeliveryTermsPage = React.lazy(() =>
+    import('./pages/IT/DeliveryTermsPage')
+);
 
 // Operations pages
 const OperationsTransfersPage = React.lazy(() =>
@@ -325,6 +328,7 @@ function AppContent() {
 
                 {/* IT Equipment Workspace */}
                 <Route path="/it/equipment" element={<ITRoute><Suspense fallback={<LoadingSkeleton />}><ITEquipmentPage /></Suspense></ITRoute>} />
+                <Route path="/it/delivery-terms" element={<ITRoute><Suspense fallback={<LoadingSkeleton />}><DeliveryTermsPage /></Suspense></ITRoute>} />
 
                 {/* Settings Routes */}
                 <Route path="/settings/master-data" element={<AdminRoute><Suspense fallback={<LoadingSkeleton />}><MasterData /></Suspense></AdminRoute>} />

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Loader2 } from 'lucide-react';
-import { itEquipmentApi } from '../../lib/itEquipmentApi';
+import { itEquipmentApi, itEquipmentCatalogApi } from '../../lib/itEquipmentApi';
+import { api } from '../../lib/api';
 import type { ITEquipmentDetail } from '../../types/itEquipment';
 
 interface Props {
@@ -13,10 +14,42 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
     const isEdit = !!equipment;
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
+    const [equipmentTypes, setEquipmentTypes] = useState<Array<{ value: string; label: string }>>([]);
+
+    // ── Master Data lookups ──
+    const [companies, setCompanies] = useState<any[]>([]);
+    const [plants, setPlants] = useState<any[]>([]);
+    const [manufacturers, setManufacturers] = useState<any[]>([]);
+    const [models, setModels] = useState<any[]>([]);
+    const [processors, setProcessors] = useState<any[]>([]);
+    const [memoryOptions, setMemoryOptions] = useState<any[]>([]);
+
+    // Load dynamic equipment types
+    useEffect(() => {
+        itEquipmentApi.types.list(true).then(types => {
+            setEquipmentTypes(types.map((t: any) => ({ value: t.code, label: t.displayName })));
+        }).catch(() => {
+            setEquipmentTypes([
+                { value: 'LAPTOP', label: 'Laptop' },
+                { value: 'DESKTOP', label: 'Desktop' },
+                { value: 'MONITOR', label: 'Monitor' },
+                { value: 'UNKNOWN', label: 'Desconhecido' },
+            ]);
+        });
+    }, []);
+
+    // Load companies & catalogs on mount
+    useEffect(() => {
+        api.lookups.getCompanies().then(setCompanies).catch(() => {});
+        itEquipmentCatalogApi.manufacturers.list(true).then(setManufacturers).catch(() => {});
+        itEquipmentCatalogApi.processors.list(true).then(setProcessors).catch(() => {});
+        itEquipmentCatalogApi.memoryOptions.list(true).then(setMemoryOptions).catch(() => {});
+    }, []);
 
     const [form, setForm] = useState({
         assetTag: equipment?.assetTag || '',
         hostname: equipment?.hostname || '',
+        companyId: '',
         plant: equipment?.plant || '',
         equipmentType: equipment?.equipmentType || 'LAPTOP',
         statusCode: equipment?.statusCode || 'AVAILABLE',
@@ -48,9 +81,53 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
 
     const showPurchase = form.sourceType === 'MANUAL_PURCHASE';
 
+    // ── Company → Plant cascade ──
+    useEffect(() => {
+        if (form.companyId) {
+            api.lookups.getPlants(Number(form.companyId)).then(setPlants).catch(() => setPlants([]));
+        } else {
+            setPlants([]);
+        }
+    }, [form.companyId]);
+
+    const handleCompanyChange = (v: string) => {
+        set('companyId', v);
+        set('plant', ''); // Clear plant when company changes
+    };
+
+    // ── Manufacturer → Model cascade ──
+    useEffect(() => {
+        if (form.manufacturer) {
+            const mfr = manufacturers.find(m => m.name === form.manufacturer);
+            if (mfr) {
+                itEquipmentCatalogApi.models.list({
+                    activeOnly: true,
+                    manufacturerId: mfr.id,
+                    equipmentTypeCode: form.equipmentType || undefined
+                }).then(setModels).catch(() => setModels([]));
+            } else {
+                setModels([]);
+            }
+        } else {
+            setModels([]);
+        }
+    }, [form.manufacturer, form.equipmentType, manufacturers]);
+
+    const handleManufacturerChange = (v: string) => {
+        set('manufacturer', v);
+        set('model', ''); // Clear model when manufacturer changes
+    };
+
+    const handleTypeChange = (v: string) => {
+        set('equipmentType', v);
+        set('model', ''); // Clear model when type changes
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!form.assetTag.trim()) { setError('Asset Tag é obrigatório.'); return; }
+        if (!isEdit && !form.companyId) { setError('Empresa é obrigatória.'); return; }
+        if (!isEdit && !form.plant) { setError('Planta é obrigatória.'); return; }
 
         // Validate purchase fields
         if (!isEdit && showPurchase) {
@@ -62,6 +139,7 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
             setError('');
 
             const payload: any = { ...form };
+            delete payload.companyId; // Not sent to backend (Plant text is enough for ITEquipment)
 
             // Attach acquisition data for MANUAL_PURCHASE
             if (!isEdit && showPurchase) {
@@ -88,6 +166,41 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
         }
     };
 
+    // Type-sensitive field visibility
+    const computeTypes = ['LAPTOP', 'DESKTOP', 'SERVER', 'TABLET'];
+    const networkTypes = ['SWITCH', 'FIREWALL', 'ACCESS_POINT', 'NETWORK_EQUIPMENT', 'NVR'];
+    const showHostname = [...computeTypes, ...networkTypes].includes(form.equipmentType);
+    const showProcessorRam = computeTypes.includes(form.equipmentType);
+    const showMacAddress = [...computeTypes, ...networkTypes, 'PRINTER'].includes(form.equipmentType);
+
+    // Build manufacturer options with backward compat
+    const manufacturerOpts = buildOptionsWithLegacy(
+        manufacturers.map(m => ({ value: m.name, label: m.name })),
+        form.manufacturer,
+        'Selecione...'
+    );
+
+    // Build model options with backward compat
+    const modelOpts = buildOptionsWithLegacy(
+        models.map(m => ({ value: m.name, label: m.name })),
+        form.model,
+        form.manufacturer ? 'Selecione...' : 'Selecione fabricante primeiro'
+    );
+
+    // Build processor options with backward compat
+    const processorOpts = buildOptionsWithLegacy(
+        processors.map(p => ({ value: p.name, label: p.name })),
+        form.processor,
+        'Selecione...'
+    );
+
+    // Build memory options with backward compat
+    const memoryOpts = buildOptionsWithLegacy(
+        memoryOptions.map(m => ({ value: m.displayName, label: m.displayName })),
+        form.memoryRam,
+        'Selecione...'
+    );
+
     return (
         <ModalWrapper title={isEdit ? 'Editar Equipamento' : 'Novo Equipamento'} onClose={onClose} wide>
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -95,18 +208,11 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
 
                 <Row>
                     <Field label="Asset Tag *" value={form.assetTag} onChange={v => set('assetTag', v)} disabled={isEdit} />
-                    <Field label="Hostname" value={form.hostname} onChange={v => set('hostname', v)} />
+                    {showHostname && <Field label="Hostname" value={form.hostname} onChange={v => set('hostname', v)} />}
                 </Row>
                 <Row>
-                    <SelectField label="Tipo" value={form.equipmentType} onChange={v => set('equipmentType', v)}
-                        options={[
-                            { value: 'LAPTOP', label: 'Laptop' },
-                            { value: 'DESKTOP', label: 'Desktop' },
-                            { value: 'MONITOR', label: 'Monitor' },
-                            { value: 'PRINTER', label: 'Impressora' },
-                            { value: 'NVR', label: 'NVR' },
-                            { value: 'UNKNOWN', label: 'Desconhecido' },
-                        ]}
+                    <SelectField label="Tipo *" value={form.equipmentType} onChange={handleTypeChange}
+                        options={equipmentTypes.length > 0 ? equipmentTypes : [{ value: 'UNKNOWN', label: 'Carregando...' }]}
                     />
                     {!isEdit && (
                         <SelectField label="Status" value={form.statusCode} onChange={v => set('statusCode', v)}
@@ -119,24 +225,60 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
                         />
                     )}
                 </Row>
+
+                {/* Company → Plant cascade */}
+                {!isEdit ? (
+                    <Row>
+                        <SelectField label="Empresa *" value={form.companyId} onChange={handleCompanyChange}
+                            options={[
+                                { value: '', label: 'Selecione...' },
+                                ...companies.filter((c: any) => c.isActive).map((c: any) => ({ value: String(c.id), label: c.name }))
+                            ]}
+                        />
+                        <SelectField label="Planta *" value={form.plant} onChange={v => set('plant', v)}
+                            options={[
+                                { value: '', label: form.companyId ? 'Selecione...' : 'Selecione empresa primeiro' },
+                                ...plants.filter((p: any) => p.isActive).map((p: any) => ({ value: p.name, label: p.name }))
+                            ]}
+                            disabled={!form.companyId}
+                        />
+                    </Row>
+                ) : (
+                    <Row>
+                        <Field label="Planta" value={form.plant} onChange={v => set('plant', v)} />
+                    </Row>
+                )}
+
+                {/* Manufacturer → Model cascade */}
                 <Row>
-                    <Field label="Fabricante" value={form.manufacturer} onChange={v => set('manufacturer', v)} />
-                    <Field label="Modelo" value={form.model} onChange={v => set('model', v)} />
+                    <SelectField label="Fabricante" value={form.manufacturer} onChange={handleManufacturerChange}
+                        options={manufacturerOpts}
+                    />
+                    <SelectField label="Modelo" value={form.model} onChange={v => set('model', v)}
+                        options={modelOpts}
+                        disabled={!form.manufacturer && !isEdit}
+                    />
                 </Row>
+
                 <Row>
                     <Field label="Serial Number" value={form.serialNumber} onChange={v => set('serialNumber', v)} />
-                    <Field label="MAC Address" value={form.macAddress} onChange={v => set('macAddress', v)} />
+                    {showMacAddress && <Field label="MAC Address" value={form.macAddress} onChange={v => set('macAddress', v)} />}
                 </Row>
+                {showProcessorRam && (
+                    <Row>
+                        <SelectField label="Processador" value={form.processor} onChange={v => set('processor', v)}
+                            options={processorOpts}
+                        />
+                        <SelectField label="RAM" value={form.memoryRam} onChange={v => set('memoryRam', v)}
+                            options={memoryOpts}
+                        />
+                    </Row>
+                )}
                 <Row>
-                    <Field label="Processador" value={form.processor} onChange={v => set('processor', v)} />
-                    <Field label="RAM" value={form.memoryRam} onChange={v => set('memoryRam', v)} />
-                </Row>
-                <Row>
-                    <Field label="Planta" value={form.plant} onChange={v => set('plant', v)} />
                     <Field label="Cor" value={form.color} onChange={v => set('color', v)} />
+                    <Field label="ID Card" value={form.idCard} onChange={v => set('idCard', v)} />
                 </Row>
                 <Row>
-                    <Field label="ID Card" value={form.idCard} onChange={v => set('idCard', v)} />
                     <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
                         <input type="checkbox" checked={form.biometricMfaEnabled} onChange={e => set('biometricMfaEnabled', e.target.checked)} id="biocheck" />
                         <label htmlFor="biocheck" style={{ fontSize: '0.85rem', color: 'var(--color-text)' }}>Biometria / MFA</label>
@@ -199,6 +341,21 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
             </form>
         </ModalWrapper>
     );
+}
+
+// ── Helper: build options list with backward compat for legacy free-text values ──
+function buildOptionsWithLegacy(
+    options: Array<{ value: string; label: string }>,
+    currentValue: string,
+    placeholder: string
+): Array<{ value: string; label: string }> {
+    const opts: Array<{ value: string; label: string }> = [{ value: '', label: placeholder }];
+    // If current value exists and isn't in the options list, prepend it
+    if (currentValue && !options.some(o => o.value === currentValue)) {
+        opts.push({ value: currentValue, label: `${currentValue} (valor existente)` });
+    }
+    opts.push(...options);
+    return opts;
 }
 
 // ─── Shared modal helpers (exported for other modals) ───
@@ -273,13 +430,13 @@ export function Field({ label, value, onChange, disabled, type, placeholder }: {
     );
 }
 
-export function SelectField({ label, value, onChange, options }: {
-    label: string; value: string; onChange: (v: string) => void; options: Array<{ value: string; label: string }>;
+export function SelectField({ label, value, onChange, options, disabled }: {
+    label: string; value: string; onChange: (v: string) => void; options: Array<{ value: string; label: string }>; disabled?: boolean;
 }) {
     return (
         <div style={{ flex: 1 }}>
             <label style={labelStyle}>{label}</label>
-            <select value={value} onChange={e => onChange(e.target.value)} style={inputStyle}>
+            <select value={value} onChange={e => onChange(e.target.value)} style={{ ...inputStyle, opacity: disabled ? 0.5 : 1 }} disabled={disabled}>
                 {options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
         </div>
