@@ -30,4 +30,8 @@ public static class WorkflowEventCodes
 
     // --- Quotation (migrated from inline) ---
     public const string QuotationCompleted = "QUOTATION_COMPLETED";
+
+    // --- Quotation Buyer Notifications ---
+    public const string QuotationAwaitingBuyer = "QUOTATION_AWAITING_BUYER";
+    public const string BuyerAssigned = "BUYER_ASSIGNED";
 }

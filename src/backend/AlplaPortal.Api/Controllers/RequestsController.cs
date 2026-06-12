@@ -1981,7 +1981,7 @@ public class RequestsController : BaseController
 
         await _context.SaveChangesAsync();
 
-        // Notifications
+        // Notifications (in-app)
         try
         {
             if (request.RequesterId != actorId)
@@ -2012,7 +2012,32 @@ public class RequestsController : BaseController
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Falha ao enviar notificações de atribuição para o Pedido {RequestNumber}.", request.RequestNumber);
+            _logger.LogWarning(ex, "Falha ao enviar notificações in-app de atribuição para o Pedido {RequestNumber}.", request.RequestNumber);
+        }
+
+        // Email notification via orchestrator (Task 3 — BUYER_ASSIGNED)
+        try
+        {
+            await _orchestrator.EmitAsync(new WorkflowEvent
+            {
+                EventCode = WorkflowEventCodes.BuyerAssigned,
+                RequestId = request.Id,
+                RequestNumber = request.RequestNumber ?? "S/N",
+                RequestTitle = request.Title ?? "",
+                TargetStatusCode = request.Status!.Code,
+                ActionTaken = "BUYER_ASSIGNED",
+                ActorUserId = actorId,
+                ActorName = user.FullName ?? "Sistema",
+                CorrelationId = history.Id,
+                RequesterId = request.RequesterId,
+                BuyerId = newBuyerId,
+                DepartmentId = request.DepartmentId,
+                PlantId = request.PlantId
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Non-critical: email notification dispatch failed for BuyerAssigned on Request {RequestId}", request.Id);
         }
 
         return NoContent();
@@ -4907,6 +4932,7 @@ public class RequestsController : BaseController
         return (actionTaken, targetStatusCode) switch
         {
             ("SUBMIT", "WAITING_AREA_APPROVAL") => WorkflowEventCodes.RequestSubmitted,
+            ("SUBMIT", "WAITING_QUOTATION") => WorkflowEventCodes.QuotationAwaitingBuyer,
             ("RESUBMIT", "WAITING_AREA_APPROVAL") => WorkflowEventCodes.RequestSubmitted,
             ("RESUBMIT", "WAITING_FINAL_APPROVAL") => WorkflowEventCodes.AreaApproved,
             ("APPROVE", "WAITING_FINAL_APPROVAL") => WorkflowEventCodes.AreaApproved,
