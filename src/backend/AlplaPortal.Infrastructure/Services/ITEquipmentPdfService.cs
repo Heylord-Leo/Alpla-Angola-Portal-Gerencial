@@ -351,6 +351,254 @@ public class ITEquipmentPdfService
             FileHash = fileHash
         };
     }
+    // ═══════════════════════════════════════════════════════════════
+    //  GROUPED DELIVERY TERM PDF
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Generate a branded PDF for a grouped delivery term with multiple equipment items.
+    /// Reuses branded header, policy text, signature blocks, and footer.
+    /// </summary>
+    public async Task<ITEquipmentAgreementService.AgreementResult> GenerateDeliveryTermPdfAsync(DeliveryTermData data)
+    {
+        var policyPath = Path.Combine(_templateDir, "policy-text.txt");
+        if (!File.Exists(policyPath))
+        {
+            _logger.LogError("Policy text file not found at {Path}", policyPath);
+            throw new FileNotFoundException(
+                "Texto da política de uso de equipamento não encontrado. Contacte o administrador do sistema.",
+                policyPath);
+        }
+        var policyLines = await File.ReadAllLinesAsync(policyPath);
+
+        var fileId = Guid.NewGuid();
+        var storageFileName = $"{fileId}.pdf";
+        var outputPath = Path.Combine(_storageDir, storageFileName);
+
+        using (var document = new PdfDocument())
+        {
+            document.Info.Title = $"Termo de Entrega e Responsabilidade — {data.TermNumber}";
+            document.Info.Author = "Portal Gerencial — Alpla Angola";
+
+            var page = document.AddPage();
+            page.Size = PdfSharpCore.PageSize.A4;
+            var gfx = XGraphics.FromPdfPage(page);
+            double y = PageMargin;
+            double contentWidth = page.Width - 2 * PageMargin;
+
+            // ── Branded header ──
+            y = DrawBrandedHeader(gfx, page, y, contentWidth,
+                "TERMO DE ENTREGA E RESPONSABILIDADE — MÚLTIPLOS EQUIPAMENTOS");
+
+            // ── Term & Date info ──
+            var documentGeneratedAt = DateTime.UtcNow;
+            y += 6;
+            gfx.DrawString($"Nº do Termo: {data.TermNumber}",
+                NormalBoldFont, new XSolidBrush(PrimaryColor), new XPoint(PageMargin, y));
+            y += 14;
+            gfx.DrawString($"Data de disponibilização ao utilizador: {data.DeliveryDate:dd/MM/yyyy}",
+                NormalFont, XBrushes.Black, new XPoint(PageMargin, y));
+            y += 14;
+            gfx.DrawString($"Data do documento: {documentGeneratedAt:dd/MM/yyyy HH:mm} UTC",
+                NormalFont, XBrushes.Gray, new XPoint(PageMargin, y));
+            y += 18;
+
+            // ── Employee info table ──
+            var employeeRows = new (string label, string value)[]
+            {
+                ("Utilizador", data.EmployeeName),
+                ("E-mail do Utilizador", data.EmployeeEmail),
+                ("Departamento", data.Department),
+                ("Cargo", data.Position),
+                ("Planta", data.Plant),
+                ("Entregue por", data.DeliveredByName),
+                ("E-mail de quem entrega", data.DeliveredByEmail),
+                ("Observações", data.Notes ?? "—"),
+            };
+
+            y = DrawInfoTable(gfx, page, y, contentWidth, employeeRows);
+            y += 16;
+
+            // ── Equipment list section ──
+            y = EnsureSpace(document, ref page, ref gfx, y, 60, contentWidth);
+            gfx.DrawString("EQUIPAMENTOS ENTREGUES",
+                SubTitleFont, new XSolidBrush(PrimaryColor),
+                new XRect(PageMargin, y, contentWidth, 16), XStringFormats.TopCenter);
+            y += 22;
+
+            // Equipment table header
+            y = DrawEquipmentTableHeader(gfx, page, y, contentWidth);
+
+            // Equipment rows
+            for (int idx = 0; idx < data.Equipment.Count; idx++)
+            {
+                y = EnsureSpace(document, ref page, ref gfx, y, 20, contentWidth);
+                // Re-draw header on new page
+                if (y < PageMargin + 20)
+                    y = DrawEquipmentTableHeader(gfx, page, y, contentWidth);
+
+                var item = data.Equipment[idx];
+                y = DrawEquipmentTableRow(gfx, page, y, contentWidth, idx + 1, item);
+            }
+
+            y += 10;
+
+            // ── Separator ──
+            gfx.DrawLine(new XPen(BorderColor, 0.5), PageMargin, y, PageMargin + contentWidth, y);
+            y += 12;
+
+            // ── Policy title ──
+            y = EnsureSpace(document, ref page, ref gfx, y, 40, contentWidth);
+            gfx.DrawString("POLÍTICA DE USO DE EQUIPAMENTO DE T.I",
+                SubTitleFont, new XSolidBrush(PrimaryColor),
+                new XRect(PageMargin, y, contentWidth, 16), XStringFormats.TopCenter);
+            y += 22;
+
+            // ── Policy text ──
+            y = DrawPolicyText(document, gfx, ref page, y, contentWidth, policyLines);
+
+            // ── Signature blocks ──
+            y = EnsureSpace(document, ref page, ref gfx, y, 200, contentWidth);
+            y += 20;
+
+            y = DrawEmptySignatureBlock(gfx, page, y, contentWidth,
+                data.EmployeeName, "Utilizador");
+            y += 20;
+
+            y = DrawEnhancedSignatureBlock(gfx, page, y, contentWidth,
+                data.DeliveredByName, "Responsável — Departamento de T.I");
+            y += 16;
+
+            // ── Electronic generation statement ──
+            y = EnsureSpace(document, ref page, ref gfx, y, 70, contentWidth);
+            gfx.DrawLine(new XPen(LightBorderColor, 0.5), PageMargin, y, PageMargin + contentWidth, y);
+            y += 8;
+
+            var equipmentSummary = string.Join(", ", data.Equipment.Select(e => e.AssetTag));
+            DrawElectronicStatement(gfx, y, contentWidth,
+                data.EmployeeName, data.EmployeeEmail,
+                $"Termo {data.TermNumber} ({data.Equipment.Count} itens: {equipmentSummary})",
+                data.DeliveredByName, data.DeliveredByEmail,
+                documentGeneratedAt, data.DeliveryDate);
+
+            // ── Footer ──
+            DrawFooter(gfx, page);
+
+            document.Save(outputPath);
+        }
+
+        var fileHash = await ComputeFileHashAsync(outputPath);
+        var displayFileName = $"Termo_Entrega_{data.TermNumber}_{data.DeliveryDate:yyyyMMdd}.pdf";
+
+        _logger.LogInformation(
+            "Delivery term PDF generated: {FileName} for term {TermNumber} with {ItemCount} items assigned to {Employee}",
+            displayFileName, data.TermNumber, data.Equipment.Count, data.EmployeeName);
+
+        return new ITEquipmentAgreementService.AgreementResult
+        {
+            FilePath = outputPath,
+            StorageFileName = storageFileName,
+            DisplayFileName = displayFileName,
+            FileHash = fileHash
+        };
+    }
+
+    /// <summary>Draw the equipment table header row.</summary>
+    private double DrawEquipmentTableHeader(XGraphics gfx, PdfPage page, double y, double contentWidth)
+    {
+        var colWidths = GetEquipmentColumnWidths(contentWidth);
+        var headers = new[] { "#", "Tipo", "Asset Tag", "Hostname", "Fabricante", "Modelo", "S/N" };
+        double x = PageMargin;
+
+        // Header background
+        gfx.DrawRectangle(new XSolidBrush(PrimaryColor),
+            PageMargin, y - 2, contentWidth, 16);
+
+        for (int c = 0; c < headers.Length; c++)
+        {
+            gfx.DrawString(headers[c], SmallBoldFont, XBrushes.White,
+                new XRect(x + 3, y, colWidths[c] - 6, 12), XStringFormats.TopLeft);
+            x += colWidths[c];
+        }
+
+        return y + 16;
+    }
+
+    /// <summary>Draw one equipment item row.</summary>
+    private double DrawEquipmentTableRow(XGraphics gfx, PdfPage page, double y, double contentWidth,
+        int rowNum, DeliveryTermEquipmentItem item)
+    {
+        var colWidths = GetEquipmentColumnWidths(contentWidth);
+        var values = new[]
+        {
+            rowNum.ToString(),
+            item.EquipmentType ?? "—",
+            item.AssetTag,
+            item.Hostname ?? "—",
+            item.Manufacturer ?? "—",
+            item.Model ?? "—",
+            item.SerialNumber ?? "—"
+        };
+
+        double x = PageMargin;
+
+        // Alternating row background
+        if (rowNum % 2 == 0)
+            gfx.DrawRectangle(new XSolidBrush(LabelBgColor), PageMargin, y - 2, contentWidth, 14);
+
+        // Bottom border
+        gfx.DrawLine(new XPen(LightBorderColor, 0.3), PageMargin, y + 12, PageMargin + contentWidth, y + 12);
+
+        for (int c = 0; c < values.Length; c++)
+        {
+            var val = values[c];
+            // Truncate if too long
+            if (val.Length > 20) val = val.Substring(0, 18) + "…";
+
+            gfx.DrawString(val, SmallFont, XBrushes.Black,
+                new XRect(x + 3, y, colWidths[c] - 6, 12), XStringFormats.TopLeft);
+            x += colWidths[c];
+        }
+
+        return y + 14;
+    }
+
+    /// <summary>Column widths for the equipment table.</summary>
+    private static double[] GetEquipmentColumnWidths(double contentWidth)
+    {
+        // #(20), Type(65), AssetTag(75), Hostname(75), Manufacturer(75), Model(90), S/N(remaining)
+        double fixedTotal = 20 + 65 + 75 + 75 + 75 + 90;
+        double remaining = contentWidth - fixedTotal;
+        return new double[] { 20, 65, 75, 75, 75, 90, remaining };
+    }
+
+    // ── DTOs for Delivery Term PDF ──
+
+    public class DeliveryTermData
+    {
+        public string TermNumber { get; set; } = string.Empty;
+        public DateTime DeliveryDate { get; set; }
+        public string EmployeeName { get; set; } = string.Empty;
+        public string EmployeeEmail { get; set; } = string.Empty;
+        public string Department { get; set; } = string.Empty;
+        public string Position { get; set; } = string.Empty;
+        public string Plant { get; set; } = string.Empty;
+        public string DeliveredByName { get; set; } = string.Empty;
+        public string DeliveredByEmail { get; set; } = string.Empty;
+        public string? Notes { get; set; }
+        public List<DeliveryTermEquipmentItem> Equipment { get; set; } = new();
+    }
+
+    public class DeliveryTermEquipmentItem
+    {
+        public string EquipmentType { get; set; } = string.Empty;
+        public string AssetTag { get; set; } = string.Empty;
+        public string? Hostname { get; set; }
+        public string? Manufacturer { get; set; }
+        public string? Model { get; set; }
+        public string? SerialNumber { get; set; }
+        public string? Notes { get; set; }
+    }
 
     // ═══════════════════════════════════════════════════════════════
     //  SHARED DRAWING HELPERS

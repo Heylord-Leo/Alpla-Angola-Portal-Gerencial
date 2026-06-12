@@ -21,7 +21,7 @@ public static class ITEquipmentConstants
             Lost, Retired, Disposed, Damaged, Unknown
         };
 
-        /// <summary>Statuses that block new assignments.</summary>
+        /// <summary>Statuses that block new assignments. Retired equipment must be reactivated first.</summary>
         public static readonly string[] NonAssignable = { Lost, Retired, Disposed };
 
         /// <summary>Portuguese display names.</summary>
@@ -80,6 +80,12 @@ public static class ITEquipmentConstants
         public const string UserChangeReturned = "USER_CHANGE_RETURNED";
         public const string UserChangeAssigned = "USER_CHANGE_ASSIGNED";
         public const string SignedTermUploaded = "SIGNED_TERM_UPLOADED";
+        public const string Reactivated = "REACTIVATED";
+        public const string DeliveryTermAssigned = "DELIVERY_TERM_ASSIGNED";
+        public const string DeliveryTermReturned = "DELIVERY_TERM_RETURNED";
+        public const string DeliveryTermDocGenerated = "DELIVERY_TERM_DOC_GENERATED";
+        public const string DeliveryTermSignedUploaded = "DELIVERY_TERM_SIGNED_UPLOADED";
+        public const string DeliveryTermCancelled = "DELIVERY_TERM_CANCELLED";
     }
 
     /// <summary>Assignment lifecycle statuses.</summary>
@@ -114,6 +120,8 @@ public static class ITEquipmentConstants
         public const string ReturnAgreement = "RETURN_AGREEMENT";
         public const string SignedAssignmentAgreement = "SIGNED_ASSIGNMENT_AGREEMENT";
         public const string SignedReturnAgreement = "SIGNED_RETURN_AGREEMENT";
+        public const string DeliveryTermAgreement = "DELIVERY_TERM_AGREEMENT";
+        public const string SignedDeliveryTermAgreement = "SIGNED_DELIVERY_TERM_AGREEMENT";
         public const string Other = "OTHER";
 
         public static string DisplayName(string code) => code switch
@@ -129,6 +137,8 @@ public static class ITEquipmentConstants
             ReturnAgreement => "Termo de Devolução",
             SignedAssignmentAgreement => "Termo de Responsabilidade Assinado",
             SignedReturnAgreement => "Termo de Devolução Assinado",
+            DeliveryTermAgreement => "Termo de Entrega Agrupado",
+            SignedDeliveryTermAgreement => "Termo de Entrega Agrupado Assinado",
             Other => "Outro",
             _ => code
         };
@@ -161,6 +171,59 @@ public static class ITEquipmentConstants
             "PRINTER" => EquipmentType.Printer,
             "NVR" => EquipmentType.Nvr,
             _ => EquipmentType.UnknownType
+        };
+    }
+    /// <summary>Delivery term lifecycle statuses.</summary>
+    public static class DeliveryTermStatus
+    {
+        public const string Draft = "DRAFT";
+        public const string Generated = "GENERATED";
+        public const string Sent = "SENT";
+        public const string Signed = "SIGNED";
+        public const string PartiallyReturned = "PARTIALLY_RETURNED";
+        public const string Closed = "CLOSED";
+        public const string Cancelled = "CANCELLED";
+
+        public static readonly string[] All = { Draft, Generated, Sent, Signed, PartiallyReturned, Closed, Cancelled };
+
+        /// <summary>Portuguese display names.</summary>
+        public static string DisplayName(string code) => code switch
+        {
+            Draft => "Rascunho",
+            Generated => "PDF Gerado",
+            Sent => "Enviado",
+            Signed => "Assinado",
+            PartiallyReturned => "Parcialmente Devolvido",
+            Closed => "Encerrado",
+            Cancelled => "Cancelado",
+            _ => code
+        };
+    }
+
+    /// <summary>Delivery item statuses within a grouped term.</summary>
+    public static class DeliveryItemStatus
+    {
+        public const string Pending = "PENDING";
+        public const string Delivered = "DELIVERED";
+        public const string Returned = "RETURNED";
+        public const string Replaced = "REPLACED";
+        public const string Lost = "LOST";
+        public const string Retired = "RETIRED";
+    }
+
+    /// <summary>Condition codes for returned equipment.</summary>
+    public static class ReturnCondition
+    {
+        public const string Good = "GOOD";
+        public const string Damaged = "DAMAGED";
+        public const string NeedsRepair = "NEEDS_REPAIR";
+
+        public static string DisplayName(string code) => code switch
+        {
+            Good => "Bom estado",
+            Damaged => "Danificado",
+            NeedsRepair => "Necessita reparo",
+            _ => code
         };
     }
 }

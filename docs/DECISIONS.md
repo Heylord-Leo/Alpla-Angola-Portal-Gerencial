@@ -2,6 +2,21 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-142 — IT Equipment Module Master Data & Catalogs
+
+- **Date:** 2026-06-12
+- **Status:** Accepted
+- **Context:** The IT Equipment module relied on free-text fields for Manufacturer, Model, Processor, Memory, and Plant. Delivery Terms also used free-text fields for Department and Plant. This caused data inconsistency, typo-driven duplication, and poor reporting capability. Furthermore, Company/Plant dependencies were not enforced.
+- **Decision:**
+    1. **Master Data Integration:** `ITEquipmentDeliveryTerm` now links directly to Master Data via `CompanyId`, `PlantId`, and `DepartmentId` foreign keys.
+    2. **Admin Catalogs:** Created `ITEquipmentManufacturer`, `ITEquipmentModel`, `ITEquipmentProcessor`, and `ITEquipmentMemoryOption` lookup tables. These are manageable by IT admins via a new "Gerir Catálogos" modal.
+    3. **Denormalized Persistence Strategy:** To preserve backward compatibility and avoid a massive data migration in this phase, the new UI dropdowns resolve the selected catalog item names and save them as flat strings into the existing `ITEquipment` text columns (`Manufacturer`, `Model`, etc.).
+    4. **Cascading Dropdowns:** UI forms now enforce logical cascades: Company must be selected before Plant; Plant is filtered by Company; Manufacturer must be selected before Model; changing Manufacturer clears the Model.
+    5. **Guided Tour:** A dedicated IT Equipment Guided Tour was added to onboard users to the new catalog features.
+- **Consequences:** Data entry is now standardized and typo-proof. Existing records remain intact without requiring destructive schema changes. Admin users have self-service control over available equipment options. The technical debt of denormalized fields in `ITEquipment` remains but is now fed by clean, structured inputs.
+
+---
+
 ## DEC-141 — Supplier Ficha Primavera Import Enrichment & Safe Update Rule
 
 - **Date:** 2026-06-08

@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Monitor, Upload, Plus, Search, Filter, ChevronLeft, ChevronRight, X, RefreshCw } from 'lucide-react';
+import { Monitor, Upload, Plus, Search, Filter, ChevronLeft, ChevronRight, X, RefreshCw, Settings } from 'lucide-react';
 import { itEquipmentApi } from '../../lib/itEquipmentApi';
 import { EquipmentSummaryCards } from '../../components/it/EquipmentSummaryCards';
 import { EquipmentTable } from '../../components/it/EquipmentTable';
 import { EquipmentQuickViewDrawer } from '../../components/it/EquipmentQuickViewDrawer';
 import { EquipmentFormModal } from '../../components/it/EquipmentFormModal';
 import { ImportEquipmentModal } from '../../components/it/ImportEquipmentModal';
+import { ManageEquipmentTypesModal } from '../../components/it/ManageEquipmentTypesModal';
+import { ManageEquipmentCatalogsModal } from '../../components/it/ManageEquipmentCatalogsModal';
 import type { ITEquipmentSummary, ITEquipmentListResponse, ITEquipmentFilterOptions } from '../../types/itEquipment';
 
 export default function ITEquipmentPage() {
@@ -31,6 +33,16 @@ export default function ITEquipmentPage() {
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
     const [showFilters, setShowFilters] = useState(false);
+    const [showTypesModal, setShowTypesModal] = useState(false);
+    const [showCatalogsModal, setShowCatalogsModal] = useState(false);
+    const [equipmentTypes, setEquipmentTypes] = useState<Array<{ value: string; label: string }>>([]);
+
+    // Load dynamic equipment types for filter dropdown
+    useEffect(() => {
+        itEquipmentApi.types.list(true).then(types => {
+            setEquipmentTypes(types.map(t => ({ value: t.code, label: t.displayName })));
+        }).catch(() => {});
+    }, []);
 
     const loadData = useCallback(async () => {
         try {
@@ -110,7 +122,7 @@ export default function ITEquipmentPage() {
                         Gestão e controle de todos os equipamentos de tecnologia da informação
                     </p>
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div data-tour="it-action-buttons" style={{ display: 'flex', gap: 8 }}>
                     <button
                         onClick={handleRefresh}
                         style={{
@@ -121,6 +133,28 @@ export default function ITEquipmentPage() {
                         }}
                     >
                         <RefreshCw size={15} /> Atualizar
+                    </button>
+                    <button
+                        onClick={() => setShowTypesModal(true)}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+                            backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)',
+                            borderRadius: 8, cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: '0.85rem',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        <Settings size={15} /> Gerir Tipos
+                    </button>
+                    <button
+                        onClick={() => setShowCatalogsModal(true)}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+                            backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)',
+                            borderRadius: 8, cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: '0.85rem',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        <Settings size={15} /> Gerir Catálogos
                     </button>
                     <button
                         onClick={() => setShowImportModal(true)}
@@ -149,7 +183,9 @@ export default function ITEquipmentPage() {
 
             {/* KPI Cards */}
             {summary && (
-                <EquipmentSummaryCards summary={summary} activeFilter={statusFilter} onFilterClick={handleKpiClick} />
+                <div data-tour="it-summary-cards">
+                    <EquipmentSummaryCards summary={summary} activeFilter={statusFilter} onFilterClick={handleKpiClick} />
+                </div>
             )}
 
             {/* Search & Filter Bar */}
@@ -238,14 +274,7 @@ export default function ITEquipmentPage() {
                         label="Tipo"
                         value={typeFilter}
                         onChange={(v) => { setTypeFilter(v); setPage(1); }}
-                        options={[
-                            { value: 'LAPTOP', label: 'Laptop' },
-                            { value: 'DESKTOP', label: 'Desktop' },
-                            { value: 'MONITOR', label: 'Monitor' },
-                            { value: 'PRINTER', label: 'Impressora' },
-                            { value: 'NVR', label: 'NVR' },
-                            { value: 'UNKNOWN', label: 'Desconhecido' },
-                        ]}
+                        options={equipmentTypes}
                     />
                     <FilterSelect
                         label="Planta"
@@ -345,6 +374,20 @@ export default function ITEquipmentPage() {
                 <ImportEquipmentModal
                     onClose={() => setShowImportModal(false)}
                     onSuccess={() => { setShowImportModal(false); setFilterOptions(null); loadData(); }}
+                />
+            )}
+
+            {/* Manage Types Modal */}
+            {showTypesModal && (
+                <ManageEquipmentTypesModal
+                    onClose={() => { setShowTypesModal(false); /* Refresh types for filters */ itEquipmentApi.types.list(true).then(types => setEquipmentTypes(types.map(t => ({ value: t.code, label: t.displayName })))).catch(() => {}); }}
+                />
+            )}
+
+            {/* Manage Catalogs Modal */}
+            {showCatalogsModal && (
+                <ManageEquipmentCatalogsModal
+                    onClose={() => setShowCatalogsModal(false)}
                 />
             )}
         </div>

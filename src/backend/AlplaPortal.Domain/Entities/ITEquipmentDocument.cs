@@ -19,6 +19,10 @@ public class ITEquipmentDocument
     public Guid? AssignmentId { get; set; }
     public ITEquipmentAssignment? Assignment { get; set; }
 
+    /// <summary>Nullable link to the delivery term if this document belongs to a grouped delivery.</summary>
+    public Guid? DeliveryTermId { get; set; }
+    public ITEquipmentDeliveryTerm? DeliveryTerm { get; set; }
+
     /// <summary>Document type code (PAYMENT_PROOF, INVOICE, PROFORMA, ASSIGNMENT_AGREEMENT, etc.).</summary>
     public string DocumentType { get; set; } = "OTHER";
 

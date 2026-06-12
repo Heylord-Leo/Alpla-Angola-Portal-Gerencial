@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Edit3, UserPlus, RotateCcw, Wrench, AlertTriangle, BookmarkCheck, Archive, Loader2, Download, Upload, FileText, FileCheck, FileX, Clock, User, Cpu, RefreshCw } from 'lucide-react';
+import { X, Edit3, UserPlus, RotateCcw, Wrench, AlertTriangle, BookmarkCheck, Archive, Loader2, Download, Upload, FileText, FileCheck, FileX, Clock, User, Cpu, RefreshCw, RotateCw } from 'lucide-react';
 import { itEquipmentApi } from '../../lib/itEquipmentApi';
 import { EQUIPMENT_STATUS_CONFIG, EQUIPMENT_TYPE_CONFIG, MOVEMENT_TYPE_LABELS, ASSIGNMENT_STATUS_CONFIG, DOCUMENT_TYPE_LABELS } from '../../types/itEquipment';
 import type { ITEquipmentDetail } from '../../types/itEquipment';
@@ -11,6 +11,7 @@ import { RetireEquipmentModal } from './RetireEquipmentModal';
 import { ReserveEquipmentModal } from './ReserveEquipmentModal';
 import { ChangeEquipmentUserModal } from './ChangeEquipmentUserModal';
 import { EquipmentFormModal } from './EquipmentFormModal';
+import { ReactivateEquipmentModal } from './ReactivateEquipmentModal';
 
 interface Props {
     equipmentId: string;
@@ -44,6 +45,7 @@ export function EquipmentQuickViewDrawer({ equipmentId, onClose, onRefresh }: Pr
     const canRepair = detail && !['LOST', 'RETIRED', 'DISPOSED'].includes(detail.statusCode);
     const canReserve = detail && detail.statusCode === 'AVAILABLE';
     const canRetire = detail && !['RETIRED', 'DISPOSED'].includes(detail.statusCode);
+    const canReactivate = detail && detail.statusCode === 'RETIRED';
 
     return (
         <>
@@ -107,6 +109,7 @@ export function EquipmentQuickViewDrawer({ equipmentId, onClose, onRefresh }: Pr
                         <ActionBtn label="Perdido" icon={<AlertTriangle size={13} />} onClick={() => setActiveModal('lost')} color="#ef4444" />
                         {canReserve && <ActionBtn label="Reservar" icon={<BookmarkCheck size={13} />} onClick={() => setActiveModal('reserve')} color="#f59e0b" />}
                         {canRetire && <ActionBtn label="Baixar" icon={<Archive size={13} />} onClick={() => setActiveModal('retire')} color="#6b7280" />}
+                        {canReactivate && <ActionBtn label="Reativar" icon={<RotateCw size={13} />} onClick={() => setActiveModal('reactivate')} color="#22c55e" />}
                     </div>
                 )}
 
@@ -157,6 +160,7 @@ export function EquipmentQuickViewDrawer({ equipmentId, onClose, onRefresh }: Pr
             {activeModal === 'reserve' && detail && <ReserveEquipmentModal equipmentId={detail.id} onClose={handleModalClose} onSuccess={handleModalSuccess} />}
             {activeModal === 'retire' && detail && <RetireEquipmentModal equipmentId={detail.id} onClose={handleModalClose} onSuccess={handleModalSuccess} />}
             {activeModal === 'change-user' && detail && <ChangeEquipmentUserModal equipmentId={detail.id} onClose={handleModalClose} onSuccess={handleModalSuccess} />}
+            {activeModal === 'reactivate' && detail && <ReactivateEquipmentModal equipmentId={detail.id} onClose={handleModalClose} onSuccess={handleModalSuccess} />}
         </>
     );
 }
@@ -515,41 +519,66 @@ function MovementsTab({ movements }: { movements: ITEquipmentDetail['movements']
     if (!movements || movements.length === 0) {
         return <EmptyState text="Nenhuma movimentação registada." />;
     }
+
+    // Color-coded movement type styling
+    const getMovementStyle = (type: string): { color: string; bg: string } => {
+        switch (type) {
+            case 'CREATED': case 'IMPORTED': return { color: '#10b981', bg: 'rgba(16,185,129,0.1)' };
+            case 'ASSIGNED': case 'USER_CHANGE_ASSIGNED': return { color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' };
+            case 'RETURNED': case 'USER_CHANGE_RETURNED': return { color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' };
+            case 'SENT_TO_REPAIR': return { color: '#f97316', bg: 'rgba(249,115,22,0.1)' };
+            case 'RETURNED_FROM_REPAIR': return { color: '#14b8a6', bg: 'rgba(20,184,166,0.1)' };
+            case 'MARKED_AS_LOST': return { color: '#ef4444', bg: 'rgba(239,68,68,0.1)' };
+            case 'RESERVED': case 'RELEASED_FROM_RESERVATION': return { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' };
+            case 'RETIRED': return { color: '#6b7280', bg: 'rgba(107,114,128,0.1)' };
+            case 'REACTIVATED': return { color: '#22c55e', bg: 'rgba(34,197,94,0.1)' };
+            case 'UPDATED': case 'PHOTO_UPDATED': case 'NOTES_UPDATED': return { color: '#6366f1', bg: 'rgba(99,102,241,0.1)' };
+            case 'AGREEMENT_GENERATED': case 'RETURN_DOCUMENT_GENERATED': case 'SIGNED_TERM_UPLOADED': return { color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)' };
+            case 'EMAIL_SENT': case 'RETURN_EMAIL_SENT': return { color: '#10b981', bg: 'rgba(16,185,129,0.08)' };
+            case 'EMAIL_FAILED': case 'RETURN_EMAIL_FAILED': return { color: '#ef4444', bg: 'rgba(239,68,68,0.08)' };
+            case 'USER_CHANGED': return { color: '#14b8a6', bg: 'rgba(20,184,166,0.1)' };
+            default: return { color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' };
+        }
+    };
+
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {movements.map((m, i) => (
-                <div key={m.id} style={{
-                    display: 'flex', gap: 12, padding: '10px 0',
-                    borderBottom: i < movements.length - 1 ? '1px solid var(--color-border)' : 'none'
-                }}>
-                    <div style={{
-                        width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-                        backgroundColor: 'rgba(59,130,246,0.1)', display: 'flex',
-                        alignItems: 'center', justifyContent: 'center', marginTop: 2
+            {movements.map((m, i) => {
+                const style = getMovementStyle(m.movementType);
+                return (
+                    <div key={m.id} style={{
+                        display: 'flex', gap: 12, padding: '10px 0',
+                        borderBottom: i < movements.length - 1 ? '1px solid var(--color-border)' : 'none'
                     }}>
-                        <Clock size={13} style={{ color: '#3b82f6' }} />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                            <span style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--color-text)' }}>
-                                {MOVEMENT_TYPE_LABELS[m.movementType] || m.movementType}
-                            </span>
-                            <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
-                                {new Date(m.createdAt).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                            </span>
+                        <div style={{
+                            width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+                            backgroundColor: style.bg, display: 'flex',
+                            alignItems: 'center', justifyContent: 'center', marginTop: 2
+                        }}>
+                            <Clock size={13} style={{ color: style.color }} />
                         </div>
-                        {(m.previousStatus || m.newStatus) && (
-                            <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
-                                {m.previousStatus && <span>{EQUIPMENT_STATUS_CONFIG[m.previousStatus]?.label || m.previousStatus}</span>}
-                                {m.previousStatus && m.newStatus && ' → '}
-                                {m.newStatus && <span style={{ fontWeight: 500 }}>{EQUIPMENT_STATUS_CONFIG[m.newStatus]?.label || m.newStatus}</span>}
+                        <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                                <span style={{ fontWeight: 600, fontSize: '0.82rem', color: style.color }}>
+                                    {MOVEMENT_TYPE_LABELS[m.movementType] || m.movementType}
+                                </span>
+                                <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
+                                    {new Date(m.createdAt).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                </span>
                             </div>
-                        )}
-                        {m.notes && <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: 3, whiteSpace: 'pre-wrap' }}>{m.notes}</p>}
-                        {m.createdByName && <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', opacity: 0.7 }}>por {m.createdByName}</span>}
+                            {(m.previousStatus || m.newStatus) && (
+                                <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
+                                    {m.previousStatus && <span>{EQUIPMENT_STATUS_CONFIG[m.previousStatus]?.label || m.previousStatus}</span>}
+                                    {m.previousStatus && m.newStatus && ' → '}
+                                    {m.newStatus && <span style={{ fontWeight: 500 }}>{EQUIPMENT_STATUS_CONFIG[m.newStatus]?.label || m.newStatus}</span>}
+                                </div>
+                            )}
+                            {m.notes && <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: 3, whiteSpace: 'pre-wrap' }}>{m.notes}</p>}
+                            {m.createdByName && <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', opacity: 0.7 }}>por {m.createdByName}</span>}
+                        </div>
                     </div>
-                </div>
-            ))}
+                );
+            })}
         </div>
     );
 }

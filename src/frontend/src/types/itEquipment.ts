@@ -160,6 +160,23 @@ export const EQUIPMENT_TYPE_CONFIG: Record<string, { label: string }> = {
     MONITOR: { label: 'Monitor' },
     PRINTER: { label: 'Impressora' },
     NVR: { label: 'NVR' },
+    MOUSE: { label: 'Rato' },
+    KEYBOARD: { label: 'Teclado' },
+    HEADSET: { label: 'Headset' },
+    DOCKING_STATION: { label: 'Docking Station' },
+    BAG: { label: 'Mala / Bolsa' },
+    PHONE: { label: 'Telemóvel' },
+    CHARGER: { label: 'Carregador' },
+    TABLET: { label: 'Tablet' },
+    SERVER: { label: 'Servidor' },
+    NETWORK_EQUIPMENT: { label: 'Equipamento de Rede' },
+    ACCESS_POINT: { label: 'Access Point' },
+    SWITCH: { label: 'Switch' },
+    FIREWALL: { label: 'Firewall' },
+    UPS: { label: 'UPS / Nobreak' },
+    PROJECTOR: { label: 'Projetor' },
+    SCANNER: { label: 'Scanner' },
+    ACCESSORIES: { label: 'Acessórios' },
     UNKNOWN: { label: 'Desconhecido' }
 };
 
@@ -186,7 +203,8 @@ export const MOVEMENT_TYPE_LABELS: Record<string, string> = {
     USER_CHANGED: 'Troca de Utilizador',
     USER_CHANGE_RETURNED: 'Devolução (Troca)',
     USER_CHANGE_ASSIGNED: 'Atribuição (Troca)',
-    SIGNED_TERM_UPLOADED: 'Termo Assinado Carregado'
+    SIGNED_TERM_UPLOADED: 'Termo Assinado Carregado',
+    REACTIVATED: 'Reativação'
 };
 
 export const ASSIGNMENT_STATUS_CONFIG: Record<string, { label: string; color: string; bgColor: string }> = {
@@ -209,5 +227,112 @@ export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
     RETURN_AGREEMENT: 'Termo de Devolução',
     SIGNED_ASSIGNMENT_AGREEMENT: 'Termo de Responsabilidade Assinado',
     SIGNED_RETURN_AGREEMENT: 'Termo de Devolução Assinado',
+    DELIVERY_TERM_AGREEMENT: 'Termo de Entrega Agrupado',
+    SIGNED_DELIVERY_TERM_AGREEMENT: 'Termo de Entrega Agrupado Assinado',
     OTHER: 'Outro'
+};
+
+// ─── Equipment Type Management ───
+
+export interface ITEquipmentTypeItem {
+    id: string;
+    code: string;
+    displayName: string;
+    isActive: boolean;
+    sortOrder: number;
+}
+
+// ─── Grouped Delivery Terms ───
+
+export interface ITDeliveryTermListItem {
+    id: string;
+    termNumber: string;
+    employeeName: string;
+    employeeEmail: string | null;
+    employeePlant: string | null;
+    deliveryDate: string;
+    status: string;
+    statusDisplay: string;
+    itemCount: number;
+    createdAt: string;
+    createdByName: string | null;
+}
+
+export interface ITDeliveryTermListResponse {
+    items: ITDeliveryTermListItem[];
+    totalCount: number;
+    page: number;
+    pageSize: number;
+}
+
+export interface ITDeliveryTermDetail {
+    id: string;
+    termNumber: string;
+    employeeName: string;
+    employeeEmail: string | null;
+    employeeUserId: string | null;
+    employeeDepartment: string | null;
+    employeePosition: string | null;
+    employeePlant: string | null;
+    deliveryDate: string;
+    status: string;
+    statusDisplay: string;
+    generatedDocumentId: string | null;
+    signedDocumentId: string | null;
+    notes: string | null;
+    createdAt: string;
+    createdByName: string | null;
+    updatedAt: string | null;
+    updatedByName: string | null;
+    items: ITDeliveryItemDetail[];
+}
+
+export interface ITDeliveryItemDetail {
+    id: string;
+    equipmentId: string;
+    assignmentId: string | null;
+    itemStatus: string;
+    itemStatusDisplay: string;
+    deliveredAt: string | null;
+    returnedAt: string | null;
+    returnCondition: string | null;
+    returnConditionDisplay: string | null;
+    notes: string | null;
+    equipment: {
+        id: string;
+        assetTag: string;
+        hostname: string | null;
+        equipmentType: string | null;
+        manufacturer: string | null;
+        model: string | null;
+        serialNumber: string | null;
+        statusCode: string;
+        statusDisplay: string;
+        currentOwnerName: string | null;
+    } | null;
+}
+
+export const DELIVERY_TERM_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+    DRAFT: { label: 'Rascunho', color: '#6b7280' },
+    GENERATED: { label: 'PDF Gerado', color: '#3b82f6' },
+    SENT: { label: 'Enviado', color: '#8b5cf6' },
+    SIGNED: { label: 'Assinado', color: '#10b981' },
+    PARTIALLY_RETURNED: { label: 'Parcialmente Devolvido', color: '#f59e0b' },
+    CLOSED: { label: 'Encerrado', color: '#6b7280' },
+    CANCELLED: { label: 'Cancelado', color: '#ef4444' }
+};
+
+export const DELIVERY_ITEM_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+    PENDING: { label: 'Pendente', color: '#6b7280' },
+    DELIVERED: { label: 'Entregue', color: '#10b981' },
+    RETURNED: { label: 'Devolvido', color: '#3b82f6' },
+    REPLACED: { label: 'Substituído', color: '#8b5cf6' },
+    LOST: { label: 'Perdido', color: '#ef4444' },
+    RETIRED: { label: 'Baixado', color: '#6b7280' }
+};
+
+export const RETURN_CONDITION_CONFIG: Record<string, { label: string; color: string }> = {
+    GOOD: { label: 'Bom estado', color: '#10b981' },
+    DAMAGED: { label: 'Danificado', color: '#ef4444' },
+    NEEDS_REPAIR: { label: 'Necessita reparo', color: '#f59e0b' }
 };

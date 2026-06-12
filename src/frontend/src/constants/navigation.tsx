@@ -3,7 +3,8 @@ import {
     FileText, Home, Settings, List, ShoppingCart, 
     Package, Activity, Network, Shield, CheckCircle,
     CreditCard, DollarSign, Archive, Users, UserCheck, Calendar, CalendarDays,
-    Layers, History, FileSignature, Bell, CalendarCheck, Monitor, Settings2
+    Layers, History, FileSignature, Bell, CalendarCheck, Monitor, Settings2,
+    ClipboardList
 } from 'lucide-react';
 import { ROLES } from './roles';
 
@@ -242,12 +243,31 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
         // ── T.I. (IT Equipment Module) ──
         {
             id: 'ti',
-            type: 'link',
+            type: 'group',
             label: 'T.I.',
             icon: <Monitor size={18} strokeWidth={2.5} />,
-            to: '/it/equipment',
             roles: [ROLES.IT, ROLES.SYSTEM_ADMINISTRATOR],
-            keywords: ['ti', 'equipamento', 'computador', 'laptop', 'desktop', 'monitor', 'impressora', 'inventário', 'estoque', 'it', 'asset tag', 'hardware']
+            keywords: ['ti', 'equipamento', 'computador', 'laptop', 'desktop', 'monitor', 'impressora', 'inventário', 'estoque', 'it', 'asset tag', 'hardware', 'termo', 'entrega'],
+            children: [
+                {
+                    id: 'ti-equipment',
+                    type: 'link',
+                    label: 'Estoque de Equipamentos',
+                    icon: <Monitor size={18} strokeWidth={2.5} />,
+                    to: '/it/equipment',
+                    roles: [ROLES.IT, ROLES.SYSTEM_ADMINISTRATOR],
+                    keywords: ['ti', 'equipamento', 'computador', 'laptop', 'desktop', 'monitor', 'impressora', 'inventário', 'estoque', 'asset tag', 'hardware']
+                },
+                {
+                    id: 'ti-delivery-terms',
+                    type: 'link',
+                    label: 'Termos de Entrega',
+                    icon: <ClipboardList size={18} strokeWidth={2.5} />,
+                    to: '/it/delivery-terms',
+                    roles: [ROLES.IT, ROLES.SYSTEM_ADMINISTRATOR],
+                    keywords: ['ti', 'termo', 'entrega', 'responsabilidade', 'agrupado', 'pdf', 'assinatura', 'delivery']
+                }
+            ]
         },
         // ── R.H. (Full Administration) — visible only to HR and System Administrator ──
         // When user has hasHRAdminAccess, this group shows with ALL children.

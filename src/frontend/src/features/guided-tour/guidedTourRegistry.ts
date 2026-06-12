@@ -7,6 +7,7 @@ import { RECEIVING_WORKSPACE_STEPS } from './tours/receivingWorkspaceTour';
 import { APPROVALS_CENTER_STEPS } from './tours/approvalsCenterTour';
 import { APPROVAL_DRAWER_AREA_STEPS } from './tours/approvalDrawerAreaTour';
 import { APPROVAL_DRAWER_FINAL_STEPS } from './tours/approvalDrawerFinalTour';
+import { IT_EQUIPMENT_STEPS } from './tours/itEquipmentTour';
 
 /**
  * Guided Tour Registry
@@ -34,6 +35,13 @@ export const TOUR_REGISTRY: TourDefinition[] = [
         label: 'Tour deste módulo',
         routes: ['/purchasing', '/requests', '/buyer/items', '/receiving'],
         steps: PURCHASING_LOGISTICS_STEPS,
+    },
+    {
+        id: 'module-it-equipment',
+        level: 'module',
+        label: 'Tour deste módulo',
+        routes: ['/it'],
+        steps: IT_EQUIPMENT_STEPS,
     },
     {
         id: 'page-requests',
