@@ -2,7 +2,39 @@
 
 ## Current Version
 
-v2.190.1
+v2.191.1
+
+## [v2.191.1] - 2026-06-12
+
+### Fixed — Quotation Submission Notification Emission
+
+**Problem:** The `SUBMISSION_CONFIRMED` email was not being sent for Quotation requests because Quotation requests skip DRAFT and are created directly in `WAITING_QUOTATION`, bypassing the notification emission path.
+
+**Fix:** Added notification emission directly in the `CreateRequestDraft` endpoint for Quotation requests.
+
+### Improved — Submission Confirmation Email Content
+
+- Email body now includes Request Title and Description with fallbacks.
+- Applies to all request types (shared template).
+
+### Improved — Buyer Queue Email CTA Button
+
+- Added explicit "Abrir Pedido no Portal →" CTA button using `AppConfig:PortalBaseUrl`.
+
+## [v2.191.0] - 2026-06-12
+
+### Added — Quotation Email Notifications
+
+Implemented three new email notification capabilities for the Quotation workflow:
+- **Submission Confirmation**: Requesters now receive a "Confirmação de Submissão" email when a Quotation request is submitted (DRAFT → WAITING_QUOTATION).
+- **Buyer Queue Alert**: Plant-scoped buyers now receive a `[AÇÃO NECESSÁRIA]` email when a new quotation request enters the queue, containing a rich summary of the request (Requester, Plant, Department, Value, Need-by date).
+- **Assignment Confirmation**: When a buyer takes ownership of a quotation, the system now automatically emails both the buyer (confirming assignment) and the requester (informing them who their buyer is).
+
+### Technical Changes
+- Added two new constants in `WorkflowEventCodes.cs`: `QuotationAwaitingBuyer` and `BuyerAssigned`.
+- Mapped `("SUBMIT", "WAITING_QUOTATION")` in `ResolveEventCode` to fix the previously silent transition.
+- Implemented `AddPlantScopedBuyerRecipientsAsync` in `WorkflowNotificationOrchestrator` to replicate the safe plant-scoped routing used for Finance.
+- Fired `_orchestrator.EmitAsync` natively inside the `/assign-buyer` endpoint.
 
 ## [v2.190.1] - 2026-06-11
 

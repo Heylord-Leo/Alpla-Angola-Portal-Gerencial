@@ -2,6 +2,41 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.191.1] - 2026-06-12
+
+### Fixed — Quotation Submission Notification Emission
+
+**Problem:** The `SUBMISSION_CONFIRMED` email was not being sent for Quotation requests. The v2.191.0 mapping in `ResolveEventCode("SUBMIT", "WAITING_QUOTATION")` was correct but unreachable because Quotation requests are created directly in `WAITING_QUOTATION` status (skipping DRAFT), so they never pass through `SubmitRequest` → `ApplyStatusChangeAndSyncItemsAsync` where notifications are emitted.
+
+**Fix:** Added notification emission directly in the `CreateRequestDraft` endpoint for Quotation requests, replicating the dual-event pattern (primary `QUOTATION_AWAITING_BUYER` + secondary `SUBMISSION_CONFIRMED`).
+
+### Improved — Submission Confirmation Email Content
+
+- The `SUBMISSION_CONFIRMED` email body now includes **Request Title** and **Description** in a styled "Dados do Pedido" details card.
+- Fallbacks applied: `Sem título` for empty title, `Não informado` for empty description.
+- Applies to all request types (Payment and Quotation) since the template is shared.
+
+### Improved — Buyer Queue Email CTA Button
+
+- The `QUOTATION_AWAITING_BUYER` email now includes an explicit **"Abrir Pedido no Portal →"** CTA button using the environment-aware `AppConfig:PortalBaseUrl`.
+- Button links directly to the request detail page (`/requests/{id}?mode=view`).
+- Uses the ALPLA blue (#002D72) visual style consistent with existing portal email buttons.
+
+## [v2.191.0] - 2026-06-12
+
+### Added — Quotation Email Notifications
+
+Implemented three new email notification capabilities for the Quotation workflow:
+- **Submission Confirmation**: Requesters now receive a "Confirmação de Submissão" email when a Quotation request is submitted (DRAFT → WAITING_QUOTATION).
+- **Buyer Queue Alert**: Plant-scoped buyers now receive a `[AÇÃO NECESSÁRIA]` email when a new quotation request enters the queue, containing a rich summary of the request (Requester, Plant, Department, Value, Need-by date).
+- **Assignment Confirmation**: When a buyer takes ownership of a quotation, the system now automatically emails both the buyer (confirming assignment) and the requester (informing them who their buyer is).
+
+### Technical Changes
+- Added two new constants in `WorkflowEventCodes.cs`: `QuotationAwaitingBuyer` and `BuyerAssigned`.
+- Mapped `("SUBMIT", "WAITING_QUOTATION")` in `ResolveEventCode` to fix the previously silent transition.
+- Implemented `AddPlantScopedBuyerRecipientsAsync` in `WorkflowNotificationOrchestrator` to replicate the safe plant-scoped routing used for Finance.
+- Fired `_orchestrator.EmitAsync` natively inside the `/assign-buyer` endpoint.
+
 ## [v2.190.1] - 2026-06-11
 
 ### Fixed — Idempotent Migrations: Schema/History Desync Safe Handling

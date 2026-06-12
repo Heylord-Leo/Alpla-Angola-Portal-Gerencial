@@ -120,6 +120,34 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 await HandlePendingAreaApprovalFanningAsync(recipients, evt, reqRef, isQuotation: true);
                 break;
 
+            // --- Quotation Awaiting Buyer: notify plant-scoped Buyers ---
+            case WorkflowEventCodes.QuotationAwaitingBuyer:
+                await AddPlantScopedBuyerRecipientsAsync(recipients, evt);
+                break;
+
+            // --- Buyer Assigned: notify Buyer + Requester ---
+            case WorkflowEventCodes.BuyerAssigned:
+            {
+                var buyerUser = evt.BuyerId.HasValue
+                    ? await _context.Users.AsNoTracking()
+                        .Where(u => u.Id == evt.BuyerId.Value)
+                        .Select(u => new { u.FullName }).FirstOrDefaultAsync()
+                    : null;
+                var buyerName = buyerUser?.FullName ?? evt.ActorName;
+
+                // Buyer: confirmation that the request was assigned to them
+                await AddUserRecipientAsync(recipients, evt.BuyerId,
+                    emailSubjectOverride: $"Pedido de Cotação atribuído a você — {reqRef}",
+                    emailBodyOverride: $"O pedido de cotação <b>{reqRef}</b> foi-lhe atribuído. Por favor, prossiga com o processo de cotação.",
+                    bypassSelfNotifyRule: true);
+
+                // Requester: informing who the buyer is
+                await AddUserRecipientAsync(recipients, evt.RequesterId,
+                    emailSubjectOverride: $"Comprador atribuído ao seu pedido — {reqRef}",
+                    emailBodyOverride: $"O comprador <b>{buyerName}</b> assumiu a responsabilidade pelo seu pedido de cotação <b>{reqRef}</b>. O processo de cotação prosseguirá em breve.");
+                break;
+            }
+
             // --- Rejection/Adjustment: notify the requester ---
             case WorkflowEventCodes.AreaRejected:
             case WorkflowEventCodes.AreaAdjustment:
@@ -418,6 +446,104 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         }
     }
 
+    /// <summary>
+    /// Resolves all active Buyer users scoped to the request's plant.
+    /// Falls back to all active Buyer users if no plant is specified
+    /// (email suppressed for global fan-out).
+    /// </summary>
+    private async Task AddPlantScopedBuyerRecipientsAsync(
+        List<NotificationRecipient> recipients, WorkflowEvent evt)
+    {
+        var buyerRole = await _context.Roles.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.RoleName == RoleConstants.Buyer);
+        if (buyerRole == null) return;
+
+        IQueryable<Guid> buyerUserIds;
+
+        if (evt.PlantId.HasValue)
+        {
+            // Plant-scoped: Buyer users who have the specific plant in their scope
+            buyerUserIds = _context.UserRoleAssignments
+                .Where(ura => ura.RoleId == buyerRole.Id)
+                .Select(ura => ura.UserId)
+                .Intersect(
+                    _context.UserPlantScopes
+                        .Where(ups => ups.PlantId == evt.PlantId.Value)
+                        .Select(ups => ups.UserId)
+                );
+        }
+        else
+        {
+            // No plant context — fallback to all Buyer users
+            buyerUserIds = _context.UserRoleAssignments
+                .Where(ura => ura.RoleId == buyerRole.Id)
+                .Select(ura => ura.UserId);
+        }
+
+        // Load request context for rich email body
+        var req = await _context.Requests.AsNoTracking()
+            .Include(r => r.Requester)
+            .Include(r => r.Plant)
+            .Include(r => r.Department)
+            .Include(r => r.Currency)
+            .FirstOrDefaultAsync(r => r.Id == evt.RequestId);
+
+        var reqRef = evt.RequestNumber;
+        var requesterName = req?.Requester?.FullName ?? "Desconhecido";
+        var plantName = req?.Plant?.Name ?? "---";
+        var deptName = req?.Department?.Name ?? "---";
+        var currencyCode = req?.Currency?.Code ?? "AOA";
+        var amount = req?.EstimatedTotalAmount ?? 0m;
+        var needByDate = req?.NeedByDateUtc?.ToString("dd/MM/yyyy") ?? "Não definida";
+
+        var portalBaseUrl = _config["AppConfig:PortalBaseUrl"] ?? "";
+        var requestDetailUrl = !string.IsNullOrWhiteSpace(portalBaseUrl)
+            ? $"{portalBaseUrl.TrimEnd('/')}/requests/{evt.RequestId}?mode=view"
+            : "";
+        var ctaButtonHtml = !string.IsNullOrWhiteSpace(requestDetailUrl)
+            ? $@"<div style='text-align: left; margin: 24px 0;'>
+                    <a href='{requestDetailUrl}' 
+                       style='display:inline-block; background-color:#002D72; color:#ffffff; padding:12px 24px; text-decoration:none; border-radius:4px; font-weight:bold;'>
+                       Abrir Pedido no Portal &rarr;
+                    </a>
+                 </div>"
+            : "";
+
+        var htmlBody = $@"
+<p>Um novo pedido de cotação <b>{reqRef}</b> está aguardando processamento na sua fila.</p>
+<div style='background-color:#f0f9ff; border:1px solid #bae6fd; padding:15px; border-radius:6px; margin:20px 0;'>
+    <h3 style='color:#0369a1; margin-top:0;'>Dados do Pedido</h3>
+    <ul style='color:#0c4a6e; font-size:14px; margin-bottom:0;'>
+        <li style='margin-bottom: 5px'><b>Nº do Pedido:</b> {reqRef}</li>
+        <li style='margin-bottom: 5px'><b>Solicitante:</b> {System.Net.WebUtility.HtmlEncode(requesterName)}</li>
+        <li style='margin-bottom: 5px'><b>Planta:</b> {System.Net.WebUtility.HtmlEncode(plantName)}</li>
+        <li style='margin-bottom: 5px'><b>Departamento:</b> {System.Net.WebUtility.HtmlEncode(deptName)}</li>
+        <li style='margin-bottom: 5px'><b>Valor Estimado:</b> {amount:N2} {currencyCode}</li>
+        <li><b>Data de Necessidade:</b> {needByDate}</li>
+    </ul>
+</div>
+{ctaButtonHtml}
+<p>Por favor, revise o pedido e assuma a responsabilidade para dar início ao processo de cotação.</p>";
+
+        var subjectOverride = $"[AÇÃO NECESSÁRIA] Novo Pedido de Cotação aguardando — {reqRef}";
+
+        var users = await _context.Users
+            .AsNoTracking()
+            .Where(u => buyerUserIds.Contains(u.Id) && u.IsActive)
+            .Select(u => new { u.Id, u.Email, u.FullName })
+            .ToListAsync();
+
+        foreach (var user in users)
+        {
+            recipients.Add(new NotificationRecipient(user.Id, user.Email, user.FullName)
+            {
+                EmailSubjectOverride = subjectOverride,
+                EmailBodyOverride = htmlBody,
+                SuppressEmail = !evt.PlantId.HasValue  // suppress email if global fallback
+            });
+        }
+    }
+
     // =====================================================================
     // DISPATCH
     // =====================================================================
@@ -487,8 +613,16 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 var currencyCode = req?.Currency?.Code ?? "AOA";
                 var totalAmt = req?.EstimatedTotalAmount ?? 0m;
 
+                var titleDisplay = !string.IsNullOrWhiteSpace(req?.Title) ? System.Net.WebUtility.HtmlEncode(req.Title) : "Sem título";
+                var descDisplay = !string.IsNullOrWhiteSpace(req?.Description) ? System.Net.WebUtility.HtmlEncode(req.Description) : "Não informado";
+
                 var bodyHtml = $"Recebemos o seu pedido <b>{reqRef}</b>{reqContext} com sucesso. O pedido foi enviado para a fila de aprovação.<br/><br/>" +
-                               $"<b>Valor Total Estimado:</b> {totalAmt:N2} {currencyCode}<br/><br/>" +
+                               $"<div style='background-color:#f0f9ff; border:1px solid #bae6fd; padding:15px; border-radius:6px; margin:16px 0;'>" +
+                               $"<h3 style='color:#0369a1; margin-top:0;'>Dados do Pedido</h3>" +
+                               $"<p style='margin:6px 0;'><b>Título:</b> {titleDisplay}</p>" +
+                               $"<p style='margin:6px 0;'><b>Descrição:</b> {descDisplay}</p>" +
+                               $"<p style='margin:6px 0;'><b>Valor Total Estimado:</b> {totalAmt:N2} {currencyCode}</p>" +
+                               $"</div>" +
                                $"<b>Resumo dos Itens:</b><br/>" + itemsTable;
 
                 return new EventConfig
@@ -683,6 +817,51 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 EmailHeadline = "Cotação Concluída",
                 EmailBody = $"A cotação para o pedido <b>{reqRef}</b>{reqContext} foi concluída por <b>{actorLabel}</b> e avança para a etapa de aprovação de área."
             };
+
+            case WorkflowEventCodes.QuotationAwaitingBuyer: return new EventConfig
+            {
+                Category = NotificationCategories.Quotation,
+                NotificationType = NotificationTypes.Warning,
+                InAppTitle = "Novo Pedido de Cotação",
+                InAppMessage = $"O pedido {reqRef}{reqContext} foi submetido por {actorLabel} e aguarda cotação.",
+                SendEmail = true,
+                EmailSubject = $"[AÇÃO NECESSÁRIA] Novo Pedido de Cotação aguardando — {reqRef}",
+                EmailHeadline = "Novo Pedido de Cotação Aguardando",
+                EmailBody = $"O pedido <b>{reqRef}</b>{reqContext} foi submetido por <b>{actorLabel}</b> e aguarda a atribuição de um comprador para dar início ao processo de cotação."
+            };
+
+            case WorkflowEventCodes.BuyerAssigned:
+            {
+                var req = await _context.Requests.AsNoTracking()
+                    .Include(r => r.Requester)
+                    .Include(r => r.Plant)
+                    .Include(r => r.Department)
+                    .Include(r => r.Currency)
+                    .FirstOrDefaultAsync(r => r.Id == evt.RequestId);
+
+                var requesterName = req?.Requester?.FullName ?? "Desconhecido";
+                var plantName = req?.Plant?.Name ?? "---";
+                var deptName = req?.Department?.Name ?? "---";
+                var currencyCode = req?.Currency?.Code ?? "AOA";
+                var amount = req?.EstimatedTotalAmount ?? 0m;
+
+                return new EventConfig
+                {
+                    Category = NotificationCategories.Quotation,
+                    NotificationType = NotificationTypes.Info,
+                    InAppTitle = "Comprador Atribuído",
+                    InAppMessage = $"O comprador {actorLabel} assumiu o pedido de cotação {reqRef}.",
+                    SendEmail = true,
+                    EmailSubject = $"Comprador atribuído ao pedido — {reqRef}",
+                    EmailHeadline = "Comprador Atribuído ao Pedido de Cotação",
+                    EmailBody = $"O comprador <b>{actorLabel}</b> assumiu a responsabilidade pelo pedido de cotação <b>{reqRef}</b>{reqContext}.<br/><br/>" +
+                        $"<b>Solicitante:</b> {System.Net.WebUtility.HtmlEncode(requesterName)}<br/>" +
+                        $"<b>Planta:</b> {System.Net.WebUtility.HtmlEncode(plantName)}<br/>" +
+                        $"<b>Departamento:</b> {System.Net.WebUtility.HtmlEncode(deptName)}<br/>" +
+                        $"<b>Valor Estimado:</b> {amount:N2} {currencyCode}<br/><br/>" +
+                        $"O processo de cotação continuará a partir deste ponto."
+                };
+            }
 
             default: return null;
         }
