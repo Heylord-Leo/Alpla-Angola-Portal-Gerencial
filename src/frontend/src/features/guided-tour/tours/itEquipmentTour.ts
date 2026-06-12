@@ -5,7 +5,7 @@ export const IT_EQUIPMENT_STEPS: TourStep[] = [
         target: 'body',
         placement: 'center',
         content: 'Bem-vindo ao módulo de Gestão de Equipamentos de IT. Aqui pode gerir o inventário, ciclo de vida e atribuições de equipamentos na empresa.',
-        disableBeacon: true,
+        skipBeacon: true,
     },
     {
         target: '[data-tour="it-summary-cards"]',
