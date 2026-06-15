@@ -4,7 +4,8 @@ import { deliveryTermsApi, itEquipmentApi } from '../../lib/itEquipmentApi';
 import { api } from '../../lib/api';
 import type {
     ITDeliveryTermListResponse, ITDeliveryTermDetail,
-    ITDeliveryItemDetail
+    ITDeliveryItemDetail, MasterDataCompany, MasterDataPlant, MasterDataDepartment,
+    ITEquipmentListItem
 } from '../../types/itEquipment';
 import { DELIVERY_TERM_STATUS_CONFIG, DELIVERY_ITEM_STATUS_CONFIG, RETURN_CONDITION_CONFIG } from '../../types/itEquipment';
 
@@ -59,8 +60,9 @@ export default function DeliveryTermsPage() {
             setDrawerLoading(true);
             const data = await deliveryTermsApi.getById(id);
             setTermDetail(data);
-        } catch (err: any) {
-            showToast(err.message || 'Erro ao carregar detalhes.', 'error');
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Erro ao carregar detalhes.';
+            showToast(message, 'error');
         } finally {
             setDrawerLoading(false);
         }
@@ -93,8 +95,9 @@ export default function DeliveryTermsPage() {
             showToast(result.detail, 'success');
             loadTermDetail(termDetail.id);
             loadList();
-        } catch (err: any) {
-            showToast(err.message, 'error');
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Erro ao confirmar.';
+            showToast(message, 'error');
         } finally {
             setActionLoading(false);
         }
@@ -108,8 +111,9 @@ export default function DeliveryTermsPage() {
             showToast(result.detail, 'success');
             loadTermDetail(termDetail.id);
             loadList();
-        } catch (err: any) {
-            showToast(err.message, 'error');
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Erro ao enviar.';
+            showToast(message, 'error');
         } finally {
             setActionLoading(false);
         }
@@ -123,8 +127,9 @@ export default function DeliveryTermsPage() {
             showToast(result.detail, 'success');
             loadTermDetail(termDetail.id);
             loadList();
-        } catch (err: any) {
-            showToast(err.message, 'error');
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Erro ao carregar documento.';
+            showToast(message, 'error');
         } finally {
             setActionLoading(false);
         }
@@ -138,8 +143,9 @@ export default function DeliveryTermsPage() {
             showToast(result.detail, 'success');
             closeDetail();
             loadList();
-        } catch (err: any) {
-            showToast(err.message, 'error');
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Erro ao cancelar.';
+            showToast(message, 'error');
         } finally {
             setActionLoading(false);
         }
@@ -159,8 +165,9 @@ export default function DeliveryTermsPage() {
             setReturnNotes('');
             loadTermDetail(termDetail.id);
             loadList();
-        } catch (err: any) {
-            showToast(err.message, 'error');
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Erro ao devolver item.';
+            showToast(message, 'error');
         } finally {
             setActionLoading(false);
         }
@@ -173,8 +180,9 @@ export default function DeliveryTermsPage() {
             await deliveryTermsApi.removeItem(termDetail.id, itemId);
             showToast('Item removido.', 'success');
             loadTermDetail(termDetail.id);
-        } catch (err: any) {
-            showToast(err.message, 'error');
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Erro ao remover item.';
+            showToast(message, 'error');
         } finally {
             setActionLoading(false);
         }
@@ -408,13 +416,13 @@ function CreateDeliveryTermModal({ onClose, onCreated, showToast }: {
     const [saving, setSaving] = useState(false);
 
     // Master Data lookups
-    const [companies, setCompanies] = useState<any[]>([]);
-    const [plants, setPlants] = useState<any[]>([]);
-    const [departments, setDepartments] = useState<any[]>([]);
+    const [companies, setCompanies] = useState<MasterDataCompany[]>([]);
+    const [plants, setPlants] = useState<MasterDataPlant[]>([]);
+    const [departments, setDepartments] = useState<MasterDataDepartment[]>([]);
 
     useEffect(() => {
-        api.lookups.getCompanies().then(setCompanies).catch(() => {});
-        api.lookups.getDepartments().then(setDepartments).catch(() => {});
+        api.lookups.getCompanies().then(setCompanies).catch((err: unknown) => console.error('[DeliveryTerms] Failed to load companies:', err));
+        api.lookups.getDepartments().then(setDepartments).catch((err: unknown) => console.error('[DeliveryTerms] Failed to load departments:', err));
     }, []);
 
     // Company → Plant cascade
@@ -446,7 +454,7 @@ function CreateDeliveryTermModal({ onClose, onCreated, showToast }: {
 
     // Equipment selection
     const [equipmentSearch, setEquipmentSearch] = useState('');
-    const [availableEquipment, setAvailableEquipment] = useState<any[]>([]);
+    const [availableEquipment, setAvailableEquipment] = useState<ITEquipmentListItem[]>([]);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [eqLoading, setEqLoading] = useState(false);
 
@@ -499,8 +507,9 @@ function CreateDeliveryTermModal({ onClose, onCreated, showToast }: {
             });
             showToast(`Termo ${result.termNumber} criado.`, 'success');
             onCreated(result.id);
-        } catch (err: any) {
-            showToast(err.message, 'error');
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Erro ao criar termo.';
+            showToast(message, 'error');
         } finally {
             setSaving(false);
         }

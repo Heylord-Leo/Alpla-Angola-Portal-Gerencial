@@ -19,13 +19,15 @@ public class ITEquipmentController : BaseController
     private readonly IEmailService _emailService;
     private readonly ITEquipmentAgreementService _agreementService;
     private readonly ITEquipmentPdfService _pdfService;
+    private readonly ITAssetCodeGeneratorService _assetCodeGenerator;
     private readonly Microsoft.Extensions.Configuration.IConfiguration _configuration;
 
-    public ITEquipmentController(ApplicationDbContext context, IEmailService emailService, ITEquipmentAgreementService agreementService, ITEquipmentPdfService pdfService, Microsoft.Extensions.Configuration.IConfiguration configuration) : base(context)
+    public ITEquipmentController(ApplicationDbContext context, IEmailService emailService, ITEquipmentAgreementService agreementService, ITEquipmentPdfService pdfService, ITAssetCodeGeneratorService assetCodeGenerator, Microsoft.Extensions.Configuration.IConfiguration configuration) : base(context)
     {
         _emailService = emailService;
         _agreementService = agreementService;
         _pdfService = pdfService;
+        _assetCodeGenerator = assetCodeGenerator;
         _configuration = configuration;
     }
 
@@ -136,9 +138,10 @@ public class ITEquipmentController : BaseController
             .Take(pageSize)
             .Select(e => new
             {
-                e.Id, e.AssetTag, e.Hostname, e.Plant, e.EquipmentType, e.StatusCode,
+                e.Id, e.AssetTag, e.LegacyAssetCode, e.Hostname, e.Plant, e.EquipmentType, e.StatusCode,
                 e.Manufacturer, e.Model, e.SerialNumber, e.MacAddress,
                 e.CurrentOwnerName, e.BiometricMfaEnabled,
+                e.CompanyCode, e.PlantCode, e.QrCodeUrl,
                 e.UpdatedAt, e.CreatedAt
             })
             .ToListAsync();
@@ -204,13 +207,15 @@ public class ITEquipmentController : BaseController
 
         return Ok(new
         {
-            eq.Id, eq.AssetTag, eq.Hostname, eq.Plant, eq.EquipmentType, eq.StatusCode,
+            eq.Id, eq.AssetTag, eq.LegacyAssetCode, eq.Hostname, eq.Plant, eq.EquipmentType, eq.StatusCode,
             eq.Manufacturer, eq.Model, eq.SerialNumber, eq.MacAddress,
             eq.Processor, eq.MemoryRam, eq.Color, eq.BiometricMfaEnabled, eq.IdCard,
             eq.DevicePhotoUrl, eq.CurrentOwnerName,
             CurrentOwnerEmail = eq.CurrentOwnerUser?.Email,
             eq.CurrentOwnerUserId, eq.CurrentOwnerEmployeeId,
             eq.Notes, eq.SourceType, eq.IsActive, eq.CreatedAt, eq.UpdatedAt,
+            eq.CompanyId, eq.PlantId, eq.CompanyCode, eq.PlantCode,
+            eq.EquipmentTypeShortCode, eq.SequenceNumber, eq.QrCodeUrl,
             CreatedByName = eq.CreatedByUser?.FullName,
             UpdatedByName = eq.UpdatedByUser?.FullName,
             Acquisition = eq.Acquisition == null ? null : new
@@ -238,12 +243,13 @@ public class ITEquipmentController : BaseController
     {
         if (!HasITAccess()) return Forbid();
 
-        if (string.IsNullOrWhiteSpace(request.AssetTag))
-            return BadRequest(new { detail = "Asset Tag é obrigatório." });
-
-        // Validate unique AssetTag
-        var exists = await _context.ITEquipments.AnyAsync(e => e.AssetTag == request.AssetTag.Trim());
-        if (exists) return BadRequest(new { detail = $"Asset Tag '{request.AssetTag}' já existe." });
+        // Validate required fields for auto Asset Code generation
+        if (request.CompanyId <= 0)
+            return BadRequest(new { detail = "Empresa é obrigatória." });
+        if (request.PlantId <= 0)
+            return BadRequest(new { detail = "Planta é obrigatória." });
+        if (string.IsNullOrWhiteSpace(request.EquipmentType))
+            return BadRequest(new { detail = "Tipo de equipamento é obrigatório." });
 
         // Validate unique SerialNumber (if provided)
         if (!string.IsNullOrWhiteSpace(request.SerialNumber))
@@ -252,15 +258,40 @@ public class ITEquipmentController : BaseController
             if (snExists) return BadRequest(new { detail = $"Serial Number '{request.SerialNumber}' já está registado." });
         }
 
+        // Generate Asset Code automatically
+        GeneratedAssetCode generated;
+        try
+        {
+            generated = await _assetCodeGenerator.GenerateAsync(
+                request.CompanyId,
+                request.PlantId,
+                request.EquipmentType);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { detail = ex.Message });
+        }
+
+        // Resolve Plant name for backward-compatible text field
+        var plant = await _context.Set<Plant>().AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == request.PlantId);
+
         var userId = CurrentUserId;
         var sourceType = request.SourceType ?? ITEquipmentConstants.SourceType.ManualRegistration;
         var statusCode = request.StatusCode ?? ITEquipmentConstants.EquipmentStatus.Available;
 
         var equipment = new ITEquipment
         {
-            AssetTag = request.AssetTag.Trim(),
+            AssetTag = generated.AssetCode,
+            LegacyAssetCode = request.LegacyAssetCode?.Trim(),
+            SequenceNumber = generated.SequenceNumber,
+            CompanyId = request.CompanyId,
+            PlantId = request.PlantId,
+            CompanyCode = generated.CompanyCode,
+            PlantCode = generated.PlantCode,
+            EquipmentTypeShortCode = generated.TypeShortCode,
             Hostname = request.Hostname?.Trim(),
-            Plant = request.Plant?.Trim(),
+            Plant = plant?.Name ?? request.PlantId.ToString(),
             EquipmentType = request.EquipmentType ?? ITEquipmentConstants.EquipmentType.UnknownType,
             StatusCode = statusCode,
             Manufacturer = request.Manufacturer?.Trim(),
@@ -277,6 +308,9 @@ public class ITEquipmentController : BaseController
             IsActive = true,
             CreatedByUserId = userId
         };
+
+        // Set QR Code URL using the equipment's immutable GUID
+        equipment.QrCodeUrl = generated.BuildQrCodeUrl(equipment.Id);
 
         _context.ITEquipments.Add(equipment);
 
@@ -309,7 +343,7 @@ public class ITEquipmentController : BaseController
             EquipmentId = equipment.Id,
             MovementType = ITEquipmentConstants.MovementType.Created,
             NewStatus = statusCode,
-            Notes = $"Equipamento criado via registo manual ({sourceType}).",
+            Notes = $"Equipamento criado com código {equipment.AssetTag} via registo manual ({sourceType}).",
             CreatedByUserId = userId
         });
 
@@ -318,7 +352,7 @@ public class ITEquipmentController : BaseController
         await NotifyITAsync(equipment.AssetTag, "Novo Equipamento Registado",
             $"O equipamento <strong>{equipment.AssetTag}</strong> ({equipment.EquipmentType}) foi registado no inventário.");
 
-        return Ok(new { id = equipment.Id, assetTag = equipment.AssetTag });
+        return Ok(new { id = equipment.Id, assetTag = equipment.AssetTag, assetCode = equipment.AssetTag, qrCodeUrl = equipment.QrCodeUrl });
     }
 
     // ─── PUT /api/it/equipment/{id} ───
@@ -329,14 +363,6 @@ public class ITEquipmentController : BaseController
 
         var eq = await _context.ITEquipments.FirstOrDefaultAsync(e => e.Id == id);
         if (eq == null) return NotFound("Equipamento não encontrado.");
-
-        // Check unique constraints if changed
-        if (request.AssetTag != null && request.AssetTag.Trim() != eq.AssetTag)
-        {
-            var exists = await _context.ITEquipments.AnyAsync(e => e.AssetTag == request.AssetTag.Trim() && e.Id != id);
-            if (exists) return BadRequest(new { detail = $"Asset Tag '{request.AssetTag}' já existe." });
-            eq.AssetTag = request.AssetTag.Trim();
-        }
 
         if (request.SerialNumber != null && !string.IsNullOrWhiteSpace(request.SerialNumber) && request.SerialNumber.Trim() != eq.SerialNumber)
         {
@@ -354,6 +380,14 @@ public class ITEquipmentController : BaseController
                 diffs.Add($"{label}: \"{oldVal ?? "—"}\" → \"{newVal}\"");
                 if (critical) criticalChange = true;
             }
+        }
+
+        // AssetTag (Asset Code) is immutable after creation — ignore any changes
+        // Only allow LegacyAssetCode to be updated
+        if (request.LegacyAssetCode != null && request.LegacyAssetCode != eq.LegacyAssetCode)
+        {
+            TrackDiff("Código Legado", eq.LegacyAssetCode, request.LegacyAssetCode.Trim());
+            eq.LegacyAssetCode = request.LegacyAssetCode.Trim();
         }
 
         if (request.Hostname != null && request.Hostname != eq.Hostname) { TrackDiff("Hostname", eq.Hostname, request.Hostname.Trim()); eq.Hostname = request.Hostname.Trim(); }
@@ -2082,10 +2116,12 @@ public class ITEquipmentController : BaseController
 
     public class CreateEquipmentRequest
     {
-        public string AssetTag { get; set; } = string.Empty;
+        // AssetTag is auto-generated — not accepted from client
+        public int CompanyId { get; set; }        // Required
+        public int PlantId { get; set; }           // Required
+        public string? EquipmentType { get; set; } // Required — equipment type Code (e.g. "LAPTOP")
+        public string? LegacyAssetCode { get; set; }
         public string? Hostname { get; set; }
-        public string? Plant { get; set; }
-        public string? EquipmentType { get; set; }
         public string? StatusCode { get; set; }
         public string? Manufacturer { get; set; }
         public string? Model { get; set; }
@@ -2119,7 +2155,8 @@ public class ITEquipmentController : BaseController
 
     public class UpdateEquipmentRequest
     {
-        public string? AssetTag { get; set; }
+        // AssetTag is immutable — not accepted for update
+        public string? LegacyAssetCode { get; set; }
         public string? Hostname { get; set; }
         public string? Plant { get; set; }
         public string? EquipmentType { get; set; }

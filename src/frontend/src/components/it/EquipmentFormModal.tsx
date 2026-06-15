@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { itEquipmentApi, itEquipmentCatalogApi } from '../../lib/itEquipmentApi';
 import { api } from '../../lib/api';
-import type { ITEquipmentDetail } from '../../types/itEquipment';
+import type { ITEquipmentDetail, ITEquipmentTypeItem, MasterDataCompany, MasterDataPlant, CatalogManufacturer, CatalogModel, CatalogProcessor, CatalogMemoryOption } from '../../types/itEquipment';
 
 interface Props {
     equipment?: ITEquipmentDetail;
@@ -17,17 +17,17 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
     const [equipmentTypes, setEquipmentTypes] = useState<Array<{ value: string; label: string }>>([]);
 
     // ── Master Data lookups ──
-    const [companies, setCompanies] = useState<any[]>([]);
-    const [plants, setPlants] = useState<any[]>([]);
-    const [manufacturers, setManufacturers] = useState<any[]>([]);
-    const [models, setModels] = useState<any[]>([]);
-    const [processors, setProcessors] = useState<any[]>([]);
-    const [memoryOptions, setMemoryOptions] = useState<any[]>([]);
+    const [companies, setCompanies] = useState<MasterDataCompany[]>([]);
+    const [plants, setPlants] = useState<MasterDataPlant[]>([]);
+    const [manufacturers, setManufacturers] = useState<CatalogManufacturer[]>([]);
+    const [models, setModels] = useState<CatalogModel[]>([]);
+    const [processors, setProcessors] = useState<CatalogProcessor[]>([]);
+    const [memoryOptions, setMemoryOptions] = useState<CatalogMemoryOption[]>([]);
 
     // Load dynamic equipment types
     useEffect(() => {
         itEquipmentApi.types.list(true).then(types => {
-            setEquipmentTypes(types.map((t: any) => ({ value: t.code, label: t.displayName })));
+            setEquipmentTypes(types.map((t: ITEquipmentTypeItem) => ({ value: t.code, label: t.displayName })));
         }).catch(() => {
             setEquipmentTypes([
                 { value: 'LAPTOP', label: 'Laptop' },
@@ -40,16 +40,16 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
 
     // Load companies & catalogs on mount
     useEffect(() => {
-        api.lookups.getCompanies().then(setCompanies).catch(() => {});
-        itEquipmentCatalogApi.manufacturers.list(true).then(setManufacturers).catch(() => {});
-        itEquipmentCatalogApi.processors.list(true).then(setProcessors).catch(() => {});
-        itEquipmentCatalogApi.memoryOptions.list(true).then(setMemoryOptions).catch(() => {});
+        api.lookups.getCompanies().then(setCompanies).catch((err: unknown) => console.error('[EquipmentForm] Failed to load companies:', err));
+        itEquipmentCatalogApi.manufacturers.list(true).then(setManufacturers).catch((err: unknown) => console.error('[EquipmentForm] Failed to load manufacturers:', err));
+        itEquipmentCatalogApi.processors.list(true).then(setProcessors).catch((err: unknown) => console.error('[EquipmentForm] Failed to load processors:', err));
+        itEquipmentCatalogApi.memoryOptions.list(true).then(setMemoryOptions).catch((err: unknown) => console.error('[EquipmentForm] Failed to load memory options:', err));
     }, []);
 
     const [form, setForm] = useState({
-        assetTag: equipment?.assetTag || '',
         hostname: equipment?.hostname || '',
-        companyId: '',
+        companyId: equipment?.companyId ? String(equipment.companyId) : '',
+        plantId: equipment?.plantId ? String(equipment.plantId) : '',
         plant: equipment?.plant || '',
         equipmentType: equipment?.equipmentType || 'LAPTOP',
         statusCode: equipment?.statusCode || 'AVAILABLE',
@@ -64,6 +64,7 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
         idCard: equipment?.idCard || '',
         notes: equipment?.notes || '',
         sourceType: equipment?.sourceType || 'MANUAL_REGISTRATION',
+        legacyAssetCode: equipment?.legacyAssetCode || '',
     });
 
     // Purchase tracking state (only for creation with MANUAL_PURCHASE)
@@ -81,7 +82,6 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
 
     const showPurchase = form.sourceType === 'MANUAL_PURCHASE';
 
-    // ── Company → Plant cascade ──
     useEffect(() => {
         if (form.companyId) {
             api.lookups.getPlants(Number(form.companyId)).then(setPlants).catch(() => setPlants([]));
@@ -92,7 +92,8 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
 
     const handleCompanyChange = (v: string) => {
         set('companyId', v);
-        set('plant', ''); // Clear plant when company changes
+        set('plantId', ''); // Clear plant when company changes
+        set('plant', '');
     };
 
     // ── Manufacturer → Model cascade ──
@@ -125,9 +126,9 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!form.assetTag.trim()) { setError('Asset Tag é obrigatório.'); return; }
         if (!isEdit && !form.companyId) { setError('Empresa é obrigatória.'); return; }
-        if (!isEdit && !form.plant) { setError('Planta é obrigatória.'); return; }
+        if (!isEdit && !form.plantId) { setError('Planta é obrigatória.'); return; }
+        if (!form.equipmentType) { setError('Tipo de equipamento é obrigatório.'); return; }
 
         // Validate purchase fields
         if (!isEdit && showPurchase) {
@@ -138,29 +139,65 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
             setSaving(true);
             setError('');
 
-            const payload: any = { ...form };
-            delete payload.companyId; // Not sent to backend (Plant text is enough for ITEquipment)
-
-            // Attach acquisition data for MANUAL_PURCHASE
-            if (!isEdit && showPurchase) {
-                payload.acquisition = {
-                    purchaseAmount: parseFloat(purchase.purchaseAmount) || 0,
-                    currency: purchase.currency || 'AOA',
-                    acquisitionDate: purchase.acquisitionDate || null,
-                    supplierName: purchase.supplierName || null,
-                    purchaseOrderNumber: purchase.purchaseOrderNumber || null,
-                    invoiceNumber: purchase.invoiceNumber || null,
-                };
-            }
-
             if (isEdit && equipment) {
-                await itEquipmentApi.update(equipment.id, payload);
+                // Update: send only editable fields (AssetTag is immutable)
+                const updatePayload: any = {
+                    hostname: form.hostname,
+                    plant: form.plant,
+                    equipmentType: form.equipmentType,
+                    manufacturer: form.manufacturer,
+                    model: form.model,
+                    serialNumber: form.serialNumber,
+                    macAddress: form.macAddress,
+                    processor: form.processor,
+                    memoryRam: form.memoryRam,
+                    color: form.color,
+                    biometricMfaEnabled: form.biometricMfaEnabled,
+                    idCard: form.idCard,
+                    notes: form.notes,
+                    legacyAssetCode: form.legacyAssetCode || null,
+                };
+                await itEquipmentApi.update(equipment.id, updatePayload);
             } else {
-                await itEquipmentApi.create(payload);
+                // Create: send companyId + plantId + equipmentType for auto Asset Code
+                const createPayload: any = {
+                    companyId: Number(form.companyId),
+                    plantId: Number(form.plantId),
+                    equipmentType: form.equipmentType,
+                    hostname: form.hostname || null,
+                    statusCode: form.statusCode,
+                    manufacturer: form.manufacturer || null,
+                    model: form.model || null,
+                    serialNumber: form.serialNumber || null,
+                    macAddress: form.macAddress || null,
+                    processor: form.processor || null,
+                    memoryRam: form.memoryRam || null,
+                    color: form.color || null,
+                    biometricMfaEnabled: form.biometricMfaEnabled,
+                    idCard: form.idCard || null,
+                    notes: form.notes || null,
+                    sourceType: form.sourceType,
+                    legacyAssetCode: form.legacyAssetCode || null,
+                };
+
+                // Attach acquisition data for MANUAL_PURCHASE
+                if (showPurchase) {
+                    createPayload.acquisition = {
+                        purchaseAmount: parseFloat(purchase.purchaseAmount) || 0,
+                        currency: purchase.currency || 'AOA',
+                        acquisitionDate: purchase.acquisitionDate || null,
+                        supplierName: purchase.supplierName || null,
+                        purchaseOrderNumber: purchase.purchaseOrderNumber || null,
+                        invoiceNumber: purchase.invoiceNumber || null,
+                    };
+                }
+
+                await itEquipmentApi.create(createPayload);
             }
             onSuccess();
-        } catch (err: any) {
-            setError(err.message || 'Erro ao salvar.');
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Erro ao salvar.';
+            setError(message);
         } finally {
             setSaving(false);
         }
@@ -207,7 +244,21 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
                 {error && <ErrorBox msg={error} />}
 
                 <Row>
-                    <Field label="Asset Tag *" value={form.assetTag} onChange={v => set('assetTag', v)} disabled={isEdit} />
+                    {isEdit && equipment ? (
+                        <div style={{ flex: 1 }}>
+                            <label style={labelStyle}>Código do Ativo</label>
+                            <div style={{ padding: '8px 12px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 6, fontWeight: 600, fontFamily: 'monospace', fontSize: 14, color: '#166534', letterSpacing: '0.5px' }}>
+                                {equipment.assetTag}
+                            </div>
+                        </div>
+                    ) : (
+                        <div style={{ flex: 1 }}>
+                            <label style={labelStyle}>Código do Ativo</label>
+                            <div style={{ padding: '8px 12px', background: '#f8fafc', border: '1px dashed #94a3b8', borderRadius: 6, color: '#64748b', fontSize: 13, fontStyle: 'italic' }}>
+                                Gerado automaticamente ao salvar
+                            </div>
+                        </div>
+                    )}
                     {showHostname && <Field label="Hostname" value={form.hostname} onChange={v => set('hostname', v)} />}
                 </Row>
                 <Row>
@@ -232,13 +283,13 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
                         <SelectField label="Empresa *" value={form.companyId} onChange={handleCompanyChange}
                             options={[
                                 { value: '', label: 'Selecione...' },
-                                ...companies.filter((c: any) => c.isActive).map((c: any) => ({ value: String(c.id), label: c.name }))
+                                ...companies.filter((c) => c.isActive).map((c) => ({ value: String(c.id), label: c.name }))
                             ]}
                         />
-                        <SelectField label="Planta *" value={form.plant} onChange={v => set('plant', v)}
+                        <SelectField label="Planta *" value={form.plantId} onChange={v => { set('plantId', v); const pl = plants.find(p => String(p.id) === v); if (pl) set('plant', pl.name); }}
                             options={[
                                 { value: '', label: form.companyId ? 'Selecione...' : 'Selecione empresa primeiro' },
-                                ...plants.filter((p: any) => p.isActive).map((p: any) => ({ value: p.name, label: p.name }))
+                                ...plants.filter((p) => p.isActive).map((p) => ({ value: String(p.id), label: p.name }))
                             ]}
                             disabled={!form.companyId}
                         />
@@ -246,6 +297,7 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
                 ) : (
                     <Row>
                         <Field label="Planta" value={form.plant} onChange={v => set('plant', v)} />
+                        <Field label="Código Legado" value={form.legacyAssetCode} onChange={v => set('legacyAssetCode', v)} placeholder="Código patrimônio antigo (opcional)" />
                     </Row>
                 )}
 

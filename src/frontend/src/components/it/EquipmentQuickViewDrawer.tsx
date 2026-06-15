@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Edit3, UserPlus, RotateCcw, Wrench, AlertTriangle, BookmarkCheck, Archive, Loader2, Download, Upload, FileText, FileCheck, FileX, Clock, User, Cpu, RefreshCw, RotateCw } from 'lucide-react';
+import { X, Edit3, UserPlus, RotateCcw, Wrench, AlertTriangle, BookmarkCheck, Archive, Loader2, Download, Upload, FileText, FileCheck, FileX, Clock, User, Cpu, RefreshCw, RotateCw, ExternalLink, Printer, Copy, QrCode } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { itEquipmentApi } from '../../lib/itEquipmentApi';
 import { EQUIPMENT_STATUS_CONFIG, EQUIPMENT_TYPE_CONFIG, MOVEMENT_TYPE_LABELS, ASSIGNMENT_STATUS_CONFIG, DOCUMENT_TYPE_LABELS } from '../../types/itEquipment';
 import type { ITEquipmentDetail } from '../../types/itEquipment';
@@ -73,7 +74,8 @@ export function EquipmentQuickViewDrawer({ equipmentId, onClose, onRefresh }: Pr
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center'
                 }}>
                     <div>
-                        <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)' }}>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>Código do Ativo</span>
+                        <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text)', fontFamily: 'monospace', letterSpacing: '0.5px' }}>
                             {detail?.assetTag || 'Carregando...'}
                         </h2>
                         {detail && statusCfg && (
@@ -110,6 +112,16 @@ export function EquipmentQuickViewDrawer({ equipmentId, onClose, onRefresh }: Pr
                         {canReserve && <ActionBtn label="Reservar" icon={<BookmarkCheck size={13} />} onClick={() => setActiveModal('reserve')} color="#f59e0b" />}
                         {canRetire && <ActionBtn label="Baixar" icon={<Archive size={13} />} onClick={() => setActiveModal('retire')} color="#6b7280" />}
                         {canReactivate && <ActionBtn label="Reativar" icon={<RotateCw size={13} />} onClick={() => setActiveModal('reactivate')} color="#22c55e" />}
+                        {/* ── Asset quick actions ── */}
+                        <div style={{ width: '100%', borderTop: '1px dashed var(--color-border)', marginTop: 2, paddingTop: 6, display: 'flex', gap: 6 }}>
+                            {detail.qrCodeUrl && (
+                                <ActionBtn label="Abrir Ficha" icon={<ExternalLink size={13} />} onClick={() => window.open(detail.qrCodeUrl!, '_blank')} color="#0ea5e9" />
+                            )}
+                            <ActionBtn label="Imprimir Etiqueta" icon={<Printer size={13} />} onClick={() => window.open(`/it/equipment/${detail.id}/label`, '_blank')} color="#6366f1" />
+                            {detail.qrCodeUrl && (
+                                <ActionBtn label="Copiar Link" icon={<Copy size={13} />} onClick={() => { navigator.clipboard.writeText(detail.qrCodeUrl!); }} color="#64748b" />
+                            )}
+                        </div>
                     </div>
                 )}
 
@@ -202,6 +214,8 @@ function InfoTab({ detail }: { detail: ITEquipmentDetail }) {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>
                     <InfoRow label="Tipo" value={typeCfg.label} />
                     <InfoRow label="Planta" value={detail.plant} />
+                    {detail.legacyAssetCode && <InfoRow label="Código Legado" value={detail.legacyAssetCode} mono />}
+                    {detail.companyCode && <InfoRow label="Empresa" value={detail.companyCode} />}
                     <InfoRow label="Fabricante" value={detail.manufacturer} />
                     <InfoRow label="Modelo" value={detail.model} />
                     <InfoRow label="Serial Number" value={detail.serialNumber} mono />
@@ -212,6 +226,42 @@ function InfoTab({ detail }: { detail: ITEquipmentDetail }) {
                     <InfoRow label="Biometric/MFA" value={detail.biometricMfaEnabled ? 'Sim' : 'Não'} />
                     <InfoRow label="ID Card" value={detail.idCard} />
                     <InfoRow label="Origem" value={detail.sourceType === 'IMPORTED_LEGACY' ? 'Importado (Legacy)' : detail.sourceType === 'MANUAL_PURCHASE' ? 'Compra' : 'Registo Manual'} />
+                </div>
+                {/* QR Code Visual Section */}
+                <div style={{ marginTop: 14, padding: 16, background: '#f8fafc', border: '1px solid var(--color-border)', borderRadius: 10, textAlign: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 12 }}>
+                        <QrCode size={15} style={{ color: 'var(--color-primary)' }} />
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>QR Code do Ativo</span>
+                    </div>
+                    {detail.qrCodeUrl ? (
+                        <>
+                            <div style={{ display: 'inline-block', padding: 10, background: '#fff', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                                <QRCodeSVG
+                                    value={detail.qrCodeUrl}
+                                    size={120}
+                                    level="M"
+                                    includeMargin={false}
+                                />
+                            </div>
+                            <div style={{ marginTop: 10, fontFamily: 'monospace', fontSize: '0.82rem', fontWeight: 600, color: 'var(--color-text)', letterSpacing: '0.5px' }}>
+                                {detail.assetTag}
+                            </div>
+                            <div style={{ marginTop: 6, fontSize: '0.75rem' }}>
+                                <a href={detail.qrCodeUrl} target="_blank" rel="noreferrer" style={{ color: '#0284c7', wordBreak: 'break-all' }}>
+                                    {detail.qrCodeUrl}
+                                </a>
+                            </div>
+                            {detail.qrCodeUrl.startsWith('/') && !detail.qrCodeUrl.startsWith('//') && (
+                                <div style={{ marginTop: 6, padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 4, fontSize: '0.7rem', color: '#92400e' }}>
+                                    <AlertTriangle size={11} /> URL relativa — configure FrontendBaseUrl para etiquetas físicas
+                                </div>
+                            )}
+                        </>
+                    ) : (
+                        <div style={{ padding: 20, color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>
+                            QR Code ainda não disponível para este ativo.
+                        </div>
+                    )}
                 </div>
             </Section>
 

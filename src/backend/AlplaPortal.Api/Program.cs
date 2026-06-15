@@ -116,6 +116,7 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<ISmtpSettingsService, SmtpSettingsService>();
 builder.Services.AddScoped<ITEquipmentAgreementService>();
 builder.Services.AddScoped<ITEquipmentPdfService>();
+builder.Services.AddScoped<ITAssetCodeGeneratorService>();
 
 // Authentication
 var jwtOptions = builder.Configuration.GetSection("Jwt").Get<JwtOptions>();

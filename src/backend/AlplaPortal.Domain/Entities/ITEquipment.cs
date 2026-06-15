@@ -7,8 +7,30 @@ public class ITEquipment
 {
     public Guid Id { get; set; } = Guid.NewGuid();
 
-    /// <summary>Primary business identifier — always unique and required.</summary>
+    /// <summary>Auto-generated official Asset Code (e.g. APA-AOVIA1-IT-NBK-000001). Unique, immutable after creation.</summary>
     public string AssetTag { get; set; } = string.Empty;
+
+    /// <summary>Optional manual/legacy patrimony code for backward compatibility.</summary>
+    public string? LegacyAssetCode { get; set; }
+
+    /// <summary>Sequence number used in AssetTag generation. Scoped per Company+Plant+EquipmentType.</summary>
+    public int SequenceNumber { get; set; }
+
+    // ── FK to master data for Asset Code generation ──
+    public int? CompanyId { get; set; }
+    public Company? CompanyRef { get; set; }
+    public int? PlantId { get; set; }
+    public Plant? PlantRef { get; set; }
+
+    /// <summary>Denormalized snapshot of Company.Code at creation time (e.g. "APA"). Immutable.</summary>
+    public string? CompanyCode { get; set; }
+    /// <summary>Denormalized snapshot of Plant.Code at creation time (e.g. "AOVIA1"). Immutable.</summary>
+    public string? PlantCode { get; set; }
+    /// <summary>Denormalized snapshot of ITEquipmentType.ShortCode at creation time (e.g. "NBK"). Immutable.</summary>
+    public string? EquipmentTypeShortCode { get; set; }
+
+    /// <summary>QR Code URL pointing to the asset detail page.</summary>
+    public string? QrCodeUrl { get; set; }
 
     public string? Hostname { get; set; }
     public string? Plant { get; set; }

@@ -13,7 +13,7 @@ interface Props {
 
 export function EquipmentTable({ data, loading, sortBy, isDescending, onSort, onRowClick }: Props) {
     const columns = [
-        { key: 'assettag', label: 'Asset Tag', width: '120px' },
+        { key: 'assettag', label: 'Código do Ativo', width: '180px' },
         { key: 'hostname', label: 'Hostname', width: '140px' },
         { key: 'type', label: 'Tipo', width: '100px' },
         { key: 'status', label: 'Status', width: '120px' },

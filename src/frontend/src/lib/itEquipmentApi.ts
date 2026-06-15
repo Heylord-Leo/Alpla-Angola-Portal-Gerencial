@@ -5,7 +5,13 @@ import type {
     ITEquipmentDetail,
     ITEquipmentFilterOptions,
     ITEquipmentImportResult,
-    ITEquipmentDocument
+    ITEquipmentDocument,
+    ITDeliveryTermListResponse,
+    ITDeliveryTermDetail,
+    CatalogManufacturer,
+    CatalogModel,
+    CatalogProcessor,
+    CatalogMemoryOption
 } from '../types/itEquipment';
 
 const BASE = `${API_BASE_URL}/api/it/equipment`;
@@ -71,7 +77,7 @@ export const itEquipmentApi = {
     },
 
     // ─── Create ───
-    create: async (data: any): Promise<{ id: string; assetTag: string }> => {
+    create: async (data: any): Promise<{ id: string; assetTag: string; assetCode: string; qrCodeUrl: string }> => {
         const response = await apiFetch(BASE, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -295,7 +301,7 @@ export const deliveryTermsApi = {
         isDescending?: boolean;
         page?: number;
         pageSize?: number;
-    } = {}) => {
+    } = {}): Promise<ITDeliveryTermListResponse> => {
         const qs = new URLSearchParams();
         if (params.search) qs.append('search', params.search);
         if (params.status) qs.append('status', params.status);
@@ -311,7 +317,7 @@ export const deliveryTermsApi = {
         return response.json();
     },
 
-    getById: async (id: string) => {
+    getById: async (id: string): Promise<ITDeliveryTermDetail> => {
         const response = await apiFetch(`${DT_BASE}/${id}`);
         if (!response.ok) return handleError(response, 'Falha ao carregar termo de entrega.');
         return response.json();
@@ -330,7 +336,7 @@ export const deliveryTermsApi = {
         deliveryDate: string;
         notes?: string;
         equipmentIds?: string[];
-    }) => {
+    }) : Promise<{ id: string; termNumber: string }> => {
         const response = await apiFetch(DT_BASE, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -352,7 +358,7 @@ export const deliveryTermsApi = {
         employeeDepartmentId?: number;
         deliveryDate?: string;
         notes?: string;
-    }) => {
+    }): Promise<{ detail: string }> => {
         const response = await apiFetch(`${DT_BASE}/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -362,7 +368,7 @@ export const deliveryTermsApi = {
         return response.json();
     },
 
-    addItems: async (id: string, equipmentIds: string[]) => {
+    addItems: async (id: string, equipmentIds: string[]): Promise<{ detail: string }> => {
         const response = await apiFetch(`${DT_BASE}/${id}/items`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -372,7 +378,7 @@ export const deliveryTermsApi = {
         return response.json();
     },
 
-    removeItem: async (termId: string, itemId: string) => {
+    removeItem: async (termId: string, itemId: string): Promise<{ detail: string }> => {
         const response = await apiFetch(`${DT_BASE}/${termId}/items/${itemId}`, {
             method: 'DELETE'
         });
@@ -380,7 +386,7 @@ export const deliveryTermsApi = {
         return response.json();
     },
 
-    generate: async (id: string) => {
+    generate: async (id: string): Promise<{ detail: string; generatedDocumentId: string }> => {
         const response = await apiFetch(`${DT_BASE}/${id}/generate`, {
             method: 'POST'
         });
@@ -388,7 +394,7 @@ export const deliveryTermsApi = {
         return response.json();
     },
 
-    send: async (id: string) => {
+    send: async (id: string): Promise<{ detail: string }> => {
         const response = await apiFetch(`${DT_BASE}/${id}/send`, {
             method: 'POST'
         });
@@ -396,7 +402,7 @@ export const deliveryTermsApi = {
         return response.json();
     },
 
-    uploadSigned: async (id: string, file: File) => {
+    uploadSigned: async (id: string, file: File): Promise<{ detail: string; signedDocumentId: string }> => {
         const formData = new FormData();
         formData.append('file', file);
         const response = await apiFetch(`${DT_BASE}/${id}/upload-signed`, {
@@ -411,7 +417,7 @@ export const deliveryTermsApi = {
         returnDate?: string;
         returnCondition?: string;
         notes?: string;
-    }) => {
+    }): Promise<{ detail: string }> => {
         const response = await apiFetch(`${DT_BASE}/${termId}/items/${itemId}/return`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -421,7 +427,7 @@ export const deliveryTermsApi = {
         return response.json();
     },
 
-    cancel: async (id: string) => {
+    cancel: async (id: string): Promise<{ detail: string }> => {
         const response = await apiFetch(`${DT_BASE}/${id}/cancel`, {
             method: 'POST'
         });
@@ -440,13 +446,13 @@ export const deliveryTermsApi = {
 export const itEquipmentCatalogApi = {
     // ─── Manufacturers ───
     manufacturers: {
-        list: async (activeOnly?: boolean) => {
+        list: async (activeOnly?: boolean): Promise<CatalogManufacturer[]> => {
             const qs = activeOnly ? '?activeOnly=true' : '';
             const response = await apiFetch(`${BASE}/manufacturers${qs}`);
             if (!response.ok) return handleError(response, 'Falha ao carregar fabricantes.');
             return response.json();
         },
-        create: async (data: { name: string; sortOrder?: number }) => {
+        create: async (data: { name: string; sortOrder?: number }): Promise<CatalogManufacturer> => {
             const response = await apiFetch(`${BASE}/manufacturers`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -455,7 +461,7 @@ export const itEquipmentCatalogApi = {
             if (!response.ok) return handleError(response, 'Falha ao criar fabricante.');
             return response.json();
         },
-        update: async (id: string, data: { name?: string; sortOrder?: number; isActive?: boolean }) => {
+        update: async (id: string, data: { name?: string; sortOrder?: number; isActive?: boolean }): Promise<CatalogManufacturer> => {
             const response = await apiFetch(`${BASE}/manufacturers/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -464,7 +470,7 @@ export const itEquipmentCatalogApi = {
             if (!response.ok) return handleError(response, 'Falha ao atualizar fabricante.');
             return response.json();
         },
-        toggle: async (id: string) => {
+        toggle: async (id: string): Promise<CatalogManufacturer> => {
             const response = await apiFetch(`${BASE}/manufacturers/${id}/toggle`, { method: 'POST' });
             if (!response.ok) return handleError(response, 'Falha ao alternar estado do fabricante.');
             return response.json();
@@ -473,7 +479,7 @@ export const itEquipmentCatalogApi = {
 
     // ─── Models ───
     models: {
-        list: async (params?: { activeOnly?: boolean; manufacturerId?: string; equipmentTypeCode?: string }) => {
+        list: async (params?: { activeOnly?: boolean; manufacturerId?: string; equipmentTypeCode?: string }): Promise<CatalogModel[]> => {
             const qs = new URLSearchParams();
             if (params?.activeOnly) qs.append('activeOnly', 'true');
             if (params?.manufacturerId) qs.append('manufacturerId', params.manufacturerId);
@@ -482,7 +488,7 @@ export const itEquipmentCatalogApi = {
             if (!response.ok) return handleError(response, 'Falha ao carregar modelos.');
             return response.json();
         },
-        create: async (data: { name: string; manufacturerId: string; equipmentTypeCode?: string; sortOrder?: number }) => {
+        create: async (data: { name: string; manufacturerId: string; equipmentTypeCode?: string; sortOrder?: number }): Promise<CatalogModel> => {
             const response = await apiFetch(`${BASE}/models`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -491,7 +497,7 @@ export const itEquipmentCatalogApi = {
             if (!response.ok) return handleError(response, 'Falha ao criar modelo.');
             return response.json();
         },
-        update: async (id: string, data: { name?: string; equipmentTypeCode?: string; sortOrder?: number; isActive?: boolean }) => {
+        update: async (id: string, data: { name?: string; equipmentTypeCode?: string; sortOrder?: number; isActive?: boolean }): Promise<CatalogModel> => {
             const response = await apiFetch(`${BASE}/models/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -500,7 +506,7 @@ export const itEquipmentCatalogApi = {
             if (!response.ok) return handleError(response, 'Falha ao atualizar modelo.');
             return response.json();
         },
-        toggle: async (id: string) => {
+        toggle: async (id: string): Promise<CatalogModel> => {
             const response = await apiFetch(`${BASE}/models/${id}/toggle`, { method: 'POST' });
             if (!response.ok) return handleError(response, 'Falha ao alternar estado do modelo.');
             return response.json();
@@ -509,13 +515,13 @@ export const itEquipmentCatalogApi = {
 
     // ─── Processors ───
     processors: {
-        list: async (activeOnly?: boolean) => {
+        list: async (activeOnly?: boolean): Promise<CatalogProcessor[]> => {
             const qs = activeOnly ? '?activeOnly=true' : '';
             const response = await apiFetch(`${BASE}/processors${qs}`);
             if (!response.ok) return handleError(response, 'Falha ao carregar processadores.');
             return response.json();
         },
-        create: async (data: { name: string; sortOrder?: number }) => {
+        create: async (data: { name: string; sortOrder?: number }): Promise<CatalogProcessor> => {
             const response = await apiFetch(`${BASE}/processors`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -524,7 +530,7 @@ export const itEquipmentCatalogApi = {
             if (!response.ok) return handleError(response, 'Falha ao criar processador.');
             return response.json();
         },
-        update: async (id: string, data: { name?: string; sortOrder?: number; isActive?: boolean }) => {
+        update: async (id: string, data: { name?: string; sortOrder?: number; isActive?: boolean }): Promise<CatalogProcessor> => {
             const response = await apiFetch(`${BASE}/processors/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -533,7 +539,7 @@ export const itEquipmentCatalogApi = {
             if (!response.ok) return handleError(response, 'Falha ao atualizar processador.');
             return response.json();
         },
-        toggle: async (id: string) => {
+        toggle: async (id: string): Promise<CatalogProcessor> => {
             const response = await apiFetch(`${BASE}/processors/${id}/toggle`, { method: 'POST' });
             if (!response.ok) return handleError(response, 'Falha ao alternar estado do processador.');
             return response.json();
@@ -542,13 +548,13 @@ export const itEquipmentCatalogApi = {
 
     // ─── Memory Options ───
     memoryOptions: {
-        list: async (activeOnly?: boolean) => {
+        list: async (activeOnly?: boolean): Promise<CatalogMemoryOption[]> => {
             const qs = activeOnly ? '?activeOnly=true' : '';
             const response = await apiFetch(`${BASE}/memory-options${qs}`);
             if (!response.ok) return handleError(response, 'Falha ao carregar opções de memória.');
             return response.json();
         },
-        create: async (data: { displayName: string; valueInGb?: number; sortOrder?: number }) => {
+        create: async (data: { displayName: string; valueInGb?: number; sortOrder?: number }): Promise<CatalogMemoryOption> => {
             const response = await apiFetch(`${BASE}/memory-options`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -557,7 +563,7 @@ export const itEquipmentCatalogApi = {
             if (!response.ok) return handleError(response, 'Falha ao criar opção de memória.');
             return response.json();
         },
-        update: async (id: string, data: { displayName?: string; valueInGb?: number; sortOrder?: number; isActive?: boolean }) => {
+        update: async (id: string, data: { displayName?: string; valueInGb?: number; sortOrder?: number; isActive?: boolean }): Promise<CatalogMemoryOption> => {
             const response = await apiFetch(`${BASE}/memory-options/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -566,7 +572,7 @@ export const itEquipmentCatalogApi = {
             if (!response.ok) return handleError(response, 'Falha ao atualizar opção de memória.');
             return response.json();
         },
-        toggle: async (id: string) => {
+        toggle: async (id: string): Promise<CatalogMemoryOption> => {
             const response = await apiFetch(`${BASE}/memory-options/${id}/toggle`, { method: 'POST' });
             if (!response.ok) return handleError(response, 'Falha ao alternar estado da opção de memória.');
             return response.json();

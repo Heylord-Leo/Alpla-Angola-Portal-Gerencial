@@ -496,7 +496,7 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         var amount = req?.EstimatedTotalAmount ?? 0m;
         var needByDate = req?.NeedByDateUtc?.ToString("dd/MM/yyyy") ?? "Não definida";
 
-        var portalBaseUrl = _config["AppConfig:PortalBaseUrl"] ?? "";
+        var portalBaseUrl = _config["AppConfig:FrontendBaseUrl"] ?? "";
         var requestDetailUrl = !string.IsNullOrWhiteSpace(portalBaseUrl)
             ? $"{portalBaseUrl.TrimEnd('/')}/requests/{evt.RequestId}?mode=view"
             : "";
@@ -578,7 +578,7 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         // --- Email Notification ---
         if (config.SendEmail && !recipient.SuppressEmail && !string.IsNullOrWhiteSpace(recipient.Email))
         {
-            var portalBaseUrl = _config["AppConfig:PortalBaseUrl"] ?? "";
+            var portalBaseUrl = _config["AppConfig:FrontendBaseUrl"] ?? "";
             var actionUrl = !string.IsNullOrWhiteSpace(portalBaseUrl) ? $"{portalBaseUrl.TrimEnd('/')}{targetPath}" : null;
 
             // Notice we are NOT wrapping this in a catch. If it fails, EmailService will throw and it'll bubble up to EmitAsync's throw, bubbling back to the Controller.

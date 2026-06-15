@@ -18,9 +18,18 @@ public class ITDeliveryTermsController : BaseController
     private readonly ITEquipmentPdfService _pdfService;
     private readonly IConfiguration _configuration;
     private readonly ILogger<ITDeliveryTermsController> _logger;
+    private readonly string _storagePath;
+
+    // ── Upload security constants ──
+    private static readonly HashSet<string> AllowedSignedDocumentExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"
+    };
+    private const long MaxSignedDocumentSizeBytes = 20 * 1024 * 1024; // 20 MB
 
     public ITDeliveryTermsController(
         ApplicationDbContext context,
+        IWebHostEnvironment env,
         IEmailService emailService,
         ITEquipmentPdfService pdfService,
         IConfiguration configuration,
@@ -30,6 +39,27 @@ public class ITDeliveryTermsController : BaseController
         _pdfService = pdfService;
         _configuration = configuration;
         _logger = logger;
+
+        // Resolve storage path using the same convention as ITEquipmentDocumentsController
+        string rootDir = env.ContentRootPath;
+        var sep = Path.DirectorySeparatorChar.ToString();
+        var srcToken = $"{sep}src{sep}";
+        var srcIdx = rootDir.IndexOf(srcToken, StringComparison.OrdinalIgnoreCase);
+        if (srcIdx > 0)
+        {
+            rootDir = rootDir.Substring(0, srcIdx);
+        }
+        else
+        {
+            rootDir = Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "..", ".."));
+        }
+
+        _storagePath = Path.GetFullPath(Path.Combine(rootDir, "data", "attachments", "it-equipment"));
+
+        if (!Directory.Exists(_storagePath))
+        {
+            Directory.CreateDirectory(_storagePath);
+        }
     }
 
     private bool HasITAccess() =>
@@ -251,7 +281,21 @@ public class ITDeliveryTermsController : BaseController
             if (validationError != null) return validationError;
         }
 
-        await _context.SaveChangesAsync();
+        // Save with retry for term number collision (unique index guard)
+        const int maxRetries = 3;
+        for (int attempt = 0; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                await _context.SaveChangesAsync();
+                break;
+            }
+            catch (DbUpdateException ex) when (attempt < maxRetries && IsUniqueConstraintViolation(ex))
+            {
+                _logger.LogWarning("TermNumber collision for {TermNumber}, regenerating (attempt {Attempt})", term.TermNumber, attempt + 1);
+                term.TermNumber = await GenerateTermNumberAsync();
+            }
+        }
 
         return Ok(new { id = term.Id, termNumber = term.TermNumber });
     }
@@ -450,6 +494,9 @@ public class ITDeliveryTermsController : BaseController
                 item.ItemStatus = ITEquipmentConstants.DeliveryItemStatus.Delivered;
                 item.DeliveredAt = now;
 
+                // Capture actual previous status before updating
+                var previousStatus = eq.StatusCode;
+
                 // Update equipment
                 eq.StatusCode = ITEquipmentConstants.EquipmentStatus.InUse;
                 eq.CurrentOwnerName = term.EmployeeName;
@@ -462,7 +509,7 @@ public class ITDeliveryTermsController : BaseController
                 {
                     EquipmentId = eq.Id,
                     MovementType = ITEquipmentConstants.MovementType.DeliveryTermAssigned,
-                    PreviousStatus = ITEquipmentConstants.EquipmentStatus.Available,
+                    PreviousStatus = previousStatus,
                     NewStatus = ITEquipmentConstants.EquipmentStatus.InUse,
                     NewOwnerName = term.EmployeeName,
                     Notes = $"Equipamento atribuído a {term.EmployeeName} através do termo de entrega {term.TermNumber}.",
@@ -628,10 +675,18 @@ public class ITDeliveryTermsController : BaseController
         if (file == null || file.Length == 0)
             return BadRequest(new { detail = "Nenhum ficheiro enviado." });
 
+        // Validate file size
+        if (file.Length > MaxSignedDocumentSizeBytes)
+            return BadRequest(new { detail = $"O ficheiro excede o tamanho máximo permitido de {MaxSignedDocumentSizeBytes / (1024 * 1024)} MB." });
+
+        // Validate file extension
+        var extension = Path.GetExtension(file.FileName)?.ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(extension) || !AllowedSignedDocumentExtensions.Contains(extension))
+            return BadRequest(new { detail = "Tipo de ficheiro não permitido. Envie PDF, JPG, PNG, DOC ou DOCX." });
+
         // Store file
-        var storageDir = ResolveStorageDir();
-        var storageFileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
-        var filePath = Path.Combine(storageDir, storageFileName);
+        var storageFileName = $"{Guid.NewGuid()}{extension}";
+        var filePath = Path.Combine(_storagePath, storageFileName);
 
         using (var stream = new FileStream(filePath, FileMode.Create))
         {
@@ -1006,17 +1061,16 @@ public class ITDeliveryTermsController : BaseController
             </table>";
     }
 
-    private string ResolveStorageDir()
-    {
-        var root = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "..", ".."));
-        var dir = Path.Combine(root, "data", "attachments", "it-equipment");
-        if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-        return dir;
-    }
-
     private string ResolveStoragePath(string storageReference)
     {
-        return Path.Combine(ResolveStorageDir(), storageReference);
+        return Path.Combine(_storagePath, storageReference);
+    }
+
+    private static bool IsUniqueConstraintViolation(DbUpdateException ex)
+    {
+        // SQL Server unique constraint violation error number = 2601 / 2627
+        var inner = ex.InnerException?.Message ?? "";
+        return inner.Contains("2601") || inner.Contains("2627") || inner.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase);
     }
 
     // ═══════════════════════════════════════════════════════════════

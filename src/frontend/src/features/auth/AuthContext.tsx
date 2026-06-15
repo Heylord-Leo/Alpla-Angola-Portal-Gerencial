@@ -67,7 +67,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (data.user.mustChangePassword) {
       navigate('/change-password');
     } else {
-      navigate('/');
+      // Resolve post-login redirect target:
+      // 1. Check location.state.from (set by ProtectedRoute)
+      // 2. Fallback to '/' (home/dashboard)
+      const fromState = (window.history.state?.usr?.from as { pathname?: string; search?: string }) ?? null;
+      const target = fromState?.pathname
+        ? fromState.pathname + (fromState.search || '')
+        : '/';
+
+      // Safety: only allow internal relative paths (prevent open redirect)
+      const isSafe = target.startsWith('/') && !target.startsWith('//') && !target.includes('://');
+      navigate(isSafe ? target : '/', { replace: true });
     }
   };
 

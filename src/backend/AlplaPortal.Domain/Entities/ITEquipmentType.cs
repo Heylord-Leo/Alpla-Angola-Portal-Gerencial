@@ -14,6 +14,9 @@ public class ITEquipmentType
     /// <summary>Display name in Portuguese (e.g. "Laptop", "Monitor", "Rato").</summary>
     public string DisplayName { get; set; } = string.Empty;
 
+    /// <summary>Short 3-letter code used exclusively in Asset Code generation (e.g. NBK, DSK, MON). Unique.</summary>
+    public string ShortCode { get; set; } = string.Empty;
+
     /// <summary>Whether this type is available for selection in forms and filters.</summary>
     public bool IsActive { get; set; } = true;
 

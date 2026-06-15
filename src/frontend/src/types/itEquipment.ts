@@ -1,5 +1,57 @@
 // ─── I.T Equipment Module Types ───
 
+// ─── Master Data / Catalog Lookup Types ───
+
+export interface MasterDataCompany {
+    id: number;
+    name: string;
+    isActive: boolean;
+}
+
+export interface MasterDataPlant {
+    id: number;
+    name: string;
+    companyId: number;
+    isActive: boolean;
+}
+
+export interface MasterDataDepartment {
+    id: number;
+    name: string;
+    isActive: boolean;
+}
+
+export interface CatalogManufacturer {
+    id: string;
+    name: string;
+    isActive: boolean;
+    sortOrder: number;
+}
+
+export interface CatalogModel {
+    id: string;
+    name: string;
+    manufacturerId: string;
+    equipmentTypeCode: string | null;
+    isActive: boolean;
+    sortOrder: number;
+}
+
+export interface CatalogProcessor {
+    id: string;
+    name: string;
+    isActive: boolean;
+    sortOrder: number;
+}
+
+export interface CatalogMemoryOption {
+    id: string;
+    displayName: string;
+    valueInGb: number | null;
+    isActive: boolean;
+    sortOrder: number;
+}
+
 export interface ITEquipmentSummary {
     total: number;
     inUse: number;
@@ -17,6 +69,7 @@ export interface ITEquipmentSummary {
 export interface ITEquipmentListItem {
     id: string;
     assetTag: string;
+    legacyAssetCode: string | null;
     hostname: string | null;
     plant: string | null;
     equipmentType: string;
@@ -27,6 +80,9 @@ export interface ITEquipmentListItem {
     macAddress: string | null;
     currentOwnerName: string | null;
     biometricMfaEnabled: boolean;
+    companyCode: string | null;
+    plantCode: string | null;
+    qrCodeUrl: string | null;
     updatedAt: string | null;
     createdAt: string;
 }
@@ -94,6 +150,7 @@ export interface ITEquipmentMovement {
 export interface ITEquipmentDetail {
     id: string;
     assetTag: string;
+    legacyAssetCode: string | null;
     hostname: string | null;
     plant: string | null;
     equipmentType: string;
@@ -117,6 +174,13 @@ export interface ITEquipmentDetail {
     isActive: boolean;
     createdAt: string;
     updatedAt: string | null;
+    companyId: number | null;
+    plantId: number | null;
+    companyCode: string | null;
+    plantCode: string | null;
+    equipmentTypeShortCode: string | null;
+    sequenceNumber: number;
+    qrCodeUrl: string | null;
     createdByName: string | null;
     updatedByName: string | null;
     acquisition: ITEquipmentAcquisition | null;

@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppShell } from './layouts/AppShell';
 import { LoadingSkeleton } from './components/ui/LoadingSkeleton';
@@ -131,6 +131,9 @@ const HRAttendanceMonthlyReport = React.lazy(() =>
 const ITEquipmentPage = React.lazy(() =>
     import('./pages/IT/ITEquipmentPage')
 );
+const ITEquipmentLabelPage = React.lazy(() =>
+    import('./pages/IT/ITEquipmentLabelPage')
+);
 const DeliveryTermsPage = React.lazy(() =>
     import('./pages/IT/DeliveryTermsPage')
 );
@@ -141,6 +144,9 @@ const OperationsTransfersPage = React.lazy(() =>
 );
 const OperationsLiveBoardPage = React.lazy(() =>
     import('./pages/Operations/OperationsLiveBoardPage')
+);
+const NotFoundPage = React.lazy(() =>
+    import('./pages/NotFoundPage')
 );
 
 // Admin pages (isolated, rarely visited)
@@ -177,9 +183,11 @@ const HREmployeeDirectory = React.lazy(() =>
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const { isAuthenticated, user } = useAuth();
+    const location = useLocation();
     
     if (!isAuthenticated) {
-        return <Navigate to="/login" replace />;
+        // Preserve the original URL so the login flow can redirect back after auth
+        return <Navigate to="/login" state={{ from: location }} replace />;
     }
 
     if (user?.mustChangePassword && window.location.pathname !== '/change-password') {
@@ -328,6 +336,8 @@ function AppContent() {
 
                 {/* IT Equipment Workspace */}
                 <Route path="/it/equipment" element={<ITRoute><Suspense fallback={<LoadingSkeleton />}><ITEquipmentPage /></Suspense></ITRoute>} />
+                <Route path="/it/equipment/:id" element={<ITRoute><Suspense fallback={<LoadingSkeleton />}><ITEquipmentPage /></Suspense></ITRoute>} />
+                <Route path="/it/equipment/:id/label" element={<ITRoute><Suspense fallback={<LoadingSkeleton />}><ITEquipmentLabelPage /></Suspense></ITRoute>} />
                 <Route path="/it/delivery-terms" element={<ITRoute><Suspense fallback={<LoadingSkeleton />}><DeliveryTermsPage /></Suspense></ITRoute>} />
 
                 {/* Settings Routes */}
@@ -343,6 +353,9 @@ function AppContent() {
                 <Route path="/admin/health" element={<AdminRoute><Suspense fallback={<LoadingSkeleton />}><IntegrationHealth /></Suspense></AdminRoute>} />
                 <Route path="/admin/integrations" element={<AdminRoute><Suspense fallback={<LoadingSkeleton />}><IntegrationSettings /></Suspense></AdminRoute>} />
             </Route>
+
+            {/* 404 — Not Found */}
+            <Route path="*" element={<Suspense fallback={<LoadingSkeleton />}><NotFoundPage /></Suspense>} />
         </Routes>
     );
 }

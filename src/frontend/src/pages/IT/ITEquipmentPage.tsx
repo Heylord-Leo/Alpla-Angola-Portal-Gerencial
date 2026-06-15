@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
 import { Monitor, Upload, Plus, Search, Filter, ChevronLeft, ChevronRight, X, RefreshCw, Settings } from 'lucide-react';
 import { itEquipmentApi } from '../../lib/itEquipmentApi';
 import { EquipmentSummaryCards } from '../../components/it/EquipmentSummaryCards';
@@ -11,6 +12,7 @@ import { ManageEquipmentCatalogsModal } from '../../components/it/ManageEquipmen
 import type { ITEquipmentSummary, ITEquipmentListResponse, ITEquipmentFilterOptions } from '../../types/itEquipment';
 
 export default function ITEquipmentPage() {
+    const { id: urlEquipmentId } = useParams<{ id?: string }>();
     const [summary, setSummary] = useState<ITEquipmentSummary | null>(null);
     const [listData, setListData] = useState<ITEquipmentListResponse | null>(null);
     const [filterOptions, setFilterOptions] = useState<ITEquipmentFilterOptions | null>(null);
@@ -29,7 +31,7 @@ export default function ITEquipmentPage() {
     const [isDescending, setIsDescending] = useState(false);
 
     // Modals & drawers
-    const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null);
+    const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(urlEquipmentId ?? null);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
     const [showFilters, setShowFilters] = useState(false);

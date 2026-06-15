@@ -15,6 +15,10 @@ public class Company
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>Short code used in Asset Code generation (e.g. "APA", "APS"). Unique.</summary>
+    public string? Code { get; set; }
+
     public bool IsActive { get; set; } = true;
     
     public Guid? FinalApproverUserId { get; set; }

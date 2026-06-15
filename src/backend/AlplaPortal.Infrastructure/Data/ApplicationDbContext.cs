@@ -908,15 +908,21 @@ public class ApplicationDbContext : DbContext
             new Department { Id = 4, Name = "TI", IsActive = true, Code = "TI" }
         );
 
+        modelBuilder.Entity<Company>(entity =>
+        {
+            entity.HasIndex(e => e.Code).IsUnique().HasFilter("\"Code\" IS NOT NULL");
+            entity.Property(e => e.Code).HasMaxLength(20);
+        });
+
         modelBuilder.Entity<Company>().HasData(
-            new Company { Id = 1, Name = "AlplaPLASTICO", IsActive = true },
-            new Company { Id = 2, Name = "AlplaSOPRO", IsActive = true }
+            new Company { Id = 1, Name = "AlplaPLASTICO", Code = "APA", IsActive = true },
+            new Company { Id = 2, Name = "AlplaSOPRO", Code = "APS", IsActive = true }
         );
 
         modelBuilder.Entity<Plant>().HasData(
-            new Plant { Id = 1, Name = "Viana 1", Code = "V1", CompanyId = 1, IsActive = true },
-            new Plant { Id = 2, Name = "Viana 2", Code = "V2", CompanyId = 1, IsActive = true },
-            new Plant { Id = 3, Name = "Viana 3", Code = "V3", CompanyId = 2, IsActive = true }
+            new Plant { Id = 1, Name = "Viana 1", Code = "AOVIA1", CompanyId = 1, IsActive = true },
+            new Plant { Id = 2, Name = "Viana 2", Code = "AOVIA2", CompanyId = 1, IsActive = true },
+            new Plant { Id = 3, Name = "Viana 3", Code = "AOVIA3", CompanyId = 2, IsActive = true }
         );
 
         modelBuilder.Entity<Supplier>().HasData(
@@ -1074,6 +1080,11 @@ public class ApplicationDbContext : DbContext
                   .HasFilter("\"Hostname\" IS NOT NULL AND \"Hostname\" <> ''");
             entity.HasIndex(e => e.StatusCode);
             entity.Property(e => e.AssetTag).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.LegacyAssetCode).HasMaxLength(100);
+            entity.Property(e => e.CompanyCode).HasMaxLength(20);
+            entity.Property(e => e.PlantCode).HasMaxLength(20);
+            entity.Property(e => e.EquipmentTypeShortCode).HasMaxLength(10);
+            entity.Property(e => e.QrCodeUrl).HasMaxLength(500);
             entity.Property(e => e.Hostname).HasMaxLength(200);
             entity.Property(e => e.Plant).HasMaxLength(100);
             entity.Property(e => e.EquipmentType).HasMaxLength(50);
@@ -1089,6 +1100,8 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CurrentOwnerEmployeeId).HasMaxLength(100);
             entity.Property(e => e.SourceType).HasMaxLength(50);
             entity.Property(e => e.IdCard).HasMaxLength(200);
+            entity.HasOne(e => e.CompanyRef).WithMany().HasForeignKey(e => e.CompanyId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.PlantRef).WithMany().HasForeignKey(e => e.PlantId).OnDelete(DeleteBehavior.NoAction);
             entity.HasOne(e => e.CurrentOwnerUser).WithMany().HasForeignKey(e => e.CurrentOwnerUserId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(e => e.CreatedByUser).WithMany().HasForeignKey(e => e.CreatedByUserId).OnDelete(DeleteBehavior.NoAction);
             entity.HasOne(e => e.UpdatedByUser).WithMany().HasForeignKey(e => e.UpdatedByUserId).OnDelete(DeleteBehavior.NoAction);
@@ -1199,36 +1212,38 @@ public class ApplicationDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.Code).IsUnique();
+            entity.HasIndex(e => e.ShortCode).IsUnique().HasFilter("\"ShortCode\" IS NOT NULL AND \"ShortCode\" <> ''");
             entity.Property(e => e.Code).HasMaxLength(50).IsRequired();
             entity.Property(e => e.DisplayName).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.ShortCode).HasMaxLength(10).HasDefaultValue("");
         });
 
         // Seed: I.T Equipment Types
         var seedDate = new DateTime(2026, 6, 12, 0, 0, 0, DateTimeKind.Utc);
         modelBuilder.Entity<ITEquipmentType>().HasData(
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000001"), Code = "LAPTOP", DisplayName = "Laptop", SortOrder = 1, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000002"), Code = "DESKTOP", DisplayName = "Desktop", SortOrder = 2, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000003"), Code = "MONITOR", DisplayName = "Monitor", SortOrder = 3, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000004"), Code = "PRINTER", DisplayName = "Impressora", SortOrder = 4, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000005"), Code = "NVR", DisplayName = "NVR", SortOrder = 5, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000006"), Code = "MOUSE", DisplayName = "Rato", SortOrder = 6, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000007"), Code = "KEYBOARD", DisplayName = "Teclado", SortOrder = 7, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000008"), Code = "HEADSET", DisplayName = "Headset", SortOrder = 8, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000009"), Code = "DOCKING_STATION", DisplayName = "Docking Station", SortOrder = 9, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-00000000000a"), Code = "BAG", DisplayName = "Mala / Bolsa", SortOrder = 10, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-00000000000b"), Code = "PHONE", DisplayName = "Telemóvel", SortOrder = 11, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-00000000000c"), Code = "CHARGER", DisplayName = "Carregador", SortOrder = 12, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-00000000000d"), Code = "TABLET", DisplayName = "Tablet", SortOrder = 13, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-00000000000e"), Code = "SERVER", DisplayName = "Servidor", SortOrder = 14, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-00000000000f"), Code = "NETWORK_EQUIPMENT", DisplayName = "Equipamento de Rede", SortOrder = 15, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000010"), Code = "ACCESS_POINT", DisplayName = "Access Point", SortOrder = 16, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000011"), Code = "SWITCH", DisplayName = "Switch", SortOrder = 17, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000012"), Code = "FIREWALL", DisplayName = "Firewall", SortOrder = 18, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000013"), Code = "UPS", DisplayName = "UPS / Nobreak", SortOrder = 19, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000014"), Code = "PROJECTOR", DisplayName = "Projetor", SortOrder = 20, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000015"), Code = "SCANNER", DisplayName = "Scanner", SortOrder = 21, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000016"), Code = "ACCESSORIES", DisplayName = "Acessórios", SortOrder = 22, IsActive = true, CreatedAt = seedDate },
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000017"), Code = "UNKNOWN", DisplayName = "Desconhecido", SortOrder = 99, IsActive = true, CreatedAt = seedDate }
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000001"), Code = "LAPTOP", ShortCode = "NBK", DisplayName = "Laptop", SortOrder = 1, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000002"), Code = "DESKTOP", ShortCode = "DSK", DisplayName = "Desktop", SortOrder = 2, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000003"), Code = "MONITOR", ShortCode = "MON", DisplayName = "Monitor", SortOrder = 3, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000004"), Code = "PRINTER", ShortCode = "PRN", DisplayName = "Impressora", SortOrder = 4, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000005"), Code = "NVR", ShortCode = "NVR", DisplayName = "NVR", SortOrder = 5, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000006"), Code = "MOUSE", ShortCode = "MOU", DisplayName = "Rato", SortOrder = 6, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000007"), Code = "KEYBOARD", ShortCode = "KBD", DisplayName = "Teclado", SortOrder = 7, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000008"), Code = "HEADSET", ShortCode = "HDS", DisplayName = "Headset", SortOrder = 8, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000009"), Code = "DOCKING_STATION", ShortCode = "DOC", DisplayName = "Docking Station", SortOrder = 9, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-00000000000a"), Code = "BAG", ShortCode = "BAG", DisplayName = "Mala / Bolsa", SortOrder = 10, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-00000000000b"), Code = "PHONE", ShortCode = "TEL", DisplayName = "Telemóvel", SortOrder = 11, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-00000000000c"), Code = "CHARGER", ShortCode = "CHG", DisplayName = "Carregador", SortOrder = 12, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-00000000000d"), Code = "TABLET", ShortCode = "TAB", DisplayName = "Tablet", SortOrder = 13, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-00000000000e"), Code = "SERVER", ShortCode = "SRV", DisplayName = "Servidor", SortOrder = 14, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-00000000000f"), Code = "NETWORK_EQUIPMENT", ShortCode = "RTR", DisplayName = "Equipamento de Rede", SortOrder = 15, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000010"), Code = "ACCESS_POINT", ShortCode = "AP", DisplayName = "Access Point", SortOrder = 16, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000011"), Code = "SWITCH", ShortCode = "SWT", DisplayName = "Switch", SortOrder = 17, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000012"), Code = "FIREWALL", ShortCode = "FWL", DisplayName = "Firewall", SortOrder = 18, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000013"), Code = "UPS", ShortCode = "UPS", DisplayName = "UPS / Nobreak", SortOrder = 19, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000014"), Code = "PROJECTOR", ShortCode = "PRJ", DisplayName = "Projetor", SortOrder = 20, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000015"), Code = "SCANNER", ShortCode = "SCN", DisplayName = "Scanner", SortOrder = 21, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000016"), Code = "ACCESSORIES", ShortCode = "ACC", DisplayName = "Acessórios", SortOrder = 22, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000017"), Code = "UNKNOWN", ShortCode = "OTH", DisplayName = "Desconhecido", SortOrder = 99, IsActive = true, CreatedAt = seedDate }
         );
 
         // ITEquipmentManufacturer
