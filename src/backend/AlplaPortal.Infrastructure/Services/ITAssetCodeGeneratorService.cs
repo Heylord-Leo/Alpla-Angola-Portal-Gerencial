@@ -10,7 +10,7 @@ namespace AlplaPortal.Infrastructure.Services;
 /// Generates unique Asset Codes for IT Equipment using the format:
 /// {COMPANY_CODE}-{PLANT_CODE}-IT-{TYPE_SHORT_CODE}-{SEQUENCE:D6}
 /// 
-/// Example: APA-AOVIA1-IT-NBK-000001
+/// Example: APA-AOVIA1-IT-LAP-000001
 /// 
 /// Sequence is scoped per Company + Plant + Equipment Type.
 /// Uses the SystemCounter table with key: IT_ASSET:{COMPANY_CODE}:{PLANT_CODE}:{TYPE_SHORT_CODE}

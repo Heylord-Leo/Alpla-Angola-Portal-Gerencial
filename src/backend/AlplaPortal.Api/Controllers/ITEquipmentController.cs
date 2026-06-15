@@ -139,10 +139,10 @@ public class ITEquipmentController : BaseController
             .Select(e => new
             {
                 e.Id, e.AssetTag, e.LegacyAssetCode, e.Hostname, e.Plant, e.EquipmentType, e.StatusCode,
-                e.Manufacturer, e.Model, e.SerialNumber, e.MacAddress,
+                e.Manufacturer, e.Model, e.SerialNumber, e.MacAddress, e.WifiMacAddress,
                 e.CurrentOwnerName, e.BiometricMfaEnabled,
                 e.CompanyCode, e.PlantCode, e.QrCodeUrl,
-                e.UpdatedAt, e.CreatedAt
+                e.ManufactureDate, e.UpdatedAt, e.CreatedAt
             })
             .ToListAsync();
 
@@ -208,7 +208,7 @@ public class ITEquipmentController : BaseController
         return Ok(new
         {
             eq.Id, eq.AssetTag, eq.LegacyAssetCode, eq.Hostname, eq.Plant, eq.EquipmentType, eq.StatusCode,
-            eq.Manufacturer, eq.Model, eq.SerialNumber, eq.MacAddress,
+            eq.Manufacturer, eq.Model, eq.SerialNumber, eq.MacAddress, eq.WifiMacAddress,
             eq.Processor, eq.MemoryRam, eq.Color, eq.BiometricMfaEnabled, eq.IdCard,
             eq.DevicePhotoUrl, eq.CurrentOwnerName,
             CurrentOwnerEmail = eq.CurrentOwnerUser?.Email,
@@ -216,6 +216,7 @@ public class ITEquipmentController : BaseController
             eq.Notes, eq.SourceType, eq.IsActive, eq.CreatedAt, eq.UpdatedAt,
             eq.CompanyId, eq.PlantId, eq.CompanyCode, eq.PlantCode,
             eq.EquipmentTypeShortCode, eq.SequenceNumber, eq.QrCodeUrl,
+            eq.ManufactureDate,
             CreatedByName = eq.CreatedByUser?.FullName,
             UpdatedByName = eq.UpdatedByUser?.FullName,
             Acquisition = eq.Acquisition == null ? null : new
@@ -298,12 +299,14 @@ public class ITEquipmentController : BaseController
             Model = request.Model?.Trim(),
             SerialNumber = request.SerialNumber?.Trim(),
             MacAddress = request.MacAddress?.Trim(),
+            WifiMacAddress = request.WifiMacAddress?.Trim(),
             Processor = request.Processor?.Trim(),
             MemoryRam = request.MemoryRam?.Trim(),
             Color = request.Color?.Trim(),
             BiometricMfaEnabled = request.BiometricMfaEnabled ?? false,
             IdCard = request.IdCard?.Trim(),
             Notes = request.Notes?.Trim(),
+            ManufactureDate = request.ManufactureDate,
             SourceType = sourceType,
             IsActive = true,
             CreatedByUserId = userId
@@ -396,13 +399,15 @@ public class ITEquipmentController : BaseController
         if (request.Manufacturer != null && request.Manufacturer != eq.Manufacturer) { TrackDiff("Fabricante", eq.Manufacturer, request.Manufacturer.Trim()); eq.Manufacturer = request.Manufacturer.Trim(); }
         if (request.Model != null && request.Model != eq.Model) { TrackDiff("Modelo", eq.Model, request.Model.Trim()); eq.Model = request.Model.Trim(); }
         if (request.SerialNumber != null && request.SerialNumber.Trim() != eq.SerialNumber) { TrackDiff("Serial", eq.SerialNumber, request.SerialNumber.Trim(), true); eq.SerialNumber = request.SerialNumber.Trim(); }
-        if (request.MacAddress != null && request.MacAddress != eq.MacAddress) { TrackDiff("MAC", eq.MacAddress, request.MacAddress.Trim()); eq.MacAddress = request.MacAddress.Trim(); }
+        if (request.MacAddress != null && request.MacAddress != eq.MacAddress) { TrackDiff("MAC Ethernet", eq.MacAddress, request.MacAddress.Trim()); eq.MacAddress = request.MacAddress.Trim(); }
+        if (request.WifiMacAddress != null && request.WifiMacAddress != eq.WifiMacAddress) { TrackDiff("MAC Wi-Fi", eq.WifiMacAddress, request.WifiMacAddress.Trim()); eq.WifiMacAddress = request.WifiMacAddress.Trim(); }
         if (request.Processor != null && request.Processor != eq.Processor) { TrackDiff("Processador", eq.Processor, request.Processor.Trim()); eq.Processor = request.Processor.Trim(); }
         if (request.MemoryRam != null && request.MemoryRam != eq.MemoryRam) { TrackDiff("RAM", eq.MemoryRam, request.MemoryRam.Trim()); eq.MemoryRam = request.MemoryRam.Trim(); }
         if (request.Color != null && request.Color != eq.Color) { TrackDiff("Cor", eq.Color, request.Color.Trim()); eq.Color = request.Color.Trim(); }
         if (request.BiometricMfaEnabled.HasValue && request.BiometricMfaEnabled != eq.BiometricMfaEnabled) { TrackDiff("Biometria", eq.BiometricMfaEnabled.ToString(), request.BiometricMfaEnabled.Value.ToString()); eq.BiometricMfaEnabled = request.BiometricMfaEnabled.Value; }
         if (request.IdCard != null && request.IdCard != eq.IdCard) { TrackDiff("ID Card", eq.IdCard, request.IdCard.Trim()); eq.IdCard = request.IdCard.Trim(); }
         if (request.Notes != null && request.Notes != eq.Notes) { eq.Notes = request.Notes.Trim(); diffs.Add("Notas atualizadas"); }
+        if (request.ManufactureDate.HasValue && request.ManufactureDate != eq.ManufactureDate) { TrackDiff("Data de Fabricação", eq.ManufactureDate?.ToString("dd/MM/yyyy") ?? "—", request.ManufactureDate.Value.ToString("dd/MM/yyyy")); eq.ManufactureDate = request.ManufactureDate; }
 
         eq.UpdatedAt = DateTime.UtcNow;
         eq.UpdatedByUserId = userId;
@@ -2127,12 +2132,14 @@ public class ITEquipmentController : BaseController
         public string? Model { get; set; }
         public string? SerialNumber { get; set; }
         public string? MacAddress { get; set; }
+        public string? WifiMacAddress { get; set; }
         public string? Processor { get; set; }
         public string? MemoryRam { get; set; }
         public string? Color { get; set; }
         public bool? BiometricMfaEnabled { get; set; }
         public string? IdCard { get; set; }
         public string? Notes { get; set; }
+        public DateTime? ManufactureDate { get; set; }
         public string? SourceType { get; set; }
         public AcquisitionDto? Acquisition { get; set; }
     }
@@ -2164,12 +2171,14 @@ public class ITEquipmentController : BaseController
         public string? Model { get; set; }
         public string? SerialNumber { get; set; }
         public string? MacAddress { get; set; }
+        public string? WifiMacAddress { get; set; }
         public string? Processor { get; set; }
         public string? MemoryRam { get; set; }
         public string? Color { get; set; }
         public bool? BiometricMfaEnabled { get; set; }
         public string? IdCard { get; set; }
         public string? Notes { get; set; }
+        public DateTime? ManufactureDate { get; set; }
     }
 
     public class AssignRequest

@@ -78,11 +78,13 @@ export interface ITEquipmentListItem {
     model: string | null;
     serialNumber: string | null;
     macAddress: string | null;
+    wifiMacAddress: string | null;
     currentOwnerName: string | null;
     biometricMfaEnabled: boolean;
     companyCode: string | null;
     plantCode: string | null;
     qrCodeUrl: string | null;
+    manufactureDate: string | null;
     updatedAt: string | null;
     createdAt: string;
 }
@@ -159,6 +161,7 @@ export interface ITEquipmentDetail {
     model: string | null;
     serialNumber: string | null;
     macAddress: string | null;
+    wifiMacAddress: string | null;
     processor: string | null;
     memoryRam: string | null;
     color: string | null;
@@ -181,6 +184,7 @@ export interface ITEquipmentDetail {
     equipmentTypeShortCode: string | null;
     sequenceNumber: number;
     qrCodeUrl: string | null;
+    manufactureDate: string | null;
     createdByName: string | null;
     updatedByName: string | null;
     acquisition: ITEquipmentAcquisition | null;

@@ -57,6 +57,7 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
         model: equipment?.model || '',
         serialNumber: equipment?.serialNumber || '',
         macAddress: equipment?.macAddress || '',
+        wifiMacAddress: equipment?.wifiMacAddress || '',
         processor: equipment?.processor || '',
         memoryRam: equipment?.memoryRam || '',
         color: equipment?.color || '',
@@ -65,6 +66,7 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
         notes: equipment?.notes || '',
         sourceType: equipment?.sourceType || 'MANUAL_REGISTRATION',
         legacyAssetCode: equipment?.legacyAssetCode || '',
+        manufactureDate: equipment?.manufactureDate ? equipment.manufactureDate.split('T')[0] : '',
     });
 
     // Purchase tracking state (only for creation with MANUAL_PURCHASE)
@@ -149,6 +151,7 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
                     model: form.model,
                     serialNumber: form.serialNumber,
                     macAddress: form.macAddress,
+                    wifiMacAddress: form.wifiMacAddress,
                     processor: form.processor,
                     memoryRam: form.memoryRam,
                     color: form.color,
@@ -156,6 +159,7 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
                     idCard: form.idCard,
                     notes: form.notes,
                     legacyAssetCode: form.legacyAssetCode || null,
+                    manufactureDate: form.manufactureDate || null,
                 };
                 await itEquipmentApi.update(equipment.id, updatePayload);
             } else {
@@ -170,6 +174,7 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
                     model: form.model || null,
                     serialNumber: form.serialNumber || null,
                     macAddress: form.macAddress || null,
+                    wifiMacAddress: form.wifiMacAddress || null,
                     processor: form.processor || null,
                     memoryRam: form.memoryRam || null,
                     color: form.color || null,
@@ -178,6 +183,7 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
                     notes: form.notes || null,
                     sourceType: form.sourceType,
                     legacyAssetCode: form.legacyAssetCode || null,
+                    manufactureDate: form.manufactureDate || null,
                 };
 
                 // Attach acquisition data for MANUAL_PURCHASE
@@ -314,8 +320,14 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
 
                 <Row>
                     <Field label="Serial Number" value={form.serialNumber} onChange={v => set('serialNumber', v)} />
-                    {showMacAddress && <Field label="MAC Address" value={form.macAddress} onChange={v => set('macAddress', v)} />}
+                    {showMacAddress && <Field label="MAC Ethernet" value={form.macAddress} onChange={v => set('macAddress', v)} placeholder="Ex: AA:BB:CC:DD:EE:FF" />}
                 </Row>
+                {showMacAddress && (
+                    <Row>
+                        <Field label="MAC Wi-Fi" value={form.wifiMacAddress} onChange={v => set('wifiMacAddress', v)} placeholder="Ex: AA:BB:CC:DD:EE:FF" />
+                        <div style={{ flex: 1 }} />
+                    </Row>
+                )}
                 {showProcessorRam && (
                     <Row>
                         <SelectField label="Processador" value={form.processor} onChange={v => set('processor', v)}
@@ -331,7 +343,11 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
                     <Field label="ID Card" value={form.idCard} onChange={v => set('idCard', v)} />
                 </Row>
                 <Row>
-                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ flex: 1 }}>
+                        <label style={labelStyle}>Data de Fabricação</label>
+                        <input type="date" value={form.manufactureDate} onChange={e => set('manufactureDate', e.target.value)} style={inputStyle} />
+                    </div>
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, paddingTop: 18 }}>
                         <input type="checkbox" checked={form.biometricMfaEnabled} onChange={e => set('biometricMfaEnabled', e.target.checked)} id="biocheck" />
                         <label htmlFor="biocheck" style={{ fontSize: '0.85rem', color: 'var(--color-text)' }}>Biometria / MFA</label>
                     </div>

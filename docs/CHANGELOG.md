@@ -2,6 +2,17 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.194.0] - 2026-06-15
+
+### Added — IT Equipment Refinements (Manufacture Date & MAC Split)
+
+**Refinements:**
+- Changed Laptop ShortCode from `NBK` to `LAP` for Asset Code generation
+- Added `ManufactureDate` field for lifecycle tracking
+- Split `MacAddress` field into `MacAddress` (Ethernet) and `WifiMacAddress` (Wi-Fi)
+- Migration: `20260615142951_ITEquipmentRefinements` applied
+
+
 ## [v2.193.0] - 2026-06-15
 
 ### Added — IT Asset Code Auto-Generation, QR Code & Label Printing

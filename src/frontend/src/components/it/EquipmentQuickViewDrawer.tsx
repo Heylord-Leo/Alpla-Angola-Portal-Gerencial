@@ -219,10 +219,12 @@ function InfoTab({ detail }: { detail: ITEquipmentDetail }) {
                     <InfoRow label="Fabricante" value={detail.manufacturer} />
                     <InfoRow label="Modelo" value={detail.model} />
                     <InfoRow label="Serial Number" value={detail.serialNumber} mono />
-                    <InfoRow label="MAC Address" value={detail.macAddress} mono />
+                    <InfoRow label="MAC Ethernet" value={detail.macAddress} mono />
+                    <InfoRow label="MAC Wi-Fi" value={detail.wifiMacAddress} mono />
                     <InfoRow label="Processador" value={detail.processor} />
                     <InfoRow label="RAM" value={detail.memoryRam} />
                     <InfoRow label="Cor" value={detail.color} />
+                    <InfoRow label="Data de Fabricação" value={detail.manufactureDate ? new Date(detail.manufactureDate).toLocaleDateString('pt-AO') : null} />
                     <InfoRow label="Biometric/MFA" value={detail.biometricMfaEnabled ? 'Sim' : 'Não'} />
                     <InfoRow label="ID Card" value={detail.idCard} />
                     <InfoRow label="Origem" value={detail.sourceType === 'IMPORTED_LEGACY' ? 'Importado (Legacy)' : detail.sourceType === 'MANUAL_PURCHASE' ? 'Compra' : 'Registo Manual'} />

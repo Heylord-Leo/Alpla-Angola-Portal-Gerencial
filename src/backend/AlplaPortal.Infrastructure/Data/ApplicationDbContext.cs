@@ -1093,6 +1093,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Model).HasMaxLength(200);
             entity.Property(e => e.SerialNumber).HasMaxLength(200);
             entity.Property(e => e.MacAddress).HasMaxLength(100);
+            entity.Property(e => e.WifiMacAddress).HasMaxLength(100);
             entity.Property(e => e.Processor).HasMaxLength(200);
             entity.Property(e => e.MemoryRam).HasMaxLength(100);
             entity.Property(e => e.Color).HasMaxLength(50);
@@ -1221,7 +1222,7 @@ public class ApplicationDbContext : DbContext
         // Seed: I.T Equipment Types
         var seedDate = new DateTime(2026, 6, 12, 0, 0, 0, DateTimeKind.Utc);
         modelBuilder.Entity<ITEquipmentType>().HasData(
-            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000001"), Code = "LAPTOP", ShortCode = "NBK", DisplayName = "Laptop", SortOrder = 1, IsActive = true, CreatedAt = seedDate },
+            new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000001"), Code = "LAPTOP", ShortCode = "LAP", DisplayName = "Laptop", SortOrder = 1, IsActive = true, CreatedAt = seedDate },
             new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000002"), Code = "DESKTOP", ShortCode = "DSK", DisplayName = "Desktop", SortOrder = 2, IsActive = true, CreatedAt = seedDate },
             new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000003"), Code = "MONITOR", ShortCode = "MON", DisplayName = "Monitor", SortOrder = 3, IsActive = true, CreatedAt = seedDate },
             new ITEquipmentType { Id = Guid.Parse("a0000001-0000-0000-0000-000000000004"), Code = "PRINTER", ShortCode = "PRN", DisplayName = "Impressora", SortOrder = 4, IsActive = true, CreatedAt = seedDate },

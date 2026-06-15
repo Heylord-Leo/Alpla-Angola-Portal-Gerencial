@@ -2,7 +2,17 @@
 
 ## Current Version
 
-v2.193.0
+v2.194.0
+
+## [v2.194.0] - 2026-06-15
+
+### Added — IT Equipment Refinements (Manufacture Date & MAC Split)
+
+**Refinements:**
+- Changed Laptop ShortCode from `NBK` to `LAP` for Asset Code generation.
+- Added `ManufactureDate` field for lifecycle tracking.
+- Split `MacAddress` field into `MacAddress` (Ethernet) and `WifiMacAddress` (Wi-Fi).
+- Migration `20260615142951_ITEquipmentRefinements` applied.
 
 ## [v2.193.0] - 2026-06-15
 

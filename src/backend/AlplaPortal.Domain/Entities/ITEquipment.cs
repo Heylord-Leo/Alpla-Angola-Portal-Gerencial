@@ -7,7 +7,7 @@ public class ITEquipment
 {
     public Guid Id { get; set; } = Guid.NewGuid();
 
-    /// <summary>Auto-generated official Asset Code (e.g. APA-AOVIA1-IT-NBK-000001). Unique, immutable after creation.</summary>
+    /// <summary>Auto-generated official Asset Code (e.g. APA-AOVIA1-IT-LAP-000001). Unique, immutable after creation.</summary>
     public string AssetTag { get; set; } = string.Empty;
 
     /// <summary>Optional manual/legacy patrimony code for backward compatibility.</summary>
@@ -26,7 +26,7 @@ public class ITEquipment
     public string? CompanyCode { get; set; }
     /// <summary>Denormalized snapshot of Plant.Code at creation time (e.g. "AOVIA1"). Immutable.</summary>
     public string? PlantCode { get; set; }
-    /// <summary>Denormalized snapshot of ITEquipmentType.ShortCode at creation time (e.g. "NBK"). Immutable.</summary>
+    /// <summary>Denormalized snapshot of ITEquipmentType.ShortCode at creation time (e.g. "LAP"). Immutable.</summary>
     public string? EquipmentTypeShortCode { get; set; }
 
     /// <summary>QR Code URL pointing to the asset detail page.</summary>
@@ -45,6 +45,7 @@ public class ITEquipment
     public string? Model { get; set; }
     public string? SerialNumber { get; set; }
     public string? MacAddress { get; set; }
+    public string? WifiMacAddress { get; set; }
     public string? Processor { get; set; }
     public string? MemoryRam { get; set; }
     public string? Color { get; set; }
@@ -59,6 +60,9 @@ public class ITEquipment
     public string? CurrentOwnerEmployeeId { get; set; }
 
     public string? Notes { get; set; }
+
+    /// <summary>Date when the equipment was manufactured. Used for lifecycle/replacement planning.</summary>
+    public DateTime? ManufactureDate { get; set; }
 
     /// <summary>How the equipment entered the system (IMPORTED_LEGACY, MANUAL_PURCHASE, MANUAL_REGISTRATION).</summary>
     public string SourceType { get; set; } = "MANUAL_REGISTRATION";
