@@ -2,6 +2,78 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.193.0] - 2026-06-15
+
+### Added — IT Asset Code Auto-Generation, QR Code & Label Printing
+
+**Automatic Asset Code Generation:**
+- New `ITAssetCodeGeneratorService` generates unique asset codes on equipment creation using format: `{COMPANY_CODE}-{PLANT_CODE}-IT-{TYPE_SHORT_CODE}-{SEQUENCE:D6}`
+- Example: `APA-AOVIA1-IT-NBK-000001`
+- Sequence counters scoped per Company + Plant + Equipment Type via `SystemCounters` table
+- New database fields: `ITEquipmentType.ShortCode`, `Organization.CompanyCode`, `ITEquipment.LegacyAssetCode`
+- `AssetTag` repurposed as the official auto-generated Asset Code (read-only in UI, displayed as "Código do Ativo")
+- Migration: `20260615104001_AddITAssetCodeAutoGeneration`
+
+**Visual QR Code in Equipment Detail:**
+- QR Code rendered in the equipment detail drawer using `qrcode.react` (`QRCodeSVG`)
+- Shows asset code below QR and clickable URL link
+- Action buttons: Abrir Ficha (open URL), Imprimir Etiqueta (print label), Copiar Link (copy URL)
+- Relative URL warning badge when `FrontendBaseUrl` is not configured
+
+**Printable Asset Label (70mm × 35mm):**
+- New route `/it/equipment/:id/label` renders a print-ready label
+- Layout: QR Code (left) + asset info (right): ALPLA ANGOLA, Asset Code, Type, S/N, Model, Plant, Company
+- `@media print` CSS hides all app chrome, sets `@page` size to 70×35mm
+- Screen preview with "Imprimir Etiqueta" button
+
+**Deep Link & Authentication Flow:**
+- New route `/it/equipment/:id` opens IT Equipment page with detail drawer auto-opened
+- `ProtectedRoute` captures original URL before login redirect; after auth, user is returned to the original page
+- Safety: only internal relative paths accepted as return URLs (no open redirects)
+- New `NotFoundPage` with catch-all `*` route
+
+**Config Consolidation — `PortalBaseUrl` eliminated:**
+- Replaced `AppConfig:PortalBaseUrl` with the existing `AppConfig:FrontendBaseUrl` in `ITAssetCodeGeneratorService` and `WorkflowNotificationOrchestrator`
+- QR Code URLs, email CTA buttons, and notification links now all use the same config key
+- No additional config changes needed on TEST or PROD servers
+
+**Operational Script:**
+- `scripts/maintenance/ResetITEquipmentData.sql` — controlled purge of IT operational data preserving all master data
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
+
+**Files Created:**
+- `src/backend/.../Migrations/20260615104001_AddITAssetCodeAutoGeneration.cs`
+- `src/backend/.../Migrations/20260615104001_AddITAssetCodeAutoGeneration.Designer.cs`
+- `src/backend/.../Services/ITAssetCodeGeneratorService.cs`
+- `src/backend/scripts/maintenance/ResetITEquipmentData.sql`
+- `src/frontend/src/pages/IT/ITEquipmentLabelPage.tsx`
+- `src/frontend/src/pages/NotFoundPage.tsx`
+
+**Files Modified:**
+- `src/backend/.../Controllers/ITEquipmentController.cs`
+- `src/backend/.../Controllers/ITDeliveryTermsController.cs`
+- `src/backend/.../Program.cs`
+- `src/backend/.../Entities/ITEquipment.cs`
+- `src/backend/.../Entities/ITEquipmentType.cs`
+- `src/backend/.../Entities/Organization.cs`
+- `src/backend/.../Data/ApplicationDbContext.cs`
+- `src/backend/.../Data/Migrations/ApplicationDbContextModelSnapshot.cs`
+- `src/backend/.../Services/WorkflowNotificationOrchestrator.cs`
+- `src/frontend/src/App.tsx`
+- `src/frontend/src/features/auth/AuthContext.tsx`
+- `src/frontend/src/components/it/EquipmentQuickViewDrawer.tsx`
+- `src/frontend/src/components/it/EquipmentFormModal.tsx`
+- `src/frontend/src/components/it/EquipmentTable.tsx`
+- `src/frontend/src/pages/IT/ITEquipmentPage.tsx`
+- `src/frontend/src/pages/IT/DeliveryTermsPage.tsx`
+- `src/frontend/src/lib/itEquipmentApi.ts`
+- `src/frontend/src/types/itEquipment.ts`
+- `src/frontend/package.json`
+- `src/frontend/src/config.ts` — APP_VERSION → v2.193.0
+- `docs/VERSION.md` — v2.193.0
+- `docs/CHANGELOG.md` — This entry
+
 ## [v2.192.0] - 2026-06-12
 
 ### Added — IT Equipment Module Improvements (Phase 1, 2, and 3)

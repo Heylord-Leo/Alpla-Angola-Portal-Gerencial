@@ -2,7 +2,83 @@
 
 ## Current Version
 
-v2.192.0
+v2.193.0
+
+## [v2.193.0] - 2026-06-15
+
+### Added — IT Asset Code Auto-Generation, QR Code & Label Printing
+
+**Automatic Asset Code Generation:**
+- New `ITAssetCodeGeneratorService` generates unique asset codes on equipment creation using format: `{COMPANY_CODE}-{PLANT_CODE}-IT-{TYPE_SHORT_CODE}-{SEQUENCE:D6}` (e.g., `APA-AOVIA1-IT-NBK-000001`)
+- Sequence counters are scoped per Company + Plant + Equipment Type (stored in `SystemCounters` table)
+- Added `ShortCode` field to `ITEquipmentType` for compact asset code segments
+- Added `CompanyCode` field to `Organization` for company identification
+- Added `LegacyAssetCode` field to `ITEquipment` for manual/old patrimony codes
+- `AssetTag` field repurposed as the official auto-generated Asset Code (read-only in frontend)
+- Migration: `20260615104001_AddITAssetCodeAutoGeneration`
+
+**QR Code & Deep Link Support:**
+- Backend generates `QrCodeUrl` for each asset: `{FrontendBaseUrl}/it/equipment/{equipmentId}`
+- Frontend route `/it/equipment/:id` auto-opens the equipment detail drawer
+- Visual QR Code rendered in the equipment detail drawer using `qrcode.react` (QRCodeSVG)
+- Action buttons: Open Equipment Page, Print Label, Copy Link
+- Relative URL warning badge when `FrontendBaseUrl` is not configured
+
+**Printable Asset Label:**
+- Route `/it/equipment/:id/label` renders a 70mm×35mm printable label
+- Layout: QR Code (left) + asset info (right): ALPLA ANGOLA, Asset Code, Type, S/N, Model, Plant, Company
+- `@media print` CSS: hides app chrome, sets `@page` size to 70×35mm
+- Includes `LegacyAssetCode` on label when present
+
+**Authentication Flow — Return URL Preservation:**
+- `ProtectedRoute` now captures the current URL before redirecting to login
+- After successful authentication, the user is redirected back to the original URL
+- Safety: only internal relative paths accepted as return URLs
+
+**404 Not Found Page:**
+- New `NotFoundPage` component for unmatched routes
+- Catch-all `*` route in App.tsx
+
+**Config Consolidation — `PortalBaseUrl` → `FrontendBaseUrl`:**
+- Eliminated the separate `AppConfig:PortalBaseUrl` config key
+- All services (QR Code generation, email CTA buttons, notification links) now use the existing `AppConfig:FrontendBaseUrl` key
+- No additional config file changes needed on TEST or PROD servers
+
+**Operational Script:**
+- `scripts/maintenance/ResetITEquipmentData.sql` — controlled purge of IT asset operational data, preserving all master data/catalogs
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
+
+**Files Created:**
+- `src/backend/.../Migrations/20260615104001_AddITAssetCodeAutoGeneration.cs` — Schema migration
+- `src/backend/.../Migrations/20260615104001_AddITAssetCodeAutoGeneration.Designer.cs` — Snapshot
+- `src/backend/.../Services/ITAssetCodeGeneratorService.cs` — Asset code generator
+- `src/backend/scripts/maintenance/ResetITEquipmentData.sql` — Data reset script
+- `src/frontend/src/pages/IT/ITEquipmentLabelPage.tsx` — Printable label page
+- `src/frontend/src/pages/NotFoundPage.tsx` — 404 page
+
+**Files Modified:**
+- `src/backend/.../Controllers/ITEquipmentController.cs` — Calls asset code generator on create
+- `src/backend/.../Controllers/ITDeliveryTermsController.cs` — Uses new field names
+- `src/backend/.../Program.cs` — DI registration for asset code service
+- `src/backend/.../Entities/ITEquipment.cs` — LegacyAssetCode property
+- `src/backend/.../Entities/ITEquipmentType.cs` — ShortCode property
+- `src/backend/.../Entities/Organization.cs` — CompanyCode property
+- `src/backend/.../Data/ApplicationDbContext.cs` — Updated model config
+- `src/backend/.../Services/WorkflowNotificationOrchestrator.cs` — PortalBaseUrl → FrontendBaseUrl
+- `src/frontend/src/App.tsx` — New routes + ProtectedRoute returnUrl logic
+- `src/frontend/src/features/auth/AuthContext.tsx` — Login redirect to return URL
+- `src/frontend/src/components/it/EquipmentQuickViewDrawer.tsx` — QR code + action buttons
+- `src/frontend/src/components/it/EquipmentFormModal.tsx` — AssetTag read-only, LegacyAssetCode field
+- `src/frontend/src/components/it/EquipmentTable.tsx` — Display changes
+- `src/frontend/src/pages/IT/ITEquipmentPage.tsx` — Equipment ID from route param
+- `src/frontend/src/pages/IT/DeliveryTermsPage.tsx` — Updated field references
+- `src/frontend/src/lib/itEquipmentApi.ts` — New API fields
+- `src/frontend/src/types/itEquipment.ts` — New type fields
+- `src/frontend/package.json` — Added qrcode.react dependency
+- `src/frontend/src/config.ts` — APP_VERSION → v2.193.0
+- `docs/VERSION.md` — v2.193.0
+- `docs/CHANGELOG.md` — This entry
 
 ## [v2.192.0] - 2026-06-12
 
