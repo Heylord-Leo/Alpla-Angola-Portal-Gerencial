@@ -436,7 +436,19 @@ export const deliveryTermsApi = {
     },
 
     downloadDocument: (id: string) => `${DT_BASE}/${id}/document`,
-    downloadSignedDocument: (id: string) => `${DT_BASE}/${id}/signed-document`
+    downloadSignedDocument: (id: string) => `${DT_BASE}/${id}/signed-document`,
+    downloadReturnDocument: (id: string) => `${DT_BASE}/${id}/return-document`,
+
+    uploadSignedReturn: async (id: string, file: File): Promise<{ detail: string; documentId: string }> => {
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await apiFetch(`${DT_BASE}/${id}/upload-signed-return`, {
+            method: 'POST',
+            body: formData
+        });
+        if (!response.ok) return handleError(response, 'Falha ao carregar documento de devolução assinado.');
+        return response.json();
+    }
 };
 
 // ═══════════════════════════════════════════════════════════════

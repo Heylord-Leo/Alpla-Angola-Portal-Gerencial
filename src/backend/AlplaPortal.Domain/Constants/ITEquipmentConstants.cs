@@ -86,6 +86,8 @@ public static class ITEquipmentConstants
         public const string DeliveryTermDocGenerated = "DELIVERY_TERM_DOC_GENERATED";
         public const string DeliveryTermSignedUploaded = "DELIVERY_TERM_SIGNED_UPLOADED";
         public const string DeliveryTermCancelled = "DELIVERY_TERM_CANCELLED";
+        public const string ReturnTermDocGenerated = "RETURN_TERM_DOC_GENERATED";
+        public const string ReturnTermEmailSent = "RETURN_TERM_EMAIL_SENT";
     }
 
     /// <summary>Assignment lifecycle statuses.</summary>
@@ -122,6 +124,8 @@ public static class ITEquipmentConstants
         public const string SignedReturnAgreement = "SIGNED_RETURN_AGREEMENT";
         public const string DeliveryTermAgreement = "DELIVERY_TERM_AGREEMENT";
         public const string SignedDeliveryTermAgreement = "SIGNED_DELIVERY_TERM_AGREEMENT";
+        public const string ReturnTermAgreement = "RETURN_TERM_AGREEMENT";
+        public const string SignedReturnTermAgreement = "SIGNED_RETURN_TERM_AGREEMENT";
         public const string Other = "OTHER";
 
         public static string DisplayName(string code) => code switch
@@ -139,6 +143,8 @@ public static class ITEquipmentConstants
             SignedReturnAgreement => "Termo de Devolução Assinado",
             DeliveryTermAgreement => "Termo de Entrega Agrupado",
             SignedDeliveryTermAgreement => "Termo de Entrega Agrupado Assinado",
+            ReturnTermAgreement => "Termo de Devolução Agrupado",
+            SignedReturnTermAgreement => "Termo de Devolução Agrupado Assinado",
             Other => "Outro",
             _ => code
         };

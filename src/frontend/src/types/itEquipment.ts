@@ -268,6 +268,8 @@ export const MOVEMENT_TYPE_LABELS: Record<string, string> = {
     RETURN_DOCUMENT_GENERATED: 'Termo de Devolução Gerado',
     RETURN_EMAIL_SENT: 'E-mail de Devolução Enviado',
     RETURN_EMAIL_FAILED: 'Falha E-mail de Devolução',
+    RETURN_TERM_DOC_GENERATED: 'Termo de Devolução Agrupado Gerado',
+    RETURN_TERM_EMAIL_SENT: 'E-mail de Devolução Agrupado Enviado',
     USER_CHANGED: 'Troca de Utilizador',
     USER_CHANGE_RETURNED: 'Devolução (Troca)',
     USER_CHANGE_ASSIGNED: 'Atribuição (Troca)',
@@ -297,6 +299,8 @@ export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
     SIGNED_RETURN_AGREEMENT: 'Termo de Devolução Assinado',
     DELIVERY_TERM_AGREEMENT: 'Termo de Entrega Agrupado',
     SIGNED_DELIVERY_TERM_AGREEMENT: 'Termo de Entrega Agrupado Assinado',
+    RETURN_TERM_AGREEMENT: 'Termo de Devolução Agrupado',
+    SIGNED_RETURN_TERM_AGREEMENT: 'Termo de Devolução Agrupado Assinado',
     OTHER: 'Outro'
 };
 
@@ -347,6 +351,7 @@ export interface ITDeliveryTermDetail {
     statusDisplay: string;
     generatedDocumentId: string | null;
     signedDocumentId: string | null;
+    returnDocumentId: string | null;
     notes: string | null;
     createdAt: string;
     createdByName: string | null;

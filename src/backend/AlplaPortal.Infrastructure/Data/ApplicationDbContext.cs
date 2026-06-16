@@ -1185,6 +1185,7 @@ public class ApplicationDbContext : DbContext
             entity.HasOne(e => e.EmployeeUser).WithMany().HasForeignKey(e => e.EmployeeUserId).OnDelete(DeleteBehavior.NoAction);
             entity.HasOne(e => e.GeneratedDocument).WithMany().HasForeignKey(e => e.GeneratedDocumentId).OnDelete(DeleteBehavior.NoAction);
             entity.HasOne(e => e.SignedDocument).WithMany().HasForeignKey(e => e.SignedDocumentId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.ReturnDocument).WithMany().HasForeignKey(e => e.ReturnDocumentId).OnDelete(DeleteBehavior.NoAction);
             entity.HasOne(e => e.CreatedByUser).WithMany().HasForeignKey(e => e.CreatedByUserId).OnDelete(DeleteBehavior.NoAction);
             entity.HasOne(e => e.UpdatedByUser).WithMany().HasForeignKey(e => e.UpdatedByUserId).OnDelete(DeleteBehavior.NoAction);
             // Master Data FK relationships (all NoAction for safety)

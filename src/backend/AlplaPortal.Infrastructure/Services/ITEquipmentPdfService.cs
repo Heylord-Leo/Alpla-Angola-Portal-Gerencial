@@ -601,8 +601,248 @@ public class ITEquipmentPdfService
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  SHARED DRAWING HELPERS
+    //  GROUPED RETURN TERM PDF
     // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Generate a branded PDF for a grouped return term when all items from a delivery term are returned.
+    /// Links to the original delivery term and lists each returned item with its condition.
+    /// </summary>
+    public async Task<ITEquipmentAgreementService.AgreementResult> GenerateReturnTermPdfAsync(ReturnTermData data)
+    {
+        var fileId = Guid.NewGuid();
+        var storageFileName = $"{fileId}.pdf";
+        var outputPath = Path.Combine(_storageDir, storageFileName);
+
+        using (var document = new PdfDocument())
+        {
+            document.Info.Title = $"Termo de Devolução — {data.OriginalTermNumber}";
+            document.Info.Author = "Portal Gerencial — Alpla Angola";
+
+            var page = document.AddPage();
+            page.Size = PdfSharpCore.PageSize.A4;
+            var gfx = XGraphics.FromPdfPage(page);
+            double y = PageMargin;
+            double contentWidth = page.Width - 2 * PageMargin;
+
+            // ── Branded header ──
+            y = DrawBrandedHeader(gfx, page, y, contentWidth,
+                "TERMO DE DEVOLUÇÃO — MÚLTIPLOS EQUIPAMENTOS");
+
+            // ── Term & Date info ──
+            var documentGeneratedAt = DateTime.UtcNow;
+            y += 6;
+            gfx.DrawString($"Referência do Termo de Entrega Original: {data.OriginalTermNumber}",
+                NormalBoldFont, new XSolidBrush(PrimaryColor), new XPoint(PageMargin, y));
+            y += 14;
+            gfx.DrawString($"Data de Devolução: {data.ReturnDate:dd/MM/yyyy}",
+                NormalFont, XBrushes.Black, new XPoint(PageMargin, y));
+            y += 14;
+            gfx.DrawString($"Data do documento: {documentGeneratedAt:dd/MM/yyyy HH:mm} UTC",
+                NormalFont, XBrushes.Gray, new XPoint(PageMargin, y));
+            y += 18;
+
+            // ── Employee info table ──
+            var employeeRows = new (string label, string value)[]
+            {
+                ("Utilizador (Devolvente)", data.EmployeeName),
+                ("E-mail do Utilizador", data.EmployeeEmail),
+                ("Departamento", data.Department),
+                ("Planta", data.Plant),
+                ("Nº do Termo de Entrega Original", data.OriginalTermNumber),
+                ("Data de Devolução", $"{data.ReturnDate:dd/MM/yyyy}"),
+                ("Recebido por (T.I)", data.ReceivedByName),
+                ("E-mail de quem recebeu", data.ReceivedByEmail),
+                ("Observações", data.Notes ?? "—"),
+            };
+
+            y = DrawInfoTable(gfx, page, y, contentWidth, employeeRows);
+            y += 16;
+
+            // ── Equipment list section ──
+            y = EnsureSpace(document, ref page, ref gfx, y, 60, contentWidth);
+            gfx.DrawString("EQUIPAMENTOS DEVOLVIDOS",
+                SubTitleFont, new XSolidBrush(PrimaryColor),
+                new XRect(PageMargin, y, contentWidth, 16), XStringFormats.TopCenter);
+            y += 22;
+
+            // Return equipment table header
+            y = DrawReturnEquipmentTableHeader(gfx, page, y, contentWidth);
+
+            // Equipment rows
+            for (int idx = 0; idx < data.Equipment.Count; idx++)
+            {
+                y = EnsureSpace(document, ref page, ref gfx, y, 20, contentWidth);
+                if (y < PageMargin + 20)
+                    y = DrawReturnEquipmentTableHeader(gfx, page, y, contentWidth);
+
+                var item = data.Equipment[idx];
+                y = DrawReturnEquipmentTableRow(gfx, page, y, contentWidth, idx + 1, item);
+            }
+
+            y += 10;
+
+            // ── Separator ──
+            gfx.DrawLine(new XPen(BorderColor, 0.5), PageMargin, y, PageMargin + contentWidth, y);
+            y += 14;
+
+            // ── Formal declaration ──
+            var decl1 = "Declara-se que os equipamentos acima identificados foram devolvidos ao departamento de T.I nas condições indicadas neste documento.";
+            y = DrawWrappedText(document, ref page, ref gfx, decl1, NormalFont, y, PageMargin, contentWidth);
+            y += 15;
+
+            var decl2 = "A condição de cada equipamento foi registada conforme informado no momento da devolução. Caso sejam identificados danos, inconsistências ou pendências após análise técnica, o departamento de T.I poderá atualizar o histórico do equipamento e tomar as medidas aplicáveis conforme as políticas internas da empresa.";
+            y = DrawWrappedText(document, ref page, ref gfx, decl2, NormalFont, y, PageMargin, contentWidth);
+            y += 30;
+
+            // ── Signature blocks ──
+            y = EnsureSpace(document, ref page, ref gfx, y, 200, contentWidth);
+            y += 20;
+
+            // User: empty signature area for manual signing
+            y = DrawEmptySignatureBlock(gfx, page, y, contentWidth,
+                data.EmployeeName, "Utilizador que devolveu os equipamentos");
+            y += 20;
+
+            // I.T Responsible: generated visual signature
+            y = DrawEnhancedSignatureBlock(gfx, page, y, contentWidth,
+                data.ReceivedByName, "Recebido por (Departamento de T.I)");
+            y += 16;
+
+            // ── Electronic generation statement ──
+            y = EnsureSpace(document, ref page, ref gfx, y, 70, contentWidth);
+            gfx.DrawLine(new XPen(LightBorderColor, 0.5), PageMargin, y, PageMargin + contentWidth, y);
+            y += 8;
+
+            var equipmentSummary = string.Join(", ", data.Equipment.Select(e => e.AssetTag));
+            DrawElectronicStatement(gfx, y, contentWidth,
+                data.EmployeeName, data.EmployeeEmail,
+                $"Devolução {data.OriginalTermNumber} ({data.Equipment.Count} itens: {equipmentSummary})",
+                data.ReceivedByName, data.ReceivedByEmail,
+                documentGeneratedAt, null);
+
+            // ── Footer ──
+            DrawFooter(gfx, page);
+
+            document.Save(outputPath);
+        }
+
+        var fileHash = await ComputeFileHashAsync(outputPath);
+        var displayFileName = $"Termo_Devolucao_{data.OriginalTermNumber}_{data.ReturnDate:yyyyMMdd}.pdf";
+
+        _logger.LogInformation(
+            "Return term PDF generated: {FileName} for term {TermNumber} with {ItemCount} items returned by {Employee}",
+            displayFileName, data.OriginalTermNumber, data.Equipment.Count, data.EmployeeName);
+
+        return new ITEquipmentAgreementService.AgreementResult
+        {
+            FilePath = outputPath,
+            StorageFileName = storageFileName,
+            DisplayFileName = displayFileName,
+            FileHash = fileHash
+        };
+    }
+
+    /// <summary>Draw the return equipment table header row.</summary>
+    private double DrawReturnEquipmentTableHeader(XGraphics gfx, PdfPage page, double y, double contentWidth)
+    {
+        var colWidths = GetReturnEquipmentColumnWidths(contentWidth);
+        var headers = new[] { "#", "Tipo", "Asset Tag", "Fabricante", "Modelo", "S/N", "Condição" };
+        double x = PageMargin;
+
+        gfx.DrawRectangle(new XSolidBrush(PrimaryColor),
+            PageMargin, y - 2, contentWidth, 16);
+
+        for (int c = 0; c < headers.Length; c++)
+        {
+            gfx.DrawString(headers[c], SmallBoldFont, XBrushes.White,
+                new XRect(x + 3, y, colWidths[c] - 6, 12), XStringFormats.TopLeft);
+            x += colWidths[c];
+        }
+
+        return y + 16;
+    }
+
+    /// <summary>Draw one return equipment item row.</summary>
+    private double DrawReturnEquipmentTableRow(XGraphics gfx, PdfPage page, double y, double contentWidth,
+        int rowNum, ReturnTermEquipmentItem item)
+    {
+        var colWidths = GetReturnEquipmentColumnWidths(contentWidth);
+
+        var conditionLabel = item.ReturnCondition?.ToUpper() switch
+        {
+            "GOOD" => "Bom estado",
+            "DAMAGED" => "Danificado",
+            "NEEDS_REPAIR" => "Necessita reparo",
+            _ => item.ReturnCondition ?? "—"
+        };
+
+        var values = new[]
+        {
+            rowNum.ToString(),
+            item.EquipmentType ?? "—",
+            item.AssetTag,
+            item.Manufacturer ?? "—",
+            item.Model ?? "—",
+            item.SerialNumber ?? "—",
+            conditionLabel
+        };
+
+        double x = PageMargin;
+
+        if (rowNum % 2 == 0)
+            gfx.DrawRectangle(new XSolidBrush(LabelBgColor), PageMargin, y - 2, contentWidth, 14);
+
+        gfx.DrawLine(new XPen(LightBorderColor, 0.3), PageMargin, y + 12, PageMargin + contentWidth, y + 12);
+
+        for (int c = 0; c < values.Length; c++)
+        {
+            var text = values[c] ?? "—";
+            if (text.Length > 18) text = text[..16] + "…";
+            gfx.DrawString(text, SmallFont, XBrushes.Black,
+                new XRect(x + 3, y, colWidths[c] - 6, 12), XStringFormats.TopLeft);
+            x += colWidths[c];
+        }
+
+        return y + 14;
+    }
+
+    /// <summary>Column widths for the return equipment table.</summary>
+    private static double[] GetReturnEquipmentColumnWidths(double contentWidth)
+    {
+        // #(20), Type(60), AssetTag(70), Manufacturer(70), Model(80), S/N(80), Condition(remaining)
+        double fixedTotal = 20 + 60 + 70 + 70 + 80 + 80;
+        double remaining = contentWidth - fixedTotal;
+        return new double[] { 20, 60, 70, 70, 80, 80, remaining };
+    }
+
+    // ── DTOs for Return Term PDF ──
+
+    public class ReturnTermData
+    {
+        public string OriginalTermNumber { get; set; } = string.Empty;
+        public DateTime ReturnDate { get; set; }
+        public string EmployeeName { get; set; } = string.Empty;
+        public string EmployeeEmail { get; set; } = string.Empty;
+        public string Department { get; set; } = string.Empty;
+        public string Plant { get; set; } = string.Empty;
+        public string ReceivedByName { get; set; } = string.Empty;
+        public string ReceivedByEmail { get; set; } = string.Empty;
+        public string? Notes { get; set; }
+        public List<ReturnTermEquipmentItem> Equipment { get; set; } = new();
+    }
+
+    public class ReturnTermEquipmentItem
+    {
+        public string EquipmentType { get; set; } = string.Empty;
+        public string AssetTag { get; set; } = string.Empty;
+        public string? Hostname { get; set; }
+        public string? Manufacturer { get; set; }
+        public string? Model { get; set; }
+        public string? SerialNumber { get; set; }
+        public string? ReturnCondition { get; set; }
+        public string? Notes { get; set; }
+    }
 
     /// <summary>
     /// Draws the branded header: logo (if available) + company name + document title.

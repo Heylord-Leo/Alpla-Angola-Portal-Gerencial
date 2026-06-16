@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { X, Edit3, UserPlus, RotateCcw, Wrench, AlertTriangle, BookmarkCheck, Archive, Loader2, Download, Upload, FileText, FileCheck, FileX, Clock, User, Cpu, RefreshCw, RotateCw, ExternalLink, Printer, Copy, QrCode } from 'lucide-react';
+import { X, Edit3, Wrench, AlertTriangle, BookmarkCheck, Archive, Loader2, Download, Upload, FileText, FileCheck, FileX, Clock, User, Cpu, RefreshCw, RotateCw, ExternalLink, Printer, Copy, QrCode } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { itEquipmentApi } from '../../lib/itEquipmentApi';
 import { EQUIPMENT_STATUS_CONFIG, EQUIPMENT_TYPE_CONFIG, MOVEMENT_TYPE_LABELS, ASSIGNMENT_STATUS_CONFIG, DOCUMENT_TYPE_LABELS } from '../../types/itEquipment';
 import type { ITEquipmentDetail } from '../../types/itEquipment';
-import { AssignEquipmentModal } from './AssignEquipmentModal';
-import { ReturnEquipmentModal } from './ReturnEquipmentModal';
+
 import { RepairEquipmentModal } from './RepairEquipmentModal';
 import { LostEquipmentModal } from './LostEquipmentModal';
 import { RetireEquipmentModal } from './RetireEquipmentModal';
@@ -41,7 +40,6 @@ export function EquipmentQuickViewDrawer({ equipmentId, onClose, onRefresh }: Pr
     const handleModalSuccess = () => { setActiveModal(null); load(); onRefresh(); };
 
     const statusCfg = detail ? (EQUIPMENT_STATUS_CONFIG[detail.statusCode] || EQUIPMENT_STATUS_CONFIG['UNKNOWN']) : null;
-    const canAssign = detail && !['LOST', 'RETIRED', 'DISPOSED'].includes(detail.statusCode);
     const canReturn = detail && detail.statusCode === 'IN_USE';
     const canRepair = detail && !['LOST', 'RETIRED', 'DISPOSED'].includes(detail.statusCode);
     const canReserve = detail && detail.statusCode === 'AVAILABLE';
@@ -55,14 +53,14 @@ export function EquipmentQuickViewDrawer({ equipmentId, onClose, onRefresh }: Pr
                 onClick={onClose}
                 style={{
                     position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
-                    zIndex: 1400, transition: 'opacity 0.3s'
+                    zIndex: 'var(--z-drawer)' as any, transition: 'opacity 0.3s'
                 }}
             />
             {/* Drawer */}
             <div style={{
                 position: 'fixed', top: 0, right: 0, bottom: 0, width: 620,
                 backgroundColor: 'var(--color-bg-surface)', borderLeft: '1px solid var(--color-border)',
-                zIndex: 1401, display: 'flex', flexDirection: 'column',
+                zIndex: 'calc(var(--z-drawer) + 1)' as any, display: 'flex', flexDirection: 'column',
                 boxShadow: '-8px 0 30px rgba(0,0,0,0.15)',
                 animation: 'slideIn 0.25s ease-out'
             }}>
@@ -104,8 +102,7 @@ export function EquipmentQuickViewDrawer({ equipmentId, onClose, onRefresh }: Pr
                         flexWrap: 'wrap'
                     }}>
                         <ActionBtn label="Editar" icon={<Edit3 size={13} />} onClick={() => setActiveModal('edit')} />
-                        {canAssign && <ActionBtn label="Atribuir" icon={<UserPlus size={13} />} onClick={() => setActiveModal('assign')} color="#3b82f6" />}
-                        {canReturn && <ActionBtn label="Devolver" icon={<RotateCcw size={13} />} onClick={() => setActiveModal('return')} color="#8b5cf6" />}
+
                         {canReturn && <ActionBtn label="Trocar Utilizador" icon={<RefreshCw size={13} />} onClick={() => setActiveModal('change-user')} color="#14b8a6" />}
                         {canRepair && <ActionBtn label="Conserto" icon={<Wrench size={13} />} onClick={() => setActiveModal('repair')} color="#f97316" />}
                         <ActionBtn label="Perdido" icon={<AlertTriangle size={13} />} onClick={() => setActiveModal('lost')} color="#ef4444" />
@@ -165,8 +162,7 @@ export function EquipmentQuickViewDrawer({ equipmentId, onClose, onRefresh }: Pr
 
             {/* Modals */}
             {activeModal === 'edit' && detail && <EquipmentFormModal equipment={detail} onClose={handleModalClose} onSuccess={handleModalSuccess} />}
-            {activeModal === 'assign' && detail && <AssignEquipmentModal equipmentId={detail.id} onClose={handleModalClose} onSuccess={handleModalSuccess} />}
-            {activeModal === 'return' && detail && <ReturnEquipmentModal equipmentId={detail.id} onClose={handleModalClose} onSuccess={handleModalSuccess} />}
+
             {activeModal === 'repair' && detail && <RepairEquipmentModal equipmentId={detail.id} statusCode={detail.statusCode} onClose={handleModalClose} onSuccess={handleModalSuccess} />}
             {activeModal === 'lost' && detail && <LostEquipmentModal equipmentId={detail.id} onClose={handleModalClose} onSuccess={handleModalSuccess} />}
             {activeModal === 'reserve' && detail && <ReserveEquipmentModal equipmentId={detail.id} onClose={handleModalClose} onSuccess={handleModalSuccess} />}
