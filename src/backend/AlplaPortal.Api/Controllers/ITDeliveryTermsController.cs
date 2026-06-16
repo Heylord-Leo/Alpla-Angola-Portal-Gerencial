@@ -179,6 +179,7 @@ public class ITDeliveryTermsController : BaseController
             statusDisplay = ITEquipmentConstants.DeliveryTermStatus.DisplayName(term.Status),
             term.GeneratedDocumentId,
             term.SignedDocumentId,
+            term.ReturnDocumentId,
             term.Notes,
             term.CreatedAt,
             createdByName = term.CreatedByUser?.FullName,
@@ -828,6 +829,127 @@ public class ITDeliveryTermsController : BaseController
         await _context.SaveChangesAsync();
 
         var user = await _context.Users.FindAsync(CurrentUserId);
+
+        // ── Auto-generate Return Term when all items are returned ──
+        if (term.Status == ITEquipmentConstants.DeliveryTermStatus.Closed
+            && !term.ReturnDocumentId.HasValue) // Idempotency: skip if already generated
+        {
+            try
+            {
+                var returnTermData = new ITEquipmentPdfService.ReturnTermData
+                {
+                    OriginalTermNumber = term.TermNumber,
+                    ReturnDate = now,
+                    EmployeeName = term.EmployeeName,
+                    EmployeeEmail = term.EmployeeEmail ?? "—",
+                    Department = term.EmployeeDepartment ?? "—",
+                    Plant = term.EmployeePlant ?? "—",
+                    ReceivedByName = user?.FullName ?? "Sistema",
+                    ReceivedByEmail = user?.Email ?? "—",
+                    Notes = term.Notes,
+                    Equipment = term.Items
+                        .Where(i => i.ItemStatus == ITEquipmentConstants.DeliveryItemStatus.Returned)
+                        .Select(i => new ITEquipmentPdfService.ReturnTermEquipmentItem
+                        {
+                            EquipmentType = i.Equipment?.EquipmentType ?? "—",
+                            AssetTag = i.Equipment?.AssetTag ?? "—",
+                            Hostname = i.Equipment?.Hostname,
+                            Manufacturer = i.Equipment?.Manufacturer,
+                            Model = i.Equipment?.Model,
+                            SerialNumber = i.Equipment?.SerialNumber,
+                            ReturnCondition = i.ReturnCondition,
+                            Notes = i.Notes
+                        })
+                        .ToList()
+                };
+
+                var pdfResult = await _pdfService.GenerateReturnTermPdfAsync(returnTermData);
+
+                var returnDoc = new ITEquipmentDocument
+                {
+                    EquipmentId = term.Items.First().EquipmentId,
+                    DeliveryTermId = term.Id,
+                    DocumentType = ITEquipmentConstants.DocumentType.ReturnTermAgreement,
+                    FileName = pdfResult.DisplayFileName,
+                    StorageReference = pdfResult.StorageFileName,
+                    FileHash = pdfResult.FileHash,
+                    UploadedByUserId = CurrentUserId,
+                    Notes = $"Termo de devolução agrupado para o termo {term.TermNumber} — {returnTermData.Equipment.Count} equipamento(s)"
+                };
+                _context.ITEquipmentDocuments.Add(returnDoc);
+
+                term.ReturnDocumentId = returnDoc.Id;
+                term.UpdatedAt = DateTime.UtcNow;
+
+                // Movement logs for return document generation
+                foreach (var retItem in term.Items.Where(i => i.ItemStatus == ITEquipmentConstants.DeliveryItemStatus.Returned))
+                {
+                    _context.ITEquipmentMovementLogs.Add(new ITEquipmentMovementLog
+                    {
+                        EquipmentId = retItem.EquipmentId,
+                        MovementType = ITEquipmentConstants.MovementType.ReturnTermDocGenerated,
+                        Notes = $"Termo de devolução gerado para o termo {term.TermNumber}.",
+                        CreatedByUserId = CurrentUserId
+                    });
+                }
+
+                await _context.SaveChangesAsync();
+
+                // Send email with PDF attachment to IT
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var itEmail = _configuration["AppConfig:ITNotificationEmail"];
+                        if (string.IsNullOrWhiteSpace(itEmail)) return;
+
+                        var frontendBaseUrl = _configuration["AppConfig:FrontendBaseUrl"]?.TrimEnd('/') ?? "";
+                        var termLink = $"{frontendBaseUrl}/it/delivery-terms";
+
+                        var bodyHtml = $@"
+                            <p>Prezado(a) Departamento de T.I,</p>
+                            <p>Todos os equipamentos do termo de entrega <strong>{term.TermNumber}</strong> foram devolvidos.</p>
+                            <table style='border-collapse:collapse;width:100%;font-size:14px;margin:16px 0'>
+                                <tr><td style='padding:6px 12px;font-weight:bold;background:#f5f5f5'>Nº do Termo de Entrega</td><td style='padding:6px 12px'>{term.TermNumber}</td></tr>
+                                <tr><td style='padding:6px 12px;font-weight:bold;background:#f5f5f5'>Funcionário</td><td style='padding:6px 12px'>{term.EmployeeName}</td></tr>
+                                <tr><td style='padding:6px 12px;font-weight:bold;background:#f5f5f5'>E-mail</td><td style='padding:6px 12px'>{term.EmployeeEmail ?? "—"}</td></tr>
+                                <tr><td style='padding:6px 12px;font-weight:bold;background:#f5f5f5'>Itens Devolvidos</td><td style='padding:6px 12px'>{returnTermData.Equipment.Count}</td></tr>
+                                <tr><td style='padding:6px 12px;font-weight:bold;background:#f5f5f5'>Recebido por</td><td style='padding:6px 12px'>{user?.FullName ?? "Sistema"}</td></tr>
+                                <tr><td style='padding:6px 12px;font-weight:bold;background:#f5f5f5'>Data/Hora</td><td style='padding:6px 12px'>{DateTime.UtcNow:dd/MM/yyyy HH:mm} UTC</td></tr>
+                            </table>
+                            <p>O Termo de Devolução está em anexo. Por favor:</p>
+                            <ol>
+                                <li>Imprima o documento ou envie digitalmente ao funcionário.</li>
+                                <li>Recolha a assinatura do funcionário (ex-utilizador).</li>
+                                <li>Carregue o documento assinado no portal.</li>
+                            </ol>
+                            <p><a href='{termLink}'>Abrir Termos de Entrega no Portal</a></p>";
+
+                        var storagePath = ResolveStoragePath(pdfResult.StorageFileName);
+
+                        await _emailService.SendWithAttachmentAsync(
+                            itEmail, "Departamento de T.I",
+                            $"Termo de Devolução — {term.TermNumber}",
+                            $"Devolução Completa — {term.TermNumber}",
+                            bodyHtml,
+                            storagePath,
+                            pdfResult.DisplayFileName);
+                    }
+                    catch (Exception emailEx)
+                    {
+                        _logger.LogWarning(emailEx, "Failed to send return term email for term {TermNumber}", term.TermNumber);
+                    }
+                });
+
+                _logger.LogInformation("Return term PDF generated and stored for term {TermNumber}", term.TermNumber);
+            }
+            catch (Exception ex)
+            {
+                // Return term PDF generation failure should not block the main return operation
+                _logger.LogError(ex, "Failed to generate return term PDF for term {TermNumber}", term.TermNumber);
+            }
+        }
+
         var action = term.Status == ITEquipmentConstants.DeliveryTermStatus.Closed
             ? "Termo encerrado — todos os itens devolvidos."
             : $"Equipamento {eq.AssetTag} devolvido.";
@@ -839,6 +961,109 @@ public class ITDeliveryTermsController : BaseController
             termStatus = term.Status,
             termStatusDisplay = ITEquipmentConstants.DeliveryTermStatus.DisplayName(term.Status)
         });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  RETURN DOCUMENT DOWNLOAD
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>GET /api/it/delivery-terms/{id}/return-document — Download the generated return term PDF.</summary>
+    [HttpGet("{id:guid}/return-document")]
+    public async Task<IActionResult> DownloadReturnDocument(Guid id)
+    {
+        if (!HasITAccess()) return Forbid();
+
+        var term = await _context.ITEquipmentDeliveryTerms
+            .Include(t => t.ReturnDocument)
+            .FirstOrDefaultAsync(t => t.Id == id);
+
+        if (term == null) return NotFound(new { detail = "Termo de entrega não encontrado." });
+        if (term.ReturnDocument == null) return NotFound(new { detail = "Termo de devolução ainda não gerado." });
+
+        var storagePath = ResolveStoragePath(term.ReturnDocument.StorageReference);
+        if (!System.IO.File.Exists(storagePath))
+            return NotFound(new { detail = "Ficheiro do documento não encontrado no servidor." });
+
+        var bytes = await System.IO.File.ReadAllBytesAsync(storagePath);
+        return File(bytes, "application/pdf", term.ReturnDocument.FileName);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  UPLOAD SIGNED RETURN DOCUMENT
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>POST /api/it/delivery-terms/{id}/upload-signed-return — Upload a signed return document.</summary>
+    [HttpPost("{id:guid}/upload-signed-return")]
+    public async Task<IActionResult> UploadSignedReturn(Guid id, [FromForm] IFormFile file)
+    {
+        if (!HasITAccess()) return Forbid();
+
+        var term = await _context.ITEquipmentDeliveryTerms
+            .Include(t => t.Items)
+            .FirstOrDefaultAsync(t => t.Id == id);
+
+        if (term == null) return NotFound(new { detail = "Termo de entrega não encontrado." });
+
+        if (term.Status != ITEquipmentConstants.DeliveryTermStatus.Closed)
+            return BadRequest(new { detail = "O upload do documento de devolução assinado só é permitido para termos encerrados." });
+
+        if (!term.ReturnDocumentId.HasValue)
+            return BadRequest(new { detail = "O termo de devolução ainda não foi gerado." });
+
+        if (file == null || file.Length == 0)
+            return BadRequest(new { detail = "Nenhum ficheiro enviado." });
+
+        if (file.Length > MaxSignedDocumentSizeBytes)
+            return BadRequest(new { detail = $"O ficheiro excede o tamanho máximo permitido de {MaxSignedDocumentSizeBytes / (1024 * 1024)} MB." });
+
+        var extension = Path.GetExtension(file.FileName)?.ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(extension) || !AllowedSignedDocumentExtensions.Contains(extension))
+            return BadRequest(new { detail = "Tipo de ficheiro não permitido. Envie PDF, JPG, PNG, DOC ou DOCX." });
+
+        // Store file
+        var storageFileName = $"{Guid.NewGuid()}{extension}";
+        var filePath = Path.Combine(_storagePath, storageFileName);
+
+        using (var stream = new FileStream(filePath, FileMode.Create))
+        {
+            await file.CopyToAsync(stream);
+        }
+
+        var doc = new ITEquipmentDocument
+        {
+            EquipmentId = term.Items.First().EquipmentId,
+            DeliveryTermId = term.Id,
+            DocumentType = ITEquipmentConstants.DocumentType.SignedReturnTermAgreement,
+            FileName = file.FileName,
+            StorageReference = storageFileName,
+            UploadedByUserId = CurrentUserId,
+            Notes = $"Documento de devolução assinado para o termo {term.TermNumber}"
+        };
+        _context.ITEquipmentDocuments.Add(doc);
+
+        term.UpdatedAt = DateTime.UtcNow;
+        term.UpdatedByUserId = CurrentUserId;
+
+        // Add movement log to each returned equipment
+        foreach (var item in term.Items.Where(i => i.ItemStatus == ITEquipmentConstants.DeliveryItemStatus.Returned))
+        {
+            _context.ITEquipmentMovementLogs.Add(new ITEquipmentMovementLog
+            {
+                EquipmentId = item.EquipmentId,
+                MovementType = ITEquipmentConstants.MovementType.ReturnTermEmailSent,
+                Notes = $"Documento de devolução assinado carregado para o termo {term.TermNumber}.",
+                CreatedByUserId = CurrentUserId
+            });
+        }
+
+        await _context.SaveChangesAsync();
+
+        var user = await _context.Users.FindAsync(CurrentUserId);
+        _ = NotifyITAsync(term.TermNumber,
+            "Documento de Devolução Assinado",
+            BuildTermNotificationHtml(term, "Documento de devolução assinado carregado com sucesso.", user?.FullName ?? "Sistema"));
+
+        return Ok(new { detail = "Documento de devolução assinado carregado com sucesso.", documentId = doc.Id });
     }
 
     // ═══════════════════════════════════════════════════════════════

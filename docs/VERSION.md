@@ -2,7 +2,38 @@
 
 ## Current Version
 
-v2.193.0
+v2.195.0
+
+## [v2.195.0] - 2026-06-16
+
+### Added — IT Equipment Return Term Generation
+
+**Auto-Generate Return Term:**
+- When the last item of a Delivery Term is returned (status changes to `CLOSED`), the system automatically generates a branded Return Term PDF.
+- The return document is linked to the original Delivery Term via a new `ReturnDocumentId` field.
+- The PDF contains an electronic generation statement and an empty signature area for the user.
+- An email is automatically dispatched to the IT Department with the Return Term PDF attached.
+
+**Signed Return Document Upload:**
+- Added the ability to upload a manually signed Return Document.
+- Upload is available directly from the Delivery Terms page and the Equipment Quick-View drawer.
+- Shows visual indicators for generated (blue) vs. signed (green) return documents.
+
+**Quick-View Drawer UX:**
+- Fixed a z-index issue that caused the drawer to appear behind the top header and TEST environment banner.
+- Removed the direct "Atribuir" and "Devolver" buttons to enforce the Delivery Terms workflow.
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
+
+## [v2.194.0] - 2026-06-15
+
+### Added — IT Equipment Refinements (Manufacture Date & MAC Split)
+
+**Refinements:**
+- Changed Laptop ShortCode from `NBK` to `LAP` for Asset Code generation.
+- Added `ManufactureDate` field for lifecycle tracking.
+- Split `MacAddress` field into `MacAddress` (Ethernet) and `WifiMacAddress` (Wi-Fi).
+- Migration `20260615142951_ITEquipmentRefinements` applied.
 
 ## [v2.193.0] - 2026-06-15
 

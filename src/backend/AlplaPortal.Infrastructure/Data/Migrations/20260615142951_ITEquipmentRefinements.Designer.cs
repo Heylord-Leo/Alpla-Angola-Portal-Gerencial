@@ -4,6 +4,7 @@ using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AlplaPortal.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260615142951_ITEquipmentRefinements")]
+    partial class ITEquipmentRefinements
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1804,9 +1807,6 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Property<string>("Notes")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<Guid?>("ReturnDocumentId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<Guid?>("SignedDocumentId")
                         .HasColumnType("uniqueidentifier");
 
@@ -1841,8 +1841,6 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.HasIndex("EmployeeUserId");
 
                     b.HasIndex("GeneratedDocumentId");
-
-                    b.HasIndex("ReturnDocumentId");
 
                     b.HasIndex("SignedDocumentId");
 
@@ -6528,11 +6526,6 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .HasForeignKey("GeneratedDocumentId")
                         .OnDelete(DeleteBehavior.NoAction);
 
-                    b.HasOne("AlplaPortal.Domain.Entities.ITEquipmentDocument", "ReturnDocument")
-                        .WithMany()
-                        .HasForeignKey("ReturnDocumentId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
                     b.HasOne("AlplaPortal.Domain.Entities.ITEquipmentDocument", "SignedDocument")
                         .WithMany()
                         .HasForeignKey("SignedDocumentId")
@@ -6554,8 +6547,6 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Navigation("EmployeeUser");
 
                     b.Navigation("GeneratedDocument");
-
-                    b.Navigation("ReturnDocument");
 
                     b.Navigation("SignedDocument");
 

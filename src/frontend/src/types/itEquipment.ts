@@ -78,11 +78,13 @@ export interface ITEquipmentListItem {
     model: string | null;
     serialNumber: string | null;
     macAddress: string | null;
+    wifiMacAddress: string | null;
     currentOwnerName: string | null;
     biometricMfaEnabled: boolean;
     companyCode: string | null;
     plantCode: string | null;
     qrCodeUrl: string | null;
+    manufactureDate: string | null;
     updatedAt: string | null;
     createdAt: string;
 }
@@ -159,6 +161,7 @@ export interface ITEquipmentDetail {
     model: string | null;
     serialNumber: string | null;
     macAddress: string | null;
+    wifiMacAddress: string | null;
     processor: string | null;
     memoryRam: string | null;
     color: string | null;
@@ -181,6 +184,7 @@ export interface ITEquipmentDetail {
     equipmentTypeShortCode: string | null;
     sequenceNumber: number;
     qrCodeUrl: string | null;
+    manufactureDate: string | null;
     createdByName: string | null;
     updatedByName: string | null;
     acquisition: ITEquipmentAcquisition | null;
@@ -264,6 +268,8 @@ export const MOVEMENT_TYPE_LABELS: Record<string, string> = {
     RETURN_DOCUMENT_GENERATED: 'Termo de Devolução Gerado',
     RETURN_EMAIL_SENT: 'E-mail de Devolução Enviado',
     RETURN_EMAIL_FAILED: 'Falha E-mail de Devolução',
+    RETURN_TERM_DOC_GENERATED: 'Termo de Devolução Agrupado Gerado',
+    RETURN_TERM_EMAIL_SENT: 'E-mail de Devolução Agrupado Enviado',
     USER_CHANGED: 'Troca de Utilizador',
     USER_CHANGE_RETURNED: 'Devolução (Troca)',
     USER_CHANGE_ASSIGNED: 'Atribuição (Troca)',
@@ -293,6 +299,8 @@ export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
     SIGNED_RETURN_AGREEMENT: 'Termo de Devolução Assinado',
     DELIVERY_TERM_AGREEMENT: 'Termo de Entrega Agrupado',
     SIGNED_DELIVERY_TERM_AGREEMENT: 'Termo de Entrega Agrupado Assinado',
+    RETURN_TERM_AGREEMENT: 'Termo de Devolução Agrupado',
+    SIGNED_RETURN_TERM_AGREEMENT: 'Termo de Devolução Agrupado Assinado',
     OTHER: 'Outro'
 };
 
@@ -343,6 +351,7 @@ export interface ITDeliveryTermDetail {
     statusDisplay: string;
     generatedDocumentId: string | null;
     signedDocumentId: string | null;
+    returnDocumentId: string | null;
     notes: string | null;
     createdAt: string;
     createdByName: string | null;

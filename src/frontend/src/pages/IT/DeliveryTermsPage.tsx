@@ -135,6 +135,22 @@ export default function DeliveryTermsPage() {
         }
     };
 
+    const handleUploadSignedReturn = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!termDetail || !e.target.files?.[0]) return;
+        try {
+            setActionLoading(true);
+            const result = await deliveryTermsApi.uploadSignedReturn(termDetail.id, e.target.files[0]);
+            showToast(result.detail, 'success');
+            loadTermDetail(termDetail.id);
+            loadList();
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Erro ao carregar documento de devolução.';
+            showToast(message, 'error');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
     const handleCancel = async () => {
         if (!termDetail || !confirm('Tem certeza que deseja cancelar este termo de entrega?')) return;
         try {
@@ -355,6 +371,7 @@ export default function DeliveryTermsPage() {
                     onGenerate={handleGenerate}
                     onSend={handleSend}
                     onUploadSigned={handleUploadSigned}
+                    onUploadSignedReturn={handleUploadSignedReturn}
                     onCancel={handleCancel}
                     onReturn={(itemId: string) => setReturnItemId(itemId)}
                     onRemoveItem={handleRemoveItem}
@@ -656,7 +673,7 @@ function CreateDeliveryTermModal({ onClose, onCreated, showToast }: {
 
 // ─── Detail Drawer ───
 
-function DetailDrawer({ detail, loading, actionLoading, onClose, onGenerate, onSend, onUploadSigned, onCancel, onReturn, onRemoveItem, onRefresh }: {
+function DetailDrawer({ detail, loading, actionLoading, onClose, onGenerate, onSend, onUploadSigned, onUploadSignedReturn, onCancel, onReturn, onRemoveItem, onRefresh }: {
     detail: ITDeliveryTermDetail | null;
     loading: boolean;
     actionLoading: boolean;
@@ -664,6 +681,7 @@ function DetailDrawer({ detail, loading, actionLoading, onClose, onGenerate, onS
     onGenerate: () => void;
     onSend: () => void;
     onUploadSigned: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    onUploadSignedReturn: (e: React.ChangeEvent<HTMLInputElement>) => void;
     onCancel: () => void;
     onReturn: (itemId: string) => void;
     onRemoveItem: (itemId: string) => void;
@@ -749,7 +767,7 @@ function DetailDrawer({ detail, loading, actionLoading, onClose, onGenerate, onS
                             </div>
 
                             {/* Documents */}
-                            {(detail.generatedDocumentId || detail.signedDocumentId) && (
+                            {(detail.generatedDocumentId || detail.signedDocumentId || detail.returnDocumentId) && (
                                 <div style={sectionStyle}>
                                     <h3 style={sectionTitleStyle}>Documentos</h3>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -761,6 +779,11 @@ function DetailDrawer({ detail, loading, actionLoading, onClose, onGenerate, onS
                                         {detail.signedDocumentId && (
                                             <a href={deliveryTermsApi.downloadSignedDocument(detail.id)} target="_blank" rel="noreferrer" style={docLinkStyle}>
                                                 <FileText size={16} style={{ color: '#10b981' }} /> Documento Assinado
+                                            </a>
+                                        )}
+                                        {detail.returnDocumentId && (
+                                            <a href={deliveryTermsApi.downloadReturnDocument(detail.id)} target="_blank" rel="noreferrer" style={docLinkStyle}>
+                                                <FileText size={16} style={{ color: '#f59e0b' }} /> Termo de Devolução (PDF)
                                             </a>
                                         )}
                                     </div>
@@ -805,6 +828,21 @@ function DetailDrawer({ detail, loading, actionLoading, onClose, onGenerate, onS
                                     <a href={deliveryTermsApi.downloadDocument(detail.id)} target="_blank" rel="noreferrer" style={btnSecondaryStyle}>
                                         <Download size={14} /> Baixar PDF
                                     </a>
+                                )}
+                                {detail.status === 'CLOSED' && (
+                                    <>
+                                        {detail.returnDocumentId && (
+                                            <a href={deliveryTermsApi.downloadReturnDocument(detail.id)} target="_blank" rel="noreferrer" style={btnSecondaryStyle}>
+                                                <Download size={14} /> Baixar Termo de Devolução
+                                            </a>
+                                        )}
+                                        {detail.returnDocumentId && (
+                                            <label style={{ ...btnPrimaryStyle, cursor: 'pointer' }}>
+                                                <Upload size={14} /> Carregar Devolução Assinada
+                                                <input type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={onUploadSignedReturn} style={{ display: 'none' }} />
+                                            </label>
+                                        )}
+                                    </>
                                 )}
                             </div>
 
