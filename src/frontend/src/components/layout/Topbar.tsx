@@ -15,7 +15,7 @@ export function Topbar() {
     const { showBanner } = useEnvironment();
 
     return (
-        <header data-tour="topbar" style={{
+        <header data-tour="topbar" className="app-shell-topbar" style={{
             height: '64px',
             backgroundColor: 'var(--color-primary)',
             borderBottom: '1px solid rgba(0, 0, 0, 0.1)',
@@ -28,20 +28,21 @@ export function Topbar() {
             zIndex: Z_INDEX.TOPBAR as any, // Elevated for dropdowns
             color: 'var(--color-bg-surface)',
             fontFamily: 'var(--font-family-display)',
-            boxShadow: 'var(--shadow-sm)'
+            boxShadow: 'var(--shadow-sm)',
+            overflow: 'hidden'
         }}>
             {/* Left Zone: Minimal Context (Branding handled by Sidebar) */}
-            <div style={{ display: 'flex', alignItems: 'center', width: '260px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', width: '260px', minWidth: '80px', flexShrink: 1 }}>
                 {/* Space reserved to balance the Sidebar width below */}
             </div>
 
             {/* Center Zone: Search Utility (Primary Element) */}
-            <div data-tour="module-search" style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+            <div data-tour="module-search" style={{ flex: 1, display: 'flex', justifyContent: 'center', minWidth: 0, overflow: 'hidden' }}>
                 <GlobalSearch />
             </div>
 
             {/* Right Zone: Integrated Actions */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', justifyContent: 'flex-end', width: '320px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', justifyContent: 'flex-end', width: '320px', minWidth: '180px', flexShrink: 1 }}>
                 <GuidedTourButton />
                 <div data-tour="notifications">
                     <NotificationBell />

@@ -174,7 +174,7 @@ export function CatalogItemsPanel({ setFeedback }: CatalogItemsPanelProps) {
     }
 
     return (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(350px, 1fr) 2fr', gap: '32px', alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '32px', alignItems: 'start' }}>
 
             {/* Form Column */}
             <div style={{

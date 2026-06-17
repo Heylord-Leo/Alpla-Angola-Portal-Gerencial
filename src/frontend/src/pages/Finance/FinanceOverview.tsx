@@ -247,7 +247,7 @@ export default function FinanceOverview() {
             </div>
 
             {/* Analytics Row 1: Diagramming */}
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
                 
                 {/* Projeção de Fluxo de Caixa */}
                 <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
@@ -361,7 +361,7 @@ export default function FinanceOverview() {
 
             {/* Analytics Row 2: Operational Data */}
             {isDetailedView && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)', gap: '24px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '24px' }}>
                     
                     {/* Tempo em Aberto (Aging) */}
                     <div style={{ backgroundColor: 'var(--color-bg-surface)', padding: '24px', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>

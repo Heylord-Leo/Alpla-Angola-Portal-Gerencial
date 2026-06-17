@@ -137,7 +137,7 @@ public class ITEquipmentPdfService
                 ("Departamento", data.AssigneeDepartment),
                 ("Planta", data.AssigneePlant),
                 ("Data de disponibilização", $"{data.AssignedDate:dd/MM/yyyy}"),
-                ("Asset Tag", data.AssetTag),
+                ("Código do Ativo", data.AssetTag),
                 ("Hostname", data.Hostname ?? "—"),
                 ("Tipo de Equipamento", typeLabel),
                 ("Fabricante", data.Manufacturer ?? "—"),
@@ -271,7 +271,7 @@ public class ITEquipmentPdfService
                 ("E-mail do Utilizador", data.UserEmail),
                 ("Departamento", data.Department),
                 ("Planta", data.Plant),
-                ("Asset Tag", data.AssetTag),
+                ("Código do Ativo", data.AssetTag),
                 ("Hostname", data.Hostname ?? "—"),
                 ("Tipo de Equipamento", typeLabel),
                 ("Fabricante", data.Manufacturer ?? "—"),
@@ -507,7 +507,7 @@ public class ITEquipmentPdfService
     private double DrawEquipmentTableHeader(XGraphics gfx, PdfPage page, double y, double contentWidth)
     {
         var colWidths = GetEquipmentColumnWidths(contentWidth);
-        var headers = new[] { "#", "Tipo", "Asset Tag", "Hostname", "Fabricante", "Modelo", "S/N" };
+        var headers = new[] { "#", "Código do Ativo", "Tipo", "Fabricante", "Modelo", "S/N", "Hostname" };
         double x = PageMargin;
 
         // Header background
@@ -532,44 +532,44 @@ public class ITEquipmentPdfService
         var values = new[]
         {
             rowNum.ToString(),
-            item.EquipmentType ?? "—",
             item.AssetTag,
-            item.Hostname ?? "—",
+            item.EquipmentType ?? "—",
             item.Manufacturer ?? "—",
             item.Model ?? "—",
-            item.SerialNumber ?? "—"
+            item.SerialNumber ?? "—",
+            item.Hostname ?? "—"
         };
 
+        double rowHeight = 22; // Increased to allow wrapping
         double x = PageMargin;
 
         // Alternating row background
         if (rowNum % 2 == 0)
-            gfx.DrawRectangle(new XSolidBrush(LabelBgColor), PageMargin, y - 2, contentWidth, 14);
+            gfx.DrawRectangle(new XSolidBrush(LabelBgColor), PageMargin, y - 2, contentWidth, rowHeight);
 
         // Bottom border
-        gfx.DrawLine(new XPen(LightBorderColor, 0.3), PageMargin, y + 12, PageMargin + contentWidth, y + 12);
+        gfx.DrawLine(new XPen(LightBorderColor, 0.3), PageMargin, y + rowHeight - 2, PageMargin + contentWidth, y + rowHeight - 2);
+
+        var tf = new XTextFormatter(gfx);
 
         for (int c = 0; c < values.Length; c++)
         {
-            var val = values[c];
-            // Truncate if too long
-            if (val.Length > 20) val = val.Substring(0, 18) + "…";
-
-            gfx.DrawString(val, SmallFont, XBrushes.Black,
-                new XRect(x + 3, y, colWidths[c] - 6, 12), XStringFormats.TopLeft);
+            var val = values[c] ?? "—";
+            tf.DrawString(val, SmallFont, XBrushes.Black,
+                new XRect(x + 3, y, colWidths[c] - 6, rowHeight - 2));
             x += colWidths[c];
         }
 
-        return y + 14;
+        return y + rowHeight;
     }
 
     /// <summary>Column widths for the equipment table.</summary>
     private static double[] GetEquipmentColumnWidths(double contentWidth)
     {
-        // #(20), Type(65), AssetTag(75), Hostname(75), Manufacturer(75), Model(90), S/N(remaining)
-        double fixedTotal = 20 + 65 + 75 + 75 + 75 + 90;
+        // #(20), Código do Ativo(125), Tipo(55), Fabricante(65), Modelo(85), S/N(80), Hostname(remaining)
+        double fixedTotal = 20 + 125 + 55 + 65 + 85 + 80;
         double remaining = contentWidth - fixedTotal;
-        return new double[] { 20, 65, 75, 75, 75, 90, remaining };
+        return new double[] { 20, 125, 55, 65, 85, 80, remaining };
     }
 
     // ── DTOs for Delivery Term PDF ──
@@ -747,7 +747,7 @@ public class ITEquipmentPdfService
     private double DrawReturnEquipmentTableHeader(XGraphics gfx, PdfPage page, double y, double contentWidth)
     {
         var colWidths = GetReturnEquipmentColumnWidths(contentWidth);
-        var headers = new[] { "#", "Tipo", "Asset Tag", "Fabricante", "Modelo", "S/N", "Condição" };
+        var headers = new[] { "#", "Código do Ativo", "Tipo", "Fabricante", "Modelo", "S/N", "Condição" };
         double x = PageMargin;
 
         gfx.DrawRectangle(new XSolidBrush(PrimaryColor),
@@ -780,40 +780,42 @@ public class ITEquipmentPdfService
         var values = new[]
         {
             rowNum.ToString(),
-            item.EquipmentType ?? "—",
             item.AssetTag,
+            item.EquipmentType ?? "—",
             item.Manufacturer ?? "—",
             item.Model ?? "—",
             item.SerialNumber ?? "—",
             conditionLabel
         };
 
+        double rowHeight = 22; // Increased to allow wrapping
         double x = PageMargin;
 
         if (rowNum % 2 == 0)
-            gfx.DrawRectangle(new XSolidBrush(LabelBgColor), PageMargin, y - 2, contentWidth, 14);
+            gfx.DrawRectangle(new XSolidBrush(LabelBgColor), PageMargin, y - 2, contentWidth, rowHeight);
 
-        gfx.DrawLine(new XPen(LightBorderColor, 0.3), PageMargin, y + 12, PageMargin + contentWidth, y + 12);
+        gfx.DrawLine(new XPen(LightBorderColor, 0.3), PageMargin, y + rowHeight - 2, PageMargin + contentWidth, y + rowHeight - 2);
+
+        var tf = new XTextFormatter(gfx);
 
         for (int c = 0; c < values.Length; c++)
         {
             var text = values[c] ?? "—";
-            if (text.Length > 18) text = text[..16] + "…";
-            gfx.DrawString(text, SmallFont, XBrushes.Black,
-                new XRect(x + 3, y, colWidths[c] - 6, 12), XStringFormats.TopLeft);
+            tf.DrawString(text, SmallFont, XBrushes.Black,
+                new XRect(x + 3, y, colWidths[c] - 6, rowHeight - 2));
             x += colWidths[c];
         }
 
-        return y + 14;
+        return y + rowHeight;
     }
 
     /// <summary>Column widths for the return equipment table.</summary>
     private static double[] GetReturnEquipmentColumnWidths(double contentWidth)
     {
-        // #(20), Type(60), AssetTag(70), Manufacturer(70), Model(80), S/N(80), Condition(remaining)
-        double fixedTotal = 20 + 60 + 70 + 70 + 80 + 80;
+        // #(20), Código do Ativo(125), Tipo(60), Fabricante(70), Modelo(90), S/N(80), Condição(remaining)
+        double fixedTotal = 20 + 125 + 60 + 70 + 90 + 80;
         double remaining = contentWidth - fixedTotal;
-        return new double[] { 20, 60, 70, 70, 80, 80, remaining };
+        return new double[] { 20, 125, 60, 70, 90, 80, remaining };
     }
 
     // ── DTOs for Return Term PDF ──

@@ -27,6 +27,8 @@ export function PageContainer({
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '32px',
+                minWidth: 0,
+                overflowX: 'hidden',
                 ...style
             }}
         >

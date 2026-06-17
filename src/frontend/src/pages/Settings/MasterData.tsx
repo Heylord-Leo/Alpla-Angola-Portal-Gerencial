@@ -373,7 +373,7 @@ export function MasterData() {
                     setFeedback={setFeedback}
                 />
             ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(350px, 1fr) 2fr', gap: '32px', alignItems: 'start' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '32px', alignItems: 'start' }}>
 
                 {/* Left Column Wrapper */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', position: 'sticky', top: 'calc(var(--header-height) + 1rem)' }}>

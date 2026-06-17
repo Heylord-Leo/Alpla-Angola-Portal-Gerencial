@@ -23,7 +23,7 @@ export function WorkflowStageDetails({ stage }: WorkflowStageDetailsProps) {
                     boxShadow: `8px 8px 0px ${isReajuste ? 'rgba(249, 115, 22, 0.1)' : 'rgba(var(--color-primary-rgb), 0.1)'}`,
                     padding: '2rem',
                     display: 'grid',
-                    gridTemplateColumns: '1.2fr 0.8fr',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
                     gap: '2.5rem',
                     position: 'relative'
                 }}

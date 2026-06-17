@@ -881,3 +881,13 @@ The portal-main tour does NOT rely on a fixed delay. It polls for layout readine
 3. Register the tour in `guidedTourRegistry.ts` (`TOUR_REGISTRY` map + route mappings)
 4. Add `data-tour` attributes to the target page components
 5. Optionally add a `GuidedTourContextButton` to the page header
+
+## Responsive Layout Constraints (v2.195.1)
+
+To ensure the portal works predictably at standard laptop resolutions (1366x768 to 1920x1080) at 100% browser zoom without horizontal overflow, the following structural constraints must be strictly adhered to:
+
+1. **Fluid Grids over Fixed Tracks**: Never use rigid fixed-fraction grids like `gridTemplateColumns: "minmax(350px, 1fr) 2fr"` for page structures (unless absolute sidebars). Always use `repeat(auto-fit, minmax(280px, 1fr))` or similar fluid wrapping strategies for main content panels and cards.
+2. **Flex Shrink Safety**: Flex container elements (`<div style={{ display: 'flex' }}>`) must apply `minWidth: 0` to immediate children if those children contain wide, non-wrapping content (like tables or long hashes). Without `minWidth: 0`, flex items will violently push the viewport out instead of shrinking.
+3. **AppShell Overflow Containment**: The main `AppShell` and `PageContainer` use `overflowX: 'hidden'` as a structural safety net. However, the true fix relies on the components themselves respecting the width limits.
+4. **Auto-Collapsing Navigation**: The main sidebar (`AppShell.tsx`) automatically detects horizontal constraints using `matchMedia('(max-width: 1366px)')` and defaults to a collapsed state on standard laptops to return maximum horizontal space to the data tables.
+5. **Table Containment**: All standard tables apply `max-width: 100%` and `word-break: break-word` globally to prevent cell text from destroying the viewport grid.
