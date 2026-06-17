@@ -2,8 +2,23 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
-## [v2.195.1] - 2026-06-17
+## [v2.195.2] - 2026-06-17
 
+### Fixed — Global Frontend Responsive Audit & Layout Constraints
+
+**Problem:** 
+The Portal Gerencial frontend had structural layout issues that caused horizontal clipping on standard laptop resolutions (e.g. 1366x768 and 1440x900) at 100% browser zoom. Some pages expanded beyond the viewport, forcing users to manually zoom out, especially when the sidebar was expanded.
+
+**Fixes Applied:**
+- **Global Constraints:** Added `overflow-x: hidden` to the HTML tag and set global `max-width: 100%` rules for tables. Added media queries to automatically collapse the sidebar at viewport widths ≤1366px.
+- **AppShell & PageContainer:** Added `overflowX: 'hidden'`, `maxWidth: '100%'`, and `minWidth: 0` to main content containers (`<motion.main>`, `PageContainer`) to prevent child elements from forcing a layout blowout.
+- **Topbar & Header:** Refactored Topbar layout from fixed widths to flexible `min-width` and `flex-shrink` to prevent overlapping or clipping.
+- **Specific Pages:** Modified `RequestsDashboard.tsx` root `div` to include `width: '100%'` and `minWidth: 0`, fixing a specific clipping bug where the "Tour da Tela" and action buttons were pushed off-screen at 1440x900 with an expanded sidebar.
+- **Grid Auto-fit:** Adjusted CSS Grid columns in Dashboard, Finance, Settings, and Purchasing pages to use `repeat(auto-fit, minmax(...))` instead of fixed fractional tracks, ensuring cards wrap safely on smaller displays.
+
+**Guided Tour impact: not applicable.**
+
+## [v2.195.1] - 2026-06-17
 ### Fixed — UX Bugfixes & Responsive Layout Audit
 
 **IT Equipment Fixes:**

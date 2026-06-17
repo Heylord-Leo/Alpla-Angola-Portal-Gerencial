@@ -222,6 +222,8 @@ export function RequestsDashboard() {
     return (
         <div style={{
             minHeight: '100vh',
+            width: '100%',
+            minWidth: 0,
             padding: '24px 32px',
             maxWidth: '1400px',
             margin: '0 auto',
