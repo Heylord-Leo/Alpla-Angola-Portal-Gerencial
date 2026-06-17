@@ -63,7 +63,7 @@ export default function PurchasingLandingPage() {
                     {/* Main Content Grid */}
                     <div style={{ 
                         display: 'grid', 
-                        gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', 
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
                         gap: '32px',
                         alignItems: 'start'
                     }}>

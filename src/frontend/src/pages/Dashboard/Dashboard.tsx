@@ -230,7 +230,7 @@ export function Dashboard() {
                 {/* ── Section 5 + 6: Bottlenecks & Financial (side by side on large screens) ── */}
                 <div style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
                     gap: '32px',
                     alignItems: 'start'
                 }}>

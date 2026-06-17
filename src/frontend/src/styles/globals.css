@@ -8,6 +8,17 @@
     padding: 0;
 }
 
+html {
+    overflow-x: hidden; /* Safety net — structural fixes below handle the real containment */
+}
+
+/* Global table containment — prevents raw tables from causing horizontal overflow */
+table {
+    table-layout: auto;
+    max-width: 100%;
+    word-break: break-word;
+}
+
 body {
     font-family: var(--font-family-body);
     background-color: var(--color-bg-page);
@@ -522,6 +533,62 @@ tr:hover td {
         display: none;
     }
 }
+
+/* ─────────────────────────────────────────────────────── */
+/*  Responsive Layout — AppShell & Topbar breakpoints     */
+/*  Structural fixes for laptop screens at 100% zoom.     */
+/* ─────────────────────────────────────────────────────── */
+
+/* Medium laptops: 1440px and below */
+@media (max-width: 1440px) {
+    .app-shell-grid {
+        padding: 1.5rem 1.5rem !important;
+        gap: 1rem !important;
+    }
+
+    .app-shell-topbar {
+        padding-left: 1.5rem !important;
+        padding-right: 1.5rem !important;
+    }
+
+    .page-container {
+        padding: 20px 20px !important;
+    }
+}
+
+/* Small laptops: 1366px and below */
+@media (max-width: 1366px) {
+    .app-shell-grid {
+        padding: 1rem 1rem !important;
+        gap: 0.75rem !important;
+    }
+
+    .app-shell-topbar {
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+    }
+
+    .page-container {
+        padding: 16px 16px !important;
+        gap: 24px !important;
+    }
+}
+
+/* ─────────────────────────────────────────────────────── */
+/*  Responsive Utilities — Text truncation & containment  */
+/* ─────────────────────────────────────────────────────── */
+
+.text-truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.overflow-contain {
+    min-width: 0;
+    overflow-x: hidden;
+}
+
 
 /* ─────────────────────────────────────────────────────── */
 /*  Global Print Rules — Minimal App Shell Override        */

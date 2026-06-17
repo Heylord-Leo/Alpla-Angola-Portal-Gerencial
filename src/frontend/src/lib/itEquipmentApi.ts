@@ -439,6 +439,36 @@ export const deliveryTermsApi = {
     downloadSignedDocument: (id: string) => `${DT_BASE}/${id}/signed-document`,
     downloadReturnDocument: (id: string) => `${DT_BASE}/${id}/return-document`,
 
+    downloadDocumentBlob: async (id: string): Promise<Blob> => {
+        const response = await apiFetch(`${DT_BASE}/${id}/document`);
+        if (!response.ok) {
+            if (response.status === 401) throw new ApiError('Sessão expirada ou não autorizada. Faça login novamente.', 401);
+            if (response.status === 404) throw new ApiError('Termo de entrega não encontrado.', 404);
+            return handleError(response, 'Não foi possível baixar o Termo de Entrega.');
+        }
+        return response.blob();
+    },
+
+    downloadSignedDocumentBlob: async (id: string): Promise<Blob> => {
+        const response = await apiFetch(`${DT_BASE}/${id}/signed-document`);
+        if (!response.ok) {
+            if (response.status === 401) throw new ApiError('Sessão expirada ou não autorizada. Faça login novamente.', 401);
+            if (response.status === 404) throw new ApiError('Documento assinado não encontrado.', 404);
+            return handleError(response, 'Não foi possível baixar o documento assinado.');
+        }
+        return response.blob();
+    },
+
+    downloadReturnDocumentBlob: async (id: string): Promise<Blob> => {
+        const response = await apiFetch(`${DT_BASE}/${id}/return-document`);
+        if (!response.ok) {
+            if (response.status === 401) throw new ApiError('Sessão expirada ou não autorizada. Faça login novamente.', 401);
+            if (response.status === 404) throw new ApiError('Termo de devolução não encontrado.', 404);
+            return handleError(response, 'Não foi possível baixar o Termo de Devolução.');
+        }
+        return response.blob();
+    },
+
     uploadSignedReturn: async (id: string, file: File): Promise<{ detail: string; documentId: string }> => {
         const formData = new FormData();
         formData.append('file', file);

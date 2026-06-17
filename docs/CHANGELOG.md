@@ -2,6 +2,19 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.195.1] - 2026-06-17
+
+### Fixed — UX Bugfixes & Responsive Layout Audit
+
+**IT Equipment Fixes:**
+- Fixed column overlapping in Delivery/Return PDF equipment tables and renamed "Asset Tag" to "Código do Ativo".
+- Resolved a `401 Unauthorized` error when downloading Return Documents by updating the frontend to use an authenticated API call instead of a direct browser link.
+
+**Global Responsive Layout Audit:**
+- Replaced rigid grid structures (fixed fractions) with flexible `repeat(auto-fit)` configurations across all major pages (Dashboard, Requests, Finance, Purchasing, Settings).
+- Added global structural flex constraints (`min-width: 0`, `overflow-x: hidden`) and global table containment to prevent horizontal view overflow.
+- Implemented an auto-collapsing sidebar behavior for standard laptop resolutions (≤1366px viewport width) to maximize content space without requiring global zoom.
+
 ## [v2.195.0] - 2026-06-16
 
 ### Added — IT Equipment Return Term Generation

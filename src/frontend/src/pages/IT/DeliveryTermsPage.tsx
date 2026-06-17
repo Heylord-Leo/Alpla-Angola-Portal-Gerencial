@@ -376,6 +376,7 @@ export default function DeliveryTermsPage() {
                     onReturn={(itemId: string) => setReturnItemId(itemId)}
                     onRemoveItem={handleRemoveItem}
                     onRefresh={() => loadTermDetail(selectedTermId)}
+                    showToast={showToast}
                 />
             )}
 
@@ -673,7 +674,7 @@ function CreateDeliveryTermModal({ onClose, onCreated, showToast }: {
 
 // ─── Detail Drawer ───
 
-function DetailDrawer({ detail, loading, actionLoading, onClose, onGenerate, onSend, onUploadSigned, onUploadSignedReturn, onCancel, onReturn, onRemoveItem, onRefresh }: {
+function DetailDrawer({ detail, loading, actionLoading, onClose, onGenerate, onSend, onUploadSigned, onUploadSignedReturn, onCancel, onReturn, onRemoveItem, onRefresh, showToast }: {
     detail: ITDeliveryTermDetail | null;
     loading: boolean;
     actionLoading: boolean;
@@ -686,7 +687,38 @@ function DetailDrawer({ detail, loading, actionLoading, onClose, onGenerate, onS
     onReturn: (itemId: string) => void;
     onRemoveItem: (itemId: string) => void;
     onRefresh: () => void;
+    showToast: (msg: string, type: 'success' | 'error') => void;
 }) {
+    const handleDownload = async (type: 'delivery' | 'signed' | 'return') => {
+        if (!detail) return;
+        try {
+            let blob: Blob;
+            let filename = '';
+            
+            if (type === 'delivery') {
+                blob = await deliveryTermsApi.downloadDocumentBlob(detail.id);
+                filename = `Termo_Entrega_${detail.termNumber}.pdf`;
+            } else if (type === 'signed') {
+                blob = await deliveryTermsApi.downloadSignedDocumentBlob(detail.id);
+                filename = `Documento_Assinado_${detail.termNumber}.pdf`;
+            } else {
+                blob = await deliveryTermsApi.downloadReturnDocumentBlob(detail.id);
+                filename = `Termo_Devolucao_${detail.termNumber}.pdf`;
+            }
+            
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (err: any) {
+            showToast(err.message || 'Erro ao baixar o documento.', 'error');
+        }
+    };
+
     return (
         <div style={drawerOverlayStyle} onClick={onClose}>
             <div style={drawerStyle} onClick={e => e.stopPropagation()}>
@@ -772,19 +804,19 @@ function DetailDrawer({ detail, loading, actionLoading, onClose, onGenerate, onS
                                     <h3 style={sectionTitleStyle}>Documentos</h3>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                         {detail.generatedDocumentId && (
-                                            <a href={deliveryTermsApi.downloadDocument(detail.id)} target="_blank" rel="noreferrer" style={docLinkStyle}>
+                                            <button onClick={() => handleDownload('delivery')} style={{ ...docLinkStyle, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%', fontFamily: 'inherit' }}>
                                                 <FileText size={16} style={{ color: '#3b82f6' }} /> Termo de Entrega (PDF Gerado)
-                                            </a>
+                                            </button>
                                         )}
                                         {detail.signedDocumentId && (
-                                            <a href={deliveryTermsApi.downloadSignedDocument(detail.id)} target="_blank" rel="noreferrer" style={docLinkStyle}>
+                                            <button onClick={() => handleDownload('signed')} style={{ ...docLinkStyle, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%', fontFamily: 'inherit' }}>
                                                 <FileText size={16} style={{ color: '#10b981' }} /> Documento Assinado
-                                            </a>
+                                            </button>
                                         )}
                                         {detail.returnDocumentId && (
-                                            <a href={deliveryTermsApi.downloadReturnDocument(detail.id)} target="_blank" rel="noreferrer" style={docLinkStyle}>
+                                            <button onClick={() => handleDownload('return')} style={{ ...docLinkStyle, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%', fontFamily: 'inherit' }}>
                                                 <FileText size={16} style={{ color: '#f59e0b' }} /> Termo de Devolução (PDF)
-                                            </a>
+                                            </button>
                                         )}
                                     </div>
                                 </div>
@@ -825,16 +857,16 @@ function DetailDrawer({ detail, loading, actionLoading, onClose, onGenerate, onS
                                     </>
                                 )}
                                 {(detail.status === 'SIGNED' || detail.status === 'PARTIALLY_RETURNED') && detail.generatedDocumentId && (
-                                    <a href={deliveryTermsApi.downloadDocument(detail.id)} target="_blank" rel="noreferrer" style={btnSecondaryStyle}>
+                                    <button onClick={() => handleDownload('delivery')} style={{ ...btnSecondaryStyle, fontFamily: 'inherit' }}>
                                         <Download size={14} /> Baixar PDF
-                                    </a>
+                                    </button>
                                 )}
                                 {detail.status === 'CLOSED' && (
                                     <>
                                         {detail.returnDocumentId && (
-                                            <a href={deliveryTermsApi.downloadReturnDocument(detail.id)} target="_blank" rel="noreferrer" style={btnSecondaryStyle}>
+                                            <button onClick={() => handleDownload('return')} style={{ ...btnSecondaryStyle, fontFamily: 'inherit' }}>
                                                 <Download size={14} /> Baixar Termo de Devolução
-                                            </a>
+                                            </button>
                                         )}
                                         {detail.returnDocumentId && (
                                             <label style={{ ...btnPrimaryStyle, cursor: 'pointer' }}>
