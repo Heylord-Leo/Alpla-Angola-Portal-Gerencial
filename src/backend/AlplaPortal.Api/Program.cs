@@ -39,6 +39,12 @@ builder.Services.AddScoped<IDocumentExtractionService, DocumentExtractionService
 builder.Services.Configure<DocumentExtractionOptions>(builder.Configuration.GetSection("DocumentExtraction"));
 builder.Services.AddScoped<IDocumentExtractionSettingsService, DocumentExtractionSettingsService>();
 
+// G5: Malware scanning extension point — NoOp placeholder until real AV is integrated.
+builder.Services.AddScoped<IFileScanService, NoOpFileScanService>();
+
+// G4: OCR cleanup background service — runs daily, disabled by default (AutoCleanupEnabled=false).
+builder.Services.AddHostedService<OcrCleanupService>();
+
 // Admin audit log writer — dedicated, best-effort persistence (not a generic ILoggerProvider).
 builder.Services.AddScoped<AdminLogWriter>();
 

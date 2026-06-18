@@ -1,0 +1,9 @@
+{
+  "_note": "Sanitized example — represents file upload rejection response.",
+  "error": {
+    "code": "UPLOAD_REJECTED",
+    "message": "File type '.exe' is not allowed. Allowed types: .pdf, .jpg, .jpeg, .png, .doc, .docx, .xls, .xlsx",
+    "field": "file"
+  },
+  "statusCode": 400
+}

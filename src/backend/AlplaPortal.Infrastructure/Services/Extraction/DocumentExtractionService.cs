@@ -1,6 +1,7 @@
 using AlplaPortal.Application.DTOs.Extraction;
 using AlplaPortal.Application.Interfaces.Extraction;
 using AlplaPortal.Application.Models.Configuration;
+using AlplaPortal.Infrastructure.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace AlplaPortal.Infrastructure.Services.Extraction;
@@ -10,24 +11,57 @@ public class DocumentExtractionService : IDocumentExtractionService
     private readonly IEnumerable<IDocumentExtractionProvider> _providers;
     private readonly ILogger<DocumentExtractionService> _logger;
     private readonly IDocumentExtractionSettingsService _settingsService;
+    private readonly AdminLogWriter _adminLogWriter;
 
     public DocumentExtractionService(
         IEnumerable<IDocumentExtractionProvider> providers,
         IDocumentExtractionSettingsService settingsService,
-        ILogger<DocumentExtractionService> logger)
+        ILogger<DocumentExtractionService> logger,
+        AdminLogWriter adminLogWriter)
     {
         _providers = providers;
         _logger = logger;
         _settingsService = settingsService;
+        _adminLogWriter = adminLogWriter;
     }
 
     public async Task<ExtractionResultDto> ExtractAsync(Stream fileStream, string fileName, string? sourceContext = null, CancellationToken ct = default)
     {
         var options = await _settingsService.GetEffectiveSettingsAsync(ct);
 
+        // G2: Global enable/disable check
         if (!options.IsEnabled)
         {
             _logger.LogWarning("Document extraction is globally disabled in settings.");
+            await _adminLogWriter.WriteAsync("Warning", nameof(DocumentExtractionService), "OCR_FEATURE_DISABLED",
+                $"AI OCR extraction attempted while feature is globally disabled. File: '{fileName}'.",
+                payload: SafePayload.From(new { fileName = Path.GetFileName(fileName), sourceContext, reason = "IsEnabled=false" }));
+            return new ExtractionResultDto { Success = false };
+        }
+
+        // G2: Module allowlist enforcement
+        var policy = options.AiOcrPolicy;
+        if (!string.IsNullOrWhiteSpace(sourceContext) && policy.AllowedModules.Count > 0)
+        {
+            var moduleAllowed = policy.AllowedModules.Any(m => m.Equals(sourceContext, StringComparison.OrdinalIgnoreCase));
+            if (!moduleAllowed)
+            {
+                _logger.LogWarning("Module '{Module}' is not in AllowedModules list. Extraction blocked.", sourceContext);
+                await _adminLogWriter.WriteAsync("Warning", nameof(DocumentExtractionService), "OCR_MODULE_BLOCKED",
+                    $"AI OCR extraction blocked: module '{sourceContext}' is not allowed.",
+                    payload: SafePayload.From(new { fileName = Path.GetFileName(fileName), module = sourceContext, allowedModules = string.Join(",", policy.AllowedModules), reason = "MODULE_NOT_ALLOWED" }));
+                return new ExtractionResultDto { Success = false };
+            }
+        }
+
+        // G2: Document type allowlist enforcement
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        if (policy.AllowedDocumentTypes.Count > 0 && !policy.AllowedDocumentTypes.Contains(extension))
+        {
+            _logger.LogWarning("Document type '{Extension}' is not in AllowedDocumentTypes list. Extraction blocked.", extension);
+            await _adminLogWriter.WriteAsync("Warning", nameof(DocumentExtractionService), "OCR_DOCUMENT_TYPE_BLOCKED",
+                $"AI OCR extraction blocked: document type '{extension}' is not allowed.",
+                payload: SafePayload.From(new { fileName = Path.GetFileName(fileName), extension, allowedDocumentTypes = string.Join(",", policy.AllowedDocumentTypes), reason = "DOCUMENT_TYPE_NOT_ALLOWED" }));
             return new ExtractionResultDto { Success = false };
         }
 

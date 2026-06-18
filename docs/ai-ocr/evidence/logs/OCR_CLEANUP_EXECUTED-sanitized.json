@@ -1,0 +1,18 @@
+{
+  "_note": "Sanitized sample — not from live system. Represents expected log format. Cleanup was not executed live — AutoCleanupEnabled is false by default.",
+  "id": "00000000-0000-0000-0000-000000000007",
+  "timestampUtc": "2026-06-19T02:00:00Z",
+  "level": "Information",
+  "source": "OcrCleanupService",
+  "eventType": "OCR_CLEANUP_EXECUTED",
+  "message": "OCR cleanup completed. Files deleted: 3. Errors: 0.",
+  "correlationId": null,
+  "userEmail": null,
+  "payload": {
+    "debugFilesDeleted": 3,
+    "rawJsonRecordsCleaned": 0,
+    "durationMs": 125,
+    "retentionDays": 7,
+    "errorCount": 0
+  }
+}

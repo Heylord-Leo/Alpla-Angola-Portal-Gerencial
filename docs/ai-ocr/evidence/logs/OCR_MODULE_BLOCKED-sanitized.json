@@ -1,0 +1,17 @@
+{
+  "_note": "Sanitized sample — not from live system. Represents expected log format.",
+  "id": "00000000-0000-0000-0000-000000000005",
+  "timestampUtc": "2026-06-18T10:12:00Z",
+  "level": "Warning",
+  "source": "DocumentExtractionService",
+  "eventType": "OCR_MODULE_BLOCKED",
+  "message": "AI OCR extraction blocked: module 'INVENTORY' is not allowed.",
+  "correlationId": "J1K2L3M4N5O6",
+  "userEmail": "user@example.com",
+  "payload": {
+    "fileName": "stock-report.pdf",
+    "module": "INVENTORY",
+    "allowedModules": "CONTRACTS,REQUESTS",
+    "reason": "MODULE_NOT_ALLOWED"
+  }
+}

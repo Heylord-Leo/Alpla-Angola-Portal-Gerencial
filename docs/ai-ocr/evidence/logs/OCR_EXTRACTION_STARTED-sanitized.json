@@ -1,0 +1,22 @@
+{
+  "_note": "Sanitized sample — not from live system. Represents expected log format.",
+  "id": "00000000-0000-0000-0000-000000000001",
+  "timestampUtc": "2026-06-18T10:00:00Z",
+  "level": "Information",
+  "source": "OpenAiDocumentExtractionProvider",
+  "eventType": "OCR_EXTRACTION_STARTED",
+  "message": "AI OCR extraction started for 'sample-invoice.pdf'.",
+  "correlationId": "A1B2C3D4E5F6",
+  "userEmail": "user@example.com",
+  "payload": {
+    "fileName": "sample-invoice.pdf",
+    "extension": ".pdf",
+    "sourceContext": "REQUESTS",
+    "provider": "OPENAI",
+    "model": "gpt-4-turbo",
+    "streamSize": 245780,
+    "documentHash": "A1B2C3D4E5F67890",
+    "invoicePromptVersion": "v2.1-hardened",
+    "contractPromptVersion": "v2.1-hardened"
+  }
+}

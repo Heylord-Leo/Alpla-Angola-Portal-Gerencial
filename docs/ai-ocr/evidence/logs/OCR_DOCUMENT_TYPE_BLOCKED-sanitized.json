@@ -1,0 +1,17 @@
+{
+  "_note": "Sanitized sample — not from live system. Represents expected log format.",
+  "id": "00000000-0000-0000-0000-000000000006",
+  "timestampUtc": "2026-06-18T10:14:00Z",
+  "level": "Warning",
+  "source": "DocumentExtractionService",
+  "eventType": "OCR_DOCUMENT_TYPE_BLOCKED",
+  "message": "AI OCR extraction blocked: document type '.docx' is not allowed.",
+  "correlationId": "P7Q8R9S0T1U2",
+  "userEmail": "user@example.com",
+  "payload": {
+    "fileName": "report.docx",
+    "extension": ".docx",
+    "allowedDocumentTypes": ".pdf,.jpg,.jpeg,.png",
+    "reason": "DOCUMENT_TYPE_NOT_ALLOWED"
+  }
+}
