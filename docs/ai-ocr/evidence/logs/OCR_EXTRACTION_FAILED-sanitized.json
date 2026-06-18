@@ -1,0 +1,19 @@
+{
+  "_note": "Sanitized sample — not from live system. Represents expected log format.",
+  "id": "00000000-0000-0000-0000-000000000003",
+  "timestampUtc": "2026-06-18T10:05:00Z",
+  "level": "Error",
+  "source": "OpenAiDocumentExtractionProvider",
+  "eventType": "OCR_EXTRACTION_FAILED",
+  "message": "AI OCR extraction failed for 'corrupted.pdf'. Error: API returned 401 Unauthorized.",
+  "correlationId": "X9Y8Z7W6V5U4",
+  "userEmail": "user@example.com",
+  "exceptionDetail": "HttpRequestException: Response status code does not indicate success: 401 (Unauthorized).",
+  "payload": {
+    "fileName": "corrupted.pdf",
+    "provider": "OPENAI",
+    "errorType": "ProviderError",
+    "statusCode": 401,
+    "durationMs": 850
+  }
+}

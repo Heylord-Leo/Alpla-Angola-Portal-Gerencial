@@ -1,0 +1,36 @@
+{
+  "_note": "Sanitized example — represents a successful OCR extraction API response. No real data.",
+  "success": true,
+  "providerName": "OPENAI",
+  "qualityScore": 0.87,
+  "isPartial": false,
+  "conflictsDetected": false,
+  "items": [
+    {
+      "lineNumber": 1,
+      "description": "[REDACTED - line item description]",
+      "quantity": 100,
+      "unit": "PC",
+      "unitPrice": 15.50,
+      "lineTotal": 1550.00,
+      "discountPercent": 0,
+      "taxRate": 14
+    },
+    {
+      "lineNumber": 2,
+      "description": "[REDACTED - line item description]",
+      "quantity": 50,
+      "unit": "KG",
+      "unitPrice": 8.25,
+      "lineTotal": 412.50,
+      "discountPercent": 5,
+      "taxRate": 14
+    }
+  ],
+  "supplierName": "[REDACTED]",
+  "supplierTaxId": "[REDACTED]",
+  "invoiceNumber": "[REDACTED]",
+  "invoiceDate": "2026-01-15",
+  "grandTotal": 1962.50,
+  "currency": "AOA"
+}

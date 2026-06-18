@@ -1,0 +1,26 @@
+{
+  "_note": "Sanitized sample — not from live system. Represents expected log format.",
+  "id": "00000000-0000-0000-0000-000000000002",
+  "timestampUtc": "2026-06-18T10:00:04Z",
+  "level": "Information",
+  "source": "OpenAiDocumentExtractionProvider",
+  "eventType": "OCR_EXTRACTION_COMPLETED",
+  "message": "AI OCR extraction completed for 'sample-invoice.pdf'. Strategy: InvoiceTextFirst, Quality: 0.87.",
+  "correlationId": "A1B2C3D4E5F6",
+  "userEmail": "user@example.com",
+  "payload": {
+    "fileName": "sample-invoice.pdf",
+    "provider": "OPENAI",
+    "model": "gpt-4-turbo",
+    "strategy": "InvoiceTextFirst",
+    "detailMode": "high",
+    "promptVersion": "v2.1-hardened",
+    "promptTokens": 1250,
+    "completionTokens": 450,
+    "totalTokens": 1700,
+    "qualityScore": 0.87,
+    "executionStatus": "Success",
+    "durationMs": 3420,
+    "responseSize": 1856
+  }
+}

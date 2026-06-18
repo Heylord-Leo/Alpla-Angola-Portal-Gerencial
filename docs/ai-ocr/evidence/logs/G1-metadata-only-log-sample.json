@@ -1,0 +1,8 @@
+{
+  "_note": "Sanitized sample — represents expected metadata-only structured log when debug logging is disabled.",
+  "timestamp": "2026-06-18T10:00:00Z",
+  "level": "Information",
+  "category": "AlplaPortal.Infrastructure.Services.Extraction.OpenAiDocumentExtractionProvider",
+  "message": "[G1-DEBUG] Debug logging disabled for extraction of 'sample-invoice.pdf'. Hash: A1B2C3D4E5F67890, Size: 245780 bytes.",
+  "_comment": "No raw AI payload, no document content, no AI response. Only metadata (file name, hash, size) is logged."
+}

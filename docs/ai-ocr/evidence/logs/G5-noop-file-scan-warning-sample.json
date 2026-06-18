@@ -1,0 +1,8 @@
+{
+  "_note": "Sanitized sample — represents expected structured log from NoOpFileScanService first-use warning.",
+  "timestamp": "2026-06-18T10:00:00Z",
+  "level": "Warning",
+  "category": "AlplaPortal.Infrastructure.Services.NoOpFileScanService",
+  "message": "[G5-PLACEHOLDER] Malware scanning is not configured. Files are accepted without AV scan. Real malware scanning is recommended before unrestricted production usage.",
+  "_comment": "This warning is logged ONCE at first usage of the NoOp placeholder. It is not an AdminLogEntry — it uses standard ILogger."
+}

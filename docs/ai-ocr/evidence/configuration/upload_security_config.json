@@ -1,0 +1,16 @@
+{
+  "_comment": "REDACTED — AI OCR Compliance Evidence. Source: appsettings.json Security:Upload section.",
+  "_environment": "TEST",
+  "_captured_date": "2026-06-18",
+  "Security": {
+    "Upload": {
+      "AllowedExtensions": [".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx", ".xls", ".xlsx"],
+      "BlockedExtensions": [".exe", ".bat", ".cmd", ".sh", ".msi", ".js", ".vbs"],
+      "MaxFileSizeBytes": 15728640,
+      "MimeTypeValidation": "soft_check_with_logging",
+      "FilenameSanitization": "regex_strip_and_truncate_100_chars",
+      "StoragePath": "data/attachments/{guid}{extension}",
+      "HashAlgorithm": "SHA-256"
+    }
+  }
+}

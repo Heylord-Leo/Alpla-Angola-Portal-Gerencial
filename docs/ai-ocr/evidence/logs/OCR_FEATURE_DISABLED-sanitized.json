@@ -1,0 +1,16 @@
+{
+  "_note": "Sanitized sample — not from live system. Represents expected log format.",
+  "id": "00000000-0000-0000-0000-000000000004",
+  "timestampUtc": "2026-06-18T10:10:00Z",
+  "level": "Warning",
+  "source": "DocumentExtractionService",
+  "eventType": "OCR_FEATURE_DISABLED",
+  "message": "AI OCR extraction attempted while feature is globally disabled. File: 'document.pdf'.",
+  "correlationId": "D3E4F5G6H7I8",
+  "userEmail": "user@example.com",
+  "payload": {
+    "fileName": "document.pdf",
+    "sourceContext": "CONTRACTS",
+    "reason": "IsEnabled=false"
+  }
+}

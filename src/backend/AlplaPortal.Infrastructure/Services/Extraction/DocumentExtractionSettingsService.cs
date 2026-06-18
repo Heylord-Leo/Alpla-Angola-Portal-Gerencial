@@ -303,7 +303,11 @@ public class DocumentExtractionSettingsService : IDocumentExtractionSettingsServ
             client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
             client.Timeout = TimeSpan.FromSeconds(10);
 
-            var response = await client.GetAsync("https://api.openai.com/v1/models", ct);
+            // G6: Use configurable endpoint for test connection
+            var testBaseUrl = string.IsNullOrWhiteSpace(settings.Endpoint)
+                ? "https://api.openai.com"
+                : settings.Endpoint.TrimEnd('/');
+            var response = await client.GetAsync($"{testBaseUrl}/v1/models", ct);
             sw.Stop();
 
             if (response.IsSuccessStatusCode)

@@ -1,0 +1,12 @@
+{
+  "_note": "Sanitized sample — represents expected structured log from prompt version in extraction payload.",
+  "timestamp": "2026-06-18T10:00:00Z",
+  "level": "Information",
+  "source": "OpenAiDocumentExtractionProvider",
+  "eventType": "OCR_EXTRACTION_STARTED",
+  "payload_excerpt": {
+    "invoicePromptVersion": "v2.1-hardened",
+    "contractPromptVersion": "v2.1-hardened"
+  },
+  "_comment": "Prompt versions are logged at extraction start for traceability. They are also included in OCR_EXTRACTION_COMPLETED events."
+}

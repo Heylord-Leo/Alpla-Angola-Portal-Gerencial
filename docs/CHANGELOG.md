@@ -2,6 +2,25 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.196.0] - 2026-06-18
+
+### Added — AI OCR Technical Hardening & Compliance Package
+
+**Security & Compliance Hardening:**
+- **Debug Logging Guard (G1):** Implemented dual-guard `IsDebugLoggingAllowed()` requiring both `IsDevelopment()` and explicit `DebugRawPayloadLogging` flag to prevent raw AI payload leakage to disk.
+- **Policy Controls (G2):** Enforced module (`CONTRACTS`, `REQUESTS`) and document type allowlists to restrict AI extraction to authorized contexts.
+- **Prompt Injection Defense (G3):** Injected security preamble to both invoice and contract system prompts to mitigate instruction overrides.
+- **Retention Controls (G4):** Created `OcrCleanupService.cs` background service for managing data retention.
+- **Malware Scanning (G5):** Added `IFileScanService` extension point and `NoOpFileScanService` placeholder.
+- **Provider Readiness (G6):** Made `OpenAiDocumentExtractionProvider` endpoint configurable to support switching to Azure Document Intelligence.
+- **System Logs Integration (G8):** Integrated 8 `OCR_*` events (`OCR_EXTRACTION_STARTED`, `OCR_MODULE_BLOCKED`, etc.) into the structured `AdminLogWriter` with `SafePayload` sanitization.
+
+**Compliance Documentation & Evidence:**
+- Updated 8 core compliance documents (v2.0) reflecting the post-hardening state.
+- Generated a comprehensive 48-file evidence package under `docs/ai-ocr/evidence/` including redacted configurations, sanitized log samples, SQL verification queries, and build results.
+
+**Guided Tour impact: not applicable.**
+
 ## [v2.195.2] - 2026-06-17
 
 ### Fixed — Global Frontend Responsive Audit & Layout Constraints
