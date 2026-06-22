@@ -101,7 +101,7 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao carregar dados do utilizador.');
             return response.json();
         },
-        create: async (data: any): Promise<{ newPassword: string }> => {
+        create: async (data: any): Promise<{ emailSent: boolean, message: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/users`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

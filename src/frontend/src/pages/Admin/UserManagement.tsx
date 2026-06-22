@@ -46,6 +46,12 @@ export default function UserManagement() {
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active');
+    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' } | null>(null);
+
+    const showToast = (message: string, type: 'success' | 'error' | 'warning') => {
+        setToast({ message, type });
+        setTimeout(() => setToast(null), 4000);
+    };
 
     // Master Data
     const [allRoles, setAllRoles] = useState<any[]>([]);
@@ -203,7 +209,7 @@ export default function UserManagement() {
             });
             setIsDrawerOpen(true);
         } catch (err: any) {
-            alert('Erro ao carregar detalhes: ' + err.message);
+            showToast('Erro ao carregar detalhes: ' + err.message, 'error');
         }
     }
 
@@ -217,7 +223,11 @@ export default function UserManagement() {
                 loadData();
             } else {
                 const res = await api.users.create(formData);
-                setResultPassword(res.newPassword);
+                if (res.emailSent) {
+                    showToast(res.message, 'success');
+                } else {
+                    showToast("Aviso: " + res.message, 'warning');
+                }
                 setIsDrawerOpen(false);
                 loadData();
             }
@@ -232,7 +242,7 @@ export default function UserManagement() {
             const res = await api.users.resetPassword(userId);
             setResultPassword(res.newPassword);
         } catch (err: any) {
-            alert('Erro ao repor: ' + err.message);
+            showToast('Erro ao repor: ' + err.message, 'error');
         }
     }
 
@@ -256,6 +266,19 @@ export default function UserManagement() {
 
     return (
         <PageContainer>
+            {/* Toast */}
+            {toast && (
+                <div style={{
+                    position: 'fixed', top: 20, right: 20, zIndex: 9999,
+                    padding: '12px 20px', borderRadius: 8, color: '#fff', fontWeight: 500, fontSize: 14,
+                    background: toast.type === 'success' ? '#10b981' : toast.type === 'warning' ? '#f59e0b' : '#ef4444',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.2)', animation: 'fadeIn 0.2s ease'
+                }}>
+                    {toast.message}
+                    <button onClick={() => setToast(null)} style={{ marginLeft: 12, background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}>✕</button>
+                </div>
+            )}
+
             {/* Header */}
             <PageHeader
                 title="Gestão de Utilizadores"
