@@ -38,6 +38,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
     const [statusBadgeColor, setStatusBadgeColor] = useState<string | null>(null);
     const [requestTypeCode, setRequestTypeCode] = useState<string | null>(null);
     const [requestNumber, setRequestNumber] = useState<string | null>(null);
+    const [requesterId, setRequesterId] = useState<string | null>(null);
     
     // Form Data
     const [formData, setFormData] = useState({
@@ -133,10 +134,14 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
     const isFullyReadOnly = !isDraftEditable && !isQuotationPartiallyEditable;
 
     const hasSavedQuotations = quotations.length > 0;
+    
+    // Creator-only check: only the requester can edit if it's not a new/copy request
+    const isCreator = user?.id === requesterId;
+    const canEditOriginalData = !id || isCopyMode || status === 'DRAFT' || isCreator;
 
-    const canEditHeader = isDraftEditable || isQuotationPartiallyEditable;
-    const canEditSupplier = isDraftEditable || (isQuotationPartiallyEditable && !hasSavedQuotations);
-    const canEditItems = isDraftEditable || (isQuotationPartiallyEditable && !hasSavedQuotations);
+    const canEditHeader = (isDraftEditable || isQuotationPartiallyEditable) && canEditOriginalData;
+    const canEditSupplier = (isDraftEditable || (isQuotationPartiallyEditable && !hasSavedQuotations)) && canEditOriginalData;
+    const canEditItems = (isDraftEditable || (isQuotationPartiallyEditable && !hasSavedQuotations)) && canEditOriginalData;
     const canManageAttachments = status !== null && !isFinalizedStatus && !isCopyMode;
     const canExecuteOperationalAction = (isOperationalStage || isQuotationStage) && !isCopyMode;
     const canEdit = canEditItems;
@@ -460,6 +465,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 setLineItems(data.lineItems || []);
                 setRequestTypeCode(data.requestTypeId === 2 ? 'PAYMENT' : 'QUOTATION');
                 setRequestNumber(null);
+                setRequesterId(null);
                 setStatusHistory([]);
                 setAttachments([]);
                 setQuotations([]);
@@ -472,6 +478,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 setLineItems(data.lineItems || []);
                 setRequestTypeCode(data.requestTypeCode);
                 setRequestNumber(data.requestNumber || null);
+                setRequesterId(data.requesterId || null);
                 setStatusHistory(data.statusHistory || []);
                 setAttachments(data.attachments || []);
                 setQuotations(data.quotations || []);
@@ -664,21 +671,11 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         try {
             await api.requests.updateDraft(id!, payload);
 
-            // Synchronize unified Due Date downwards to all existing line items
-            if (!isCopyMode && lineItems.length > 0) {
-                const globalDueDate = formData.needByDateUtc && !isNaN(new Date(formData.needByDateUtc).getTime()) 
-                    ? new Date(formData.needByDateUtc).toISOString() 
-                    : null;
-                
-                await Promise.all(lineItems.map(item => 
-                    api.requests.updateLineItem(id!, item.id, {
-                        ...item,
-                        quantity: Number(item.quantity) || 0,
-                        unitPrice: Number(item.unitPrice) || 0,
-                        dueDate: globalDueDate
-                    })
-                ));
-            }
+            // Due-date propagation to line items is now handled server-side inside UpdateRequestDraft
+            // to ensure atomicity — all changes commit or fail together within a single transaction.
+            // Previously, a separate Promise.all(updateLineItem) call here caused the IVA save bug:
+            // header changes were committed, but line item updates could fail IVA validation,
+            // resulting in partial persistence and misleading error messages.
 
             // Refetch to ensure frontend state (especially total) is perfectly in sync with backend logic
             const updated = await api.requests.get(id!);

@@ -1053,6 +1053,7 @@ public class RequestsController : BaseController
                     NewStatusName = sh.NewStatus!.Name,
                     Comment = sh.Comment,
                     CreatedAtUtc = sh.CreatedAtUtc,
+                    ActorUserId = sh.ActorUserId,
                     ActorName = sh.ActorUser!.FullName
                 }).OrderByDescending(sh => sh.CreatedAtUtc).ToList(),
 
@@ -1113,6 +1114,32 @@ public class RequestsController : BaseController
                 request.CurrencyCode = selectedQ.Currency;
                 request.SupplierPortalCode = null; // Direct from snapshot
             }
+        }
+
+        // Fetch field changes for this request and associate with status history entries
+        var fieldChanges = await _context.RequestFieldChangeHistories
+            .AsNoTracking()
+            .Where(fc => fc.RequestId == id)
+            .OrderByDescending(fc => fc.CreatedAtUtc)
+            .Select(fc => new RequestFieldChangeHistoryDto
+            {
+                Id = fc.Id,
+                FieldName = fc.FieldName,
+                FieldDisplayName = fc.FieldDisplayName,
+                PreviousValue = fc.PreviousValue,
+                NewValue = fc.NewValue,
+                StatusCodeAtChange = fc.StatusCodeAtChange,
+                LineItemId = fc.LineItemId,
+                CreatedAtUtc = fc.CreatedAtUtc,
+                ActorName = fc.ActorUser.FullName
+            })
+            .ToListAsync();
+
+        foreach (var sh in request.StatusHistory)
+        {
+            sh.FieldChanges = fieldChanges
+                .Where(fc => fc.CreatedAtUtc >= sh.CreatedAtUtc.AddSeconds(-2) && fc.CreatedAtUtc <= sh.CreatedAtUtc.AddSeconds(2))
+                .ToList();
         }
 
         return Ok(request);
@@ -1660,6 +1687,19 @@ public class RequestsController : BaseController
             });
         }
 
+        // 3.1. Creator-only edit enforcement for non-DRAFT statuses
+        // After a request enters the workflow, only the original creator may edit request data.
+        // Buyer-specific actions (quotation management, assign, workflow) use separate endpoints.
+        if (statusCode != "DRAFT" && request.RequesterId != actorId)
+        {
+            return StatusCode(403, new ProblemDetails 
+            { 
+                Title = "Acesso Proibido", 
+                Detail = "Apenas o criador do pedido pode editar os dados do pedido nesta fase. Para solicitações de alteração, utilize os comentários ou o fluxo de comunicação.", 
+                Status = 403 
+            });
+        }
+
         var requestTypeEntity = await _context.RequestTypes.FirstOrDefaultAsync(rt => rt.Id == dto.RequestTypeId);
         if (requestTypeEntity == null) return BadRequest("Tipo de pedido inválido.");
 
@@ -1681,18 +1721,83 @@ public class RequestsController : BaseController
         var changedFields = new List<string>();
         bool changed = false;
 
+        // --- Field-level audit helper (Phase 3: Full traceability) ---
+        // Records old → new value for every changed field into RequestFieldChangeHistory.
+        var fieldChanges = new List<RequestFieldChangeHistory>();
+        void TrackField(string fieldName, string displayName, string? oldVal, string? newVal, Guid? lineItemId = null)
+        {
+            if (oldVal != newVal)
+            {
+                fieldChanges.Add(new RequestFieldChangeHistory
+                {
+                    RequestId = request.Id,
+                    ActorUserId = actorId,
+                    FieldName = fieldName,
+                    FieldDisplayName = displayName,
+                    PreviousValue = oldVal,
+                    NewValue = newVal,
+                    StatusCodeAtChange = statusCode,
+                    LineItemId = lineItemId,
+                    CreatedAtUtc = DateTime.UtcNow
+                });
+            }
+        }
+
         // --- Safe Fields (Always editable in allowed statuses) ---
         var newTitle = dto.Title?.Trim() ?? "";
-        if ((request.Title?.Trim() ?? "") != newTitle) { request.Title = newTitle; changedFields.Add("Título"); changed = true; }
+        if ((request.Title?.Trim() ?? "") != newTitle)
+        {
+            TrackField("Title", "Título", request.Title?.Trim(), newTitle);
+            request.Title = newTitle; changedFields.Add("Título"); changed = true;
+        }
         
         var newDescription = dto.Description?.Trim() ?? "";
-        if ((request.Description?.Trim() ?? "") != newDescription) { request.Description = newDescription; changedFields.Add("Descrição"); changed = true; }
-        if (request.NeedLevelId != dto.NeedLevelId) { request.NeedLevelId = dto.NeedLevelId; changedFields.Add("Urgência"); changed = true; }
-        if (request.DepartmentId != dto.DepartmentId) { request.DepartmentId = dto.DepartmentId; changedFields.Add("Departamento"); changed = true; }
-        if (request.NeedByDateUtc != dto.NeedByDateUtc) { request.NeedByDateUtc = dto.NeedByDateUtc; changedFields.Add("Data Necessidade"); changed = true; }
-        if (request.CapexOpexClassificationId != dto.CapexOpexClassificationId) { request.CapexOpexClassificationId = dto.CapexOpexClassificationId; changedFields.Add("Classificação"); changed = true; }
-        if (request.EstimatedTotalAmount != dto.EstimatedTotalAmount) { request.EstimatedTotalAmount = dto.EstimatedTotalAmount; changedFields.Add("Valor Bruto Estimado"); changed = true; }
-        if (request.DiscountAmount != dto.DiscountAmount) { request.DiscountAmount = dto.DiscountAmount; changedFields.Add("Desconto Global"); changed = true; }
+        if ((request.Description?.Trim() ?? "") != newDescription)
+        {
+            TrackField("Description", "Descrição", request.Description?.Trim(), newDescription);
+            request.Description = newDescription; changedFields.Add("Descrição"); changed = true;
+        }
+        if (request.NeedLevelId != dto.NeedLevelId)
+        {
+            TrackField("NeedLevelId", "Urgência", request.NeedLevelId?.ToString(), dto.NeedLevelId?.ToString());
+            request.NeedLevelId = dto.NeedLevelId; changedFields.Add("Urgência"); changed = true;
+        }
+        if (request.DepartmentId != dto.DepartmentId)
+        {
+            TrackField("DepartmentId", "Departamento", request.DepartmentId.ToString(), dto.DepartmentId.ToString());
+            request.DepartmentId = dto.DepartmentId; changedFields.Add("Departamento"); changed = true;
+        }
+        if (request.NeedByDateUtc != dto.NeedByDateUtc)
+        {
+            TrackField("NeedByDateUtc", "Data Necessidade", request.NeedByDateUtc?.ToString("o"), dto.NeedByDateUtc?.ToString("o"));
+            request.NeedByDateUtc = dto.NeedByDateUtc;
+            changedFields.Add("Data Necessidade");
+            changed = true;
+
+            // Server-side due-date propagation: synchronize to all active line items
+            // within the same SaveChangesAsync() transaction for atomicity.
+            // This replaces the previous frontend-side Promise.all(updateLineItem) pattern
+            // which caused the IVA partial save bug (header committed, item updates could fail).
+            foreach (var lineItem in request.LineItems.Where(l => !l.IsDeleted))
+            {
+                lineItem.DueDate = dto.NeedByDateUtc;
+            }
+        }
+        if (request.CapexOpexClassificationId != dto.CapexOpexClassificationId)
+        {
+            TrackField("CapexOpexClassificationId", "Classificação", request.CapexOpexClassificationId?.ToString(), dto.CapexOpexClassificationId?.ToString());
+            request.CapexOpexClassificationId = dto.CapexOpexClassificationId; changedFields.Add("Classificação"); changed = true;
+        }
+        if (request.EstimatedTotalAmount != dto.EstimatedTotalAmount)
+        {
+            TrackField("EstimatedTotalAmount", "Valor Bruto Estimado", request.EstimatedTotalAmount.ToString("F2"), dto.EstimatedTotalAmount.ToString("F2"));
+            request.EstimatedTotalAmount = dto.EstimatedTotalAmount; changedFields.Add("Valor Bruto Estimado"); changed = true;
+        }
+        if (request.DiscountAmount != dto.DiscountAmount)
+        {
+            TrackField("DiscountAmount", "Desconto Global", request.DiscountAmount.ToString("F2"), dto.DiscountAmount.ToString("F2"));
+            request.DiscountAmount = dto.DiscountAmount; changedFields.Add("Desconto Global"); changed = true;
+        }
 
         // --- Restricted Fields in Quotation Stage ---
         if (isQuotationStage)
@@ -1810,6 +1915,12 @@ public class RequestsController : BaseController
                 CreatedAtUtc = DateTime.UtcNow
             };
             _context.RequestStatusHistories.Add(history);
+
+            // Phase 3: Persist field-level audit records within the same transaction
+            if (fieldChanges.Any())
+            {
+                _context.RequestFieldChangeHistories.AddRange(fieldChanges);
+            }
         }
 
         await _context.SaveChangesAsync();
@@ -3335,6 +3446,16 @@ public class RequestsController : BaseController
             });
         }
 
+        // Creator-only edit enforcement for non-DRAFT statuses
+        if (request.Status!.Code != "DRAFT" && request.RequesterId != actorId)
+        {
+            return StatusCode(403, new ProblemDetails 
+            { 
+                Title = "Acesso Proibido", 
+                Detail = "Apenas o criador do pedido pode adicionar itens ao pedido nesta fase.", 
+                Status = 403 
+            });
+        }
         var unit = await _context.Units.FindAsync(dto.UnitId);
 
         // Item Plant Validation: Mandatory for all types EXCEPT Payment (DEC-076)
@@ -3511,6 +3632,17 @@ public class RequestsController : BaseController
             });
         }
 
+        // Creator-only edit enforcement for non-DRAFT statuses
+        if (request.Status!.Code != "DRAFT" && request.RequesterId != actorId)
+        {
+            return StatusCode(403, new ProblemDetails 
+            { 
+                Title = "Acesso Proibido", 
+                Detail = "Apenas o criador do pedido pode editar itens do pedido nesta fase.", 
+                Status = 403 
+            });
+        }
+
         var item = request.LineItems.FirstOrDefault(l => l.Id == itemId && !l.IsDeleted);
         if (item == null) return NotFound(new ProblemDetails { Title = "Item não encontrado no pedido.", Status = 404 });
 
@@ -3674,6 +3806,17 @@ public class RequestsController : BaseController
                 Title = "Regra de Negócio Violada", 
                 Detail = "Operação bloqueada: este pedido não está em rascunho nem em fase de reajuste/cotação, por isso não é possível excluir itens.", 
                 Status = 409 
+            });
+        }
+
+        // Creator-only edit enforcement for non-DRAFT statuses
+        if (request.Status!.Code != "DRAFT" && request.RequesterId != actorId)
+        {
+            return StatusCode(403, new ProblemDetails 
+            { 
+                Title = "Acesso Proibido", 
+                Detail = "Apenas o criador do pedido pode excluir itens do pedido nesta fase.", 
+                Status = 403 
             });
         }
 

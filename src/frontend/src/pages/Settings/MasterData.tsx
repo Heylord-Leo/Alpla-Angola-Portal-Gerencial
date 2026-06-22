@@ -376,7 +376,7 @@ export function MasterData() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '32px', alignItems: 'start' }}>
 
                 {/* Left Column Wrapper */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', position: 'sticky', top: 'calc(var(--header-height) + 1rem)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', position: 'sticky', top: 'calc(var(--header-height) + 1rem + var(--env-banner-offset, 0px))' }}>
 
                     {/* Form Column - Styled as a standard card */}
                     <div style={{

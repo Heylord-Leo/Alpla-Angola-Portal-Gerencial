@@ -512,7 +512,7 @@ export function ApprovalCenter() {
             `}</style>
             {/* Feedback */}
             {feedback.message && (
-                <div style={{ position: 'sticky', top: 'calc(var(--header-height) - 1rem)', zIndex: 10, backgroundColor: 'var(--color-bg-surface)', padding: '2rem 0 0 0', margin: '-2rem 0 0 0', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ position: 'sticky', top: 'calc(var(--header-height) + var(--env-banner-offset, 0px))', zIndex: 10, backgroundColor: 'var(--color-bg-surface)', padding: '2rem 0 0 0', margin: '-2rem 0 0 0', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <Feedback type={feedback.type} message={feedback.message} onClose={() => setFeedback(prev => ({ ...prev, message: null }))} />
                 </div>
             )}

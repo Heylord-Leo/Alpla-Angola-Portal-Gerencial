@@ -965,7 +965,7 @@ function QuickViewerDrawer({ open, selectedTransfer, timelineData, timelineLoadi
                         onClick={onClose}
                         style={{
                             position: 'fixed',
-                            top: 'var(--header-height)',
+                            top: 'calc(var(--header-height) + var(--env-banner-offset, 0px))',
                             left: 0, right: 0, bottom: 0,
                             backgroundColor: 'rgba(0, 0, 0, 0.35)',
                             zIndex: 1000,
@@ -981,9 +981,9 @@ function QuickViewerDrawer({ open, selectedTransfer, timelineData, timelineLoadi
                         transition={{ type: 'spring', stiffness: 400, damping: 35 }}
                         style={{
                             position: 'fixed',
-                            top: 'var(--header-height)',
+                            top: 'calc(var(--header-height) + var(--env-banner-offset, 0px))',
                             right: 0,
-                            height: 'calc(100vh - var(--header-height))',
+                            height: 'calc(100vh - var(--header-height) - var(--env-banner-offset, 0px))',
                             width: `min(${DRAWER_WIDTH}px, 100vw)`,
                             backgroundColor: 'var(--color-bg-surface)',
                             borderLeft: '1px solid var(--color-border)',

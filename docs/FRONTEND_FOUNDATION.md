@@ -124,7 +124,7 @@ The application automatically detects whether it is running in TEST or PRODUCTIO
 1. **Backend-Driven Configuration**: `GET /api/app/environment` (anonymous) returns `code`, `name`, and `showBanner`. PROD defaults to no banner. TEST is configured via IIS environment variables (`AppEnvironment__Code`, `AppEnvironment__Name`, `AppEnvironment__ShowBanner`).
 2. **EnvironmentContext**: `src/frontend/src/contexts/EnvironmentContext.tsx` fetches from the API with a URL-based fallback (`localhost`/`test` hostname → TEST). Provides `useEnvironment()` hook returning `{ code, name, showBanner, isTest }`.
 3. **EnvironmentBanner**: `src/frontend/src/components/ui/EnvironmentBanner.tsx` — fixed amber banner at `z-index: 10000` (above all other elements). Rendered once: via `AppShell` for authenticated pages, or directly in `LoginPage`/`ResetPasswordPage` for public pages.
-4. **Layout Offset**: CSS variable `--env-banner-height` (32px when TEST, 0 when PROD) offsets the topbar, sidebar, and main content. Applied in `globals.css`.
+4. **Layout Offset**: CSS variables `--env-banner-height` (32px when TEST, 0 when PROD) and `--env-banner-offset` are used to offset the topbar, sidebar, main content, and sticky headers. Applied in `globals.css`.
 5. **Sidebar TEST Badge**: An amber pill badge in the sidebar header area, visible only in TEST.
 6. **Browser Title Prefix**: `[TEST] Portal Gerencial` set via `useEffect` in the context provider.
 7. **LiveBoard Compact Strip**: `OperationsLiveBoardPage.tsx` renders a compact 24px inline amber strip instead of the full fixed banner.

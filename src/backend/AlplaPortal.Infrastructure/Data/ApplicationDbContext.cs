@@ -33,6 +33,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Request> Requests => Set<Request>();
     public DbSet<RequestLineItem> RequestLineItems => Set<RequestLineItem>();
     public DbSet<RequestStatusHistory> RequestStatusHistories => Set<RequestStatusHistory>();
+    public DbSet<RequestFieldChangeHistory> RequestFieldChangeHistories => Set<RequestFieldChangeHistory>();
     public DbSet<RequestAttachment> RequestAttachments => Set<RequestAttachment>();
     public DbSet<Quotation> Quotations => Set<Quotation>();
     public DbSet<QuotationItem> QuotationItems => Set<QuotationItem>();
@@ -705,6 +706,30 @@ public class ApplicationDbContext : DbContext
 
         modelBuilder.Entity<RequestLineItem>().HasIndex(r => r.RequestId);
         modelBuilder.Entity<RequestLineItem>().HasIndex(r => new { r.RequestId, r.IsDeleted });
+
+        // ─── Request Field Change History (Audit Trail) ───
+        modelBuilder.Entity<RequestFieldChangeHistory>(entity =>
+        {
+            entity.HasIndex(h => h.RequestId)
+                .HasDatabaseName("IX_RequestFieldChangeHistories_RequestId");
+            entity.HasIndex(h => h.ActorUserId)
+                .HasDatabaseName("IX_RequestFieldChangeHistories_ActorUserId");
+
+            entity.HasOne(h => h.Request)
+                .WithMany()
+                .HasForeignKey(h => h.RequestId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(h => h.ActorUser)
+                .WithMany()
+                .HasForeignKey(h => h.ActorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(h => h.LineItem)
+                .WithMany()
+                .HasForeignKey(h => h.LineItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
 
         modelBuilder.Entity<RequestAttachment>().HasIndex(ra => ra.FileHash).HasFilter("[FileHash] IS NOT NULL");
 

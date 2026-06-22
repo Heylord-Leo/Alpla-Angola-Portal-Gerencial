@@ -183,7 +183,7 @@ export function CatalogItemsPanel({ setFeedback }: CatalogItemsPanelProps) {
                 borderRadius: 'var(--radius-lg)',
                 border: '1px solid var(--color-border)',
                 position: 'sticky',
-                top: 'calc(var(--header-height) + 1rem)'
+                top: 'calc(var(--header-height) + 1rem + var(--env-banner-offset, 0px))'
             }}>
                 <h2 style={{
                     marginTop: 0,

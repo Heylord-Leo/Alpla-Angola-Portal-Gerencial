@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { Z_INDEX } from '../../constants/ui';
 import { User, LogOut, Key, ChevronDown, Moon, Sun, Monitor } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
 import { useAuth } from '../../features/auth/AuthContext';
@@ -88,7 +89,7 @@ export function UserDropdown() {
                                 backgroundColor: 'var(--color-bg-surface)',
                                 border: '1px solid var(--color-border)',
                                 boxShadow: 'var(--shadow-lg)',
-                                zIndex: 100,
+                                zIndex: Z_INDEX.POPOVER as any,
                                 padding: '8px 0'
                             }}
                         >
