@@ -52,8 +52,8 @@ export const RequestActionHeader: React.FC<RequestActionHeaderProps> = ({
             marginBottom: '16px',
         } : {
             position: 'sticky',
-            top: 'calc(var(--header-height) - 1rem)',
-            zIndex: Z_INDEX.STICKY as any,
+            top: 'calc(var(--header-height) + var(--env-banner-offset, 0px))',
+            zIndex: isDrawerMode ? 10 : Z_INDEX.STICKY as any,
             backgroundColor: 'var(--color-bg-page)',
             margin: '-1rem -24px 0 -24px',
             padding: '8px 24px 0 24px',

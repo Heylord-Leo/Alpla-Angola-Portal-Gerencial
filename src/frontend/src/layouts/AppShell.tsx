@@ -51,7 +51,7 @@ export function AppShell({ children }: AppShellProps) {
 
     return (
         <GuidedTourProvider>
-            <div className={`app-shell${showBanner ? ' has-env-banner' : ''}`} style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: 'var(--color-bg-page)', paddingTop: showBanner ? 'var(--env-banner-height)' : undefined, overflowX: 'hidden' }}>
+            <div className={`app-shell${showBanner ? ' has-env-banner' : ''}`} style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: 'var(--color-bg-page)', paddingTop: showBanner ? 'var(--env-banner-height)' : undefined, overflowX: 'clip' }}>
                 {/* Environment indicator — rendered once for authenticated pages */}
                 <EnvironmentBanner />
 
@@ -102,7 +102,7 @@ export function AppShell({ children }: AppShellProps) {
                             flexDirection: 'column',
                             minWidth: 0,
                             maxWidth: '100%',
-                            overflowX: 'hidden',
+                            overflowX: 'clip',
                             padding: '1.5rem',
                             position: 'relative'
                         }}

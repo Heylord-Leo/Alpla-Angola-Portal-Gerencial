@@ -128,5 +128,21 @@ public class RequestStatusHistoryDto
     public string NewStatusName { get; set; } = string.Empty;
     public string? Comment { get; set; }
     public DateTime CreatedAtUtc { get; set; }
+    public Guid ActorUserId { get; set; }
+    public string ActorName { get; set; } = string.Empty;
+    public List<RequestFieldChangeHistoryDto> FieldChanges { get; set; } = new();
+}
+
+public class RequestFieldChangeHistoryDto
+{
+    public Guid Id { get; set; }
+    public string FieldName { get; set; } = string.Empty;
+    public string FieldDisplayName { get; set; } = string.Empty;
+    public string? PreviousValue { get; set; }
+    public string? NewValue { get; set; }
+    public string StatusCodeAtChange { get; set; } = string.Empty;
+    public Guid? LineItemId { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
     public string ActorName { get; set; } = string.Empty;
 }
+

@@ -2,8 +2,21 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
-## [v2.196.0] - 2026-06-18
+## [v2.197.0] - 2026-06-22
 
+### Added — Request Field-Level Audit Trail & Edit Permissions
+
+- **Field-Level Audit Trail**: Added automatic tracking of individual field changes during Request modifications. A new `Histórico do Pedido` section now displays old vs. new values for tracked fields (e.g., Description, Department, Need Level, Dates).
+- **Edit Permissions Enforcement**: Restricted Request modification (Editing) strictly to the original Requester (Creator). Other roles can no longer edit a request, except for specific workflow transitions.
+
+### Fixed — IVA Partial Save Bug & Global Layout Overlapping
+
+- **IVA Partial Save Bug**: Fixed an issue where IVA percentages were not persisting correctly during partial request saves by ensuring backend entity propagation.
+- **Global Layout Constraints**: Addressed overlapping UI elements globally.
+  - Stabilized `--header-height` to `64px` and removed destructive `overflow: hidden` on Topbar to fix dropdown clipping.
+  - Introduced `--env-banner-offset` to smartly adapt sticky headers across environments (TEST vs PROD), correcting sticky positioning on `RequestActionHeader`, `ApprovalCenter`, `BuyerItemsList`, `OperationsTransfersPage`, `MasterData`, and `CatalogItemsPanel`.
+
+## [v2.196.0] - 2026-06-18
 ### Added — AI OCR Technical Hardening & Compliance Package
 
 **Security & Compliance Hardening:**

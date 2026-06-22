@@ -456,6 +456,7 @@ tr:hover td {
 
 :root {
     --env-banner-height: 32px;
+    --env-banner-offset: 0px;
 }
 
 .env-banner {
@@ -504,6 +505,9 @@ tr:hover td {
 }
 
 /* Layout offset when banner is visible */
+.has-env-banner {
+    --env-banner-offset: var(--env-banner-height);
+}
 .has-env-banner [data-tour="topbar"] {
     top: var(--env-banner-height);
 }

@@ -149,8 +149,23 @@ export interface RequestStatusHistoryDto {
     newStatusName: string;
     comment?: string;
     createdAtUtc: string;
+    actorUserId: string;
+    actorName: string;
+    fieldChanges: RequestFieldChangeHistoryDto[];
+}
+
+export interface RequestFieldChangeHistoryDto {
+    id: string;
+    fieldName: string;
+    fieldDisplayName: string;
+    previousValue?: string;
+    newValue?: string;
+    statusCodeAtChange: string;
+    lineItemId?: string;
+    createdAtUtc: string;
     actorName: string;
 }
+
 
 export interface RequestAttachmentDto {
     id: string;

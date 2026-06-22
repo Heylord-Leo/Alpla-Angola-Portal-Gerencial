@@ -555,7 +555,36 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                                         <div style={{ fontSize: '0.85rem' }}>
                                             <span style={{ fontWeight: 700, display: 'block', marginBottom: '4px' }}>{entry.actorName}</span>
                                             {entry.comment && (
-                                                <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', fontSize: '0.8rem' }}>"{entry.comment}"</span>
+                                                <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', fontSize: '0.8rem', display: 'block', marginBottom: entry.fieldChanges && entry.fieldChanges.length > 0 ? '8px' : '0px' }}>"{entry.comment}"</span>
+                                            )}
+                                            {entry.fieldChanges && entry.fieldChanges.length > 0 && (
+                                                <div style={{
+                                                    marginTop: '8px',
+                                                    padding: '10px 14px',
+                                                    backgroundColor: 'var(--color-bg-page)',
+                                                    borderRadius: 'var(--radius-md)',
+                                                    border: '1px solid var(--color-border)',
+                                                    fontSize: '0.75rem',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    gap: '6px'
+                                                }}>
+                                                    <div style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>
+                                                        Alterações Detalhadas:
+                                                    </div>
+                                                    {entry.fieldChanges.map((change) => (
+                                                        <div key={change.id} style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', lineHeight: '1.4' }}>
+                                                            <span style={{ fontWeight: 700, color: 'var(--color-text-main)' }}>{change.fieldDisplayName}:</span>
+                                                            <span style={{ color: 'var(--color-text-muted)', textDecoration: 'line-through', backgroundColor: 'rgba(239, 68, 68, 0.08)', padding: '1px 4px', borderRadius: '4px' }}>
+                                                                {change.previousValue || 'vazio'}
+                                                            </span>
+                                                            <span style={{ color: 'var(--color-text-muted)' }}>➔</span>
+                                                            <span style={{ fontWeight: 700, color: 'var(--color-primary)', backgroundColor: 'rgba(var(--color-primary-rgb), 0.08)', padding: '1px 4px', borderRadius: '4px' }}>
+                                                                {change.newValue || 'vazio'}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             )}
                                         </div>
                                     </div>

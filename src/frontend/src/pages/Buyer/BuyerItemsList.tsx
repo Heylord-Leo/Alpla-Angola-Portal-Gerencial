@@ -1353,7 +1353,7 @@ export function BuyerItemsList() {
             {feedback.message && (
                 <div style={{
                     position: 'sticky',
-                    top: 'calc(var(--header-height) - 1rem)',
+                    top: 'calc(var(--header-height) + var(--env-banner-offset, 0px))',
                     zIndex: 110,
                     backgroundColor: 'var(--color-bg-page)',
                     padding: '2rem 0 0 0',
