@@ -2,7 +2,17 @@
 
 ## Current Version
 
-v2.197.0
+v2.198.0
+
+## [v2.198.0] - 2026-06-22
+
+### Added — User Onboarding Email Flow
+
+- **Secure Password Setup**: Added an onboarding email flow for newly created users containing a secure token link instead of transmitting plain-text passwords.
+- **Branding Correction**: Corrected email footer text to "ALPLA Angola".
+- **UI Notifications**: Replaced browser `alert()` popups with consistent custom `toast` notifications in User Management.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.197.0] - 2026-06-22
 

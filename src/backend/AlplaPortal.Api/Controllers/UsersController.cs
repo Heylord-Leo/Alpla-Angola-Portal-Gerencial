@@ -8,6 +8,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 
+using Microsoft.Extensions.Configuration;
+
 namespace AlplaPortal.Api.Controllers;
 
 [ApiController]
@@ -19,6 +21,9 @@ public class UsersController : BaseController
     private readonly IAuthService _authService;
     private readonly IPasswordHasher _passwordHasher;
 
+    private readonly IEmailService _emailService;
+    private readonly IConfiguration _configuration;
+
     // Roles allowed for Local Managers to assign
     private static readonly string[] AllowedRolesForLM = 
     { 
@@ -29,11 +34,15 @@ public class UsersController : BaseController
         ApplicationDbContext context, 
         AdminLogWriter adminLogWriter,
         IAuthService authService,
-        IPasswordHasher passwordHasher) : base(context)
+        IPasswordHasher passwordHasher,
+        IEmailService emailService,
+        IConfiguration configuration) : base(context)
     {
         _adminLogWriter = adminLogWriter;
         _authService = authService;
         _passwordHasher = passwordHasher;
+        _emailService = emailService;
+        _configuration = configuration;
     }
     
     [HttpGet("me")]
@@ -132,7 +141,7 @@ public class UsersController : BaseController
     }
 
     [HttpPost]
-    public async Task<ActionResult<ResetPasswordResponseDto>> CreateUser([FromBody] CreateUserDto dto)
+    public async Task<ActionResult<CreateUserResponseDto>> CreateUser([FromBody] CreateUserDto dto)
     {
         if (await _context.Users.AnyAsync(u => u.Email == dto.Email))
         {
@@ -154,14 +163,13 @@ public class UsersController : BaseController
             if (!await CheckScopePermissions(dto.PlantIds, dto.DepartmentIds)) return BadRequest(new { message = "Não tem permissão para atribuir este escopo de acesso." });
         }
 
-        var tempPassword = _passwordHasher.GenerateRandomPassword();
         var user = new User
         {
             FullName = dto.FullName,
             Email = dto.Email,
             IsActive = dto.IsActive,
             MustChangePassword = true,
-            PasswordHash = _passwordHasher.HashPassword(tempPassword),
+            PasswordHash = null,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -182,12 +190,39 @@ public class UsersController : BaseController
 
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
+            
+            // Password setup token generation
+            var token = await _authService.GeneratePasswordSetupTokenAsync(user.Id);
+            
+            // Try to send email
+            var frontendBaseUrl = _configuration["AppConfig:FrontendBaseUrl"] ?? "http://localhost:5173";
+            var encodedEmail = Uri.EscapeDataString(user.Email);
+            var passwordSetupUrl = $"{frontendBaseUrl}/reset-password?token={token}&email={encodedEmail}";
+            
+            var expirationHoursConfig = _configuration["AppConfig:UserOnboarding:PasswordSetupTokenExpirationHours"];
+            if (!int.TryParse(expirationHoursConfig, out int expirationHours))
+            {
+                expirationHours = 24;
+            }
 
-            await _adminLogWriter.WriteAsync("Activity", "UserManagement", "USER_CREATED", 
-                $"Utilizador {user.Email} criado por {User.FindFirstValue(ClaimTypes.Email)}", 
-                payload: System.Text.Json.JsonSerializer.Serialize(new { user.Id, user.Email, dto.RoleIds }));
+            var emailSent = await _emailService.SendOnboardingEmailAsync(user.Email, user.FullName, frontendBaseUrl, passwordSetupUrl, expirationHours);
 
-            return Ok(new ResetPasswordResponseDto { NewPassword = tempPassword });
+            if (emailSent)
+            {
+                await _adminLogWriter.WriteAsync("Activity", "UserManagement", "USER_CREATED", 
+                    $"Utilizador {user.Email} criado por {User.FindFirstValue(ClaimTypes.Email)} e e-mail de onboarding enviado.", 
+                    payload: System.Text.Json.JsonSerializer.Serialize(new { user.Id, user.Email, dto.RoleIds, EmailSent = true }));
+                
+                return Ok(new CreateUserResponseDto { EmailSent = true, Message = "Utilizador criado e e-mail de onboarding enviado com sucesso." });
+            }
+            else
+            {
+                await _adminLogWriter.WriteAsync("Warning", "UserManagement", "ONBOARDING_EMAIL_FAILED", 
+                    $"Utilizador {user.Email} criado por {User.FindFirstValue(ClaimTypes.Email)}, mas envio do e-mail falhou.", 
+                    payload: System.Text.Json.JsonSerializer.Serialize(new { user.Id, user.Email, dto.RoleIds, EmailSent = false }));
+                
+                return Ok(new CreateUserResponseDto { EmailSent = false, Message = "Utilizador criado, mas não foi possível enviar o e-mail de onboarding. Verifique as configurações SMTP ou contacte o administrador." });
+            }
         }
         catch (Exception ex)
         {

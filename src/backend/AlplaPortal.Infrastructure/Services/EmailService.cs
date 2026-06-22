@@ -205,6 +205,124 @@ public class EmailService : IEmailService
     //  Public Email Methods
     // ═══════════════════════════════════════════════════════════════
 
+    public async Task<bool> SendOnboardingEmailAsync(string toEmail, string userFullName, string portalUrl, string passwordSetupUrl, int expirationHours)
+    {
+        try
+        {
+            var smtp = await _smtpSettingsService.GetEffectiveSettingsAsync();
+
+            if (!_env.IsDevelopment() && (passwordSetupUrl.Contains("localhost") || passwordSetupUrl.Contains("127.0.0.1")))
+            {
+                var errorMsg = "CRITICAL: Attempted to generate a transactional email containing localhost URLs outside of Development environment. Operation aborted to protect production integrity.";
+                _logger.LogCritical(errorMsg);
+                throw new InvalidOperationException(errorMsg);
+            }
+
+            if (string.IsNullOrEmpty(smtp.Server) || string.IsNullOrEmpty(smtp.SenderEmail) || string.IsNullOrEmpty(smtp.Password))
+            {
+                _logger.LogError("SMTP configuration is missing or incomplete. Server: {Server}, SenderEmail: {SenderEmail}, HasPassword: {HasPwd}",
+                    smtp.Server, smtp.SenderEmail, !string.IsNullOrEmpty(smtp.Password));
+                return false;
+            }
+
+            _logger.LogInformation("Building onboarding email for {Email} with setup link: {SetupUrl}", toEmail, passwordSetupUrl);
+
+            var fromAddress = new MailAddress(smtp.SenderEmail, smtp.SenderName);
+            var toAddress = new MailAddress(toEmail);
+
+            using var smtpClient = new SmtpClient(smtp.Server, smtp.Port)
+            {
+                Credentials = new NetworkCredential(smtp.SenderEmail, smtp.Password),
+                EnableSsl = smtp.EnableSsl
+            };
+
+            var logoPath = ResolveLogoPath();
+            var hasLogo = logoPath != null;
+
+            var logoHtml = hasLogo
+                ? $"<img src='cid:{LogoContentId}' alt='ALPLA Portal' style='max-width: 150px; margin-bottom: 20px;' />"
+                : "<h2 style='color: #002D72; margin-bottom: 20px;'>ALPLA Portal</h2>";
+
+            var body = $@"
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8' />
+    <meta name='viewport' content='width=device-width, initial-scale=1.0' />
+    <style>
+        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 0; padding: 0; color: #333333; }}
+        .container {{ max-width: 600px; margin: 30px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }}
+        .header {{ background-color: #ffffff; padding: 25px 30px; text-align: center; border-bottom: 3px solid #002D72; }}
+        .content {{ padding: 30px; line-height: 1.6; }}
+        .button {{ display: inline-block; background-color: #002D72; color: #ffffff !important; text-decoration: none; padding: 12px 25px; border-radius: 4px; font-weight: bold; margin: 20px 0; }}
+        .footer {{ background-color: #f8f9fa; padding: 20px 30px; text-align: center; font-size: 12px; color: #6c757d; border-top: 1px solid #e9ecef; }}
+        .expiry-note {{ background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; margin: 20px 0; font-size: 13px; color: #856404; }}
+    </style>
+</head>
+<body>
+    <div class='container'>
+        <div class='header'>
+            {logoHtml}
+        </div>
+        <div class='content'>
+            <h2 style='color: #002D72; margin-top: 0;'>Bem-vindo(a) ao Portal Gerencial ALPLA</h2>
+            <p>Olá <strong>{userFullName}</strong>,</p>
+            <p>O seu perfil de utilizador foi criado com sucesso no Portal Gerencial ALPLA.</p>
+            <p>Para concluir a configuração da sua conta e aceder ao sistema (<a href='{portalUrl}'>{portalUrl}</a>), por favor defina a sua palavra-passe clicando no botão abaixo:</p>
+            
+            <div style='text-align: center;'>
+                <a href='{passwordSetupUrl}' class='button'>Definir Palavra-Passe</a>
+            </div>
+            
+            <div class='expiry-note'>
+                <strong>Atenção:</strong> Por motivos de segurança, este link é válido por apenas {expirationHours} horas.
+                Após este período, deverá utilizar a opção 'Esqueci a palavra-passe' no ecrã de login ou contactar a equipa de TI.
+            </div>
+            
+            <p>Se tiver alguma dificuldade de acesso, por favor contacte o suporte de TI.</p>
+        </div>
+        <div class='footer'>
+            <p>Este é um e-mail automático gerado pelo sistema. Por favor, não responda a esta mensagem.</p>
+            <p>&copy; {DateTime.UtcNow.Year} ALPLA Angola. Todos os direitos reservados.</p>
+        </div>
+    </div>
+</body>
+</html>";
+
+            using var message = new MailMessage(fromAddress, toAddress)
+            {
+                Subject = "Portal Gerencial — Acesso ao Sistema",
+                Body = body,
+                IsBodyHtml = true
+            };
+
+            var htmlView = AlternateView.CreateAlternateViewFromString(body, null, MediaTypeNames.Text.Html);
+            if (hasLogo)
+            {
+                var logoResource = new LinkedResource(logoPath!)
+                {
+                    ContentId = LogoContentId,
+                    ContentType = new ContentType("image/png")
+                };
+                htmlView.LinkedResources.Add(logoResource);
+            }
+            message.AlternateViews.Add(htmlView);
+
+            // Important: Apply central environment policies (subject prefixes, DEV redirects, etc.)
+            await ApplyEnvironmentPolicy(message, smtp, toEmail);
+
+            await smtpClient.SendMailAsync(message);
+            _logger.LogInformation("Onboarding email successfully sent to {Email}", toEmail);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send onboarding email to {Email}", toEmail);
+            return false;
+        }
+    }
+
     public async Task<bool> SendPasswordResetEmailAsync(string toEmail, string resetLink)
     {
         try

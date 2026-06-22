@@ -50,3 +50,9 @@ public class ResetPasswordResponseDto
 {
     public string NewPassword { get; set; } = string.Empty;
 }
+
+public class CreateUserResponseDto
+{
+    public bool EmailSent { get; set; }
+    public string Message { get; set; } = string.Empty;
+}

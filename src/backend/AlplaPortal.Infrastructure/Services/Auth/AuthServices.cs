@@ -10,6 +10,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using AlplaPortal.Infrastructure.Logging;
+using Microsoft.Extensions.Configuration;
 
 namespace AlplaPortal.Infrastructure.Services.Auth;
 
@@ -91,6 +92,7 @@ public class AuthService : IAuthService
     private readonly SecurityOptions _securityOptions;
     private readonly AdminLogWriter _adminLogWriter;
     private readonly IEmailService _emailService;
+    private readonly IConfiguration _configuration;
 
     public AuthService(
         ApplicationDbContext context, 
@@ -98,7 +100,8 @@ public class AuthService : IAuthService
         IJwtService jwtService,
         IOptions<SecurityOptions> securityOptions,
         AdminLogWriter adminLogWriter,
-        IEmailService emailService)
+        IEmailService emailService,
+        IConfiguration configuration)
     {
         _context = context;
         _passwordHasher = passwordHasher;
@@ -106,6 +109,7 @@ public class AuthService : IAuthService
         _securityOptions = securityOptions.Value;
         _adminLogWriter = adminLogWriter;
         _emailService = emailService;
+        _configuration = configuration;
     }
 
     public async Task<LoginResponse?> LoginAsync(LoginRequest request)
@@ -242,6 +246,32 @@ public class AuthService : IAuthService
         await _emailService.SendPasswordResetEmailAsync(user.Email, resetLink);
         
         return true;
+    }
+
+    public async Task<string> GeneratePasswordSetupTokenAsync(Guid userId)
+    {
+        var user = await _context.Users.FindAsync(userId);
+        if (user == null) throw new KeyNotFoundException("User not found.");
+
+        string token = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
+        token = token.Replace("+", "-").Replace("/", "_").TrimEnd('=');
+
+        var expirationHoursConfig = _configuration["AppConfig:UserOnboarding:PasswordSetupTokenExpirationHours"];
+        if (!int.TryParse(expirationHoursConfig, out int expirationHours))
+        {
+            expirationHours = 24;
+        }
+
+        user.PasswordResetToken = token;
+        user.PasswordResetTokenExpiryUtc = DateTime.UtcNow.AddHours(expirationHours);
+        
+        // We ensure PasswordHash is null or kept null (or dummy if required by DB constraint, but EF/SQL allows null here as per entity definition)
+        user.PasswordHash = null;
+        user.MustChangePassword = true;
+        
+        await _context.SaveChangesAsync();
+
+        return token;
     }
 
     public async Task<bool> ResetPasswordWithTokenAsync(string email, string token, string newPassword)

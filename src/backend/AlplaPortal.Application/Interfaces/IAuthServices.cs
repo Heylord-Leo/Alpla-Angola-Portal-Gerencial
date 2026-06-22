@@ -21,5 +21,6 @@ public interface IAuthService
     Task<bool> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword);
     Task<string> ResetPasswordAsync(Guid userId); // Returns new temp password
     Task<bool> ForgotPasswordAsync(string email, string frontendBaseUrl);
+    Task<string> GeneratePasswordSetupTokenAsync(Guid userId);
     Task<bool> ResetPasswordWithTokenAsync(string email, string token, string newPassword);
 }
