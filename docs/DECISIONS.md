@@ -2,6 +2,24 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-143 — Accounts Payable Email Notification System
+
+- **Date:** 2026-06-23
+- **Status:** Accepted
+- **Context:** The Portal Gerencial processes payment requests for two companies (Plastic and Sopro), each with a dedicated external Accounts Payable mailbox. When a payment request reaches scheduling or completion status, the AP team needs to be notified by email. The AP mailboxes are NOT portal users — they are external inbox addresses. The notification must be company-specific, configurable by administrators, and must not block the payment workflow if email delivery fails.
+- **Decision:**
+    1. **Dedicated Configuration Table (Option B):** Created `AccountsPayableNotificationConfigs` with fields: `CompanyId` (unique FK), `Email`, `CcEmails` (semicolon-separated), `Label`, `IsActive`, `NotifyOnScheduled`, `NotifyOnCompleted`, audit timestamps. Rejected the simpler Option A (adding a nullable field to `Companies` table) because it does not support CC, activation toggles, event-level control, or future extensibility.
+    2. **Dedicated Log Table:** Created `AccountsPayableNotificationLogs` with a filtered unique index `IX_ApNotifLogs_Dedup` on `(RequestId, EventCode, RecipientEmail) WHERE Success=1 AND Skipped=0` for duplicate prevention.
+    3. **CC Handling:** CC emails are sent as real CC on the email message, not as separate email sends. `IEmailService.SendEmailAsync` extended with an optional `ccRecipients` parameter. `ApplyEnvironmentPolicy` clears both `message.To` and `message.CC` in non-production environments.
+    4. **Non-Blocking Integration:** `WorkflowNotificationOrchestrator.EmitAsync` wraps AP notification calls in a try-catch. Failures are logged but do not propagate — the payment status change always succeeds regardless of email delivery outcome.
+    5. **Company Routing:** `CompanyId` added to `WorkflowEvent` payload. `FinanceController` endpoints now include `CompanyId` when emitting `PAYMENT_SCHEDULED` and `PAYMENT_COMPLETED` events. The orchestrator resolves the AP config by `CompanyId` from the event payload.
+    6. **Master Data UI:** AP configs are managed via a new "📧 E-mails Contas a Pagar" tab in the existing Master Data page. No new routes, drawers, or modals. Administrators can create, edit, and delete configs per company. No auto-seeding — administrators manage all configs manually.
+    7. **No Token/Auth for AP emails:** AP mailboxes are external recipients, not portal users. No user account creation or authentication is involved.
+- **Alternatives considered:** (1) Adding a single `AccountsPayableEmail` column to the `Companies` table (Option A — rejected: no CC support, no activation toggle, no event-level control, no logging). (2) Sending CC as a separate email call (rejected: not real CC, would appear as a separate email in the recipient's inbox). (3) Auto-seeding config rows for known companies (rejected: user requested administrator-managed configs via UI).
+- **Consequences:** AP email notifications are fully configurable per company. The system is extensible for future companies. Email delivery failures are tracked in the log table. Non-production environments are protected from accidental external emails. The dedup index prevents duplicate notifications on retries.
+
+---
+
 ## DEC-142 — IT Equipment Module Master Data & Catalogs
 
 - **Date:** 2026-06-12

@@ -9,6 +9,7 @@ import { Edit2, Power, PowerOff, Search, Database } from 'lucide-react';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { CatalogItemsPanel } from './CatalogItemsPanel';
+import { ApNotificationsPanel } from './ApNotificationsPanel';
 
 function debounce<T extends (...args: any[]) => void>(fn: T, delay: number) {
     let timeoutId: number | undefined;
@@ -34,7 +35,7 @@ export function MasterData() {
     const [loading, setLoading] = useState(true);
 
     // Form states
-    const [activeTab, setActiveTab] = useState<'units' | 'currencies' | 'needLevels' | 'departments' | 'plants' | 'suppliers' | 'costCenters' | 'ivaRates' | 'companies' | 'contractTypes' | 'catalogItems'>('units');
+    const [activeTab, setActiveTab] = useState<'units' | 'currencies' | 'needLevels' | 'departments' | 'plants' | 'suppliers' | 'costCenters' | 'ivaRates' | 'companies' | 'contractTypes' | 'catalogItems' | 'apNotificationConfigs'>('units');
 
     // Suppliers Search State
     const [supplierSearchQuery, setSupplierSearchQuery] = useState('');
@@ -338,7 +339,8 @@ export function MasterData() {
                     { id: 'ivaRates', label: 'Taxas de IVA' },
                     { id: 'companies', label: 'Empresas' },
                     { id: 'contractTypes', label: 'Tipos de Contrato' },
-                    { id: 'catalogItems', label: '📦 Catálogo de Itens' }
+                    { id: 'catalogItems', label: '📦 Catálogo de Itens' },
+                    { id: 'apNotificationConfigs', label: '📧 E-mails Contas a Pagar' }
                 ].map((tab) => (
                     <button
                         key={tab.id}
@@ -371,6 +373,12 @@ export function MasterData() {
                 <CatalogItemsPanel
                     feedback={feedback}
                     setFeedback={setFeedback}
+                />
+            ) : activeTab === 'apNotificationConfigs' ? (
+                <ApNotificationsPanel
+                    feedback={feedback}
+                    setFeedback={setFeedback}
+                    companies={companies}
                 />
             ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '32px', alignItems: 'start' }}>

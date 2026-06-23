@@ -2,7 +2,20 @@
 
 ## Current Version
 
-v2.198.0
+v2.199.0
+
+## [v2.199.0] - 2026-06-23
+
+### Added — Accounts Payable Email Notification System
+
+- **AP Notification Configuration**: Dedicated `AccountsPayableNotificationConfigs` table and Master Data UI panel for per-company AP email settings.
+- **AP Notification Logging**: `AccountsPayableNotificationLogs` table with duplicate prevention.
+- **Workflow Integration**: `PAYMENT_SCHEDULED` and `PAYMENT_COMPLETED` trigger AP emails with `CompanyId` routing.
+- **CC Support**: Real CC handling via email service.
+- **Non-Blocking Failures**: Email failures logged, do not block payment workflow.
+- **Environment Policy**: `ApplyEnvironmentPolicy` clears both TO and CC in non-prod.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.198.0] - 2026-06-22
 

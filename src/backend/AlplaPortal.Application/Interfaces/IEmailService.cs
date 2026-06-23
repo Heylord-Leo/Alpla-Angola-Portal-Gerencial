@@ -16,7 +16,8 @@ public interface IEmailService
     /// <param name="bodyHtml">HTML content for the main message area.</param>
     /// <param name="actionUrl">Optional CTA button URL.</param>
     /// <param name="actionLabel">Optional CTA button label (e.g., "Ver Pedido").</param>
-    Task<bool> SendWorkflowNotificationAsync(string toEmail, string recipientName, string subject, string headline, string bodyHtml, string? actionUrl = null, string? actionLabel = null);
+    /// <param name="ccEmails">Optional CC email addresses, separated by semicolon (;) or comma (,).</param>
+    Task<bool> SendWorkflowNotificationAsync(string toEmail, string recipientName, string subject, string headline, string bodyHtml, string? actionUrl = null, string? actionLabel = null, string? ccEmails = null);
 
     /// <summary>
     /// Sends a branded workflow notification email with a file attachment.

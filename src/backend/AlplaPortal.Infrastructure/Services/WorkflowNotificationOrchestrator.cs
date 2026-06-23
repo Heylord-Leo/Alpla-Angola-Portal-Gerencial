@@ -69,6 +69,20 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 
                 await DispatchToRecipientAsync(evt, eventConfig, recipient);
             }
+
+            // ── Accounts Payable external notification (independent from in-app dispatch) ──
+            if (evt.EventCode == WorkflowEventCodes.PaymentScheduled || evt.EventCode == WorkflowEventCodes.PaymentCompleted)
+            {
+                try
+                {
+                    await SendAccountsPayableNotificationAsync(evt);
+                }
+                catch (Exception apEx)
+                {
+                    // AP notification failure must NEVER propagate — payment workflow is unaffected
+                    _logger.LogWarning(apEx, "Non-critical: Accounts Payable notification failed for {EventCode} on Request {RequestId}", evt.EventCode, evt.RequestId);
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -377,6 +391,178 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 EmailBodyOverride = htmlOverride
             });
         }
+    }
+
+    // =====================================================================
+    //  Accounts Payable External Notification
+    // =====================================================================
+
+    /// <summary>
+    /// Sends an Accounts Payable notification email to the configured external mailbox
+    /// for the request's company. Non-blocking — failures are logged but never stall
+    /// the payment workflow.
+    /// </summary>
+    private async Task SendAccountsPayableNotificationAsync(WorkflowEvent evt)
+    {
+        if (!evt.CompanyId.HasValue)
+        {
+            _logger.LogDebug("AP notification skipped: no CompanyId on WorkflowEvent for Request {RequestId}", evt.RequestId);
+            return;
+        }
+
+        var config = await _context.AccountsPayableNotificationConfigs
+            .AsNoTracking()
+            .Include(c => c.Company)
+            .FirstOrDefaultAsync(c => c.CompanyId == evt.CompanyId.Value && c.IsActive);
+
+        if (config == null)
+        {
+            _logger.LogInformation("No active Accounts Payable notification configuration found for CompanyId {CompanyId}. Payment workflow continues normally.", evt.CompanyId.Value);
+            return;
+        }
+
+        // Per-event toggles
+        bool shouldNotify = evt.EventCode switch
+        {
+            WorkflowEventCodes.PaymentScheduled => config.NotifyOnScheduled,
+            WorkflowEventCodes.PaymentCompleted => config.NotifyOnCompleted,
+            _ => false
+        };
+
+        if (!shouldNotify)
+        {
+            _logger.LogDebug("AP notification disabled for event {EventCode} on CompanyId {CompanyId}", evt.EventCode, evt.CompanyId.Value);
+            return;
+        }
+
+        // Dedup check: prevent duplicate successful notifications
+        var alreadySent = await _context.AccountsPayableNotificationLogs
+            .AnyAsync(l => l.RequestId == evt.RequestId
+                        && l.EventCode == evt.EventCode
+                        && l.RecipientEmail == config.Email
+                        && l.Success && !l.Skipped);
+
+        if (alreadySent)
+        {
+            _context.AccountsPayableNotificationLogs.Add(new Domain.Entities.AccountsPayableNotificationLog
+            {
+                RequestId = evt.RequestId,
+                CompanyId = evt.CompanyId.Value,
+                EventCode = evt.EventCode,
+                RecipientEmail = config.Email,
+                CcEmails = config.CcEmails,
+                Subject = "(duplicate skipped)",
+                SentAtUtc = DateTime.UtcNow,
+                Success = false,
+                Skipped = true
+            });
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("AP notification skipped (duplicate) for {EventCode} on Request {RequestId} to {ApEmail}", evt.EventCode, evt.RequestId, config.Email);
+            return;
+        }
+
+        // Resolve request details for the email body
+        var req = await _context.Requests
+            .AsNoTracking()
+            .Include(r => r.Supplier)
+            .FirstOrDefaultAsync(r => r.Id == evt.RequestId);
+
+        if (req == null)
+        {
+            _logger.LogWarning("AP notification skipped: Request {RequestId} not found", evt.RequestId);
+            return;
+        }
+
+        var companyName = config.Company?.Name ?? "Empresa";
+        var supplierName = req.Supplier?.Name ?? "\u2014";
+        var currency = req.CurrencyId.HasValue
+            ? await _context.Currencies.AsNoTracking().Where(c => c.Id == req.CurrencyId).Select(c => c.Code).FirstOrDefaultAsync() ?? "AOA"
+            : "AOA";
+        var amount = req.ActualPaidAmount ?? req.EstimatedTotalAmount;
+        var reqRef = evt.RequestNumber;
+        var paymentState = evt.EventCode == WorkflowEventCodes.PaymentScheduled ? "Pagamento Agendado" : "Pagamento Realizado";
+
+        var subject = $"[Portal Gerencial] Novo pedido de pagamento para {companyName} \u2014 Pedido {reqRef}";
+        var headline = $"Notifica\u00e7\u00e3o de Contas a Pagar \u2014 {companyName}";
+        var bodyHtml = BuildApNotificationBody(reqRef, req.Title ?? "", supplierName, amount, currency, paymentState, evt.ActorName, companyName);
+
+        var frontendBaseUrl = _config["AppConfig:FrontendBaseUrl"]?.TrimEnd('/') ?? "";
+        var actionUrl = $"{frontendBaseUrl}/finance?requestId={evt.RequestId}";
+
+        try
+        {
+            var sent = await _emailService.SendWorkflowNotificationAsync(
+                config.Email, companyName, subject, headline, bodyHtml,
+                actionUrl, "Ver Pedido", config.CcEmails);
+
+            _context.AccountsPayableNotificationLogs.Add(new Domain.Entities.AccountsPayableNotificationLog
+            {
+                RequestId = evt.RequestId,
+                CompanyId = evt.CompanyId.Value,
+                EventCode = evt.EventCode,
+                RecipientEmail = config.Email,
+                CcEmails = config.CcEmails,
+                Subject = subject,
+                SentAtUtc = DateTime.UtcNow,
+                Success = sent,
+                ErrorMessage = sent ? null : "SendWorkflowNotificationAsync returned false"
+            });
+            await _context.SaveChangesAsync();
+
+            if (sent)
+                _logger.LogInformation("AP notification sent for {EventCode} on Request {RequestId} to {ApEmail}", evt.EventCode, evt.RequestId, config.Email);
+            else
+                _logger.LogWarning("AP notification SMTP returned false for {EventCode} on Request {RequestId} to {ApEmail}", evt.EventCode, evt.RequestId, config.Email);
+        }
+        catch (Exception ex)
+        {
+            // AP email failure must NEVER block the payment workflow
+            _context.AccountsPayableNotificationLogs.Add(new Domain.Entities.AccountsPayableNotificationLog
+            {
+                RequestId = evt.RequestId,
+                CompanyId = evt.CompanyId.Value,
+                EventCode = evt.EventCode,
+                RecipientEmail = config.Email,
+                CcEmails = config.CcEmails,
+                Subject = subject,
+                SentAtUtc = DateTime.UtcNow,
+                Success = false,
+                ErrorMessage = ex.Message.Length > 2000 ? ex.Message[..2000] : ex.Message
+            });
+            try { await _context.SaveChangesAsync(); }
+            catch (Exception logEx) { _logger.LogWarning(logEx, "Failed to persist AP notification failure log for Request {RequestId}", evt.RequestId); }
+
+            _logger.LogWarning(ex, "Non-critical: AP notification email failed for {EventCode} on Request {RequestId} to {ApEmail}", evt.EventCode, evt.RequestId, config.Email);
+        }
+    }
+
+    /// <summary>
+    /// Builds the neutral Portuguese email body for Accounts Payable notification.
+    /// </summary>
+    private static string BuildApNotificationBody(
+        string reqRef, string requestTitle, string supplierName,
+        decimal amount, string currency, string statusLabel,
+        string actorName, string companyName)
+    {
+        Func<string?, string> enc = System.Net.WebUtility.HtmlEncode;
+        var dateTime = DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm") + " (UTC)";
+
+        return $@"
+<p>Um pedido de pagamento entrou na lista de Contas a Pagar.</p>
+<div style='background-color:#f8f9fa; border:1px solid #dee2e6; padding:15px; border-radius:6px; margin:20px 0;'>
+    <table style='width:100%; font-size:14px; color:#333; border-collapse:collapse;'>
+        <tr><td style='padding:6px 0;'><b>Empresa:</b></td><td style='padding:6px 0;'>{enc(companyName)}</td></tr>
+        <tr><td style='padding:6px 0;'><b>Pedido:</b></td><td style='padding:6px 0;'>{enc(reqRef)}</td></tr>
+        <tr><td style='padding:6px 0;'><b>T&#237;tulo:</b></td><td style='padding:6px 0;'>{enc(requestTitle)}</td></tr>
+        <tr><td style='padding:6px 0;'><b>Fornecedor:</b></td><td style='padding:6px 0;'>{enc(supplierName)}</td></tr>
+        <tr><td style='padding:6px 0;'><b>Montante:</b></td><td style='padding:6px 0;'>{amount:N2} {currency}</td></tr>
+        <tr><td style='padding:6px 0;'><b>Status atual:</b></td><td style='padding:6px 0;'>{statusLabel}</td></tr>
+        <tr><td style='padding:6px 0;'><b>A&#231;&#227;o realizada por:</b></td><td style='padding:6px 0;'>{enc(actorName)}</td></tr>
+        <tr><td style='padding:6px 0;'><b>Data/hora:</b></td><td style='padding:6px 0;'>{dateTime}</td></tr>
+    </table>
+</div>
+<p style='font-size:13px; color:#666;'>Acesse o Portal Gerencial para consultar os detalhes do pedido.</p>
+<p style='font-size:12px; color:#999;'>Esta &#233; uma mensagem autom&#225;tica do Portal Gerencial.</p>";
     }
 
     private async Task AddUserRecipientAsync(List<NotificationRecipient> recipients, Guid? userId,

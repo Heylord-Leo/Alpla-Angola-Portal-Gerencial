@@ -131,6 +131,7 @@ public class EmailService : IEmailService
 
             // Replace recipients
             message.To.Clear();
+            message.CC.Clear(); // Also clear CC to prevent non-production leakage
             message.To.Add(new MailAddress(finalRecipient));
 
             _logger.LogWarning(
@@ -427,7 +428,7 @@ public class EmailService : IEmailService
     }
 
 
-    public async Task<bool> SendWorkflowNotificationAsync(string toEmail, string recipientName, string subject, string headline, string bodyHtml, string? actionUrl = null, string? actionLabel = null)
+    public async Task<bool> SendWorkflowNotificationAsync(string toEmail, string recipientName, string subject, string headline, string bodyHtml, string? actionUrl = null, string? actionLabel = null, string? ccEmails = null)
     {
         try
         {
@@ -493,6 +494,17 @@ public class EmailService : IEmailService
             {
                 Subject = subject
             };
+
+            // Add CC recipients if provided
+            if (!string.IsNullOrWhiteSpace(ccEmails))
+            {
+                var ccList = ccEmails.Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                foreach (var cc in ccList)
+                {
+                    try { message.CC.Add(new MailAddress(cc.Trim())); }
+                    catch (FormatException) { _logger.LogWarning("Invalid CC email address skipped during send: {CcEmail}", cc); }
+                }
+            }
 
             if (hasLogo)
             {

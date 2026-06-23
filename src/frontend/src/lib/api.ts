@@ -1804,5 +1804,36 @@ export const api = {
                 return response.json();
             }
         }
+    },
+
+    // ── Accounts Payable Notification Configuration ──────────────────
+    apNotificationConfigs: {
+        list: async (): Promise<any[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/ap-notification-configs`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar configurações de Contas a Pagar.');
+            return response.json();
+        },
+        create: async (data: any): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/ap-notification-configs`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao criar configuração de Contas a Pagar.');
+            return response.json();
+        },
+        update: async (id: number, data: any): Promise<void> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/ap-notification-configs/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao atualizar configuração.');
+        },
+        toggleActive: async (id: number): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/ap-notification-configs/${id}/toggle-active`, { method: 'PUT' });
+            if (!response.ok) return handleApiError(response, 'Falha ao alternar estado da configuração.');
+            return response.json();
+        },
     }
 };
