@@ -743,7 +743,8 @@ public class FinanceController : BaseController
                 AreaApproverId = r.AreaApproverId,
                 FinalApproverId = r.FinalApproverId,
                 DepartmentId = r.DepartmentId,
-                PlantId = r.PlantId
+                PlantId = r.PlantId,
+                CompanyId = r.CompanyId
             });
         }
         catch (Exception ex)
@@ -880,7 +881,8 @@ public class FinanceController : BaseController
                 AreaApproverId = r.AreaApproverId,
                 FinalApproverId = r.FinalApproverId,
                 DepartmentId = r.DepartmentId,
-                PlantId = r.PlantId
+                PlantId = r.PlantId,
+                CompanyId = r.CompanyId
             });
         }
         catch (Exception ex)

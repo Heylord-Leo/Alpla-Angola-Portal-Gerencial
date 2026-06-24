@@ -2,6 +2,41 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.199.0] - 2026-06-23
+
+### Added — Accounts Payable Email Notification System
+
+- **AP Notification Configuration**: Created a dedicated `AccountsPayableNotificationConfigs` table and Master Data UI panel ("📧 E-mails Contas a Pagar") for managing per-company Accounts Payable email notification settings.
+- **AP Notification Logging**: Created `AccountsPayableNotificationLogs` table with filtered unique index for duplicate prevention (`RequestId + EventCode + RecipientEmail WHERE Success=1 AND Skipped=0`).
+- **Workflow Integration**: `PAYMENT_SCHEDULED` and `PAYMENT_COMPLETED` events now trigger automatic email notifications to the configured AP email address. `CompanyId` added to workflow event payloads for company-specific routing.
+- **CC Support**: AP configurations support optional CC email addresses (semicolon-separated `CcEmails` field). CC is handled as real CC via the email service, not as separate emails.
+- **Non-Blocking Failures**: AP email send failures do not block the payment workflow. Failures are logged in the notification log table.
+- **Environment Policy**: `ApplyEnvironmentPolicy` now clears both `To` and `CC` recipients in non-production environments, preventing accidental emails to external AP mailboxes from TEST.
+- **Frontend CRUD**: Full create/edit/delete interface in Master Data with validation, company dropdown, toggle controls for `NotifyOnScheduled` and `NotifyOnCompleted`, and inline CC email display.
+- **Migration**: `20260623154314_AddAccountsPayableNotifications` — 2 tables, 5 indexes, 1 FK.
+
+**Guided Tour impact: not applicable.**
+
+**Files Created:**
+- `src/backend/AlplaPortal.Api/Controllers/AccountsPayableConfigController.cs` — CRUD API
+- `src/backend/AlplaPortal.Domain/Entities/AccountsPayableNotificationLog.cs` — Log entity
+- `src/backend/AlplaPortal.Infrastructure/Data/Migrations/20260623154314_AddAccountsPayableNotifications.cs` — Migration
+- `src/frontend/src/pages/Settings/ApNotificationsPanel.tsx` — AP config panel
+
+**Files Modified:**
+- `src/backend/AlplaPortal.Api/Controllers/FinanceController.cs` — CompanyId in workflow payloads
+- `src/backend/AlplaPortal.Application/Interfaces/IEmailService.cs` — CC parameter
+- `src/backend/AlplaPortal.Domain/Entities/Organization.cs` — AP config entity
+- `src/backend/AlplaPortal.Domain/Events/WorkflowEvent.cs` — CompanyId property
+- `src/backend/AlplaPortal.Infrastructure/Data/ApplicationDbContext.cs` — DbSets + model config
+- `src/backend/AlplaPortal.Infrastructure/Services/EmailService.cs` — CC support + environment policy
+- `src/backend/AlplaPortal.Infrastructure/Services/WorkflowNotificationOrchestrator.cs` — AP notification logic
+- `src/frontend/src/lib/api.ts` — AP config API methods
+- `src/frontend/src/pages/Settings/MasterData.tsx` — AP notifications tab
+- `src/frontend/src/config.ts` — APP_VERSION → "v2.199.0"
+- `docs/VERSION.md` — v2.199.0
+- `docs/CHANGELOG.md` — This entry
+
 ## [v2.198.0] - 2026-06-22
 
 ### Added — User Onboarding Email Flow

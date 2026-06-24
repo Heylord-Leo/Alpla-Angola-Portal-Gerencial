@@ -176,3 +176,41 @@ public class CostCenter
     public int PlantId { get; set; }
     public Plant Plant { get; set; } = null!;
 }
+
+/// <summary>
+/// Configures Accounts Payable email notifications for a specific company.
+/// When a payment request reaches Scheduling or Payment status, the system
+/// sends a notification to the configured email address.
+/// One configuration per company (unique constraint on CompanyId).
+/// </summary>
+public class AccountsPayableNotificationConfig
+{
+    public int Id { get; set; }
+
+    /// <summary>FK to Company. Unique — one config per company.</summary>
+    public int CompanyId { get; set; }
+    public Company Company { get; set; } = null!;
+
+    /// <summary>Primary AP notification email address (To:).</summary>
+    public string Email { get; set; } = string.Empty;
+
+    /// <summary>Optional CC email addresses, separated by semicolon (;).</summary>
+    public string? CcEmails { get; set; }
+
+    /// <summary>Display label for admin reference (e.g., "Accounts Payable Plastic").</summary>
+    public string? Label { get; set; }
+
+    /// <summary>When false, notifications are paused without deleting the config.</summary>
+    public bool IsActive { get; set; } = true;
+
+    /// <summary>Send notification when payment is scheduled (PAYMENT_SCHEDULED).</summary>
+    public bool NotifyOnScheduled { get; set; } = true;
+
+    /// <summary>Send notification when payment is completed (PAYMENT_COMPLETED).</summary>
+    public bool NotifyOnCompleted { get; set; } = true;
+
+    // Audit
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+

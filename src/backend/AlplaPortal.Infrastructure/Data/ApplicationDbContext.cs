@@ -109,6 +109,10 @@ public class ApplicationDbContext : DbContext
     public DbSet<ITEquipmentProcessor> ITEquipmentProcessors => Set<ITEquipmentProcessor>();
     public DbSet<ITEquipmentMemoryOption> ITEquipmentMemoryOptions => Set<ITEquipmentMemoryOption>();
 
+    // Accounts Payable Notification System
+    public DbSet<AccountsPayableNotificationConfig> AccountsPayableNotificationConfigs => Set<AccountsPayableNotificationConfig>();
+    public DbSet<AccountsPayableNotificationLog> AccountsPayableNotificationLogs => Set<AccountsPayableNotificationLog>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -668,6 +672,27 @@ public class ApplicationDbContext : DbContext
         });
 
         modelBuilder.Entity<CostCenter>().HasIndex(c => c.Code).IsUnique();
+
+        // ─── Accounts Payable Notification Configuration ───
+        modelBuilder.Entity<AccountsPayableNotificationConfig>(entity =>
+        {
+            entity.HasIndex(c => c.CompanyId).IsUnique();
+            entity.HasOne(c => c.Company)
+                .WithMany()
+                .HasForeignKey(c => c.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ─── Accounts Payable Notification Logs (dedup + audit) ───
+        modelBuilder.Entity<AccountsPayableNotificationLog>(entity =>
+        {
+            entity.HasIndex(l => new { l.RequestId, l.EventCode, l.RecipientEmail })
+                .IsUnique()
+                .HasFilter("[Success] = 1 AND [Skipped] = 0")
+                .HasDatabaseName("IX_ApNotifLogs_Dedup");
+            entity.HasIndex(l => l.RequestId);
+            entity.HasIndex(l => l.CompanyId);
+        });
 
         // Item Catalog configuration
         modelBuilder.Entity<ItemCatalog>().HasIndex(ic => ic.Code).IsUnique();
