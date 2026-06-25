@@ -34,4 +34,19 @@ public static class WorkflowEventCodes
     // --- Quotation Buyer Notifications ---
     public const string QuotationAwaitingBuyer = "QUOTATION_AWAITING_BUYER";
     public const string BuyerAssigned = "BUYER_ASSIGNED";
+
+    // --- Buy-to-Pay (Advance Payment / Reconciliation) ---
+    public const string PaymentConditionDefined = "PAYMENT_CONDITION_DEFINED";
+    public const string AdvancePaymentRequired = "ADVANCE_PAYMENT_REQUIRED";
+    public const string AdvancePaymentScheduled = "ADVANCE_PAYMENT_SCHEDULED";
+    public const string AdvancePaymentCompleted = "ADVANCE_PAYMENT_COMPLETED";
+    public const string WaitingSupplierDelivery = "WAITING_SUPPLIER_DELIVERY";
+    public const string ReceivingPending = "RECEIVING_PENDING";
+    public const string DeliveryConfirmed = "DELIVERY_CONFIRMED";
+    public const string ReconciliationStarted = "RECONCILIATION_STARTED";
+    public const string ReconciliationCompleted = "RECONCILIATION_COMPLETED";
+    public const string FinalBalanceRequired = "FINAL_BALANCE_REQUIRED";
+    public const string FinalBalanceScheduled = "FINAL_BALANCE_SCHEDULED";
+    public const string FinalBalanceCompleted = "FINAL_BALANCE_COMPLETED";
+    public const string CreditDebitNoteRequired = "CREDIT_DEBIT_NOTE_REQUIRED";
 }

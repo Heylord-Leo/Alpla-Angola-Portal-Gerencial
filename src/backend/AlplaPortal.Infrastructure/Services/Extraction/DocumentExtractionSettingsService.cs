@@ -351,4 +351,53 @@ public class DocumentExtractionSettingsService : IDocumentExtractionSettingsServ
             return new ConnectionTestResultDto { Success = false, ProviderName = "OpenAI", Message = $"Erro ao testar conexão OpenAI: {ex.Message}" };
         }
     }
+
+    public async Task<List<OcrModuleConfigDto>> GetModuleSettingsAsync(CancellationToken ct = default)
+    {
+        var modules = await _dbContext.OcrModuleConfigs.AsNoTracking().ToListAsync(ct);
+        return modules.Select(m => new OcrModuleConfigDto
+        {
+            Id = m.Id,
+            ModuleKey = m.ModuleKey,
+            DisplayName = m.DisplayName,
+            IsEnabled = m.IsEnabled,
+            AllowedExtensions = m.AllowedExtensions,
+            MaxFileSizeMb = m.MaxFileSizeMb,
+            ProviderOverride = m.ProviderOverride,
+            ModelOverride = m.ModelOverride,
+            UpdatedBy = m.UpdatedBy,
+            UpdatedAtUtc = m.UpdatedAtUtc
+        }).ToList();
+    }
+
+    public async Task UpdateModuleSettingAsync(string moduleKey, OcrModuleConfigDto dto, string updatedBy, CancellationToken ct = default)
+    {
+        var module = await _dbContext.OcrModuleConfigs.FirstOrDefaultAsync(m => m.ModuleKey.ToUpper() == moduleKey.ToUpper(), ct);
+        
+        if (module == null)
+        {
+            throw new ArgumentException($"Módulo '{moduleKey}' não encontrado.");
+        }
+
+        var oldEnabled = module.IsEnabled;
+        
+        module.IsEnabled = dto.IsEnabled;
+        module.AllowedExtensions = dto.AllowedExtensions;
+        module.MaxFileSizeMb = dto.MaxFileSizeMb;
+        module.ProviderOverride = dto.ProviderOverride;
+        module.ModelOverride = dto.ModelOverride;
+        module.UpdatedBy = updatedBy;
+        module.UpdatedAtUtc = DateTime.UtcNow;
+
+        await _dbContext.SaveChangesAsync(ct);
+
+        _logger.LogInformation("OCR module config updated. Module: {ModuleKey}, Enabled: {IsEnabled}", module.ModuleKey, module.IsEnabled);
+
+        await _adminLog.WriteAsync(
+            level: "Information",
+            source: Source,
+            eventType: "OCR_MODULE_SETTINGS_SAVED",
+            message: $"Configurações OCR do módulo '{module.ModuleKey}' atualizadas por {updatedBy}. Ativo: {module.IsEnabled} (Anterior: {oldEnabled}).",
+            payload: SafePayload.From(new { ModuleKey = module.ModuleKey, IsEnabled = module.IsEnabled, PreviousEnabled = oldEnabled, UpdatedBy = updatedBy }));
+    }
 }

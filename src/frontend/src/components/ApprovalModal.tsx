@@ -21,6 +21,9 @@ export type ApprovalActionType =
     | 'ITEM_STATUS_CHANGE'
     | 'CANCEL_REQUEST'
     | 'DUPLICATE_REQUEST'
+    | 'CONFIRM_DELIVERY'
+    | 'SCHEDULE_ADVANCE'
+    | 'CONFIRM_ADVANCE'
     | 'SAVE_QUOTATION_OCR'
     | 'SAVE_QUOTATION_MANUAL'
     | 'DELETE_OBLIGATION'
@@ -81,6 +84,9 @@ export function ApprovalModal({
             case 'ITEM_STATUS_CHANGE': return 'Confirmar Alteração de Status';
             case 'CANCEL_REQUEST': return 'Cancelar Pedido';
             case 'DUPLICATE_REQUEST': return 'Duplicar Pedido';
+            case 'CONFIRM_DELIVERY': return 'Confirmar Entrega/Serviço';
+            case 'SCHEDULE_ADVANCE': return 'Agendar Adiantamento';
+            case 'CONFIRM_ADVANCE': return 'Confirmar Adiantamento';
             case 'SAVE_QUOTATION_OCR':
             case 'SAVE_QUOTATION_MANUAL': return 'Confirmar salvamento';
             case 'DELETE_OBLIGATION': return 'Confirmar exclusão';
@@ -122,6 +128,9 @@ export function ApprovalModal({
                     : 'Deseja confirmar a alteração de status deste item? Esta ação requer uma observação obrigatória.';
             case 'CANCEL_REQUEST': return 'Tem certeza que deseja cancelar este pedido? O solicitante será notificado automaticamente. Informe o motivo abaixo.';
             case 'DUPLICATE_REQUEST': return 'Deseja criar uma cópia deste pedido? Um novo rascunho será gerado com os mesmos dados básicos e itens, sem copiar o histórico ou anexos.';
+            case 'CONFIRM_DELIVERY': return 'Deseja confirmar a entrega dos itens ou a realização do serviço associado a este pedido?';
+            case 'SCHEDULE_ADVANCE': return 'Deseja confirmar o agendamento do adiantamento para este pedido?';
+            case 'CONFIRM_ADVANCE': return 'Deseja confirmar que o adiantamento deste pedido foi realizado?';
             case 'SAVE_QUOTATION_OCR': return 'A extração de informações via OCR não é 100% precisa. Você verificou todas as informações?';
             case 'SAVE_QUOTATION_MANUAL': return 'Tem certeza de que todas as informações inseridas estão corretas?';
             case 'DELETE_OBLIGATION': return 'Tem certeza que deseja apagar esta obrigação?';
@@ -135,7 +144,8 @@ export function ApprovalModal({
     const showCommentField = [
         'APPROVE', 'REJECT', 'REQUEST_ADJUSTMENT', 
         'SCHEDULE_PAYMENT', 'COMPLETE_PAYMENT', 'MOVE_TO_RECEIPT', 
-        'CONFIRM_RECEIVING', 'FINALIZE', 'COMPLETE_QUOTATION', 'ITEM_STATUS_CHANGE', 'CANCEL_REQUEST'
+        'CONFIRM_RECEIVING', 'FINALIZE', 'COMPLETE_QUOTATION', 'ITEM_STATUS_CHANGE', 'CANCEL_REQUEST',
+        'CONFIRM_DELIVERY', 'SCHEDULE_ADVANCE', 'CONFIRM_ADVANCE'
     ].includes(type || '');
 
     const inputStyle = {

@@ -39,6 +39,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<QuotationItem> QuotationItems => Set<QuotationItem>();
     public DbSet<SystemCounter> SystemCounters => Set<SystemCounter>();
     public DbSet<DocumentExtractionSettings> DocumentExtractionSettings => Set<DocumentExtractionSettings>();
+    public DbSet<OcrModuleConfig> OcrModuleConfigs => Set<OcrModuleConfig>();
     public DbSet<SmtpSettings> SmtpSettings => Set<SmtpSettings>();
     public DbSet<LogEntry> LogEntries => Set<LogEntry>();
     public DbSet<AdminLogEntry> AdminLogEntries => Set<AdminLogEntry>();
@@ -113,11 +114,19 @@ public class ApplicationDbContext : DbContext
     public DbSet<AccountsPayableNotificationConfig> AccountsPayableNotificationConfigs => Set<AccountsPayableNotificationConfig>();
     public DbSet<AccountsPayableNotificationLog> AccountsPayableNotificationLogs => Set<AccountsPayableNotificationLog>();
 
+    // Buy-to-Pay (Advance Payment / Reconciliation)
+    public DbSet<RequestPayment> RequestPayments => Set<RequestPayment>();
+    public DbSet<RequestReconciliation> RequestReconciliations => Set<RequestReconciliation>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
         // Apply Configurations (like Request mapping)
+        modelBuilder.Entity<OcrModuleConfig>().HasData(
+            new OcrModuleConfig { Id = 1, ModuleKey = "REQUESTS", DisplayName = "Requests & Buy2Pay", IsEnabled = true, AllowedExtensions = ".pdf,.jpg,.jpeg,.png", UpdatedBy = "System", UpdatedAtUtc = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new OcrModuleConfig { Id = 2, ModuleKey = "CONTRACTS", DisplayName = "Contracts Management", IsEnabled = true, AllowedExtensions = ".pdf,.jpg,.jpeg,.png", UpdatedBy = "System", UpdatedAtUtc = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc) }
+        );
         modelBuilder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly());
 
         modelBuilder.Entity<RequestLineItem>()
@@ -694,6 +703,93 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(l => l.CompanyId);
         });
 
+        // ─── Buy-to-Pay: RequestPayments ───
+        modelBuilder.Entity<RequestPayment>(entity =>
+        {
+            entity.HasIndex(p => p.RequestId)
+                .HasDatabaseName("IX_RequestPayments_RequestId");
+            entity.HasIndex(p => new { p.RequestId, p.PaymentType, p.PaymentSequence })
+                .IsUnique()
+                .HasDatabaseName("IX_RequestPayments_RequestId_Type_Seq");
+
+            entity.Property(p => p.PlannedPercent).HasColumnType("decimal(5,2)");
+            entity.Property(p => p.PlannedAmount).HasColumnType("decimal(18,2)");
+            entity.Property(p => p.ActualPaidAmount).HasColumnType("decimal(18,2)");
+            entity.Property(p => p.DivergenceAmount).HasColumnType("decimal(18,2)");
+            entity.Property(p => p.PaymentType).HasMaxLength(32).IsRequired();
+            entity.Property(p => p.PaymentStatus).HasMaxLength(32).IsRequired();
+            entity.Property(p => p.CurrencyCode).HasMaxLength(10).IsRequired();
+
+            entity.HasOne(p => p.Request)
+                .WithMany(r => r.Payments)
+                .HasForeignKey(p => p.RequestId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            entity.HasOne(p => p.PaymentProofAttachment)
+                .WithMany()
+                .HasForeignKey(p => p.PaymentProofAttachmentId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(p => p.ScheduledByUser)
+                .WithMany()
+                .HasForeignKey(p => p.ScheduledByUserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            entity.HasOne(p => p.PaidByUser)
+                .WithMany()
+                .HasForeignKey(p => p.PaidByUserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            entity.HasOne(p => p.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(p => p.CreatedByUserId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        // ─── Buy-to-Pay: RequestReconciliations (1:N) ───
+        modelBuilder.Entity<RequestReconciliation>(entity =>
+        {
+            entity.HasIndex(r => r.RequestId)
+                .HasDatabaseName("IX_RequestReconciliations_RequestId");
+            entity.HasIndex(r => new { r.RequestId, r.ReconciliationSequence })
+                .IsUnique()
+                .HasDatabaseName("IX_RequestReconciliations_RequestId_Seq");
+
+            entity.Property(r => r.FinalInvoiceAmount).HasColumnType("decimal(18,2)");
+            entity.Property(r => r.FinalAcceptedAmount).HasColumnType("decimal(18,2)");
+            entity.Property(r => r.DeliveredAcceptedAmount).HasColumnType("decimal(18,2)");
+            entity.Property(r => r.DifferenceAmount).HasColumnType("decimal(18,2)");
+            entity.Property(r => r.RemainingBalanceAmount).HasColumnType("decimal(18,2)");
+            entity.Property(r => r.RefundAmount).HasColumnType("decimal(18,2)");
+            entity.Property(r => r.ReconciliationStatus).HasMaxLength(32).IsRequired();
+            entity.Property(r => r.CurrencyCode).HasMaxLength(10);
+
+            entity.HasOne(r => r.Request)
+                .WithMany(req => req.Reconciliations)
+                .HasForeignKey(r => r.RequestId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            entity.HasOne(r => r.CreditNoteAttachment)
+                .WithMany()
+                .HasForeignKey(r => r.CreditNoteAttachmentId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            entity.HasOne(r => r.DebitNoteAttachment)
+                .WithMany()
+                .HasForeignKey(r => r.DebitNoteAttachmentId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            entity.HasOne(r => r.StartedByUser)
+                .WithMany()
+                .HasForeignKey(r => r.StartedByUserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            entity.HasOne(r => r.CompletedByUser)
+                .WithMany()
+                .HasForeignKey(r => r.CompletedByUserId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
         // Item Catalog configuration
         modelBuilder.Entity<ItemCatalog>().HasIndex(ic => ic.Code).IsUnique();
         modelBuilder.Entity<ItemCatalog>()
@@ -856,6 +952,12 @@ public class ApplicationDbContext : DbContext
             new RequestStatus { Id = 17, Code = "COMPLETED", Name = "Finalizado", DisplayOrder = 19, BadgeColor = "carbon" },
             new RequestStatus { Id = 18, Code = "CANCELLED", Name = "Cancelado", DisplayOrder = 20, BadgeColor = "zinc" },
             new RequestStatus { Id = 20, Code = "QUOTATION_COMPLETED", Name = "Cotação Concluída", DisplayOrder = 21, BadgeColor = "emerald", IsActive = false },
+
+            // Buy-to-Pay (Advance Payment) — idempotent seed IDs
+            new RequestStatus { Id = 23, Code = "ADVANCE_PAYMENT_REQUIRED", Name = "Adiantamento Necessário", DisplayOrder = 23, BadgeColor = "#ffc107" },
+            new RequestStatus { Id = 24, Code = "ADVANCE_PAYMENT_COMPLETED", Name = "Adiantamento Realizado", DisplayOrder = 24, BadgeColor = "#28a745" },
+            new RequestStatus { Id = 25, Code = "WAITING_SUPPLIER_DELIVERY", Name = "Ag. Entrega/Serviço", DisplayOrder = 25, BadgeColor = "#6f42c1" },
+            new RequestStatus { Id = 26, Code = "WAITING_RECONCILIATION", Name = "Ag. Reconciliação", DisplayOrder = 26, BadgeColor = "#fd7e14" },
             new RequestStatus { Id = 22, Code = "WAITING_PO_CORRECTION", Name = "Devolvido para Compras", DisplayOrder = 22, BadgeColor = "red" }
         );
 

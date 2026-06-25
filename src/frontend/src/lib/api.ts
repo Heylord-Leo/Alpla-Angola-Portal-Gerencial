@@ -1,4 +1,4 @@
-import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto, IntegrationSettingsDto, IntegrationConnectionTestResultDto, UpdateIntegrationSettingsDto, UpdatePrimaveraCompanyDto, ReplacePrimaveraCompanySecretDto, UpdateAlplaProdPlantDto, ReplaceAlplaProdPlantSecretDto } from '../types';
+import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, OcrModuleConfigDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto, IntegrationSettingsDto, IntegrationConnectionTestResultDto, UpdateIntegrationSettingsDto, UpdatePrimaveraCompanyDto, ReplacePrimaveraCompanySecretDto, UpdateAlplaProdPlantDto, ReplaceAlplaProdPlantSecretDto } from '../types';
 import { logger, FrontendComponentKey } from './logger';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
@@ -395,7 +395,7 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao solicitar ajuste no pedido (Aprovação Final).');
             return response.json();
         },
-        registerPo: async (id: string, payload: { comment?: string, hasMismatches?: boolean, overrideConfirmed?: boolean, mismatchDetails?: string }): Promise<{ message: string; statusCode: string }> => {
+        registerPo: async (id: string, payload: { comment?: string, hasMismatches?: boolean, overrideConfirmed?: boolean, mismatchDetails?: string, paymentConditionCode?: string, advancePaymentPercent?: number, paymentConditionSource?: string }): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/operational/register-po`, {
                 method: 'POST',
                 headers: { 
@@ -477,6 +477,44 @@ export const api = {
             });
             if (!response.ok) return handleApiError(response, 'Falha ao finalizar o pedido.');
             return response.json();
+        },
+
+        // ── Buy-to-Pay (Advance Payment Lifecycle) ──
+        scheduleAdvancePayment: async (id: string, comment?: string): Promise<{ message: string; paymentId: number }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/b2p/schedule-advance`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment }),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao agendar adiantamento.');
+            return response.json();
+        },
+        confirmAdvancePayment: async (id: string, payload: { actualPaidAmount: number; comment?: string; paymentProofAttachmentId?: string }): Promise<{ message: string; paymentId: number }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/b2p/confirm-advance`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao confirmar adiantamento.');
+            return response.json();
+        },
+        confirmDelivery: async (id: string, comment?: string): Promise<{ message: string; statusCode: string }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/b2p/confirm-delivery`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment }),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao confirmar entrega/serviço.');
+            return response.json();
+        },
+        reconcile: async (id: string, dto: any): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/b2p/reconcile`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(dto)
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao registrar reconciliação.');
+            return res.json();
         },
         completeQuotation: async (id: string, payload?: { comment?: string, financialIntegrityOverride?: boolean, overrideJustification?: string }): Promise<{ message: string; statusCode: string } | { integrityCheckFailed: true; ocrOriginalTotal: number; quotationTotal: number; varianceAmount: number; variancePercent: number; toleranceApplied: number; unresolvedReconciliationCount: number; quotationId: string; detail: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/quotation/complete`, {
@@ -1630,6 +1668,19 @@ export const api = {
                 });
                 if (!response.ok) return handleApiError(response, 'Falha ao testar conexão.', 'AdminApi');
                 return response.json();
+            },
+            getModules: async (): Promise<OcrModuleConfigDto[]> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/document-extraction-settings/modules`);
+                if (!response.ok) return handleApiError(response, 'Falha ao carregar módulos de OCR.', 'AdminApi');
+                return response.json();
+            },
+            updateModule: async (moduleKey: string, data: OcrModuleConfigDto): Promise<void> => {
+                const response = await apiFetch(`${API_BASE_URL}/api/admin/document-extraction-settings/modules/${moduleKey}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                if (!response.ok) return handleApiError(response, 'Falha ao atualizar módulo de OCR.', 'AdminApi');
             }
         },
         diagnostics: {

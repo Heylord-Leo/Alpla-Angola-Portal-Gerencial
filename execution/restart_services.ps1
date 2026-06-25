@@ -19,7 +19,7 @@ Stop-ProcessByPort 5173
 # Start Backend
 $backendDir = "c:\dev\alpla-portal\src\backend\AlplaPortal.Api"
 Write-Host "Starting backend in $backendDir..."
-Start-Process "dotnet" -ArgumentList "run" -WorkingDirectory $backendDir -WindowStyle Normal
+Start-Process "cmd" -ArgumentList "/k dotnet build && set ASPNETCORE_ENVIRONMENT=Development&& dotnet bin\Debug\net8.0\AlplaPortal.Api.dll" -WorkingDirectory $backendDir -WindowStyle Normal
 
 # Start Frontend
 $frontendDir = "c:\dev\alpla-portal\src\frontend"

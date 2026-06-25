@@ -9,5 +9,10 @@ public static class AttachmentConstants
         public const string PaymentSchedule = "PAYMENT_SCHEDULE";
         public const string PaymentProof = "PAYMENT_PROOF";
         public const string Receipt = "RECEIPT";
+
+        // ── Buy-to-Pay (Advance Payment / Reconciliation) ──
+        public const string AdvancePaymentProof = "ADVANCE_PAYMENT_PROOF";
+        public const string CreditNote = "CREDIT_NOTE";
+        public const string DebitNote = "DEBIT_NOTE";
     }
 }

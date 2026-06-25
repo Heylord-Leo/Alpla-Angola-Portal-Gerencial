@@ -24,6 +24,7 @@ export function ReceivingWorkspace() {
 
     // Group toggle states
     const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+        delivery: true,
         pending: true,
         followup: false,
         received: false
@@ -44,7 +45,8 @@ export function ReceivingWorkspace() {
                 'PAYMENT_COMPLETED', 'PAG_REALIZADO', 
                 'WAITING_RECEIPT', 'AG_RECIBO', 
                 'IN_FOLLOWUP', 
-                'COMPLETED', 'FINALIZADO'
+                'COMPLETED', 'FINALIZADO',
+                'WAITING_SUPPLIER_DELIVERY'  // B2P: advance payment flow
             ];
             const targetStatusIds = statuses
                 .filter(s => targetStatusCodes.includes(s.code))
@@ -122,6 +124,7 @@ export function ReceivingWorkspace() {
 
     const groups = useMemo(() => {
         return {
+            delivery: requests.filter(r => r.statusCode === 'WAITING_SUPPLIER_DELIVERY'),
             pending: requests.filter(r => r.statusCode === 'PAYMENT_COMPLETED' || r.statusCode === 'WAITING_RECEIPT' || r.statusCode === 'PAG_REALIZADO' || r.statusCode === 'AG_RECIBO'),
             followup: requests.filter(r => r.statusCode === 'IN_FOLLOWUP'),
             received: requests.filter(r => r.statusCode === 'COMPLETED' || r.statusCode === 'FINALIZADO')
@@ -132,6 +135,7 @@ export function ReceivingWorkspace() {
     useEffect(() => {
         if (searchInput.trim()) {
             setExpandedSections({
+                delivery: groups.delivery.length > 0,
                 pending: groups.pending.length > 0,
                 followup: groups.followup.length > 0,
                 received: groups.received.length > 0
@@ -139,6 +143,7 @@ export function ReceivingWorkspace() {
         } else {
             // Restore default when search is cleared
             setExpandedSections({
+                delivery: true,
                 pending: true,
                 followup: false,
                 received: false
@@ -238,6 +243,19 @@ export function ReceivingWorkspace() {
                 <div style={{ padding: '60px', textAlign: 'center', fontWeight: 700 }}>CARREGANDO...</div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {groups.delivery.length > 0 && (
+                    <div data-tour="receiving-delivery">
+                    <CollapsibleSection
+                        title="Ag. Entrega/Serviço (Adiantamento)"
+                        count={groups.delivery.length}
+                        isOpen={expandedSections.delivery}
+                        onToggle={() => toggleSection('delivery')}
+                    >
+                        {renderTable(groups.delivery)}
+                    </CollapsibleSection>
+                    </div>
+                    )}
+
                     <div data-tour="receiving-pending">
                     <CollapsibleSection
                         title="Pedidos aguardando recebimento"

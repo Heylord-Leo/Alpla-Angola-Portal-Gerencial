@@ -104,6 +104,10 @@ public class FinanceListItemDto
     public decimal? ActualPaidAmount { get; set; }
     public DateTime? ActualPaidAtUtc { get; set; }
     public bool HasPaymentDivergence { get; set; }
+
+    // ── Buy-to-Pay (Phase 8) ──
+    public string? PaymentCondition { get; set; }
+    public decimal? AdvancePaymentPercent { get; set; }
 }
 
 public class FinanceListResponseDto
@@ -127,6 +131,10 @@ public class FinanceHistoryItemDto
     public string ActorName { get; set; } = string.Empty;
     public string? NewStatusCode { get; set; }
     public string? NewStatusName { get; set; }
+
+    // ── Buy-to-Pay (Phase 8) ──
+    public string? PaymentCondition { get; set; }
+    public decimal? AdvancePaymentPercent { get; set; }
 }
 
 public class FinanceActionRequestDto

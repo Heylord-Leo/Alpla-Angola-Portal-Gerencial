@@ -377,7 +377,7 @@ function CarouselCard({ order, onView, onDuplicate, onQuotationClick, onReceivin
                         >
                             <StatusBadge status={order.statusCode} />
                         </div>
-                    ) : (order.statusCode === 'WAITING_RECEIPT' || order.statusCode === 'PAYMENT_COMPLETED') && onReceivingClick ? (
+                    ) : (order.statusCode === 'WAITING_RECEIPT' || order.statusCode === 'PAYMENT_COMPLETED' || order.statusCode === 'WAITING_SUPPLIER_DELIVERY') && onReceivingClick ? (
                         <div 
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -394,7 +394,7 @@ function CarouselCard({ order, onView, onDuplicate, onQuotationClick, onReceivin
                         >
                             <StatusBadge status={order.statusCode} />
                         </div>
-                    ) : (order.statusCode === 'PO_ISSUED' || order.statusCode === 'PAYMENT_SCHEDULED' || order.statusCode === 'PAYMENT_REQUEST_SENT') && onPaymentClick ? (
+                    ) : (order.statusCode === 'PO_ISSUED' || order.statusCode === 'PAYMENT_SCHEDULED' || order.statusCode === 'PAYMENT_REQUEST_SENT' || order.statusCode === 'ADVANCE_PAYMENT_REQUIRED' || order.statusCode === 'WAITING_RECONCILIATION') && onPaymentClick ? (
                         <div 
                             onClick={(e) => {
                                 e.stopPropagation();

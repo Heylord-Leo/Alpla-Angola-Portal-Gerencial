@@ -108,6 +108,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
     }>({ show: false, type: null });
     const [showRegisterPoModal, setShowRegisterPoModal] = useState(false);
     const [showCorrectPoModal, setShowCorrectPoModal] = useState(false);
+    const [showReconciliationModal, setShowReconciliationModal] = useState(false);
     const [approvalComment, setApprovalComment] = useState('');
     const [approvalProcessing, setApprovalProcessing] = useState(false);
     const [modalFeedback, setModalFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'error', message: null });
@@ -782,8 +783,8 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
             setModalFeedback({ type: 'error', message: 'É necessário anexar o Cronograma de Pagamento antes de agendar.' });
             return;
         }
-        if (action === 'COMPLETE_PAYMENT' && !hasAttachment('PAYMENT_PROOF')) {
-            setModalFeedback({ type: 'error', message: 'É necessário anexar o Comprovante de Pagamento antes de concluir.' });
+        if ((action === 'COMPLETE_PAYMENT' || action === 'CONFIRM_ADVANCE') && !hasAttachment('PAYMENT_PROOF')) {
+            setModalFeedback({ type: 'error', message: 'É necessário anexar o Comprovante de Pagamento antes de confirmar.' });
             return;
         }
         if (action === 'COMPLETE_QUOTATION') {
@@ -851,6 +852,13 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 result = await api.requests.schedulePayment(id, approvalComment);
             } else if (action === 'COMPLETE_PAYMENT') {
                 result = await api.requests.completePayment(id, approvalComment);
+            } else if (action === 'SCHEDULE_ADVANCE') {
+                result = await api.requests.scheduleAdvancePayment(id, approvalComment);
+            } else if (action === 'CONFIRM_ADVANCE') {
+                // Pass estimated total as fallback. A dedicated UI can be added later if partial advance amount needs to be specific.
+                result = await api.requests.confirmAdvancePayment(id, { actualPaidAmount: Number(formData.estimatedTotalAmount) || 0, comment: approvalComment });
+            } else if (action === 'CONFIRM_DELIVERY') {
+                result = await api.requests.confirmDelivery(id, approvalComment);
             } else if (action === 'MOVE_TO_RECEIPT') {
                 result = await api.requests.moveToReceipt(id, approvalComment);
             } else if (action === 'FINALIZE') {
@@ -1059,6 +1067,8 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         setShowRegisterPoModal,
         showCorrectPoModal,
         setShowCorrectPoModal,
+        showReconciliationModal,
+        setShowReconciliationModal,
         approvalComment,
         setApprovalComment,
         approvalProcessing,

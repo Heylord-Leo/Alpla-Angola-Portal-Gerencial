@@ -28,7 +28,8 @@ def restart_services():
     backend_dir = r"c:\dev\alpla-portal\src\backend\AlplaPortal.Api"
     print(f"Starting backend in {backend_dir}...")
     # Use start to run in a new window so it doesn't block
-    subprocess.Popen("start dotnet run", cwd=backend_dir, shell=True)
+    cmd = 'start cmd /k "dotnet build && set ASPNETCORE_ENVIRONMENT=Development&& dotnet bin\\Debug\\net8.0\\AlplaPortal.Api.dll"'
+    subprocess.Popen(cmd, cwd=backend_dir, shell=True)
 
     # 3. Start Frontend
     frontend_dir = r"c:\dev\alpla-portal\src\frontend"

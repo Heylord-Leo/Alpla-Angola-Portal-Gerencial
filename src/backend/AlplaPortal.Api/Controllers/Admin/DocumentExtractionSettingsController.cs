@@ -44,4 +44,26 @@ public class DocumentExtractionSettingsController : ControllerBase
         var result = await _settingsService.TestConnectionAsync(ct);
         return Ok(result);
     }
+
+    [HttpGet("modules")]
+    public async Task<ActionResult<List<OcrModuleConfigDto>>> GetModules(CancellationToken ct)
+    {
+        var modules = await _settingsService.GetModuleSettingsAsync(ct);
+        return Ok(modules);
+    }
+
+    [HttpPut("modules/{moduleKey}")]
+    public async Task<IActionResult> UpdateModule(string moduleKey, [FromBody] OcrModuleConfigDto dto, CancellationToken ct)
+    {
+        try
+        {
+            var updatedBy = User.Identity?.Name ?? "Admin";
+            await _settingsService.UpdateModuleSettingAsync(moduleKey, dto, updatedBy, ct);
+            return NoContent();
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
 }

@@ -28,4 +28,14 @@ public interface IDocumentExtractionSettingsService
     /// Tests the connection to the currently active document extraction provider.
     /// </summary>
     Task<ConnectionTestResultDto> TestConnectionAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets all OCR module configurations.
+    /// </summary>
+    Task<List<OcrModuleConfigDto>> GetModuleSettingsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Updates an OCR module configuration.
+    /// </summary>
+    Task UpdateModuleSettingAsync(string moduleKey, OcrModuleConfigDto dto, string updatedBy, CancellationToken ct = default);
 }

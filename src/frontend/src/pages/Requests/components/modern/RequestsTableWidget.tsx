@@ -31,6 +31,10 @@ const STATUS_THEME: Record<string, { bg: string; fg: string; border: string; ico
     'REJECTED':           { bg: '#FEF2F2', fg: '#DC2626', border: '#FCA5A5', icon: AlertCircle },
     'WAITING_PO_CORRECTION': { bg: '#FEF2F2', fg: '#DC2626', border: '#FCA5A5', icon: AlertCircle },
     'PAYMENT_REQUEST_SENT': { bg: '#FAF5FF', fg: '#7E22CE', border: '#C4B5FD', icon: CreditCard },
+    'ADVANCE_PAYMENT_REQUIRED': { bg: '#FFFBEB', fg: '#B45309', border: '#FCD34D', icon: CreditCard },
+    'ADVANCE_PAYMENT_COMPLETED': { bg: '#ECFDF5', fg: '#047857', border: '#6EE7B7', icon: CheckCircle2 },
+    'WAITING_SUPPLIER_DELIVERY': { bg: '#EEF2FF', fg: '#4338CA', border: '#A5B4FC', icon: Package },
+    'WAITING_RECONCILIATION': { bg: '#FFF7ED', fg: '#C2410C', border: '#FDBA74', icon: AlertCircle },
 };
 
 export const StatusBadge = ({ status }: { status: string }) => {

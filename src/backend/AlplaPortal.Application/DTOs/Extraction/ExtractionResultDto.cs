@@ -11,6 +11,16 @@ public class ExtractionHeaderDto
     public decimal? TotalAmount { get; set; }
     public decimal? GrandTotal { get; set; }
     public decimal? DiscountAmount { get; set; }
+
+    // ── Payment Condition OCR Extraction ──
+    /// <summary>Classified payment condition: POST_PAID, ADVANCE_FULL, ADVANCE_PARTIAL, or null if not detected.</summary>
+    public string? PaymentConditionType { get; set; }
+    /// <summary>Raw text from the document that describes payment terms.</summary>
+    public string? PaymentConditionRawText { get; set; }
+    /// <summary>OCR confidence score for the payment condition classification (0.0–1.0).</summary>
+    public decimal? PaymentConditionConfidence { get; set; }
+    /// <summary>Advance payment percentage extracted from the document (e.g. 50 for "50% adiantado"). Null if not detected.</summary>
+    public decimal? PaymentConditionAdvancePercent { get; set; }
 }
 
 public class ExtractionLineItemDto

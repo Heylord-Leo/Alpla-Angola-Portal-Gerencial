@@ -184,6 +184,10 @@ export interface RequestDetailsDto extends RequestListItemDto {
     attachments: RequestAttachmentDto[];
     quotations: SavedQuotationDto[];
     statusHistory: RequestStatusHistoryDto[];
+    // B2P: Payment Condition
+    paymentConditionCode?: string | null;
+    advancePaymentPercent?: number | null;
+    paymentConditionSource?: string | null;
 }
 
 export interface IvaRate {
@@ -490,6 +494,19 @@ export interface DocumentExtractionSettingsDto {
     openAiTimeoutSeconds?: number;
     azureDocumentIntelligenceEnabled: boolean;
     azureDocumentIntelligenceTimeoutSeconds?: number;
+}
+
+export interface OcrModuleConfigDto {
+    id: number;
+    moduleKey: string;
+    displayName: string;
+    isEnabled: boolean;
+    allowedExtensions?: string;
+    maxFileSizeMb?: number;
+    providerOverride?: string;
+    modelOverride?: string;
+    updatedBy?: string;
+    updatedAtUtc: string;
 }
 
 export interface SmtpSettingsDto {
