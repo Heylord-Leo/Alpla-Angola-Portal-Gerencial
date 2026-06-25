@@ -115,6 +115,24 @@ public class Request
     public Guid? ContractPaymentObligationId { get; set; }
     public ContractPaymentObligation? ContractPaymentObligation { get; set; }
 
+    // ── Buy-to-Pay: Payment Condition (set by Buyer at PO registration) ──
+    /// <summary>
+    /// Payment condition code: POST_PAID, ADVANCE_FULL, ADVANCE_PARTIAL.
+    /// NULL = POST_PAID (backward compatible for existing requests).
+    /// </summary>
+    public string? PaymentConditionCode { get; set; }
+
+    /// <summary>
+    /// Advance payment percentage (1–100). Only set when PaymentConditionCode = ADVANCE_PARTIAL or ADVANCE_FULL (100).
+    /// </summary>
+    public decimal? AdvancePaymentPercent { get; set; }
+
+    /// <summary>
+    /// Source of the payment condition selection: OCR_DETECTED, USER_SELECTED.
+    /// Null for legacy requests created before this tracking was introduced.
+    /// </summary>
+    public string? PaymentConditionSource { get; set; }
+
     // Integration Placeholders
     public string? PrimaveraReference { get; set; }
     public string? AlplaProdReference { get; set; }
@@ -123,4 +141,8 @@ public class Request
     public ICollection<RequestLineItem> LineItems { get; set; } = new List<RequestLineItem>();
     public ICollection<RequestStatusHistory> StatusHistories { get; set; } = new List<RequestStatusHistory>();
     public ICollection<RequestAttachment> Attachments { get; set; } = new List<RequestAttachment>();
+
+    // ── Buy-to-Pay: Child Tables ──
+    public ICollection<RequestPayment> Payments { get; set; } = new List<RequestPayment>();
+    public ICollection<RequestReconciliation> Reconciliations { get; set; } = new List<RequestReconciliation>();
 }

@@ -83,6 +83,20 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                     _logger.LogWarning(apEx, "Non-critical: Accounts Payable notification failed for {EventCode} on Request {RequestId}", evt.EventCode, evt.RequestId);
                 }
             }
+
+            // ── Buyer P.O. Creation Instruction (independent from generic approval dispatch) ──
+            if (evt.EventCode == WorkflowEventCodes.FinalApproved)
+            {
+                try
+                {
+                    await SendBuyerPoCreationInstructionAsync(evt);
+                }
+                catch (Exception buyerEx)
+                {
+                    // Buyer PO instruction failure must NEVER block the approval workflow
+                    _logger.LogWarning(buyerEx, "Non-critical: Buyer P.O. creation instruction email failed for Request {RequestId}", evt.RequestId);
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -193,6 +207,17 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             // --- PO Correction Completed: notify Finance (same plant-scoped pattern as initial PO) ---
             case WorkflowEventCodes.PoCorrectionCompleted:
                 await AddPlantScopedFinanceRecipientsAsync(recipients, evt.PlantId);
+                break;
+
+            // --- Buy-to-Pay Advance Payments ---
+            case WorkflowEventCodes.AdvancePaymentRequired:
+                await AddPlantScopedFinanceRecipientsAsync(recipients, evt.PlantId);
+                break;
+
+            case WorkflowEventCodes.AdvancePaymentScheduled:
+            case WorkflowEventCodes.AdvancePaymentCompleted:
+            case WorkflowEventCodes.ReconciliationCompleted:
+                await HandlePaymentFanningOverridesAsync(recipients, evt, reqRef);
                 break;
 
             // --- Lifecycle: notify key stakeholders ---
@@ -992,6 +1017,54 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 EmailBody = $"O pedido <b>{reqRef}</b>{reqContext} teve o processo de recebimento finalizado. O ciclo do pedido está completo."
             };
 
+            case WorkflowEventCodes.AdvancePaymentRequired: return new EventConfig
+            {
+                Category = NotificationCategories.Payment,
+                NotificationType = NotificationTypes.Warning,
+                InAppTitle = "Adiantamento Necessário",
+                InAppMessage = $"O pedido {reqRef}{reqContext} exige um pagamento de adiantamento.",
+                SendEmail = true,
+                EmailSubject = $"Adiantamento Necessário — {reqRef}",
+                EmailHeadline = "Adiantamento Necessário",
+                EmailBody = $"O pedido <b>{reqRef}</b>{reqContext} tem uma condição de pagamento que exige um adiantamento para prosseguir."
+            };
+
+            case WorkflowEventCodes.AdvancePaymentScheduled: return new EventConfig
+            {
+                Category = NotificationCategories.Payment,
+                NotificationType = NotificationTypes.Info,
+                InAppTitle = "Adiantamento Agendado",
+                InAppMessage = $"O adiantamento referente ao pedido {reqRef}{reqContext} foi agendado.",
+                SendEmail = true,
+                EmailSubject = $"Adiantamento Agendado — {reqRef}",
+                EmailHeadline = "Adiantamento Agendado",
+                EmailBody = $"O pagamento de adiantamento para o pedido <b>{reqRef}</b>{reqContext} foi agendado pela equipa financeira."
+            };
+
+            case WorkflowEventCodes.AdvancePaymentCompleted: return new EventConfig
+            {
+                Category = NotificationCategories.Payment,
+                NotificationType = NotificationTypes.Success,
+                InAppTitle = "Adiantamento Realizado",
+                InAppMessage = $"O adiantamento referente ao pedido {reqRef}{reqContext} foi realizado com sucesso.",
+                SendEmail = true,
+                EmailSubject = $"Adiantamento Realizado — {reqRef}",
+                EmailHeadline = "Adiantamento Realizado com Sucesso",
+                EmailBody = $"O pagamento de adiantamento para o pedido <b>{reqRef}</b>{reqContext} foi concluído pela equipa financeira."
+            };
+
+            case WorkflowEventCodes.ReconciliationCompleted: return new EventConfig
+            {
+                Category = NotificationCategories.Payment,
+                NotificationType = NotificationTypes.Success,
+                InAppTitle = "Reconciliação Concluída",
+                InAppMessage = $"A reconciliação referente ao pedido {reqRef}{reqContext} foi realizada com sucesso.",
+                SendEmail = true,
+                EmailSubject = $"Reconciliação Concluída — {reqRef}",
+                EmailHeadline = "Reconciliação Concluída",
+                EmailBody = $"A reconciliação de adiantamento e faturamento para o pedido <b>{reqRef}</b>{reqContext} foi concluída."
+            };
+
             case WorkflowEventCodes.QuotationCompleted: return new EventConfig
             {
                 Category = NotificationCategories.Quotation,
@@ -1080,6 +1153,253 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             : "";
         return $"O pedido <b>{reqRef}</b>{reqContext} foi devolvido pela equipa de Finanças (<b>{actor}</b>) para correção da P.O ou documentação.{commentHtml}";
     }
+
+
+    // =====================================================================
+    // BUYER P.O. CREATION INSTRUCTION EMAIL
+    // =====================================================================
+
+    /// <summary>
+    /// Sends a dedicated, operational email to the assigned Buyer when a request is finally approved.
+    /// Contains all data needed to create the P.O. in PRIMAVERA without manual lookups.
+    /// Idempotency: uses a deterministic CorrelationId derived from RequestId + BuyerId to guarantee
+    /// the Buyer never receives duplicate P.O. creation instruction emails for the same approved request.
+    /// </summary>
+    private async Task SendBuyerPoCreationInstructionAsync(WorkflowEvent evt)
+    {
+        // ── Guard: no buyer assigned ──
+        if (!evt.BuyerId.HasValue)
+        {
+            _logger.LogWarning("[BuyerPO] No buyer assigned for Request {RequestId}. Skipping P.O. creation instruction email.", evt.RequestId);
+            return;
+        }
+
+        var buyerId = evt.BuyerId.Value;
+
+        // ── Idempotency: deterministic CorrelationId from RequestId + BuyerId ──
+        // This ensures stability across retries — the same (request, buyer) pair always produces the same GUID.
+        var dedupCorrelationId = GenerateDeterministicGuid(evt.RequestId, buyerId, "BUYER_PO_CREATION_INSTRUCTION");
+
+        var alreadySent = await _context.InformationalNotifications
+            .AnyAsync(n => n.EventCorrelationId == dedupCorrelationId && n.UserId == buyerId);
+
+        if (alreadySent)
+        {
+            _logger.LogInformation("[BuyerPO] P.O. creation instruction already sent for Request {RequestId}, Buyer {BuyerId} (CorrelationId: {CorrelationId}). Skipping.",
+                evt.RequestId, buyerId, dedupCorrelationId);
+            return;
+        }
+
+        // ── Load full request data with quotation includes ──
+        var request = await _context.Requests
+            .AsNoTracking()
+            .Include(r => r.Requester)
+            .Include(r => r.Department)
+            .Include(r => r.Plant).ThenInclude(p => p!.Company)
+            .Include(r => r.Currency)
+            .Include(r => r.Buyer)
+            .Include(r => r.Quotations.Where(q => q.IsSelected))
+                .ThenInclude(q => q.Supplier)
+            .Include(r => r.Quotations.Where(q => q.IsSelected))
+                .ThenInclude(q => q.Items.OrderBy(i => i.LineNumber))
+                    .ThenInclude(i => i.ItemCatalog)
+            .Include(r => r.Quotations.Where(q => q.IsSelected))
+                .ThenInclude(q => q.Items)
+                    .ThenInclude(i => i.Unit)
+            .Include(r => r.Quotations.Where(q => q.IsSelected))
+                .ThenInclude(q => q.Items)
+                    .ThenInclude(i => i.IvaRate)
+            .AsSplitQuery()
+            .FirstOrDefaultAsync(r => r.Id == evt.RequestId);
+
+        if (request == null)
+        {
+            _logger.LogWarning("[BuyerPO] Request {RequestId} not found. Skipping P.O. creation instruction email.", evt.RequestId);
+            return;
+        }
+
+        if (request.Buyer == null)
+        {
+            _logger.LogWarning("[BuyerPO] Buyer user record not found for BuyerId {BuyerId}. Skipping.", buyerId);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Buyer.Email))
+        {
+            _logger.LogWarning("[BuyerPO] Buyer {BuyerId} has no email address. Skipping P.O. creation instruction.", buyerId);
+            return;
+        }
+
+        var selectedQuotation = request.Quotations.FirstOrDefault(q => q.IsSelected);
+        var supplier = selectedQuotation?.Supplier;
+        var quotationItems = selectedQuotation?.Items?.OrderBy(i => i.LineNumber).ToList();
+        var reqRef = request.RequestNumber ?? "S/N";
+        var currencyCode = request.Currency?.Code ?? selectedQuotation?.Currency ?? "AOA";
+
+        _logger.LogInformation("[BuyerPO] Building P.O. creation instruction email for Buyer {BuyerName} ({BuyerEmail}), Request {RequestNumber}.",
+            request.Buyer.FullName, request.Buyer.Email, reqRef);
+
+        // ── Build rich HTML email body ──
+        var sb = new System.Text.StringBuilder();
+
+        // Section 1: Request Information
+        sb.Append("<h3 style='color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 8px;'>Dados do Pedido</h3>");
+        sb.Append("<table style='width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 14px;'>");
+        AppendInfoRow(sb, "Número do Pedido", $"<b>{Encode(reqRef)}</b>");
+        AppendInfoRow(sb, "Título", Encode(request.Title ?? "—"));
+        AppendInfoRow(sb, "Requisitante", Encode(request.Requester?.FullName ?? "—"));
+        AppendInfoRow(sb, "Departamento", Encode(request.Department?.Name ?? "—"));
+        AppendInfoRow(sb, "Planta / Empresa", $"{Encode(request.Plant?.Name ?? "—")} / {Encode(request.Plant?.Company?.Name ?? "—")}");
+        AppendInfoRow(sb, "Data de Aprovação", DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm") + " (UTC)");
+        AppendInfoRow(sb, "Comprador Atribuído", Encode(request.Buyer.FullName));
+        if (!string.IsNullOrWhiteSpace(request.Description))
+            AppendInfoRow(sb, "Observações", Encode(request.Description));
+        sb.Append("</table>");
+
+        // Section 2: Supplier Information
+        sb.Append("<h3 style='color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 8px;'>Dados do Fornecedor</h3>");
+        sb.Append("<table style='width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 14px;'>");
+        AppendInfoRow(sb, "Fornecedor", Encode(supplier?.Name ?? selectedQuotation?.SupplierNameSnapshot ?? "—"));
+        AppendInfoRow(sb, "NIF", Encode(supplier?.TaxId ?? "—"));
+        AppendInfoRow(sb, "Código PRIMAVERA", Encode(supplier?.PrimaveraCode ?? "Sem código PRIMAVERA"));
+        AppendInfoRow(sb, "E-mail", Encode(supplier?.ContactEmail1 ?? "—"));
+        sb.Append("</table>");
+
+        // Section 3: Financial Summary
+        sb.Append("<h3 style='color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 8px;'>Resumo Financeiro</h3>");
+        sb.Append("<table style='width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 14px;'>");
+        AppendInfoRow(sb, "Moeda", currencyCode);
+        if (selectedQuotation != null)
+        {
+            AppendInfoRow(sb, "Subtotal (Antes IVA)", $"{currencyCode} {selectedQuotation.TotalTaxableBase:N2}");
+            if (selectedQuotation.DiscountAmount > 0)
+                AppendInfoRow(sb, "Desconto", $"{currencyCode} {selectedQuotation.DiscountAmount:N2}");
+            AppendInfoRow(sb, "IVA Total", $"{currencyCode} {selectedQuotation.TotalIvaAmount:N2}");
+            AppendInfoRow(sb, "<b>Total</b>", $"<b>{currencyCode} {selectedQuotation.TotalAmount:N2}</b>");
+        }
+        else
+        {
+            var totalAmt = request.EstimatedTotalAmount;
+            AppendInfoRow(sb, "<b>Total Estimado</b>", $"<b>{currencyCode} {totalAmt:N2}</b>");
+        }
+        sb.Append("</table>");
+
+        // Section 4: Payment Condition
+        sb.Append("<h3 style='color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 8px;'>Condição de Pagamento</h3>");
+        sb.Append("<table style='width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 14px;'>");
+        var paymentLabel = request.PaymentConditionCode switch
+        {
+            "POST_PAID" => "Pós-pago (após entrega)",
+            "ADVANCE_FULL" => "100% Antecipado",
+            "ADVANCE_PARTIAL" => $"Antecipado Parcial ({request.AdvancePaymentPercent ?? 0}%)",
+            _ => "A definir no registo da P.O."
+        };
+        AppendInfoRow(sb, "Condição", paymentLabel);
+        if (request.AdvancePaymentPercent.HasValue && request.PaymentConditionCode != "POST_PAID")
+            AppendInfoRow(sb, "Percentual de Adiantamento", $"{request.AdvancePaymentPercent}%");
+        sb.Append("</table>");
+
+        // Section 5: Line Items Table with PRIMAVERA Codes
+        if (quotationItems != null && quotationItems.Any())
+        {
+            sb.Append("<h3 style='color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 8px;'>Itens da Cotação</h3>");
+            sb.Append("<table style='width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px;'>");
+            sb.Append("<thead><tr style='background-color: #f8f9fa; border-bottom: 2px solid #dee2e6;'>");
+            sb.Append("<th style='padding: 8px; text-align: left;'>#</th>");
+            sb.Append("<th style='padding: 8px; text-align: left;'>Descrição</th>");
+            sb.Append("<th style='padding: 8px; text-align: right;'>Qtd</th>");
+            sb.Append("<th style='padding: 8px; text-align: left;'>Un.</th>");
+            sb.Append("<th style='padding: 8px; text-align: right;'>Preço Unit.</th>");
+            sb.Append("<th style='padding: 8px; text-align: right;'>IVA %</th>");
+            sb.Append("<th style='padding: 8px; text-align: right;'>Total</th>");
+            sb.Append("<th style='padding: 8px; text-align: left;'>Cód. PRIMAVERA</th>");
+            sb.Append("</tr></thead><tbody>");
+
+            foreach (var item in quotationItems)
+            {
+                var primaveraCode = item.ItemCatalogId != null
+                    ? Encode(item.ItemCatalog?.PrimaveraCode ?? item.ItemCatalog?.Code ?? "—")
+                    : "<em style='color: #e67e22;'>Manual item - no PRIMAVERA item ID</em>";
+
+                sb.Append("<tr style='border-bottom: 1px solid #e9ecef;'>");
+                sb.Append($"<td style='padding: 8px;'>{item.LineNumber}</td>");
+                sb.Append($"<td style='padding: 8px;'>{Encode(item.Description)}</td>");
+                sb.Append($"<td style='padding: 8px; text-align: right;'>{item.Quantity:N2}</td>");
+                sb.Append($"<td style='padding: 8px;'>{item.Unit?.Code ?? "—"}</td>");
+                sb.Append($"<td style='padding: 8px; text-align: right;'>{item.UnitPrice:N2}</td>");
+                sb.Append($"<td style='padding: 8px; text-align: right;'>{item.IvaRatePercent:N1}%</td>");
+                sb.Append($"<td style='padding: 8px; text-align: right;'>{item.LineTotal:N2}</td>");
+                sb.Append($"<td style='padding: 8px;'>{primaveraCode}</td>");
+                sb.Append("</tr>");
+            }
+
+            sb.Append("</tbody></table>");
+        }
+
+        // CTA instruction
+        sb.Append("<p style='margin-top: 20px; padding: 12px; background: #eaf4fc; border-left: 4px solid #3498db; font-size: 14px;'>");
+        sb.Append("<b>Próximo passo:</b> Crie a Purchase Order no PRIMAVERA com os dados acima e faça o upload do documento P.O. no portal.");
+        sb.Append("</p>");
+
+        var emailBody = sb.ToString();
+        var subject = $"Pedido aprovado - aguardando criação da P.O. | Request #{reqRef}";
+        var headline = "Pedido Aprovado — Aguardando P.O.";
+
+        var portalBaseUrl = _config["App:PortalBaseUrl"] ?? "";
+        var actionUrl = $"{portalBaseUrl}/requests/{evt.RequestId}";
+
+        // ── Send email ──
+        var sent = await _emailService.SendWorkflowNotificationAsync(
+            request.Buyer.Email,
+            request.Buyer.FullName,
+            subject,
+            headline,
+            emailBody,
+            actionUrl,
+            "Abrir Pedido no Portal");
+
+        if (sent)
+        {
+            _logger.LogInformation("[BuyerPO] P.O. creation instruction email sent to {BuyerEmail} for Request {RequestNumber} (CorrelationId: {CorrelationId}).",
+                request.Buyer.Email, reqRef, dedupCorrelationId);
+
+            // Persist dedup record
+            await _notificationService.CreateNotificationWithDedupAsync(
+                buyerId,
+                "Instrução de Criação de P.O.",
+                $"O pedido {reqRef} foi aprovado. Crie a P.O. no PRIMAVERA.",
+                "BUYER_INSTRUCTION",
+                $"/requests/{evt.RequestId}",
+                dedupCorrelationId,
+                "BUYER_PO_CREATION_INSTRUCTION");
+        }
+        else
+        {
+            _logger.LogWarning("[BuyerPO] Email dispatch returned failure for Buyer {BuyerEmail}, Request {RequestNumber}.", request.Buyer.Email, reqRef);
+        }
+    }
+
+    /// <summary>
+    /// Generates a deterministic GUID from a set of input values using a namespace-based approach.
+    /// Guarantees that the same inputs always produce the same GUID, enabling stable idempotency keys.
+    /// </summary>
+    private static Guid GenerateDeterministicGuid(Guid requestId, Guid buyerId, string purpose)
+    {
+        using var md5 = System.Security.Cryptography.MD5.Create();
+        var input = $"{requestId}:{buyerId}:{purpose}";
+        var hash = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(input));
+        return new Guid(hash);
+    }
+
+    private static void AppendInfoRow(System.Text.StringBuilder sb, string label, string value)
+    {
+        sb.Append("<tr>");
+        sb.Append($"<td style='padding: 6px 8px; color: #7f8c8d; width: 40%;'>{label}</td>");
+        sb.Append($"<td style='padding: 6px 8px; color: #2c3e50;'>{value}</td>");
+        sb.Append("</tr>");
+    }
+
+    private static string Encode(string? value) => System.Net.WebUtility.HtmlEncode(value ?? "—");
 
     private async Task<string> FormatLineItemsTableAsync(Guid requestId)
     {

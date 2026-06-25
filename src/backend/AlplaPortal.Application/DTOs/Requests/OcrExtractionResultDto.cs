@@ -48,6 +48,15 @@ public class OcrHeaderSuggestionsDto
 
     [JsonPropertyName("discountAmount")]
     public OcrValueDto<decimal>? DiscountAmount { get; set; }
+
+    [JsonPropertyName("paymentCondition")]
+    public OcrValueDto<string>? PaymentCondition { get; set; }
+
+    [JsonPropertyName("paymentConditionRawText")]
+    public OcrValueDto<string>? PaymentConditionRawText { get; set; }
+
+    [JsonPropertyName("paymentConditionAdvancePercent")]
+    public OcrValueDto<decimal?>? PaymentConditionAdvancePercent { get; set; }
 }
 
 public class OcrLineItemSuggestionDto

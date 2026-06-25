@@ -22,7 +22,16 @@ public static class ExtractionMapper
                 Date = new OcrValueDto<string> { Value = internalResult.Header?.DocumentDate, Status = "recommended" },
                 CurrencyCode = new OcrValueDto<string> { Value = internalResult.Header?.Currency, Status = "recommended" },
                 TotalAmount = new OcrValueDto<decimal> { Value = internalResult.Header?.GrandTotal ?? internalResult.Header?.TotalAmount ?? 0, Status = "recommended" },
-                DiscountAmount = new OcrValueDto<decimal> { Value = internalResult.Header?.DiscountAmount ?? 0, Status = "recommended" }
+                DiscountAmount = new OcrValueDto<decimal> { Value = internalResult.Header?.DiscountAmount ?? 0, Status = "recommended" },
+                PaymentCondition = !string.IsNullOrWhiteSpace(internalResult.Header?.PaymentConditionType) 
+                    ? new OcrValueDto<string> { Value = internalResult.Header.PaymentConditionType, Status = internalResult.Header.PaymentConditionConfidence >= 0.7m ? "recommended" : "suggested" }
+                    : null,
+                PaymentConditionRawText = !string.IsNullOrWhiteSpace(internalResult.Header?.PaymentConditionRawText)
+                    ? new OcrValueDto<string> { Value = internalResult.Header.PaymentConditionRawText, Status = "informational" }
+                    : null,
+                PaymentConditionAdvancePercent = internalResult.Header?.PaymentConditionAdvancePercent.HasValue == true
+                    ? new OcrValueDto<decimal?> { Value = internalResult.Header.PaymentConditionAdvancePercent, Status = "suggested" }
+                    : null
             },
             LineItemSuggestions = (internalResult.Items ?? new()).Select(item => new OcrLineItemSuggestionDto
             {

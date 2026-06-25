@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import { DocumentExtractionSettingsDto } from '../../types';
+import { DocumentExtractionSettingsDto, OcrModuleConfigDto } from '../../types';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
-import { Save, Info, AlertTriangle, Globe, Braces, Settings } from 'lucide-react';
+import { Save, Info, AlertTriangle, Globe, Braces, Settings, Layers } from 'lucide-react';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 
 export function DocumentExtractionSettings() {
     const [settings, setSettings] = useState<DocumentExtractionSettingsDto | null>(null);
+    const [modules, setModules] = useState<OcrModuleConfigDto[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [feedback, setFeedback] = useState<{ message: string, type: FeedbackType } | null>(null);
@@ -22,8 +23,12 @@ export function DocumentExtractionSettings() {
     const loadSettings = async () => {
         try {
             setLoading(true);
-            const data = await api.admin.extractionSettings.get();
+            const [data, mods] = await Promise.all([
+                api.admin.extractionSettings.get(),
+                api.admin.extractionSettings.getModules()
+            ]);
             setSettings(data);
+            setModules(mods);
         } catch (err: any) {
             setFeedback({ message: 'Falha ao carregar configurações de extração.', type: 'error' });
         } finally {
@@ -38,7 +43,15 @@ export function DocumentExtractionSettings() {
         try {
             setSaving(true);
             setFeedback(null);
+            
+            // Save global settings
             await api.admin.extractionSettings.update(settings);
+
+            // Save modules
+            for (const mod of modules) {
+                await api.admin.extractionSettings.updateModule(mod.moduleKey, mod);
+            }
+
             setFeedback({ message: 'Configurações guardadas com sucesso.', type: 'success' });
         } catch (err: any) {
             setFeedback({ message: err.message || 'Falha ao guardar configurações.', type: 'error' });
@@ -65,6 +78,10 @@ export function DocumentExtractionSettings() {
 
     const handleChange = (field: keyof DocumentExtractionSettingsDto, value: any) => {
         setSettings(prev => prev ? { ...prev, [field]: value } : null);
+    };
+
+    const handleModuleChange = (moduleKey: string, field: keyof OcrModuleConfigDto, value: any) => {
+        setModules(prev => prev.map(m => m.moduleKey === moduleKey ? { ...m, [field]: value } : m));
     };
 
     if (loading) {
@@ -235,6 +252,94 @@ export function DocumentExtractionSettings() {
                             <Globe size={16} /> {testing ? 'A TESTAR...' : 'TESTAR CONEXÃO DO PROVEDOR'}
                         </button>
                     </div>
+                </section>
+
+                {/* Módulos OCR */}
+                <section style={{ 
+                    backgroundColor: 'var(--color-bg-surface)', 
+                    border: '1px solid var(--color-border)', 
+                    borderRadius: 'var(--radius-lg)',
+                    padding: '1.5rem'
+                }}>
+                    <h2 style={{ fontSize: '1.1rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.75rem' }}>
+                        <Layers size={20} color="var(--color-primary)" />
+                        Módulos OCR
+                    </h2>
+
+                    {modules.length === 0 ? (
+                        <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>Nenhum módulo OCR configurado.</p>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            {modules.map(mod => (
+                                <div key={mod.moduleKey} style={{ 
+                                    padding: '1rem', 
+                                    border: '1px solid var(--color-border)', 
+                                    borderRadius: 'var(--radius-md)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '1rem',
+                                    backgroundColor: mod.isEnabled ? 'var(--color-bg-page)' : 'rgba(0,0,0,0.02)'
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div>
+                                            <h3 style={{ margin: 0, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                {mod.displayName}
+                                                <span style={{ fontSize: '0.7rem', padding: '0.1rem 0.4rem', backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text-muted)' }}>
+                                                    {mod.moduleKey}
+                                                </span>
+                                            </h3>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                            <label style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', color: mod.isEnabled ? 'var(--color-status-blue)' : 'var(--color-text-muted)' }}>
+                                                {mod.isEnabled ? 'ATIVO' : 'DESATIVADO'}
+                                            </label>
+                                            <input
+                                                type="checkbox"
+                                                checked={mod.isEnabled}
+                                                onChange={(e) => handleModuleChange(mod.moduleKey, 'isEnabled', e.target.checked)}
+                                                style={{ width: '1.1rem', height: '1.1rem', cursor: 'pointer' }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                            <label style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Extensões Permitidas</label>
+                                            <input
+                                                type="text"
+                                                value={mod.allowedExtensions || ''}
+                                                onChange={(e) => handleModuleChange(mod.moduleKey, 'allowedExtensions', e.target.value)}
+                                                placeholder="ex: .pdf,.png"
+                                                style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }}
+                                            />
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                            <label style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Provedor Específico</label>
+                                            <select
+                                                value={mod.providerOverride || ''}
+                                                onChange={(e) => handleModuleChange(mod.moduleKey, 'providerOverride', e.target.value || null)}
+                                                style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }}
+                                            >
+                                                <option value="">(Usar Global)</option>
+                                                <option value="OPENAI">OpenAI Vision</option>
+                                                <option value="AZURE_DOCUMENT_INTELLIGENCE">Azure Document Intelligence</option>
+                                            </select>
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                            <label style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Modelo Específico</label>
+                                            <input
+                                                type="text"
+                                                value={mod.modelOverride || ''}
+                                                onChange={(e) => handleModuleChange(mod.moduleKey, 'modelOverride', e.target.value)}
+                                                placeholder="(Usar Global)"
+                                                style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </section>
 
                 {/* OpenAI Section */}

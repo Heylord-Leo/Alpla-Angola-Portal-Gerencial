@@ -39,33 +39,39 @@ public class DocumentExtractionService : IDocumentExtractionService
             return new ExtractionResultDto { Success = false };
         }
 
-        // G2: Module allowlist enforcement
-        var policy = options.AiOcrPolicy;
-        if (!string.IsNullOrWhiteSpace(sourceContext) && policy.AllowedModules.Count > 0)
+        // G2: Database-backed Module allowlist enforcement
+        OcrModuleConfigDto? activeModule = null;
+        if (!string.IsNullOrWhiteSpace(sourceContext))
         {
-            var moduleAllowed = policy.AllowedModules.Any(m => m.Equals(sourceContext, StringComparison.OrdinalIgnoreCase));
-            if (!moduleAllowed)
+            var moduleSettings = await _settingsService.GetModuleSettingsAsync(ct);
+            activeModule = moduleSettings.FirstOrDefault(m => m.ModuleKey.Equals(sourceContext, StringComparison.OrdinalIgnoreCase));
+
+            if (activeModule == null || !activeModule.IsEnabled)
             {
-                _logger.LogWarning("Module '{Module}' is not in AllowedModules list. Extraction blocked.", sourceContext);
+                var reason = activeModule == null ? "MODULE_NOT_CONFIGURED" : "MODULE_DISABLED";
+                _logger.LogWarning("Module '{Module}' OCR extraction blocked. Reason: {Reason}", sourceContext, reason);
                 await _adminLogWriter.WriteAsync("Warning", nameof(DocumentExtractionService), "OCR_MODULE_BLOCKED",
-                    $"AI OCR extraction blocked: module '{sourceContext}' is not allowed.",
-                    payload: SafePayload.From(new { fileName = Path.GetFileName(fileName), module = sourceContext, allowedModules = string.Join(",", policy.AllowedModules), reason = "MODULE_NOT_ALLOWED" }));
+                    $"AI OCR extraction blocked: module '{sourceContext}' is not configured or disabled.",
+                    payload: SafePayload.From(new { fileName = Path.GetFileName(fileName), module = sourceContext, reason }));
                 return new ExtractionResultDto { Success = false };
             }
         }
 
         // G2: Document type allowlist enforcement
         var extension = Path.GetExtension(fileName).ToLowerInvariant();
-        if (policy.AllowedDocumentTypes.Count > 0 && !policy.AllowedDocumentTypes.Contains(extension))
+        var allowedExtensions = activeModule?.AllowedExtensions?.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(e => e.Trim().ToLowerInvariant()).ToList()
+                                ?? options.AiOcrPolicy.AllowedDocumentTypes;
+
+        if (allowedExtensions.Count > 0 && !allowedExtensions.Contains(extension))
         {
             _logger.LogWarning("Document type '{Extension}' is not in AllowedDocumentTypes list. Extraction blocked.", extension);
             await _adminLogWriter.WriteAsync("Warning", nameof(DocumentExtractionService), "OCR_DOCUMENT_TYPE_BLOCKED",
                 $"AI OCR extraction blocked: document type '{extension}' is not allowed.",
-                payload: SafePayload.From(new { fileName = Path.GetFileName(fileName), extension, allowedDocumentTypes = string.Join(",", policy.AllowedDocumentTypes), reason = "DOCUMENT_TYPE_NOT_ALLOWED" }));
+                payload: SafePayload.From(new { fileName = Path.GetFileName(fileName), extension, allowedDocumentTypes = string.Join(",", allowedExtensions), reason = "DOCUMENT_TYPE_NOT_ALLOWED" }));
             return new ExtractionResultDto { Success = false };
         }
 
-        var providerName = options.DefaultProvider;
+        var providerName = activeModule?.ProviderOverride ?? options.DefaultProvider;
 
         // Guard: if a legacy/obsolete provider name (e.g. LOCAL_OCR) is still in the database,
         // log a warning and fall back to OPENAI.

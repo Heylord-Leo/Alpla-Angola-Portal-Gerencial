@@ -51,6 +51,12 @@ export function RegisterPoModal({ show, requestId, supplierId, requestData, onCl
     const [regCheck, setRegCheck] = useState<SupplierRegistrationCheck | null>(null);
     const [regCheckLoading, setRegCheckLoading] = useState(false);
 
+    // B2P: Payment Condition State (no default — buyer must explicitly select)
+    const [paymentCondition, setPaymentCondition] = useState<string>('');
+    const [advancePercent, setAdvancePercent] = useState<number>(50);
+    const [paymentConditionSource, setPaymentConditionSource] = useState<'OCR_DETECTED' | 'USER_SELECTED' | ''>('');
+    const [ocrDetectedPaymentCondition, setOcrDetectedPaymentCondition] = useState<string | null>(null);
+
     // Reset state on open/close
     useEffect(() => {
         if (!show) {
@@ -60,6 +66,10 @@ export function RegisterPoModal({ show, requestId, supplierId, requestData, onCl
             setOverrideConfirmed(false);
             setFeedback({ type: 'error', message: null });
             setRegCheck(null);
+            setPaymentCondition('');
+            setAdvancePercent(50);
+            setPaymentConditionSource('');
+            setOcrDetectedPaymentCondition(null);
         }
     }, [show]);
 
@@ -149,6 +159,20 @@ export function RegisterPoModal({ show, requestId, supplierId, requestData, onCl
                 extractedSupplier
             });
 
+            // OCR Payment Condition Detection
+            const ocrPaymentCondition = suggestions?.paymentCondition?.value;
+            const ocrAdvancePercent = suggestions?.paymentConditionAdvancePercent?.value;
+            if (ocrPaymentCondition && ['POST_PAID', 'ADVANCE_FULL', 'ADVANCE_PARTIAL'].includes(ocrPaymentCondition)) {
+                setPaymentCondition(ocrPaymentCondition);
+                setPaymentConditionSource('OCR_DETECTED');
+                setOcrDetectedPaymentCondition(ocrPaymentCondition);
+                if (ocrPaymentCondition === 'ADVANCE_PARTIAL' && ocrAdvancePercent) {
+                    setAdvancePercent(Math.max(1, Math.min(99, Math.round(Number(ocrAdvancePercent)))));
+                }
+            } else {
+                setOcrDetectedPaymentCondition(null);
+            }
+
         } catch (err: any) {
              setOcrResult({
                 hasMismatches: true,
@@ -206,12 +230,15 @@ export function RegisterPoModal({ show, requestId, supplierId, requestData, onCl
             // 1. Upload the file first
             await api.attachments.upload(requestId, [file], 'PO');
 
-            // 2. Register PO status transition
+            // 2. Register PO status transition (with B2P payment condition)
             const result = await api.requests.registerPo(requestId, {
                 comment,
                 hasMismatches: ocrResult?.hasMismatches || false,
                 overrideConfirmed,
-                mismatchDetails: ocrResult?.details ? ocrResult.details.join('; ') : ''
+                mismatchDetails: ocrResult?.details ? ocrResult.details.join('; ') : '',
+                paymentConditionCode: paymentCondition,
+                advancePaymentPercent: paymentCondition === 'ADVANCE_PARTIAL' ? advancePercent : undefined,
+                paymentConditionSource: paymentConditionSource || 'USER_SELECTED'
             });
 
             onSuccess(result.message || 'P.O registrada com sucesso!');
@@ -615,6 +642,86 @@ export function RegisterPoModal({ show, requestId, supplierId, requestData, onCl
                             )}
                         </div>
 
+                        {/* ── B2P: Payment Condition Selector (required — no default) ── */}
+                        <div style={{ marginBottom: '24px', padding: '20px', backgroundColor: 'var(--color-bg-page)', border: !paymentCondition ? '2px solid #f97316' : '2px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: !paymentCondition ? '#f97316' : 'var(--color-text-muted)' }}>
+                                Condição de Pagamento <span style={{ color: '#ef4444' }}>*</span>
+                                {ocrDetectedPaymentCondition && (
+                                    <span style={{ fontSize: '0.65rem', padding: '2px 8px', borderRadius: '999px', backgroundColor: 'rgba(22, 163, 74, 0.1)', color: '#16a34a', border: '1px solid rgba(22, 163, 74, 0.3)', fontWeight: 700 }}>
+                                        OCR Detectado
+                                    </span>
+                                )}
+                            </label>
+                            {!paymentCondition && (
+                                <p style={{ fontSize: '0.75rem', color: '#f97316', marginBottom: '10px', fontWeight: 600 }}>
+                                    Selecione a condição de pagamento antes de registrar a P.O.
+                                </p>
+                            )}
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                {[
+                                    { code: 'POST_PAID', label: 'Pós-Pago' },
+                                    { code: 'ADVANCE_FULL', label: '100% Antecipado' },
+                                    { code: 'ADVANCE_PARTIAL', label: 'Antecipado Parcial' },
+                                ].map(opt => (
+                                    <button
+                                        key={opt.code}
+                                        type="button"
+                                        onClick={() => { setPaymentCondition(opt.code); setPaymentConditionSource('USER_SELECTED'); }}
+                                        style={{
+                                            padding: '10px 18px',
+                                            borderRadius: 'var(--radius-sm)',
+                                            border: paymentCondition === opt.code ? '2px solid var(--color-primary)' : '1.5px solid var(--color-border)',
+                                            backgroundColor: paymentCondition === opt.code ? 'rgba(var(--color-primary-rgb), 0.08)' : 'var(--color-bg-surface)',
+                                            color: paymentCondition === opt.code ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                                            fontWeight: 800,
+                                            fontSize: '0.8rem',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.15s ease',
+                                            fontFamily: 'inherit',
+                                            position: 'relative',
+                                        }}
+                                    >
+                                        {opt.label}
+                                        {ocrDetectedPaymentCondition === opt.code && paymentCondition === opt.code && (
+                                            <span style={{ position: 'absolute', top: '-6px', right: '-6px', width: '14px', height: '14px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                <CheckCircle size={10} color="white" strokeWidth={3} />
+                                            </span>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {paymentCondition === 'ADVANCE_PARTIAL' && (
+                                <div style={{ marginTop: '16px' }}>
+                                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 800, fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
+                                        Percentual de Adiantamento: {advancePercent}%
+                                    </label>
+                                    <input
+                                        type="range"
+                                        min={1}
+                                        max={99}
+                                        value={advancePercent}
+                                        onChange={(e) => setAdvancePercent(Number(e.target.value))}
+                                        style={{ width: '100%', cursor: 'pointer' }}
+                                    />
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', fontWeight: 700, color: 'var(--color-text-muted)' }}>
+                                        <span>1%</span>
+                                        <span style={{ color: 'var(--color-primary)', fontWeight: 900 }}>
+                                            {formatCurrencyAO(requestData.totalAmount * advancePercent / 100)} {requestData.currencyCode}
+                                        </span>
+                                        <span>99%</span>
+                                    </div>
+                                </div>
+                            )}
+
+                            {paymentCondition === 'ADVANCE_FULL' && (
+                                <div style={{ marginTop: '12px', fontSize: '0.8rem', fontWeight: 700, color: '#d97706', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <AlertTriangle size={14} />
+                                    O valor total de {formatCurrencyAO(requestData.totalAmount)} {requestData.currencyCode} será exigido como adiantamento.
+                                </div>
+                            )}
+                        </div>
+
                         <div style={{ marginBottom: '32px' }}>
                             <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
                                 Comentário {!ocrResult?.hasMismatches ? '(opcional)' : '(Obrigatório)'}
@@ -653,7 +760,7 @@ export function RegisterPoModal({ show, requestId, supplierId, requestData, onCl
                                 CANCELAR
                             </button>
                             <button
-                                disabled={isBlocked || processing || !file || ocrLoading || (ocrResult?.hasMismatches && !overrideConfirmed) || (ocrResult?.hasMismatches && !comment.trim())}
+                                disabled={isBlocked || processing || !file || ocrLoading || !paymentCondition || (ocrResult?.hasMismatches && !overrideConfirmed) || (ocrResult?.hasMismatches && !comment.trim())}
                                 onClick={handleConfirm}
                                 style={{
                                     height: '48px',
@@ -664,13 +771,13 @@ export function RegisterPoModal({ show, requestId, supplierId, requestData, onCl
                                     display: 'flex',
                                     alignItems: 'center',
                                     gap: '8px',
-                                    cursor: (isBlocked || processing || !file || ocrLoading || (ocrResult?.hasMismatches && !overrideConfirmed) || (ocrResult?.hasMismatches && !comment.trim())) ? 'not-allowed' : 'pointer',
+                                    cursor: (isBlocked || processing || !file || ocrLoading || !paymentCondition || (ocrResult?.hasMismatches && !overrideConfirmed) || (ocrResult?.hasMismatches && !comment.trim())) ? 'not-allowed' : 'pointer',
                                     fontWeight: 800,
                                     borderRadius: 'var(--radius-sm)',
                                     boxShadow: isBlocked ? 'none' : 'var(--shadow-md)',
                                     fontFamily: 'var(--font-family-display)',
                                     fontSize: '0.875rem',
-                                    opacity: (isBlocked || processing || !file || ocrLoading || (ocrResult?.hasMismatches && !overrideConfirmed) || (ocrResult?.hasMismatches && !comment.trim())) ? 0.7 : 1
+                                    opacity: (isBlocked || processing || !file || ocrLoading || !paymentCondition || (ocrResult?.hasMismatches && !overrideConfirmed) || (ocrResult?.hasMismatches && !comment.trim())) ? 0.7 : 1
                                 }}
                             >
                                 <Save size={18} />

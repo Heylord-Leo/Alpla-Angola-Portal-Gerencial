@@ -111,6 +111,26 @@ export function getRequestGuidance(statusCode: string, requestTypeCode: string |
                 responsible: 'Sem ação',
                 nextAction: 'Pedido cancelado'
             };
+        case 'ADVANCE_PAYMENT_REQUIRED':
+            return {
+                responsible: 'Financeiro',
+                nextAction: 'Agendar e processar adiantamento ao fornecedor'
+            };
+        case 'ADVANCE_PAYMENT_COMPLETED':
+            return {
+                responsible: 'Recebimento / Comprador',
+                nextAction: 'Aguardar entrega do fornecedor'
+            };
+        case 'WAITING_SUPPLIER_DELIVERY':
+            return {
+                responsible: 'Recebimento / Comprador',
+                nextAction: 'Confirmar entrega do bem ou serviço'
+            };
+        case 'WAITING_RECONCILIATION':
+            return {
+                responsible: 'Financeiro',
+                nextAction: 'Reconciliar facturas e finalizar pagamento remanescente'
+            };
         default:
             return {
                 responsible: 'Não definido',
@@ -132,7 +152,9 @@ export function isFinalizedStatus(statusCode: string | null | undefined): boolea
         'COMPLETED', 'REJECTED', 'CANCELLED', 
         'QUOTATION_COMPLETED', 'PO_ISSUED', 
         'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED',
-        'WAITING_RECEIPT'
+        'WAITING_RECEIPT',
+        'ADVANCE_PAYMENT_REQUIRED', 'ADVANCE_PAYMENT_COMPLETED',
+        'WAITING_SUPPLIER_DELIVERY', 'WAITING_RECONCILIATION'
     ];
     return finalized.includes(statusCode);
 }

@@ -25,6 +25,7 @@ import { completeQuotationAction } from '../../lib/workflow';
 import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModal';
 import { RegisterPoModal } from '../../components/RegisterPoModal';
 import { CorrectPoModal } from '../../components/CorrectPoModal';
+import { ReconciliationModal } from '../../components/ui/ReconciliationModal';
 import { RequestActionHeader, BreadcrumbItem, OperationalGuidance } from './components/RequestActionHeader';
 import { RequestQuotations } from './components/RequestQuotations';
 import { scrollToFirstError } from '../../lib/validation';
@@ -92,6 +93,8 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         setShowRegisterPoModal,
         showCorrectPoModal,
         setShowCorrectPoModal,
+        showReconciliationModal,
+        setShowReconciliationModal,
         approvalComment,
         setApprovalComment,
         approvalProcessing,
@@ -339,6 +342,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     isQuotationPartiallyEditable={isQuotationPartiallyEditable}
                     setShowRegisterPoModal={setShowRegisterPoModal}
                     setShowCorrectPoModal={setShowCorrectPoModal}
+                    setShowReconciliationModal={setShowReconciliationModal}
                     setShowApprovalModal={setShowApprovalModal}
                     navigate={navigate}
                     onDrawerClose={onDrawerClose}
@@ -656,6 +660,17 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     );
                 })()
             )}
+
+            {/* Reconciliation Modal */}
+            <ReconciliationModal
+                show={showReconciliationModal}
+                requestId={id!}
+                onClose={() => setShowReconciliationModal(false)}
+                onSuccess={(message) => {
+                    setFeedback({ type: 'success', message });
+                    loadData();
+                }}
+            />
 
             {/* Correct PO Modal — only for WAITING_PO_CORRECTION correction flow (isolated from initial registration) */}
             <CorrectPoModal

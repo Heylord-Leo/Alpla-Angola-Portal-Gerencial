@@ -509,7 +509,9 @@ public class FinanceController : BaseController
                 ActualPaidAmount = r.ActualPaidAmount,
                 ActualPaidAtUtc = r.ActualPaidAtUtc,
                 HasPaymentDivergence = r.ApprovedTotalAmount.HasValue && r.ActualPaidAmount.HasValue
-                    && Math.Round(r.ActualPaidAmount.Value, 2) != Math.Round(r.ApprovedTotalAmount.Value, 2)
+                    && Math.Round(r.ActualPaidAmount.Value, 2) != Math.Round(r.ApprovedTotalAmount.Value, 2),
+                PaymentCondition = r.PaymentConditionCode,
+                AdvancePaymentPercent = r.AdvancePaymentPercent
             });
         }
 
@@ -590,7 +592,9 @@ public class FinanceController : BaseController
                 CreatedAtUtc = sh.CreatedAtUtc,
                 ActorName = sh.ActorUser!.FullName ?? "Unknown",
                 NewStatusCode = sh.NewStatus!.Code ?? string.Empty,
-                NewStatusName = sh.NewStatus.Name ?? string.Empty
+                NewStatusName = sh.NewStatus.Name ?? string.Empty,
+                PaymentCondition = sh.Request.PaymentConditionCode,
+                AdvancePaymentPercent = sh.Request.AdvancePaymentPercent
             })
             .ToListAsync();
 
@@ -651,12 +655,14 @@ public class FinanceController : BaseController
                 CreatedAtUtc = sh.CreatedAtUtc,
                 ActorName = sh.ActorUser!.FullName ?? "Unknown",
                 NewStatusCode = sh.NewStatus!.Code ?? string.Empty,
-                NewStatusName = sh.NewStatus.Name ?? string.Empty
+                NewStatusName = sh.NewStatus.Name ?? string.Empty,
+                PaymentCondition = sh.Request.PaymentConditionCode,
+                AdvancePaymentPercent = sh.Request.AdvancePaymentPercent
             })
             .ToListAsync();
 
         var csv = new System.Text.StringBuilder();
-        csv.AppendLine("Data/Hora;Acao;Responsavel;Ref. Pedido;Titulo;Moeda;Montante;Detalhes");
+        csv.AppendLine("Data/Hora;Acao;Responsavel;Ref. Pedido;Titulo;Moeda;Montante;Cond. Pagamento;% Adiant.;Detalhes");
 
         foreach (var item in items)
         {
@@ -670,7 +676,7 @@ public class FinanceController : BaseController
                 "PAYMENT_DIVERGENCE_DETECTED" => "Divergência",
                 _ => item.ActionTaken
             };
-            csv.AppendLine($"{item.CreatedAtUtc:yyyy-MM-dd HH:mm:ss};{actionStr};{item.ActorName};{item.RequestNumber};{item.RequestTitle};{item.CurrencyCode};{item.Amount};{comment}");
+            csv.AppendLine($"{item.CreatedAtUtc:yyyy-MM-dd HH:mm:ss};{actionStr};{item.ActorName};{item.RequestNumber};{item.RequestTitle};{item.CurrencyCode};{item.Amount};{item.PaymentCondition};{item.AdvancePaymentPercent};{comment}");
         }
 
         var bytes = System.Text.Encoding.UTF8.GetBytes(csv.ToString());
@@ -1285,7 +1291,8 @@ public class FinanceController : BaseController
                 return "REALIZED";
 
             // Confirmed
-            if (linkedRequestStatusCode is RequestConstants.Statuses.FinalApproved or RequestConstants.Statuses.PoIssued or RequestConstants.Statuses.PaymentRequestSent or RequestConstants.Statuses.PaymentScheduled)
+            if (linkedRequestStatusCode is RequestConstants.Statuses.FinalApproved or RequestConstants.Statuses.PoIssued or RequestConstants.Statuses.PaymentRequestSent or RequestConstants.Statuses.PaymentScheduled
+                or RequestConstants.Statuses.AdvancePaymentRequired or RequestConstants.Statuses.AdvancePaymentCompleted or RequestConstants.Statuses.WaitingSupplierDelivery or RequestConstants.Statuses.WaitingReconciliation)
                 return "CONFIRMED";
 
             // Pipeline — all other in-flight statuses

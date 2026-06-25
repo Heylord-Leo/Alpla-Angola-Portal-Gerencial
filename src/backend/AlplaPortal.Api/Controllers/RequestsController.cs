@@ -624,7 +624,7 @@ public class RequestsController : BaseController
         var isFinance = roles.Contains(RoleConstants.Finance);
         var isReceiver = roles.Contains(RoleConstants.Receiving);
 
-        var receivingCodes = new[] { "WAITING_RECEIPT", RequestConstants.Statuses.PaymentCompleted, "PAG_REALIZADO", "AG_RECIBO" };
+        var receivingCodes = new[] { "WAITING_RECEIPT", RequestConstants.Statuses.PaymentCompleted, "PAG_REALIZADO", "AG_RECIBO", "WAITING_SUPPLIER_DELIVERY" };
 
         Expression<Func<AlplaPortal.Domain.Entities.Request, bool>> myTasksCriteria = r =>
             // Solicitante: Em rascunho, ajuste ou Aprovado (Pagamento - para acompanhamento/vencimento)
@@ -634,9 +634,9 @@ public class RequestsController : BaseController
             // Aprovador Final
             (isFinalApprover && r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval) ||
             // Comprador
-            (isBuyer && (r.Status!.Code == RequestConstants.Statuses.WaitingQuotation || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Quotation)) && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
+            (isBuyer && (r.Status!.Code == RequestConstants.Statuses.WaitingQuotation || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Quotation) || r.Status!.Code == "WAITING_SUPPLIER_DELIVERY") && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
             // Financeiro
-            (isFinance && ((r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled)) ||
+            (isFinance && ((r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled || r.Status!.Code == "ADVANCE_PAYMENT_REQUIRED" || r.Status!.Code == "WAITING_RECONCILIATION")) ||
             // Recebimento (Requester ou Role)
             ((r.RequesterId == currentUserId || isReceiver) && receivingCodes.Contains(r.Status!.Code));
 
@@ -650,9 +650,9 @@ public class RequestsController : BaseController
                 (r.RequesterId == currentUserId && (r.Status!.Code == RequestConstants.Statuses.Draft || r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment))) ||
                 (isAreaApprover && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
                 (isFinalApprover && r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval) ||
-                (isBuyer && (r.Status!.Code == RequestConstants.Statuses.WaitingQuotation || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Quotation)) && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
-                (isFinance && ((r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled)) ||
-                ((r.RequesterId == currentUserId || isReceiver) && receivingCodes.Contains(r.Status!.Code))
+                (isBuyer && (r.Status!.Code == RequestConstants.Statuses.WaitingQuotation || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Quotation) || r.Status!.Code == "WAITING_SUPPLIER_DELIVERY") && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
+                (isFinance && ((r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled || r.Status!.Code == "ADVANCE_PAYMENT_REQUIRED" || r.Status!.Code == "WAITING_RECONCILIATION")) ||
+                ((r.RequesterId == currentUserId || isReceiver) && (receivingCodes.Contains(r.Status!.Code) || r.Status!.Code == "WAITING_SUPPLIER_DELIVERY"))
             ));
         }
         // --- 
@@ -993,6 +993,11 @@ public class RequestsController : BaseController
                 EstimatedTotalAmount = r.EstimatedTotalAmount,
                 DiscountAmount = r.DiscountAmount,
                 CurrencyCode = r.Currency != null ? r.Currency.Code : null,
+
+                // B2P: Payment Condition
+                PaymentConditionCode = r.PaymentConditionCode,
+                AdvancePaymentPercent = r.AdvancePaymentPercent,
+                PaymentConditionSource = r.PaymentConditionSource,
                 
                 RequestedDateUtc = r.RequestedDateUtc,
                 NeedByDateUtc = r.NeedByDateUtc,
@@ -2248,7 +2253,7 @@ public class RequestsController : BaseController
         {
             // Step 3: Trigger Extraction via provider-agnostic service
             using var stream = file.OpenReadStream();
-            var internalResult = await _extractionService.ExtractAsync(stream, file.FileName, "quotation");
+            var internalResult = await _extractionService.ExtractAsync(stream, file.FileName, "REQUESTS");
 
             // Map back to legacy DTO to preserve frontend compatibility
             var legacyResult = ExtractionMapper.MapToLegacyOcrResult(internalResult);
@@ -4182,6 +4187,49 @@ public class RequestsController : BaseController
             });
         }
 
+        // ── B2P: Validate payment condition (required — no silent default) ──
+        if (string.IsNullOrWhiteSpace(dto.PaymentConditionCode))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Condição de Pagamento Obrigatória",
+                Detail = "É obrigatório selecionar a condição de pagamento antes de registrar a P.O.",
+                Status = 400
+            });
+        }
+        var paymentCondition = dto.PaymentConditionCode;
+        var validConditions = new[] { RequestConstants.PaymentConditions.PostPaid, RequestConstants.PaymentConditions.AdvanceFull, RequestConstants.PaymentConditions.AdvancePartial };
+        if (!validConditions.Contains(paymentCondition))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Condição de Pagamento Inválida",
+                Detail = $"Condição '{paymentCondition}' não reconhecida. Valores aceitos: POST_PAID, ADVANCE_FULL, ADVANCE_PARTIAL.",
+                Status = 400
+            });
+        }
+
+        decimal? advancePercent = null;
+        if (paymentCondition == RequestConstants.PaymentConditions.AdvanceFull)
+        {
+            advancePercent = 100m;
+        }
+        else if (paymentCondition == RequestConstants.PaymentConditions.AdvancePartial)
+        {
+            if (!dto.AdvancePaymentPercent.HasValue || dto.AdvancePaymentPercent.Value < 1 || dto.AdvancePaymentPercent.Value > 99)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Percentual Inválido",
+                    Detail = "Para pagamento antecipado parcial, informe o percentual entre 1 e 99.",
+                    Status = 400
+                });
+            }
+            advancePercent = dto.AdvancePaymentPercent.Value;
+        }
+
+        bool isAdvancePayment = paymentCondition != RequestConstants.PaymentConditions.PostPaid;
+
         string finalComment = dto.Comment ?? string.Empty;
         if (dto.HasMismatches)
         {
@@ -4189,17 +4237,71 @@ public class RequestsController : BaseController
         }
 
         // Determine action code: initial registration vs. correction after Finance return
-        var request = await _context.Requests.Include(r => r.Status).FirstOrDefaultAsync(r => r.Id == id);
-        var isCorrection = request?.Status?.Code == RequestConstants.Statuses.WaitingPoCorrection;
+        var request = await _context.Requests
+            .Include(r => r.Status)
+            .Include(r => r.Currency)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (request == null) return NotFound();
+
+        var isCorrection = request.Status?.Code == RequestConstants.Statuses.WaitingPoCorrection;
         var actionCode = isCorrection ? "REREGISTER_PO" : "REGISTER_PO";
-        var successMsg = isCorrection ? "P.O corrigida e re-registrada com sucesso." : "P.O registrada com sucesso.";
 
         if (isCorrection && string.IsNullOrWhiteSpace(finalComment))
         {
             finalComment = "P.O corrigida após devolução por Finanças.";
         }
 
-        return await ProcessCommonOperationalTransition(id, actionCode, "PO_ISSUED", new[] { "APPROVED", RequestConstants.Statuses.WaitingPoCorrection }, finalComment, successMsg);
+        // ── B2P: Persist payment condition on Request ──
+        request.PaymentConditionCode = paymentCondition;
+        request.AdvancePaymentPercent = advancePercent;
+        request.PaymentConditionSource = dto.PaymentConditionSource ?? "USER_SELECTED";
+        request.UpdatedAtUtc = DateTime.UtcNow;
+        request.UpdatedByUserId = CurrentUserId;
+        await _context.SaveChangesAsync();
+
+        // ── B2P: Determine target status based on payment condition ──
+        string targetStatusCode;
+        string successMsg;
+
+        if (isAdvancePayment)
+        {
+            targetStatusCode = RequestConstants.Statuses.AdvancePaymentRequired;
+            successMsg = isCorrection
+                ? "P.O corrigida e re-registrada com sucesso. Adiantamento necessário."
+                : $"P.O registrada com sucesso. Adiantamento de {advancePercent}% necessário.";
+
+            // Add payment condition info to comment
+            finalComment += $"\n[Condição de Pagamento: {paymentCondition} — {advancePercent}%]";
+
+            // ── B2P: Create advance payment record ──
+            var approvedTotal = request.ApprovedTotalAmount ?? request.EstimatedTotalAmount;
+            var currencyCode = request.ApprovedCurrencyCode ?? request.Currency?.Code ?? "AOA";
+
+            var advancePayment = new RequestPayment
+            {
+                RequestId = request.Id,
+                PaymentType = RequestPayment.PaymentTypes.Advance,
+                PaymentSequence = 1,
+                PlannedPercent = advancePercent,
+                PlannedAmount = Math.Round(approvedTotal * (advancePercent!.Value / 100m), 2),
+                CurrencyCode = currencyCode,
+                PaymentStatus = RequestPayment.PaymentStatuses.Planned,
+                CreatedByUserId = CurrentUserId,
+                CreatedAtUtc = DateTime.UtcNow,
+                Notes = $"Adiantamento de {advancePercent}% criado automaticamente no registro da P.O."
+            };
+            _context.RequestPayments.Add(advancePayment);
+            await _context.SaveChangesAsync();
+        }
+        else
+        {
+            // POST_PAID: follow existing flow (PO_ISSUED)
+            targetStatusCode = "PO_ISSUED";
+            successMsg = isCorrection ? "P.O corrigida e re-registrada com sucesso." : "P.O registrada com sucesso.";
+        }
+
+        return await ProcessCommonOperationalTransition(id, actionCode, targetStatusCode, new[] { "APPROVED", RequestConstants.Statuses.WaitingPoCorrection }, finalComment, successMsg);
     }
 
     [HttpPost("{id}/operational/schedule-payment")]
@@ -4232,6 +4334,257 @@ public class RequestsController : BaseController
         }
         // Unified post-PO operational flow
     return await ProcessCommonOperationalTransition(id, "COMPLETE_PAYMENT", "PAYMENT_COMPLETED", new[] { "PO_ISSUED", "PAYMENT_SCHEDULED" }, dto.Comment, "Pagamento realizado com sucesso.");
+    }
+
+    // ── Buy-to-Pay: Advance Payment Lifecycle Endpoints ──
+
+    [HttpPost("{id}/b2p/schedule-advance")]
+    public async Task<IActionResult> ScheduleAdvancePayment(Guid id, [FromBody] ApprovalActionDto dto)
+    {
+        var actorId = CurrentUserId;
+        var request = await _context.Requests
+            .Include(r => r.Status)
+            .Include(r => r.Payments)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (request == null) return NotFound();
+
+        if (request.Status?.Code != RequestConstants.Statuses.AdvancePaymentRequired)
+            return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "O pedido não está em status de adiantamento necessário.", Status = 400 });
+
+        // Find the planned advance payment
+        var advancePayment = request.Payments
+            .FirstOrDefault(p => p.PaymentType == RequestPayment.PaymentTypes.Advance && p.PaymentStatus == RequestPayment.PaymentStatuses.Planned);
+
+        if (advancePayment == null)
+            return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Não existe pagamento adiantado planejado para este pedido.", Status = 400 });
+
+        // Update payment status
+        advancePayment.PaymentStatus = RequestPayment.PaymentStatuses.Scheduled;
+        advancePayment.ScheduledDateUtc = DateTime.UtcNow;
+        advancePayment.ScheduledByUserId = actorId;
+        advancePayment.UpdatedByUserId = actorId;
+        advancePayment.UpdatedAtUtc = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        // Stay at ADVANCE_PAYMENT_REQUIRED — scheduling doesn't change request status
+        // Just add timeline entry
+        var currentStatus = await _context.RequestStatuses.FirstAsync(s => s.Code == request.Status!.Code);
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = request.Id,
+            ActorUserId = actorId,
+            ActionTaken = "SCHEDULE_ADVANCE",
+            PreviousStatusId = currentStatus.Id,
+            NewStatusId = currentStatus.Id,
+            Comment = dto.Comment ?? "Adiantamento agendado.",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        request.UpdatedAtUtc = DateTime.UtcNow;
+        request.UpdatedByUserId = actorId;
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "Adiantamento agendado com sucesso.", paymentId = advancePayment.Id });
+    }
+
+    [HttpPost("{id}/b2p/confirm-advance")]
+    public async Task<IActionResult> ConfirmAdvancePayment(Guid id, [FromBody] ConfirmAdvancePaymentDto dto)
+    {
+        var actorId = CurrentUserId;
+        var roles = CurrentUserRoles;
+        if (!roles.Contains(RoleConstants.Finance))
+            return StatusCode(403, "Apenas o Financeiro pode confirmar o adiantamento.");
+
+        var request = await _context.Requests
+            .Include(r => r.Status)
+            .Include(r => r.Payments)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (request == null) return NotFound();
+
+        if (request.Status?.Code != RequestConstants.Statuses.AdvancePaymentRequired)
+            return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "O pedido não está em status de adiantamento necessário.", Status = 400 });
+
+        // Find the scheduled or planned advance payment
+        var advancePayment = request.Payments
+            .Where(p => p.PaymentType == RequestPayment.PaymentTypes.Advance)
+            .Where(p => p.PaymentStatus == RequestPayment.PaymentStatuses.Scheduled || p.PaymentStatus == RequestPayment.PaymentStatuses.Planned)
+            .OrderByDescending(p => p.PaymentSequence)
+            .FirstOrDefault();
+
+        if (advancePayment == null)
+            return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Não existe pagamento adiantado pendente para este pedido.", Status = 400 });
+
+        // Validate actual paid amount
+        if (dto.ActualPaidAmount <= 0)
+            return BadRequest(new ProblemDetails { Title = "Valor Inválido", Detail = "O valor pago deve ser maior que zero.", Status = 400 });
+
+        // Update payment
+        advancePayment.PaymentStatus = RequestPayment.PaymentStatuses.Completed;
+        advancePayment.ActualPaidAmount = dto.ActualPaidAmount;
+        advancePayment.PaidDateUtc = DateTime.UtcNow;
+        advancePayment.PaidByUserId = actorId;
+        advancePayment.UpdatedByUserId = actorId;
+        advancePayment.UpdatedAtUtc = DateTime.UtcNow;
+
+        // Divergence detection
+        var divergence = dto.ActualPaidAmount - advancePayment.PlannedAmount;
+        if (Math.Abs(divergence) > 0.01m)
+        {
+            advancePayment.HasDivergence = true;
+            advancePayment.DivergenceAmount = divergence;
+            advancePayment.DivergenceNotes = dto.Comment;
+        }
+
+        // Link payment proof attachment if provided
+        if (dto.PaymentProofAttachmentId.HasValue)
+        {
+            advancePayment.PaymentProofAttachmentId = dto.PaymentProofAttachmentId;
+        }
+
+        await _context.SaveChangesAsync();
+
+        // ── Auto-transition: ADVANCE_PAYMENT_REQUIRED → ADVANCE_PAYMENT_COMPLETED → WAITING_SUPPLIER_DELIVERY ──
+        var advCompletedStatus = await _context.RequestStatuses.FirstAsync(s => s.Code == RequestConstants.Statuses.AdvancePaymentCompleted);
+        var waitingDeliveryStatus = await _context.RequestStatuses.FirstAsync(s => s.Code == RequestConstants.Statuses.WaitingSupplierDelivery);
+        var prevStatusId = request.StatusId;
+
+        // Step 1: ADVANCE_PAYMENT_COMPLETED
+        request.StatusId = advCompletedStatus.Id;
+        request.UpdatedAtUtc = DateTime.UtcNow;
+        request.UpdatedByUserId = actorId;
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = request.Id,
+            ActorUserId = actorId,
+            ActionTaken = "CONFIRM_ADVANCE",
+            PreviousStatusId = prevStatusId,
+            NewStatusId = advCompletedStatus.Id,
+            Comment = $"Adiantamento de {advancePayment.ActualPaidAmount} confirmado. {dto.Comment}",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        // Step 2: Auto → WAITING_SUPPLIER_DELIVERY
+        request.StatusId = waitingDeliveryStatus.Id;
+        request.UpdatedAtUtc = DateTime.UtcNow;
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = request.Id,
+            ActorUserId = actorId,
+            ActionTaken = "AUTO_ADVANCE_TO_DELIVERY",
+            PreviousStatusId = advCompletedStatus.Id,
+            NewStatusId = waitingDeliveryStatus.Id,
+            Comment = "Transição automática: adiantamento confirmado → aguardando entrega/serviço.",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "Adiantamento confirmado. Pedido aguardando entrega/serviço.", paymentId = advancePayment.Id });
+    }
+
+    [HttpPost("{id}/b2p/reconcile")]
+    public async Task<IActionResult> ReconcileRequest(Guid id, [FromBody] SubmitReconciliationDto dto)
+    {
+        var actorId = CurrentUserId;
+        var roles = CurrentUserRoles;
+        if (!roles.Contains(RoleConstants.Finance))
+            return StatusCode(403, "Apenas o Financeiro pode realizar a reconciliação.");
+
+        var request = await _context.Requests
+            .Include(r => r.Status)
+            .Include(r => r.Reconciliations)
+            .Include(r => r.Payments)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (request == null)
+            return NotFound("Pedido não encontrado.");
+
+        if (request.Status!.Code != "WAITING_RECONCILIATION")
+            return StatusCode(400, "O pedido não está aguardando reconciliação.");
+
+        var activeReconciliation = request.Reconciliations
+            .Where(r => r.ReconciliationStatus == RequestReconciliation.ReconciliationStatuses.Draft || r.ReconciliationStatus == RequestReconciliation.ReconciliationStatuses.InProgress)
+            .OrderByDescending(r => r.ReconciliationSequence)
+            .FirstOrDefault();
+
+        if (activeReconciliation == null)
+        {
+            var nextSequence = request.Reconciliations.Any() ? request.Reconciliations.Max(r => r.ReconciliationSequence) + 1 : 1;
+            activeReconciliation = new RequestReconciliation
+            {
+                RequestId = request.Id,
+                ReconciliationSequence = nextSequence,
+                StartedByUserId = actorId,
+                StartedAtUtc = DateTime.UtcNow,
+                CreatedAtUtc = DateTime.UtcNow
+            };
+            _context.RequestReconciliations.Add(activeReconciliation);
+        }
+
+        activeReconciliation.FinalInvoiceAmount = dto.FinalInvoiceAmount;
+        activeReconciliation.FinalAcceptedAmount = dto.FinalAcceptedAmount;
+        activeReconciliation.DeliveredAcceptedAmount = dto.DeliveredAcceptedAmount;
+        activeReconciliation.ReconciliationDecision = dto.ReconciliationDecision;
+        activeReconciliation.ReconciliationNotes = dto.ReconciliationNotes;
+        activeReconciliation.CreditNoteRequired = dto.CreditNoteRequired;
+        activeReconciliation.CreditNoteNumber = dto.CreditNoteNumber;
+        activeReconciliation.CreditNoteAttachmentId = dto.CreditNoteAttachmentId;
+        activeReconciliation.DebitNoteRequired = dto.DebitNoteRequired;
+        activeReconciliation.DebitNoteNumber = dto.DebitNoteNumber;
+        activeReconciliation.DebitNoteAttachmentId = dto.DebitNoteAttachmentId;
+        activeReconciliation.RefundRequired = dto.RefundRequired;
+        activeReconciliation.RefundAmount = dto.RefundAmount;
+        activeReconciliation.CompensationFuturePayment = dto.CompensationFuturePayment;
+        activeReconciliation.CompensationNotes = dto.CompensationNotes;
+
+        var actualPaidSum = request.Payments.Where(p => p.PaymentStatus == RequestPayment.PaymentStatuses.Completed).Sum(p => p.ActualPaidAmount ?? 0);
+        activeReconciliation.DifferenceAmount = dto.FinalInvoiceAmount - actualPaidSum;
+
+        if (dto.ReconciliationDecision == RequestReconciliation.ReconciliationDecisions.NoDifference)
+        {
+            activeReconciliation.ReconciliationStatus = RequestReconciliation.ReconciliationStatuses.Completed;
+            activeReconciliation.CompletedByUserId = actorId;
+            activeReconciliation.CompletedAtUtc = DateTime.UtcNow;
+
+            var finalizedStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == RequestConstants.Statuses.PaymentCompleted);
+            request.StatusId = finalizedStatus!.Id;
+
+            request.StatusHistories.Add(new RequestStatusHistory
+            {
+                RequestId = request.Id,
+                PreviousStatusId = request.StatusId,
+                NewStatusId = finalizedStatus.Id,
+                ActorUserId = actorId,
+                ActionTaken = "Reconciled",
+                CreatedAtUtc = DateTime.UtcNow,
+                Comment = "Reconciliação finalizada (Sem divergência)."
+            });
+        }
+        else
+        {
+            activeReconciliation.ReconciliationStatus = RequestReconciliation.ReconciliationStatuses.InProgress;
+        }
+
+        activeReconciliation.UpdatedAtUtc = DateTime.UtcNow;
+        request.UpdatedByUserId = actorId;
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "Reconciliação registrada com sucesso.", statusCode = request.Status!.Code });
+    }
+
+    public async Task<IActionResult> ConfirmDelivery(Guid id, [FromBody] ApprovalActionDto dto)
+    {
+        var actorId = CurrentUserId;
+        var roles = CurrentUserRoles;
+        if (!roles.Contains(RoleConstants.Receiving) && !roles.Contains(RoleConstants.Buyer))
+            return StatusCode(403, "Apenas o Almoxarifado ou Comprador pode confirmar a entrega.");
+
+        return await ProcessCommonOperationalTransition(id, "CONFIRM_DELIVERY", RequestConstants.Statuses.WaitingReconciliation,
+            new[] { RequestConstants.Statuses.WaitingSupplierDelivery }, dto.Comment, "Entrega/serviço confirmado. Pedido em reconciliação.");
     }
 
     [HttpPost("{id}/operational/move-to-receipt")]
@@ -4935,6 +5288,10 @@ public class RequestsController : BaseController
             return StatusCode(403, "Apenas o Financeiro pode gerir o fluxo de pagamento e finalização.");
         if ((action == "MOVE_TO_RECEIPT" || action == "CONFIRM_RECEIVING") && !roles.Contains(RoleConstants.Receiving))
             return StatusCode(403, "Apenas o Almoxarifado/Recebimento pode confirmar o recebimento.");
+        if (action == "CONFIRM_DELIVERY" && !roles.Contains(RoleConstants.Receiving) && !roles.Contains(RoleConstants.Buyer))
+            return StatusCode(403, "Apenas o Almoxarifado ou Comprador pode confirmar a entrega.");
+        if (action == "REREGISTER_PO" && !roles.Contains(RoleConstants.Buyer))
+            return StatusCode(403, "Apenas o Comprador pode re-registrar a P.O.");
 
         var request = await _context.Requests
             .Include(r => r.RequestType)

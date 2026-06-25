@@ -244,6 +244,9 @@ export default function FinancePaymentsList() {
                         <option value="PAID,PAYMENT_COMPLETED">Pagos</option>
                         <option value="PAYMENT_SCHEDULED">Agendados</option>
                         <option value="PO_ISSUED">P.O Emitida</option>
+                        <option value="ADVANCE_PAYMENT_REQUIRED">Ag. Adiantamento</option>
+                        <option value="ADVANCE_PAYMENT_COMPLETED,WAITING_SUPPLIER_DELIVERY">Adiantamento Pago</option>
+                        <option value="WAITING_RECONCILIATION">Em Reconciliação</option>
                     </select>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

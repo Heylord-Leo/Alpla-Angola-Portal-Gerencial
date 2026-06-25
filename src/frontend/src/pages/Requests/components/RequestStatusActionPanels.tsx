@@ -47,6 +47,7 @@ export interface RequestStatusActionPanelsProps {
     // Modal setters
     setShowRegisterPoModal: (show: boolean) => void;
     setShowCorrectPoModal: (show: boolean) => void;
+    setShowReconciliationModal: (show: boolean) => void;
     setShowApprovalModal: (val: { show: boolean; type: string }) => void;
 
     // Navigation
@@ -63,7 +64,7 @@ export function RequestStatusActionPanels({
     requestTypeCode,
     isBuyer, isAreaApprover, isFinalApprover, isFinance, isReceiving,
     canExecuteOperationalAction, isQuotationPartiallyEditable,
-    setShowRegisterPoModal, setShowCorrectPoModal, setShowApprovalModal,
+    setShowRegisterPoModal, setShowCorrectPoModal, setShowReconciliationModal, setShowApprovalModal,
     navigate, onDrawerClose,
     getRequestGuidance
 }: RequestStatusActionPanelsProps) {
@@ -111,7 +112,7 @@ export function RequestStatusActionPanels({
 
 
             {/* Procurement/Buyer Status Panel (Former Action Bar) */}
-            {canExecuteOperationalAction && ['APPROVED', 'PO_ISSUED', 'WAITING_PO_CORRECTION', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT'].includes(status || '') && (
+            {canExecuteOperationalAction && ['APPROVED', 'PO_ISSUED', 'WAITING_PO_CORRECTION', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'ADVANCE_PAYMENT_REQUIRED', 'ADVANCE_PAYMENT_COMPLETED', 'WAITING_SUPPLIER_DELIVERY', 'WAITING_RECONCILIATION'].includes(status || '') && (
                 <div style={{
                     backgroundColor: 'white',
                     padding: '12px 24px',
@@ -230,6 +231,69 @@ export function RequestStatusActionPanels({
                                     </div>
                                 )
                             )
+                        )}
+
+                        {/* B2P: Reconciliation (Finance) */}
+                        {isFinance && status === 'WAITING_RECONCILIATION' && (
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button 
+                                    onClick={() => setShowReconciliationModal(true)}
+                                    className="btn-primary"
+                                    style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#4f46e5' }}
+                                >
+                                    <ShieldAlert size={14} /> INICIAR RECONCILIAÇÃO
+                                </button>
+                            </div>
+                        )}
+
+                        {/* B2P: Advance Payment actions (Finance) */}
+                        {isFinance && status === 'ADVANCE_PAYMENT_REQUIRED' && (
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button 
+                                    onClick={() => setShowApprovalModal({ show: true, type: 'SCHEDULE_ADVANCE' })}
+                                    className="btn-primary"
+                                    style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#f59e0b' }}
+                                >
+                                    <Clock size={14} /> AGENDAR ADIANTAMENTO
+                                </button>
+                                <button 
+                                    onClick={() => setShowApprovalModal({ show: true, type: 'CONFIRM_ADVANCE' })}
+                                    className="btn-primary"
+                                    style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#16a34a' }}
+                                >
+                                    <CheckCircle size={14} /> CONFIRMAR ADIANTAMENTO
+                                </button>
+                            </div>
+                        )}
+                        {!isFinance && status === 'ADVANCE_PAYMENT_REQUIRED' && (
+                            <span style={{ fontSize: '0.75rem', color: '#64748b', fontStyle: 'italic', display: 'flex', alignItems: 'center', height: '32px' }}>
+                                Aguardando o Financeiro agendar/confirmar o adiantamento.
+                            </span>
+                        )}
+
+                        {/* B2P: Delivery confirmation (Receiving/Buyer) */}
+                        {(isReceiving || isBuyer) && status === 'WAITING_SUPPLIER_DELIVERY' && (
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button 
+                                    onClick={() => setShowApprovalModal({ show: true, type: 'CONFIRM_DELIVERY' })}
+                                    className="btn-primary"
+                                    style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#6f42c1' }}
+                                >
+                                    <CheckCircle size={14} /> CONFIRMAR ENTREGA/SERVIÇO
+                                </button>
+                            </div>
+                        )}
+                        {!isReceiving && !isBuyer && status === 'WAITING_SUPPLIER_DELIVERY' && (
+                            <span style={{ fontSize: '0.75rem', color: '#64748b', fontStyle: 'italic', display: 'flex', alignItems: 'center', height: '32px' }}>
+                                Aguardando confirmação de entrega/serviço pelo Almoxarifado ou Comprador.
+                            </span>
+                        )}
+
+                        {/* B2P: Reconciliation pending (informational) */}
+                        {status === 'WAITING_RECONCILIATION' && (
+                            <span style={{ fontSize: '0.75rem', color: '#fd7e14', fontWeight: 700, display: 'flex', alignItems: 'center', height: '32px', gap: '6px' }}>
+                                <Clock size={14} /> Pedido em processo de reconciliação.
+                            </span>
                         )}
                     </div>
                 </div>

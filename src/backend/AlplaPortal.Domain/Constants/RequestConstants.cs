@@ -29,6 +29,22 @@ public static class RequestConstants
         public const string Completed = "COMPLETED";
         public const string WaitingCostCenter = "WAITING_COST_CENTER";
         public const string WaitingPoCorrection = "WAITING_PO_CORRECTION";
+
+        // ── Buy-to-Pay (Advance Payment) ──
+        public const string AdvancePaymentRequired = "ADVANCE_PAYMENT_REQUIRED";
+        public const string AdvancePaymentCompleted = "ADVANCE_PAYMENT_COMPLETED";
+        public const string WaitingSupplierDelivery = "WAITING_SUPPLIER_DELIVERY";
+        public const string WaitingReconciliation = "WAITING_RECONCILIATION";
+    }
+
+    /// <summary>
+    /// Payment condition codes defined by Buyer at PO registration.
+    /// </summary>
+    public static class PaymentConditions
+    {
+        public const string PostPaid = "POST_PAID";
+        public const string AdvanceFull = "ADVANCE_FULL";
+        public const string AdvancePartial = "ADVANCE_PARTIAL";
     }
 
     /// <summary>

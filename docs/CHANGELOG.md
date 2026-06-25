@@ -2,6 +2,25 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.200.0] - 2026-06-25
+
+### Added — Buy2Pay Foundation & Purchasing Workflow Enhancements
+
+- **Buy2Pay (B2P) Core**: Introduced reconciliation UI, payment tracking logic, and DB models (`RequestPayment`, `RequestReconciliation`).
+- **OCR Module Configuration**: Migrated OCR whitelist from hardcoded appsettings to a secure-by-default DB table (`OcrModuleConfig`), including Admin API and Settings UI.
+- **Buyer P.O. Creation Email**: Added a dedicated, idempotent email workflow for Buyers when a request enters the final approved stage, providing full operational data for PRIMAVERA P.O. creation.
+- **P.O. Payment Condition Control**: Removed silent POST_PAID default; enforced explicit Buyer selection with OCR auto-detection. Persists detection source (`PaymentConditionSource`) for auditability.
+- **Duplicate Document UX Safety**: Added a 5-second countdown safety delay to the confirmation button on duplicate document warning modals to prevent instinctive overrides.
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
+
+**Files Created:**
+- `src/backend/AlplaPortal.Domain/Entities/OcrModuleConfig.cs`
+- `src/backend/AlplaPortal.Domain/Entities/RequestPayment.cs`
+- `src/backend/AlplaPortal.Domain/Entities/RequestReconciliation.cs`
+- `src/frontend/src/components/ui/ReconciliationModal.tsx`
+- EF Migrations (`AddB2PImplementation`, `AddOcrModuleConfig`, `AddPaymentConditionSource`)
+
 ## [v2.199.0] - 2026-06-23
 
 ### Added — Accounts Payable Email Notification System

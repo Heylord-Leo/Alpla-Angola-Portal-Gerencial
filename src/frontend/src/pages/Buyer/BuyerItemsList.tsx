@@ -245,6 +245,20 @@ export function BuyerItemsList() {
         createdAtUtc?: string;
         uploadCallback: () => void;
     } | null>(null);
+    const [dupCountdown, setDupCountdown] = useState(0);
+
+    // Countdown timer for duplicate warning confirm button safety delay
+    useEffect(() => {
+        if (!fileDuplicateWarning?.isOpen) { setDupCountdown(0); return; }
+        setDupCountdown(5);
+        const interval = setInterval(() => {
+            setDupCountdown(prev => {
+                if (prev <= 1) { clearInterval(interval); return 0; }
+                return prev - 1;
+            });
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [fileDuplicateWarning?.isOpen]);
 
     // Financial Integrity Gate Modal State
     const [integrityModal, setIntegrityModal] = useState<{
@@ -3554,14 +3568,15 @@ export function BuyerItemsList() {
                                     </button>
                                     <button
                                         type="button"
+                                        disabled={dupCountdown > 0}
                                         onClick={() => {
                                             if (fileDuplicateWarning?.uploadCallback) {
                                                 fileDuplicateWarning.uploadCallback();
                                             }
                                         }}
-                                        style={{ flex: 1.2, padding: '10px 16px', fontSize: '0.8rem', fontWeight: 800, color: 'white', backgroundColor: '#ea580c', border: 'none', borderRadius: '6px', cursor: 'pointer', textTransform: 'uppercase', boxShadow: '0 4px 0 #9a3412' }}
+                                        style={{ flex: 1.2, padding: '10px 16px', fontSize: '0.8rem', fontWeight: 800, color: 'white', backgroundColor: '#ea580c', border: 'none', borderRadius: '6px', cursor: dupCountdown > 0 ? 'not-allowed' : 'pointer', textTransform: 'uppercase', boxShadow: '0 4px 0 #9a3412', opacity: dupCountdown > 0 ? 0.6 : 1, transition: 'opacity 0.3s ease' }}
                                     >
-                                        Estou Ciente, Prosseguir
+                                        {dupCountdown > 0 ? `Estou Ciente, Prosseguir (${dupCountdown})` : 'Estou Ciente, Prosseguir'}
                                     </button>
                                 </div>
                             </div>

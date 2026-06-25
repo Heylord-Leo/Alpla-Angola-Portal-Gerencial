@@ -4,6 +4,7 @@ using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AlplaPortal.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260624091056_AddB2PImplementation")]
+    partial class AddB2PImplementation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -4451,76 +4454,6 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.ToTable("OcrExtractedItems");
                 });
 
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.OcrModuleConfig", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("AllowedExtensions")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("DisplayName")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<bool>("IsEnabled")
-                        .HasColumnType("bit");
-
-                    b.Property<int?>("MaxFileSizeMb")
-                        .HasColumnType("int");
-
-                    b.Property<string>("ModelOverride")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("ModuleKey")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<string>("ProviderOverride")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("UpdatedBy")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("OcrModuleConfigs");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = 1,
-                            AllowedExtensions = ".pdf,.jpg,.jpeg,.png",
-                            DisplayName = "Requests & Buy2Pay",
-                            IsEnabled = true,
-                            ModuleKey = "REQUESTS",
-                            UpdatedAtUtc = new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            UpdatedBy = "System"
-                        },
-                        new
-                        {
-                            Id = 2,
-                            AllowedExtensions = ".pdf,.jpg,.jpeg,.png",
-                            DisplayName = "Contracts Management",
-                            IsEnabled = true,
-                            ModuleKey = "CONTRACTS",
-                            UpdatedAtUtc = new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            UpdatedBy = "System"
-                        });
-                });
-
             modelBuilder.Entity("AlplaPortal.Domain.Entities.Plant", b =>
                 {
                     b.Property<int>("Id")
@@ -4931,9 +4864,6 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("PaymentConditionCode")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("PaymentConditionSource")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<int?>("PlantId")

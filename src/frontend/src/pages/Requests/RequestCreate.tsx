@@ -53,6 +53,21 @@ export function RequestCreate() {
     const [currencies, setCurrencies] = useState<CurrencyDto[]>([]);
     const [isOcrLoading, setIsOcrLoading] = useState(false);
     const [duplicateWarning, setDuplicateWarning] = useState<{ isOpen: boolean; requestNumber: string; uploadCallback: () => void; uploadedBy?: string; createdAtUtc?: string } | null>(null);
+    const [dupCountdown, setDupCountdown] = useState(0);
+
+    // Countdown timer for duplicate warning confirm button safety delay
+    useEffect(() => {
+        if (!duplicateWarning?.isOpen) { setDupCountdown(0); return; }
+        setDupCountdown(5);
+        const interval = setInterval(() => {
+            setDupCountdown(prev => {
+                if (prev <= 1) { clearInterval(interval); return 0; }
+                return prev - 1;
+            });
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [duplicateWarning?.isOpen]);
+
     const [paymentDraft, setPaymentDraft] = useState<OcrDraft | null>(null);
     const [ocrFile, setOcrFile] = useState<File | null>(null);
     const [isManualOcr, setIsManualOcr] = useState(false);
@@ -1783,14 +1798,15 @@ export function RequestCreate() {
                                     </button>
                                     <button
                                         type="button"
+                                        disabled={dupCountdown > 0}
                                         onClick={() => {
                                             if (duplicateWarning?.uploadCallback) {
                                                 duplicateWarning.uploadCallback();
                                             }
                                         }}
-                                        style={{ flex: 1, padding: '8px 16px', fontSize: '0.875rem', fontWeight: 500, color: 'white', backgroundColor: '#d97706', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
+                                        style={{ flex: 1, padding: '8px 16px', fontSize: '0.875rem', fontWeight: 500, color: 'white', backgroundColor: '#d97706', border: 'none', borderRadius: '8px', cursor: dupCountdown > 0 ? 'not-allowed' : 'pointer', opacity: dupCountdown > 0 ? 0.6 : 1, transition: 'opacity 0.3s ease' }}
                                     >
-                                        Estou Ciente, Prosseguir
+                                        {dupCountdown > 0 ? `Estou Ciente, Prosseguir (${dupCountdown})` : 'Estou Ciente, Prosseguir'}
                                     </button>
                                 </div>
                             </div>

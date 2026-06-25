@@ -21,6 +21,11 @@ public class RequestAttachment
     public const string TYPE_PAYMENT_SCHEDULE = "PAYMENT_SCHEDULE";
     public const string TYPE_RECEIPT = "RECEIPT";
 
+    // Buy-to-Pay
+    public const string TYPE_ADVANCE_PAYMENT_PROOF = "ADVANCE_PAYMENT_PROOF";
+    public const string TYPE_CREDIT_NOTE = "CREDIT_NOTE";
+    public const string TYPE_DEBIT_NOTE = "DEBIT_NOTE";
+
     public string StorageReference { get; set; } = string.Empty; // Path pointer
 
     public Guid UploadedByUserId { get; set; }

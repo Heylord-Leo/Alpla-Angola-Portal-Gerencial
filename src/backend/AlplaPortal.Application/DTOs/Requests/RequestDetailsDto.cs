@@ -52,6 +52,11 @@ public class RequestDetailsDto
     public decimal DiscountAmount { get; set; }
     public string? CurrencyCode { get; set; }
 
+    // B2P: Payment Condition
+    public string? PaymentConditionCode { get; set; }
+    public decimal? AdvancePaymentPercent { get; set; }
+    public string? PaymentConditionSource { get; set; }
+
     public DateTime RequestedDateUtc { get; set; }
     public DateTime? NeedByDateUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; }

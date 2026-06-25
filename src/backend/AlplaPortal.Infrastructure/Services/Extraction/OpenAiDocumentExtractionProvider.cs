@@ -760,6 +760,15 @@ CRITICAL PRECISION RULES:
   If no global/commercial discount exists on the document, set discountAmount = 0.
   NOTE: Do NOT confuse this with per-item discounts in the 'Desc.' column — those are already captured per line item.
 
+- PAYMENT CONDITION — CLASSIFICATION RULES:
+  Look for payment terms text anywhere in the document (header, footer, terms section, notes).
+  Classify into one of these types:
+    * POST_PAID: payment after delivery/receipt. Look for: 'Pós-pago', 'Pagamento após entrega', 'Pagamento após recebimento', 'Factura a X dias', 'Net X days', 'Payment on delivery', 'A prazo', '30/60/90 dias', 'Contra factura'.
+    * ADVANCE_FULL: 100% payment before delivery. Look for: '100% antecipado', '100% advance payment', 'Pagamento integral antecipado', 'Pré-pagamento total', 'Full prepayment'.
+    * ADVANCE_PARTIAL: partial advance payment with remainder after delivery. Look for: '50% adiantado e 50% após entrega', 'X% advance + Y% on delivery', 'Pagamento parcial antecipado', partial advance split patterns like '30% antes e 70% após'.
+  If you identify ADVANCE_PARTIAL, also extract the advance percentage (the portion paid before delivery).
+  If no clear payment condition is found, set type to null.
+
 Output ONLY JSON with this structure:
 {
   ""header"": {
@@ -772,7 +781,13 @@ Output ONLY JSON with this structure:
     ""currency"": ""string (e.g. EUR, USD, AOA)"",
     ""totalAmount"": number (Zwischensumme / Subtotal after all discounts, before tax),
     ""grandTotal"": number (Final total INCLUDING tax/IVA - this is what the buyer actually pays),
-    ""discountAmount"": number (Global/commercial invoice-level discount, 0 if none — see rules above)
+    ""discountAmount"": number (Global/commercial invoice-level discount, 0 if none — see rules above),
+    ""paymentCondition"": {
+      ""type"": ""POST_PAID | ADVANCE_FULL | ADVANCE_PARTIAL | null"",
+      ""rawText"": ""original payment terms text from document, or null"",
+      ""confidence"": number (0.0-1.0),
+      ""advancePercent"": number or null (only for ADVANCE_PARTIAL — the % paid before delivery, e.g. 50)
+    }
   },
   ""items"": [
     {
@@ -818,6 +833,19 @@ Output ONLY JSON with this structure:
                     GrandTotal = header.TryGetProperty("grandTotal", out var gt) ? (gt.ValueKind == JsonValueKind.Number ? gt.GetDecimal() : 0) : null,
                     DiscountAmount = header.TryGetProperty("discountAmount", out var da) ? (da.ValueKind == JsonValueKind.Number ? da.GetDecimal() : 0) : null
                 };
+
+                // Parse paymentCondition sub-object
+                if (header.TryGetProperty("paymentCondition", out var pc) && pc.ValueKind == JsonValueKind.Object)
+                {
+                    result.Header.PaymentConditionType = pc.TryGetProperty("type", out var pct) && pct.ValueKind == JsonValueKind.String
+                        ? pct.GetString() : null;
+                    result.Header.PaymentConditionRawText = pc.TryGetProperty("rawText", out var pcr) && pcr.ValueKind == JsonValueKind.String
+                        ? pcr.GetString() : null;
+                    result.Header.PaymentConditionConfidence = pc.TryGetProperty("confidence", out var pcc) && pcc.ValueKind == JsonValueKind.Number
+                        ? pcc.GetDecimal() : null;
+                    result.Header.PaymentConditionAdvancePercent = pc.TryGetProperty("advancePercent", out var pca) && pca.ValueKind == JsonValueKind.Number
+                        ? pca.GetDecimal() : null;
+                }
             }
 
             if (rawResult.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
