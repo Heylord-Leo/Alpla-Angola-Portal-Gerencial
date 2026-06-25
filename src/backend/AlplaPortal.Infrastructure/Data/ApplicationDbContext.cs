@@ -118,6 +118,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<RequestPayment> RequestPayments => Set<RequestPayment>();
     public DbSet<RequestReconciliation> RequestReconciliations => Set<RequestReconciliation>();
 
+    // Email Outbox (async email delivery queue)
+    public DbSet<EmailOutboxEntry> EmailOutbox => Set<EmailOutboxEntry>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

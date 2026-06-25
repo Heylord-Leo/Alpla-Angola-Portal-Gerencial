@@ -485,39 +485,43 @@
 }
 
 /* ─── Print-specific styles — CR-80 Card (Zebra ZC300 Compatible) ─── */
-@page {
-    size: 85.6mm 53.98mm;   /* CR-80 landscape — Zebra ZC300 feed */
-    margin: 0;
-}
-
+/* 
+ * IMPORTANT: employee-workspace.css already defines global print rules:
+ *   body * { visibility: hidden !important; }
+ *   .hr-badge-print-area, .hr-badge-print-area * { visibility: visible !important; }
+ *
+ * The reprint preview uses class "hr-badge-print-area" to participate in
+ * that visibility pattern. No conflicting display:none rules here.
+ */
 @media print {
-    html, body {
-        margin: 0 !important;
-        padding: 0 !important;
-        width: 85.6mm !important;
-        height: 53.98mm !important;
-        overflow: hidden !important;
-        background: #fff !important;
+    /* Hide all history-page chrome (already invisible via body * rule, 
+       but reinforce for specificity safety) */
+    .bph-container {
+        visibility: hidden !important;
     }
 
-    .bph-container,
+    /* The modal overlay should not interfere with print */
     .bph-modal-overlay {
-        display: none !important;
-    }
-    .print-target {
+        visibility: hidden !important;
+        position: static !important;
         display: block !important;
-        position: fixed !important;
-        top: 0;
-        left: 0;
-        width: 85.6mm !important;
-        height: 53.98mm !important;
-        transform: none !important;
-        -webkit-print-color-adjust: exact !important;
-        print-color-adjust: exact !important;
-        color-adjust: exact !important;
     }
 
-    .print-target .badge-card-container {
+    /* The modal itself should not interfere */
+    .bph-modal {
+        visibility: hidden !important;
+        position: static !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+
+    /* The .hr-badge-print-area inside the modal gets visibility from 
+       employee-workspace.css global rules. Just ensure correct positioning. */
+    .bph-preview-card.hr-badge-print-area {
+        transform: none !important;
+    }
+
+    .bph-preview-card.hr-badge-print-area .badge-card-container {
         width: 85.6mm !important;
         height: 53.98mm !important;
         margin: 0 !important;
@@ -525,6 +529,11 @@
         box-shadow: none !important;
         border: none !important;
         border-radius: 0 !important;
+    }
+
+    /* Hide the fullscreen/expand button during print */
+    .bph-no-print {
+        display: none !important;
     }
 }
 

@@ -72,6 +72,7 @@ export default function BadgePrintHistoryPage() {
     const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(false);
     const [isReprinting, setIsReprinting] = useState(false);
     const [reprintReason, setReprintReason] = useState('');
+    const [reprintCardNumber, setReprintCardNumber] = useState('');
 
     // ─── Load History ───
     const loadHistory = useCallback(async (p: number = page) => {
@@ -115,6 +116,7 @@ export default function BadgePrintHistoryPage() {
     const handleOpenReprint = async (item: PrintHistoryItem) => {
         setReprintItem(item);
         setReprintReason('');
+        setReprintCardNumber('');
         setIsLoadingSnapshot(true);
         setReprintSnapshot(null);
 
@@ -122,6 +124,14 @@ export default function BadgePrintHistoryPage() {
             const res = await apiFetch(`${API_BASE_URL}/api/badges/history/${item.id}/snapshot`);
             const snapshot: PrintSnapshot = await res.json();
             setReprintSnapshot(snapshot);
+
+            // Pre-populate card number from snapshot payload
+            try {
+                const payload = JSON.parse(snapshot.snapshotPayloadJson || '{}');
+                setReprintCardNumber(payload.cardNumber || '');
+            } catch {
+                setReprintCardNumber('');
+            }
         } catch (err) {
             console.error('Load snapshot error:', err);
         } finally {
@@ -132,6 +142,7 @@ export default function BadgePrintHistoryPage() {
     const handleCloseReprint = () => {
         setReprintItem(null);
         setReprintSnapshot(null);
+        setReprintCardNumber('');
     };
 
     const handleReprint = async () => {
@@ -142,7 +153,10 @@ export default function BadgePrintHistoryPage() {
             await apiFetch(`${API_BASE_URL}/api/badges/history/${reprintItem.id}/reprint`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ reason: reprintReason.trim() || null }),
+                body: JSON.stringify({
+                    reason: reprintReason.trim() || null,
+                    cardNumber: reprintCardNumber.trim() || null,
+                }),
             });
 
             // Trigger print
@@ -174,7 +188,7 @@ export default function BadgePrintHistoryPage() {
                 department: payload.department,
                 category: payload.category,
                 employeeCode: payload.employeeCode || reprintItem?.employeeCode || '',
-                cardNumber: payload.cardNumber,
+                cardNumber: reprintCardNumber || payload.cardNumber,
                 company: payload.company || reprintItem?.companyCode,
                 photoUrl,
             };
@@ -409,7 +423,17 @@ export default function BadgePrintHistoryPage() {
                                         {' '} • Total de impressões: {reprintItem.printCount}
                                     </p>
 
-                                    {/* Optional reason field (future-ready) */}
+                                    {/* Card number — editable before reprint */}
+                                    <div className="bph-modal-field">
+                                        <label>Número do Cartão <span style={{ color: '#dc2626' }}>*</span></label>
+                                        <input
+                                            value={reprintCardNumber}
+                                            onChange={e => setReprintCardNumber(e.target.value)}
+                                            placeholder="Número do cartão para impressão"
+                                        />
+                                    </div>
+
+                                    {/* Optional reason field */}
                                     <div className="bph-modal-field">
                                         <label>Motivo da Reimpressão (opcional)</label>
                                         <input
@@ -435,7 +459,7 @@ export default function BadgePrintHistoryPage() {
                                             </div>
                                         );
                                         return (
-                                            <div className="bph-preview-card print-target">
+                                            <div className="bph-preview-card hr-badge-print-area">
                                                 <BadgePreview
                                                     data={badgeData}
                                                     layoutConfig={snapshotLayoutConfig}
@@ -453,7 +477,7 @@ export default function BadgePrintHistoryPage() {
                                 <button
                                     className="bph-btn-primary"
                                     onClick={handleReprint}
-                                    disabled={isReprinting || isLoadingSnapshot || !reprintSnapshot}
+                                    disabled={isReprinting || isLoadingSnapshot || !reprintSnapshot || !reprintCardNumber.trim()}
                                 >
                                     {isReprinting ? (
                                         <><Loader2 size={14} className="bph-spinner" /> Imprimindo...</>

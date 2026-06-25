@@ -105,6 +105,9 @@ builder.Services.AddScoped<IApprovalIntelligenceService, ApprovalIntelligenceSer
 // Proforma Deadline Alerts — daily background check (first BackgroundService in the project)
 builder.Services.AddHostedService<ProformaDeadlineAlertService>();
 
+// Email Outbox Processor — async email delivery queue (polls every 10s)
+builder.Services.AddHostedService<EmailOutboxProcessor>();
+
 // Contract OCR Services
 builder.Services.AddScoped<IContractOcrNormalisationService, ContractOcrNormalisationService>();
 builder.Services.AddScoped<ContractOcrBackgroundProcessor>();
