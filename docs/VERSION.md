@@ -2,7 +2,13 @@
 
 ## Current Version
 
-v2.200.0
+v2.201.0
+
+## [v2.201.0] - 2026-06-25
+
+- **Email Outbox + Background Processor**: Async email delivery via outbox pattern. Request creation no longer blocks on SMTP. Atomic `UPDATE...OUTPUT` claiming, crash recovery, 3-layer deduplication, exponential retry, dead-letter, AdminLog audit trail.
+- **Badge Reprint Blank Fix**: Resolved CSS `visibility: hidden` conflict causing blank badge output during reprint. Aligned with existing `.hr-badge-print-area` print pattern.
+- **Editable Card Number on Reprint**: Required "Número do Cartão" field in reprint modal with live preview. Per-event `CardNumberUsed` storage without modifying original history. `BADGE_REPRINT` AdminLog audit entry.
 
 ## [v2.200.0] - 2026-06-25
 

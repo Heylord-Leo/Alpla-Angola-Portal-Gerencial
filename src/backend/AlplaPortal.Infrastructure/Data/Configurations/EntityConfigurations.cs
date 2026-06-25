@@ -156,3 +156,46 @@ public class IvaRateConfiguration : IEntityTypeConfiguration<IvaRate>
         builder.Property(i => i.RatePercent).HasColumnType("decimal(18,2)");
     }
 }
+
+public class EmailOutboxEntryConfiguration : IEntityTypeConfiguration<EmailOutboxEntry>
+{
+    public void Configure(EntityTypeBuilder<EmailOutboxEntry> builder)
+    {
+        builder.HasKey(e => e.Id);
+        builder.Property(e => e.RecipientEmail).IsRequired().HasMaxLength(256);
+        builder.Property(e => e.RecipientName).HasMaxLength(256);
+        builder.Property(e => e.Subject).IsRequired().HasMaxLength(512);
+        builder.Property(e => e.Headline).IsRequired().HasMaxLength(256);
+        builder.Property(e => e.BodyHtml).IsRequired();
+        builder.Property(e => e.ActionUrl).HasMaxLength(1024);
+        builder.Property(e => e.ActionLabel).HasMaxLength(128);
+        builder.Property(e => e.CcEmails).HasMaxLength(1024);
+        builder.Property(e => e.Status).IsRequired().HasMaxLength(20).HasDefaultValue("PENDING");
+        builder.Property(e => e.MaxRetries).HasDefaultValue(3);
+        builder.Property(e => e.LastError).HasMaxLength(2000);
+        builder.Property(e => e.RequestNumber).HasMaxLength(50);
+        builder.Property(e => e.EventCode).HasMaxLength(100);
+
+        // Primary index: processor polling — picks PENDING or retryable FAILED entries
+        builder.HasIndex(e => new { e.Status, e.NextRetryAtUtc })
+               .HasFilter("[Status] IN ('PENDING', 'FAILED')")
+               .HasDatabaseName("IX_EmailOutbox_Status_NextRetry");
+
+        // Dedup UNIQUE index: database-level prevention of duplicate active entries
+        // for the same correlation + recipient. Only applies when CorrelationId is not null
+        // and the entry is still in an active (non-terminal) state.
+        builder.HasIndex(e => new { e.CorrelationId, e.RecipientEmail })
+               .IsUnique()
+               .HasFilter("[CorrelationId] IS NOT NULL AND [Status] IN ('PENDING', 'PROCESSING', 'FAILED')")
+               .HasDatabaseName("IX_EmailOutbox_Correlation_Recipient_Active");
+
+        // Traceability: find all outbox entries for a given request
+        builder.HasIndex(e => e.RequestId)
+               .HasDatabaseName("IX_EmailOutbox_RequestId");
+
+        // Crash recovery: find entries stuck in PROCESSING
+        builder.HasIndex(e => new { e.Status, e.CreatedAtUtc })
+               .HasFilter("[Status] = 'PROCESSING'")
+               .HasDatabaseName("IX_EmailOutbox_Processing_CreatedAt");
+    }
+}

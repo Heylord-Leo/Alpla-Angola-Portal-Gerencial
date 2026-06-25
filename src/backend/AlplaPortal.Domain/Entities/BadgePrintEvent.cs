@@ -31,4 +31,10 @@ public class BadgePrintEvent
     /// Examples: "Damaged card", "Name change", "Lost badge".
     /// </summary>
     public string? Reason { get; set; }
+
+    /// <summary>
+    /// Card number printed on the badge for this specific reprint.
+    /// Stored per-event so the original BadgePrintHistory.CardNumber is never overwritten.
+    /// </summary>
+    public string? CardNumberUsed { get; set; }
 }

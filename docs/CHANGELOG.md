@@ -2,6 +2,37 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.201.0] - 2026-06-25
+
+### Fixed — Request Creation Performance (Email Outbox)
+
+- **Email Outbox + Background Processor**: Decoupled synchronous SMTP email sending from the request creation lifecycle. Emails are now queued to an `EmailOutbox` table and processed asynchronously by a `BackgroundService`, reducing `POST /api/v1/requests` response time from ~10 seconds to < 500ms.
+- **Atomic Concurrency Safety**: Processor uses `UPDATE TOP(N)...OUTPUT INSERTED.*` SQL pattern for race-condition-proof row claiming, safe for multi-instance deployments.
+- **Crash Recovery**: Auto-recovers entries stuck in `PROCESSING` status for >5 minutes after application restarts.
+- **Deduplication**: Three-layer protection — insert-time code check, unique filtered DB index (`IX_EmailOutbox_Correlation_Recipient_Active`), and send-time verification.
+- **Retry + Dead-Letter**: Exponential backoff retry with configurable max attempts. Failed entries marked `DEAD_LETTER` after exhaustion.
+- **AdminLog Audit Trail**: Full lifecycle logging via `AdminLogWriter` — `QUEUED`, `SENT`, `RETRY_SCHEDULED`, `DEAD_LETTER`, `DEDUP`, `STUCK_RECOVERED`.
+
+### Fixed — HR Badge Reprint Blank Output
+
+- **Blank Reprint Fix**: Resolved CSS conflict where `body * { visibility: hidden !important }` from `employee-workspace.css` was overriding the reprint preview's `display: block`. Changed reprint preview to use `.hr-badge-print-area` class, aligning with the existing visibility-based print pattern.
+- **Print CSS Rewrite**: Rewrote `badge-print-history.css` `@media print` rules to use `visibility`-based approach instead of conflicting `display: none` rules.
+
+### Added — Editable Card Number Before Badge Reprint
+
+- **Card Number Field**: Added required "Número do Cartão" editable field in the Reimprimir Crachá modal, pre-populated from the original print snapshot.
+- **Live Preview**: Card number changes immediately reflected in the badge preview before printing.
+- **Per-Event Storage**: New `BadgePrintEvent.CardNumberUsed` column stores the card number used in each specific reprint without modifying the original `BadgePrintHistory.CardNumber`.
+- **AdminLog Audit Entry**: Each reprint writes a `BADGE_REPRINT` event to `AdminLogEntries` with full JSON payload (employee code/name, previous/new card number, reason, user, timestamp, status).
+
+**Guided Tour impact: not applicable.**
+
+**Files Created:**
+- `src/backend/AlplaPortal.Domain/Entities/EmailOutboxEntry.cs`
+- `src/backend/AlplaPortal.Infrastructure/Services/EmailOutboxProcessor.cs`
+- EF Migrations (`AddEmailOutbox`, `AddBadgePrintEventCardNumber`)
+
+
 ## [v2.200.0] - 2026-06-25
 
 ### Added — Buy2Pay Foundation & Purchasing Workflow Enhancements

@@ -1,5 +1,6 @@
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Infrastructure.Data;
+using AlplaPortal.Infrastructure.Logging;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -30,11 +31,13 @@ public class BadgeController : ControllerBase
 {
     private readonly ApplicationDbContext _db;
     private readonly ILogger<BadgeController> _logger;
+    private readonly AdminLogWriter _adminLog;
 
-    public BadgeController(ApplicationDbContext db, ILogger<BadgeController> logger)
+    public BadgeController(ApplicationDbContext db, ILogger<BadgeController> logger, AdminLogWriter adminLog)
     {
         _db = db;
         _logger = logger;
+        _adminLog = adminLog;
     }
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -377,6 +380,7 @@ public class BadgeController : ControllerBase
     /// <summary>
     /// Record a reprint event.
     /// Creates a BadgePrintEvent audit record AND increments PrintCount.
+    /// Stores the card number used for this specific reprint.
     /// </summary>
     [HttpPost("history/{id:guid}/reprint")]
     public async Task<IActionResult> RecordReprint(Guid id, [FromBody] ReprintDto? dto = null)
@@ -386,13 +390,16 @@ public class BadgeController : ControllerBase
             return NotFound(new { message = "Registro de impressão não encontrado." });
 
         var userId = GetUserId();
+        var previousCardNumber = history.CardNumber;
+        var newCardNumber = dto?.CardNumber?.Trim();
 
-        // Create audit event
+        // Create audit event with card number used
         var printEvent = new BadgePrintEvent
         {
             BadgePrintHistoryId = history.Id,
             ReprintedByUserId = userId,
-            Reason = dto?.Reason
+            Reason = dto?.Reason,
+            CardNumberUsed = newCardNumber
         };
 
         _db.BadgePrintEvents.Add(printEvent);
@@ -400,10 +407,34 @@ public class BadgeController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("Badge reprint #{Count} recorded: History {HistoryId} by {UserId}",
-            history.PrintCount, history.Id, userId);
+        _logger.LogInformation("Badge reprint #{Count} recorded: History {HistoryId} by {UserId}, CardNumber: {PreviousCard} -> {NewCard}",
+            history.PrintCount, history.Id, userId, previousCardNumber, newCardNumber);
 
-        return Ok(new { printCount = history.PrintCount });
+        // Write AdminLog audit entry for full traceability
+        var auditPayload = JsonSerializer.Serialize(new
+        {
+            employeeCode = history.EmployeeCode,
+            employeeName = history.EmployeeName,
+            originalPrintHistoryId = history.Id,
+            reprintEventId = printEvent.Id,
+            previousCardNumber,
+            newCardNumber,
+            reason = dto?.Reason,
+            reprintedByUserId = userId,
+            reprintedAtUtc = printEvent.ReprintedAtUtc,
+            printCount = history.PrintCount,
+            status = "SUCCESS"
+        });
+
+        await _adminLog.WriteAsync(
+            "Info",
+            "BadgeController",
+            "BADGE_REPRINT",
+            $"Badge reprint #{history.PrintCount} for {history.EmployeeCode} ({history.EmployeeName}). Card: {previousCardNumber ?? "(none)"} → {newCardNumber ?? "(unchanged)"}. Reason: {dto?.Reason ?? "(none)"}.",
+            payload: auditPayload
+        );
+
+        return Ok(new { printCount = history.PrintCount, reprintEventId = printEvent.Id });
     }
 
     /// <summary>Get snapshot payload for reprint rendering.</summary>
@@ -527,4 +558,5 @@ public record RecordPrintDto
 public record ReprintDto
 {
     public string? Reason { get; init; }
+    public string? CardNumber { get; init; }
 }

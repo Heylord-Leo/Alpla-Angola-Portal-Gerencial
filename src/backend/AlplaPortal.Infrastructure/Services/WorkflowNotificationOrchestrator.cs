@@ -1,7 +1,9 @@
 using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Domain.Constants;
+using AlplaPortal.Domain.Entities;
 using AlplaPortal.Domain.Events;
 using AlplaPortal.Infrastructure.Data;
+using AlplaPortal.Infrastructure.Logging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -25,19 +27,22 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
     private readonly IEmailService _emailService;
     private readonly IConfiguration _config;
     private readonly ILogger<WorkflowNotificationOrchestrator> _logger;
+    private readonly AdminLogWriter _adminLog;
 
     public WorkflowNotificationOrchestrator(
         ApplicationDbContext context,
         INotificationService notificationService,
         IEmailService emailService,
         IConfiguration config,
-        ILogger<WorkflowNotificationOrchestrator> logger)
+        ILogger<WorkflowNotificationOrchestrator> logger,
+        AdminLogWriter adminLog)
     {
         _context = context;
         _notificationService = notificationService;
         _emailService = emailService;
         _config = config;
         _logger = logger;
+        _adminLog = adminLog;
     }
 
     public async Task EmitAsync(WorkflowEvent evt)
@@ -786,22 +791,53 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             _logger.LogWarning(ex, "Failed to create in-app notification for User {UserId} (Event: {EventCode})", recipient.UserId, evt.EventCode);
         }
 
-        // --- Email Notification ---
+        // --- Email Notification (Outbox Pattern — non-blocking) ---
         if (config.SendEmail && !recipient.SuppressEmail && !string.IsNullOrWhiteSpace(recipient.Email))
         {
             var portalBaseUrl = _config["AppConfig:FrontendBaseUrl"] ?? "";
             var actionUrl = !string.IsNullOrWhiteSpace(portalBaseUrl) ? $"{portalBaseUrl.TrimEnd('/')}{targetPath}" : null;
 
-            // Notice we are NOT wrapping this in a catch. If it fails, EmailService will throw and it'll bubble up to EmitAsync's throw, bubbling back to the Controller.
-            await _emailService.SendWorkflowNotificationAsync(
-                recipient.Email,
-                recipient.FullName,
-                recipient.EmailSubjectOverride ?? config.EmailSubject,
-                config.EmailHeadline,
-                recipient.EmailBodyOverride ?? config.EmailBody,
-                actionUrl,
-                "Ver Pedido"
-            );
+            // Dedup at insert time: prevent duplicate outbox entries for the same event + recipient.
+            var alreadyQueued = await _context.EmailOutbox.AnyAsync(
+                e => e.CorrelationId == evt.CorrelationId
+                  && e.RecipientEmail == recipient.Email
+                  && e.Status != "DEAD_LETTER");
+
+            if (alreadyQueued)
+            {
+                _logger.LogDebug(
+                    "Outbox dedup: email already queued for {RecipientEmail} (Event: {EventCode}, CorrelationId: {CorrelationId}). Skipping insert.",
+                    recipient.Email, evt.EventCode, evt.CorrelationId);
+                return;
+            }
+
+            // Queue the email for async delivery instead of sending synchronously.
+            // The EmailOutboxProcessor background service will pick this up and send it.
+            _context.EmailOutbox.Add(new EmailOutboxEntry
+            {
+                RecipientEmail = recipient.Email,
+                RecipientName = recipient.FullName,
+                Subject = recipient.EmailSubjectOverride ?? config.EmailSubject,
+                Headline = config.EmailHeadline,
+                BodyHtml = recipient.EmailBodyOverride ?? config.EmailBody,
+                ActionUrl = actionUrl,
+                ActionLabel = "Ver Pedido",
+                RequestId = evt.RequestId,
+                RequestNumber = evt.RequestNumber,
+                EventCode = evt.EventCode,
+                CorrelationId = evt.CorrelationId,
+                Status = "PENDING",
+                CreatedAtUtc = DateTime.UtcNow
+            });
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "Email queued to outbox for {RecipientEmail} (Event: {EventCode}, Request: {RequestNumber}, CorrelationId: {CorrelationId})",
+                recipient.Email, evt.EventCode, evt.RequestNumber, evt.CorrelationId);
+
+            await _adminLog.WriteAsync("Info", "WorkflowNotificationOrchestrator", "EMAIL_OUTBOX_QUEUED",
+                $"E-mail de notificação enfileirado para {recipient.Email} ({recipient.FullName}). Pedido: {evt.RequestNumber}. Evento: {evt.EventCode}.",
+                payload: $"RequestId: {evt.RequestId}. CorrelationId: {evt.CorrelationId}. Subject: {(recipient.EmailSubjectOverride ?? config.EmailSubject)}.");
         }
     }
 
