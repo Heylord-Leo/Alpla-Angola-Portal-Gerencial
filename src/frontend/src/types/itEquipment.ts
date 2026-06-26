@@ -101,6 +101,7 @@ export interface ITEquipmentAcquisition {
     acquisitionDate: string | null;
     supplierName: string | null;
     purchaseOrderNumber: string | null;
+    /** General purchase/delivery document reference (invoice, delivery note, internal doc). */
     invoiceNumber: string | null;
     paymentReference: string | null;
     paymentDate: string | null;
@@ -111,6 +112,10 @@ export interface ITEquipmentAcquisition {
     warrantyNotes: string | null;
     acquisitionNotes: string | null;
     purchaseRequestNumber: string | null;
+    /** When true, purchase documentation is unavailable for this equipment. */
+    purchaseInfoUnavailable: boolean;
+    /** Mandatory reason when purchaseInfoUnavailable is true. */
+    purchaseInfoUnavailableReason: string | null;
 }
 
 export interface ITEquipmentDocument {

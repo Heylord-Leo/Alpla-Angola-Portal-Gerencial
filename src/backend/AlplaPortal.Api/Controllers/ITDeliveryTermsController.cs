@@ -539,7 +539,13 @@ public class ITDeliveryTermsController : BaseController
                     Manufacturer = i.Equipment.Manufacturer,
                     Model = i.Equipment.Model,
                     SerialNumber = i.Equipment.SerialNumber,
-                    Notes = i.Notes
+                    Notes = i.Notes,
+                    // Purchase traceability — null acquisition treated as unavailable
+                    PurchaseAmount = i.Equipment.Acquisition?.PurchaseAmount,
+                    Currency = i.Equipment.Acquisition?.Currency,
+                    AcquisitionDate = i.Equipment.Acquisition?.AcquisitionDate,
+                    InvoiceNumber = i.Equipment.Acquisition?.InvoiceNumber,
+                    PurchaseInfoUnavailable = i.Equipment.Acquisition?.PurchaseInfoUnavailable ?? true
                 }).ToList()
             };
 

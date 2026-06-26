@@ -24,6 +24,11 @@ public class ITEquipmentAcquisition
     public Guid? FinancePaymentId { get; set; }
     // ────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// General purchase/delivery document reference number.
+    /// Can represent an invoice, delivery note, purchase order, or any internal traceability document.
+    /// UI label: "Nº do documento de compra / entrega".
+    /// </summary>
     public string? InvoiceNumber { get; set; }
     public string? PaymentReference { get; set; }
     public DateTime? PaymentDate { get; set; }
@@ -35,6 +40,15 @@ public class ITEquipmentAcquisition
     public string? WarrantyNotes { get; set; }
 
     public string? AcquisitionNotes { get; set; }
+
+    /// <summary>When true, purchase documentation is unavailable for this equipment (legacy, donated, etc.).</summary>
+    public bool PurchaseInfoUnavailable { get; set; } = false;
+
+    /// <summary>
+    /// Mandatory reason when PurchaseInfoUnavailable = true.
+    /// Example: "Legacy equipment added before purchase tracking was mandatory."
+    /// </summary>
+    public string? PurchaseInfoUnavailableReason { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public Guid? CreatedByUserId { get; set; }

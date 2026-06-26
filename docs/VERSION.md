@@ -2,9 +2,19 @@
 
 ## Current Version
 
-v2.201.1
+v2.202.0
 
-## [v2.201.1] - 2026-06-26
+## [v2.202.0] - 2026-06-26
+
+### Added — IT Equipment Purchase Traceability
+
+- **Purchase Information**: Added support for tracking purchase value, date, and document reference (invoice number) for IT Equipment.
+- **Unavailable State Handling**: Implemented explicit tracking of missing/legacy purchase data using `PurchaseInfoUnavailable` and `PurchaseInfoUnavailableReason` fields to maintain data integrity without blocking migrations.
+- **PDF Responsibilities Term Update**: Restructured the "Termo de Responsabilidade" PDF table to support 10 columns using a compact 6.5pt font layout. The PDF now accurately displays equipment values, purchase dates, and purchase document numbers, explicitly rendering "Indisponível" for legacy records without values.
+- **Form UI Update**: Added an always-visible "Compra / Rastreabilidade" section to the Equipment Form modal with validation for mandatory purchase fields or justified absence.
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
+
 
 - **HR Sync Logging & Robustness**: Refined the HR Employee Directory Synchronization to handle SQL connection timeouts gracefully without crashing the frontend. Added `EXTERNAL_DB_TIMEOUT` structured backend error. 
 - **Shared Correlation ID**: The frontend now generates a shared `X-Correlation-ID` for the full synchronization operation (departments + employees), logged consistently via `AdminLogWriter` across events (`HR_SYNC_STARTED`, `HR_SYNC_SUCCESS`, `HR_SYNC_PARTIAL`, `HR_SYNC_FAILED`).
