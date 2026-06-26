@@ -36,6 +36,8 @@ public class ITEquipmentPdfService
     private static readonly XFont SmallFont = new("Arial", 7.5, XFontStyle.Regular);
     private static readonly XFont SmallBoldFont = new("Arial", 7.5, XFontStyle.Bold);
     private static readonly XFont HeaderFont = new("Arial", 8, XFontStyle.Regular);
+    private static readonly XFont CompactFont = new("Arial", 6.5, XFontStyle.Regular);
+    private static readonly XFont CompactBoldFont = new("Arial", 6.5, XFontStyle.Bold);
     private static readonly XFont AcceptanceFont = new("Arial", 6.5, XFontStyle.Italic);
 
     // Colors
@@ -503,11 +505,11 @@ public class ITEquipmentPdfService
         };
     }
 
-    /// <summary>Draw the equipment table header row.</summary>
+    /// <summary>Draw the equipment table header row (10 columns including purchase traceability).</summary>
     private double DrawEquipmentTableHeader(XGraphics gfx, PdfPage page, double y, double contentWidth)
     {
         var colWidths = GetEquipmentColumnWidths(contentWidth);
-        var headers = new[] { "#", "Código do Ativo", "Tipo", "Fabricante", "Modelo", "S/N", "Hostname" };
+        var headers = new[] { "#", "Código", "Tipo", "Fabricante", "Modelo", "S/N", "Hostname", "Valor Ref.", "Data Compra", "Documento" };
         double x = PageMargin;
 
         // Header background
@@ -516,19 +518,31 @@ public class ITEquipmentPdfService
 
         for (int c = 0; c < headers.Length; c++)
         {
-            gfx.DrawString(headers[c], SmallBoldFont, XBrushes.White,
-                new XRect(x + 3, y, colWidths[c] - 6, 12), XStringFormats.TopLeft);
+            gfx.DrawString(headers[c], CompactBoldFont, XBrushes.White,
+                new XRect(x + 2, y, colWidths[c] - 4, 12), XStringFormats.TopLeft);
             x += colWidths[c];
         }
 
         return y + 16;
     }
 
-    /// <summary>Draw one equipment item row.</summary>
+    /// <summary>Draw one equipment item row (10 columns including purchase traceability).</summary>
     private double DrawEquipmentTableRow(XGraphics gfx, PdfPage page, double y, double contentWidth,
         int rowNum, DeliveryTermEquipmentItem item)
     {
         var colWidths = GetEquipmentColumnWidths(contentWidth);
+
+        // Format purchase display values
+        string purchaseValueDisplay = item.PurchaseInfoUnavailable || !item.PurchaseAmount.HasValue
+            ? "Indisponível"
+            : $"{item.PurchaseAmount:N2} {item.Currency ?? "AOA"}";
+        string purchaseDateDisplay = item.PurchaseInfoUnavailable || !item.AcquisitionDate.HasValue
+            ? "Indisponível"
+            : item.AcquisitionDate.Value.ToString("dd/MM/yyyy");
+        string purchaseDocDisplay = item.PurchaseInfoUnavailable || string.IsNullOrWhiteSpace(item.InvoiceNumber)
+            ? "Indisponível"
+            : item.InvoiceNumber;
+
         var values = new[]
         {
             rowNum.ToString(),
@@ -537,10 +551,13 @@ public class ITEquipmentPdfService
             item.Manufacturer ?? "—",
             item.Model ?? "—",
             item.SerialNumber ?? "—",
-            item.Hostname ?? "—"
+            item.Hostname ?? "—",
+            purchaseValueDisplay,
+            purchaseDateDisplay,
+            purchaseDocDisplay
         };
 
-        double rowHeight = 22; // Increased to allow wrapping
+        double rowHeight = 22;
         double x = PageMargin;
 
         // Alternating row background
@@ -555,21 +572,21 @@ public class ITEquipmentPdfService
         for (int c = 0; c < values.Length; c++)
         {
             var val = values[c] ?? "—";
-            tf.DrawString(val, SmallFont, XBrushes.Black,
-                new XRect(x + 3, y, colWidths[c] - 6, rowHeight - 2));
+            tf.DrawString(val, CompactFont, XBrushes.Black,
+                new XRect(x + 2, y, colWidths[c] - 4, rowHeight - 2));
             x += colWidths[c];
         }
 
         return y + rowHeight;
     }
 
-    /// <summary>Column widths for the equipment table.</summary>
+    /// <summary>Column widths for the 10-column equipment table (including purchase traceability).</summary>
     private static double[] GetEquipmentColumnWidths(double contentWidth)
     {
-        // #(20), Código do Ativo(125), Tipo(55), Fabricante(65), Modelo(85), S/N(80), Hostname(remaining)
-        double fixedTotal = 20 + 125 + 55 + 65 + 85 + 80;
+        // #(18), Código(80), Tipo(42), Fabricante(52), Modelo(60), S/N(55), Hostname(55), Valor Ref.(60), Data Compra(48), Documento(remaining)
+        double fixedTotal = 18 + 80 + 42 + 52 + 60 + 55 + 55 + 60 + 48;
         double remaining = contentWidth - fixedTotal;
-        return new double[] { 20, 125, 55, 65, 85, 80, remaining };
+        return new double[] { 18, 80, 42, 52, 60, 55, 55, 60, 48, remaining };
     }
 
     // ── DTOs for Delivery Term PDF ──
@@ -598,6 +615,14 @@ public class ITEquipmentPdfService
         public string? Model { get; set; }
         public string? SerialNumber { get; set; }
         public string? Notes { get; set; }
+        // Purchase traceability fields
+        public decimal? PurchaseAmount { get; set; }
+        public string? Currency { get; set; }
+        public DateTime? AcquisitionDate { get; set; }
+        /// <summary>General purchase/delivery document reference (invoice, delivery note, etc.).</summary>
+        public string? InvoiceNumber { get; set; }
+        /// <summary>When true, purchase info is unavailable — display "Indisponível" in PDF.</summary>
+        public bool PurchaseInfoUnavailable { get; set; }
     }
 
     // ═══════════════════════════════════════════════════════════════

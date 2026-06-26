@@ -12,8 +12,9 @@ Para efeitos deste acordo, considera-se mau uso ou negligência, entre outros: 
  
 5. Declaração de Valor dos Ativos 
 O usuário declara estar ciente de que os ativos entregues possuem valor financeiro relevante para a empresa. Para fins de responsabilidade e eventual ressarcimento, fica estabelecido que o valor de referência do equipamento principal entregue corresponde ao valor de mercado à data da entrega. 
-Valor de referência do equipamento: Vide Tabela Inicial 
-Este valor poderá ser utilizado como base para cálculo de ressarcimento em caso de dano, perda, roubo ou não devolução. 
+Valor de referência dos ativos: conforme indicado na tabela de equipamentos entregues.
+Nos casos em que o valor, data de compra ou documento de aquisição não estejam disponíveis, o campo será apresentado como "Indisponível", sem prejuízo da responsabilidade do utilizador pela guarda, conservação e devolução do ativo.
+Este valor poderá ser utilizado como base para cálculo de ressarcimento em caso de dano, perda, roubo ou não devolução.  
  
 6. Responsabilidade sobre Acessórios 
 Todos os acessórios entregues juntamente com o equipamento principal, incluindo, mas não se limitando a: • Carregador; • Mouse; • Auricular; • Mochila; • Cartões ou passes de acesso; 

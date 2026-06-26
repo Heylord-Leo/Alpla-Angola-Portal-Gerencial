@@ -227,7 +227,9 @@ public class ITEquipmentController : BaseController
                 eq.Acquisition.PurchaseAmount, eq.Acquisition.Currency,
                 eq.Acquisition.WarrantyStartDate, eq.Acquisition.WarrantyEndDate,
                 eq.Acquisition.WarrantyNotes, eq.Acquisition.AcquisitionNotes,
-                eq.Acquisition.PurchaseRequestNumber
+                eq.Acquisition.PurchaseRequestNumber,
+                eq.Acquisition.PurchaseInfoUnavailable,
+                eq.Acquisition.PurchaseInfoUnavailableReason
             },
             Documents = eq.Documents.Select(d => new
             {
@@ -317,24 +319,45 @@ public class ITEquipmentController : BaseController
 
         _context.ITEquipments.Add(equipment);
 
-        // Create acquisition record if this is a purchase
-        if (sourceType == ITEquipmentConstants.SourceType.ManualPurchase && request.Acquisition != null)
+        // Create acquisition / purchase traceability record (decoupled from SourceType — any equipment can have purchase data)
+        if (request.Acquisition != null)
         {
+            var acqDto = request.Acquisition;
+            var isUnavailable = acqDto.PurchaseInfoUnavailable == true;
+
+            // Validate purchase traceability fields
+            if (!isUnavailable)
+            {
+                if (!acqDto.PurchaseAmount.HasValue || acqDto.PurchaseAmount <= 0)
+                    return BadRequest(new { detail = "Informe o valor de compra, data de compra e número do documento, ou marque as informações como indisponíveis." });
+                if (!acqDto.AcquisitionDate.HasValue)
+                    return BadRequest(new { detail = "Informe o valor de compra, data de compra e número do documento, ou marque as informações como indisponíveis." });
+                if (string.IsNullOrWhiteSpace(acqDto.InvoiceNumber))
+                    return BadRequest(new { detail = "Informe o valor de compra, data de compra e número do documento, ou marque as informações como indisponíveis." });
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(acqDto.PurchaseInfoUnavailableReason))
+                    return BadRequest(new { detail = "Informe o motivo da indisponibilidade das informações de compra." });
+            }
+
             var acq = new ITEquipmentAcquisition
             {
                 EquipmentId = equipment.Id,
-                AcquisitionDate = request.Acquisition.AcquisitionDate,
-                SupplierName = request.Acquisition.SupplierName?.Trim(),
-                PurchaseOrderNumber = request.Acquisition.PurchaseOrderNumber?.Trim(),
-                InvoiceNumber = request.Acquisition.InvoiceNumber?.Trim(),
-                PaymentReference = request.Acquisition.PaymentReference?.Trim(),
-                PaymentDate = request.Acquisition.PaymentDate,
-                PurchaseAmount = request.Acquisition.PurchaseAmount,
-                Currency = request.Acquisition.Currency?.Trim(),
-                WarrantyStartDate = request.Acquisition.WarrantyStartDate,
-                WarrantyEndDate = request.Acquisition.WarrantyEndDate,
-                WarrantyNotes = request.Acquisition.WarrantyNotes?.Trim(),
-                AcquisitionNotes = request.Acquisition.AcquisitionNotes?.Trim(),
+                AcquisitionDate = acqDto.AcquisitionDate,
+                SupplierName = acqDto.SupplierName?.Trim(),
+                PurchaseOrderNumber = acqDto.PurchaseOrderNumber?.Trim(),
+                InvoiceNumber = acqDto.InvoiceNumber?.Trim(),
+                PaymentReference = acqDto.PaymentReference?.Trim(),
+                PaymentDate = acqDto.PaymentDate,
+                PurchaseAmount = acqDto.PurchaseAmount,
+                Currency = acqDto.Currency?.Trim(),
+                WarrantyStartDate = acqDto.WarrantyStartDate,
+                WarrantyEndDate = acqDto.WarrantyEndDate,
+                WarrantyNotes = acqDto.WarrantyNotes?.Trim(),
+                AcquisitionNotes = acqDto.AcquisitionNotes?.Trim(),
+                PurchaseInfoUnavailable = isUnavailable,
+                PurchaseInfoUnavailableReason = isUnavailable ? acqDto.PurchaseInfoUnavailableReason?.Trim() : null,
                 CreatedByUserId = userId
             };
             _context.ITEquipmentAcquisitions.Add(acq);
@@ -408,6 +431,118 @@ public class ITEquipmentController : BaseController
         if (request.IdCard != null && request.IdCard != eq.IdCard) { TrackDiff("ID Card", eq.IdCard, request.IdCard.Trim()); eq.IdCard = request.IdCard.Trim(); }
         if (request.Notes != null && request.Notes != eq.Notes) { eq.Notes = request.Notes.Trim(); diffs.Add("Notas atualizadas"); }
         if (request.ManufactureDate.HasValue && request.ManufactureDate != eq.ManufactureDate) { TrackDiff("Data de Fabricação", eq.ManufactureDate?.ToString("dd/MM/yyyy") ?? "—", request.ManufactureDate.Value.ToString("dd/MM/yyyy")); eq.ManufactureDate = request.ManufactureDate; }
+
+        // ── Purchase / Traceability (Acquisition) ──
+        if (request.Acquisition != null)
+        {
+            var acqDto = request.Acquisition;
+            var isUnavailable = acqDto.PurchaseInfoUnavailable == true;
+
+            // Validate purchase traceability fields
+            if (!isUnavailable)
+            {
+                if (!acqDto.PurchaseAmount.HasValue || acqDto.PurchaseAmount <= 0)
+                    return BadRequest(new { detail = "Informe o valor de compra, data de compra e número do documento, ou marque as informações como indisponíveis." });
+                if (!acqDto.AcquisitionDate.HasValue)
+                    return BadRequest(new { detail = "Informe o valor de compra, data de compra e número do documento, ou marque as informações como indisponíveis." });
+                if (string.IsNullOrWhiteSpace(acqDto.InvoiceNumber))
+                    return BadRequest(new { detail = "Informe o valor de compra, data de compra e número do documento, ou marque as informações como indisponíveis." });
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(acqDto.PurchaseInfoUnavailableReason))
+                    return BadRequest(new { detail = "Informe o motivo da indisponibilidade das informações de compra." });
+            }
+
+            // Load or create acquisition record
+            var existingAcq = await _context.ITEquipmentAcquisitions.FirstOrDefaultAsync(a => a.EquipmentId == id);
+            if (existingAcq == null)
+            {
+                // Create new acquisition record for this equipment
+                var newAcq = new ITEquipmentAcquisition
+                {
+                    EquipmentId = id,
+                    AcquisitionDate = acqDto.AcquisitionDate,
+                    SupplierName = acqDto.SupplierName?.Trim(),
+                    PurchaseOrderNumber = acqDto.PurchaseOrderNumber?.Trim(),
+                    InvoiceNumber = acqDto.InvoiceNumber?.Trim(),
+                    PaymentReference = acqDto.PaymentReference?.Trim(),
+                    PaymentDate = acqDto.PaymentDate,
+                    PurchaseAmount = acqDto.PurchaseAmount,
+                    Currency = acqDto.Currency?.Trim(),
+                    WarrantyStartDate = acqDto.WarrantyStartDate,
+                    WarrantyEndDate = acqDto.WarrantyEndDate,
+                    WarrantyNotes = acqDto.WarrantyNotes?.Trim(),
+                    AcquisitionNotes = acqDto.AcquisitionNotes?.Trim(),
+                    PurchaseInfoUnavailable = isUnavailable,
+                    PurchaseInfoUnavailableReason = isUnavailable ? acqDto.PurchaseInfoUnavailableReason?.Trim() : null,
+                    CreatedByUserId = userId
+                };
+                _context.ITEquipmentAcquisitions.Add(newAcq);
+                diffs.Add("Dados de compra/rastreabilidade adicionados");
+            }
+            else
+            {
+                // Update existing acquisition — track individual field diffs
+                if (acqDto.PurchaseAmount != existingAcq.PurchaseAmount)
+                {
+                    TrackDiff("Valor de Compra",
+                        existingAcq.PurchaseAmount?.ToString("N2") ?? "—",
+                        acqDto.PurchaseAmount?.ToString("N2") ?? "—", true);
+                    existingAcq.PurchaseAmount = acqDto.PurchaseAmount;
+                }
+                if (acqDto.Currency != null && acqDto.Currency != existingAcq.Currency)
+                {
+                    TrackDiff("Moeda", existingAcq.Currency ?? "—", acqDto.Currency);
+                    existingAcq.Currency = acqDto.Currency.Trim();
+                }
+                if (acqDto.AcquisitionDate != existingAcq.AcquisitionDate)
+                {
+                    TrackDiff("Data de Compra",
+                        existingAcq.AcquisitionDate?.ToString("dd/MM/yyyy") ?? "—",
+                        acqDto.AcquisitionDate?.ToString("dd/MM/yyyy") ?? "—");
+                    existingAcq.AcquisitionDate = acqDto.AcquisitionDate;
+                }
+                if (acqDto.InvoiceNumber?.Trim() != existingAcq.InvoiceNumber)
+                {
+                    TrackDiff("Nº Documento", existingAcq.InvoiceNumber ?? "—", acqDto.InvoiceNumber?.Trim() ?? "—");
+                    existingAcq.InvoiceNumber = acqDto.InvoiceNumber?.Trim();
+                }
+                if (acqDto.SupplierName?.Trim() != existingAcq.SupplierName)
+                {
+                    TrackDiff("Fornecedor", existingAcq.SupplierName ?? "—", acqDto.SupplierName?.Trim() ?? "—");
+                    existingAcq.SupplierName = acqDto.SupplierName?.Trim();
+                }
+                if (acqDto.PurchaseOrderNumber?.Trim() != existingAcq.PurchaseOrderNumber)
+                {
+                    existingAcq.PurchaseOrderNumber = acqDto.PurchaseOrderNumber?.Trim();
+                }
+                if (isUnavailable != existingAcq.PurchaseInfoUnavailable)
+                {
+                    TrackDiff("Info Compra Indisponível",
+                        existingAcq.PurchaseInfoUnavailable ? "Sim" : "Não",
+                        isUnavailable ? "Sim" : "Não");
+                    existingAcq.PurchaseInfoUnavailable = isUnavailable;
+                }
+                if (isUnavailable)
+                {
+                    var newReason = acqDto.PurchaseInfoUnavailableReason?.Trim();
+                    if (newReason != existingAcq.PurchaseInfoUnavailableReason)
+                    {
+                        TrackDiff("Motivo Indisponibilidade",
+                            existingAcq.PurchaseInfoUnavailableReason ?? "—", newReason ?? "—");
+                        existingAcq.PurchaseInfoUnavailableReason = newReason;
+                    }
+                }
+                else
+                {
+                    existingAcq.PurchaseInfoUnavailableReason = null;
+                }
+
+                existingAcq.UpdatedAt = DateTime.UtcNow;
+                existingAcq.UpdatedByUserId = userId;
+            }
+        }
 
         eq.UpdatedAt = DateTime.UtcNow;
         eq.UpdatedByUserId = userId;
@@ -2149,6 +2284,10 @@ public class ITEquipmentController : BaseController
         public DateTime? AcquisitionDate { get; set; }
         public string? SupplierName { get; set; }
         public string? PurchaseOrderNumber { get; set; }
+        /// <summary>
+        /// General purchase/delivery document reference.
+        /// Can represent an invoice, delivery note, or internal traceability document.
+        /// </summary>
         public string? InvoiceNumber { get; set; }
         public string? PaymentReference { get; set; }
         public DateTime? PaymentDate { get; set; }
@@ -2158,6 +2297,10 @@ public class ITEquipmentController : BaseController
         public DateTime? WarrantyEndDate { get; set; }
         public string? WarrantyNotes { get; set; }
         public string? AcquisitionNotes { get; set; }
+        /// <summary>When true, purchase documentation is unavailable.</summary>
+        public bool? PurchaseInfoUnavailable { get; set; }
+        /// <summary>Mandatory reason when PurchaseInfoUnavailable = true.</summary>
+        public string? PurchaseInfoUnavailableReason { get; set; }
     }
 
     public class UpdateEquipmentRequest
@@ -2179,6 +2322,8 @@ public class ITEquipmentController : BaseController
         public string? IdCard { get; set; }
         public string? Notes { get; set; }
         public DateTime? ManufactureDate { get; set; }
+        /// <summary>Purchase/traceability data. If provided, creates or updates the ITEquipmentAcquisition record.</summary>
+        public AcquisitionDto? Acquisition { get; set; }
     }
 
     public class AssignRequest

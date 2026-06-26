@@ -2,6 +2,17 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.202.0] - 2026-06-26
+
+### Added — IT Equipment Purchase Traceability
+
+- **Purchase Information**: Added support for tracking purchase value, date, and document reference (invoice number) for IT Equipment.
+- **Unavailable State Handling**: Implemented explicit tracking of missing/legacy purchase data using `PurchaseInfoUnavailable` and `PurchaseInfoUnavailableReason` fields to maintain data integrity without blocking migrations.
+- **PDF Responsibilities Term Update**: Restructured the "Termo de Responsabilidade" PDF table to support 10 columns using a compact 6.5pt font layout. The PDF now accurately displays equipment values, purchase dates, and purchase document numbers, explicitly rendering "Indisponível" for legacy records without values.
+- **Form UI Update**: Added an always-visible "Compra / Rastreabilidade" section to the Equipment Form modal with validation for mandatory purchase fields or justified absence.
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
+
 ## [v2.201.1] - 2026-06-26
 
 ### Fixed — HR Sync Logging & Robustness

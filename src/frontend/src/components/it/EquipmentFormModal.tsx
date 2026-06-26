@@ -69,7 +69,7 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
         manufactureDate: equipment?.manufactureDate ? equipment.manufactureDate.split('T')[0] : '',
     });
 
-    // Purchase tracking state (only for creation with MANUAL_PURCHASE)
+    // Purchase / traceability state — visible for both create and edit, independent of SourceType
     const [purchase, setPurchase] = useState({
         purchaseAmount: equipment?.acquisition?.purchaseAmount?.toString() || '',
         currency: equipment?.acquisition?.currency || 'AOA',
@@ -77,12 +77,12 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
         supplierName: equipment?.acquisition?.supplierName || '',
         purchaseOrderNumber: equipment?.acquisition?.purchaseOrderNumber || '',
         invoiceNumber: equipment?.acquisition?.invoiceNumber || '',
+        purchaseInfoUnavailable: equipment?.acquisition?.purchaseInfoUnavailable ?? false,
+        purchaseInfoUnavailableReason: equipment?.acquisition?.purchaseInfoUnavailableReason || '',
     });
 
     const set = (field: string, value: any) => setForm(prev => ({ ...prev, [field]: value }));
-    const setPur = (field: string, value: string) => setPurchase(prev => ({ ...prev, [field]: value }));
-
-    const showPurchase = form.sourceType === 'MANUAL_PURCHASE';
+    const setPur = (field: string, value: any) => setPurchase(prev => ({ ...prev, [field]: value }));
 
     useEffect(() => {
         if (form.companyId) {
@@ -132,17 +132,36 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
         if (!isEdit && !form.plantId) { setError('Planta é obrigatória.'); return; }
         if (!form.equipmentType) { setError('Tipo de equipamento é obrigatório.'); return; }
 
-        // Validate purchase fields
-        if (!isEdit && showPurchase) {
-            if (!purchase.purchaseAmount.trim()) { setError('Valor de compra é obrigatório para equipamento de compra.'); return; }
+        // Validate purchase traceability fields
+        if (!purchase.purchaseInfoUnavailable) {
+            if (!purchase.purchaseAmount.toString().trim() || !purchase.acquisitionDate.trim() || !purchase.invoiceNumber.trim()) {
+                setError('Informe o valor de compra, data de compra e número do documento, ou marque as informações como indisponíveis.');
+                return;
+            }
+        } else {
+            if (!purchase.purchaseInfoUnavailableReason.trim()) {
+                setError('Informe o motivo da indisponibilidade das informações de compra.');
+                return;
+            }
         }
+
+        // Build acquisition payload (always included — independent of SourceType)
+        const acquisitionPayload = {
+            purchaseAmount: purchase.purchaseInfoUnavailable ? null : (parseFloat(purchase.purchaseAmount.toString()) || null),
+            currency: purchase.currency || 'AOA',
+            acquisitionDate: purchase.purchaseInfoUnavailable ? null : (purchase.acquisitionDate || null),
+            invoiceNumber: purchase.purchaseInfoUnavailable ? null : (purchase.invoiceNumber || null),
+            supplierName: purchase.supplierName || null,
+            purchaseOrderNumber: purchase.purchaseOrderNumber || null,
+            purchaseInfoUnavailable: purchase.purchaseInfoUnavailable,
+            purchaseInfoUnavailableReason: purchase.purchaseInfoUnavailable ? purchase.purchaseInfoUnavailableReason : null,
+        };
 
         try {
             setSaving(true);
             setError('');
 
             if (isEdit && equipment) {
-                // Update: send only editable fields (AssetTag is immutable)
                 const updatePayload: any = {
                     hostname: form.hostname,
                     plant: form.plant,
@@ -160,10 +179,10 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
                     notes: form.notes,
                     legacyAssetCode: form.legacyAssetCode || null,
                     manufactureDate: form.manufactureDate || null,
+                    acquisition: acquisitionPayload,
                 };
                 await itEquipmentApi.update(equipment.id, updatePayload);
             } else {
-                // Create: send companyId + plantId + equipmentType for auto Asset Code
                 const createPayload: any = {
                     companyId: Number(form.companyId),
                     plantId: Number(form.plantId),
@@ -184,20 +203,8 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
                     sourceType: form.sourceType,
                     legacyAssetCode: form.legacyAssetCode || null,
                     manufactureDate: form.manufactureDate || null,
+                    acquisition: acquisitionPayload,
                 };
-
-                // Attach acquisition data for MANUAL_PURCHASE
-                if (showPurchase) {
-                    createPayload.acquisition = {
-                        purchaseAmount: parseFloat(purchase.purchaseAmount) || 0,
-                        currency: purchase.currency || 'AOA',
-                        acquisitionDate: purchase.acquisitionDate || null,
-                        supplierName: purchase.supplierName || null,
-                        purchaseOrderNumber: purchase.purchaseOrderNumber || null,
-                        invoiceNumber: purchase.invoiceNumber || null,
-                    };
-                }
-
                 await itEquipmentApi.create(createPayload);
             }
             onSuccess();
@@ -353,48 +360,74 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
                     </div>
                 </Row>
 
-                {/* Source Type / Acquisition */}
+                {/* Source Type (create only) */}
                 {!isEdit && (
-                    <>
-                        <SelectField label="Origem do Equipamento" value={form.sourceType} onChange={v => set('sourceType', v)}
-                            options={[
-                                { value: 'MANUAL_REGISTRATION', label: 'Registo Manual' },
-                                { value: 'MANUAL_PURCHASE', label: 'Compra / Aquisição' },
-                            ]}
-                        />
-                        {showPurchase && (
-                            <div style={{
-                                border: '1px solid var(--color-border)', borderRadius: 10, padding: 14,
-                                background: 'var(--color-bg-surface)', marginTop: 4
-                            }}>
-                                <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--color-text)', marginBottom: 10 }}>
-                                    💰 Dados de Compra
-                                </div>
-                                <Row>
-                                    <Field label="Valor de Compra *" value={purchase.purchaseAmount} onChange={v => setPur('purchaseAmount', v)} />
-                                    <SelectField label="Moeda" value={purchase.currency} onChange={v => setPur('currency', v)}
-                                        options={[
-                                            { value: 'AOA', label: 'AOA — Kwanza' },
-                                            { value: 'USD', label: 'USD — Dólar' },
-                                            { value: 'EUR', label: 'EUR — Euro' },
-                                        ]}
-                                    />
-                                </Row>
-                                <Row>
-                                    <div style={{ flex: 1 }}>
-                                        <label style={labelStyle}>Data de Aquisição</label>
-                                        <input type="date" value={purchase.acquisitionDate} onChange={e => setPur('acquisitionDate', e.target.value)} style={inputStyle} />
-                                    </div>
-                                    <Field label="Fornecedor" value={purchase.supplierName} onChange={v => setPur('supplierName', v)} />
-                                </Row>
-                                <Row>
-                                    <Field label="Nº Ordem de Compra" value={purchase.purchaseOrderNumber} onChange={v => setPur('purchaseOrderNumber', v)} />
-                                    <Field label="Nº Fatura" value={purchase.invoiceNumber} onChange={v => setPur('invoiceNumber', v)} />
-                                </Row>
-                            </div>
-                        )}
-                    </>
+                    <SelectField label="Origem do Equipamento" value={form.sourceType} onChange={v => set('sourceType', v)}
+                        options={[
+                            { value: 'MANUAL_REGISTRATION', label: 'Registo Manual' },
+                            { value: 'MANUAL_PURCHASE', label: 'Compra / Aquisição' },
+                        ]}
+                    />
                 )}
+
+                {/* ── Purchase / Traceability — always visible ── */}
+                <div style={{
+                    border: '1px solid var(--color-border)', borderRadius: 10, padding: 14,
+                    background: 'var(--color-bg-surface)', marginTop: 4
+                }}>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--color-text)', marginBottom: 10 }}>
+                        📋 Compra / Rastreabilidade
+                    </div>
+
+                    {/* Unavailable toggle */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                        <input type="checkbox" checked={purchase.purchaseInfoUnavailable}
+                            onChange={e => setPur('purchaseInfoUnavailable', e.target.checked)}
+                            id="purchaseUnavailableCheck" />
+                        <label htmlFor="purchaseUnavailableCheck" style={{ fontSize: '0.85rem', color: 'var(--color-text)' }}>
+                            Informações de compra indisponíveis
+                        </label>
+                    </div>
+
+                    {purchase.purchaseInfoUnavailable ? (
+                        /* Reason for unavailability */
+                        <div>
+                            <label style={labelStyle}>Motivo da indisponibilidade *</label>
+                            <textarea
+                                value={purchase.purchaseInfoUnavailableReason}
+                                onChange={e => setPur('purchaseInfoUnavailableReason', e.target.value)}
+                                rows={2}
+                                placeholder="Ex: Equipamento adquirido antes da implementação do sistema de rastreabilidade."
+                                style={{ ...inputStyle, resize: 'vertical' }}
+                            />
+                        </div>
+                    ) : (
+                        /* Purchase data fields */
+                        <>
+                            <Row>
+                                <Field label="Valor de compra *" value={purchase.purchaseAmount.toString()} onChange={v => setPur('purchaseAmount', v)} placeholder="0.00" />
+                                <SelectField label="Moeda" value={purchase.currency} onChange={v => setPur('currency', v)}
+                                    options={[
+                                        { value: 'AOA', label: 'AOA — Kwanza' },
+                                        { value: 'USD', label: 'USD — Dólar' },
+                                        { value: 'EUR', label: 'EUR — Euro' },
+                                    ]}
+                                />
+                            </Row>
+                            <Row>
+                                <div style={{ flex: 1 }}>
+                                    <label style={labelStyle}>Data de compra *</label>
+                                    <input type="date" value={purchase.acquisitionDate} onChange={e => setPur('acquisitionDate', e.target.value)} style={inputStyle} />
+                                </div>
+                                <Field label="Nº do documento de compra / entrega *" value={purchase.invoiceNumber} onChange={v => setPur('invoiceNumber', v)} placeholder="Fatura, guia, ou documento interno" />
+                            </Row>
+                            <Row>
+                                <Field label="Fornecedor" value={purchase.supplierName} onChange={v => setPur('supplierName', v)} />
+                                <Field label="Nº Ordem de Compra" value={purchase.purchaseOrderNumber} onChange={v => setPur('purchaseOrderNumber', v)} />
+                            </Row>
+                        </>
+                    )}
+                </div>
 
                 <div>
                     <label style={{ ...labelStyle }}>Notas</label>
