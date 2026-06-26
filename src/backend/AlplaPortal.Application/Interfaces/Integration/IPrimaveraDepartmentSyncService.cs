@@ -10,5 +10,5 @@ public class DepartmentSyncResult
 
 public interface IPrimaveraDepartmentSyncService
 {
-    Task<DepartmentSyncResult> SyncDepartmentsAsync(CancellationToken cancellationToken = default);
+    Task<DepartmentSyncResult> SyncDepartmentsAsync(string? correlationId = null, CancellationToken cancellationToken = default);
 }

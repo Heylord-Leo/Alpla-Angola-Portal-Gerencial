@@ -6,11 +6,15 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 export class ApiError extends Error {
     public status?: number;
     public fieldErrors?: Record<string, string[]>;
+    public correlationId?: string;
+    public errorCode?: string;
 
-    constructor(message: string, status?: number, fieldErrors?: Record<string, string[]>) {
+    constructor(message: string, status?: number, fieldErrors?: Record<string, string[]>, correlationId?: string, errorCode?: string) {
         super(message);
         this.status = status;
         this.fieldErrors = fieldErrors;
+        this.correlationId = correlationId;
+        this.errorCode = errorCode;
         this.name = 'ApiError';
     }
 }
@@ -83,10 +87,14 @@ async function handleApiError(
         errorMsg = errJson.detail || errJson.title || errJson.message;
     }
 
-    throw new ApiError(
+    const apiError = new ApiError(
         errorMsg,
-        response.status
+        response.status,
+        undefined,
+        errJson?.correlationId || correlationId,
+        errJson?.errorCode
     );
+    throw apiError;
 }
 
 export const api = {
@@ -631,8 +639,10 @@ export const api = {
         }
     },
     hrLeave: {
-        syncEmployees: async (): Promise<any> => {
-            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/employees/sync`, { method: 'POST' });
+        syncEmployees: async (correlationId?: string): Promise<any> => {
+            const headers: Record<string, string> = {};
+            if (correlationId) headers['X-Correlation-ID'] = correlationId;
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/employees/sync`, { method: 'POST', headers });
             if (!response.ok) {
                 // Return json anyway if 207 or specialized error
                 if (response.status === 207) return response.json();
@@ -657,8 +667,10 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao buscar departamentos mestre.');
             return response.json();
         },
-        syncDepartments: async (): Promise<{ message: string, created: number, updated: number, processed: number, errors?: string[] }> => {
-            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/departments/sync`, { method: 'POST' });
+        syncDepartments: async (correlationId?: string): Promise<{ message: string, created: number, updated: number, processed: number, errors?: string[] }> => {
+            const headers: Record<string, string> = {};
+            if (correlationId) headers['X-Correlation-ID'] = correlationId;
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/departments/sync`, { method: 'POST', headers });
             if (!response.ok && response.status !== 207) return handleApiError(response, 'Falha ao sincronizar departamentos mestre.');
             return response.json();
         },

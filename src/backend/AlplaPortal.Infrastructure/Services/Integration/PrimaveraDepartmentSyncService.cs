@@ -1,6 +1,8 @@
+using System.Text.Json;
 using AlplaPortal.Application.Interfaces.Integration;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Infrastructure.Data;
+using AlplaPortal.Infrastructure.Logging;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -11,22 +13,29 @@ public class PrimaveraDepartmentSyncService : IPrimaveraDepartmentSyncService
 {
     private readonly ApplicationDbContext _dbContext;
     private readonly PrimaveraConnectionFactory _connectionFactory;
+    private readonly AdminLogWriter _adminLogWriter;
     private readonly ILogger<PrimaveraDepartmentSyncService> _logger;
 
     public PrimaveraDepartmentSyncService(
         ApplicationDbContext dbContext,
         PrimaveraConnectionFactory connectionFactory,
+        AdminLogWriter adminLogWriter,
         ILogger<PrimaveraDepartmentSyncService> logger)
     {
         _dbContext = dbContext;
         _connectionFactory = connectionFactory;
+        _adminLogWriter = adminLogWriter;
         _logger = logger;
     }
 
-    public async Task<DepartmentSyncResult> SyncDepartmentsAsync(CancellationToken cancellationToken = default)
+    public async Task<DepartmentSyncResult> SyncDepartmentsAsync(string? correlationId = null, CancellationToken cancellationToken = default)
     {
         var companies = _connectionFactory.GetConfiguredCompanies();
         var result = new DepartmentSyncResult();
+
+        _ = _adminLogWriter.WriteAsync("Information", nameof(PrimaveraDepartmentSyncService), "DEPT_SYNC_STARTED",
+            "Sincronização de departamentos (Primavera) iniciada.",
+            payload: JsonSerializer.Serialize(new { CorrelationId = correlationId }));
 
         foreach (var company in companies)
         {
@@ -93,7 +102,23 @@ public class PrimaveraDepartmentSyncService : IPrimaveraDepartmentSyncService
             {
                 _logger.LogError(ex, "Failed to sync departments from Primavera database {DbName}", dbName);
                 result.Errors.Add($"[{dbName}] {ex.Message}");
+                
+                // Add system log for department sync failure
+                _ = _adminLogWriter.WriteAsync("Error", nameof(PrimaveraDepartmentSyncService), "DEPT_SYNC_FAILED",
+                    $"Falha ao sincronizar departamentos da base {dbName}: {ex.Message}",
+                    exceptionDetail: ex.StackTrace,
+                    payload: JsonSerializer.Serialize(new { CorrelationId = correlationId, Database = dbName }));
             }
+        }
+
+        // Add system log for completion
+        if (result.Processed > 0 || result.Errors.Any())
+        {
+            var status = result.Errors.Any() ? "Warning" : "Information";
+            var eventCode = result.Errors.Any() ? "DEPT_SYNC_PARTIAL" : "DEPT_SYNC_SUCCESS";
+            _ = _adminLogWriter.WriteAsync(status, nameof(PrimaveraDepartmentSyncService), eventCode,
+                $"Sincronização de departamentos (Primavera): {result.Created} criados, {result.Updated} atualizados, {result.Errors.Count} erros.",
+                payload: JsonSerializer.Serialize(new { CorrelationId = correlationId, Created = result.Created, Updated = result.Updated, ErrorCount = result.Errors.Count }));
         }
 
         return result;

@@ -278,12 +278,16 @@ export default function HREmployeeDirectory() {
         if (action === 'SYNC_ALL' || action === 'SYNC' || action === 'SYNC_DEPARTMENTS') {
             setModalProcessing(true);
             setModalFeedback({ type: 'info', message: null });
+
+            // Generate a single shared CorrelationId for the entire sync operation
+            const sharedCorrelationId = crypto.randomUUID().replace(/-/g, '').substring(0, 12);
+
             try {
                 // 1. Departamentos
-                const deptData = await api.hrLeave.syncDepartments();
+                const deptData = await api.hrLeave.syncDepartments(sharedCorrelationId);
                 
                 // 2. Funcionários
-                const empData = await api.hrLeave.syncEmployees();
+                const empData = await api.hrLeave.syncEmployees(sharedCorrelationId);
 
                 // 3. Resolve plant suggestions (Primavera read-only)
                 let sugMsg = '';
@@ -296,7 +300,7 @@ export default function HREmployeeDirectory() {
                 }
                 
                 let deptMsg = `[Mestre] Processados: ${deptData.processed} | Criados: ${deptData.created} | Erros: ${deptData.errors ? deptData.errors.length : 0}`;
-                let empMsg = `[Innux] Criados: ${empData.employeesCreated} | Atualizados: ${empData.employeesUpdated} | Desativados: ${empData.employeesDeactivated}`;
+                let empMsg = `[Innux] Criados: ${empData.employeesCreated} | Atualizados: ${empData.employeesUpdated} | Ignorados: ${empData.employeesSkipped || 0} | Desativados: ${empData.employeesDeactivated}`;
                 
                 let finalStatus: FeedbackType = 'success';
                 let alertContext = '';
@@ -304,12 +308,15 @@ export default function HREmployeeDirectory() {
                 if (deptData.errors && deptData.errors.length > 0) {
                     finalStatus = 'warning';
                 }
-                if (empData.status === 'PARTIAL') {
+                if (empData.status === 'PARTIAL' || empData.status === 'FAILED') {
                     finalStatus = 'warning';
                     alertContext = ` Aviso: ${empData.message}`;
+                    if (empData.correlationId || sharedCorrelationId) {
+                        alertContext += ` (Ref: ${empData.correlationId || sharedCorrelationId})`;
+                    }
                 }
 
-                setFeedback({ type: finalStatus, message: `Sincronização global concluída com sucesso. ${deptMsg}. ${empMsg}.${sugMsg}${alertContext}` });
+                setFeedback({ type: finalStatus, message: `Sincronização global concluída. ${deptMsg}. ${empMsg}.${sugMsg}${alertContext}` });
                 
                 // Recarrega tudo
                 loadEmployees();
@@ -317,7 +324,27 @@ export default function HREmployeeDirectory() {
                 setActionModal(null);
             } catch (error: any) {
                 console.error('Unified Sync error', error);
-                setModalFeedback({ type: 'error', message: error.message || 'Falha ao processar as sincronizações. Verifique se os serviços (Innux e/ou Primavera) estão operacionais na rede.' });
+                
+                let errorMsg: string;
+                const errorCode = error?.errorCode;
+                const corrId = error?.correlationId || sharedCorrelationId;
+
+                if (errorCode === 'EXTERNAL_DB_TIMEOUT') {
+                    errorMsg = `Não foi possível conectar à base externa durante a sincronização. A operação foi registada nos logs do sistema para análise técnica. Referência: ${corrId}`;
+                } else if (!errorCode && error.message && (
+                    error.message.toLowerCase().includes('timeout') || 
+                    error.message.toLowerCase().includes('connection')
+                )) {
+                    // Fallback keyword detection for non-structured errors
+                    errorMsg = `Não foi possível conectar à base externa durante a sincronização. A operação foi registada nos logs do sistema para análise técnica. Referência: ${corrId}`;
+                } else {
+                    errorMsg = error.message || 'Falha ao processar as sincronizações. Verifique se os serviços (Innux e/ou Primavera) estão operacionais na rede.';
+                    if (corrId) {
+                        errorMsg += ` Referência do erro: ${corrId}`;
+                    }
+                }
+                
+                setModalFeedback({ type: 'error', message: errorMsg });
             } finally {
                 setModalProcessing(false);
             }
