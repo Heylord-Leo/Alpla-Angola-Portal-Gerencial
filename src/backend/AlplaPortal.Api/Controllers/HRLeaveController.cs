@@ -565,40 +565,61 @@ public class HRLeaveController : ControllerBase
         if (!IsAdminOrHR)
             return Forbid();
 
+        var correlationId = HttpContext.Items["CorrelationId"] as string;
+
         try
         {
-            var result = await _syncService.SyncFromInnuxAsync(CurrentUserId);
+            var result = await _syncService.SyncFromInnuxAsync(CurrentUserId, correlationId);
             if (result.Status == "FAILED" || result.Status == "PARTIAL")
             {
                 return StatusCode(207, new
                 {
-                    message = "Sincronização concluída com erros. " + (result.ErrorDetails ?? ""),
+                    message = result.Status == "PARTIAL"
+                        ? $"Sincronização concluída parcialmente: {result.EmployeesCreated} criados, {result.EmployeesUpdated} atualizados, {result.EmployeesDeactivated} desativados, ignorados consultados nos logs."
+                        : "Sincronização concluída com erros. " + (result.ErrorDetails ?? ""),
+                    correlationId,
                     result.EmployeesCreated,
                     result.EmployeesUpdated,
                     result.EmployeesDeactivated,
                     result.TotalProcessed,
                     result.Errors,
-                    result.Status
+                    status = result.Status
                 });
             }
             return Ok(new
             {
                 message = "Sincronização concluída.",
+                correlationId,
                 result.EmployeesCreated,
                 result.EmployeesUpdated,
                 result.EmployeesDeactivated,
                 result.TotalProcessed,
                 result.Errors,
-                result.Status
+                status = result.Status
             });
         }
         catch (InvalidOperationException ex)
         {
-            return StatusCode(503, new { message = ex.Message, errorType = "InvalidOperationException" });
+            return StatusCode(409, new { message = ex.Message, errorType = "InvalidOperationException", errorCode = "SYNC_IN_PROGRESS", correlationId });
         }
-        catch (Exception ex)
+        catch (Exception ex) when (IsExternalDbTimeoutException(ex))
         {
-            return StatusCode(500, new { message = $"Falha inesperada durante a sincronização: {ex.Message}", errorType = "Exception" });
+            _logger.LogError(ex, "HR Employee sync failed due to external database timeout");
+            return StatusCode(500, new 
+            { 
+                message = "Não foi possível conectar à base externa durante a sincronização. A operação foi registada nos logs do sistema para análise técnica.", 
+                errorCode = "EXTERNAL_DB_TIMEOUT",
+                correlationId 
+            });
+        }
+        catch (Exception)
+        {
+            return StatusCode(500, new 
+            { 
+                message = "Não foi possível concluir a sincronização do directório de funcionários. O erro foi registado nos logs do sistema para análise técnica.", 
+                errorCode = "SYNC_FAILED",
+                correlationId 
+            });
         }
     }
 
@@ -671,15 +692,18 @@ public class HRLeaveController : ControllerBase
         if (!IsAdminOrHR)
             return Forbid();
 
+        var correlationId = HttpContext.Items["CorrelationId"] as string;
+
         try
         {
-            var result = await _deptSyncService.SyncDepartmentsAsync();
+            var result = await _deptSyncService.SyncDepartmentsAsync(correlationId);
             
             if (result.Errors.Any())
             {
                 return StatusCode(207, new 
                 { 
-                    message = "Sincronização concluída com erros. Algumas empresas podem ter falhado.", 
+                    message = "Sincronização concluída com erros. Algumas empresas podem ter falhado.",
+                    correlationId,
                     result.Created,
                     result.Updated,
                     result.Processed,
@@ -689,16 +713,21 @@ public class HRLeaveController : ControllerBase
 
             return Ok(new 
             { 
-                message = "Sincronização concluída.", 
+                message = "Sincronização concluída.",
+                correlationId,
                 result.Created,
                 result.Updated,
                 result.Processed,
                 result.Errors
             });
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return StatusCode(500, new { message = $"Falha na sincronização: {ex.Message}" });
+            return StatusCode(500, new 
+            { 
+                message = "Falha na sincronização dos departamentos. O erro foi registado nos logs do sistema para análise técnica.",
+                correlationId
+            });
         }
     }
 
@@ -1619,5 +1648,38 @@ public class HRLeaveController : ControllerBase
     {
         public string? Comment { get; set; }
         public string? Reason { get; set; }
+    }
+
+    // ─── Private Helpers ───
+
+    /// <summary>
+    /// Detects whether an exception (or its InnerException chain) represents
+    /// an external database timeout or connection failure.
+    /// </summary>
+    private static bool IsExternalDbTimeoutException(Exception ex)
+    {
+        var current = ex;
+        while (current != null)
+        {
+            if (current is TimeoutException)
+                return true;
+
+            if (current is Microsoft.Data.SqlClient.SqlException sqlEx)
+            {
+                // SQL Server error codes for timeout / connectivity
+                // -2 = Timeout expired, 53 = network path not found, 
+                // 258 = wait timeout, 121 = semaphore timeout
+                if (sqlEx.Number == -2 || sqlEx.Number == 53 || sqlEx.Number == 258 || sqlEx.Number == 121)
+                    return true;
+            }
+
+            // Also check message text as a safety net
+            if (current.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase) 
+                && current.Message.Contains("connection", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            current = current.InnerException;
+        }
+        return false;
     }
 }

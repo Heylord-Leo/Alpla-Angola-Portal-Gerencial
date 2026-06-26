@@ -2,6 +2,16 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.201.1] - 2026-06-26
+
+### Fixed — HR Sync Logging & Robustness
+
+- **Graceful Failure**: Refined the HR Employee Directory Synchronization to handle SQL connection timeouts gracefully without crashing the frontend. Added `EXTERNAL_DB_TIMEOUT` structured backend error. 
+- **Shared Correlation ID**: The frontend now generates a shared `X-Correlation-ID` for the full synchronization operation (departments + employees), logged consistently via `AdminLogWriter` across events (`HR_SYNC_STARTED`, `HR_SYNC_SUCCESS`, `HR_SYNC_PARTIAL`, `HR_SYNC_FAILED`, `DEPT_SYNC_*`).
+- **Partial Sync Handling**: Replaced hard crash on unprocessable records with skip-and-continue logic. Emits `HR_SYNC_PARTIAL` when some records are skipped, displaying the count in the UI. Skipped records log `EmployeeCode` and `Reason` via AdminLog.
+
+**Guided Tour impact: not applicable.**
+
 ## [v2.201.0] - 2026-06-25
 
 ### Fixed — Request Creation Performance (Email Outbox)

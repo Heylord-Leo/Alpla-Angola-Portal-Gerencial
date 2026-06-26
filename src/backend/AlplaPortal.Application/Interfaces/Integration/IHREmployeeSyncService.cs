@@ -12,7 +12,7 @@ public interface IHREmployeeSyncService
     /// Syncs all active employees from Innux into HREmployees table.
     /// Upserts by InnuxEmployeeId. Deactivates employees no longer in Innux.
     /// </summary>
-    Task<HRSyncLog> SyncFromInnuxAsync(Guid? triggeredByUserId = null);
+    Task<HRSyncLog> SyncFromInnuxAsync(Guid? triggeredByUserId = null, string? correlationId = null);
 
     /// <summary>Returns the most recent sync log entry.</summary>
     Task<HRSyncLog?> GetLastSyncAsync();

@@ -1,6 +1,9 @@
+using System.Diagnostics;
+using System.Text.Json;
 using AlplaPortal.Application.Interfaces.Integration;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Infrastructure.Data;
+using AlplaPortal.Infrastructure.Logging;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -12,31 +15,43 @@ namespace AlplaPortal.Infrastructure.Services.Integration;
 ///
 /// Strategy:
 /// 1. Query all active employees from Innux dbo.Funcionarios
-/// 2. Upsert into HREmployees matching on InnuxEmployeeId
-/// 3. Mark employees not found in Innux as IsActive = false
-/// 4. Log sync operation in HRSyncLogs
+/// 2. Validate in-memory (skip duplicates or invalid codes)
+/// 3. Upsert into HREmployees matching on InnuxEmployeeId
+/// 4. Mark employees not found in Innux as IsActive = false
+/// 5. Save changes in a batch, with full error logging if it fails
 ///
-/// Preserves Portal mapping fields (PortalDepartmentId, PlantId, ManagerUserId)
-/// — these are never overwritten by sync; they are managed by HR/Admin.
+/// Note on Concurrency: SemaphoreSlim is process-level. If this API 
+/// scales to multiple instances, use a distributed lock (e.g. Redis/DB).
 /// </summary>
 public class HREmployeeSyncService : IHREmployeeSyncService
 {
     private readonly ApplicationDbContext _context;
     private readonly InnuxConnectionFactory _connectionFactory;
+    private readonly AdminLogWriter _adminLogWriter;
     private readonly ILogger<HREmployeeSyncService> _logger;
+
+    private static readonly SemaphoreSlim _syncLock = new(1, 1);
 
     public HREmployeeSyncService(
         ApplicationDbContext context,
         InnuxConnectionFactory connectionFactory,
+        AdminLogWriter adminLogWriter,
         ILogger<HREmployeeSyncService> logger)
     {
         _context = context;
         _connectionFactory = connectionFactory;
+        _adminLogWriter = adminLogWriter;
         _logger = logger;
     }
 
-    public async Task<HRSyncLog> SyncFromInnuxAsync(Guid? triggeredByUserId = null)
+    public async Task<HRSyncLog> SyncFromInnuxAsync(Guid? triggeredByUserId = null, string? correlationId = null)
     {
+        if (!_syncLock.Wait(0))
+        {
+            throw new InvalidOperationException("Uma sincronização já está em curso. Por favor, aguarde.");
+        }
+
+        var sw = Stopwatch.StartNew();
         var syncLog = new HRSyncLog
         {
             TriggeredByUserId = triggeredByUserId,
@@ -44,6 +59,12 @@ public class HREmployeeSyncService : IHREmployeeSyncService
         };
         _context.HRSyncLogs.Add(syncLog);
         await _context.SaveChangesAsync();
+
+        await _adminLogWriter.WriteAsync("Information", nameof(HREmployeeSyncService), "HR_SYNC_STARTED",
+            $"Sincronização de funcionários iniciada pelo utilizador {triggeredByUserId}.",
+            payload: JsonSerializer.Serialize(new { CorrelationId = correlationId }));
+
+        var skippedDetails = new List<object>();
 
         try
         {
@@ -58,12 +79,37 @@ public class HREmployeeSyncService : IHREmployeeSyncService
             var updated = 0;
             var deactivated = 0;
             var errors = 0;
+            var skipped = 0;
             var processedInnuxIds = new HashSet<int>();
+            var seenEmployeeCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var innux in innuxEmployees)
             {
                 try
                 {
+                    // Validation
+                    if (string.IsNullOrWhiteSpace(innux.EmployeeCode))
+                    {
+                        skipped++;
+                        skippedDetails.Add(new { EmployeeCode = innux.EmployeeCode ?? "(vazio)", Reason = "EmployeeCode vazio" });
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(innux.FullName))
+                    {
+                        skipped++;
+                        skippedDetails.Add(new { innux.EmployeeCode, Reason = "Nome completo vazio" });
+                        continue;
+                    }
+
+                    if (seenEmployeeCodes.Contains(innux.EmployeeCode))
+                    {
+                        skipped++;
+                        skippedDetails.Add(new { innux.EmployeeCode, Reason = "EmployeeCode duplicado no Innux" });
+                        continue;
+                    }
+
+                    seenEmployeeCodes.Add(innux.EmployeeCode);
                     processedInnuxIds.Add(innux.InnuxEmployeeId);
 
                     if (existingByInnuxId.TryGetValue(innux.InnuxEmployeeId, out var existing))
@@ -75,11 +121,6 @@ public class HREmployeeSyncService : IHREmployeeSyncService
                         existing.InnuxDepartmentId = innux.InnuxDepartmentId;
                         existing.JobTitle = innux.JobTitle;
                         existing.CardNumber = innux.CardNumber;
-                        // Only overwrite email if Innux provides a non-empty value.
-                        // This preserves manually-linked corporate emails used for
-                        // self-service Portal access (User ↔ HREmployee mapping).
-                        // Most Innux employees have no email; overwriting with NULL
-                        // would break self-calendar for linked Portal users.
                         if (!string.IsNullOrWhiteSpace(innux.Email))
                             existing.Email = innux.Email;
                         existing.HireDate = innux.HireDate;
@@ -113,8 +154,9 @@ public class HREmployeeSyncService : IHREmployeeSyncService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Error processing Innux employee {Id}", innux.InnuxEmployeeId);
+                    _logger.LogWarning(ex, "Error processing Innux employee {Code}", innux.EmployeeCode);
                     errors++;
+                    skippedDetails.Add(new { innux.EmployeeCode, Reason = $"Exceção durante o mapeamento: {ex.Message}" });
                 }
             }
 
@@ -129,7 +171,18 @@ public class HREmployeeSyncService : IHREmployeeSyncService
                 }
             }
 
-            await _context.SaveChangesAsync();
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException dbEx)
+            {
+                // Unroll InnerExceptions to capture actual constraint failures
+                var actualError = dbEx.InnerException?.Message ?? dbEx.Message;
+                throw new Exception($"Database save failed: {actualError}", dbEx);
+            }
+
+            sw.Stop();
 
             // 4. Update sync log
             syncLog.EmployeesCreated = created;
@@ -137,24 +190,60 @@ public class HREmployeeSyncService : IHREmployeeSyncService
             syncLog.EmployeesDeactivated = deactivated;
             syncLog.TotalProcessed = innuxEmployees.Count;
             syncLog.Errors = errors;
-            syncLog.Status = "COMPLETED";
             syncLog.CompletedAtUtc = DateTime.UtcNow;
+
+            // Determine status: PARTIAL if any records were skipped or had errors
+            var isPartial = skipped > 0 || errors > 0;
+            syncLog.Status = isPartial ? "PARTIAL" : "COMPLETED";
+            
             await _context.SaveChangesAsync();
 
+            var eventCode = isPartial ? "HR_SYNC_PARTIAL" : "HR_SYNC_SUCCESS";
+            var logLevel = isPartial ? "Warning" : "Information";
+            var statusMsg = isPartial
+                ? $"Sincronização concluída parcialmente: {created} criados, {updated} atualizados, {deactivated} desativados, {skipped} ignorado(s)."
+                : $"Sincronização concluída: {created} criados, {updated} atualizados, {deactivated} desativados.";
+
+            await _adminLogWriter.WriteAsync(logLevel, nameof(HREmployeeSyncService), eventCode,
+                statusMsg,
+                payload: JsonSerializer.Serialize(new { CorrelationId = correlationId, Created = created, Updated = updated, Deactivated = deactivated, Skipped = skipped, DurationMs = sw.ElapsedMilliseconds, SkippedDetails = skippedDetails }));
+
             _logger.LogInformation(
-                "HR Employee sync completed: {Created} created, {Updated} updated, {Deactivated} deactivated, {Errors} errors",
-                created, updated, deactivated, errors);
+                "HR Employee sync completed: {Created} created, {Updated} updated, {Deactivated} deactivated, {Skipped} skipped, {Errors} errors",
+                created, updated, deactivated, skipped, errors);
 
             return syncLog;
         }
         catch (Exception ex)
         {
+            sw.Stop();
             _logger.LogError(ex, "HR Employee sync failed");
+
+            // Build detailed exception tracking
+            var fullError = ex.Message;
+            var currentEx = ex.InnerException;
+            while (currentEx != null)
+            {
+                fullError += $" | Inner: {currentEx.Message}";
+                currentEx = currentEx.InnerException;
+            }
+
             syncLog.Status = "FAILED";
-            syncLog.ErrorDetails = ex.Message;
+            syncLog.ErrorDetails = fullError;
             syncLog.CompletedAtUtc = DateTime.UtcNow;
+            
             await _context.SaveChangesAsync();
+
+            await _adminLogWriter.WriteAsync("Error", nameof(HREmployeeSyncService), "HR_SYNC_FAILED",
+                $"Falha na sincronização: {ex.Message}",
+                exceptionDetail: fullError + "\n" + ex.StackTrace,
+                payload: JsonSerializer.Serialize(new { CorrelationId = correlationId, DurationMs = sw.ElapsedMilliseconds, Skipped = skippedDetails.Count }));
+
             throw;
+        }
+        finally
+        {
+            _syncLock.Release();
         }
     }
 

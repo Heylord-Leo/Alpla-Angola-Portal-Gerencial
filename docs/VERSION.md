@@ -2,7 +2,13 @@
 
 ## Current Version
 
-v2.201.0
+v2.201.1
+
+## [v2.201.1] - 2026-06-26
+
+- **HR Sync Logging & Robustness**: Refined the HR Employee Directory Synchronization to handle SQL connection timeouts gracefully without crashing the frontend. Added `EXTERNAL_DB_TIMEOUT` structured backend error. 
+- **Shared Correlation ID**: The frontend now generates a shared `X-Correlation-ID` for the full synchronization operation (departments + employees), logged consistently via `AdminLogWriter` across events (`HR_SYNC_STARTED`, `HR_SYNC_SUCCESS`, `HR_SYNC_PARTIAL`, `HR_SYNC_FAILED`).
+- **Partial Sync Handling**: Replaced hard crash on unprocessable records with skip-and-continue logic. Emits `HR_SYNC_PARTIAL` when some records are skipped, displaying the count in the UI.
 
 ## [v2.201.0] - 2026-06-25
 
