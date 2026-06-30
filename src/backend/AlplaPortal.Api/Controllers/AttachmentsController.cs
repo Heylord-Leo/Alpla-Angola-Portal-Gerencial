@@ -125,8 +125,14 @@ public class AttachmentsController : BaseController
                 detail = "O Cronograma de Pagamento deve ser carregado nos estágios de emissão de P.O ou agendamento.";
                 break;
             case AttachmentConstants.Types.PaymentProof:
-                isUploadable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup }.Contains(statusCode);
-                detail = "O Comprovante de Pagamento deve ser carregado nos estágios de emissão de P.O, agendamento, conclusão ou recebimento.";
+                isUploadable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.AdvancePaymentRequired, RequestConstants.Statuses.AdvancePaymentCompleted }.Contains(statusCode);
+                if (isUploadable && statusCode == RequestConstants.Statuses.AdvancePaymentCompleted && !CurrentUserRoles.Contains(RoleConstants.Finance) && !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
+                {
+                    isUploadable = false;
+                    detail = "Apenas usuários do Financeiro podem carregar comprovativos após a conclusão do adiantamento.";
+                    break;
+                }
+                detail = "O Comprovante de Pagamento deve ser carregado nos estágios de emissão de P.O, agendamento, adiantamento ou conclusão.";
                 break;
             case AttachmentConstants.Types.Receipt:
                 isUploadable = new[] { "WAITING_RECEIPT" }.Contains(statusCode);

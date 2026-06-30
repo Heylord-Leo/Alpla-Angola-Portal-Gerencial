@@ -6,6 +6,7 @@ import { Check, Clock, AlertTriangle, FileText, MessageSquare, ChevronLeft, Chev
 import { KebabMenu } from '../../components/ui/KebabMenu';
 import { ModernTooltip } from '../../components/ui/ModernTooltip';
 import { FinanceActionModal, FinanceActionType } from '../../components/modals/FinanceActionModal';
+import { logger } from '../../lib/logger';
 import { FeedbackType } from '../../components/ui/Feedback';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -145,13 +146,21 @@ export default function FinancePaymentsList() {
                     await api.finance.schedulePayment(actionModal.requestId, new Date(payload.date).toISOString(), payload.notes || "Agendado via portal");
                 }
             } else if (action === 'PAY') {
+                let attachmentId: string | undefined = undefined;
                 if (payload.file) {
-                    await api.attachments.upload(actionModal.requestId, [payload.file], 'PAYMENT_PROOF');
+                    const uploadResult = await api.attachments.upload(actionModal.requestId, [payload.file], 'PAYMENT_PROOF');
+                    if (uploadResult && uploadResult.length > 0) {
+                        attachmentId = uploadResult[0].id;
+                    }
                 }
                 const actualPaidAmount = payload.amount ? parseFloat(payload.amount) : undefined;
                 const paymentDateUtc = payload.date ? new Date(payload.date).toISOString() : undefined;
                 if (isAdvance) {
-                    await api.requests.confirmAdvancePayment(actionModal.requestId, { actualPaidAmount: actualPaidAmount || 0, comment: payload.notes || "Adiantamento liquidado via portal" });
+                    await api.requests.confirmAdvancePayment(actionModal.requestId, { 
+                        actualPaidAmount: actualPaidAmount || 0, 
+                        comment: payload.notes || "Adiantamento liquidado via portal",
+                        paymentProofAttachmentId: attachmentId
+                    });
                 } else {
                     await api.finance.markAsPaid(actionModal.requestId, paymentDateUtc, payload.notes || "Liquidado via portal", actualPaidAmount);
                 }
@@ -165,7 +174,12 @@ export default function FinancePaymentsList() {
             loadData();
         } catch (err: any) {
             console.error(err);
-            setFeedback({ type: 'error', message: err.response?.data?.message || "Falha ao executar ação." });
+            const errorMessage = err instanceof Error ? err.message : (err?.response?.data?.message || "Falha ao executar ação.");
+            
+            // Log to administration logs
+            logger.error(`Erro ao executar ação financeira: ${actionModal.action} no pedido ${actionModal.requestId}. Detalhes: ${errorMessage}`, err, 'Global');
+            
+            setFeedback({ type: 'error', message: errorMessage });
         } finally {
             setProcessing(false);
         }

@@ -10,13 +10,15 @@ import {
   ArrowLeft
 } from 'lucide-react';
 import { api } from '../../lib/api';
+import { logger } from '../../lib/logger';
 import { RequestDetailsDto } from '../../types';
 import ReceivingModal from '../../components/modals/ReceivingModal';
 import { FeedbackType } from '../../components/ui/Feedback';
 import { RequestActionHeader } from '../Requests/components/RequestActionHeader';
-import { ApprovalModal } from '../../components/ApprovalModal';
-import { PageContainer } from '../../components/ui/PageContainer';
+import { RequestAttachments } from '../../components/RequestAttachments';
+import { FinalizeReceivingModal } from '../../components/modals/FinalizeReceivingModal';
 import { StandardTable } from '../../components/ui/StandardTable';
+import { motion } from 'framer-motion';
 
 const highlightStyles = `
 @keyframes sectionHighlight {
@@ -47,9 +49,6 @@ const ReceivingOperation: React.FC = () => {
   } | null>(null);
 
   const [finalizeModalOpen, setFinalizeModalOpen] = useState(false);
-  const [finalizeComment, setFinalizeComment] = useState('');
-  const [finalizeProcessing, setFinalizeProcessing] = useState(false);
-  const [finalizeFeedback, setFinalizeFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'success', message: null });
 
   const fetchRequest = async () => {
     if (!id) return;
@@ -136,9 +135,12 @@ const ReceivingOperation: React.FC = () => {
       }
       setFeedback({ type: 'success', message: 'Recebimento registrado com sucesso.' });
       fetchRequest();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error updating receiving:', err);
-      setFeedback({ type: 'error', message: 'Falha ao atualizar o recebimento do item.' });
+      const errorMessage = err instanceof Error ? err.message : (err?.response?.data?.message || 'Falha ao atualizar o recebimento do item.');
+      
+      logger.error(`Erro ao atualizar recebimento do item ${selectedItem.id} no pedido ${request?.requestNumber}: ${errorMessage}`, err, 'Global');
+      setFeedback({ type: 'error', message: errorMessage });
     }
   };
 
@@ -146,19 +148,7 @@ const ReceivingOperation: React.FC = () => {
     setFinalizeModalOpen(true);
   };
 
-  const handleConfirmFinalize = async () => {
-    try {
-        setFinalizeProcessing(true);
-        await api.requests.confirmReceiving(request!.id, finalizeComment);
-        setFinalizeModalOpen(false);
-        navigate('/receiving/workspace', { state: { successMessage: 'Recebimento confirmado com sucesso.' } });
-    } catch (err: any) {
-        console.error('Error confirming receiving:', err);
-        setFinalizeFeedback({ type: 'error', message: err.message || 'Falha ao confirmar recebimento.' });
-    } finally {
-        setFinalizeProcessing(false);
-    }
-  };
+
 
   if (loading) {
     return (
@@ -188,7 +178,12 @@ const ReceivingOperation: React.FC = () => {
   };
 
   return (
-    <PageContainer padding="24px 32px">
+    <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.4 }}
+        style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', maxWidth: '1440px', margin: '0 auto', minWidth: 0 }}
+    >
       <style>{highlightStyles}</style>
       <RequestActionHeader
         title="Operação de Recebimento"
@@ -323,6 +318,17 @@ const ReceivingOperation: React.FC = () => {
               </StandardTable>
             </div>
           </div>
+
+          <div style={{ marginTop: '24px' }}>
+            <RequestAttachments
+              requestId={request.id}
+              attachments={request.attachments || []}
+              canEdit={!isReadOnly}
+              onRefresh={fetchRequest}
+              requestType={request.requestTypeCode}
+              status={request.statusCode}
+            />
+          </div>
         </div>
 
         {/* Sidebar */}
@@ -417,22 +423,21 @@ const ReceivingOperation: React.FC = () => {
         />
       )}
 
-      <ApprovalModal
+      <FinalizeReceivingModal
+        requestId={request.id}
+        requestNumber={request.requestNumber || ''}
+        attachments={request.attachments || []}
         show={finalizeModalOpen}
-        type="CONFIRM_RECEIVING"
-        onClose={() => {
+        onClose={() => setFinalizeModalOpen(false)}
+        onSuccess={(msg) => {
             setFinalizeModalOpen(false);
-            setFinalizeFeedback({ type: 'success', message: null });
+            if (msg) {
+                navigate('/receiving/workspace', { state: { successMessage: msg } });
+            }
         }}
-        onConfirm={handleConfirmFinalize}
-        comment={finalizeComment}
-        setComment={setFinalizeComment}
-        processing={finalizeProcessing}
-        feedback={finalizeFeedback}
-        onCloseFeedback={() => setFinalizeFeedback({ ...finalizeFeedback, message: null })}
         isPartial={!allReceived}
       />
-    </PageContainer>
+    </motion.div>
   );
 };
 

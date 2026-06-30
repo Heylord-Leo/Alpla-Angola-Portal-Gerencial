@@ -26,6 +26,7 @@ export function ReceivingWorkspace() {
     const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
         delivery: true,
         pending: true,
+        waiting_document: false,
         followup: false,
         received: false
     });
@@ -125,7 +126,8 @@ export function ReceivingWorkspace() {
     const groups = useMemo(() => {
         return {
             delivery: requests.filter(r => r.statusCode === 'WAITING_SUPPLIER_DELIVERY'),
-            pending: requests.filter(r => r.statusCode === 'PAYMENT_COMPLETED' || r.statusCode === 'WAITING_RECEIPT' || r.statusCode === 'PAG_REALIZADO' || r.statusCode === 'AG_RECIBO'),
+            pending: requests.filter(r => r.statusCode === 'PAYMENT_COMPLETED' || r.statusCode === 'PAG_REALIZADO'),
+            waiting_document: requests.filter(r => r.statusCode === 'WAITING_RECEIPT' || r.statusCode === 'AG_RECIBO'),
             followup: requests.filter(r => r.statusCode === 'IN_FOLLOWUP'),
             received: requests.filter(r => r.statusCode === 'COMPLETED' || r.statusCode === 'FINALIZADO')
         };
@@ -137,6 +139,7 @@ export function ReceivingWorkspace() {
             setExpandedSections({
                 delivery: groups.delivery.length > 0,
                 pending: groups.pending.length > 0,
+                waiting_document: groups.waiting_document.length > 0,
                 followup: groups.followup.length > 0,
                 received: groups.received.length > 0
             });
@@ -145,11 +148,12 @@ export function ReceivingWorkspace() {
             setExpandedSections({
                 delivery: true,
                 pending: true,
+                waiting_document: false,
                 followup: false,
                 received: false
             });
         }
-    }, [searchInput, groups.pending.length, groups.followup.length, groups.received.length]);
+    }, [searchInput, groups.pending.length, groups.waiting_document.length, groups.followup.length, groups.received.length]);
 
     const toggleSection = (id: string) => {
         setExpandedSections(prev => ({ ...prev, [id]: !prev[id] }));
@@ -264,6 +268,17 @@ export function ReceivingWorkspace() {
                         onToggle={() => toggleSection('pending')}
                     >
                         {renderTable(groups.pending)}
+                    </CollapsibleSection>
+                    </div>
+
+                    <div data-tour="receiving-waiting-document">
+                    <CollapsibleSection
+                        title="Pedidos aguardando documento fiscal / finalização"
+                        count={groups.waiting_document.length}
+                        isOpen={expandedSections.waiting_document}
+                        onToggle={() => toggleSection('waiting_document')}
+                    >
+                        {renderTable(groups.waiting_document)}
                     </CollapsibleSection>
                     </div>
 
