@@ -128,6 +128,9 @@ const HRAttendanceMonthlyReport = React.lazy(() =>
 );
 
 // IT pages
+const ITLandingPage = React.lazy(() =>
+    import('./pages/IT/ITLandingPage')
+);
 const ITEquipmentPage = React.lazy(() =>
     import('./pages/IT/ITEquipmentPage')
 );
@@ -136,6 +139,24 @@ const ITEquipmentLabelPage = React.lazy(() =>
 );
 const DeliveryTermsPage = React.lazy(() =>
     import('./pages/IT/DeliveryTermsPage')
+);
+const BatchEquipmentWizardPage = React.lazy(() =>
+    import('./pages/IT/BatchEquipmentWizardPage')
+);
+const UnifiedCreateEquipmentPage = React.lazy(() =>
+    import('./pages/IT/UnifiedCreateEquipmentPage')
+);
+const CatalogSettingsPage = React.lazy(() =>
+    import('./pages/IT/CatalogSettingsPage')
+);
+const TypeSettingsPage = React.lazy(() =>
+    import('./pages/IT/TypeSettingsPage')
+);
+const ModelWizardPage = React.lazy(() =>
+    import('./pages/IT/wizards/ModelWizardPage')
+);
+const TypeWizardPage = React.lazy(() =>
+    import('./pages/IT/wizards/TypeWizardPage')
 );
 
 // Operations pages
@@ -334,11 +355,25 @@ function AppContent() {
                     <Route path="monthly-changes/runs/:id" element={<HRAdminRoute><Suspense fallback={<LoadingSkeleton />}><MonthlyChangesRunDetail /></Suspense></HRAdminRoute>} />
                 </Route>
 
-                {/* IT Equipment Workspace */}
-                <Route path="/it/equipment" element={<ITRoute><Suspense fallback={<LoadingSkeleton />}><ITEquipmentPage /></Suspense></ITRoute>} />
-                <Route path="/it/equipment/:id" element={<ITRoute><Suspense fallback={<LoadingSkeleton />}><ITEquipmentPage /></Suspense></ITRoute>} />
+                {/* IT Module — nested like Finance */}
+                <Route path="/it" element={<ITRoute><Suspense fallback={<LoadingSkeleton />}><ITLandingPage /></Suspense></ITRoute>}>
+                    <Route index element={<Navigate to="equipment" replace />} />
+                    <Route path="equipment" element={<Suspense fallback={<LoadingSkeleton />}><ITEquipmentPage /></Suspense>} />
+                    <Route path="equipment/:id" element={<Suspense fallback={<LoadingSkeleton />}><ITEquipmentPage /></Suspense>} />
+                    <Route path="delivery-terms" element={<Suspense fallback={<LoadingSkeleton />}><DeliveryTermsPage /></Suspense>} />
+                    <Route path="catalogs" element={<Suspense fallback={<LoadingSkeleton />}><CatalogSettingsPage /></Suspense>} />
+                    <Route path="types" element={<Suspense fallback={<LoadingSkeleton />}><TypeSettingsPage /></Suspense>} />
+                </Route>
+                {/* IT standalone pages — outside the tabbed shell */}
+                <Route path="/it/equipment/new" element={<ITRoute><Suspense fallback={<LoadingSkeleton />}><UnifiedCreateEquipmentPage /></Suspense></ITRoute>} />
+                <Route path="/it/equipment/batch" element={<ITRoute><Suspense fallback={<LoadingSkeleton />}><BatchEquipmentWizardPage /></Suspense></ITRoute>} />
                 <Route path="/it/equipment/:id/label" element={<ITRoute><Suspense fallback={<LoadingSkeleton />}><ITEquipmentLabelPage /></Suspense></ITRoute>} />
-                <Route path="/it/delivery-terms" element={<ITRoute><Suspense fallback={<LoadingSkeleton />}><DeliveryTermsPage /></Suspense></ITRoute>} />
+                <Route path="/it/catalogs/models/:id" element={<ITRoute><Suspense fallback={<LoadingSkeleton />}><ModelWizardPage /></Suspense></ITRoute>} />
+                <Route path="/it/types/:id" element={<ITRoute><Suspense fallback={<LoadingSkeleton />}><TypeWizardPage /></Suspense></ITRoute>} />
+                
+                {/* IT legacy redirects */}
+                <Route path="/it/settings/catalogs" element={<Navigate to="/it/catalogs" replace />} />
+                <Route path="/it/settings/types" element={<Navigate to="/it/types" replace />} />
 
                 {/* Settings Routes */}
                 <Route path="/settings/master-data" element={<AdminRoute><Suspense fallback={<LoadingSkeleton />}><MasterData /></Suspense></AdminRoute>} />

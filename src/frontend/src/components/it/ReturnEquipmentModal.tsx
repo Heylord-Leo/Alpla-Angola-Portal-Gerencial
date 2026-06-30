@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { itEquipmentApi } from '../../lib/itEquipmentApi';
-import { ModalWrapper, SubmitBtn, ErrorBox, SelectField, TextArea, cancelBtnStyle } from './EquipmentFormModal';
+import { ModalWrapper, SubmitBtn, ErrorBox, cancelBtnStyle } from './EquipmentFormModal';
+import { FormSelect } from '../common/form/FormSelect';
+import { FormTextarea } from '../common/form/FormTextarea';
 import { Info, AlertTriangle } from 'lucide-react';
 
 interface Props { equipmentId: string; onClose: () => void; onSuccess: () => void; }
@@ -69,7 +71,7 @@ export function ReturnEquipmentModal({ equipmentId, onClose, onSuccess }: Props)
                     </span>
                 </div>
 
-                <SelectField label="Condição" value={condition} onChange={setCondition}
+                <FormSelect label="Condição" value={condition} onChange={setCondition}
                     options={[
                         { value: 'GOOD', label: 'Em bom estado' },
                         { value: 'DAMAGED', label: 'Danificado' },
@@ -77,7 +79,7 @@ export function ReturnEquipmentModal({ equipmentId, onClose, onSuccess }: Props)
                     ]} />
 
                 <div>
-                    <TextArea label="Observações" value={notes} onChange={setNotes} rows={3} />
+                    <FormTextarea label="Observações" value={notes} onChange={setNotes} rows={3} />
                     {needsObservation && !notes.trim() && (
                         <div style={{ color: '#dc2626', fontSize: '0.78rem', marginTop: 4 }}>
                             Informe uma observação quando o equipamento não estiver em bom estado.
@@ -88,7 +90,7 @@ export function ReturnEquipmentModal({ equipmentId, onClose, onSuccess }: Props)
                     </div>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
                     <button type="button" onClick={onClose} style={cancelBtnStyle}>Cancelar</button>
                     <SubmitBtn label="Devolver" loading={saving} />
                 </div>

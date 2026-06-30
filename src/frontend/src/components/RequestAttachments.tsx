@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FileText, Upload, Download, Trash2, AlertCircle, CheckCircle } from 'lucide-react';
 import { api } from '../lib/api';
 import { formatDateTime } from '../lib/utils';
+import { ConfirmationDialog } from './common/ConfirmationDialog';
 
 interface Attachment {
     id: string;
@@ -45,6 +46,12 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
 }) => {
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [confirmAction, setConfirmAction] = useState<{
+        id: string;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+    } | null>(null);
 
     const isTypeUploadable = (typeCode: string) => {
         if (!status || !requestType) return false;
@@ -106,15 +113,21 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
         }
     };
 
-    const handleDelete = async (id: string) => {
-        if (!window.confirm('Tem certeza que deseja remover este documento?')) return;
-
-        try {
-            await api.attachments.delete(id);
-            onRefresh();
-        } catch (err: any) {
-            alert(err.message || 'Falha ao remover arquivo.');
-        }
+    const handleDelete = (id: string) => {
+        setConfirmAction({
+            id,
+            title: 'Remover Documento',
+            message: 'Tem certeza que deseja remover este documento?',
+            onConfirm: async () => {
+                setConfirmAction(null);
+                try {
+                    await api.attachments.delete(id);
+                    onRefresh();
+                } catch (err: any) {
+                    alert(err.message || 'Falha ao remover arquivo.');
+                }
+            }
+        });
     };
 
     const handleDownload = async (id: string, fileName: string) => {
@@ -139,6 +152,17 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
             gap: '24px',
             transition: 'box-shadow 0.5s ease'
         }}>
+            {/* Confirmation Dialog */}
+            {confirmAction && (
+                <ConfirmationDialog
+                    title={confirmAction.title}
+                    message={confirmAction.message}
+                    onConfirm={confirmAction.onConfirm}
+                    onCancel={() => setConfirmAction(null)}
+                    variant="destructive"
+                />
+            )}
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid var(--color-border)', paddingBottom: '8px' }}>
                 <h2 style={{
                     fontSize: '1.25rem',

@@ -12,6 +12,8 @@ import { ReserveEquipmentModal } from './ReserveEquipmentModal';
 import { ChangeEquipmentUserModal } from './ChangeEquipmentUserModal';
 import { EquipmentFormModal } from './EquipmentFormModal';
 import { ReactivateEquipmentModal } from './ReactivateEquipmentModal';
+import { ActionDropdown } from '../common/ActionDropdown';
+import { StatusBadge } from '../common/ui/StatusBadge';
 
 interface Props {
     equipmentId: string;
@@ -77,14 +79,19 @@ export function EquipmentQuickViewDrawer({ equipmentId, onClose, onRefresh }: Pr
                             {detail?.assetTag || 'Carregando...'}
                         </h2>
                         {detail && statusCfg && (
-                            <span style={{
-                                display: 'inline-flex', alignItems: 'center', padding: '2px 10px',
-                                borderRadius: 20, fontSize: '0.75rem', fontWeight: 600,
-                                color: statusCfg.color, backgroundColor: statusCfg.bgColor,
-                                marginTop: 4
+                            <div style={{ marginTop: 6 }}>
+                                <StatusBadge status={detail.statusCode} label={statusCfg.label} />
+                            </div>
+                        )}
+                        {detail?.purchaseDocumentPending && (
+                            <div style={{
+                                display: 'flex', alignItems: 'center', gap: 6, marginTop: 6,
+                                padding: '4px 10px', borderRadius: 6, fontSize: '0.75rem', fontWeight: 500,
+                                color: '#d97706', backgroundColor: '#fffbeb', border: '1px solid #fde68a'
                             }}>
-                                {statusCfg.label}
-                            </span>
+                                <AlertTriangle size={13} />
+                                Cadastro incompleto — documento de compra pendente
+                            </div>
                         )}
                     </div>
                     <button onClick={onClose} style={{
@@ -99,16 +106,40 @@ export function EquipmentQuickViewDrawer({ equipmentId, onClose, onRefresh }: Pr
                 {detail && (
                     <div style={{
                         display: 'flex', gap: 6, padding: '10px 20px', borderBottom: '1px solid var(--color-border)',
-                        flexWrap: 'wrap'
+                        flexWrap: 'wrap', alignItems: 'center'
                     }}>
                         <ActionBtn label="Editar" icon={<Edit3 size={13} />} onClick={() => setActiveModal('edit')} />
 
-                        {canReturn && <ActionBtn label="Trocar Utilizador" icon={<RefreshCw size={13} />} onClick={() => setActiveModal('change-user')} color="#14b8a6" />}
-                        {canRepair && <ActionBtn label="Conserto" icon={<Wrench size={13} />} onClick={() => setActiveModal('repair')} color="#f97316" />}
-                        <ActionBtn label="Perdido" icon={<AlertTriangle size={13} />} onClick={() => setActiveModal('lost')} color="#ef4444" />
-                        {canReserve && <ActionBtn label="Reservar" icon={<BookmarkCheck size={13} />} onClick={() => setActiveModal('reserve')} color="#f59e0b" />}
-                        {canRetire && <ActionBtn label="Baixar" icon={<Archive size={13} />} onClick={() => setActiveModal('retire')} color="#6b7280" />}
-                        {canReactivate && <ActionBtn label="Reativar" icon={<RotateCw size={13} />} onClick={() => setActiveModal('reactivate')} color="#22c55e" />}
+                        {canReturn && (
+                            <ActionBtn 
+                                label="Trocar Utilizador" 
+                                icon={<RefreshCw size={13} />} 
+                                onClick={() => setActiveModal('change-user')} 
+                                color="#14b8a6" 
+                                disabled={detail.purchaseDocumentPending}
+                                disabledReason="Cadastro incompleto: documento de compra/entrega pendente."
+                            />
+                        )}
+                        {canReserve && (
+                            <ActionBtn 
+                                label="Reservar" 
+                                icon={<BookmarkCheck size={13} />} 
+                                onClick={() => setActiveModal('reserve')} 
+                                color="#f59e0b" 
+                                disabled={detail.purchaseDocumentPending}
+                                disabledReason="Cadastro incompleto: documento de compra/entrega pendente."
+                            />
+                        )}
+
+                        <div style={{ marginLeft: 'auto' }}>
+                            <ActionDropdown options={[
+                                canRepair ? { label: "Conserto", icon: <Wrench size={13} />, onClick: () => setActiveModal('repair'), color: "#f97316" } : null,
+                                { label: "Perdido", icon: <AlertTriangle size={13} />, onClick: () => setActiveModal('lost'), color: "#ef4444" },
+                                canRetire ? { label: "Baixar", icon: <Archive size={13} />, onClick: () => setActiveModal('retire'), color: "#6b7280" } : null,
+                                canReactivate ? { label: "Reativar", icon: <RotateCw size={13} />, onClick: () => setActiveModal('reactivate'), color: "#22c55e" } : null
+                            ].filter(Boolean) as any} />
+                        </div>
+
                         {/* ── Asset quick actions ── */}
                         <div style={{ width: '100%', borderTop: '1px dashed var(--color-border)', marginTop: 2, paddingTop: 6, display: 'flex', gap: 6 }}>
                             {detail.qrCodeUrl && (
@@ -173,19 +204,22 @@ export function EquipmentQuickViewDrawer({ equipmentId, onClose, onRefresh }: Pr
     );
 }
 
-function ActionBtn({ label, icon, onClick, color }: { label: string; icon: React.ReactNode; onClick: () => void; color?: string }) {
+function ActionBtn({ label, icon, onClick, color, disabled, disabledReason }: { label: string; icon: React.ReactNode; onClick: () => void; color?: string; disabled?: boolean; disabledReason?: string }) {
     return (
         <button
-            onClick={onClick}
+            onClick={() => { if (!disabled) onClick(); }}
+            title={disabled ? disabledReason : undefined}
             style={{
                 display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px',
                 border: `1px solid ${color || 'var(--color-border)'}30`,
                 borderRadius: 6, background: `${color || 'var(--color-text)'}08`,
-                color: color || 'var(--color-text)', cursor: 'pointer',
-                fontSize: '0.78rem', fontWeight: 600, transition: 'all 0.15s'
+                color: disabled ? '#9ca3af' : (color || 'var(--color-text)'), 
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                fontSize: '0.78rem', fontWeight: 600, transition: 'all 0.15s',
+                opacity: disabled ? 0.6 : 1
             }}
-            onMouseOver={(e) => { e.currentTarget.style.backgroundColor = `${color || '#888'}18`; }}
-            onMouseOut={(e) => { e.currentTarget.style.backgroundColor = `${color || '#888'}08`; }}
+            onMouseOver={(e) => { if (!disabled) e.currentTarget.style.backgroundColor = `${color || '#888'}18`; }}
+            onMouseOut={(e) => { if (!disabled) e.currentTarget.style.backgroundColor = `${color || '#888'}08`; }}
         >
             {icon} {label}
         </button>
@@ -266,19 +300,61 @@ function InfoTab({ detail }: { detail: ITEquipmentDetail }) {
             {/* Acquisition */}
             {detail.acquisition && (
                 <Section title="Aquisição / Compra" icon={<FileText size={15} />}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>
-                        <InfoRow label="Data" value={detail.acquisition.acquisitionDate ? new Date(detail.acquisition.acquisitionDate).toLocaleDateString('pt-PT') : null} />
-                        <InfoRow label="Fornecedor" value={detail.acquisition.supplierName} />
-                        <InfoRow label="Nº P.O" value={detail.acquisition.purchaseOrderNumber} />
-                        <InfoRow label="Nº Fatura" value={detail.acquisition.invoiceNumber} />
-                        {detail.acquisition.purchaseAmount != null && (
-                            <InfoRow label="Valor" value={`${detail.acquisition.purchaseAmount.toLocaleString('pt-PT', { minimumFractionDigits: 2 })} ${detail.acquisition.currency || 'AOA'}`} />
-                        )}
-                        <InfoRow label="Ref. Pagamento" value={detail.acquisition.paymentReference} />
-                        {detail.acquisition.warrantyEndDate && (
-                            <InfoRow label="Garantia até" value={new Date(detail.acquisition.warrantyEndDate).toLocaleDateString('pt-PT')} />
+                    {detail.acquisition.purchaseInfoUnavailable ? (
+                        <div style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                            Informações de compra indisponíveis{detail.acquisition.purchaseInfoUnavailableReason ? `: ${detail.acquisition.purchaseInfoUnavailableReason}` : ''}
+                        </div>
+                    ) : (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>
+                            <InfoRow label="Data" value={detail.acquisition.acquisitionDate ? new Date(detail.acquisition.acquisitionDate).toLocaleDateString('pt-PT') : null} />
+                            
+                            <div style={{ gridColumn: '1 / -1', padding: '8px 12px', background: '#f8fafc', border: '1px solid var(--color-border)', borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>Fornecedor</span>
+                                <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--color-text)' }}>
+                                    {detail.acquisition.supplierName || '—'}
+                                </span>
+                                {(detail.acquisition.supplierTaxId || detail.acquisition.supplierPortalCode) && (
+                                    <div style={{ display: 'flex', gap: 12, fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
+                                        {detail.acquisition.supplierTaxId && <span>NIF: <span style={{ fontFamily: 'monospace' }}>{detail.acquisition.supplierTaxId}</span></span>}
+                                        {detail.acquisition.supplierPortalCode && <span>Cód. Portal: <span style={{ fontFamily: 'monospace' }}>{detail.acquisition.supplierPortalCode}</span></span>}
+                                    </div>
+                                )}
+                            </div>
+
+                            <InfoRow label="Nº P.O" value={detail.acquisition.purchaseOrderNumber} />
+                            <InfoRow label="Nº Documento" value={detail.acquisition.invoiceNumber} />
+                            {detail.acquisition.purchaseAmount != null && (
+                                <InfoRow label="Valor" value={`${detail.acquisition.purchaseAmount.toLocaleString('pt-PT', { minimumFractionDigits: 2 })} ${detail.acquisition.currency || 'AOA'}`} />
+                            )}
+                            <InfoRow label="Ref. Pagamento" value={detail.acquisition.paymentReference} />
+                        </div>
+                    )}
+
+                    {/* Warranty sub-section */}
+                    <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--color-border)' }}>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text)', marginBottom: 4 }}>🛡️ Garantia</div>
+                        {detail.acquisition.warrantyInfoUnavailable ? (
+                            <div style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                                Informações de garantia indisponíveis{detail.acquisition.warrantyInfoUnavailableReason ? `: ${detail.acquisition.warrantyInfoUnavailableReason}` : ''}
+                            </div>
+                        ) : (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>
+                                {detail.acquisition.warrantyMonths != null && (
+                                    <InfoRow label="Duração" value={`${detail.acquisition.warrantyMonths} meses`} />
+                                )}
+                                {detail.acquisition.warrantyStartDate && (
+                                    <InfoRow label="Início" value={new Date(detail.acquisition.warrantyStartDate).toLocaleDateString('pt-PT')} />
+                                )}
+                                {detail.acquisition.warrantyEndDate && (
+                                    <InfoRow label="Fim" value={new Date(detail.acquisition.warrantyEndDate).toLocaleDateString('pt-PT')} />
+                                )}
+                                {detail.acquisition.warrantyNotes && (
+                                    <InfoRow label="Notas" value={detail.acquisition.warrantyNotes} />
+                                )}
+                            </div>
                         )}
                     </div>
+
                     {detail.acquisition.acquisitionNotes && (
                         <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginTop: 8, fontStyle: 'italic' }}>
                             {detail.acquisition.acquisitionNotes}
@@ -460,12 +536,11 @@ function AssignmentsTab({ assignments, equipmentId, documents, onRefresh }: {
                     }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                             <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--color-text)' }}>{a.assignedToName}</span>
-                            <span style={{
-                                padding: '2px 8px', borderRadius: 12, fontSize: '0.72rem', fontWeight: 600,
-                                color: cfg.color, backgroundColor: cfg.bgColor
-                            }}>
-                                {cfg.label}
-                            </span>
+                            <StatusBadge 
+                                status={a.assignmentStatus} 
+                                label={cfg.label} 
+                                variant={a.assignmentStatus === 'ACTIVE' ? 'blue' : a.assignmentStatus === 'RETURNED' ? 'green' : 'gray'} 
+                            />
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 12px', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
                             <span>Atribuído: {new Date(a.assignedDate).toLocaleDateString('pt-PT')}</span>
@@ -615,10 +690,10 @@ function MovementsTab({ movements }: { movements: ITEquipmentDetail['movements']
                                 </span>
                             </div>
                             {(m.previousStatus || m.newStatus) && (
-                                <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
-                                    {m.previousStatus && <span>{EQUIPMENT_STATUS_CONFIG[m.previousStatus]?.label || m.previousStatus}</span>}
-                                    {m.previousStatus && m.newStatus && ' → '}
-                                    {m.newStatus && <span style={{ fontWeight: 500 }}>{EQUIPMENT_STATUS_CONFIG[m.newStatus]?.label || m.newStatus}</span>}
+                                <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                    {m.previousStatus && <StatusBadge status={m.previousStatus} label={EQUIPMENT_STATUS_CONFIG[m.previousStatus]?.label || m.previousStatus} />}
+                                    {m.previousStatus && m.newStatus && <span>→</span>}
+                                    {m.newStatus && <StatusBadge status={m.newStatus} label={EQUIPMENT_STATUS_CONFIG[m.newStatus]?.label || m.newStatus} />}
                                 </div>
                             )}
                             {m.notes && <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: 3, whiteSpace: 'pre-wrap' }}>{m.notes}</p>}

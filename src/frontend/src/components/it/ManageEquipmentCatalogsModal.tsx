@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, ToggleLeft, ToggleRight } from 'lucide-react';
-import { itEquipmentCatalogApi } from '../../lib/itEquipmentApi';
-import { ModalWrapper, ErrorBox, inputStyle } from './EquipmentFormModal';
+import { itEquipmentCatalogApi, itEquipmentApi } from '../../lib/itEquipmentApi';
+import { ModalWrapper, ErrorBox } from './EquipmentFormModal';
+import { FormInput } from '../common/form/FormInput';
+import { FormSelect } from '../common/form/FormSelect';
 
 type CatalogTab = 'manufacturers' | 'models' | 'processors' | 'memory';
 
@@ -83,12 +85,13 @@ function ManufacturersTab() {
     return (
         <div>
             {error && <ErrorBox msg={error} />}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Novo fabricante..."
-                    style={{ ...inputStyle, flex: 1 }}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'flex-start' }}>
+                <FormInput
+                    value={newName} onChange={setNewName} placeholder="Novo fabricante..."
                     onKeyDown={e => e.key === 'Enter' && handleCreate()}
+                    style={{ flex: 1, margin: 0 }}
                 />
-                <button onClick={handleCreate} style={addBtnStyle}><Plus size={14} /> Adicionar</button>
+                <button onClick={handleCreate} style={{...addBtnStyle, marginTop: 0}}><Plus size={14} /> Adicionar</button>
             </div>
             <CatalogTable
                 items={items}
@@ -113,6 +116,7 @@ function ManufacturersTab() {
 function ModelsTab() {
     const [items, setItems] = useState<any[]>([]);
     const [manufacturers, setManufacturers] = useState<any[]>([]);
+    const [equipmentTypes, setEquipmentTypes] = useState<Array<{ id: string; code: string; displayName: string; isActive: boolean; sortOrder: number }>>([]);
     const [loading, setLoading] = useState(true);
     const [newName, setNewName] = useState('');
     const [newMfrId, setNewMfrId] = useState('');
@@ -122,25 +126,30 @@ function ModelsTab() {
     const load = async () => {
         try {
             setLoading(true);
-            const [models, mfrs] = await Promise.all([
+            const [models, mfrs, types] = await Promise.all([
                 itEquipmentCatalogApi.models.list(),
-                itEquipmentCatalogApi.manufacturers.list(true)
+                itEquipmentCatalogApi.manufacturers.list(true),
+                itEquipmentApi.types.list(true)
             ]);
             setItems(models);
             setManufacturers(mfrs);
+            setEquipmentTypes(types);
         } catch { /* empty */ } finally { setLoading(false); }
     };
 
     useEffect(() => { load(); }, []);
 
     const handleCreate = async () => {
-        if (!newName.trim() || !newMfrId) return;
+        if (!newName.trim() || !newMfrId || !newTypeCode) {
+            if (!newTypeCode) setError('Selecione um tipo de equipamento válido.');
+            return;
+        }
         try {
             setError('');
             await itEquipmentCatalogApi.models.create({
                 name: newName.trim(),
                 manufacturerId: newMfrId,
-                equipmentTypeCode: newTypeCode || undefined
+                equipmentTypeCode: newTypeCode
             });
             setNewName('');
             setNewTypeCode('');
@@ -155,36 +164,75 @@ function ModelsTab() {
         await load();
     };
 
+    // Resolve type code to display name, with fallbacks for null/invalid
+    const resolveTypeName = (code: string | null | undefined): { label: string; isValid: boolean } => {
+        if (!code) return { label: 'Tipo não definido', isValid: false };
+        const found = equipmentTypes.find(t => t.code === code);
+        if (found) return { label: found.displayName, isValid: true };
+        return { label: 'Tipo inválido / não encontrado', isValid: false };
+    };
+
+    const canCreate = !!(newName.trim() && newMfrId && newTypeCode);
+
     return (
         <div>
             {error && <ErrorBox msg={error} />}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-                <select value={newMfrId} onChange={e => setNewMfrId(e.target.value)} style={{ ...inputStyle, flex: '0 0 180px' }}>
-                    <option value="">Fabricante...</option>
-                    {manufacturers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                </select>
-                <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Nome do modelo..."
-                    style={{ ...inputStyle, flex: 1 }}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                <FormSelect
+                    value={newMfrId}
+                    onChange={setNewMfrId}
+                    options={[
+                        { label: 'Fabricante...', value: '' },
+                        ...manufacturers.map(m => ({ label: m.name, value: m.id }))
+                    ]}
+                    style={{ flex: '0 0 180px', margin: 0 }}
                 />
-                <input value={newTypeCode} onChange={e => setNewTypeCode(e.target.value)} placeholder="Tipo (ex: LAPTOP)"
-                    style={{ ...inputStyle, flex: '0 0 130px' }}
+                <FormInput
+                    value={newName} onChange={setNewName} placeholder="Nome do modelo..."
+                    style={{ flex: 1, margin: 0 }}
                 />
-                <button onClick={handleCreate} style={addBtnStyle}><Plus size={14} /> Adicionar</button>
+                <FormSelect
+                    value={newTypeCode}
+                    onChange={setNewTypeCode}
+                    options={[
+                        { label: 'Tipo...', value: '' },
+                        ...equipmentTypes.map(t => ({ label: t.displayName, value: t.code }))
+                    ]}
+                    style={{ flex: '0 0 160px', margin: 0 }}
+                />
+                <button onClick={handleCreate} disabled={!canCreate} style={{
+                    ...addBtnStyle,
+                    marginTop: 0,
+                    opacity: canCreate ? 1 : 0.5,
+                    cursor: canCreate ? 'pointer' : 'not-allowed'
+                }}><Plus size={14} /> Adicionar</button>
             </div>
             <CatalogTable
                 items={items}
                 loading={loading}
                 columns={['Fabricante', 'Modelo', 'Tipo', 'Estado']}
-                renderRow={(item) => (
-                    <>
-                        <td style={cellStyle}>{item.manufacturerName}</td>
-                        <td style={cellStyle}>{item.name}</td>
-                        <td style={cellStyle}><span style={badgeStyle}>{item.equipmentTypeCode || '—'}</span></td>
-                        <td style={cellStyle}>
-                            <ToggleButton active={item.isActive} onClick={() => handleToggle(item.id)} />
-                        </td>
-                    </>
-                )}
+                renderRow={(item) => {
+                    const typeInfo = resolveTypeName(item.equipmentTypeCode);
+                    return (
+                        <>
+                            <td style={cellStyle}>{item.manufacturerName}</td>
+                            <td style={cellStyle}>{item.name}</td>
+                            <td style={cellStyle}>
+                                <span style={{
+                                    ...badgeStyle,
+                                    color: typeInfo.isValid ? 'var(--color-text)' : '#d97706',
+                                    borderColor: typeInfo.isValid ? 'var(--color-border)' : '#fde68a',
+                                    backgroundColor: typeInfo.isValid ? 'var(--color-bg-surface)' : '#fffbeb'
+                                }}>
+                                    {typeInfo.label}
+                                </span>
+                            </td>
+                            <td style={cellStyle}>
+                                <ToggleButton active={item.isActive} onClick={() => handleToggle(item.id)} />
+                            </td>
+                        </>
+                    );
+                }}
             />
         </div>
     );
@@ -229,12 +277,13 @@ function ProcessorsTab() {
     return (
         <div>
             {error && <ErrorBox msg={error} />}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Novo processador..."
-                    style={{ ...inputStyle, flex: 1 }}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'flex-start' }}>
+                <FormInput
+                    value={newName} onChange={setNewName} placeholder="Novo processador..."
                     onKeyDown={e => e.key === 'Enter' && handleCreate()}
+                    style={{ flex: 1, margin: 0 }}
                 />
-                <button onClick={handleCreate} style={addBtnStyle}><Plus size={14} /> Adicionar</button>
+                <button onClick={handleCreate} style={{...addBtnStyle, marginTop: 0}}><Plus size={14} /> Adicionar</button>
             </div>
             <CatalogTable
                 items={items}
@@ -297,16 +346,18 @@ function MemoryTab() {
     return (
         <div>
             {error && <ErrorBox msg={error} />}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Ex: 16 GB"
-                    style={{ ...inputStyle, flex: 1 }}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'flex-start' }}>
+                <FormInput
+                    value={newName} onChange={setNewName} placeholder="Ex: 16 GB"
                     onKeyDown={e => e.key === 'Enter' && handleCreate()}
+                    style={{ flex: 1, margin: 0 }}
                 />
-                <input value={newGb} onChange={e => setNewGb(e.target.value)} placeholder="GB (num)"
+                <FormInput
                     type="number"
-                    style={{ ...inputStyle, flex: '0 0 100px' }}
+                    value={newGb} onChange={setNewGb} placeholder="GB (num)"
+                    style={{ flex: '0 0 100px', margin: 0 }}
                 />
-                <button onClick={handleCreate} style={addBtnStyle}><Plus size={14} /> Adicionar</button>
+                <button onClick={handleCreate} style={{...addBtnStyle, marginTop: 0}}><Plus size={14} /> Adicionar</button>
             </div>
             <CatalogTable
                 items={items}

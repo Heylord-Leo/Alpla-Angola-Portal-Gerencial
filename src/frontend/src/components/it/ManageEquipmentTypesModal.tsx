@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { X, Plus, Edit3, ToggleLeft, ToggleRight, Loader2, GripVertical, Check, AlertCircle } from 'lucide-react';
+import { Plus, Edit3, ToggleLeft, ToggleRight, Loader2, GripVertical, Check, AlertCircle } from 'lucide-react';
 import { itEquipmentApi } from '../../lib/itEquipmentApi';
+import { ModalWrapper } from './EquipmentFormModal';
 
 interface EquipmentType {
     id: string;
@@ -137,37 +138,10 @@ export function ManageEquipmentTypesModal({ onClose }: Props) {
     };
 
     return (
-        <div style={{
-            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
-            zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center'
-        }}>
-            <div style={{
-                background: 'var(--color-bg-surface)', borderRadius: 14, width: 620,
-                maxHeight: '85vh', display: 'flex', flexDirection: 'column',
-                boxShadow: '0 12px 50px rgba(0,0,0,0.3)', border: '1px solid var(--color-border)',
-                animation: 'fadeIn 0.2s ease-out'
-            }}>
-                <style>{`@keyframes fadeIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }`}</style>
-
-                {/* Header */}
-                <div style={{
-                    padding: '16px 20px', borderBottom: '1px solid var(--color-border)',
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                }}>
-                    <div>
-                        <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--color-text)' }}>
-                            Gerir Tipos de Equipamento
-                        </h3>
-                        <p style={{ margin: '2px 0 0', fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                            {types.length} tipos registados · {types.filter(t => t.isActive).length} ativos
-                        </p>
-                    </div>
-                    <button onClick={onClose} style={{
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        color: 'var(--color-text-muted)', padding: 6, borderRadius: 6
-                    }}>
-                        <X size={20} />
-                    </button>
+        <ModalWrapper title="Gerir Tipos de Equipamento" onClose={onClose} width={620}>
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', maxHeight: 'calc(85vh - 60px)' }}>
+                <div style={{ padding: '0 20px 12px', fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: -12 }}>
+                    {types.length} tipos registados · {types.filter(t => t.isActive).length} ativos
                 </div>
 
                 {/* Messages */}
@@ -425,7 +399,8 @@ export function ManageEquipmentTypesModal({ onClose }: Props) {
                 {/* Footer */}
                 <div style={{
                     padding: '12px 20px', borderTop: '1px solid var(--color-border)',
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    marginTop: 'auto'
                 }}>
                     <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                         Tipos inativos não aparecem nos formulários, mas equipamentos existentes continuam visíveis.
@@ -442,6 +417,6 @@ export function ManageEquipmentTypesModal({ onClose }: Props) {
                     </button>
                 </div>
             </div>
-        </div>
+        </ModalWrapper>
     );
 }

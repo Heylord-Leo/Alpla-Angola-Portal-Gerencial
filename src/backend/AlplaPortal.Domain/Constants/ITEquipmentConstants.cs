@@ -126,6 +126,7 @@ public static class ITEquipmentConstants
         public const string SignedDeliveryTermAgreement = "SIGNED_DELIVERY_TERM_AGREEMENT";
         public const string ReturnTermAgreement = "RETURN_TERM_AGREEMENT";
         public const string SignedReturnTermAgreement = "SIGNED_RETURN_TERM_AGREEMENT";
+        public const string PurchaseDocument = "PURCHASE_DOCUMENT";
         public const string Other = "OTHER";
 
         public static string DisplayName(string code) => code switch
@@ -145,6 +146,7 @@ public static class ITEquipmentConstants
             SignedDeliveryTermAgreement => "Termo de Entrega Agrupado Assinado",
             ReturnTermAgreement => "Termo de Devolução Agrupado",
             SignedReturnTermAgreement => "Termo de Devolução Agrupado Assinado",
+            PurchaseDocument => "Nota de Compra / Guia de Entrega",
             Other => "Outro",
             _ => code
         };

@@ -1,6 +1,7 @@
 import { ArrowUp, ArrowDown, Loader2 } from 'lucide-react';
 import { EQUIPMENT_STATUS_CONFIG, EQUIPMENT_TYPE_CONFIG } from '../../types/itEquipment';
 import type { ITEquipmentListResponse } from '../../types/itEquipment';
+import { StatusBadge } from '../common/ui/StatusBadge';
 
 interface Props {
     data: ITEquipmentListResponse | null;
@@ -125,14 +126,7 @@ export function EquipmentTable({ data, loading, sortBy, isDescending, onSort, on
                                         {typeCfg.label}
                                     </td>
                                     <td style={{ padding: '10px 14px' }}>
-                                        <span style={{
-                                            display: 'inline-flex', alignItems: 'center', padding: '3px 10px',
-                                            borderRadius: 20, fontSize: '0.75rem', fontWeight: 600,
-                                            color: statusCfg.color, backgroundColor: statusCfg.bgColor,
-                                            border: `1px solid ${statusCfg.color}20`
-                                        }}>
-                                            {statusCfg.label}
-                                        </span>
+                                        <StatusBadge status={item.statusCode} label={statusCfg.label} />
                                     </td>
                                     <td style={{ padding: '10px 14px', color: item.manufacturer ? 'var(--color-text)' : 'var(--color-text-muted)' }}>
                                         {item.manufacturer || '—'}

@@ -87,6 +87,16 @@ export const itEquipmentApi = {
         return response.json();
     },
 
+    // ─── Create Batch ───
+    createBatch: async (formData: FormData): Promise<{ count: number; firstAssetCode: string; lastAssetCode: string; items: any[] }> => {
+        const response = await apiFetch(`${BASE}/batch`, {
+            method: 'POST',
+            body: formData // Note: Content-Type is intentionally omitted for FormData
+        });
+        if (!response.ok) return handleError(response, 'Falha ao criar lote de equipamentos.');
+        return response.json();
+    },
+
     // ─── Update ───
     update: async (id: string, data: any): Promise<void> => {
         const response = await apiFetch(`${BASE}/${id}`, {

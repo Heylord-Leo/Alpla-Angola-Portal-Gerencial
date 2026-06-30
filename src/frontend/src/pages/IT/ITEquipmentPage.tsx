@@ -1,18 +1,21 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
-import { Monitor, Upload, Plus, Search, Filter, ChevronLeft, ChevronRight, X, RefreshCw, Settings } from 'lucide-react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Upload, Plus, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { itEquipmentApi } from '../../lib/itEquipmentApi';
 import { EquipmentSummaryCards } from '../../components/it/EquipmentSummaryCards';
 import { EquipmentTable } from '../../components/it/EquipmentTable';
 import { EquipmentQuickViewDrawer } from '../../components/it/EquipmentQuickViewDrawer';
 import { EquipmentFormModal } from '../../components/it/EquipmentFormModal';
+import { BatchEquipmentModal } from '../../components/it/BatchEquipmentModal';
 import { ImportEquipmentModal } from '../../components/it/ImportEquipmentModal';
 import { ManageEquipmentTypesModal } from '../../components/it/ManageEquipmentTypesModal';
 import { ManageEquipmentCatalogsModal } from '../../components/it/ManageEquipmentCatalogsModal';
+import { SearchFilterBar } from '../../components/ui/SearchFilterBar';
 import type { ITEquipmentSummary, ITEquipmentListResponse, ITEquipmentFilterOptions } from '../../types/itEquipment';
 
 export default function ITEquipmentPage() {
     const { id: urlEquipmentId } = useParams<{ id?: string }>();
+    const navigate = useNavigate();
     const [summary, setSummary] = useState<ITEquipmentSummary | null>(null);
     const [listData, setListData] = useState<ITEquipmentListResponse | null>(null);
     const [filterOptions, setFilterOptions] = useState<ITEquipmentFilterOptions | null>(null);
@@ -33,6 +36,7 @@ export default function ITEquipmentPage() {
     // Modals & drawers
     const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(urlEquipmentId ?? null);
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [showBatchModal, setShowBatchModal] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
     const [showFilters, setShowFilters] = useState(false);
     const [showTypesModal, setShowTypesModal] = useState(false);
@@ -109,78 +113,43 @@ export default function ITEquipmentPage() {
     const totalPages = listData ? Math.ceil(listData.totalCount / pageSize) : 0;
 
     return (
-        <div style={{ padding: '0 32px 32px', maxWidth: 1600, margin: '0 auto' }}>
-            {/* Page Header */}
-            <div style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                marginBottom: 24, paddingTop: 8
-            }}>
-                <div>
-                    <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--color-text)', margin: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <Monitor size={28} style={{ color: 'var(--color-primary)' }} />
-                        Estoque de Equipamentos de T.I
-                    </h1>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem', marginTop: 4 }}>
-                        Gestão e controle de todos os equipamentos de tecnologia da informação
-                    </p>
-                </div>
-                <div data-tour="it-action-buttons" style={{ display: 'flex', gap: 8 }}>
-                    <button
-                        onClick={handleRefresh}
-                        style={{
-                            display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
-                            backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)',
-                            borderRadius: 8, cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: '0.85rem',
-                            transition: 'all 0.2s'
-                        }}
-                    >
-                        <RefreshCw size={15} /> Atualizar
-                    </button>
-                    <button
-                        onClick={() => setShowTypesModal(true)}
-                        style={{
-                            display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
-                            backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)',
-                            borderRadius: 8, cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: '0.85rem',
-                            transition: 'all 0.2s'
-                        }}
-                    >
-                        <Settings size={15} /> Gerir Tipos
-                    </button>
-                    <button
-                        onClick={() => setShowCatalogsModal(true)}
-                        style={{
-                            display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
-                            backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)',
-                            borderRadius: 8, cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: '0.85rem',
-                            transition: 'all 0.2s'
-                        }}
-                    >
-                        <Settings size={15} /> Gerir Catálogos
-                    </button>
-                    <button
-                        onClick={() => setShowImportModal(true)}
-                        style={{
-                            display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
-                            backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)',
-                            borderRadius: 8, cursor: 'pointer', color: 'var(--color-text)', fontSize: '0.85rem',
-                            fontWeight: 600, transition: 'all 0.2s'
-                        }}
-                    >
-                        <Upload size={15} /> Importar CSV
-                    </button>
-                    <button
-                        onClick={() => setShowCreateModal(true)}
-                        style={{
-                            display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px',
-                            background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none',
-                            borderRadius: 8, cursor: 'pointer', color: '#fff', fontSize: '0.85rem',
-                            fontWeight: 600, transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(59,130,246,0.3)'
-                        }}
-                    >
-                        <Plus size={15} /> Novo Equipamento
-                    </button>
-                </div>
+        <>
+            {/* Page-level action bar */}
+            <div data-tour="it-action-buttons" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                    onClick={handleRefresh}
+                    style={{
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+                        border: '1px solid var(--color-border)', borderRadius: 8,
+                        backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-muted)',
+                        fontSize: '0.85rem', fontWeight: 500, cursor: 'pointer', transition: 'all 0.2s',
+                    }}
+                >
+                    <RefreshCw size={15} /> Atualizar
+                </button>
+                <button
+                    onClick={() => setShowImportModal(true)}
+                    style={{
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+                        border: '1px solid var(--color-border)', borderRadius: 8,
+                        backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-muted)',
+                        fontSize: '0.85rem', fontWeight: 500, cursor: 'pointer', transition: 'all 0.2s',
+                    }}
+                >
+                    <Upload size={15} /> Importar CSV
+                </button>
+                <button
+                    onClick={() => navigate('/it/equipment/new')}
+                    style={{
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px',
+                        backgroundColor: 'var(--color-primary)', border: 'none',
+                        borderRadius: 8, cursor: 'pointer', color: '#fff', fontSize: '0.85rem',
+                        fontWeight: 600, transition: 'all 0.2s',
+                        boxShadow: '0 2px 8px rgba(var(--color-primary-rgb), 0.3)'
+                    }}
+                >
+                    <Plus size={15} /> Novo Equipamento
+                </button>
             </div>
 
             {/* KPI Cards */}
@@ -190,70 +159,33 @@ export default function ITEquipmentPage() {
                 </div>
             )}
 
-            {/* Search & Filter Bar */}
-            <div style={{
-                display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center'
-            }}>
-                <div style={{
-                    flex: 1, display: 'flex', alignItems: 'center', gap: 8,
-                    backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)',
-                    borderRadius: 8, padding: '0 12px'
-                }}>
-                    <Search size={16} style={{ color: 'var(--color-text-muted)' }} />
-                    <input
-                        type="text"
-                        placeholder="Buscar por asset tag, hostname, serial, dono, modelo, fabricante, MAC..."
-                        value={search}
-                        onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                        style={{
-                            flex: 1, border: 'none', background: 'transparent', padding: '10px 0',
-                            color: 'var(--color-text)', fontSize: '0.9rem', outline: 'none'
-                        }}
-                    />
-                    {search && (
-                        <X size={14} style={{ cursor: 'pointer', color: 'var(--color-text-muted)' }} onClick={() => setSearch('')} />
-                    )}
-                </div>
-                <button
-                    onClick={() => setShowFilters(!showFilters)}
-                    style={{
-                        display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px',
-                        backgroundColor: hasActiveFilters ? 'rgba(59,130,246,0.1)' : 'var(--color-bg-surface)',
-                        border: `1px solid ${hasActiveFilters ? 'rgba(59,130,246,0.4)' : 'var(--color-border)'}`,
-                        borderRadius: 8, cursor: 'pointer',
-                        color: hasActiveFilters ? '#3b82f6' : 'var(--color-text-muted)',
-                        fontSize: '0.85rem', fontWeight: 500
-                    }}
-                >
-                    <Filter size={15} /> Filtros
-                    {hasActiveFilters && (
-                        <span style={{
-                            backgroundColor: '#3b82f6', color: '#fff', borderRadius: '50%',
-                            width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: '0.7rem', fontWeight: 700
-                        }}>
-                            {[statusFilter, typeFilter, plantFilter, manufacturerFilter].filter(Boolean).length}
-                        </span>
-                    )}
-                </button>
-                {hasActiveFilters && (
-                    <button
-                        onClick={clearFilters}
-                        style={{
-                            padding: '10px 12px', border: 'none', background: 'transparent',
-                            cursor: 'pointer', color: '#ef4444', fontSize: '0.8rem', fontWeight: 600
-                        }}
-                    >
-                        Limpar filtros
-                    </button>
-                )}
-            </div>
+            {/* Search & Filter Bar — standard Portal component */}
+            <SearchFilterBar
+                searchPlaceholder="Buscar por asset tag, hostname, serial, dono, modelo, fabricante, MAC..."
+                searchValue={search}
+                onSearchChange={(val) => { setSearch(val); setPage(1); }}
+                onToggleAdvancedFilters={() => setShowFilters(!showFilters)}
+                showAdvancedFilters={showFilters}
+                actions={
+                    hasActiveFilters ? (
+                        <button
+                            onClick={clearFilters}
+                            style={{
+                                padding: '8px 12px', border: 'none', background: 'transparent',
+                                cursor: 'pointer', color: '#ef4444', fontSize: '0.8rem', fontWeight: 600
+                            }}
+                        >
+                            Limpar filtros
+                        </button>
+                    ) : undefined
+                }
+            />
 
-            {/* Filter Dropdowns */}
+            {/* Advanced Filter Dropdowns */}
             {showFilters && (
                 <div style={{
                     display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                    gap: 12, marginBottom: 16, padding: 16,
+                    gap: 12, padding: 16,
                     backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)',
                     borderRadius: 10
                 }}>
@@ -297,7 +229,7 @@ export default function ITEquipmentPage() {
             {error && (
                 <div style={{
                     padding: 16, backgroundColor: '#fef2f2', border: '1px solid #fecaca',
-                    borderRadius: 10, color: '#dc2626', marginBottom: 16, fontSize: '0.9rem'
+                    borderRadius: 10, color: '#dc2626', fontSize: '0.9rem'
                 }}>
                     {error}
                 </div>
@@ -317,7 +249,7 @@ export default function ITEquipmentPage() {
             {listData && listData.totalCount > pageSize && (
                 <div style={{
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    marginTop: 16, padding: '12px 16px',
+                    padding: '12px 16px',
                     backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)',
                     borderRadius: 10
                 }}>
@@ -371,6 +303,17 @@ export default function ITEquipmentPage() {
                 />
             )}
 
+            {/* Batch Modal */}
+            {showBatchModal && (
+                <BatchEquipmentModal
+                    onClose={() => setShowBatchModal(false)}
+                    onSuccess={() => {
+                        setShowBatchModal(false);
+                        loadData();
+                    }}
+                />
+            )}
+
             {/* Import Modal */}
             {showImportModal && (
                 <ImportEquipmentModal
@@ -392,7 +335,7 @@ export default function ITEquipmentPage() {
                     onClose={() => setShowCatalogsModal(false)}
                 />
             )}
-        </div>
+        </>
     );
 }
 

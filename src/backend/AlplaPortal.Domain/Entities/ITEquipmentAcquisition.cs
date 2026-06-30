@@ -17,6 +17,7 @@ public class ITEquipmentAcquisition
 
     // ── Future Integration Fields (nullable, not enforced yet) ──
     public int? SupplierId { get; set; }
+    public Supplier? Supplier { get; set; }
     public Guid? PurchaseRequestId { get; set; }
     public string? PurchaseRequestNumber { get; set; }
     public string? PurchaseOrderNumber { get; set; }
@@ -37,7 +38,20 @@ public class ITEquipmentAcquisition
 
     public DateTime? WarrantyStartDate { get; set; }
     public DateTime? WarrantyEndDate { get; set; }
+
+    /// <summary>Warranty duration in months. Used for auto-calculating WarrantyEndDate.</summary>
+    public int? WarrantyMonths { get; set; }
+
     public string? WarrantyNotes { get; set; }
+
+    /// <summary>When true, warranty information is unavailable for this equipment.</summary>
+    public bool WarrantyInfoUnavailable { get; set; } = false;
+
+    /// <summary>
+    /// Mandatory reason when WarrantyInfoUnavailable = true.
+    /// Example: "Warranty information not available — equipment received without documentation."
+    /// </summary>
+    public string? WarrantyInfoUnavailableReason { get; set; }
 
     public string? AcquisitionNotes { get; set; }
 

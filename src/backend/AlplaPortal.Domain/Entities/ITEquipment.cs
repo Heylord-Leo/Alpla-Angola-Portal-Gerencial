@@ -69,6 +69,13 @@ public class ITEquipment
 
     public bool IsActive { get; set; } = true;
 
+    /// <summary>
+    /// When true, the equipment registration is incomplete because the mandatory purchase document
+    /// has not been uploaded yet. Equipment with this flag cannot be assigned or added to delivery terms.
+    /// Automatically cleared when a PURCHASE_DOCUMENT is uploaded via ITEquipmentDocumentsController.
+    /// </summary>
+    public bool PurchaseDocumentPending { get; set; } = false;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
     public Guid? CreatedByUserId { get; set; }

@@ -1223,6 +1223,13 @@ public class ITDeliveryTermsController : BaseController
                 continue;
             }
 
+            // Block if purchase document is pending
+            if (eq.PurchaseDocumentPending)
+            {
+                errors.Add($"{eq.AssetTag}: cadastro incompleto — documento de compra/entrega pendente.");
+                continue;
+            }
+
             // Check if already assigned elsewhere or in an incompatible state
             if (eq.StatusCode != ITEquipmentConstants.EquipmentStatus.Available &&
                 eq.StatusCode != ITEquipmentConstants.EquipmentStatus.Returned)

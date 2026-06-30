@@ -8,6 +8,8 @@ import { APPROVALS_CENTER_STEPS } from './tours/approvalsCenterTour';
 import { APPROVAL_DRAWER_AREA_STEPS } from './tours/approvalDrawerAreaTour';
 import { APPROVAL_DRAWER_FINAL_STEPS } from './tours/approvalDrawerFinalTour';
 import { IT_EQUIPMENT_STEPS } from './tours/itEquipmentTour';
+import { IT_CATALOGS_PAGE_STEPS } from './tours/itCatalogsPageTour';
+import { IT_TYPES_PAGE_STEPS } from './tours/itTypesPageTour';
 
 /**
  * Guided Tour Registry
@@ -42,6 +44,20 @@ export const TOUR_REGISTRY: TourDefinition[] = [
         label: 'Tour deste módulo',
         routes: ['/it'],
         steps: IT_EQUIPMENT_STEPS,
+    },
+    {
+        id: 'page-it-catalogs',
+        level: 'page',
+        label: 'Tour desta tela',
+        routes: ['/it/catalogs'],
+        steps: IT_CATALOGS_PAGE_STEPS,
+    },
+    {
+        id: 'page-it-types',
+        level: 'page',
+        label: 'Tour desta tela',
+        routes: ['/it/types'],
+        steps: IT_TYPES_PAGE_STEPS,
     },
     {
         id: 'page-requests',

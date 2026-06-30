@@ -69,6 +69,16 @@ public class ITEquipmentDocumentsController : BaseController
         if (isSignedTermType && !allowedSignedExtensions.Contains(extension))
             return BadRequest("Formato de ficheiro não permitido para termos assinados. Utilize PDF, JPG ou PNG.");
 
+        // Validate PURCHASE_DOCUMENT: 10MB limit, PDF/JPG/PNG only
+        var isPurchaseDocument = documentType == ITEquipmentConstants.DocumentType.PurchaseDocument;
+        if (isPurchaseDocument)
+        {
+            if (file.Length > 10 * 1024 * 1024)
+                return BadRequest("O ficheiro de compra excede o limite de 10MB.");
+            if (!allowedSignedExtensions.Contains(extension))
+                return BadRequest("Formato de ficheiro não permitido para documentos de compra. Utilize PDF, JPG ou PNG.");
+        }
+
         // Validate assignmentId exists when uploading signed terms
         if (isSignedTermType && assignmentId.HasValue)
         {
@@ -129,6 +139,21 @@ public class ITEquipmentDocumentsController : BaseController
 
         equipment.UpdatedAt = DateTime.UtcNow;
         equipment.UpdatedByUserId = userId;
+
+        // Clear PurchaseDocumentPending flag when a purchase document is uploaded
+        if (isPurchaseDocument && equipment.PurchaseDocumentPending)
+        {
+            equipment.PurchaseDocumentPending = false;
+            _context.ITEquipmentMovementLogs.Add(new ITEquipmentMovementLog
+            {
+                EquipmentId = equipmentId,
+                MovementType = ITEquipmentConstants.MovementType.Updated,
+                PreviousStatus = equipment.StatusCode,
+                NewStatus = equipment.StatusCode,
+                Notes = "Documento de compra/entrega carregado. Cadastro completo.",
+                CreatedByUserId = userId
+            });
+        }
 
         await _context.SaveChangesAsync();
 

@@ -28,9 +28,9 @@ export function LostEquipmentModal({ equipmentId, onClose, onSuccess }: Props) {
                 </div>
                 <Field label="Responsável" value={responsiblePerson} onChange={setResponsiblePerson} placeholder="Nome da pessoa responsável" />
                 <TextArea label="Detalhes" value={notes} onChange={setNotes} rows={3} />
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
                     <button type="button" onClick={onClose} style={cancelBtnStyle}>Cancelar</button>
-                    <SubmitBtn label="Marcar como Perdido" loading={saving} />
+                    <SubmitBtn label="Confirmar" loading={saving} />
                 </div>
             </form>
         </ModalWrapper>

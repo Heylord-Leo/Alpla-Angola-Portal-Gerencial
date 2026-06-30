@@ -8,12 +8,16 @@ export const IT_EQUIPMENT_STEPS: TourStep[] = [
         skipBeacon: true,
     },
     {
+        target: '[data-tour="it-module-tabs"]',
+        content: 'Navegue entre o Estoque de Equipamentos, Termos de Entrega, e as páginas de configurações de Catálogos e Tipos de Equipamento usando estes separadores.',
+    },
+    {
         target: '[data-tour="it-summary-cards"]',
         content: 'Estes cartões fornecem um resumo rápido do estado do inventário: equipamentos totais, disponíveis, em uso e o valor contabilístico atual.',
     },
     {
         target: '[data-tour="it-action-buttons"]',
-        content: 'Aqui encontra as ações principais: exportar/importar CSV, adicionar equipamentos manualmente e gerir Tipos e Catálogos de dados mestre.',
+        content: 'Aqui encontra as ações principais: exportar/importar CSV e adicionar equipamentos manualmente.',
     },
     {
         target: '[data-tour="it-equipment-table"]',

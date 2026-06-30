@@ -99,7 +99,10 @@ export interface ITEquipmentListResponse {
 export interface ITEquipmentAcquisition {
     id: string;
     acquisitionDate: string | null;
+    supplierId: number | null;
     supplierName: string | null;
+    supplierPortalCode: string | null;
+    supplierTaxId: string | null;
     purchaseOrderNumber: string | null;
     /** General purchase/delivery document reference (invoice, delivery note, internal doc). */
     invoiceNumber: string | null;
@@ -109,6 +112,8 @@ export interface ITEquipmentAcquisition {
     currency: string | null;
     warrantyStartDate: string | null;
     warrantyEndDate: string | null;
+    /** Warranty duration in months for auto-calculation. */
+    warrantyMonths: number | null;
     warrantyNotes: string | null;
     acquisitionNotes: string | null;
     purchaseRequestNumber: string | null;
@@ -116,6 +121,10 @@ export interface ITEquipmentAcquisition {
     purchaseInfoUnavailable: boolean;
     /** Mandatory reason when purchaseInfoUnavailable is true. */
     purchaseInfoUnavailableReason: string | null;
+    /** When true, warranty information is unavailable for this equipment. */
+    warrantyInfoUnavailable: boolean;
+    /** Mandatory reason when warrantyInfoUnavailable is true. */
+    warrantyInfoUnavailableReason: string | null;
 }
 
 export interface ITEquipmentDocument {
@@ -193,6 +202,8 @@ export interface ITEquipmentDetail {
     createdByName: string | null;
     updatedByName: string | null;
     acquisition: ITEquipmentAcquisition | null;
+    /** When true, equipment registration is incomplete — purchase document not yet uploaded. */
+    purchaseDocumentPending: boolean;
     documents: ITEquipmentDocument[];
     assignments: ITEquipmentAssignment[];
     movements: ITEquipmentMovement[];
@@ -306,6 +317,7 @@ export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
     SIGNED_DELIVERY_TERM_AGREEMENT: 'Termo de Entrega Agrupado Assinado',
     RETURN_TERM_AGREEMENT: 'Termo de Devolução Agrupado',
     SIGNED_RETURN_TERM_AGREEMENT: 'Termo de Devolução Agrupado Assinado',
+    PURCHASE_DOCUMENT: 'Nota de Compra / Guia de Entrega',
     OTHER: 'Outro'
 };
 
