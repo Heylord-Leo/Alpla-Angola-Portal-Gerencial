@@ -23,9 +23,8 @@ export function EquipmentSummaryCards({ summary, activeFilter, onFilterClick }: 
     return (
         <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(165px, 1fr))',
-            gap: 12,
-            marginBottom: 20
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: 24,
         }}>
             {cards.map(card => (
                 <KPICard

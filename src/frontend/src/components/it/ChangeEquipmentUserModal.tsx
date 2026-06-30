@@ -4,6 +4,7 @@ import { api } from '../../lib/api';
 import { ModalWrapper, SubmitBtn, ErrorBox, Field, Row, TextArea, SelectField, cancelBtnStyle, labelStyle, inputStyle } from './EquipmentFormModal';
 import { Info, AlertTriangle } from 'lucide-react';
 import type { ITEquipmentDetail, ITEquipmentAssignment } from '../../types/itEquipment';
+import { ConfirmationDialog } from '../common/ConfirmationDialog';
 
 interface Props { equipmentId: string; onClose: () => void; onSuccess: () => void; }
 
@@ -51,7 +52,7 @@ export function ChangeEquipmentUserModal({ equipmentId, onClose, onSuccess }: Pr
     const [_usersLoaded, setUsersLoaded] = useState(false);
 
     // Same user confirmation
-    const [sameUserConfirmed, setSameUserConfirmed] = useState(false);
+    const [confirmDialog, setConfirmDialog] = useState(false);
 
     // Load equipment detail + master data + users
     useEffect(() => {
@@ -97,7 +98,6 @@ export function ChangeEquipmentUserModal({ equipmentId, onClose, onSuccess }: Pr
     const handleUserSearchChange = (value: string) => {
         setUserSearch(value);
         setSelectedUser(null);
-        setSameUserConfirmed(false);
         set('newAssignedToUserId', '');
         set('newAssignedToName', value);
         set('newAssignedToEmail', '');
@@ -109,7 +109,6 @@ export function ChangeEquipmentUserModal({ equipmentId, onClose, onSuccess }: Pr
         setSelectedUser(user);
         setUserSearch(user.fullName);
         setShowDropdown(false);
-        setSameUserConfirmed(false);
         setForm(p => ({
             ...p,
             newAssignedToUserId: user.id,
@@ -147,12 +146,15 @@ export function ChangeEquipmentUserModal({ equipmentId, onClose, onSuccess }: Pr
             setError('Não é possível transferir o equipamento para outro utilizador quando a condição da devolução indica dano ou necessidade de conserto. Faça a devolução normal e envie o equipamento para conserto.');
             return;
         }
-        if (isSameUser && !sameUserConfirmed) {
-            setError('O novo utilizador é o mesmo utilizador atual. Confirme se deseja continuar.');
-            setSameUserConfirmed(true);
+        if (isSameUser) {
+            setConfirmDialog(true);
             return;
         }
 
+        await executeTransfer();
+    };
+
+    const executeTransfer = async () => {
         try {
             setSaving(true); setWarnings([]);
             const result = await itEquipmentApi.changeUser(equipmentId, {
@@ -171,7 +173,7 @@ export function ChangeEquipmentUserModal({ equipmentId, onClose, onSuccess }: Pr
             } else {
                 onSuccess();
             }
-        } catch (err: any) { setError(err.message); } finally { setSaving(false); }
+        } catch (err: any) { setError(err.message); } finally { setSaving(false); setConfirmDialog(false); }
     };
 
     const dropdownStyle: React.CSSProperties = {
@@ -208,7 +210,7 @@ export function ChangeEquipmentUserModal({ equipmentId, onClose, onSuccess }: Pr
         return (
             <ModalWrapper title="Trocar Utilizador" onClose={onClose}>
                 <ErrorBox msg="Este equipamento não possui uma atribuição ativa." />
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
                     <button type="button" onClick={onClose} style={cancelBtnStyle}>Fechar</button>
                 </div>
             </ModalWrapper>
@@ -217,6 +219,16 @@ export function ChangeEquipmentUserModal({ equipmentId, onClose, onSuccess }: Pr
 
     return (
         <ModalWrapper title="Trocar Utilizador" onClose={onClose} width={580}>
+            {confirmDialog && (
+                <ConfirmationDialog
+                    title="Confirmar Transferência"
+                    message="O novo utilizador selecionado é o mesmo utilizador atual. Tem certeza que deseja realizar esta transferência?"
+                    confirmText="Confirmar Transferência"
+                    cancelText="Cancelar"
+                    onConfirm={executeTransfer}
+                    onCancel={() => setConfirmDialog(false)}
+                />
+            )}
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {error && <ErrorBox msg={error} />}
 
@@ -319,7 +331,7 @@ export function ChangeEquipmentUserModal({ equipmentId, onClose, onSuccess }: Pr
                     )}
                     {isSameUser && (
                         <span style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>
-                            ⚠ Mesmo utilizador atual. {sameUserConfirmed ? 'Confirmado.' : 'Clique em "Transferir" novamente para confirmar.'}
+                            ⚠ Mesmo utilizador atual selecionado.
                         </span>
                     )}
                     {showDropdown && userOptions.length > 0 && (
@@ -379,10 +391,10 @@ export function ChangeEquipmentUserModal({ equipmentId, onClose, onSuccess }: Pr
 
                 <TextArea label="Observações da entrega" value={form.newAssignmentNotes} onChange={v => set('newAssignmentNotes', v)} rows={2} />
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
                     <button type="button" onClick={onClose} style={cancelBtnStyle}>Cancelar</button>
                     <SubmitBtn
-                        label={isSameUser && !sameUserConfirmed ? 'Confirmar Transferência' : 'Transferir'}
+                        label="Transferir"
                         loading={saving}
                         disabled={returnCondition !== 'GOOD'}
                     />

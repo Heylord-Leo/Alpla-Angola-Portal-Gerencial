@@ -27,7 +27,7 @@ export function ReserveEquipmentModal({ equipmentId, onClose, onSuccess }: Props
                 <Field label="Reservado Para" value={reservedFor} onChange={setReservedFor} placeholder="Nome ou departamento" />
                 <Field label="Motivo" value={reason} onChange={setReason} placeholder="Ex: Novo colaborador chegando em..." />
                 <TextArea label="Notas" value={notes} onChange={setNotes} rows={2} />
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
                     <button type="button" onClick={onClose} style={cancelBtnStyle}>Cancelar</button>
                     <SubmitBtn label="Reservar" loading={saving} />
                 </div>

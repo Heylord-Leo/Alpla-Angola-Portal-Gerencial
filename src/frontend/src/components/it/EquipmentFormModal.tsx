@@ -3,6 +3,14 @@ import { X, Loader2 } from 'lucide-react';
 import { itEquipmentApi, itEquipmentCatalogApi } from '../../lib/itEquipmentApi';
 import { api } from '../../lib/api';
 import type { ITEquipmentDetail, ITEquipmentTypeItem, MasterDataCompany, MasterDataPlant, CatalogManufacturer, CatalogModel, CatalogProcessor, CatalogMemoryOption } from '../../types/itEquipment';
+import { SupplierAutocomplete } from '../SupplierAutocomplete';
+import { FormInput } from '../common/form/FormInput';
+import { FormSelect } from '../common/form/FormSelect';
+import { FormSearchableSelect } from '../common/form/FormSearchableSelect';
+import { FormTextarea } from '../common/form/FormTextarea';
+import { FormCheckbox } from '../common/form/FormCheckbox';
+import { FileUpload } from '../common/form/FileUpload';
+import { SectionCard } from '../common/ui/SectionCard';
 
 interface Props {
     equipment?: ITEquipmentDetail;
@@ -14,6 +22,7 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
     const isEdit = !!equipment;
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
+    const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
     const [equipmentTypes, setEquipmentTypes] = useState<Array<{ value: string; label: string }>>([]);
 
     // ── Master Data lookups ──
@@ -74,15 +83,55 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
         purchaseAmount: equipment?.acquisition?.purchaseAmount?.toString() || '',
         currency: equipment?.acquisition?.currency || 'AOA',
         acquisitionDate: equipment?.acquisition?.acquisitionDate ? equipment.acquisition.acquisitionDate.split('T')[0] : '',
+        supplierId: equipment?.acquisition?.supplierId || null,
         supplierName: equipment?.acquisition?.supplierName || '',
+        supplierPortalCode: equipment?.acquisition?.supplierPortalCode || '',
         purchaseOrderNumber: equipment?.acquisition?.purchaseOrderNumber || '',
         invoiceNumber: equipment?.acquisition?.invoiceNumber || '',
         purchaseInfoUnavailable: equipment?.acquisition?.purchaseInfoUnavailable ?? false,
         purchaseInfoUnavailableReason: equipment?.acquisition?.purchaseInfoUnavailableReason || '',
     });
 
+    // Warranty state
+    const [warranty, setWarranty] = useState({
+        warrantyMonths: equipment?.acquisition?.warrantyMonths?.toString() || '',
+        warrantyStartDate: equipment?.acquisition?.warrantyStartDate ? equipment.acquisition.warrantyStartDate.split('T')[0] : '',
+        warrantyEndDate: equipment?.acquisition?.warrantyEndDate ? equipment.acquisition.warrantyEndDate.split('T')[0] : '',
+        warrantyNotes: equipment?.acquisition?.warrantyNotes || '',
+        warrantyInfoUnavailable: equipment?.acquisition?.warrantyInfoUnavailable ?? false,
+        warrantyInfoUnavailableReason: equipment?.acquisition?.warrantyInfoUnavailableReason || '',
+    });
+
+    // Purchase document file (for create flow)
+    const [purchaseDocFile, setPurchaseDocFile] = useState<File | null>(null);
+    const [purchaseDocError, setPurchaseDocError] = useState('');
+
     const set = (field: string, value: any) => setForm(prev => ({ ...prev, [field]: value }));
     const setPur = (field: string, value: any) => setPurchase(prev => ({ ...prev, [field]: value }));
+    const setWar = (field: string, value: any) => setWarranty(prev => ({ ...prev, [field]: value }));
+
+    // Auto-calculate warranty end date from start + months
+    useEffect(() => {
+        const months = parseInt(warranty.warrantyMonths);
+        if (!months || months <= 0) return;
+        const startDate = warranty.warrantyStartDate || purchase.acquisitionDate;
+        if (!startDate) return;
+        const start = new Date(startDate);
+        if (isNaN(start.getTime())) return;
+        const end = new Date(start);
+        end.setMonth(end.getMonth() + months);
+        const endStr = end.toISOString().split('T')[0];
+        if (endStr !== warranty.warrantyEndDate) {
+            setWarranty(prev => ({ ...prev, warrantyEndDate: endStr }));
+        }
+    }, [warranty.warrantyMonths, warranty.warrantyStartDate, purchase.acquisitionDate]);
+
+    // Auto-populate warranty start date from acquisition date
+    useEffect(() => {
+        if (!warranty.warrantyStartDate && purchase.acquisitionDate) {
+            setWarranty(prev => ({ ...prev, warrantyStartDate: purchase.acquisitionDate }));
+        }
+    }, [purchase.acquisitionDate]);
 
     useEffect(() => {
         if (form.companyId) {
@@ -128,21 +177,53 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!isEdit && !form.companyId) { setError('Empresa é obrigatória.'); return; }
-        if (!isEdit && !form.plantId) { setError('Planta é obrigatória.'); return; }
-        if (!form.equipmentType) { setError('Tipo de equipamento é obrigatório.'); return; }
+        setError('');
+        setFieldErrors({});
+        const newErrors: Record<string, string> = {};
+
+        if (!isEdit && !form.companyId) newErrors.companyId = 'Obrigatório.';
+        if (!isEdit && !form.plantId) newErrors.plantId = 'Obrigatório.';
+        if (!form.equipmentType) newErrors.equipmentType = 'Obrigatório.';
 
         // Validate purchase traceability fields
         if (!purchase.purchaseInfoUnavailable) {
-            if (!purchase.purchaseAmount.toString().trim() || !purchase.acquisitionDate.trim() || !purchase.invoiceNumber.trim()) {
-                setError('Informe o valor de compra, data de compra e número do documento, ou marque as informações como indisponíveis.');
-                return;
+            if (!purchase.purchaseAmount.toString().trim()) newErrors.purchaseAmount = 'Obrigatório.';
+            if (!purchase.acquisitionDate.trim()) newErrors.acquisitionDate = 'Obrigatório.';
+            if (!purchase.invoiceNumber.trim()) newErrors.invoiceNumber = 'Obrigatório.';
+            if (!purchase.supplierId) newErrors.supplierId = 'Obrigatório.';
+
+            // Require purchase document on create
+            if (!isEdit && !purchaseDocFile) {
+                newErrors.purchaseDocFile = 'Cópia da nota de compra é obrigatória.';
+            }
+            // On edit, check if purchase document already exists
+            if (isEdit && equipment) {
+                const hasPurchaseDoc = equipment.documents.some(d => d.documentType === 'PURCHASE_DOCUMENT');
+                if (!hasPurchaseDoc && !purchaseDocFile) {
+                    newErrors.purchaseDocFile = 'Cópia da nota de compra é obrigatória.';
+                }
             }
         } else {
             if (!purchase.purchaseInfoUnavailableReason.trim()) {
-                setError('Informe o motivo da indisponibilidade das informações de compra.');
-                return;
+                newErrors.purchaseInfoUnavailableReason = 'Informe o motivo.';
             }
+        }
+
+        // Validate warranty fields
+        if (!warranty.warrantyInfoUnavailable && !purchase.purchaseInfoUnavailable) {
+            if (!warranty.warrantyMonths.trim() && !warranty.warrantyEndDate.trim()) {
+                newErrors.warrantyMonths = 'Informe a duração ou a data fim.';
+                newErrors.warrantyEndDate = 'Informe a duração ou a data fim.';
+            }
+        }
+        if (warranty.warrantyInfoUnavailable && !warranty.warrantyInfoUnavailableReason.trim()) {
+            newErrors.warrantyInfoUnavailableReason = 'Informe o motivo.';
+        }
+
+        if (Object.keys(newErrors).length > 0) {
+            setFieldErrors(newErrors);
+            setError('Preencha os campos obrigatórios corretamente.');
+            return;
         }
 
         // Build acquisition payload (always included — independent of SourceType)
@@ -151,10 +232,17 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
             currency: purchase.currency || 'AOA',
             acquisitionDate: purchase.purchaseInfoUnavailable ? null : (purchase.acquisitionDate || null),
             invoiceNumber: purchase.purchaseInfoUnavailable ? null : (purchase.invoiceNumber || null),
-            supplierName: purchase.supplierName || null,
+            supplierId: purchase.purchaseInfoUnavailable ? null : purchase.supplierId,
+            supplierName: purchase.purchaseInfoUnavailable ? null : (purchase.supplierName || null),
             purchaseOrderNumber: purchase.purchaseOrderNumber || null,
             purchaseInfoUnavailable: purchase.purchaseInfoUnavailable,
             purchaseInfoUnavailableReason: purchase.purchaseInfoUnavailable ? purchase.purchaseInfoUnavailableReason : null,
+            warrantyMonths: warranty.warrantyInfoUnavailable ? null : (parseInt(warranty.warrantyMonths) || null),
+            warrantyStartDate: warranty.warrantyInfoUnavailable ? null : (warranty.warrantyStartDate || null),
+            warrantyEndDate: warranty.warrantyInfoUnavailable ? null : (warranty.warrantyEndDate || null),
+            warrantyNotes: warranty.warrantyNotes || null,
+            warrantyInfoUnavailable: warranty.warrantyInfoUnavailable,
+            warrantyInfoUnavailableReason: warranty.warrantyInfoUnavailable ? warranty.warrantyInfoUnavailableReason : null,
         };
 
         try {
@@ -205,8 +293,36 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
                     manufactureDate: form.manufactureDate || null,
                     acquisition: acquisitionPayload,
                 };
-                await itEquipmentApi.create(createPayload);
+                const result = await itEquipmentApi.create(createPayload);
+
+                // Upload purchase document if file was selected
+                if (purchaseDocFile && result.id) {
+                    try {
+                        await itEquipmentApi.documents.upload(result.id, purchaseDocFile, 'PURCHASE_DOCUMENT');
+                    } catch (uploadErr) {
+                        // Equipment created but document upload failed — show warning, don't delete equipment
+                        setPurchaseDocError(
+                            `Equipamento criado (${result.assetTag}), mas o documento de compra não foi carregado. ` +
+                            `O equipamento ficará com cadastro incompleto até que o documento seja carregado. ` +
+                            `Abra o equipamento para tentar novamente.`
+                        );
+                        setSaving(false);
+                        // Still refresh the list to show the new equipment
+                        onSuccess();
+                        return;
+                    }
+                }
             }
+
+            // Upload purchase document on edit (if a new file was selected)
+            if (isEdit && equipment && purchaseDocFile) {
+                try {
+                    await itEquipmentApi.documents.upload(equipment.id, purchaseDocFile, 'PURCHASE_DOCUMENT');
+                } catch (uploadErr) {
+                    setPurchaseDocError('O documento de compra não foi carregado. Tente novamente.');
+                }
+            }
+
             onSuccess();
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : 'Erro ao salvar.';
@@ -256,7 +372,7 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {error && <ErrorBox msg={error} />}
 
-                <Row>
+                <div style={{ display: 'flex', gap: 12 }}>
                     {isEdit && equipment ? (
                         <div style={{ flex: 1 }}>
                             <label style={labelStyle}>Código do Ativo</label>
@@ -272,14 +388,16 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
                             </div>
                         </div>
                     )}
-                    {showHostname && <Field label="Hostname" value={form.hostname} onChange={v => set('hostname', v)} />}
-                </Row>
-                <Row>
-                    <SelectField label="Tipo *" value={form.equipmentType} onChange={handleTypeChange}
+                    {showHostname && <FormInput label="Hostname" value={form.hostname} onChange={v => set('hostname', v)} />}
+                </div>
+                <div style={{ display: 'flex', gap: 12 }}>
+                    <FormSearchableSelect label="Tipo" value={form.equipmentType} onChange={handleTypeChange}
                         options={equipmentTypes.length > 0 ? equipmentTypes : [{ value: 'UNKNOWN', label: 'Carregando...' }]}
+                        error={fieldErrors.equipmentType}
+                        required
                     />
                     {!isEdit && (
-                        <SelectField label="Status" value={form.statusCode} onChange={v => set('statusCode', v)}
+                        <FormSelect label="Status" value={form.statusCode} onChange={v => set('statusCode', v)}
                             options={[
                                 { value: 'AVAILABLE', label: 'Disponível' },
                                 { value: 'IN_USE', label: 'Em uso' },
@@ -288,81 +406,78 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
                             ]}
                         />
                     )}
-                </Row>
+                </div>
 
                 {/* Company → Plant cascade */}
                 {!isEdit ? (
-                    <Row>
-                        <SelectField label="Empresa *" value={form.companyId} onChange={handleCompanyChange}
+                    <div style={{ display: 'flex', gap: 12 }}>
+                        <FormSelect label="Empresa *" value={form.companyId} onChange={handleCompanyChange}
                             options={[
                                 { value: '', label: 'Selecione...' },
                                 ...companies.filter((c) => c.isActive).map((c) => ({ value: String(c.id), label: c.name }))
                             ]}
+                            error={fieldErrors.companyId}
                         />
-                        <SelectField label="Planta *" value={form.plantId} onChange={v => { set('plantId', v); const pl = plants.find(p => String(p.id) === v); if (pl) set('plant', pl.name); }}
+                        <FormSearchableSelect label="Planta" value={form.plantId} onChange={v => { set('plantId', v); const pl = plants.find(p => String(p.id) === v); if (pl) set('plant', pl.name); }}
                             options={[
                                 { value: '', label: form.companyId ? 'Selecione...' : 'Selecione empresa primeiro' },
                                 ...plants.filter((p) => p.isActive).map((p) => ({ value: String(p.id), label: p.name }))
                             ]}
                             disabled={!form.companyId}
+                            error={fieldErrors.plantId}
+                            required
                         />
-                    </Row>
+                    </div>
                 ) : (
-                    <Row>
-                        <Field label="Planta" value={form.plant} onChange={v => set('plant', v)} />
-                        <Field label="Código Legado" value={form.legacyAssetCode} onChange={v => set('legacyAssetCode', v)} placeholder="Código patrimônio antigo (opcional)" />
-                    </Row>
+                    <div style={{ display: 'flex', gap: 12 }}>
+                        <FormInput label="Planta" value={form.plant} onChange={v => set('plant', v)} />
+                        <FormInput label="Código Legado" value={form.legacyAssetCode} onChange={v => set('legacyAssetCode', v)} placeholder="Código patrimônio antigo (opcional)" />
+                    </div>
                 )}
 
                 {/* Manufacturer → Model cascade */}
-                <Row>
-                    <SelectField label="Fabricante" value={form.manufacturer} onChange={handleManufacturerChange}
+                <div style={{ display: 'flex', gap: 12 }}>
+                    <FormSearchableSelect label="Fabricante" value={form.manufacturer} onChange={handleManufacturerChange}
                         options={manufacturerOpts}
                     />
-                    <SelectField label="Modelo" value={form.model} onChange={v => set('model', v)}
+                    <FormSearchableSelect label="Modelo" value={form.model} onChange={v => set('model', v)}
                         options={modelOpts}
                         disabled={!form.manufacturer && !isEdit}
                     />
-                </Row>
+                </div>
 
-                <Row>
-                    <Field label="Serial Number" value={form.serialNumber} onChange={v => set('serialNumber', v)} />
-                    {showMacAddress && <Field label="MAC Ethernet" value={form.macAddress} onChange={v => set('macAddress', v)} placeholder="Ex: AA:BB:CC:DD:EE:FF" />}
-                </Row>
+                <div style={{ display: 'flex', gap: 12 }}>
+                    <FormInput label="Serial Number" value={form.serialNumber} onChange={v => set('serialNumber', v)} />
+                    {showMacAddress && <FormInput label="MAC Ethernet" value={form.macAddress} onChange={v => set('macAddress', v)} placeholder="Ex: AA:BB:CC:DD:EE:FF" />}
+                </div>
                 {showMacAddress && (
-                    <Row>
-                        <Field label="MAC Wi-Fi" value={form.wifiMacAddress} onChange={v => set('wifiMacAddress', v)} placeholder="Ex: AA:BB:CC:DD:EE:FF" />
+                    <div style={{ display: 'flex', gap: 12 }}>
+                        <FormInput label="MAC Wi-Fi" value={form.wifiMacAddress} onChange={v => set('wifiMacAddress', v)} placeholder="Ex: AA:BB:CC:DD:EE:FF" />
                         <div style={{ flex: 1 }} />
-                    </Row>
+                    </div>
                 )}
                 {showProcessorRam && (
-                    <Row>
-                        <SelectField label="Processador" value={form.processor} onChange={v => set('processor', v)}
+                    <div style={{ display: 'flex', gap: 12 }}>
+                        <FormSearchableSelect label="Processador" value={form.processor} onChange={v => set('processor', v)}
                             options={processorOpts}
                         />
-                        <SelectField label="RAM" value={form.memoryRam} onChange={v => set('memoryRam', v)}
+                        <FormSearchableSelect label="RAM" value={form.memoryRam} onChange={v => set('memoryRam', v)}
                             options={memoryOpts}
                         />
-                    </Row>
+                    </div>
                 )}
-                <Row>
-                    <Field label="Cor" value={form.color} onChange={v => set('color', v)} />
-                    <Field label="ID Card" value={form.idCard} onChange={v => set('idCard', v)} />
-                </Row>
-                <Row>
-                    <div style={{ flex: 1 }}>
-                        <label style={labelStyle}>Data de Fabricação</label>
-                        <input type="date" value={form.manufactureDate} onChange={e => set('manufactureDate', e.target.value)} style={inputStyle} />
-                    </div>
-                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, paddingTop: 18 }}>
-                        <input type="checkbox" checked={form.biometricMfaEnabled} onChange={e => set('biometricMfaEnabled', e.target.checked)} id="biocheck" />
-                        <label htmlFor="biocheck" style={{ fontSize: '0.85rem', color: 'var(--color-text)' }}>Biometria / MFA</label>
-                    </div>
-                </Row>
+                <div style={{ display: 'flex', gap: 12 }}>
+                    <FormInput label="Cor" value={form.color} onChange={v => set('color', v)} />
+                    <FormInput label="ID Card" value={form.idCard} onChange={v => set('idCard', v)} />
+                </div>
+                <div style={{ display: 'flex', gap: 12 }}>
+                    <FormInput label="Data de Fabricação" type="date" value={form.manufactureDate} onChange={v => set('manufactureDate', v)} style={{ flex: 1 }} />
+                    <div style={{ flex: 1, paddingTop: 18 }}><FormCheckbox label="Biometria / MFA" checked={form.biometricMfaEnabled} onChange={v => set('biometricMfaEnabled', v)} id="biocheck" /></div>
+                </div>
 
                 {/* Source Type (create only) */}
                 {!isEdit && (
-                    <SelectField label="Origem do Equipamento" value={form.sourceType} onChange={v => set('sourceType', v)}
+                    <FormSelect label="Origem do Equipamento" value={form.sourceType} onChange={v => set('sourceType', v)}
                         options={[
                             { value: 'MANUAL_REGISTRATION', label: 'Registo Manual' },
                             { value: 'MANUAL_PURCHASE', label: 'Compra / Aquisição' },
@@ -371,23 +486,10 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
                 )}
 
                 {/* ── Purchase / Traceability — always visible ── */}
-                <div style={{
-                    border: '1px solid var(--color-border)', borderRadius: 10, padding: 14,
-                    background: 'var(--color-bg-surface)', marginTop: 4
-                }}>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--color-text)', marginBottom: 10 }}>
-                        📋 Compra / Rastreabilidade
-                    </div>
+                <SectionCard title="Compra / Rastreabilidade" icon={<span style={{fontSize: '1rem'}}>📋</span>}>
 
                     {/* Unavailable toggle */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                        <input type="checkbox" checked={purchase.purchaseInfoUnavailable}
-                            onChange={e => setPur('purchaseInfoUnavailable', e.target.checked)}
-                            id="purchaseUnavailableCheck" />
-                        <label htmlFor="purchaseUnavailableCheck" style={{ fontSize: '0.85rem', color: 'var(--color-text)' }}>
-                            Informações de compra indisponíveis
-                        </label>
-                    </div>
+                    <FormCheckbox label="Informações de compra indisponíveis" checked={purchase.purchaseInfoUnavailable} onChange={v => setPur('purchaseInfoUnavailable', v)} id="purchaseUnavailableCheck" style={{ marginBottom: 12 }} />
 
                     {purchase.purchaseInfoUnavailable ? (
                         /* Reason for unavailability */
@@ -398,44 +500,115 @@ export function EquipmentFormModal({ equipment, onClose, onSuccess }: Props) {
                                 onChange={e => setPur('purchaseInfoUnavailableReason', e.target.value)}
                                 rows={2}
                                 placeholder="Ex: Equipamento adquirido antes da implementação do sistema de rastreabilidade."
-                                style={{ ...inputStyle, resize: 'vertical' }}
+                                style={{ ...inputStyle, resize: 'vertical', borderColor: fieldErrors.purchaseInfoUnavailableReason ? '#ef4444' : 'var(--color-border)' }}
                             />
+                            {fieldErrors.purchaseInfoUnavailableReason && <div style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: 4 }}>{fieldErrors.purchaseInfoUnavailableReason}</div>}
                         </div>
                     ) : (
                         /* Purchase data fields */
                         <>
-                            <Row>
-                                <Field label="Valor de compra *" value={purchase.purchaseAmount.toString()} onChange={v => setPur('purchaseAmount', v)} placeholder="0.00" />
-                                <SelectField label="Moeda" value={purchase.currency} onChange={v => setPur('currency', v)}
+                            <div style={{ display: 'flex', gap: 12 }}>
+                                <FormInput label="Valor de compra *" value={purchase.purchaseAmount.toString()} onChange={v => setPur('purchaseAmount', v)} placeholder="0.00" error={fieldErrors.purchaseAmount} />
+                                <FormSelect label="Moeda" value={purchase.currency} onChange={v => setPur('currency', v)}
                                     options={[
                                         { value: 'AOA', label: 'AOA — Kwanza' },
                                         { value: 'USD', label: 'USD — Dólar' },
                                         { value: 'EUR', label: 'EUR — Euro' },
                                     ]}
                                 />
-                            </Row>
-                            <Row>
+                            </div>
+                            <div style={{ display: 'flex', gap: 12 }}>
+                                <FormInput label="Data de compra *" type="date" value={purchase.acquisitionDate} onChange={v => setPur('acquisitionDate', v)} error={fieldErrors.acquisitionDate} style={{ flex: 1 }} />
+                                <FormInput label="Nº do documento de compra / entrega *" value={purchase.invoiceNumber} onChange={v => setPur('invoiceNumber', v)} placeholder="Fatura, guia, ou documento interno" error={fieldErrors.invoiceNumber} />
+                            </div>
+                            <div style={{ display: 'flex', gap: 12 }}>
                                 <div style={{ flex: 1 }}>
-                                    <label style={labelStyle}>Data de compra *</label>
-                                    <input type="date" value={purchase.acquisitionDate} onChange={e => setPur('acquisitionDate', e.target.value)} style={inputStyle} />
+                                    <label style={labelStyle}>Fornecedor *</label>
+                                    <div style={{ border: fieldErrors.supplierId ? '1px solid #ef4444' : 'none', borderRadius: 6 }}>
+                                        <SupplierAutocomplete 
+                                            initialName={purchase.supplierName} 
+                                            initialPortalCode={purchase.supplierPortalCode}
+                                            onChange={(id, name, portalCode) => {
+                                                setPur('supplierId', id);
+                                                setPur('supplierName', name);
+                                                setPur('supplierPortalCode', portalCode || '');
+                                            }}
+                                        />
+                                    </div>
+                                    {fieldErrors.supplierId && <div style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: 4 }}>{fieldErrors.supplierId}</div>}
                                 </div>
-                                <Field label="Nº do documento de compra / entrega *" value={purchase.invoiceNumber} onChange={v => setPur('invoiceNumber', v)} placeholder="Fatura, guia, ou documento interno" />
-                            </Row>
-                            <Row>
-                                <Field label="Fornecedor" value={purchase.supplierName} onChange={v => setPur('supplierName', v)} />
-                                <Field label="Nº Ordem de Compra" value={purchase.purchaseOrderNumber} onChange={v => setPur('purchaseOrderNumber', v)} />
-                            </Row>
+                                <FormInput label="Nº Ordem de Compra" value={purchase.purchaseOrderNumber} onChange={v => setPur('purchaseOrderNumber', v)} />
+                            </div>
+
+                            {/* Purchase document upload */}
+                            <div style={{ marginTop: 8 }}>
+                                <FileUpload
+                                    label="Cópia da nota de compra / guia de entrega *"
+                                    file={purchaseDocFile}
+                                    existingFileName={isEdit && equipment && equipment.documents.some(d => d.documentType === 'PURCHASE_DOCUMENT') ? "Documento existente" : undefined}
+                                    onChange={(file) => {
+                                        setPurchaseDocError('');
+                                        setPurchaseDocFile(file);
+                                    }}
+                                    onRemoveExisting={() => {
+                                        // The user is replacing or removing it.
+                                    }}
+                                    accept=".pdf,.jpg,.jpeg,.png"
+                                    maxSizeMB={10}
+                                    error={purchaseDocError || fieldErrors.purchaseDocFile}
+                                    helperText="PDF, JPG ou PNG — máximo 10 MB"
+                                />
+                                {isEdit && equipment && equipment.documents.some(d => d.documentType === 'PURCHASE_DOCUMENT') && !purchaseDocFile && (
+                                    <div style={{
+                                        padding: '6px 10px', backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0',
+                                        borderRadius: 6, fontSize: '0.8rem', color: '#059669', marginTop: 8
+                                    }}>
+                                        ✅ Documento já carregado — carregue um novo arquivo acima para substituir.
+                                    </div>
+                                )}
+                            </div>
                         </>
                     )}
+                </SectionCard>
+
+                {/* ── Warranty Section ── */}
+                <SectionCard title="Garantia" icon={<span style={{fontSize: '1rem'}}>🛡️</span>}>
+
+                    <FormCheckbox label="Informações de garantia indisponíveis" checked={warranty.warrantyInfoUnavailable} onChange={v => setWar('warrantyInfoUnavailable', v)} id="warrantyUnavailableCheck" style={{ marginBottom: 12 }} />
+
+                    {warranty.warrantyInfoUnavailable ? (
+                        <div>
+                            <label style={labelStyle}>Motivo da indisponibilidade *</label>
+                            <textarea
+                                value={warranty.warrantyInfoUnavailableReason}
+                                onChange={e => setWar('warrantyInfoUnavailableReason', e.target.value)}
+                                rows={2}
+                                placeholder="Ex: Informações de garantia não disponíveis — equipamento recebido sem documentação."
+                                style={{ ...inputStyle, resize: 'vertical', borderColor: fieldErrors.warrantyInfoUnavailableReason ? '#ef4444' : 'var(--color-border)' }}
+                            />
+                            {fieldErrors.warrantyInfoUnavailableReason && <div style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: 4 }}>{fieldErrors.warrantyInfoUnavailableReason}</div>}
+                        </div>
+                    ) : (
+                        <>
+                            <div style={{ display: 'flex', gap: 12 }}>
+                                <FormInput label="Garantia (meses)" value={warranty.warrantyMonths}
+                                    onChange={v => setWar('warrantyMonths', v)} type="number" placeholder="12" error={fieldErrors.warrantyMonths} />
+                                <FormInput label="Início da garantia" type="date" value={warranty.warrantyStartDate} onChange={v => setWar('warrantyStartDate', v)} style={{ flex: 1 }} />
+                            </div>
+                            <div style={{ display: 'flex', gap: 12 }}>
+                                <FormInput label="Fim da garantia" type="date" value={warranty.warrantyEndDate} onChange={v => setWar('warrantyEndDate', v)} error={fieldErrors.warrantyEndDate} helperText={warranty.warrantyMonths && warranty.warrantyEndDate ? `Calculado automaticamente a partir de ${warranty.warrantyMonths} meses. Editável.` : undefined} style={{ flex: 1 }} />
+                                <FormInput label="Notas de garantia" value={warranty.warrantyNotes}
+                                    onChange={v => setWar('warrantyNotes', v)} placeholder="Informações adicionais" />
+                            </div>
+                        </>
+                    )}
+                </SectionCard>
+
+                <div style={{ marginTop: 16 }}>
+                    <FormTextarea label="Notas" value={form.notes} onChange={v => set('notes', v)} rows={3} />
                 </div>
 
-                <div>
-                    <label style={{ ...labelStyle }}>Notas</label>
-                    <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={3}
-                        style={{ ...inputStyle, resize: 'vertical' }} />
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
                     <button type="button" onClick={onClose} style={cancelBtnStyle}>Cancelar</button>
                     <SubmitBtn label={isEdit ? 'Salvar' : 'Criar Equipamento'} loading={saving} />
                 </div>
@@ -519,27 +692,29 @@ export function ErrorBox({ msg }: { msg: string }) {
     );
 }
 
-export function Field({ label, value, onChange, disabled, type, placeholder }: {
-    label: string; value: string; onChange: (v: string) => void; disabled?: boolean; type?: string; placeholder?: string;
+export function Field({ label, value, onChange, disabled, type, placeholder, error }: {
+    label: string; value: string; onChange: (v: string) => void; disabled?: boolean; type?: string; placeholder?: string; error?: string;
 }) {
     return (
         <div style={{ flex: 1 }}>
             <label style={labelStyle}>{label}</label>
             <input type={type || 'text'} value={value} onChange={e => onChange(e.target.value)} disabled={disabled}
-                placeholder={placeholder} style={{ ...inputStyle, opacity: disabled ? 0.6 : 1 }} />
+                placeholder={placeholder} style={{ ...inputStyle, opacity: disabled ? 0.6 : 1, borderColor: error ? '#ef4444' : 'var(--color-border)' }} />
+            {error && <div style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: 4 }}>{error}</div>}
         </div>
     );
 }
 
-export function SelectField({ label, value, onChange, options, disabled }: {
-    label: string; value: string; onChange: (v: string) => void; options: Array<{ value: string; label: string }>; disabled?: boolean;
+export function SelectField({ label, value, onChange, options, disabled, error }: {
+    label: string; value: string; onChange: (v: string) => void; options: Array<{ value: string; label: string }>; disabled?: boolean; error?: string;
 }) {
     return (
         <div style={{ flex: 1 }}>
             <label style={labelStyle}>{label}</label>
-            <select value={value} onChange={e => onChange(e.target.value)} style={{ ...inputStyle, opacity: disabled ? 0.5 : 1 }} disabled={disabled}>
+            <select value={value} onChange={e => onChange(e.target.value)} style={{ ...inputStyle, opacity: disabled ? 0.5 : 1, borderColor: error ? '#ef4444' : 'var(--color-border)' }} disabled={disabled}>
                 {options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
+            {error && <div style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: 4 }}>{error}</div>}
         </div>
     );
 }
@@ -548,21 +723,22 @@ export function Row({ children }: { children: React.ReactNode }) {
     return <div style={{ display: 'flex', gap: 12 }}>{children}</div>;
 }
 
-export function TextArea({ label, value, onChange, rows }: {
-    label: string; value: string; onChange: (v: string) => void; rows?: number;
+export function TextArea({ label, value, onChange, rows, error }: {
+    label: string; value: string; onChange: (v: string) => void; rows?: number; error?: string;
 }) {
     return (
         <div>
             <label style={labelStyle}>{label}</label>
             <textarea value={value} onChange={e => onChange(e.target.value)} rows={rows || 3}
-                style={{ ...inputStyle, resize: 'vertical' }} />
+                style={{ ...inputStyle, resize: 'vertical', borderColor: error ? '#ef4444' : 'var(--color-border)' }} />
+            {error && <div style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: 4 }}>{error}</div>}
         </div>
     );
 }
 
 export const labelStyle: React.CSSProperties = {
-    display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-muted)',
-    textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4
+    display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--color-text)',
+    marginBottom: 4
 };
 
 export const inputStyle: React.CSSProperties = {

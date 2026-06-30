@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 
 namespace AlplaPortal.Api.Controllers;
@@ -21,14 +22,25 @@ public class ITEquipmentController : BaseController
     private readonly ITEquipmentPdfService _pdfService;
     private readonly ITAssetCodeGeneratorService _assetCodeGenerator;
     private readonly Microsoft.Extensions.Configuration.IConfiguration _configuration;
+    private readonly string _attachmentStoragePath;
 
-    public ITEquipmentController(ApplicationDbContext context, IEmailService emailService, ITEquipmentAgreementService agreementService, ITEquipmentPdfService pdfService, ITAssetCodeGeneratorService assetCodeGenerator, Microsoft.Extensions.Configuration.IConfiguration configuration) : base(context)
+    public ITEquipmentController(ApplicationDbContext context, IEmailService emailService, ITEquipmentAgreementService agreementService, ITEquipmentPdfService pdfService, ITAssetCodeGeneratorService assetCodeGenerator, Microsoft.Extensions.Configuration.IConfiguration configuration, IWebHostEnvironment env) : base(context)
     {
         _emailService = emailService;
         _agreementService = agreementService;
         _pdfService = pdfService;
         _assetCodeGenerator = assetCodeGenerator;
         _configuration = configuration;
+
+        // Resolve attachment storage path (same logic as ITEquipmentDocumentsController)
+        string rootDir = env.ContentRootPath;
+        var sep = Path.DirectorySeparatorChar.ToString();
+        var srcToken = $"{sep}src{sep}";
+        var srcIdx = rootDir.IndexOf(srcToken, StringComparison.OrdinalIgnoreCase);
+        if (srcIdx > 0) rootDir = rootDir.Substring(0, srcIdx);
+        else rootDir = Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "..", ".."));
+        _attachmentStoragePath = Path.GetFullPath(Path.Combine(rootDir, "data", "attachments", "it-equipment"));
+        if (!Directory.Exists(_attachmentStoragePath)) Directory.CreateDirectory(_attachmentStoragePath);
     }
 
     // ─── Helper: Check IT role ───
@@ -174,6 +186,7 @@ public class ITEquipmentController : BaseController
 
         var eq = await _context.ITEquipments.AsNoTracking()
             .Include(e => e.Acquisition)
+                .ThenInclude(a => a.Supplier)
             .Include(e => e.Documents.Where(d => !d.IsDeleted))
             .Include(e => e.CurrentOwnerUser)
             .Include(e => e.CreatedByUser)
@@ -216,7 +229,7 @@ public class ITEquipmentController : BaseController
             eq.Notes, eq.SourceType, eq.IsActive, eq.CreatedAt, eq.UpdatedAt,
             eq.CompanyId, eq.PlantId, eq.CompanyCode, eq.PlantCode,
             eq.EquipmentTypeShortCode, eq.SequenceNumber, eq.QrCodeUrl,
-            eq.ManufactureDate,
+            eq.ManufactureDate, eq.PurchaseDocumentPending,
             CreatedByName = eq.CreatedByUser?.FullName,
             UpdatedByName = eq.UpdatedByUser?.FullName,
             Acquisition = eq.Acquisition == null ? null : new
@@ -226,10 +239,16 @@ public class ITEquipmentController : BaseController
                 eq.Acquisition.PaymentReference, eq.Acquisition.PaymentDate,
                 eq.Acquisition.PurchaseAmount, eq.Acquisition.Currency,
                 eq.Acquisition.WarrantyStartDate, eq.Acquisition.WarrantyEndDate,
+                eq.Acquisition.WarrantyMonths,
                 eq.Acquisition.WarrantyNotes, eq.Acquisition.AcquisitionNotes,
                 eq.Acquisition.PurchaseRequestNumber,
                 eq.Acquisition.PurchaseInfoUnavailable,
-                eq.Acquisition.PurchaseInfoUnavailableReason
+                eq.Acquisition.PurchaseInfoUnavailableReason,
+                eq.Acquisition.WarrantyInfoUnavailable,
+                eq.Acquisition.WarrantyInfoUnavailableReason,
+                eq.Acquisition.SupplierId,
+                SupplierPortalCode = eq.Acquisition.Supplier?.PortalCode,
+                SupplierTaxId = eq.Acquisition.Supplier?.TaxId
             },
             Documents = eq.Documents.Select(d => new
             {
@@ -341,26 +360,60 @@ public class ITEquipmentController : BaseController
                     return BadRequest(new { detail = "Informe o motivo da indisponibilidade das informações de compra." });
             }
 
+            // ── Warranty validation and auto-calculation ──
+            var warrantyUnavailable = acqDto.WarrantyInfoUnavailable == true;
+            if (!warrantyUnavailable && !isUnavailable)
+            {
+                // When purchase info is available and warranty info is available, require at least warrantyMonths or warrantyEndDate
+                if (!acqDto.WarrantyMonths.HasValue && !acqDto.WarrantyEndDate.HasValue)
+                    return BadRequest(new { detail = "Informe a garantia (meses) ou o fim da garantia, ou marque as informações de garantia como indisponíveis." });
+            }
+            if (warrantyUnavailable)
+            {
+                if (string.IsNullOrWhiteSpace(acqDto.WarrantyInfoUnavailableReason))
+                    return BadRequest(new { detail = "Informe o motivo da indisponibilidade das informações de garantia." });
+            }
+
+            // Auto-calculate warranty dates
+            DateTime? warrantyStart = acqDto.WarrantyStartDate ?? acqDto.AcquisitionDate;
+            DateTime? warrantyEnd = acqDto.WarrantyEndDate;
+            if (!warrantyEnd.HasValue && acqDto.WarrantyMonths.HasValue && warrantyStart.HasValue)
+            {
+                warrantyEnd = warrantyStart.Value.AddMonths(acqDto.WarrantyMonths.Value);
+            }
+
             var acq = new ITEquipmentAcquisition
             {
                 EquipmentId = equipment.Id,
                 AcquisitionDate = acqDto.AcquisitionDate,
                 SupplierName = acqDto.SupplierName?.Trim(),
+                PurchaseRequestId = acqDto.PurchaseRequestId,
+                PurchaseRequestNumber = acqDto.PurchaseRequestNumber?.Trim(),
                 PurchaseOrderNumber = acqDto.PurchaseOrderNumber?.Trim(),
                 InvoiceNumber = acqDto.InvoiceNumber?.Trim(),
                 PaymentReference = acqDto.PaymentReference?.Trim(),
                 PaymentDate = acqDto.PaymentDate,
                 PurchaseAmount = acqDto.PurchaseAmount,
                 Currency = acqDto.Currency?.Trim(),
-                WarrantyStartDate = acqDto.WarrantyStartDate,
-                WarrantyEndDate = acqDto.WarrantyEndDate,
+                WarrantyStartDate = warrantyUnavailable ? null : warrantyStart,
+                WarrantyEndDate = warrantyUnavailable ? null : warrantyEnd,
+                WarrantyMonths = warrantyUnavailable ? null : acqDto.WarrantyMonths,
                 WarrantyNotes = acqDto.WarrantyNotes?.Trim(),
                 AcquisitionNotes = acqDto.AcquisitionNotes?.Trim(),
                 PurchaseInfoUnavailable = isUnavailable,
                 PurchaseInfoUnavailableReason = isUnavailable ? acqDto.PurchaseInfoUnavailableReason?.Trim() : null,
-                CreatedByUserId = userId
+                WarrantyInfoUnavailable = warrantyUnavailable,
+                WarrantyInfoUnavailableReason = warrantyUnavailable ? acqDto.WarrantyInfoUnavailableReason?.Trim() : null,
+                CreatedByUserId = userId,
+                SupplierId = acqDto.SupplierId
             };
             _context.ITEquipmentAcquisitions.Add(acq);
+
+            // Set PurchaseDocumentPending flag when purchase info is available (document must be uploaded separately)
+            if (!isUnavailable)
+            {
+                equipment.PurchaseDocumentPending = true;
+            }
         }
 
         // Movement log: CREATED
@@ -379,6 +432,445 @@ public class ITEquipmentController : BaseController
             $"O equipamento <strong>{equipment.AssetTag}</strong> ({equipment.EquipmentType}) foi registado no inventário.");
 
         return Ok(new { id = equipment.Id, assetTag = equipment.AssetTag, assetCode = equipment.AssetTag, qrCodeUrl = equipment.QrCodeUrl });
+    }
+
+    // ─── POST /api/it/equipment/batch ── (Batch equipment creation with purchase document) ───
+    [HttpPost("batch")]
+    [RequestSizeLimit(25 * 1024 * 1024)] // 25MB for multipart with document
+    public async Task<IActionResult> CreateBatch(
+        [FromForm] int companyId,
+        [FromForm] int plantId,
+        [FromForm] string equipmentType,
+        [FromForm] string? statusCode,
+        [FromForm] string? manufacturer,
+        [FromForm] string? model,
+        [FromForm] string? color,
+        [FromForm] string? manufactureDate,
+        [FromForm] string? sourceType,
+        [FromForm] string? notes,
+        [FromForm] int quantity,
+        [FromForm] string? itemsJson,
+        // ── Acquisition / purchase traceability (shared for all items) ──
+        [FromForm] int? supplierId,
+        [FromForm] string? supplierName,
+        [FromForm] string? purchaseAmount,
+        [FromForm] string? currency,
+        [FromForm] string? acquisitionDate,
+        [FromForm] string? invoiceNumber,
+        [FromForm] string? purchaseRequestId,
+        [FromForm] string? purchaseRequestNumber,
+        [FromForm] string? purchaseOrderNumber,
+        [FromForm] bool purchaseInfoUnavailable,
+        [FromForm] string? purchaseInfoUnavailableReason,
+        // ── Warranty (shared for all items) ──
+        [FromForm] string? warrantyMonths,
+        [FromForm] string? warrantyStartDate,
+        [FromForm] string? warrantyEndDate,
+        [FromForm] string? warrantyNotes,
+        [FromForm] bool warrantyInfoUnavailable,
+        [FromForm] string? warrantyInfoUnavailableReason,
+        // ── Purchase document file ──
+        [FromForm] IFormFile? purchaseDocument)
+    {
+        if (!HasITAccess()) return Forbid();
+
+        // ── 1. Validate batch size ──
+        if (quantity < 2 || quantity > 100)
+            return BadRequest(new { detail = "O lote deve conter no mínimo 2 equipamentos. Para criar apenas 1 equipamento, utilize o cadastro individual." });
+
+        // ── 2. Validate required shared fields ──
+        if (companyId <= 0)
+            return BadRequest(new { detail = "Empresa é obrigatória." });
+        if (plantId <= 0)
+            return BadRequest(new { detail = "Planta é obrigatória." });
+        if (string.IsNullOrWhiteSpace(equipmentType))
+            return BadRequest(new { detail = "Tipo de equipamento é obrigatório." });
+
+        // ── 3. Parse individual items JSON ──
+        var items = new List<BatchItemDto>();
+        if (!string.IsNullOrWhiteSpace(itemsJson))
+        {
+            try
+            {
+                items = System.Text.Json.JsonSerializer.Deserialize<List<BatchItemDto>>(itemsJson,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                    ?? new List<BatchItemDto>();
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                return BadRequest(new { detail = "Formato inválido para os itens individuais." });
+            }
+        }
+
+        // Pad items list if fewer than quantity (items are optional — empty rows are valid)
+        while (items.Count < quantity)
+        {
+            items.Add(new BatchItemDto { Index = items.Count + 1 });
+        }
+
+        if (items.Count > quantity)
+            return BadRequest(new { detail = $"Número de itens individuais ({items.Count}) excede a quantidade ({quantity})." });
+
+        // ── 4. Validate and Resolve Supplier ──
+        string? resolvedSupplierName = null;
+        if (!purchaseInfoUnavailable)
+        {
+            if (supplierId == null)
+                return BadRequest(new { detail = "Selecione um fornecedor ativo." });
+
+            var supplier = await _context.Suppliers.FirstOrDefaultAsync(s => s.Id == supplierId);
+            if (supplier == null || supplier.RegistrationStatus != "ACTIVE")
+                return BadRequest(new { detail = "Fornecedor inválido ou inativo." });
+
+            resolvedSupplierName = supplier.Name;
+        }
+
+        // ── 5. Validate purchase traceability ──
+        decimal? parsedPurchaseAmount = null;
+        DateTime? parsedAcquisitionDate = null;
+
+        if (!purchaseInfoUnavailable)
+        {
+            if (!string.IsNullOrWhiteSpace(purchaseAmount))
+            {
+                if (!decimal.TryParse(purchaseAmount, NumberStyles.Any, CultureInfo.InvariantCulture, out var pa) || pa <= 0)
+                    return BadRequest(new { detail = "Valor unitário de compra inválido." });
+                parsedPurchaseAmount = pa;
+            }
+            else
+            {
+                return BadRequest(new { detail = "Informe o valor unitário de compra, data de compra e número do documento, ou marque as informações como indisponíveis." });
+            }
+
+            if (!string.IsNullOrWhiteSpace(acquisitionDate))
+            {
+                if (!DateTime.TryParse(acquisitionDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out var ad))
+                    return BadRequest(new { detail = "Data de compra inválida." });
+                parsedAcquisitionDate = ad;
+            }
+            else
+            {
+                return BadRequest(new { detail = "Informe o valor unitário de compra, data de compra e número do documento, ou marque as informações como indisponíveis." });
+            }
+
+            if (string.IsNullOrWhiteSpace(invoiceNumber))
+                return BadRequest(new { detail = "Informe o valor unitário de compra, data de compra e número do documento, ou marque as informações como indisponíveis." });
+
+            // ── Validate purchase document file (mandatory when purchase info is available) ──
+            if (purchaseDocument == null || purchaseDocument.Length == 0)
+                return BadRequest(new { detail = "Carregue a cópia da nota de compra / guia de entrega." });
+
+            if (purchaseDocument.Length > 10 * 1024 * 1024)
+                return BadRequest(new { detail = "O ficheiro de compra excede o limite de 10MB." });
+
+            var allowedExtensions = new[] { ".pdf", ".jpg", ".jpeg", ".png" };
+            var docExtension = Path.GetExtension(purchaseDocument.FileName).ToLowerInvariant();
+            if (!allowedExtensions.Contains(docExtension))
+                return BadRequest(new { detail = "Formato de ficheiro não permitido para documentos de compra. Utilize PDF, JPG ou PNG." });
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(purchaseInfoUnavailableReason))
+                return BadRequest(new { detail = "Informe o motivo da indisponibilidade das informações de compra." });
+        }
+
+        // ── 6. Validate warranty ──
+        int? parsedWarrantyMonths = null;
+        DateTime? parsedWarrantyStartDate = null;
+        DateTime? parsedWarrantyEndDate = null;
+
+        if (!warrantyInfoUnavailable && !purchaseInfoUnavailable)
+        {
+            if (!string.IsNullOrWhiteSpace(warrantyMonths))
+            {
+                if (!int.TryParse(warrantyMonths, out var wm) || wm <= 0)
+                    return BadRequest(new { detail = "Garantia (meses) inválida." });
+                parsedWarrantyMonths = wm;
+            }
+            if (!string.IsNullOrWhiteSpace(warrantyEndDate))
+            {
+                if (!DateTime.TryParse(warrantyEndDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out var we))
+                    return BadRequest(new { detail = "Data de fim de garantia inválida." });
+                parsedWarrantyEndDate = we;
+            }
+            if (!string.IsNullOrWhiteSpace(warrantyStartDate))
+            {
+                if (!DateTime.TryParse(warrantyStartDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out var ws))
+                    return BadRequest(new { detail = "Data de início de garantia inválida." });
+                parsedWarrantyStartDate = ws;
+            }
+
+            if (!parsedWarrantyMonths.HasValue && !parsedWarrantyEndDate.HasValue)
+                return BadRequest(new { detail = "Informe a garantia (meses) ou o fim da garantia, ou marque as informações de garantia como indisponíveis." });
+        }
+        if (warrantyInfoUnavailable)
+        {
+            if (string.IsNullOrWhiteSpace(warrantyInfoUnavailableReason))
+                return BadRequest(new { detail = "Informe o motivo da indisponibilidade das informações de garantia." });
+        }
+
+        // Auto-calculate warranty dates
+        DateTime? calcWarrantyStart = parsedWarrantyStartDate ?? parsedAcquisitionDate;
+        DateTime? calcWarrantyEnd = parsedWarrantyEndDate;
+        if (!calcWarrantyEnd.HasValue && parsedWarrantyMonths.HasValue && calcWarrantyStart.HasValue)
+        {
+            calcWarrantyEnd = calcWarrantyStart.Value.AddMonths(parsedWarrantyMonths.Value);
+        }
+
+        // ── 7. Validate individual items — check for duplicate serial numbers ──
+        var serialNumbers = items
+            .Where(i => !string.IsNullOrWhiteSpace(i.SerialNumber))
+            .Select(i => i.SerialNumber!.Trim())
+            .ToList();
+
+        if (serialNumbers.Count != serialNumbers.Distinct(StringComparer.OrdinalIgnoreCase).Count())
+            return BadRequest(new { detail = "Números de série duplicados encontrados nos itens do lote." });
+
+        if (serialNumbers.Count > 0)
+        {
+            var existingSerials = await _context.ITEquipments
+                .Where(e => serialNumbers.Contains(e.SerialNumber!))
+                .Select(e => e.SerialNumber)
+                .ToListAsync();
+            if (existingSerials.Count > 0)
+                return BadRequest(new { detail = $"Número(s) de série já registado(s): {string.Join(", ", existingSerials)}" });
+        }
+
+        // ── 8. Generate asset codes atomically ──
+        List<GeneratedAssetCode> generatedCodes;
+        try
+        {
+            generatedCodes = await _assetCodeGenerator.GenerateBatchAsync(
+                companyId, plantId, equipmentType, quantity);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { detail = ex.Message });
+        }
+
+        // ── 9. Store purchase document file (before DB writes — rollback-safe) ──
+        string? docStorageFileName = null;
+        string? docFileHash = null;
+        string? docSanitizedName = null;
+        string? docFilePath = null;
+        Guid docFileId = Guid.NewGuid();
+
+        if (!purchaseInfoUnavailable && purchaseDocument != null)
+        {
+            var docExtension = Path.GetExtension(purchaseDocument.FileName).ToLowerInvariant();
+            docStorageFileName = $"{docFileId}{docExtension}";
+            docFilePath = Path.Combine(_attachmentStoragePath, docStorageFileName);
+
+            try
+            {
+                using (var stream = new FileStream(docFilePath, FileMode.Create))
+                {
+                    await purchaseDocument.CopyToAsync(stream);
+                }
+
+                using (var streamForHash = new FileStream(docFilePath, FileMode.Open, FileAccess.Read))
+                using (var sha256 = SHA256.Create())
+                {
+                    var hashBytes = await sha256.ComputeHashAsync(streamForHash);
+                    docFileHash = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
+                }
+
+                docSanitizedName = SanitizeFileName(purchaseDocument.FileName);
+            }
+            catch (Exception ex)
+            {
+                // Clean up partial file if it was written
+                if (docFilePath != null && System.IO.File.Exists(docFilePath))
+                {
+                    try { System.IO.File.Delete(docFilePath); } catch { /* best effort */ }
+                }
+                return StatusCode(500, new { detail = $"Falha ao guardar o documento de compra: {ex.Message}" });
+            }
+        }
+
+        // ── 10. Create all equipment, acquisition, document and movement records ──
+        var userId = CurrentUserId;
+        var resolvedSourceType = sourceType ?? ITEquipmentConstants.SourceType.ManualRegistration;
+        var resolvedStatusCode = statusCode ?? ITEquipmentConstants.EquipmentStatus.Available;
+        DateTime? parsedManufactureDate = null;
+        if (!string.IsNullOrWhiteSpace(manufactureDate))
+        {
+            if (DateTime.TryParse(manufactureDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out var md))
+                parsedManufactureDate = md;
+        }
+
+        var plantEntity = await _context.Set<Plant>().AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == plantId);
+
+        var createdItems = new List<object>();
+
+        try
+        {
+            for (int i = 0; i < quantity; i++)
+            {
+                var gen = generatedCodes[i];
+                var item = items[i];
+
+                var eq = new ITEquipment
+                {
+                    AssetTag = gen.AssetCode,
+                    SequenceNumber = gen.SequenceNumber,
+                    CompanyId = companyId,
+                    PlantId = plantId,
+                    CompanyCode = gen.CompanyCode,
+                    PlantCode = gen.PlantCode,
+                    EquipmentTypeShortCode = gen.TypeShortCode,
+                    Hostname = item.Hostname?.Trim(),
+                    Plant = plantEntity?.Name ?? plantId.ToString(),
+                    EquipmentType = equipmentType,
+                    StatusCode = resolvedStatusCode,
+                    Manufacturer = manufacturer?.Trim(),
+                    Model = model?.Trim(),
+                    SerialNumber = item.SerialNumber?.Trim(),
+                    MacAddress = item.MacAddress?.Trim(),
+                    WifiMacAddress = item.WifiMacAddress?.Trim(),
+                    Color = color?.Trim(),
+                    IdCard = item.IdCard?.Trim(),
+                    Notes = CombineNotes(notes, item.Notes),
+                    ManufactureDate = parsedManufactureDate,
+                    SourceType = resolvedSourceType,
+                    IsActive = true,
+                    PurchaseDocumentPending = false, // Batch ensures document is included in transaction
+                    CreatedByUserId = userId
+                };
+
+                eq.QrCodeUrl = gen.BuildQrCodeUrl(eq.Id);
+                _context.ITEquipments.Add(eq);
+
+                // Acquisition record
+                var acq = new ITEquipmentAcquisition
+                {
+                    EquipmentId = eq.Id,
+                    AcquisitionDate = parsedAcquisitionDate,
+                    SupplierId = supplierId,
+                    SupplierName = resolvedSupplierName?.Trim(),
+                    PurchaseRequestId = string.IsNullOrWhiteSpace(purchaseRequestId) ? null : Guid.Parse(purchaseRequestId),
+                    PurchaseRequestNumber = purchaseRequestNumber?.Trim(),
+                    PurchaseOrderNumber = purchaseOrderNumber?.Trim(),
+                    InvoiceNumber = purchaseInfoUnavailable ? null : invoiceNumber?.Trim(),
+                    PurchaseAmount = parsedPurchaseAmount,
+                    Currency = (currency ?? "AOA").Trim(),
+                    WarrantyStartDate = warrantyInfoUnavailable ? null : calcWarrantyStart,
+                    WarrantyEndDate = warrantyInfoUnavailable ? null : calcWarrantyEnd,
+                    WarrantyMonths = warrantyInfoUnavailable ? null : parsedWarrantyMonths,
+                    WarrantyNotes = warrantyNotes?.Trim(),
+                    PurchaseInfoUnavailable = purchaseInfoUnavailable,
+                    PurchaseInfoUnavailableReason = purchaseInfoUnavailable ? purchaseInfoUnavailableReason?.Trim() : null,
+                    WarrantyInfoUnavailable = warrantyInfoUnavailable,
+                    WarrantyInfoUnavailableReason = warrantyInfoUnavailable ? warrantyInfoUnavailableReason?.Trim() : null,
+                    CreatedByUserId = userId
+                };
+                _context.ITEquipmentAcquisitions.Add(acq);
+
+                // Purchase document record (all share same StorageReference)
+                if (docStorageFileName != null)
+                {
+                    _context.ITEquipmentDocuments.Add(new ITEquipmentDocument
+                    {
+                        EquipmentId = eq.Id,
+                        AcquisitionId = acq.Id,
+                        DocumentType = ITEquipmentConstants.DocumentType.PurchaseDocument,
+                        FileName = docSanitizedName!,
+                        StorageReference = docStorageFileName,
+                        FileHash = docFileHash,
+                        UploadedAt = DateTime.UtcNow,
+                        UploadedByUserId = userId,
+                        Notes = $"Documento de compra do lote ({quantity} itens).",
+                        IsDeleted = false
+                    });
+                }
+
+                // Movement log
+                _context.ITEquipmentMovementLogs.Add(new ITEquipmentMovementLog
+                {
+                    EquipmentId = eq.Id,
+                    MovementType = ITEquipmentConstants.MovementType.Created,
+                    NewStatus = resolvedStatusCode,
+                    Notes = $"Equipamento criado em lote ({quantity} itens) com código {eq.AssetTag}.",
+                    CreatedByUserId = userId
+                });
+
+                createdItems.Add(new { id = eq.Id, assetTag = eq.AssetTag, index = i + 1 });
+            }
+
+            await _context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            // Clean up the stored document file since the transaction failed
+            if (docFilePath != null && System.IO.File.Exists(docFilePath))
+            {
+                try { System.IO.File.Delete(docFilePath); } catch { /* best effort */ }
+            }
+            return StatusCode(500, new { detail = $"Falha ao criar lote de equipamentos: {ex.Message}" });
+        }
+
+        // ── 11. Consolidated IT notification ──
+        var firstCode = generatedCodes[0].AssetCode;
+        var lastCode = generatedCodes[^1].AssetCode;
+        try
+        {
+            var email = _configuration["AppConfig:ITNotificationEmail"];
+            if (!string.IsNullOrWhiteSpace(email))
+            {
+                var bodyHtml = $@"
+                    <p>Foram registados <strong>{quantity}</strong> equipamentos em lote.</p>
+                    <table style='border-collapse:collapse;margin:12px 0'>
+                        <tr><td style='padding:4px 12px 4px 0;font-weight:bold'>Tipo:</td><td>{equipmentType}</td></tr>
+                        <tr><td style='padding:4px 12px 4px 0;font-weight:bold'>Fabricante:</td><td>{manufacturer ?? "—"}</td></tr>
+                        <tr><td style='padding:4px 12px 4px 0;font-weight:bold'>Modelo:</td><td>{model ?? "—"}</td></tr>
+                        <tr><td style='padding:4px 12px 4px 0;font-weight:bold'>Empresa:</td><td>{generatedCodes[0].CompanyCode}</td></tr>
+                        <tr><td style='padding:4px 12px 4px 0;font-weight:bold'>Planta:</td><td>{generatedCodes[0].PlantCode}</td></tr>
+                        <tr><td style='padding:4px 12px 4px 0;font-weight:bold'>Primeiro código:</td><td>{firstCode}</td></tr>
+                        <tr><td style='padding:4px 12px 4px 0;font-weight:bold'>Último código:</td><td>{lastCode}</td></tr>
+                        <tr><td style='padding:4px 12px 4px 0;font-weight:bold'>Nº documento:</td><td>{invoiceNumber ?? "—"}</td></tr>
+                    </table>";
+
+                await _emailService.SendWorkflowNotificationAsync(
+                    email, "Departamento de T.I",
+                    $"Lote de {quantity} Equipamentos Registado — {firstCode} a {lastCode}",
+                    "Lote de Equipamentos Registado",
+                    bodyHtml);
+            }
+        }
+        catch { /* Notification failure should never block the main operation */ }
+
+        return Ok(new
+        {
+            count = quantity,
+            firstAssetCode = firstCode,
+            lastAssetCode = lastCode,
+            items = createdItems
+        });
+    }
+
+    /// <summary>Combines shared notes with per-item notes.</summary>
+    private static string? CombineNotes(string? sharedNotes, string? itemNotes)
+    {
+        var shared = sharedNotes?.Trim();
+        var item = itemNotes?.Trim();
+        if (string.IsNullOrEmpty(shared) && string.IsNullOrEmpty(item)) return null;
+        if (string.IsNullOrEmpty(shared)) return item;
+        if (string.IsNullOrEmpty(item)) return shared;
+        return $"{shared}\n---\n{item}";
+    }
+
+    /// <summary>Sanitizes a file name for safe storage.</summary>
+    private static string SanitizeFileName(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName)) return "unnamed_file";
+        string nameOnly = Path.GetFileNameWithoutExtension(fileName);
+        string extension = Path.GetExtension(fileName);
+        string sanitized = Regex.Replace(nameOnly, @"[^a-zA-Z0-9\s\-_]", "");
+        sanitized = sanitized.Replace(" ", "_").Trim();
+        if (string.IsNullOrEmpty(sanitized)) sanitized = "file";
+        if (sanitized.Length > 100) sanitized = sanitized.Substring(0, 100);
+        return sanitized + extension.ToLowerInvariant();
     }
 
     // ─── PUT /api/it/equipment/{id} ───
@@ -454,6 +946,41 @@ public class ITEquipmentController : BaseController
                     return BadRequest(new { detail = "Informe o motivo da indisponibilidade das informações de compra." });
             }
 
+            // ── Validate and Resolve Supplier ──
+            string? resolvedSupplierName = acqDto.SupplierName;
+            if (!isUnavailable)
+            {
+                if (acqDto.SupplierId == null)
+                    return BadRequest(new { detail = "Selecione um fornecedor ativo." });
+
+                var supplier = await _context.Suppliers.FirstOrDefaultAsync(s => s.Id == acqDto.SupplierId);
+                if (supplier == null || supplier.RegistrationStatus != "ACTIVE")
+                    return BadRequest(new { detail = "Fornecedor inválido ou inativo." });
+
+                resolvedSupplierName = supplier.Name;
+            }
+
+            // ── Warranty validation and auto-calculation ──
+            var warrantyUnavailable = acqDto.WarrantyInfoUnavailable == true;
+            if (!warrantyUnavailable && !isUnavailable)
+            {
+                if (!acqDto.WarrantyMonths.HasValue && !acqDto.WarrantyEndDate.HasValue)
+                    return BadRequest(new { detail = "Informe a garantia (meses) ou o fim da garantia, ou marque as informações de garantia como indisponíveis." });
+            }
+            if (warrantyUnavailable)
+            {
+                if (string.IsNullOrWhiteSpace(acqDto.WarrantyInfoUnavailableReason))
+                    return BadRequest(new { detail = "Informe o motivo da indisponibilidade das informações de garantia." });
+            }
+
+            // Auto-calculate warranty dates
+            DateTime? warrantyStart = acqDto.WarrantyStartDate ?? acqDto.AcquisitionDate;
+            DateTime? warrantyEnd = acqDto.WarrantyEndDate;
+            if (!warrantyEnd.HasValue && acqDto.WarrantyMonths.HasValue && warrantyStart.HasValue)
+            {
+                warrantyEnd = warrantyStart.Value.AddMonths(acqDto.WarrantyMonths.Value);
+            }
+
             // Load or create acquisition record
             var existingAcq = await _context.ITEquipmentAcquisitions.FirstOrDefaultAsync(a => a.EquipmentId == id);
             if (existingAcq == null)
@@ -463,19 +990,23 @@ public class ITEquipmentController : BaseController
                 {
                     EquipmentId = id,
                     AcquisitionDate = acqDto.AcquisitionDate,
-                    SupplierName = acqDto.SupplierName?.Trim(),
+                    SupplierId = acqDto.SupplierId,
+                    SupplierName = resolvedSupplierName?.Trim(),
                     PurchaseOrderNumber = acqDto.PurchaseOrderNumber?.Trim(),
                     InvoiceNumber = acqDto.InvoiceNumber?.Trim(),
                     PaymentReference = acqDto.PaymentReference?.Trim(),
                     PaymentDate = acqDto.PaymentDate,
                     PurchaseAmount = acqDto.PurchaseAmount,
                     Currency = acqDto.Currency?.Trim(),
-                    WarrantyStartDate = acqDto.WarrantyStartDate,
-                    WarrantyEndDate = acqDto.WarrantyEndDate,
+                    WarrantyStartDate = warrantyUnavailable ? null : warrantyStart,
+                    WarrantyEndDate = warrantyUnavailable ? null : warrantyEnd,
+                    WarrantyMonths = warrantyUnavailable ? null : acqDto.WarrantyMonths,
                     WarrantyNotes = acqDto.WarrantyNotes?.Trim(),
                     AcquisitionNotes = acqDto.AcquisitionNotes?.Trim(),
                     PurchaseInfoUnavailable = isUnavailable,
                     PurchaseInfoUnavailableReason = isUnavailable ? acqDto.PurchaseInfoUnavailableReason?.Trim() : null,
+                    WarrantyInfoUnavailable = warrantyUnavailable,
+                    WarrantyInfoUnavailableReason = warrantyUnavailable ? acqDto.WarrantyInfoUnavailableReason?.Trim() : null,
                     CreatedByUserId = userId
                 };
                 _context.ITEquipmentAcquisitions.Add(newAcq);
@@ -508,10 +1039,16 @@ public class ITEquipmentController : BaseController
                     TrackDiff("Nº Documento", existingAcq.InvoiceNumber ?? "—", acqDto.InvoiceNumber?.Trim() ?? "—");
                     existingAcq.InvoiceNumber = acqDto.InvoiceNumber?.Trim();
                 }
-                if (acqDto.SupplierName?.Trim() != existingAcq.SupplierName)
+                if (acqDto.SupplierId != existingAcq.SupplierId)
                 {
-                    TrackDiff("Fornecedor", existingAcq.SupplierName ?? "—", acqDto.SupplierName?.Trim() ?? "—");
-                    existingAcq.SupplierName = acqDto.SupplierName?.Trim();
+                    TrackDiff("Fornecedor", existingAcq.SupplierName ?? existingAcq.SupplierId?.ToString() ?? "—", resolvedSupplierName ?? acqDto.SupplierId?.ToString() ?? "—");
+                    existingAcq.SupplierId = acqDto.SupplierId;
+                    existingAcq.SupplierName = resolvedSupplierName?.Trim();
+                }
+                else if (resolvedSupplierName?.Trim() != existingAcq.SupplierName)
+                {
+                    TrackDiff("Nome do Fornecedor", existingAcq.SupplierName ?? "—", resolvedSupplierName?.Trim() ?? "—");
+                    existingAcq.SupplierName = resolvedSupplierName?.Trim();
                 }
                 if (acqDto.PurchaseOrderNumber?.Trim() != existingAcq.PurchaseOrderNumber)
                 {
@@ -537,6 +1074,54 @@ public class ITEquipmentController : BaseController
                 else
                 {
                     existingAcq.PurchaseInfoUnavailableReason = null;
+                }
+
+                // ── Warranty field diffs ──
+                var calcWarrantyStart = warrantyUnavailable ? null : warrantyStart;
+                var calcWarrantyEnd = warrantyUnavailable ? null : warrantyEnd;
+                var calcWarrantyMonths = warrantyUnavailable ? null : acqDto.WarrantyMonths;
+
+                if (calcWarrantyMonths != existingAcq.WarrantyMonths)
+                {
+                    TrackDiff("Garantia (meses)",
+                        existingAcq.WarrantyMonths?.ToString() ?? "—",
+                        calcWarrantyMonths?.ToString() ?? "—");
+                    existingAcq.WarrantyMonths = calcWarrantyMonths;
+                }
+                if (calcWarrantyStart != existingAcq.WarrantyStartDate)
+                {
+                    TrackDiff("Início da Garantia",
+                        existingAcq.WarrantyStartDate?.ToString("dd/MM/yyyy") ?? "—",
+                        calcWarrantyStart?.ToString("dd/MM/yyyy") ?? "—");
+                    existingAcq.WarrantyStartDate = calcWarrantyStart;
+                }
+                if (calcWarrantyEnd != existingAcq.WarrantyEndDate)
+                {
+                    TrackDiff("Fim da Garantia",
+                        existingAcq.WarrantyEndDate?.ToString("dd/MM/yyyy") ?? "—",
+                        calcWarrantyEnd?.ToString("dd/MM/yyyy") ?? "—");
+                    existingAcq.WarrantyEndDate = calcWarrantyEnd;
+                }
+                if (warrantyUnavailable != existingAcq.WarrantyInfoUnavailable)
+                {
+                    TrackDiff("Info Garantia Indisponível",
+                        existingAcq.WarrantyInfoUnavailable ? "Sim" : "Não",
+                        warrantyUnavailable ? "Sim" : "Não");
+                    existingAcq.WarrantyInfoUnavailable = warrantyUnavailable;
+                }
+                if (warrantyUnavailable)
+                {
+                    var newWarrantyReason = acqDto.WarrantyInfoUnavailableReason?.Trim();
+                    if (newWarrantyReason != existingAcq.WarrantyInfoUnavailableReason)
+                    {
+                        TrackDiff("Motivo Indisponibilidade Garantia",
+                            existingAcq.WarrantyInfoUnavailableReason ?? "—", newWarrantyReason ?? "—");
+                        existingAcq.WarrantyInfoUnavailableReason = newWarrantyReason;
+                    }
+                }
+                else
+                {
+                    existingAcq.WarrantyInfoUnavailableReason = null;
                 }
 
                 existingAcq.UpdatedAt = DateTime.UtcNow;
@@ -586,6 +1171,10 @@ public class ITEquipmentController : BaseController
         // Block assignment if non-assignable status
         if (ITEquipmentConstants.EquipmentStatus.NonAssignable.Contains(eq.StatusCode))
             return BadRequest(new { detail = $"Equipamento com status '{ITEquipmentConstants.EquipmentStatus.DisplayName(eq.StatusCode)}' não pode ser atribuído." });
+
+        // Block assignment if purchase document is pending
+        if (eq.PurchaseDocumentPending)
+            return BadRequest(new { detail = "Cadastro incompleto: documento de compra/entrega pendente. Carregue o documento antes de atribuir o equipamento." });
 
         // Block if already has an active assignment
         var activeAssignment = await _context.ITEquipmentAssignments
@@ -1811,9 +2400,17 @@ public class ITEquipmentController : BaseController
             return BadRequest(new { detail = "Nome do modelo é obrigatório." });
         if (!request.ManufacturerId.HasValue)
             return BadRequest(new { detail = "Fabricante é obrigatório." });
+        if (string.IsNullOrWhiteSpace(request.EquipmentTypeCode))
+            return BadRequest(new { detail = "Tipo de equipamento é obrigatório." });
 
         var manufacturer = await _context.ITEquipmentManufacturers.FirstOrDefaultAsync(m => m.Id == request.ManufacturerId.Value);
         if (manufacturer == null) return BadRequest(new { detail = "Fabricante não encontrado." });
+
+        // Validate equipment type exists and is active
+        var typeCode = request.EquipmentTypeCode.Trim().ToUpperInvariant();
+        var typeExists = await _context.ITEquipmentTypes.AnyAsync(t => t.Code == typeCode && t.IsActive);
+        if (!typeExists)
+            return BadRequest(new { detail = "Tipo de equipamento inválido ou inativo." });
 
         var name = request.Name.Trim();
         if (await _context.ITEquipmentModels.AnyAsync(m => m.ManufacturerId == request.ManufacturerId.Value && m.Name == name))
@@ -1826,7 +2423,7 @@ public class ITEquipmentController : BaseController
         var entity = new ITEquipmentModel
         {
             ManufacturerId = request.ManufacturerId.Value,
-            EquipmentTypeCode = request.EquipmentTypeCode?.Trim().ToUpperInvariant(),
+            EquipmentTypeCode = typeCode,
             Name = name,
             SortOrder = request.SortOrder ?? maxSort + 1,
             IsActive = true
@@ -1851,7 +2448,14 @@ public class ITEquipmentController : BaseController
                 return BadRequest(new { detail = $"Já existe um modelo '{name}' para este fabricante." });
             entity.Name = name;
         }
-        if (request.EquipmentTypeCode != null) entity.EquipmentTypeCode = request.EquipmentTypeCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(request.EquipmentTypeCode))
+        {
+            var typeCode = request.EquipmentTypeCode.Trim().ToUpperInvariant();
+            var typeExists = await _context.ITEquipmentTypes.AnyAsync(t => t.Code == typeCode && t.IsActive);
+            if (!typeExists)
+                return BadRequest(new { detail = "Tipo de equipamento inválido ou inativo." });
+            entity.EquipmentTypeCode = typeCode;
+        }
         if (request.SortOrder.HasValue) entity.SortOrder = request.SortOrder.Value;
         if (request.IsActive.HasValue) entity.IsActive = request.IsActive.Value;
         entity.UpdatedAt = DateTime.UtcNow;
@@ -2254,6 +2858,18 @@ public class ITEquipmentController : BaseController
 
     // ─── Request DTOs ───
 
+    /// <summary>Individual item data for batch equipment creation.</summary>
+    public class BatchItemDto
+    {
+        public int Index { get; set; }
+        public string? SerialNumber { get; set; }
+        public string? Hostname { get; set; }
+        public string? MacAddress { get; set; }
+        public string? WifiMacAddress { get; set; }
+        public string? IdCard { get; set; }
+        public string? Notes { get; set; }
+    }
+
     public class CreateEquipmentRequest
     {
         // AssetTag is auto-generated — not accepted from client
@@ -2282,7 +2898,10 @@ public class ITEquipmentController : BaseController
     public class AcquisitionDto
     {
         public DateTime? AcquisitionDate { get; set; }
+        public int? SupplierId { get; set; }
         public string? SupplierName { get; set; }
+        public Guid? PurchaseRequestId { get; set; }
+        public string? PurchaseRequestNumber { get; set; }
         public string? PurchaseOrderNumber { get; set; }
         /// <summary>
         /// General purchase/delivery document reference.
@@ -2295,12 +2914,17 @@ public class ITEquipmentController : BaseController
         public string? Currency { get; set; }
         public DateTime? WarrantyStartDate { get; set; }
         public DateTime? WarrantyEndDate { get; set; }
+        public int? WarrantyMonths { get; set; }
         public string? WarrantyNotes { get; set; }
         public string? AcquisitionNotes { get; set; }
         /// <summary>When true, purchase documentation is unavailable.</summary>
         public bool? PurchaseInfoUnavailable { get; set; }
         /// <summary>Mandatory reason when PurchaseInfoUnavailable = true.</summary>
         public string? PurchaseInfoUnavailableReason { get; set; }
+        /// <summary>When true, warranty information is unavailable.</summary>
+        public bool? WarrantyInfoUnavailable { get; set; }
+        /// <summary>Mandatory reason when WarrantyInfoUnavailable = true.</summary>
+        public string? WarrantyInfoUnavailableReason { get; set; }
     }
 
     public class UpdateEquipmentRequest

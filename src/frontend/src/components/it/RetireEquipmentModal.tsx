@@ -28,7 +28,7 @@ export function RetireEquipmentModal({ equipmentId, onClose, onSuccess }: Props)
                 </div>
                 <Field label="Motivo da Baixa" value={reason} onChange={setReason} placeholder="Ex: Fim de vida útil, danificado irreparável" />
                 <TextArea label="Observações" value={notes} onChange={setNotes} rows={3} />
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
                     <button type="button" onClick={onClose} style={cancelBtnStyle}>Cancelar</button>
                     <SubmitBtn label="Baixar Equipamento" loading={saving} />
                 </div>

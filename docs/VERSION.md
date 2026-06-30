@@ -2,7 +2,15 @@
 
 ## Current Version
 
-v2.202.0
+v2.203.0
+
+## [v2.203.0] - 2026-06-30
+
+### Added — IT Module UI Alignment & Settings Migration (Phase 3D)
+
+- **UI Realignment**: Synchronized the Catalog (`/it/catalogs`) and Equipment Type (`/it/types`) settings screens with the modern portal standards (`WizardLayout`, `StandardTable`, `KebabMenu`, `SearchFilterBar`). Replaced the legacy modal-based management.
+- **Guided Tours**: Created dedicated page-level guided tours for the new IT Catalogs and IT Types screens. Added tab anchor hooks (`data-tour="it-module-tabs"`) to `ITLandingPage.tsx` to properly guide users across the module.
+- **Bug Fixes**: Resolved dead code issues in `ModelWizardPage.tsx` and ensured strict TypeScript compilation (`tsc --noEmit`).
 
 ## [v2.202.0] - 2026-06-26
 

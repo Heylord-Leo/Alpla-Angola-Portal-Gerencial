@@ -46,7 +46,7 @@ export function RepairEquipmentModal({ equipmentId, statusCode, onClose, onSucce
                         <TextArea label="Observações" value={form.notes} onChange={v => set('notes', v)} />
                     </>
                 )}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
                     <button type="button" onClick={onClose} style={cancelBtnStyle}>Cancelar</button>
                     <SubmitBtn label={isInRepair ? 'Confirmar Retorno' : 'Enviar para Conserto'} loading={saving} />
                 </div>

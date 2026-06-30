@@ -117,7 +117,7 @@ export function ReactivateEquipmentModal({ equipmentId, onClose, onSuccess }: Pr
                     />
                 </label>
 
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
                     <button
                         onClick={onClose}
                         disabled={loading}

@@ -18,7 +18,9 @@ export type TourId =
     | 'page-approvals-center'
     | 'drawer-approval-area'
     | 'drawer-approval-final'
-    | 'module-it-equipment';
+    | 'module-it-equipment'
+    | 'page-it-catalogs'
+    | 'page-it-types';
 
 /** Tour hierarchy level */
 export type TourLevel = 'portal' | 'module' | 'page' | 'drawer';

@@ -4,7 +4,7 @@ import {
     Package, Activity, Network, Shield, CheckCircle,
     CreditCard, DollarSign, Archive, Users, UserCheck, Calendar, CalendarDays,
     Layers, History, FileSignature, Bell, CalendarCheck, Monitor, Settings2,
-    ClipboardList
+    ClipboardList, Wrench
 } from 'lucide-react';
 import { ROLES } from './roles';
 
@@ -266,6 +266,24 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                     to: '/it/delivery-terms',
                     roles: [ROLES.IT, ROLES.SYSTEM_ADMINISTRATOR],
                     keywords: ['ti', 'termo', 'entrega', 'responsabilidade', 'agrupado', 'pdf', 'assinatura', 'delivery']
+                },
+                {
+                    id: 'ti-settings-catalogs',
+                    type: 'link',
+                    label: 'Catálogos',
+                    icon: <Settings size={18} strokeWidth={2.5} />,
+                    to: '/it/catalogs',
+                    roles: [ROLES.IT, ROLES.SYSTEM_ADMINISTRATOR],
+                    keywords: ['ti', 'catálogo', 'fabricante', 'modelo', 'processador', 'memória', 'configuração', 'settings']
+                },
+                {
+                    id: 'ti-settings-types',
+                    type: 'link',
+                    label: 'Tipos de Equipamento',
+                    icon: <Wrench size={18} strokeWidth={2.5} />,
+                    to: '/it/types',
+                    roles: [ROLES.IT, ROLES.SYSTEM_ADMINISTRATOR],
+                    keywords: ['ti', 'tipo', 'equipamento', 'laptop', 'desktop', 'monitor', 'configuração', 'settings']
                 }
             ]
         },

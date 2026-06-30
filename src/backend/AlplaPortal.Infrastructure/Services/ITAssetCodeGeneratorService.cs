@@ -103,11 +103,101 @@ public class ITAssetCodeGeneratorService
     }
 
     /// <summary>
+    /// Generates N sequential Asset Codes for the given company, plant, and equipment type.
+    /// Atomically increments the SystemCounter by the requested quantity.
+    /// </summary>
+    public async Task<List<GeneratedAssetCode>> GenerateBatchAsync(
+        int companyId,
+        int plantId,
+        string equipmentTypeCode,
+        int quantity,
+        CancellationToken ct = default)
+    {
+        if (quantity < 1 || quantity > 100)
+            throw new ArgumentOutOfRangeException(nameof(quantity), "Quantity must be between 1 and 100.");
+
+        // 1. Resolve Company code
+        var company = await _context.Set<Company>()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == companyId, ct)
+            ?? throw new InvalidOperationException($"Company with Id {companyId} not found.");
+
+        if (string.IsNullOrWhiteSpace(company.Code))
+            throw new InvalidOperationException($"Company '{company.Name}' (Id={companyId}) does not have a Code configured.");
+
+        // 2. Resolve Plant code
+        var plant = await _context.Set<Plant>()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == plantId, ct)
+            ?? throw new InvalidOperationException($"Plant with Id {plantId} not found.");
+
+        if (string.IsNullOrWhiteSpace(plant.Code))
+            throw new InvalidOperationException($"Plant '{plant.Name}' (Id={plantId}) does not have a Code configured.");
+
+        if (plant.CompanyId != companyId)
+            throw new InvalidOperationException($"Plant '{plant.Name}' does not belong to Company '{company.Name}'.");
+
+        // 3. Resolve Equipment Type short code
+        var eqType = await _context.Set<ITEquipmentType>()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Code == equipmentTypeCode && t.IsActive, ct)
+            ?? throw new InvalidOperationException($"Equipment type with Code '{equipmentTypeCode}' not found or inactive.");
+
+        if (string.IsNullOrWhiteSpace(eqType.ShortCode))
+            throw new InvalidOperationException($"Equipment type '{eqType.DisplayName}' (Code={eqType.Code}) does not have a ShortCode configured.");
+
+        var companyCode = company.Code.Trim().ToUpperInvariant();
+        var plantCode = plant.Code.Trim().ToUpperInvariant();
+        var typeShortCode = eqType.ShortCode.Trim().ToUpperInvariant();
+
+        // 4. Build counter key
+        var counterKey = $"IT_ASSET:{companyCode}:{plantCode}:{typeShortCode}";
+
+        // 5. Atomically increment counter by quantity
+        int startSequence = await IncrementCounterByAsync(counterKey, quantity, ct);
+
+        // 6. Build QR Code URL base
+        var portalBaseUrl = _config["AppConfig:FrontendBaseUrl"]?.TrimEnd('/') ?? "";
+
+        // 7. Generate all asset codes
+        var results = new List<GeneratedAssetCode>(quantity);
+        for (int i = 0; i < quantity; i++)
+        {
+            var seq = startSequence + i;
+            var assetCode = $"{companyCode}-{plantCode}-IT-{typeShortCode}-{seq:D6}";
+            results.Add(new GeneratedAssetCode(
+                AssetCode: assetCode,
+                SequenceNumber: seq,
+                CompanyCode: companyCode,
+                PlantCode: plantCode,
+                TypeShortCode: typeShortCode,
+                PortalBaseUrl: portalBaseUrl
+            ));
+        }
+
+        _logger.LogInformation(
+            "Generated {Count} IT Asset Codes: {First} to {Last} (Counter={CounterKey})",
+            quantity, results[0].AssetCode, results[^1].AssetCode, counterKey);
+
+        return results;
+    }
+
+    /// <summary>
     /// Atomically increments the SystemCounter for the given key.
     /// Creates the counter row if it doesn't exist.
     /// Retries up to 3 times on concurrency conflicts.
     /// </summary>
     private async Task<int> IncrementCounterAsync(string counterKey, CancellationToken ct)
+    {
+        return await IncrementCounterByAsync(counterKey, 1, ct);
+    }
+
+    /// <summary>
+    /// Atomically increments the SystemCounter by the given amount.
+    /// Returns the FIRST sequence number in the allocated range.
+    /// E.g., if current=5 and amount=10, returns 6 (range is 6..15).
+    /// </summary>
+    private async Task<int> IncrementCounterByAsync(string counterKey, int amount, CancellationToken ct)
     {
         const int maxRetries = 3;
 
@@ -118,29 +208,29 @@ public class ITAssetCodeGeneratorService
                 var counter = await _context.SystemCounters
                     .FirstOrDefaultAsync(sc => sc.Id == counterKey, ct);
 
-                int seqNumber;
+                int startSequence;
 
                 if (counter == null)
                 {
-                    seqNumber = 1;
+                    startSequence = 1;
                     counter = new SystemCounter
                     {
                         Id = counterKey,
-                        CurrentValue = seqNumber,
+                        CurrentValue = amount,
                         LastUpdatedUtc = DateTime.UtcNow
                     };
                     _context.SystemCounters.Add(counter);
                 }
                 else
                 {
-                    counter.CurrentValue++;
+                    startSequence = counter.CurrentValue + 1;
+                    counter.CurrentValue += amount;
                     counter.LastUpdatedUtc = DateTime.UtcNow;
-                    seqNumber = counter.CurrentValue;
                 }
 
                 await _context.SaveChangesAsync(ct);
 
-                return seqNumber;
+                return startSequence;
             }
             catch (DbUpdateConcurrencyException) when (attempt < maxRetries)
             {
@@ -148,13 +238,12 @@ public class ITAssetCodeGeneratorService
                     "Concurrency conflict on counter {CounterKey}, attempt {Attempt}/{MaxRetries}. Retrying...",
                     counterKey, attempt, maxRetries);
 
-                // Detach tracked entities to force re-read
                 foreach (var entry in _context.ChangeTracker.Entries().ToList())
                 {
                     entry.State = EntityState.Detached;
                 }
 
-                await Task.Delay(50 * attempt, ct); // brief backoff
+                await Task.Delay(50 * attempt, ct);
             }
         }
 

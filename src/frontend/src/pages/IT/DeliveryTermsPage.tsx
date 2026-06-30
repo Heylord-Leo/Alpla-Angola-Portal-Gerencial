@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ClipboardList, Plus, Search, ChevronLeft, ChevronRight, RefreshCw, X, Download, Send, Upload, Undo2, FileText, Trash2 } from 'lucide-react';
+import { Plus, Search, ChevronLeft, ChevronRight, RefreshCw, X, Download, Send, Upload, Undo2, FileText, Trash2 } from 'lucide-react';
 import { deliveryTermsApi, itEquipmentApi } from '../../lib/itEquipmentApi';
 import { api } from '../../lib/api';
 import type {
@@ -8,6 +8,7 @@ import type {
     ITEquipmentListItem
 } from '../../types/itEquipment';
 import { DELIVERY_TERM_STATUS_CONFIG, DELIVERY_ITEM_STATUS_CONFIG, RETURN_CONDITION_CONFIG } from '../../types/itEquipment';
+import { ConfirmationDialog } from '../../components/common/ConfirmationDialog';
 
 export default function DeliveryTermsPage() {
     const [listData, setListData] = useState<ITDeliveryTermListResponse | null>(null);
@@ -15,6 +16,12 @@ export default function DeliveryTermsPage() {
     const [error, setError] = useState<string | null>(null);
     const [actionLoading, setActionLoading] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+    const [confirmAction, setConfirmAction] = useState<{
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        variant?: 'primary' | 'destructive';
+    } | null>(null);
 
     // Filters
     const [search, setSearch] = useState('');
@@ -87,20 +94,27 @@ export default function DeliveryTermsPage() {
 
     // ── Actions ──
 
-    const handleGenerate = async () => {
-        if (!termDetail || !confirm('Tem certeza que deseja CONFIRMAR A ENTREGA e gerar o PDF? Esta ação irá atribuir todos os equipamentos ao funcionário.')) return;
-        try {
-            setActionLoading(true);
-            const result = await deliveryTermsApi.generate(termDetail.id);
-            showToast(result.detail, 'success');
-            loadTermDetail(termDetail.id);
-            loadList();
-        } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : 'Erro ao confirmar.';
-            showToast(message, 'error');
-        } finally {
-            setActionLoading(false);
-        }
+    const handleGenerate = () => {
+        if (!termDetail) return;
+        setConfirmAction({
+            title: 'Confirmar Entrega',
+            message: 'Tem certeza que deseja CONFIRMAR A ENTREGA e gerar o PDF? Esta ação irá atribuir todos os equipamentos ao funcionário.',
+            onConfirm: async () => {
+                setConfirmAction(null);
+                try {
+                    setActionLoading(true);
+                    const result = await deliveryTermsApi.generate(termDetail.id);
+                    showToast(result.detail, 'success');
+                    loadTermDetail(termDetail.id);
+                    loadList();
+                } catch (err: unknown) {
+                    const message = err instanceof Error ? err.message : 'Erro ao confirmar.';
+                    showToast(message, 'error');
+                } finally {
+                    setActionLoading(false);
+                }
+            }
+        });
     };
 
     const handleSend = async () => {
@@ -151,20 +165,28 @@ export default function DeliveryTermsPage() {
         }
     };
 
-    const handleCancel = async () => {
-        if (!termDetail || !confirm('Tem certeza que deseja cancelar este termo de entrega?')) return;
-        try {
-            setActionLoading(true);
-            const result = await deliveryTermsApi.cancel(termDetail.id);
-            showToast(result.detail, 'success');
-            closeDetail();
-            loadList();
-        } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : 'Erro ao cancelar.';
-            showToast(message, 'error');
-        } finally {
-            setActionLoading(false);
-        }
+    const handleCancel = () => {
+        if (!termDetail) return;
+        setConfirmAction({
+            title: 'Cancelar Termo',
+            message: 'Tem certeza que deseja cancelar este termo de entrega?',
+            variant: 'destructive',
+            onConfirm: async () => {
+                setConfirmAction(null);
+                try {
+                    setActionLoading(true);
+                    const result = await deliveryTermsApi.cancel(termDetail.id);
+                    showToast(result.detail, 'success');
+                    closeDetail();
+                    loadList();
+                } catch (err: unknown) {
+                    const message = err instanceof Error ? err.message : 'Erro ao cancelar.';
+                    showToast(message, 'error');
+                } finally {
+                    setActionLoading(false);
+                }
+            }
+        });
     };
 
     const handleReturnItem = async () => {
@@ -189,19 +211,27 @@ export default function DeliveryTermsPage() {
         }
     };
 
-    const handleRemoveItem = async (itemId: string) => {
-        if (!termDetail || !confirm('Remover este equipamento do termo?')) return;
-        try {
-            setActionLoading(true);
-            await deliveryTermsApi.removeItem(termDetail.id, itemId);
-            showToast('Item removido.', 'success');
-            loadTermDetail(termDetail.id);
-        } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : 'Erro ao remover item.';
-            showToast(message, 'error');
-        } finally {
-            setActionLoading(false);
-        }
+    const handleRemoveItem = (itemId: string) => {
+        if (!termDetail) return;
+        setConfirmAction({
+            title: 'Remover Equipamento',
+            message: 'Remover este equipamento do termo?',
+            variant: 'destructive',
+            onConfirm: async () => {
+                setConfirmAction(null);
+                try {
+                    setActionLoading(true);
+                    await deliveryTermsApi.removeItem(termDetail.id, itemId);
+                    showToast('Item removido.', 'success');
+                    loadTermDetail(termDetail.id);
+                } catch (err: unknown) {
+                    const message = err instanceof Error ? err.message : 'Erro ao remover item.';
+                    showToast(message, 'error');
+                } finally {
+                    setActionLoading(false);
+                }
+            }
+        });
     };
 
     // ── Pagination ──
@@ -211,7 +241,7 @@ export default function DeliveryTermsPage() {
     // ── Render ──
 
     return (
-        <div className="it-delivery-terms-page" style={{ padding: '24px 32px', maxWidth: '1400px', margin: '0 auto' }}>
+        <>
             {/* Toast */}
             {toast && (
                 <div style={{
@@ -225,25 +255,25 @@ export default function DeliveryTermsPage() {
                 </div>
             )}
 
-            {/* Page Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <ClipboardList size={28} strokeWidth={2} style={{ color: '#3b82f6' }} />
-                    <div>
-                        <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#111827' }}>Termos de Entrega</h1>
-                        <p style={{ margin: 0, fontSize: 13, color: '#6b7280' }}>
-                            Gestão de termos de entrega agrupados de equipamento de T.I.
-                        </p>
-                    </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={loadList} style={btnSecondaryStyle}>
-                        <RefreshCw size={16} /> Atualizar
-                    </button>
-                    <button onClick={() => setShowCreateModal(true)} style={btnPrimaryStyle}>
-                        <Plus size={16} /> Novo Termo
-                    </button>
-                </div>
+            {/* Confirmation Dialog */}
+            {confirmAction && (
+                <ConfirmationDialog
+                    title={confirmAction.title}
+                    message={confirmAction.message}
+                    onConfirm={confirmAction.onConfirm}
+                    onCancel={() => setConfirmAction(null)}
+                    variant={confirmAction.variant}
+                />
+            )}
+
+            {/* Page-level action bar */}
+            <div data-tour="it-action-buttons" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '10px', marginBottom: 20 }}>
+                <button onClick={loadList} style={btnSecondaryStyle}>
+                    <RefreshCw size={16} /> Atualizar
+                </button>
+                <button onClick={() => setShowCreateModal(true)} style={btnPrimaryStyle}>
+                    <Plus size={16} /> Novo Termo
+                </button>
             </div>
 
             {/* Filters */}
@@ -393,7 +423,7 @@ export default function DeliveryTermsPage() {
                     onClose={() => { setReturnItemId(null); setReturnCondition('GOOD'); setReturnNotes(''); }}
                 />
             )}
-        </div>
+        </>
     );
 }
 
@@ -955,14 +985,14 @@ function ReturnItemModal({ item, condition, notes, loading, onConditionChange, o
 
 const btnPrimaryStyle: React.CSSProperties = {
     display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px',
-    background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8,
+    background: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: 8,
     fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
     textDecoration: 'none'
 };
 
 const btnSecondaryStyle: React.CSSProperties = {
     display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px',
-    background: '#f3f4f6', color: '#374151', border: '1px solid #e5e7eb', borderRadius: 8,
+    background: 'var(--color-bg-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)', borderRadius: 8,
     fontSize: 13, fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
     textDecoration: 'none'
 };
@@ -977,13 +1007,13 @@ const iconBtnStyle: React.CSSProperties = {
 };
 
 const searchInputStyle: React.CSSProperties = {
-    width: '100%', padding: '8px 12px 8px 36px', border: '1px solid #e5e7eb',
-    borderRadius: 8, fontSize: 14, outline: 'none', background: '#fff'
+    width: '100%', padding: '8px 12px 8px 36px', border: '1px solid var(--color-border)',
+    borderRadius: 8, fontSize: 14, outline: 'none', background: 'var(--color-bg-surface)'
 };
 
 const selectStyle: React.CSSProperties = {
-    padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 8,
-    fontSize: 14, background: '#fff', color: '#374151', cursor: 'pointer'
+    padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 8,
+    fontSize: 14, background: 'var(--color-bg-surface)', color: 'var(--color-text)', cursor: 'pointer'
 };
 
 const thStyle: React.CSSProperties = {

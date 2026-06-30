@@ -31,7 +31,7 @@ export default function ITEquipmentLabelPage() {
     if (loading) {
         return (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-                <Loader2 size={28} style={{ animation: 'spin 1s linear infinite', color: '#3b82f6' }} />
+                <Loader2 size={28} style={{ animation: 'spin 1s linear infinite', color: 'var(--color-primary)' }} />
                 <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
             </div>
         );

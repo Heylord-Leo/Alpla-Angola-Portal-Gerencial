@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { itEquipmentApi } from '../../lib/itEquipmentApi';
 import { api } from '../../lib/api';
-import { ModalWrapper, SubmitBtn, ErrorBox, Field, Row, TextArea, cancelBtnStyle, labelStyle, inputStyle } from './EquipmentFormModal';
+import { ModalWrapper, SubmitBtn, ErrorBox, cancelBtnStyle, labelStyle, inputStyle } from './EquipmentFormModal';
+import { FormInput } from '../common/form/FormInput';
+import { FormSelect } from '../common/form/FormSelect';
+import { FormTextarea } from '../common/form/FormTextarea';
 
 interface Props { equipmentId: string; onClose: () => void; onSuccess: () => void; }
 
@@ -217,58 +220,42 @@ export function AssignEquipmentModal({ equipmentId, onClose, onSuccess }: Props)
                     )}
                 </div>
 
-                <Field
+                <FormInput
                     label={selectedUser ? 'Email do Utilizador (preenchido automaticamente)' : 'Email do Utilizador *'}
                     value={form.assignedToEmail}
                     onChange={v => set('assignedToEmail', v)}
                 />
 
-                <div>
-                    <label style={labelStyle}>Data de disponibilização ao utilizador *</label>
-                    <input
-                        type="date"
-                        value={form.assignedDate}
-                        onChange={e => set('assignedDate', e.target.value)}
-                        required
-                        style={inputStyle}
-                    />
-                    <span style={{ fontSize: 11, color: '#888', marginTop: 2, display: 'block' }}>
-                        Data em que o equipamento foi/será disponibilizado ao utilizador.
-                    </span>
-                </div>
+                <FormInput
+                    label="Data de disponibilização ao utilizador *"
+                    type="date"
+                    value={form.assignedDate}
+                    onChange={v => set('assignedDate', v)}
+                    required
+                    helperText="Data em que o equipamento foi/será disponibilizado ao utilizador."
+                />
 
-                <Row>
-                    <div style={{ flex: 1 }}>
-                        <label style={labelStyle}>Planta</label>
-                        <select
-                            value={form.assignedToPlant}
-                            onChange={e => set('assignedToPlant', e.target.value)}
-                            disabled={loadingMaster}
-                            style={{ ...inputStyle, cursor: loadingMaster ? 'wait' : 'pointer' }}
-                        >
-                            <option value="">Selecione a planta</option>
-                            {plants.map((p: any) => (
-                                <option key={p.id} value={p.name}>{p.name}</option>
-                            ))}
-                        </select>
-                    </div>
-                    <div style={{ flex: 1 }}>
-                        <label style={labelStyle}>Departamento</label>
-                        <select
-                            value={form.assignedToDepartment}
-                            onChange={e => set('assignedToDepartment', e.target.value)}
-                            disabled={loadingMaster}
-                            style={{ ...inputStyle, cursor: loadingMaster ? 'wait' : 'pointer' }}
-                        >
-                            <option value="">Selecione o departamento</option>
-                            {departments.map((d: any) => (
-                                <option key={d.id} value={d.name}>{d.name}</option>
-                            ))}
-                        </select>
-                    </div>
-                </Row>
-                <TextArea label="Notas" value={form.notes} onChange={v => set('notes', v)} rows={2} />
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                <div style={{ display: 'flex', gap: 12 }}>
+                    <FormSelect
+                        label="Planta"
+                        value={form.assignedToPlant}
+                        onChange={v => set('assignedToPlant', v)}
+                        disabled={loadingMaster}
+                        options={[{ value: '', label: 'Selecione a planta' }, ...plants.map(p => ({ value: p.name, label: p.name }))]}
+                        style={{ flex: 1 }}
+                    />
+                    <FormSelect
+                        label="Departamento"
+                        value={form.assignedToDepartment}
+                        onChange={v => set('assignedToDepartment', v)}
+                        disabled={loadingMaster}
+                        options={[{ value: '', label: 'Selecione o departamento' }, ...departments.map(d => ({ value: d.name, label: d.name }))]}
+                        style={{ flex: 1 }}
+                    />
+                </div>
+                
+                <FormTextarea label="Notas" value={form.notes} onChange={v => set('notes', v)} rows={2} />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
                     <button type="button" onClick={onClose} style={cancelBtnStyle}>Cancelar</button>
                     <SubmitBtn label="Atribuir" loading={saving} />
                 </div>

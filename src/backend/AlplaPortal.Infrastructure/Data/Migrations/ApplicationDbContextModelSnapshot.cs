@@ -1696,6 +1696,9 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<bool>("PurchaseDocumentPending")
+                        .HasColumnType("bit");
+
                     b.Property<string>("QrCodeUrl")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
@@ -1837,6 +1840,15 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
 
                     b.Property<DateTime?>("WarrantyEndDate")
                         .HasColumnType("datetime2");
+
+                    b.Property<bool>("WarrantyInfoUnavailable")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("WarrantyInfoUnavailableReason")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("WarrantyMonths")
+                        .HasColumnType("int");
 
                     b.Property<string>("WarrantyNotes")
                         .HasColumnType("nvarchar(max)");

@@ -1303,6 +1303,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.PurchaseAmount).HasPrecision(18, 2);
             entity.Property(e => e.Currency).HasMaxLength(10);
             entity.HasOne(e => e.Equipment).WithOne(eq => eq.Acquisition).HasForeignKey<ITEquipmentAcquisition>(e => e.EquipmentId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.Supplier).WithMany().HasForeignKey(e => e.SupplierId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(e => e.CreatedByUser).WithMany().HasForeignKey(e => e.CreatedByUserId).OnDelete(DeleteBehavior.NoAction);
             entity.HasOne(e => e.UpdatedByUser).WithMany().HasForeignKey(e => e.UpdatedByUserId).OnDelete(DeleteBehavior.NoAction);
         });
