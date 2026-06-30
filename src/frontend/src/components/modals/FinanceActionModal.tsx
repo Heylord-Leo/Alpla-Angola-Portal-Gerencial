@@ -11,6 +11,7 @@ export type FinanceActionType = 'SCHEDULE' | 'PAY' | 'RETURN' | 'NOTE' | null;
 interface FinanceActionModalProps {
     show: boolean;
     action: FinanceActionType;
+    isAdvance?: boolean;
     onClose: () => void;
     onConfirm: (action: FinanceActionType, payload: { date?: string; notes?: string; file?: File | null; amount?: string }) => void;
     processing: boolean;
@@ -21,6 +22,7 @@ interface FinanceActionModalProps {
 export function FinanceActionModal({
     show,
     action,
+    isAdvance = false,
     onClose,
     onConfirm,
     processing,
@@ -51,8 +53,8 @@ export function FinanceActionModal({
 
     const getTitle = () => {
         switch (action) {
-            case 'SCHEDULE': return 'Agendar Pagamento';
-            case 'PAY': return 'Confirmar Liquidação';
+            case 'SCHEDULE': return isAdvance ? 'Agendar Adiantamento' : 'Agendar Pagamento';
+            case 'PAY': return isAdvance ? 'Confirmar Adiantamento' : 'Confirmar Liquidação';
             case 'RETURN': return 'Devolver Pedido para Ajuste';
             case 'NOTE': return 'Adicionar Observação';
             default: return '';

@@ -4550,19 +4550,50 @@ public class RequestsController : BaseController
             activeReconciliation.CompletedByUserId = actorId;
             activeReconciliation.CompletedAtUtc = DateTime.UtcNow;
 
-            var finalizedStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == RequestConstants.Statuses.PaymentCompleted);
-            request.StatusId = finalizedStatus!.Id;
-
-            request.StatusHistories.Add(new RequestStatusHistory
+            if (activeReconciliation.DifferenceAmount > 0)
             {
-                RequestId = request.Id,
-                PreviousStatusId = request.StatusId,
-                NewStatusId = finalizedStatus.Id,
-                ActorUserId = actorId,
-                ActionTaken = "Reconciled",
-                CreatedAtUtc = DateTime.UtcNow,
-                Comment = "Reconciliação finalizada (Sem divergência)."
-            });
+                var finalBalancePayment = new RequestPayment
+                {
+                    RequestId = request.Id,
+                    PaymentType = RequestPayment.PaymentTypes.FinalBalance,
+                    PaymentStatus = RequestPayment.PaymentStatuses.Planned,
+                    PlannedAmount = activeReconciliation.DifferenceAmount.Value,
+                    CreatedAtUtc = DateTime.UtcNow
+                };
+                _context.RequestPayments.Add(finalBalancePayment);
+
+                var waitingPaymentStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == RequestConstants.Statuses.PaymentRequestSent);
+                
+                request.StatusHistories.Add(new RequestStatusHistory
+                {
+                    RequestId = request.Id,
+                    PreviousStatusId = request.StatusId,
+                    NewStatusId = waitingPaymentStatus!.Id,
+                    ActorUserId = actorId,
+                    ActionTaken = "Reconciled_Balance_Created",
+                    CreatedAtUtc = DateTime.UtcNow,
+                    Comment = $"Reconciliação finalizada. Saldo remanescente de {activeReconciliation.DifferenceAmount} enviado para pagamento."
+                });
+
+                request.StatusId = waitingPaymentStatus.Id;
+            }
+            else
+            {
+                var finalizedStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == RequestConstants.Statuses.PaymentCompleted);
+                
+                request.StatusHistories.Add(new RequestStatusHistory
+                {
+                    RequestId = request.Id,
+                    PreviousStatusId = request.StatusId,
+                    NewStatusId = finalizedStatus!.Id,
+                    ActorUserId = actorId,
+                    ActionTaken = "Reconciled",
+                    CreatedAtUtc = DateTime.UtcNow,
+                    Comment = "Reconciliação finalizada (Sem saldo remanescente)."
+                });
+
+                request.StatusId = finalizedStatus.Id;
+            }
         }
         else
         {
@@ -4576,6 +4607,7 @@ public class RequestsController : BaseController
         return Ok(new { message = "Reconciliação registrada com sucesso.", statusCode = request.Status!.Code });
     }
 
+    [HttpPost("{id}/b2p/confirm-delivery")]
     public async Task<IActionResult> ConfirmDelivery(Guid id, [FromBody] ApprovalActionDto dto)
     {
         var actorId = CurrentUserId;

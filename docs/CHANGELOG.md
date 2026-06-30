@@ -2,6 +2,15 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.203.1] - 2026-06-30
+
+### Fixed — Finance List Component Crashes
+
+- **DTO Alignment**: Updated `FinanceListItemDto` in the frontend to include `paymentCondition` and `advancePaymentPercent` to correctly match the C# API response, resolving TypeScript compilation errors.
+- **Data Access Fix**: Replaced obsolete nested references (`i.request.id`, `i.request.status?.code`) with flat DTO property access (`i.id`, `i.statusCode`) in the Finance Payments list and action modal logic to prevent runtime reference errors. Corrected list path from `data?.items` to `data?.pagedResult?.items`.
+
+**Guided Tour impact: not applicable.**
+
 ## [v2.203.0] - 2026-06-30
 
 ### Added — IT Module UI Alignment & Settings Migration (Phase 3D)
