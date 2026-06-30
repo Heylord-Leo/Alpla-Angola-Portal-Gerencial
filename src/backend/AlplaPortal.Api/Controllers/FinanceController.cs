@@ -356,6 +356,8 @@ public class FinanceController : BaseController
         { 
             RequestConstants.Statuses.PoIssued, 
             RequestConstants.Statuses.PaymentRequestSent, 
+            RequestConstants.Statuses.AdvancePaymentRequired,
+            RequestConstants.Statuses.AdvancePaymentCompleted,
             RequestConstants.Statuses.PaymentScheduled, 
             RequestConstants.Statuses.Paid,
             RequestConstants.Statuses.PaymentCompleted,
@@ -404,7 +406,7 @@ public class FinanceController : BaseController
         switch(filter)
         {
             case "action":
-                var waitingActions = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentRequestSent };
+                var waitingActions = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentRequestSent, RequestConstants.Statuses.AdvancePaymentRequired };
                 query = query.Where(r => waitingActions.Contains(r.Status!.Code) || (r.RequestType!.Code == RequestConstants.Types.Payment && r.Status!.Code == RequestConstants.Statuses.FinalApproved));
                 break;
             case "scheduled":
@@ -453,7 +455,7 @@ public class FinanceController : BaseController
         foreach (var item in items)
         {
             var r = item.Request;
-            var isPaid = r.Status!.Code == RequestConstants.Statuses.Paid || r.Status.Code == RequestConstants.Statuses.PaymentCompleted || r.Status.Code == RequestConstants.Statuses.InFollowup || r.Status.Code == RequestConstants.Statuses.Completed || r.ActualPaidAtUtc.HasValue || item.PaidHistory != null;
+            var isPaid = r.Status!.Code == RequestConstants.Statuses.Paid || r.Status.Code == RequestConstants.Statuses.PaymentCompleted || r.Status.Code == RequestConstants.Statuses.InFollowup || r.Status.Code == RequestConstants.Statuses.Completed || r.Status.Code == RequestConstants.Statuses.AdvancePaymentCompleted || r.ActualPaidAtUtc.HasValue || item.PaidHistory != null;
             var isQuotation = r.RequestType!.Code == RequestConstants.Types.Quotation;
             
             var missingDocs = new List<string>();

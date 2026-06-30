@@ -698,6 +698,9 @@ export interface FinanceListItemDto {
     isMissingDocuments: boolean;
     missingDocumentTypes: string[];
     availableFinanceActions: string[];
+    // Buy-to-Pay (Phase 8)
+    paymentCondition?: string | null;
+    advancePaymentPercent?: number | null;
 }
 
 export interface FinanceListResponseDto {

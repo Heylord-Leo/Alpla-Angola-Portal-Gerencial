@@ -132,18 +132,29 @@ export default function FinancePaymentsList() {
         setFeedback({ type: 'success', message: null });
 
         try {
+            const requestItem = data?.pagedResult?.items.find(i => i.id === actionModal.requestId);
+            const isAdvance = requestItem?.statusCode === 'ADVANCE_PAYMENT_REQUIRED';
+
             if (action === 'SCHEDULE' && payload.date) {
                 if (payload.file) {
                     await api.attachments.upload(actionModal.requestId, [payload.file], 'PAYMENT_SCHEDULE');
                 }
-                await api.finance.schedulePayment(actionModal.requestId, new Date(payload.date).toISOString(), payload.notes || "Agendado via portal");
+                if (isAdvance) {
+                    await api.requests.scheduleAdvancePayment(actionModal.requestId, payload.notes || "Adiantamento agendado via portal");
+                } else {
+                    await api.finance.schedulePayment(actionModal.requestId, new Date(payload.date).toISOString(), payload.notes || "Agendado via portal");
+                }
             } else if (action === 'PAY') {
                 if (payload.file) {
                     await api.attachments.upload(actionModal.requestId, [payload.file], 'PAYMENT_PROOF');
                 }
                 const actualPaidAmount = payload.amount ? parseFloat(payload.amount) : undefined;
                 const paymentDateUtc = payload.date ? new Date(payload.date).toISOString() : undefined;
-                await api.finance.markAsPaid(actionModal.requestId, paymentDateUtc, payload.notes || "Liquidado via portal", actualPaidAmount);
+                if (isAdvance) {
+                    await api.requests.confirmAdvancePayment(actionModal.requestId, { actualPaidAmount: actualPaidAmount || 0, comment: payload.notes || "Adiantamento liquidado via portal" });
+                } else {
+                    await api.finance.markAsPaid(actionModal.requestId, paymentDateUtc, payload.notes || "Liquidado via portal", actualPaidAmount);
+                }
             } else if (action === 'RETURN' && payload.notes) {
                 await api.finance.returnForAdjustment(actionModal.requestId, payload.notes);
             } else if (action === 'NOTE' && payload.notes) {
@@ -313,12 +324,23 @@ export default function FinancePaymentsList() {
                                 <div style={{ fontSize: '0.85rem', color: '#64748b' }}>Req: {item.requesterName}</div>
                             </td>
                             <td style={{ padding: '16px', verticalAlign: 'top' }}>
-                                <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                                     <ModernTooltip content={
                                         <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{getStatusTooltip(item.statusCode, item.statusName)}</div>
                                     } side="top">
                                         <span style={{ ...getBadgeStyle(item.statusBadgeColor), cursor: 'help' }}>{item.statusName}</span>
                                     </ModernTooltip>
+
+                                    {item.statusCode === 'ADVANCE_PAYMENT_REQUIRED' && (
+                                        <span style={{ backgroundColor: '#fdf4ff', color: '#c026d3', border: '1px solid #f5d0fe', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700 }}>
+                                            Adiantamento {item.advancePaymentPercent ? `(${item.advancePaymentPercent}%)` : ''}
+                                        </span>
+                                    )}
+                                    {item.paymentCondition === 'ADVANCE_PAYMENT' && item.statusCode !== 'ADVANCE_PAYMENT_REQUIRED' && item.statusCode !== 'ADVANCE_PAYMENT_COMPLETED' && (
+                                        <span style={{ backgroundColor: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700 }}>
+                                            Saldo Final
+                                        </span>
+                                    )}
 
                                     {item.paidDateUtc ? (
                                         <ModernTooltip content={
@@ -479,6 +501,7 @@ export default function FinancePaymentsList() {
             <FinanceActionModal
                 show={actionModal.show}
                 action={actionModal.action}
+                isAdvance={data?.pagedResult?.items.find(i => i.id === actionModal.requestId)?.statusCode === 'ADVANCE_PAYMENT_REQUIRED'}
                 onClose={() => setActionModal({ show: false, action: null, requestId: null })}
                 onConfirm={handleConfirmAction}
                 processing={processing}
