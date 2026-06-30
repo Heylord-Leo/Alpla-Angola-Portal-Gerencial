@@ -14,6 +14,8 @@ using PdfSharpCore.Drawing;
 using PdfSharpCore.Drawing.Layout;
 using PdfSharpCore.Pdf;
 
+using Microsoft.Extensions.Configuration;
+
 namespace AlplaPortal.Infrastructure.Services;
 
 /// <summary>
@@ -27,6 +29,7 @@ public class ITEquipmentPdfService
     private readonly string _storageDir;
     private readonly string _brandingDir;
     private readonly string _templateDir;
+    private readonly IWebHostEnvironment _env;
 
     // Fonts
     private static readonly XFont TitleFont = new("Arial", 14, XFontStyle.Bold);
@@ -50,27 +53,23 @@ public class ITEquipmentPdfService
     private const double PageMargin = 40;
     private const double TableLabelWidth = 160;
 
-    public ITEquipmentPdfService(ILogger<ITEquipmentPdfService> logger, IWebHostEnvironment env)
+    public ITEquipmentPdfService(ILogger<ITEquipmentPdfService> logger, IWebHostEnvironment env, IConfiguration config)
     {
         _logger = logger;
+        _env = env;
 
-        // Resolve project root (same pattern as ITEquipmentAgreementService)
-        string rootDir = env.ContentRootPath;
-        var sep = Path.DirectorySeparatorChar.ToString();
-        var srcToken = $"{sep}src{sep}";
-        var srcIdx = rootDir.IndexOf(srcToken, StringComparison.OrdinalIgnoreCase);
-        if (srcIdx > 0)
-        {
-            rootDir = rootDir.Substring(0, srcIdx);
-        }
-        else
-        {
-            rootDir = Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "..", ".."));
-        }
+        var templatesRes = AlplaPortal.Infrastructure.Helpers.PathResolutionHelper.ResolvePath(
+            env, config, "ITEquipment:TemplatesPath", Path.Combine("data", "templates", "it-equipment"));
+        
+        var brandingRes = AlplaPortal.Infrastructure.Helpers.PathResolutionHelper.ResolvePath(
+            env, config, "ITEquipment:BrandingPath", Path.Combine("data", "templates", "branding"));
+        
+        var storageRes = AlplaPortal.Infrastructure.Helpers.PathResolutionHelper.ResolvePath(
+            env, config, "ITEquipment:StoragePath", Path.Combine("data", "attachments", "it-equipment"));
 
-        _templateDir = Path.GetFullPath(Path.Combine(rootDir, "data", "templates", "it-equipment"));
-        _brandingDir = Path.GetFullPath(Path.Combine(rootDir, "data", "templates", "branding"));
-        _storageDir = Path.GetFullPath(Path.Combine(rootDir, "data", "attachments", "it-equipment"));
+        _templateDir = templatesRes.ResolvedPath;
+        _brandingDir = brandingRes.ResolvedPath;
+        _storageDir = storageRes.ResolvedPath;
 
         if (!Directory.Exists(_storageDir))
             Directory.CreateDirectory(_storageDir);

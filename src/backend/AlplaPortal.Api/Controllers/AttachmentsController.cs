@@ -21,25 +21,14 @@ public class AttachmentsController : BaseController
     private readonly string _storagePath;
     private readonly SecurityOptions _securityOptions;
 
-    public AttachmentsController(ApplicationDbContext context, IWebHostEnvironment env, IOptions<SecurityOptions> securityOptions) : base(context)
+    public AttachmentsController(ApplicationDbContext context, IWebHostEnvironment env, IOptions<SecurityOptions> securityOptions, Microsoft.Extensions.Configuration.IConfiguration configuration) : base(context)
     {
         _securityOptions = securityOptions.Value;
         
-        string rootDir = env.ContentRootPath;
-        var sep = Path.DirectorySeparatorChar.ToString();
-        var srcToken = $"{sep}src{sep}";
-        var srcIdx = rootDir.IndexOf(srcToken, StringComparison.OrdinalIgnoreCase);
-        if (srcIdx > 0)
-        {
-            rootDir = rootDir.Substring(0, srcIdx);
-        }
-        else
-        {
-            rootDir = Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "..", ".."));
-        }
-
-        // Local storage path for V1: c:\dev\alpla-portal\data\attachments
-        _storagePath = Path.GetFullPath(Path.Combine(rootDir, "data", "attachments"));
+        var storageRes = AlplaPortal.Infrastructure.Helpers.PathResolutionHelper.ResolvePath(
+            env, configuration, "AppConfig:AttachmentsStoragePath", Path.Combine("data", "attachments"));
+            
+        _storagePath = storageRes.ResolvedPath;
         
         if (!Directory.Exists(_storagePath))
         {

@@ -1408,7 +1408,10 @@ public class LookupsController : ControllerBase
 
         // Storage path: data/attachments/suppliers/{supplierId}/
         var env = HttpContext.RequestServices.GetRequiredService<IWebHostEnvironment>();
-        var storagePath = Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "..", "..", "data", "attachments", "suppliers", id.ToString()));
+        var config = HttpContext.RequestServices.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>();
+        var storageRes = AlplaPortal.Infrastructure.Helpers.PathResolutionHelper.ResolvePath(
+            env, config, "AppConfig:SuppliersStoragePath", Path.Combine("data", "attachments", "suppliers"));
+        var storagePath = Path.Combine(storageRes.ResolvedPath, id.ToString());
         if (!Directory.Exists(storagePath)) Directory.CreateDirectory(storagePath);
 
         var fileId = Guid.NewGuid();
@@ -1475,7 +1478,10 @@ public class LookupsController : ControllerBase
         if (doc == null) return NotFound();
 
         var env = HttpContext.RequestServices.GetRequiredService<IWebHostEnvironment>();
-        var storagePath = Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "..", "..", "data", "attachments", doc.StoragePath));
+        var config = HttpContext.RequestServices.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>();
+        var storageRes = AlplaPortal.Infrastructure.Helpers.PathResolutionHelper.ResolvePath(
+            env, config, "AppConfig:AttachmentsStoragePath", Path.Combine("data", "attachments"));
+        var storagePath = Path.Combine(storageRes.ResolvedPath, doc.StoragePath);
         if (!System.IO.File.Exists(storagePath)) return NotFound("Arquivo físico não encontrado.");
 
         var bytes = await System.IO.File.ReadAllBytesAsync(storagePath);

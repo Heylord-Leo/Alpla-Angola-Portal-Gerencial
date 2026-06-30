@@ -27,26 +27,18 @@ public class ITEquipmentAgreementService
 
     private const string TemplateName = "Novas Politicas de uso de equipamento.docx";
 
-    public ITEquipmentAgreementService(ILogger<ITEquipmentAgreementService> logger, IWebHostEnvironment env)
+    public ITEquipmentAgreementService(ILogger<ITEquipmentAgreementService> logger, IWebHostEnvironment env, Microsoft.Extensions.Configuration.IConfiguration config)
     {
         _logger = logger;
 
-        // Resolve project root (same pattern as ITEquipmentDocumentsController)
-        string rootDir = env.ContentRootPath;
-        var sep = Path.DirectorySeparatorChar.ToString();
-        var srcToken = $"{sep}src{sep}";
-        var srcIdx = rootDir.IndexOf(srcToken, StringComparison.OrdinalIgnoreCase);
-        if (srcIdx > 0)
-        {
-            rootDir = rootDir.Substring(0, srcIdx);
-        }
-        else
-        {
-            rootDir = Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "..", ".."));
-        }
+        var templatesRes = AlplaPortal.Infrastructure.Helpers.PathResolutionHelper.ResolvePath(
+            env, config, "ITEquipment:TemplatesPath", Path.Combine("data", "templates", "it-equipment"));
+        
+        var storageRes = AlplaPortal.Infrastructure.Helpers.PathResolutionHelper.ResolvePath(
+            env, config, "ITEquipment:StoragePath", Path.Combine("data", "attachments", "it-equipment"));
 
-        _templateDir = Path.GetFullPath(Path.Combine(rootDir, "data", "templates", "it-equipment"));
-        _storageDir = Path.GetFullPath(Path.Combine(rootDir, "data", "attachments", "it-equipment"));
+        _templateDir = templatesRes.ResolvedPath;
+        _storageDir = storageRes.ResolvedPath;
 
         if (!Directory.Exists(_storageDir))
             Directory.CreateDirectory(_storageDir);

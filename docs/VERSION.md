@@ -2,9 +2,18 @@
 
 ## Current Version
 
-v2.203.0
 v2.203.1
 v2.204.0
+v2.204.1
+
+## [v2.204.1] - 2026-06-30
+
+### Fixed — IT Equipment Path Resolution & Email Dispatch Resiliency
+
+- **Robust Path Resolution**: Replaced fragile `..\..\..\` directory traversal in the IT Equipment module with `PathResolutionHelper`. Path references now utilize `appsettings.json` explicitly (falling back to IIS `ContentRootPath`), ensuring document generation and file saving work deterministically in deployed IIS environments.
+- **Email Attachment Hardening**: `EmailService` and controllers handling Delivery Terms, Return Terms, and Assignments now specifically catch `FileNotFoundException`. Missing required PDFs gracefully abort workflows with a structured `ILogger` telemetry error, rather than silently sending blank emails and permitting assignments to persist without legal coverage.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.204.0] - 2026-06-30
 

@@ -555,7 +555,7 @@ public class EmailService : IEmailService
         }
     }
 
-    public async Task<bool> SendWithAttachmentAsync(string toEmail, string recipientName, string subject, string headline, string bodyHtml, string attachmentPath, string attachmentFileName)
+    public async Task<bool> SendWithAttachmentAsync(string toEmail, string recipientName, string subject, string headline, string bodyHtml, string attachmentPath, string attachmentFileName, bool requiredAttachment = true)
     {
         try
         {
@@ -624,6 +624,11 @@ public class EmailService : IEmailService
             }
             else
             {
+                if (requiredAttachment)
+                {
+                    _logger.LogError("Required attachment file not found at {Path} for email to {Email}. Aborting email send.", attachmentPath, toEmail);
+                    throw new FileNotFoundException($"Anexo obrigatório não encontrado: {attachmentPath}");
+                }
                 _logger.LogWarning("Attachment file not found at {Path} for email to {Email}. Sending without attachment.", attachmentPath, toEmail);
             }
 
