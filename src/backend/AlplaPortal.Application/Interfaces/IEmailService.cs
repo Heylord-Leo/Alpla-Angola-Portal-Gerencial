@@ -22,7 +22,7 @@ public interface IEmailService
     /// <summary>
     /// Sends a branded workflow notification email with a file attachment.
     /// </summary>
-    Task<bool> SendWithAttachmentAsync(string toEmail, string recipientName, string subject, string headline, string bodyHtml, string attachmentPath, string attachmentFileName);
+    Task<bool> SendWithAttachmentAsync(string toEmail, string recipientName, string subject, string headline, string bodyHtml, string attachmentPath, string attachmentFileName, bool requiredAttachment = true);
 
     /// <summary>
     /// Sends an onboarding email to a newly created user with a password setup link.

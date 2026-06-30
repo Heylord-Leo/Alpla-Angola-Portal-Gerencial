@@ -16,22 +16,12 @@ public class ITEquipmentDocumentsController : BaseController
 {
     private readonly string _storagePath;
 
-    public ITEquipmentDocumentsController(ApplicationDbContext context, IWebHostEnvironment env) : base(context)
+    public ITEquipmentDocumentsController(ApplicationDbContext context, IWebHostEnvironment env, Microsoft.Extensions.Configuration.IConfiguration config) : base(context)
     {
-        string rootDir = env.ContentRootPath;
-        var sep = Path.DirectorySeparatorChar.ToString();
-        var srcToken = $"{sep}src{sep}";
-        var srcIdx = rootDir.IndexOf(srcToken, StringComparison.OrdinalIgnoreCase);
-        if (srcIdx > 0)
-        {
-            rootDir = rootDir.Substring(0, srcIdx);
-        }
-        else
-        {
-            rootDir = Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "..", ".."));
-        }
+        var storageRes = AlplaPortal.Infrastructure.Helpers.PathResolutionHelper.ResolvePath(
+            env, config, "ITEquipment:StoragePath", Path.Combine("data", "attachments", "it-equipment"));
 
-        _storagePath = Path.GetFullPath(Path.Combine(rootDir, "data", "attachments", "it-equipment"));
+        _storagePath = storageRes.ResolvedPath;
 
         if (!Directory.Exists(_storagePath))
         {

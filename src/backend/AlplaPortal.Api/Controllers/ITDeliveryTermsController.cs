@@ -40,21 +40,11 @@ public class ITDeliveryTermsController : BaseController
         _configuration = configuration;
         _logger = logger;
 
-        // Resolve storage path using the same convention as ITEquipmentDocumentsController
-        string rootDir = env.ContentRootPath;
-        var sep = Path.DirectorySeparatorChar.ToString();
-        var srcToken = $"{sep}src{sep}";
-        var srcIdx = rootDir.IndexOf(srcToken, StringComparison.OrdinalIgnoreCase);
-        if (srcIdx > 0)
-        {
-            rootDir = rootDir.Substring(0, srcIdx);
-        }
-        else
-        {
-            rootDir = Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "..", ".."));
-        }
+        // Resolve storage path
+        var storageRes = AlplaPortal.Infrastructure.Helpers.PathResolutionHelper.ResolvePath(
+            env, configuration, "ITEquipment:StoragePath", Path.Combine("data", "attachments", "it-equipment"));
 
-        _storagePath = Path.GetFullPath(Path.Combine(rootDir, "data", "attachments", "it-equipment"));
+        _storagePath = storageRes.ResolvedPath;
 
         if (!Directory.Exists(_storagePath))
         {
@@ -417,9 +407,10 @@ public class ITDeliveryTermsController : BaseController
         if (!HasITAccess()) return Forbid();
 
         using var tx = await _context.Database.BeginTransactionAsync();
+        ITEquipmentDeliveryTerm? term = null;
         try
         {
-            var term = await _context.ITEquipmentDeliveryTerms
+            term = await _context.ITEquipmentDeliveryTerms
                 .Include(t => t.Items)
                     .ThenInclude(i => i.Equipment)
                         .ThenInclude(e => e!.Acquisition)
@@ -589,8 +580,41 @@ public class ITDeliveryTermsController : BaseController
         catch (Exception ex)
         {
             await tx.RollbackAsync();
-            _logger.LogError(ex, "Failed to confirm delivery term {TermId}", id);
-            return StatusCode(500, new { detail = "Erro ao confirmar o termo de entrega. Nenhum equipamento foi alterado." });
+            
+            var traceId = HttpContext.TraceIdentifier;
+
+            var structuredLog = new
+            {
+                Action = "GenerateAndConfirm",
+                Environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Unknown",
+                RequestId = traceId,
+                DeliveryTermId = id,
+                TermStatusBefore = term?.Status,
+                ItemCount = term?.Items.Count ?? 0,
+                EmployeeEmail = term?.EmployeeEmail,
+                UserId = CurrentUserId,
+                EquipmentDetails = term?.Items?.Select(i => new
+                {
+                    DeliveryItemId = i.Id,
+                    EquipmentId = i.EquipmentId,
+                    EquipmentStatusBefore = i.Equipment?.StatusCode,
+                    ItemStatusBefore = i.ItemStatus
+                }).ToList()
+            };
+
+            if (ex is FileNotFoundException)
+            {
+                _logger.LogError(ex, "PDF generation failed due to missing template/policy file. Structured Data: {@LogData}", structuredLog);
+            }
+            else
+            {
+                _logger.LogError(ex, "Failed to confirm delivery term {TermId}. Structured Data: {@LogData}", id, structuredLog);
+            }
+
+            return StatusCode(500, new { 
+                detail = "Não foi possível confirmar a entrega porque ocorreu um erro ao gerar o PDF ou atualizar os registros. Verifique o log técnico para mais detalhes.",
+                requestId = traceId
+            });
         }
     }
 
@@ -625,17 +649,28 @@ public class ITDeliveryTermsController : BaseController
         if (!System.IO.File.Exists(storagePath))
             return BadRequest(new { detail = "Ficheiro do documento não encontrado no servidor." });
 
-        var sent = await _emailService.SendWithAttachmentAsync(
-            term.EmployeeEmail,
-            term.EmployeeName,
-            $"Termo de Entrega de Equipamento — {term.TermNumber}",
-            $"Termo de Entrega — {term.TermNumber}",
-            $"Prezado(a) {term.EmployeeName},<br><br>" +
-            $"Segue em anexo o Termo de Entrega e Responsabilidade de Equipamento de T.I referente ao termo <strong>{term.TermNumber}</strong>.<br><br>" +
-            $"Por favor, revise e assine o documento conforme as instruções internas.<br><br>" +
-            $"Atenciosamente,<br>Departamento de T.I — Alpla Angola",
-            storagePath,
-            term.GeneratedDocument.FileName);
+        bool sent = false;
+        try
+        {
+            sent = await _emailService.SendWithAttachmentAsync(
+                term.EmployeeEmail,
+                term.EmployeeName,
+                $"Termo de Entrega de Equipamento — {term.TermNumber}",
+                $"Termo de Entrega — {term.TermNumber}",
+                $"Prezado(a) {term.EmployeeName},<br><br>" +
+                $"Segue em anexo o Termo de Entrega e Responsabilidade de Equipamento de T.I referente ao termo <strong>{term.TermNumber}</strong>.<br><br>" +
+                $"Por favor, revise e assine o documento conforme as instruções internas.<br><br>" +
+                $"Atenciosamente,<br>Departamento de T.I — Alpla Angola",
+                storagePath,
+                term.GeneratedDocument.FileName,
+                requiredAttachment: true);
+        }
+        catch (FileNotFoundException ex)
+        {
+            _logger.LogError(ex, "[ITDeliveryTerms] Missing Required Email Attachment | Env: {Env} | ReqId: {TraceId} | UserId: {UserId} | Flow: {Flow} | ExpectedPath: {Path}", 
+                _configuration["AppEnvironment:Code"] ?? "UNKNOWN", HttpContext.TraceIdentifier, CurrentUserId, "Send Delivery Term Email", storagePath);
+            return StatusCode(500, new { detail = "Falha técnica: O ficheiro PDF gerado não foi encontrado no servidor." });
+        }
 
         if (sent)
         {
@@ -931,7 +966,7 @@ public class ITDeliveryTermsController : BaseController
                             </ol>
                             <p><a href='{termLink}'>Abrir Termos de Entrega no Portal</a></p>";
 
-                        var storagePath = ResolveStoragePath(pdfResult.StorageFileName);
+                        var storagePath = Path.Combine(_storagePath, pdfResult.StorageFileName);
 
                         await _emailService.SendWithAttachmentAsync(
                             itEmail, "Departamento de T.I",
@@ -939,7 +974,13 @@ public class ITDeliveryTermsController : BaseController
                             $"Devolução Completa — {term.TermNumber}",
                             bodyHtml,
                             storagePath,
-                            pdfResult.DisplayFileName);
+                            pdfResult.DisplayFileName,
+                            requiredAttachment: true);
+                    }
+                    catch (FileNotFoundException ex)
+                    {
+                        _logger.LogError(ex, "[ITDeliveryTerms] Missing Required Email Attachment | Env: {Env} | UserId: {UserId} | Flow: {Flow} | ExpectedPath: {Path}", 
+                            _configuration["AppEnvironment:Code"] ?? "UNKNOWN", CurrentUserId, "Send Return Term Email to IT", Path.Combine(_storagePath, pdfResult.StorageFileName));
                     }
                     catch (Exception emailEx)
                     {

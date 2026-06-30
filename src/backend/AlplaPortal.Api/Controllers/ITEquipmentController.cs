@@ -23,23 +23,21 @@ public class ITEquipmentController : BaseController
     private readonly ITAssetCodeGeneratorService _assetCodeGenerator;
     private readonly Microsoft.Extensions.Configuration.IConfiguration _configuration;
     private readonly string _attachmentStoragePath;
+    private readonly ILogger<ITEquipmentController> _logger;
 
-    public ITEquipmentController(ApplicationDbContext context, IEmailService emailService, ITEquipmentAgreementService agreementService, ITEquipmentPdfService pdfService, ITAssetCodeGeneratorService assetCodeGenerator, Microsoft.Extensions.Configuration.IConfiguration configuration, IWebHostEnvironment env) : base(context)
+    public ITEquipmentController(ApplicationDbContext context, IEmailService emailService, ITEquipmentAgreementService agreementService, ITEquipmentPdfService pdfService, ITAssetCodeGeneratorService assetCodeGenerator, Microsoft.Extensions.Configuration.IConfiguration configuration, IWebHostEnvironment env, ILogger<ITEquipmentController> logger) : base(context)
     {
         _emailService = emailService;
         _agreementService = agreementService;
         _pdfService = pdfService;
         _assetCodeGenerator = assetCodeGenerator;
         _configuration = configuration;
+        _logger = logger;
 
-        // Resolve attachment storage path (same logic as ITEquipmentDocumentsController)
-        string rootDir = env.ContentRootPath;
-        var sep = Path.DirectorySeparatorChar.ToString();
-        var srcToken = $"{sep}src{sep}";
-        var srcIdx = rootDir.IndexOf(srcToken, StringComparison.OrdinalIgnoreCase);
-        if (srcIdx > 0) rootDir = rootDir.Substring(0, srcIdx);
-        else rootDir = Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "..", ".."));
-        _attachmentStoragePath = Path.GetFullPath(Path.Combine(rootDir, "data", "attachments", "it-equipment"));
+        // Resolve attachment storage path
+        var storageRes = AlplaPortal.Infrastructure.Helpers.PathResolutionHelper.ResolvePath(
+            env, configuration, "ITEquipment:StoragePath", Path.Combine("data", "attachments", "it-equipment"));
+        _attachmentStoragePath = storageRes.ResolvedPath;
         if (!Directory.Exists(_attachmentStoragePath)) Directory.CreateDirectory(_attachmentStoragePath);
     }
 
@@ -1333,7 +1331,20 @@ public class ITEquipmentController : BaseController
 
                 if (!sent) warnings.Add($"Não foi possível enviar o e-mail para o utilizador ({assigneeEmail}).");
             }
-            catch
+            catch (FileNotFoundException ex)
+            {
+                warnings.Add($"Falha técnica: O ficheiro PDF não foi encontrado ao enviar e-mail para o utilizador ({assigneeEmail}).");
+                _logger.LogError(ex, "[ITEquipment] Missing Required Email Attachment | Env: {Env} | ReqId: {TraceId} | UserId: {UserId} | Flow: {Flow} | ExpectedPath: {Path}", 
+                    _configuration["AppEnvironment:Code"] ?? "UNKNOWN", HttpContext.TraceIdentifier, userId, "Assign Equipment - Email to Assignee", agreementResult.FilePath);
+                _context.ITEquipmentMovementLogs.Add(new ITEquipmentMovementLog
+                {
+                    EquipmentId = id,
+                    MovementType = ITEquipmentConstants.MovementType.EmailFailed,
+                    Notes = $"Anexo não encontrado ao enviar e-mail ao utilizador: {assigneeEmail}",
+                    CreatedByUserId = userId
+                });
+            }
+            catch (Exception ex)
             {
                 warnings.Add($"Falha ao enviar e-mail para o utilizador ({assigneeEmail}).");
                 _context.ITEquipmentMovementLogs.Add(new ITEquipmentMovementLog
@@ -1368,7 +1379,20 @@ public class ITEquipmentController : BaseController
 
                     if (!sent) warnings.Add($"Não foi possível enviar o e-mail para quem atribui ({assignerEmail}).");
                 }
-                catch
+                catch (FileNotFoundException ex)
+                {
+                    warnings.Add($"Falha técnica: O ficheiro PDF não foi encontrado ao enviar e-mail para quem atribui ({assignerEmail}).");
+                    _logger.LogError(ex, "[ITEquipment] Missing Required Email Attachment | Env: {Env} | ReqId: {TraceId} | UserId: {UserId} | Flow: {Flow} | ExpectedPath: {Path}", 
+                        _configuration["AppEnvironment:Code"] ?? "UNKNOWN", HttpContext.TraceIdentifier, userId, "Assign Equipment - Email to Assigner", agreementResult.FilePath);
+                    _context.ITEquipmentMovementLogs.Add(new ITEquipmentMovementLog
+                    {
+                        EquipmentId = id,
+                        MovementType = ITEquipmentConstants.MovementType.EmailFailed,
+                        Notes = $"Anexo não encontrado ao enviar e-mail a quem atribui: {assignerEmail}",
+                        CreatedByUserId = userId
+                    });
+                }
+                catch (Exception ex)
                 {
                     warnings.Add($"Falha ao enviar e-mail para quem atribui ({assignerEmail}).");
                     _context.ITEquipmentMovementLogs.Add(new ITEquipmentMovementLog
@@ -1580,6 +1604,19 @@ public class ITEquipmentController : BaseController
 
                     if (!sent) warnings.Add($"Não foi possível enviar o Termo de Devolução para o utilizador ({returningUserEmail}).");
                 }
+                catch (FileNotFoundException ex)
+                {
+                    warnings.Add($"Falha técnica: O ficheiro PDF não foi encontrado ao enviar Termo de Devolução para o utilizador ({returningUserEmail}).");
+                    _logger.LogError(ex, "[ITEquipment] Missing Required Email Attachment | Env: {Env} | ReqId: {TraceId} | UserId: {UserId} | Flow: {Flow} | ExpectedPath: {Path}", 
+                        _configuration["AppEnvironment:Code"] ?? "UNKNOWN", HttpContext.TraceIdentifier, userId, "Return Equipment - Email to Returning User", returnDocResult.FilePath);
+                    _context.ITEquipmentMovementLogs.Add(new ITEquipmentMovementLog
+                    {
+                        EquipmentId = id,
+                        MovementType = ITEquipmentConstants.MovementType.ReturnEmailFailed,
+                        Notes = $"Anexo não encontrado ao enviar Termo de Devolução para o utilizador: {returningUserEmail}",
+                        CreatedByUserId = userId
+                    });
+                }
                 catch (Exception ex)
                 {
                     warnings.Add($"Falha ao enviar Termo de Devolução para o utilizador ({returningUserEmail}).");
@@ -1617,6 +1654,19 @@ public class ITEquipmentController : BaseController
                     });
 
                     if (!sent) warnings.Add($"Não foi possível enviar o Termo de Devolução para quem recebeu ({receiverEmail}).");
+                }
+                catch (FileNotFoundException ex)
+                {
+                    warnings.Add($"Falha técnica: O ficheiro PDF não foi encontrado ao enviar Termo de Devolução para quem recebeu ({receiverEmail}).");
+                    _logger.LogError(ex, "[ITEquipment] Missing Required Email Attachment | Env: {Env} | ReqId: {TraceId} | UserId: {UserId} | Flow: {Flow} | ExpectedPath: {Path}", 
+                        _configuration["AppEnvironment:Code"] ?? "UNKNOWN", HttpContext.TraceIdentifier, userId, "Return Equipment - Email to Receiver", returnDocResult.FilePath);
+                    _context.ITEquipmentMovementLogs.Add(new ITEquipmentMovementLog
+                    {
+                        EquipmentId = id,
+                        MovementType = ITEquipmentConstants.MovementType.ReturnEmailFailed,
+                        Notes = $"Anexo não encontrado ao enviar Termo de Devolução para quem recebeu: {receiverEmail}",
+                        CreatedByUserId = userId
+                    });
                 }
                 catch (Exception ex)
                 {
@@ -1963,6 +2013,19 @@ public class ITEquipmentController : BaseController
             });
 
             if (!sent) warnings.Add($"Não foi possível enviar o e-mail para {name} ({email}).");
+        }
+        catch (FileNotFoundException ex)
+        {
+            warnings.Add($"Falha técnica: O ficheiro PDF não foi encontrado ao enviar e-mail para {name} ({email}).");
+            _logger.LogError(ex, "[ITEquipment] Missing Required Email Attachment | Env: {Env} | ReqId: {TraceId} | UserId: {UserId} | Flow: {Flow} | ExpectedPath: {Path}", 
+                _configuration["AppEnvironment:Code"] ?? "UNKNOWN", HttpContext.TraceIdentifier, userId, "SendEmailWithLog Helper", doc.FilePath);
+            _context.ITEquipmentMovementLogs.Add(new ITEquipmentMovementLog
+            {
+                EquipmentId = equipmentId,
+                MovementType = failMovement,
+                Notes = $"Anexo não encontrado ao enviar e-mail para {name} ({email})",
+                CreatedByUserId = userId
+            });
         }
         catch (Exception ex)
         {
