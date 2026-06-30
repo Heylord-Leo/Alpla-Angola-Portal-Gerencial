@@ -26,6 +26,7 @@ import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModa
 import { RegisterPoModal } from '../../components/RegisterPoModal';
 import { CorrectPoModal } from '../../components/CorrectPoModal';
 import { ReconciliationModal } from '../../components/ui/ReconciliationModal';
+import { FinalizeReceivingModal } from '../../components/modals/FinalizeReceivingModal';
 import { RequestActionHeader, BreadcrumbItem, OperationalGuidance } from './components/RequestActionHeader';
 import { RequestQuotations } from './components/RequestQuotations';
 import { scrollToFirstError } from '../../lib/validation';
@@ -600,24 +601,42 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
             </CollapsibleSection>
 
             {/* Approval Modal */}
-            <ApprovalModal
-                selectedQuotationName={quotations.find(q => q.isSelected)?.supplierNameSnapshot}
-                show={showApprovalModal.show}
-                type={showApprovalModal.type}
-                status={status}
-                isReworkStatus={isReworkStatus}
-                onClose={() => {
-                    setShowApprovalModal({ show: false, type: null });
-                    setApprovalComment('');
-                    setModalFeedback({ type: 'error', message: null });
-                }}
-                onConfirm={(action) => handleRequestAction(action!)}
-                comment={approvalComment}
-                setComment={setApprovalComment}
-                processing={approvalProcessing || saving || submitting}
-                feedback={modalFeedback}
-                onCloseFeedback={() => setModalFeedback(prev => ({ ...prev, message: null }))}
-            />
+            {showApprovalModal.type === 'FINALIZE' ? (
+                <FinalizeReceivingModal
+                    requestId={id!}
+                    requestNumber={requestNumber || ''}
+                    attachments={attachments}
+                    show={showApprovalModal.show}
+                    onClose={() => {
+                        setShowApprovalModal({ show: false, type: null });
+                        setModalFeedback({ type: 'error', message: null });
+                    }}
+                    onSuccess={(msg) => {
+                        setShowApprovalModal({ show: false, type: null });
+                        setFeedback({ type: 'success', message: msg || 'Finalizado com sucesso.' });
+                        loadData();
+                    }}
+                />
+            ) : (
+                <ApprovalModal
+                    selectedQuotationName={quotations.find(q => q.isSelected)?.supplierNameSnapshot}
+                    show={showApprovalModal.show}
+                    type={showApprovalModal.type}
+                    status={status}
+                    isReworkStatus={isReworkStatus}
+                    onClose={() => {
+                        setShowApprovalModal({ show: false, type: null });
+                        setApprovalComment('');
+                        setModalFeedback({ type: 'error', message: null });
+                    }}
+                    onConfirm={(action) => handleRequestAction(action!)}
+                    comment={approvalComment}
+                    setComment={setApprovalComment}
+                    processing={approvalProcessing || saving || submitting}
+                    feedback={modalFeedback}
+                    onCloseFeedback={() => setModalFeedback(prev => ({ ...prev, message: null }))}
+                />
+            )}
 
             {id && (
                 (() => {

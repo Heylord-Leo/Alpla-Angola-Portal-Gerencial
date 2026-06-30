@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+
 import { useNavigate, useLocation } from 'react-router-dom';
 import { X, ClipboardCheck, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -56,7 +56,7 @@ export function PendingApprovalsSticker() {
         ? 'Você possui 1 item aguardando aprovação.'
         : `Você possui ${count} itens aguardando aprovação.`;
 
-    return createPortal(
+    return (
         <AnimatePresence>
             {isVisible && !onApprovalsPage && (
                 <motion.div
@@ -68,9 +68,6 @@ export function PendingApprovalsSticker() {
                     role="status"
                     aria-live="polite"
                     style={{
-                        position: 'fixed',
-                        bottom: '24px',
-                        right: '24px',
                         width: '340px',
                         maxWidth: 'calc(100vw - 48px)',
                         backgroundColor: '#EFF6FF',
@@ -175,7 +172,6 @@ export function PendingApprovalsSticker() {
                     </div>
                 </motion.div>
             )}
-        </AnimatePresence>,
-        document.body
+        </AnimatePresence>
     );
 }

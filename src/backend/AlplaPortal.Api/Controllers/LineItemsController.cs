@@ -590,7 +590,7 @@ public class LineItemsController : BaseController
         if (item == null) return NotFound();
 
         // Validation: Request must be in a valid receiving status
-        var allowedRequestStatuses = new[] { "PAYMENT_COMPLETED", "WAITING_RECEIPT", "IN_FOLLOWUP" };
+        var allowedRequestStatuses = new[] { "PAYMENT_COMPLETED", "WAITING_RECEIPT", "IN_FOLLOWUP", RequestConstants.Statuses.WaitingSupplierDelivery };
         if (!allowedRequestStatuses.Contains(item.Request.Status!.Code))
         {
             return Conflict(new ProblemDetails { Title = "Ação Bloqueada", Detail = "O pedido não está em fase de recebimento.", Status = 409 });
@@ -615,7 +615,7 @@ public class LineItemsController : BaseController
 
         if (qi == null) return NotFound();
 
-        var allowedRequestStatuses = new[] { "PAYMENT_COMPLETED", "WAITING_RECEIPT", "IN_FOLLOWUP" };
+        var allowedRequestStatuses = new[] { "PAYMENT_COMPLETED", "WAITING_RECEIPT", "IN_FOLLOWUP", RequestConstants.Statuses.WaitingSupplierDelivery };
         if (!allowedRequestStatuses.Contains(qi.Quotation.Request.Status!.Code))
         {
             return Conflict(new ProblemDetails { Title = "Ação Bloqueada", Detail = "O pedido não está em fase de recebimento.", Status = 409 });

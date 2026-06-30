@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+
 import { useNavigate, useLocation } from 'react-router-dom';
 import { X, PackageCheck, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -40,7 +40,7 @@ export function PendingReceivingSticker() {
         ? 'Você possui 1 pedido aguardando confirmação de entrega.'
         : `Você possui ${count} pedidos aguardando confirmação de entrega.`;
 
-    return createPortal(
+    return (
         <AnimatePresence>
             {isVisible && !onReceivingPage && (
                 <motion.div
@@ -52,9 +52,6 @@ export function PendingReceivingSticker() {
                     role="status"
                     aria-live="polite"
                     style={{
-                        position: 'fixed',
-                        bottom: '120px', // slightly above approvals sticker to avoid overlap
-                        right: '24px',
                         width: '340px',
                         maxWidth: 'calc(100vw - 48px)',
                         backgroundColor: '#F3E8FF', // purple light
@@ -82,25 +79,27 @@ export function PendingReceivingSticker() {
                             }}
                         />
                         <div style={{ flex: 1, minWidth: 0 }}>
-                            <h4 style={{
-                                margin: '0 0 4px 0',
-                                fontSize: '0.9rem',
-                                fontWeight: 800,
+                            <div style={{
+                                fontFamily: 'var(--font-family-display)',
+                                fontWeight: 700,
+                                fontSize: '0.82rem',
                                 color: '#6B21A8',
-                                letterSpacing: '-0.01em',
-                                lineHeight: 1.2
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.03em',
+                                lineHeight: 1.3
                             }}>
                                 {title}
-                            </h4>
-                            <p style={{
-                                margin: 0,
-                                fontSize: '0.8125rem',
-                                color: '#7E22CE',
+                            </div>
+                            <div style={{
+                                fontFamily: 'var(--font-family-body)',
                                 fontWeight: 500,
-                                lineHeight: 1.4
+                                fontSize: '0.83rem',
+                                color: '#7E22CE',
+                                lineHeight: 1.5,
+                                marginTop: '4px'
                             }}>
                                 {body}
-                            </p>
+                            </div>
                         </div>
                         <button
                             onClick={handleDismiss}
@@ -132,30 +131,30 @@ export function PendingReceivingSticker() {
                         </button>
                     </div>
 
-                    <div style={{
-                        padding: '12px 14px 14px 44px',
-                        display: 'flex',
-                        justifyContent: 'flex-start'
-                    }}>
+                    {/* Action row */}
+                    <div style={{ padding: '10px 14px 14px 14px' }}>
                         <button
                             onClick={handleNavigate}
                             style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 gap: '6px',
-                                background: 'transparent',
+                                background: 'none',
                                 border: 'none',
-                                padding: 0,
-                                color: '#9333EA',
-                                fontSize: '0.8125rem',
-                                fontWeight: 800,
                                 cursor: 'pointer',
+                                fontFamily: 'var(--font-family-display)',
+                                fontWeight: 700,
+                                fontSize: '0.78rem',
+                                color: '#9333EA',
                                 textTransform: 'uppercase',
-                                letterSpacing: '0.02em',
-                                transition: 'color 0.2s'
+                                letterSpacing: '0.04em',
+                                padding: '6px 10px',
+                                borderRadius: 'var(--radius-sm)',
+                                transition: 'background-color 0.15s ease',
+                                marginLeft: '30px' // Align with text (icon width + gap)
                             }}
-                            onMouseOver={(e) => e.currentTarget.style.color = '#7E22CE'}
-                            onMouseOut={(e) => e.currentTarget.style.color = '#9333EA'}
+                            onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'rgba(147, 51, 234, 0.1)')}
+                            onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                         >
                             Ir para Recebimento
                             <ArrowRight size={14} strokeWidth={2.5} />
@@ -163,7 +162,6 @@ export function PendingReceivingSticker() {
                     </div>
                 </motion.div>
             )}
-        </AnimatePresence>,
-        document.body
+        </AnimatePresence>
     );
 }

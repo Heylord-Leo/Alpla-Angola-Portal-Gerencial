@@ -2,6 +2,17 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.204.0] - 2026-06-30
+
+### Fixed — Advance Payment & Receiving Workflow 
+
+- **Advance Payment Support**: Updated `FinancePaymentsList` to correctly display and filter requests with `ADVANCE_PAYMENT_REQUIRED` status. Unblocked the receiving pipeline (`LineItemsController`, `RequestsController`, `AttachmentsController`) to accept requests in `WAITING_SUPPLIER_DELIVERY` status, enabling payment proof upload and receiving continuation.
+- **Receiving Workspace Layout**: Fixed horizontal misalignment in the Receiving Operation screen header by replacing `PageContainer` with a localized wrapper (`motion.div`) matching `RequestEdit.tsx` constraints.
+- **Receipt Validation Modal**: Replaced the generic approval modal in `ReceivingOperation` and `RequestEdit` with a new, dedicated `FinalizeReceivingModal`. The modal strictly enforces receipt upload (or skip for services) before allowing a request to transition to `COMPLETED`.
+- **Floating Badges Cleanup**: Standardized floating notification badges (`PendingApprovalsSticker`, `PendingReceivingSticker`) by moving them out of `AppShell`'s absolute positioning into a unified `StickerContainer` for proper stacking and z-index management.
+
+**Guided Tour impact: not applicable.**
+
 ## [v2.203.1] - 2026-06-30
 
 ### Fixed — Finance List Component Crashes

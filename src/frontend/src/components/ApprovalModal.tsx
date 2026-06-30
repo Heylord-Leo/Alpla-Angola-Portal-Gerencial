@@ -46,6 +46,7 @@ interface ApprovalModalProps {
     isLastItem?: boolean;
     isPartial?: boolean;
     selectedQuotationName?: string | null;
+    children?: React.ReactNode;
 }
 
 export function ApprovalModal({
@@ -62,7 +63,8 @@ export function ApprovalModal({
     onCloseFeedback,
     isLastItem,
     isPartial,
-    selectedQuotationName
+    selectedQuotationName,
+    children
 }: ApprovalModalProps) {
     if (!show) return null;
 
@@ -221,6 +223,12 @@ export function ApprovalModal({
                                         padding: '16px'
                                     }}
                                 />
+                            </div>
+                        )}
+
+                        {children && (
+                            <div style={{ marginBottom: '32px' }}>
+                                {children}
                             </div>
                         )}
 

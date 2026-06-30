@@ -4437,9 +4437,18 @@ public class RequestsController : BaseController
             advancePayment.DivergenceNotes = dto.Comment;
         }
 
-        // Link payment proof attachment if provided
+        // Validate and link payment proof attachment if provided
         if (dto.PaymentProofAttachmentId.HasValue)
         {
+            var attachment = await _context.RequestAttachments
+                .FirstOrDefaultAsync(a => a.Id == dto.PaymentProofAttachmentId.Value && a.RequestId == id && !a.IsDeleted);
+                
+            if (attachment == null)
+                return BadRequest(new ProblemDetails { Title = "Anexo Inválido", Detail = "O comprovativo de pagamento não foi encontrado ou não pertence a este pedido.", Status = 400 });
+
+            if (attachment.AttachmentTypeCode != AttachmentConstants.Types.PaymentProof)
+                return BadRequest(new ProblemDetails { Title = "Anexo Inválido", Detail = "O ficheiro enviado não é um comprovativo de pagamento válido.", Status = 400 });
+
             advancePayment.PaymentProofAttachmentId = dto.PaymentProofAttachmentId;
         }
 
@@ -4656,8 +4665,8 @@ public class RequestsController : BaseController
 
             if (request == null) return NotFound();
 
-            // Status Rule: Must be in WAITING_RECEIPT or IN_FOLLOWUP to confirm receiving
-            var allowedStatuses = new[] { "WAITING_RECEIPT", "IN_FOLLOWUP" };
+            // Status Rule: Must be in WAITING_RECEIPT, IN_FOLLOWUP, PAYMENT_COMPLETED, or WAITING_SUPPLIER_DELIVERY to confirm receiving
+            var allowedStatuses = new[] { "WAITING_RECEIPT", "IN_FOLLOWUP", RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.WaitingSupplierDelivery };
             if (!allowedStatuses.Contains(request.Status!.Code))
             {
                 return BadRequest(new ProblemDetails

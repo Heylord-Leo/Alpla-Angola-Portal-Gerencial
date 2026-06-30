@@ -113,8 +113,19 @@ export function AppShell({ children }: AppShellProps) {
                 </div>
 
                 {/* Global Right-Side Stickers */}
-                <PendingApprovalsSticker />
-                <PendingReceivingSticker />
+                <div style={{
+                    position: 'fixed',
+                    bottom: '24px',
+                    right: '24px',
+                    display: 'flex',
+                    flexDirection: 'column-reverse', // Newest notifications typically go to bottom, or just column
+                    gap: '16px',
+                    zIndex: 9999,
+                    pointerEvents: 'none' // Let clicks pass through empty space
+                }}>
+                    <PendingApprovalsSticker />
+                    <PendingReceivingSticker />
+                </div>
             </div>
         </GuidedTourProvider>
     );
