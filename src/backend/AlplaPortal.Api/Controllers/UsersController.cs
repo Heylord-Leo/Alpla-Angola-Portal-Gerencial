@@ -24,12 +24,6 @@ public class UsersController : BaseController
     private readonly IEmailService _emailService;
     private readonly IConfiguration _configuration;
 
-    // Roles allowed for Local Managers to assign
-    private static readonly string[] AllowedRolesForLM = 
-    { 
-        "Requester", "Buyer", "Area Approver", "Final Approver", "Finance", "Receiving", "Import", "Viewer / Management", "HR" 
-    };
-
     public UsersController(
         ApplicationDbContext context, 
         AdminLogWriter adminLogWriter,
@@ -69,6 +63,13 @@ public class UsersController : BaseController
             Departments = user.UserDepartmentScopes.Select(ds => ds.Department.Code ?? string.Empty).ToList(),
             CanEdit = false
         });
+    }
+
+    [HttpGet("assignable-roles")]
+    public async Task<ActionResult<IEnumerable<string>>> GetAssignableRoles()
+    {
+        var assignableRoles = await GetAssignableRolesForCurrentUserAsync();
+        return Ok(assignableRoles);
     }
 
     [HttpGet]
@@ -140,9 +141,39 @@ public class UsersController : BaseController
         });
     }
 
+    private readonly string[] _allowedCorporateDomains = new[] { "alpla.com" };
+
+    private bool IsValidCorporateEmail(string email)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return false;
+
+        email = email.Trim();
+        try
+        {
+            var addr = new System.Net.Mail.MailAddress(email);
+            if (addr.Address != email) return false;
+            
+            var domain = addr.Host.ToLowerInvariant();
+            return _allowedCorporateDomains.Contains(domain);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     [HttpPost]
     public async Task<ActionResult<CreateUserResponseDto>> CreateUser([FromBody] CreateUserDto dto)
     {
+        if (!IsValidCorporateEmail(dto.Email))
+        {
+            await _adminLogWriter.WriteAsync("Security", "UserManagement", "USER_CREATE_BLOCKED", 
+                $"Tentativa de criar utilizador com e-mail corporativo inválido: {dto.Email} por {User.FindFirstValue(ClaimTypes.Email)}", 
+                payload: System.Text.Json.JsonSerializer.Serialize(new { dto.Email, Reason = "Invalid corporate email address" }));
+            
+            return BadRequest(new { message = "Apenas e-mails corporativos ALPLA são permitidos." });
+        }
+
         if (await _context.Users.AnyAsync(u => u.Email == dto.Email))
         {
             await _adminLogWriter.WriteAsync("Activity", "UserManagement", "USER_CREATION_FAILED", 
@@ -158,9 +189,27 @@ public class UsersController : BaseController
         // Permission check for Local Manager
         if (!isSystemAdmin)
         {
-            if (!roles.Contains("Local Manager")) return Forbid();
-            if (!await CheckRolePermissions(dto.RoleIds)) return BadRequest(new { message = "Não tem permissão para atribuir uma das funções selecionadas." });
-            if (!await CheckScopePermissions(dto.PlantIds, dto.DepartmentIds)) return BadRequest(new { message = "Não tem permissão para atribuir este escopo de acesso." });
+            if (!roles.Contains("Local Manager")) 
+            {
+                await _adminLogWriter.WriteAsync("Security", "UserManagement", "USER_CREATE_BLOCKED", 
+                    $"Tentativa não autorizada de criar utilizador por {User.FindFirstValue(ClaimTypes.Email)}. Motivo: Não é gestor.",
+                    payload: System.Text.Json.JsonSerializer.Serialize(new { dto.Email, Reason = "Manager Role Missing" }));
+                return Forbid();
+            }
+            if (!await CheckRolePermissions(dto.RoleIds)) 
+            {
+                await _adminLogWriter.WriteAsync("Security", "UserManagement", "USER_CREATE_BLOCKED", 
+                    $"Tentativa não autorizada de criar utilizador por {User.FindFirstValue(ClaimTypes.Email)}. Motivo: Current manager does not have permission to assign requested roles.",
+                    payload: System.Text.Json.JsonSerializer.Serialize(new { dto.Email, dto.RoleIds, Reason = "Restricted Role" }));
+                return BadRequest(new { message = "Não tem permissão para atribuir uma das funções selecionadas." });
+            }
+            if (!await CheckScopePermissions(dto.PlantIds, dto.DepartmentIds)) 
+            {
+                await _adminLogWriter.WriteAsync("Security", "UserManagement", "USER_CREATE_BLOCKED", 
+                    $"Tentativa não autorizada de criar utilizador por {User.FindFirstValue(ClaimTypes.Email)}. Motivo: Escopo restrito.",
+                    payload: System.Text.Json.JsonSerializer.Serialize(new { dto.Email, dto.PlantIds, dto.DepartmentIds, Reason = "Out of Scope" }));
+                return BadRequest(new { message = "Não tem permissão para atribuir este escopo de acesso." });
+            }
         }
 
         var user = new User
@@ -234,6 +283,15 @@ public class UsersController : BaseController
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateUser(Guid id, [FromBody] UpdateUserDto dto)
     {
+        if (!IsValidCorporateEmail(dto.Email))
+        {
+            await _adminLogWriter.WriteAsync("Security", "UserManagement", "USER_UPDATE_BLOCKED", 
+                $"Tentativa de atualizar utilizador com e-mail corporativo inválido: {dto.Email} por {User.FindFirstValue(ClaimTypes.Email)}", 
+                payload: System.Text.Json.JsonSerializer.Serialize(new { TargetUserId = id, dto.Email, Reason = "Invalid corporate email address" }));
+            
+            return BadRequest(new { message = "Apenas e-mails corporativos ALPLA são permitidos." });
+        }
+
         var user = await _context.Users
             .Include(u => u.UserRoleAssignments)
             .Include(u => u.UserPlantScopes)
@@ -248,18 +306,54 @@ public class UsersController : BaseController
         // Stricter subset logic for Local Manager
         if (!isSystemAdmin)
         {
-            if (!roles.Contains("Local Manager")) return Forbid();
+            if (!roles.Contains("Local Manager")) 
+            {
+                await _adminLogWriter.WriteAsync("Security", "UserManagement", "USER_UPDATE_BLOCKED", 
+                    $"Tentativa não autorizada de atualizar utilizador por {User.FindFirstValue(ClaimTypes.Email)}.",
+                    payload: System.Text.Json.JsonSerializer.Serialize(new { TargetUserId = user.Id, TargetUserEmail = user.Email, Reason = "Manager Role Missing" }));
+                return Forbid();
+            }
             
+            // Check if target user HAS restricted roles that the CURRENT user cannot manage
+            var targetUserRoles = user.UserRoleAssignments.Select(ra => ra.Role.RoleName).ToList();
+            var assignableRoles = await GetAssignableRolesForCurrentUserAsync();
+            
+            if (targetUserRoles.Any(r => !assignableRoles.Contains(r)))
+            {
+                await _adminLogWriter.WriteAsync("Security", "UserManagement", "USER_UPDATE_BLOCKED", 
+                    $"Tentativa não autorizada de atualizar utilizador {user.Email} por {User.FindFirstValue(ClaimTypes.Email)}. Motivo: Target user has restricted roles.",
+                    payload: System.Text.Json.JsonSerializer.Serialize(new { TargetUserId = user.Id, TargetUserEmail = user.Email, Reason = "Target User Restricted Role" }));
+                return BadRequest(new { message = "Não tem permissão para editar um utilizador com funções restritas fora da sua autoridade." });
+            }
+
             // Current actor must manage the target user's CURRENT scope (subset logic)
             var currentPlants = user.UserPlantScopes.Select(s => s.PlantId).ToList();
             var currentDepts = user.UserDepartmentScopes.Select(s => s.DepartmentId).ToList();
-            if (!await CheckScopePermissions(currentPlants, currentDepts)) return Forbid();
+            if (!await CheckScopePermissions(currentPlants, currentDepts)) 
+            {
+                await _adminLogWriter.WriteAsync("Security", "UserManagement", "USER_UPDATE_BLOCKED", 
+                    $"Tentativa não autorizada de atualizar utilizador {user.Email} por {User.FindFirstValue(ClaimTypes.Email)}. Motivo: Target user is out of current scope.",
+                    payload: System.Text.Json.JsonSerializer.Serialize(new { TargetUserId = user.Id, TargetUserEmail = user.Email, Reason = "Target User Out of Scope" }));
+                return Forbid();
+            }
 
             // And the NEW scope must also be a subset of the actor's scope
-            if (!await CheckScopePermissions(dto.PlantIds, dto.DepartmentIds)) return BadRequest(new { message = "Não tem permissão para atribuir este novo escopo." });
+            if (!await CheckScopePermissions(dto.PlantIds, dto.DepartmentIds)) 
+            {
+                await _adminLogWriter.WriteAsync("Security", "UserManagement", "USER_UPDATE_BLOCKED", 
+                    $"Tentativa não autorizada de atualizar utilizador {user.Email} por {User.FindFirstValue(ClaimTypes.Email)}. Motivo: New scope is out of manager's scope.",
+                    payload: System.Text.Json.JsonSerializer.Serialize(new { TargetUserId = user.Id, TargetUserEmail = user.Email, Reason = "New Scope Restricted" }));
+                return BadRequest(new { message = "Não tem permissão para atribuir este novo escopo." });
+            }
             
             // Roles check
-            if (!await CheckRolePermissions(dto.RoleIds)) return BadRequest(new { message = "Não tem permissão para gerir uma das funções selecionadas." });
+            if (!await CheckRolePermissions(dto.RoleIds)) 
+            {
+                await _adminLogWriter.WriteAsync("Security", "UserManagement", "USER_UPDATE_BLOCKED", 
+                    $"Tentativa não autorizada de atualizar utilizador {user.Email} por {User.FindFirstValue(ClaimTypes.Email)}. Motivo: Cannot assign requested roles.",
+                    payload: System.Text.Json.JsonSerializer.Serialize(new { TargetUserId = user.Id, TargetUserEmail = user.Email, dto.RoleIds, Reason = "Restricted Role Assigned" }));
+                return BadRequest(new { message = "Não tem permissão para gerir uma das funções selecionadas." });
+            }
         }
 
         user.FullName = dto.FullName;
@@ -319,6 +413,11 @@ public class UsersController : BaseController
             var currentPlants = user.UserPlantScopes.Select(s => s.PlantId).ToList();
             var currentDepts = user.UserDepartmentScopes.Select(s => s.DepartmentId).ToList();
             if (!await CheckScopePermissions(currentPlants, currentDepts)) return Forbid();
+
+            // Check restricted roles
+            var assignableRoles = await GetAssignableRolesForCurrentUserAsync();
+            var targetUserRoles = await _context.UserRoleAssignments.Where(ra => ra.UserId == user.Id).Select(ra => ra.Role.RoleName).ToListAsync();
+            if (targetUserRoles.Any(r => !assignableRoles.Contains(r))) return BadRequest(new { message = "Não tem permissão para repor a palavra-passe de um utilizador com funções restritas." });
         }
 
         var newPassword = await _authService.ResetPasswordAsync(id);
@@ -350,7 +449,38 @@ public class UsersController : BaseController
             .Select(r => r.RoleName)
             .ToListAsync();
 
-        return requestedRoles.All(r => AllowedRolesForLM.Contains(r));
+        var assignableRoles = await GetAssignableRolesForCurrentUserAsync();
+        return requestedRoles.All(r => assignableRoles.Contains(r));
+    }
+
+    private async Task<List<string>> GetAssignableRolesForCurrentUserAsync()
+    {
+        var currentUserRoles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
+        
+        if (currentUserRoles.Contains("System Administrator"))
+        {
+            return await _context.Roles.Select(r => r.RoleName).ToListAsync();
+        }
+
+        var roles = new List<string>
+        {
+            "Requester",
+            "Area Approver",
+            "Receiving",
+            "Viewer / Management"
+        };
+
+        if (currentUserRoles.Contains("HR"))
+        {
+            roles.Add("HR");
+        }
+
+        if (currentUserRoles.Contains("Import"))
+        {
+            roles.Add("Import");
+        }
+
+        return roles;
     }
 
     private async Task<bool> CheckScopePermissions(List<int> plantIds, List<int> departmentIds)

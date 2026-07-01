@@ -27,6 +27,7 @@ import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { SearchFilterBar } from '../../components/ui/SearchFilterBar';
 import { StandardTable } from '../../components/ui/StandardTable';
+import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 
 interface UserListDto {
     id: string;
@@ -46,15 +47,16 @@ export default function UserManagement() {
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active');
-    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' } | null>(null);
+    const [toast, setToast] = useState<{ message: string | null; type: FeedbackType }>({ message: null, type: 'success' });
 
-    const showToast = (message: string, type: 'success' | 'error' | 'warning') => {
+    const showToast = (message: string, type: FeedbackType) => {
         setToast({ message, type });
-        setTimeout(() => setToast(null), 4000);
+        setTimeout(() => setToast(prev => ({ ...prev, message: null })), 4000);
     };
 
     // Master Data
     const [allRoles, setAllRoles] = useState<any[]>([]);
+    const [assignableRoleNames, setAssignableRoleNames] = useState<string[]>([]);
     const [allPlants, setAllPlants] = useState<any[]>([]);
     const [allDepts, setAllDepts] = useState<any[]>([]);
 
@@ -75,7 +77,6 @@ export default function UserManagement() {
     const [resultPassword, setResultPassword] = useState<string | null>(null);
 
     const isSystemAdmin = currentUser?.roles.includes(ROLES.SYSTEM_ADMINISTRATOR);
-    const isLocalManager = currentUser?.roles.includes(ROLES.LOCAL_MANAGER);
 
     useEffect(() => {
         loadData();
@@ -102,26 +103,18 @@ export default function UserManagement() {
 
     async function loadMasterData() {
         try {
-            const [roles, plants, depts] = await Promise.all([
+            const [roles, plants, depts, assignableRoles] = await Promise.all([
                 api.lookups.getRoles(),
                 api.lookups.getPlants(),
-                api.lookups.getDepartments()
+                api.lookups.getDepartments(),
+                api.users.getAssignableRoles()
             ]);
             
-            const managerAssignableRoles = [
-                'Requester', 
-                'Receiving', 
-                'Viewer / Management', 
-                'Import', 
-                'Area Approver',
-                'HR'
-            ];
+            setAssignableRoleNames(assignableRoles);
 
             const filteredRoles = isSystemAdmin
                 ? roles
-                : isLocalManager
-                ? roles.filter((r: any) => managerAssignableRoles.includes(r.roleName))
-                : roles.filter((r: any) => ![ ROLES.SYSTEM_ADMINISTRATOR, ROLES.LOCAL_MANAGER ].includes(r.roleName));
+                : roles.filter((r: any) => assignableRoles.includes(r.roleName));
 
             // Filter plants and departments for Local Manager scope (Case-insensitive Code match)
             const filteredPlants = isSystemAdmin
@@ -216,6 +209,13 @@ export default function UserManagement() {
     async function handleSave(e: React.FormEvent) {
         e.preventDefault();
         setDrawerError(null);
+
+        const email = formData.email.trim().toLowerCase();
+        if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/) || !email.endsWith('@alpla.com')) {
+            showToast('Informe um e-mail corporativo ALPLA válido.', 'error');
+            return;
+        }
+
         try {
             if (editingUser) {
                 await api.users.update(editingUser.id, formData);
@@ -267,16 +267,12 @@ export default function UserManagement() {
     return (
         <PageContainer>
             {/* Toast */}
-            {toast && (
-                <div style={{
-                    position: 'fixed', top: 20, right: 20, zIndex: 9999,
-                    padding: '12px 20px', borderRadius: 8, color: '#fff', fontWeight: 500, fontSize: 14,
-                    background: toast.type === 'success' ? '#10b981' : toast.type === 'warning' ? '#f59e0b' : '#ef4444',
-                    boxShadow: '0 4px 16px rgba(0,0,0,0.2)', animation: 'fadeIn 0.2s ease'
-                }}>
-                    {toast.message}
-                    <button onClick={() => setToast(null)} style={{ marginLeft: 12, background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}>✕</button>
-                </div>
+            {toast.message && (
+                <Feedback
+                    type={toast.type}
+                    message={toast.message}
+                    onClose={() => setToast(prev => ({ ...prev, message: null }))}
+                />
             )}
 
             {/* Header */}
@@ -315,6 +311,16 @@ export default function UserManagement() {
                     </button>
                 }
             />
+
+            {/* Intro text */}
+            <div style={{ padding: '16px 24px', background: 'var(--color-bg-surface)', borderBottom: '1px solid var(--color-border)' }}>
+                <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+                    <strong>Atenção:</strong> Como {isSystemAdmin ? 'Administrador de Sistema' : 'Gestor Local'}, 
+                    apenas pode gerir utilizadores e perfis dentro do seu âmbito de atuação.
+                    Utilizadores com permissões restritas (ex: Recursos Humanos ou Importação) 
+                    só podem ser editados se você possuir essas permissões.
+                </p>
+            </div>
 
             {/* Error Banner */}
             {error && (
@@ -393,20 +399,29 @@ export default function UserManagement() {
                             </td>
                             <td style={{ padding: '16px', textAlign: 'right' }}>
                                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
-                                    {user.canEdit ? (
-                                        <>
-                                            <button onClick={() => handleOpenEdit(user.id)} title="Editar" style={{ padding: 6, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer' }}>
-                                                <Edit2 size={18} />
-                                            </button>
-                                            <button onClick={() => handleResetPassword(user.id, user.email)} title="Repor Palavra-passe" style={{ padding: 6, color: 'var(--color-status-orange)', background: 'none', border: 'none', cursor: 'pointer' }}>
-                                                <Key size={18} />
-                                            </button>
-                                        </>
-                                    ) : (
-                                        <div title="Sem permissão (Fora do escopo)" style={{ opacity: 0.3, padding: 6 }}>
-                                            <Lock size={18} />
-                                        </div>
-                                    )}
+                                    {(() => {
+                                        const hasRestrictedRoles = !isSystemAdmin && user.roles.some(r => !assignableRoleNames.includes(r));
+                                        const finalCanEdit = user.canEdit && !hasRestrictedRoles;
+
+                                        if (finalCanEdit) {
+                                            return (
+                                                <>
+                                                    <button onClick={() => handleOpenEdit(user.id)} title="Editar" style={{ padding: 6, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                                                        <Edit2 size={18} />
+                                                    </button>
+                                                    <button onClick={() => handleResetPassword(user.id, user.email)} title="Repor Palavra-passe" style={{ padding: 6, color: 'var(--color-status-orange)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                                                        <Key size={18} />
+                                                    </button>
+                                                </>
+                                            );
+                                        }
+
+                                        return (
+                                            <div title={hasRestrictedRoles ? "Sem permissão (Contém funções restritas)" : "Sem permissão (Fora do escopo)"} style={{ opacity: 0.3, padding: 6 }}>
+                                                <Lock size={18} />
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                             </td>
                         </tr>
