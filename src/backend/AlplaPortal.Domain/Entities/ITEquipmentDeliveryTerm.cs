@@ -57,6 +57,10 @@ public class ITEquipmentDeliveryTerm
     public Guid? ReturnDocumentId { get; set; }
     public ITEquipmentDocument? ReturnDocument { get; set; }
 
+    /// <summary>FK to the signed (uploaded) return term PDF document.</summary>
+    public Guid? SignedReturnDocumentId { get; set; }
+    public ITEquipmentDocument? SignedReturnDocument { get; set; }
+
     public string? Notes { get; set; }
 
     // ── Audit ──

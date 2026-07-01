@@ -170,6 +170,7 @@ public class ITDeliveryTermsController : BaseController
             term.GeneratedDocumentId,
             term.SignedDocumentId,
             term.ReturnDocumentId,
+            term.SignedReturnDocumentId,
             term.Notes,
             term.CreatedAt,
             createdByName = term.CreatedByUser?.FullName,
@@ -227,6 +228,18 @@ public class ITDeliveryTermsController : BaseController
 
         if (string.IsNullOrWhiteSpace(request.EmployeeName))
             return BadRequest(new { detail = "Nome do funcionário é obrigatório." });
+
+        if (!string.IsNullOrWhiteSpace(request.EmployeeEmail))
+        {
+            if (!System.Text.RegularExpressions.Regex.IsMatch(request.EmployeeEmail.Trim(), @"^[^@\s]+@[^@\s]+\.[^@\s]+$"))
+                return BadRequest(new { detail = "O e-mail informado é inválido." });
+        }
+
+        if (!request.CompanyId.HasValue)
+            return BadRequest(new { detail = "Empresa é obrigatória." });
+
+        if (!request.EmployeePlantId.HasValue)
+            return BadRequest(new { detail = "Planta é obrigatória." });
 
         if (request.DeliveryDate == default)
             return BadRequest(new { detail = "Data de entrega é obrigatória." });
@@ -302,6 +315,15 @@ public class ITDeliveryTermsController : BaseController
 
         if (term.Status != ITEquipmentConstants.DeliveryTermStatus.Draft)
             return BadRequest(new { detail = "Apenas termos em rascunho podem ser editados." });
+
+        if (request.EmployeeName != null && string.IsNullOrWhiteSpace(request.EmployeeName))
+            return BadRequest(new { detail = "Nome do funcionário não pode ser vazio." });
+
+        if (request.EmployeeEmail != null)
+        {
+            if (string.IsNullOrWhiteSpace(request.EmployeeEmail) || !System.Text.RegularExpressions.Regex.IsMatch(request.EmployeeEmail.Trim(), @"^[^@\s]+@[^@\s]+\.[^@\s]+$"))
+                return BadRequest(new { detail = "O e-mail informado é inválido." });
+        }
 
         if (!string.IsNullOrWhiteSpace(request.EmployeeName))
             term.EmployeeName = request.EmployeeName.Trim();
@@ -565,10 +587,25 @@ public class ITDeliveryTermsController : BaseController
             await _context.SaveChangesAsync();
             await tx.CommitAsync();
 
-            // IT notification (post-commit, failure-safe)
-            _ = NotifyITAsync(term.TermNumber,
-                "Termo de Entrega Confirmado",
-                BuildTermNotificationHtml(term, "Termo de entrega confirmado e PDF gerado.", currentUser?.FullName ?? "Sistema"));
+            // System log for delivery term confirmation (no email sent to IT)
+            var confirmLog = new
+            {
+                Action = "DeliveryTermConfirmed",
+                Environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Unknown",
+                RequestId = HttpContext.TraceIdentifier,
+                DeliveryTermId = term.Id,
+                TermNumber = term.TermNumber,
+                EmployeeName = term.EmployeeName,
+                EmployeeEmail = term.EmployeeEmail,
+                ItemCount = term.Items.Count,
+                EquipmentIds = term.Items.Select(i => i.EquipmentId).ToList(),
+                PerformedByUserId = CurrentUserId,
+                PerformedByEmail = currentUser?.Email,
+                DocumentId = doc.Id,
+                DocumentPath = pdfResult.StorageFileName,
+                Timestamp = DateTime.UtcNow
+            };
+            _logger.LogInformation("Delivery term confirmed and PDF generated. Structured Data: {@LogData}", confirmLog);
 
             return Ok(new
             {
@@ -629,6 +666,7 @@ public class ITDeliveryTermsController : BaseController
         if (!HasITAccess()) return Forbid();
 
         var term = await _context.ITEquipmentDeliveryTerms
+            .Include(t => t.Items)
             .Include(t => t.GeneratedDocument)
             .FirstOrDefaultAsync(t => t.Id == id);
 
@@ -652,6 +690,24 @@ public class ITDeliveryTermsController : BaseController
         bool sent = false;
         try
         {
+            var traceId = HttpContext.TraceIdentifier;
+            
+            var structuredLog = new
+            {
+                Action = "SendDeliveryTermEmail",
+                Environment = _configuration["AppEnvironment:Code"] ?? "Unknown",
+                RequestId = traceId,
+                DeliveryTermId = term.Id,
+                TermNumber = term.TermNumber,
+                ItemCount = term.Items?.Count ?? 0,
+                DeliveryItemIds = term.Items?.Select(i => i.Id).ToList(),
+                EquipmentIds = term.Items?.Select(i => i.EquipmentId).ToList(),
+                RecipientEmail = term.EmployeeEmail,
+                UserId = CurrentUserId
+            };
+
+            _logger.LogInformation("Sending delivery term email to employee and IT notification. Structured Data: {@LogData}", structuredLog);
+
             sent = await _emailService.SendWithAttachmentAsync(
                 term.EmployeeEmail,
                 term.EmployeeName,
@@ -659,7 +715,14 @@ public class ITDeliveryTermsController : BaseController
                 $"Termo de Entrega — {term.TermNumber}",
                 $"Prezado(a) {term.EmployeeName},<br><br>" +
                 $"Segue em anexo o Termo de Entrega e Responsabilidade de Equipamento de T.I referente ao termo <strong>{term.TermNumber}</strong>.<br><br>" +
-                $"Por favor, revise e assine o documento conforme as instruções internas.<br><br>" +
+                $"Para concluir o processo, por favor, siga os passos abaixo:<br>" +
+                $"<ol>" +
+                $"<li><strong>Leia</strong> atentamente as regras e responsabilidades descritas no termo.</li>" +
+                $"<li><strong>Rúbrique</strong> (assine de forma abreviada) todas as páginas, exceto a última.</li>" +
+                $"<li><strong>Assine</strong> a última página no campo destinado ao 'Utilizador'.</li>" +
+                $"<li><strong>Digitalize</strong> o documento completo assinado.</li>" +
+                $"<li><strong>Envie ou encaminhe</strong> o documento digitalizado para <a href=\"mailto:aovia1-it@alpla.com?subject=Termo%20de%20Entrega%20Assinado%20-%20{term.TermNumber}&body=Olá,%0D%0A%0D%0ASegue%20em%20anexo%20o%20termo%20de%20entrega%20assinado.%0D%0A%0D%0ANº%20Termo:%20{term.TermNumber}%0D%0A%0D%0AObrigado.\">aovia1-it@alpla.com</a>.</li>" +
+                $"</ol><br>" +
                 $"Atenciosamente,<br>Departamento de T.I — Alpla Angola",
                 storagePath,
                 term.GeneratedDocument.FileName,
@@ -680,9 +743,10 @@ public class ITDeliveryTermsController : BaseController
             await _context.SaveChangesAsync();
 
             var currentUser = await _context.Users.FindAsync(CurrentUserId);
-            _ = NotifyITAsync(term.TermNumber,
+            await NotifyITAsync(term,
                 "Termo de Entrega Enviado",
-                BuildTermNotificationHtml(term, $"Termo enviado por e-mail para {term.EmployeeEmail}.", currentUser?.FullName ?? "Sistema"));
+                BuildTermNotificationHtml(term, $"Termo enviado por e-mail para {term.EmployeeEmail}.", currentUser?.FullName ?? "Sistema"),
+                storagePath);
 
             return Ok(new { detail = $"Termo enviado para {term.EmployeeEmail}." });
         }
@@ -773,7 +837,7 @@ public class ITDeliveryTermsController : BaseController
         await _context.SaveChangesAsync();
 
         var user = await _context.Users.FindAsync(CurrentUserId);
-        _ = NotifyITAsync(term.TermNumber,
+        await NotifyITAsync(term,
             "Documento Assinado Carregado",
             BuildTermNotificationHtml(term, "Documento assinado carregado com sucesso.", user?.FullName ?? "Sistema"));
 
@@ -1000,7 +1064,7 @@ public class ITDeliveryTermsController : BaseController
         var action = term.Status == ITEquipmentConstants.DeliveryTermStatus.Closed
             ? "Termo encerrado — todos os itens devolvidos."
             : $"Equipamento {eq.AssetTag} devolvido.";
-        _ = NotifyITAsync(term.TermNumber, "Item Devolvido", BuildTermNotificationHtml(term, action, user?.FullName ?? "Sistema"));
+        await NotifyITAsync(term, "Item Devolvido", BuildTermNotificationHtml(term, action, user?.FullName ?? "Sistema"));
 
         return Ok(new
         {
@@ -1088,6 +1152,7 @@ public class ITDeliveryTermsController : BaseController
         };
         _context.ITEquipmentDocuments.Add(doc);
 
+        term.SignedReturnDocument = doc;
         term.UpdatedAt = DateTime.UtcNow;
         term.UpdatedByUserId = CurrentUserId;
 
@@ -1106,7 +1171,7 @@ public class ITDeliveryTermsController : BaseController
         await _context.SaveChangesAsync();
 
         var user = await _context.Users.FindAsync(CurrentUserId);
-        _ = NotifyITAsync(term.TermNumber,
+        await NotifyITAsync(term,
             "Documento de Devolução Assinado",
             BuildTermNotificationHtml(term, "Documento de devolução assinado carregado com sucesso.", user?.FullName ?? "Sistema"));
 
@@ -1146,7 +1211,7 @@ public class ITDeliveryTermsController : BaseController
         await _context.SaveChangesAsync();
 
         var user = await _context.Users.FindAsync(CurrentUserId);
-        _ = NotifyITAsync(term.TermNumber, "Termo de Entrega Cancelado",
+        await NotifyITAsync(term, "Termo de Entrega Cancelado",
             BuildTermNotificationHtml(term, "Termo de entrega cancelado.", user?.FullName ?? "Sistema"));
 
         return Ok(new { detail = "Termo de entrega cancelado." });
@@ -1304,21 +1369,70 @@ public class ITDeliveryTermsController : BaseController
         return null;
     }
 
-    private async Task NotifyITAsync(string termNumber, string headline, string bodyHtml)
+    private async Task NotifyITAsync(ITEquipmentDeliveryTerm term, string headline, string bodyHtml, string? storagePath = null)
     {
+        var traceId = HttpContext.TraceIdentifier;
+        var env = _configuration["AppEnvironment:Code"] ?? "Unknown";
+        var email = _configuration["AppConfig:ITNotificationEmail"];
+        bool sent = false;
+        string? errorDetails = null;
+
         try
         {
-            var email = _configuration["AppConfig:ITNotificationEmail"];
-            if (string.IsNullOrWhiteSpace(email)) return;
-
-            await _emailService.SendWorkflowNotificationAsync(
-                email, "Departamento de T.I",
-                $"{headline} — {termNumber}",
-                headline, bodyHtml);
+            if (!string.IsNullOrWhiteSpace(email))
+            {
+                if (!string.IsNullOrWhiteSpace(storagePath) && System.IO.File.Exists(storagePath))
+                {
+                    await _emailService.SendWithAttachmentAsync(
+                        email, "Departamento de T.I",
+                        $"{headline} — {term.TermNumber}",
+                        headline, bodyHtml,
+                        storagePath,
+                        term.GeneratedDocument?.FileName ?? $"Termo_{term.TermNumber}.pdf",
+                        requiredAttachment: true);
+                }
+                else
+                {
+                    await _emailService.SendWorkflowNotificationAsync(
+                        email, "Departamento de T.I",
+                        $"{headline} — {term.TermNumber}",
+                        headline, bodyHtml);
+                }
+                sent = true;
+            }
+            else
+            {
+                errorDetails = "AppConfig:ITNotificationEmail is null or empty.";
+            }
         }
-        catch
+        catch (Exception ex)
         {
-            // IT notification failure should never block the main operation
+            errorDetails = ex.ToString();
+        }
+
+        var structuredLog = new
+        {
+            Action = "SendITNotificationEmail",
+            Environment = env,
+            RequestId = traceId,
+            DeliveryTermId = term.Id,
+            TermNumber = term.TermNumber,
+            RecipientEmail = email ?? "N/A",
+            ItemCount = term.Items?.Count ?? 0,
+            EquipmentIds = term.Items?.Select(i => i.EquipmentId).ToList(),
+            AttachmentPath = storagePath ?? "N/A",
+            AttachmentExists = storagePath != null ? System.IO.File.Exists(storagePath) : (bool?)null,
+            SmtpResult = sent ? "Success" : "Failed",
+            ErrorDetails = errorDetails
+        };
+
+        if (sent)
+        {
+            _logger.LogInformation("IT notification email sent. Structured Data: {@LogData}", structuredLog);
+        }
+        else
+        {
+            _logger.LogError("Failed to send IT notification email. Structured Data: {@LogData}", structuredLog);
         }
     }
 

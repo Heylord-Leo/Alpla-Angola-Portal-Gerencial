@@ -9,7 +9,6 @@ import { RepairEquipmentModal } from './RepairEquipmentModal';
 import { LostEquipmentModal } from './LostEquipmentModal';
 import { RetireEquipmentModal } from './RetireEquipmentModal';
 import { ReserveEquipmentModal } from './ReserveEquipmentModal';
-import { ChangeEquipmentUserModal } from './ChangeEquipmentUserModal';
 import { EquipmentFormModal } from './EquipmentFormModal';
 import { ReactivateEquipmentModal } from './ReactivateEquipmentModal';
 import { ActionDropdown } from '../common/ActionDropdown';
@@ -112,12 +111,12 @@ export function EquipmentQuickViewDrawer({ equipmentId, onClose, onRefresh }: Pr
 
                         {canReturn && (
                             <ActionBtn 
-                                label="Trocar Utilizador" 
+                                label="Transferir Equipamento" 
                                 icon={<RefreshCw size={13} />} 
-                                onClick={() => setActiveModal('change-user')} 
+                                onClick={() => {}} 
                                 color="#14b8a6" 
-                                disabled={detail.purchaseDocumentPending}
-                                disabledReason="Cadastro incompleto: documento de compra/entrega pendente."
+                                disabled={true}
+                                disabledReason="Para transferir este equipamento para outro utilizador, primeiro realize a devolução do equipamento e depois crie um novo Termo de Entrega."
                             />
                         )}
                         {canReserve && (
@@ -198,7 +197,6 @@ export function EquipmentQuickViewDrawer({ equipmentId, onClose, onRefresh }: Pr
             {activeModal === 'lost' && detail && <LostEquipmentModal equipmentId={detail.id} onClose={handleModalClose} onSuccess={handleModalSuccess} />}
             {activeModal === 'reserve' && detail && <ReserveEquipmentModal equipmentId={detail.id} onClose={handleModalClose} onSuccess={handleModalSuccess} />}
             {activeModal === 'retire' && detail && <RetireEquipmentModal equipmentId={detail.id} onClose={handleModalClose} onSuccess={handleModalSuccess} />}
-            {activeModal === 'change-user' && detail && <ChangeEquipmentUserModal equipmentId={detail.id} onClose={handleModalClose} onSuccess={handleModalSuccess} />}
             {activeModal === 'reactivate' && detail && <ReactivateEquipmentModal equipmentId={detail.id} onClose={handleModalClose} onSuccess={handleModalSuccess} />}
         </>
     );

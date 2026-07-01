@@ -369,6 +369,7 @@ export interface ITDeliveryTermDetail {
     generatedDocumentId: string | null;
     signedDocumentId: string | null;
     returnDocumentId: string | null;
+    signedReturnDocumentId: string | null;
     notes: string | null;
     createdAt: string;
     createdByName: string | null;
