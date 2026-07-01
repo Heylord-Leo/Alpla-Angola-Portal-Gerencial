@@ -167,7 +167,7 @@ public class ITEquipmentPdfService
             y += 22;
 
             // ── Policy text ──
-            y = DrawPolicyText(document, gfx, ref page, y, contentWidth, policyLines);
+            y = DrawPolicyText(document, ref gfx, ref page, y, contentWidth, policyLines);
 
             // ── Signature blocks ──
             y = EnsureSpace(document, ref page, ref gfx, y, 200, contentWidth);
@@ -309,23 +309,26 @@ public class ITEquipmentPdfService
 
             // ── Signature blocks ──
             var returnDocGeneratedAt = DateTime.UtcNow;
-            y = EnsureSpace(document, ref page, ref gfx, y, 200, contentWidth);
-            y += 20;
+            y = EnsureSpace(document, ref page, ref gfx, y, 100, contentWidth);
+            y += 15;
+
+            double halfWidth = contentWidth / 2;
+            double sigY = y;
 
             // User: empty signature area for manual signing
-            y = DrawEmptySignatureBlock(gfx, page, y, contentWidth,
-                data.UserName, "Utilizador que devolveu o equipamento");
-            y += 20;
+            double endY1 = DrawEmptySignatureBlockAt(gfx, page, PageMargin, sigY, halfWidth,
+                data.UserName, "Utilizador que devolveu");
 
             // I.T Responsible: generated visual signature
-            y = DrawEnhancedSignatureBlock(gfx, page, y, contentWidth,
-                data.ReceivedByName, "Recebido por (Departamento de T.I)");
-            y += 16;
+            double endY2 = DrawEnhancedSignatureBlockAt(gfx, page, PageMargin + halfWidth, sigY, halfWidth,
+                data.ReceivedByName, "Recebido por (T.I)");
+
+            y = Math.Max(endY1, endY2) + 10;
 
             // ── Electronic generation statement ──
-            y = EnsureSpace(document, ref page, ref gfx, y, 70, contentWidth);
+            y = EnsureSpace(document, ref page, ref gfx, y, 50, contentWidth);
             gfx.DrawLine(new XPen(LightBorderColor, 0.5), PageMargin, y, PageMargin + contentWidth, y);
-            y += 8;
+            y += 5;
             DrawElectronicStatement(gfx, y, contentWidth,
                 data.UserName, data.UserEmail, data.AssetTag,
                 data.ReceivedByName, data.ReceivedByEmail,
@@ -389,7 +392,7 @@ public class ITEquipmentPdfService
 
             // ── Branded header ──
             y = DrawBrandedHeader(gfx, page, y, contentWidth,
-                "TERMO DE ENTREGA E RESPONSABILIDADE — MÚLTIPLOS EQUIPAMENTOS");
+                "TERMO DE ENTREGA E RESPONSABILIDADE");
 
             // ── Term & Date info ──
             var documentGeneratedAt = DateTime.UtcNow;
@@ -448,15 +451,49 @@ public class ITEquipmentPdfService
             gfx.DrawLine(new XPen(BorderColor, 0.5), PageMargin, y, PageMargin + contentWidth, y);
             y += 12;
 
-            // ── Policy title ──
-            y = EnsureSpace(document, ref page, ref gfx, y, 40, contentWidth);
+            // ── Handwritten Observations Section ──
+            y = EnsureSpace(document, ref page, ref gfx, y, 120, contentWidth);
+            gfx.DrawString("OBSERVAÇÕES DO UTILIZADOR SOBRE O ESTADO DOS EQUIPAMENTOS",
+                SmallBoldFont, new XSolidBrush(PrimaryColor),
+                new XRect(PageMargin, y, contentWidth, 12), XStringFormats.TopLeft);
+            y += 14;
+
+            string obsHelper = "Utilize o espaço abaixo para registrar, no momento da entrega, qualquer avaria, dano, acessório em falta ou observação relevante sobre o estado dos equipamentos recebidos.";
+            y = DrawWrappedText(document, ref page, ref gfx, obsHelper, SmallFont, y, PageMargin, contentWidth);
+            y += 10;
+
+            // Draw a bordered box with some lines for writing
+            double boxHeight = 80;
+            y = EnsureSpace(document, ref page, ref gfx, y, boxHeight, contentWidth);
+            var boxRect = new XRect(PageMargin, y, contentWidth, boxHeight);
+            gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb(252, 252, 252)), boxRect);
+            gfx.DrawRectangle(new XPen(BorderColor, 0.5), boxRect);
+
+            // Draw faint lines inside the box
+            double lineY = y + 20;
+            while (lineY < y + boxHeight - 10)
+            {
+                gfx.DrawLine(new XPen(LightBorderColor, 0.5), PageMargin + 10, lineY, PageMargin + contentWidth - 10, lineY);
+                lineY += 20;
+            }
+
+            y += boxHeight + 15;
+
+            // ── Policy title (Always on Page 2) ──
+            DrawFooter(gfx, page);
+            gfx.Dispose();
+            page = document.AddPage();
+            page.Size = PdfSharpCore.PageSize.A4;
+            gfx = XGraphics.FromPdfPage(page);
+            y = PageMargin;
+
             gfx.DrawString("POLÍTICA DE USO DE EQUIPAMENTO DE T.I",
                 SubTitleFont, new XSolidBrush(PrimaryColor),
                 new XRect(PageMargin, y, contentWidth, 16), XStringFormats.TopCenter);
             y += 22;
 
             // ── Policy text ──
-            y = DrawPolicyText(document, gfx, ref page, y, contentWidth, policyLines);
+            y = DrawPolicyText(document, ref gfx, ref page, y, contentWidth, policyLines);
 
             // ── Signature blocks ──
             y = EnsureSpace(document, ref page, ref gfx, y, 200, contentWidth);
@@ -508,7 +545,7 @@ public class ITEquipmentPdfService
     private double DrawEquipmentTableHeader(XGraphics gfx, PdfPage page, double y, double contentWidth)
     {
         var colWidths = GetEquipmentColumnWidths(contentWidth);
-        var headers = new[] { "#", "Código", "Tipo", "Fabricante", "Modelo", "S/N", "Hostname", "Valor Ref.", "Data Compra", "Documento" };
+        var headers = new[] { "#", "Código Imobilizado", "Tipo", "Fabricante", "Modelo", "S/N", "Hostname", "Valor Ref.", "Data Compra", "Documento" };
         double x = PageMargin;
 
         // Header background
@@ -582,10 +619,10 @@ public class ITEquipmentPdfService
     /// <summary>Column widths for the 10-column equipment table (including purchase traceability).</summary>
     private static double[] GetEquipmentColumnWidths(double contentWidth)
     {
-        // #(18), Código(80), Tipo(42), Fabricante(52), Modelo(60), S/N(55), Hostname(55), Valor Ref.(60), Data Compra(48), Documento(remaining)
-        double fixedTotal = 18 + 80 + 42 + 52 + 60 + 55 + 55 + 60 + 48;
+        // #(18), Código Imobilizado(100), Tipo(40), Fabricante(45), Modelo(50), S/N(45), Hostname(45), Valor Ref.(50), Data Compra(45), Documento(remaining)
+        double fixedTotal = 18 + 100 + 40 + 45 + 50 + 45 + 45 + 50 + 45;
         double remaining = contentWidth - fixedTotal;
-        return new double[] { 18, 80, 42, 52, 60, 55, 55, 60, 48, remaining };
+        return new double[] { 18, 100, 40, 45, 50, 45, 45, 50, 45, remaining };
     }
 
     // ── DTOs for Delivery Term PDF ──
@@ -651,7 +688,7 @@ public class ITEquipmentPdfService
 
             // ── Branded header ──
             y = DrawBrandedHeader(gfx, page, y, contentWidth,
-                "TERMO DE DEVOLUÇÃO — MÚLTIPLOS EQUIPAMENTOS");
+                "TERMO DE DEVOLUÇÃO DE EQUIPAMENTO DE T.I");
 
             // ── Term & Date info ──
             var documentGeneratedAt = DateTime.UtcNow;
@@ -684,11 +721,11 @@ public class ITEquipmentPdfService
             y += 16;
 
             // ── Equipment list section ──
-            y = EnsureSpace(document, ref page, ref gfx, y, 60, contentWidth);
+            y = EnsureSpace(document, ref page, ref gfx, y, 50, contentWidth);
             gfx.DrawString("EQUIPAMENTOS DEVOLVIDOS",
                 SubTitleFont, new XSolidBrush(PrimaryColor),
-                new XRect(PageMargin, y, contentWidth, 16), XStringFormats.TopCenter);
-            y += 22;
+                new XRect(PageMargin, y, contentWidth, 14), XStringFormats.TopCenter);
+            y += 16;
 
             // Return equipment table header
             y = DrawReturnEquipmentTableHeader(gfx, page, y, contentWidth);
@@ -704,39 +741,42 @@ public class ITEquipmentPdfService
                 y = DrawReturnEquipmentTableRow(gfx, page, y, contentWidth, idx + 1, item);
             }
 
-            y += 10;
+            y += 6;
 
             // ── Separator ──
             gfx.DrawLine(new XPen(BorderColor, 0.5), PageMargin, y, PageMargin + contentWidth, y);
-            y += 14;
+            y += 10;
 
             // ── Formal declaration ──
             var decl1 = "Declara-se que os equipamentos acima identificados foram devolvidos ao departamento de T.I nas condições indicadas neste documento.";
             y = DrawWrappedText(document, ref page, ref gfx, decl1, NormalFont, y, PageMargin, contentWidth);
-            y += 15;
+            y += 10;
 
             var decl2 = "A condição de cada equipamento foi registada conforme informado no momento da devolução. Caso sejam identificados danos, inconsistências ou pendências após análise técnica, o departamento de T.I poderá atualizar o histórico do equipamento e tomar as medidas aplicáveis conforme as políticas internas da empresa.";
             y = DrawWrappedText(document, ref page, ref gfx, decl2, NormalFont, y, PageMargin, contentWidth);
-            y += 30;
+            y += 15;
 
             // ── Signature blocks ──
-            y = EnsureSpace(document, ref page, ref gfx, y, 200, contentWidth);
-            y += 20;
+            y = EnsureSpace(document, ref page, ref gfx, y, 100, contentWidth);
+            y += 15;
+
+            double halfWidth = contentWidth / 2;
+            double sigY = y;
 
             // User: empty signature area for manual signing
-            y = DrawEmptySignatureBlock(gfx, page, y, contentWidth,
-                data.EmployeeName, "Utilizador que devolveu os equipamentos");
-            y += 20;
+            double endY1 = DrawEmptySignatureBlockAt(gfx, page, PageMargin, sigY, halfWidth,
+                data.EmployeeName, "Utilizador que devolveu");
 
             // I.T Responsible: generated visual signature
-            y = DrawEnhancedSignatureBlock(gfx, page, y, contentWidth,
-                data.ReceivedByName, "Recebido por (Departamento de T.I)");
-            y += 16;
+            double endY2 = DrawEnhancedSignatureBlockAt(gfx, page, PageMargin + halfWidth, sigY, halfWidth,
+                data.ReceivedByName, "Recebido por (T.I)");
+
+            y = Math.Max(endY1, endY2) + 10;
 
             // ── Electronic generation statement ──
-            y = EnsureSpace(document, ref page, ref gfx, y, 70, contentWidth);
+            y = EnsureSpace(document, ref page, ref gfx, y, 50, contentWidth);
             gfx.DrawLine(new XPen(LightBorderColor, 0.5), PageMargin, y, PageMargin + contentWidth, y);
-            y += 8;
+            y += 5;
 
             var equipmentSummary = string.Join(", ", data.Equipment.Select(e => e.AssetTag));
             DrawElectronicStatement(gfx, y, contentWidth,
@@ -771,20 +811,20 @@ public class ITEquipmentPdfService
     private double DrawReturnEquipmentTableHeader(XGraphics gfx, PdfPage page, double y, double contentWidth)
     {
         var colWidths = GetReturnEquipmentColumnWidths(contentWidth);
-        var headers = new[] { "#", "Código do Ativo", "Tipo", "Fabricante", "Modelo", "S/N", "Condição" };
+        var headers = new[] { "#", "Código Imobilizado", "Tipo", "Hostname", "Fabricante", "Modelo", "S/N", "Condição" };
         double x = PageMargin;
 
         gfx.DrawRectangle(new XSolidBrush(PrimaryColor),
-            PageMargin, y - 2, contentWidth, 16);
+            PageMargin, y - 2, contentWidth, 14);
 
         for (int c = 0; c < headers.Length; c++)
         {
-            gfx.DrawString(headers[c], SmallBoldFont, XBrushes.White,
-                new XRect(x + 3, y, colWidths[c] - 6, 12), XStringFormats.TopLeft);
+            gfx.DrawString(headers[c], CompactBoldFont, XBrushes.White,
+                new XRect(x + 2, y, colWidths[c] - 4, 12), XStringFormats.TopLeft);
             x += colWidths[c];
         }
 
-        return y + 16;
+        return y + 14;
     }
 
     /// <summary>Draw one return equipment item row.</summary>
@@ -806,13 +846,14 @@ public class ITEquipmentPdfService
             rowNum.ToString(),
             item.AssetTag,
             item.EquipmentType ?? "—",
+            item.Hostname ?? "—",
             item.Manufacturer ?? "—",
             item.Model ?? "—",
             item.SerialNumber ?? "—",
             conditionLabel
         };
 
-        double rowHeight = 22; // Increased to allow wrapping
+        double rowHeight = 16;
         double x = PageMargin;
 
         if (rowNum % 2 == 0)
@@ -825,8 +866,8 @@ public class ITEquipmentPdfService
         for (int c = 0; c < values.Length; c++)
         {
             var text = values[c] ?? "—";
-            tf.DrawString(text, SmallFont, XBrushes.Black,
-                new XRect(x + 3, y, colWidths[c] - 6, rowHeight - 2));
+            tf.DrawString(text, CompactFont, XBrushes.Black,
+                new XRect(x + 2, y, colWidths[c] - 4, rowHeight - 2));
             x += colWidths[c];
         }
 
@@ -836,10 +877,11 @@ public class ITEquipmentPdfService
     /// <summary>Column widths for the return equipment table.</summary>
     private static double[] GetReturnEquipmentColumnWidths(double contentWidth)
     {
-        // #(20), Código do Ativo(125), Tipo(60), Fabricante(70), Modelo(90), S/N(80), Condição(remaining)
-        double fixedTotal = 20 + 125 + 60 + 70 + 90 + 80;
+        // Increase Codigo Imobilizado to 120 and reduce others to avoid overlap
+        // #(18), Código Imobilizado(120), Tipo(50), Hostname(60), Fabricante(60), Modelo(60), S/N(60), Condição(remaining)
+        double fixedTotal = 18 + 120 + 50 + 60 + 60 + 60 + 60;
         double remaining = contentWidth - fixedTotal;
-        return new double[] { 20, 125, 60, 70, 90, 80, remaining };
+        return new double[] { 18, 120, 50, 60, 60, 60, 60, remaining };
     }
 
     // ── DTOs for Return Term PDF ──
@@ -965,7 +1007,7 @@ public class ITEquipmentPdfService
     /// <summary>
     /// Draws the policy text, handling page breaks as needed.
     /// </summary>
-    private double DrawPolicyText(PdfDocument document, XGraphics gfx, ref PdfPage page,
+    private double DrawPolicyText(PdfDocument document, ref XGraphics gfx, ref PdfPage page,
         double y, double contentWidth, string[] lines)
     {
         foreach (var line in lines)
@@ -1065,8 +1107,14 @@ public class ITEquipmentPdfService
     private double DrawEnhancedSignatureBlock(XGraphics gfx, PdfPage page, double y, double contentWidth,
         string fullName, string roleLabel)
     {
-        double blockCenterX = PageMargin + contentWidth / 2;
-        double lineWidth = 260;
+        return DrawEnhancedSignatureBlockAt(gfx, page, PageMargin, y, contentWidth, fullName, roleLabel);
+    }
+
+    private double DrawEnhancedSignatureBlockAt(XGraphics gfx, PdfPage page, double x, double y, double width,
+        string fullName, string roleLabel)
+    {
+        double blockCenterX = x + width / 2;
+        double lineWidth = Math.Min(260, width - 20);
         double lineStartX = blockCenterX - lineWidth / 2;
 
         // ── Cursive signature image ──
@@ -1076,7 +1124,7 @@ public class ITEquipmentPdfService
             using var signatureImage = XImage.FromStream(() => signatureStream);
 
             // Scale: max 220px wide, max 36px tall, maintain aspect ratio
-            double maxW = 220, maxH = 36;
+            double maxW = Math.Min(220, width - 10), maxH = 36;
             double scale = Math.Min(maxW / signatureImage.PixelWidth, maxH / signatureImage.PixelHeight);
             double imgW = signatureImage.PixelWidth * scale;
             double imgH = signatureImage.PixelHeight * scale;
@@ -1090,7 +1138,7 @@ public class ITEquipmentPdfService
             // Fallback: draw name in italic if image generation fails
             var fallbackFont = new XFont("Arial", 14, XFontStyle.Italic);
             gfx.DrawString(fullName, fallbackFont, new XSolidBrush(PrimaryColor),
-                new XRect(PageMargin, y, contentWidth, 20), XStringFormats.TopCenter);
+                new XRect(x, y, width, 20), XStringFormats.TopCenter);
             y += 22;
         }
 
@@ -1100,12 +1148,12 @@ public class ITEquipmentPdfService
 
         // ── Printed name ──
         gfx.DrawString(fullName, SmallBoldFont, XBrushes.Black,
-            new XRect(PageMargin, y, contentWidth, 12), XStringFormats.TopCenter);
+            new XRect(x, y, width, 12), XStringFormats.TopCenter);
         y += 12;
 
         // ── Role label ──
         gfx.DrawString(roleLabel, SmallFont, XBrushes.Gray,
-            new XRect(PageMargin, y, contentWidth, 12), XStringFormats.TopCenter);
+            new XRect(x, y, width, 12), XStringFormats.TopCenter);
         y += 14;
 
         return y;
@@ -1213,8 +1261,14 @@ public class ITEquipmentPdfService
     private double DrawEmptySignatureBlock(XGraphics gfx, PdfPage page, double y, double contentWidth,
         string fullName, string roleLabel)
     {
-        double blockCenterX = PageMargin + contentWidth / 2;
-        double lineWidth = 260;
+        return DrawEmptySignatureBlockAt(gfx, page, PageMargin, y, contentWidth, fullName, roleLabel);
+    }
+
+    private double DrawEmptySignatureBlockAt(XGraphics gfx, PdfPage page, double x, double y, double width,
+        string fullName, string roleLabel)
+    {
+        double blockCenterX = x + width / 2;
+        double lineWidth = Math.Min(260, width - 20);
         double lineStartX = blockCenterX - lineWidth / 2;
 
         // ── Empty space for manual signature ──
@@ -1226,12 +1280,12 @@ public class ITEquipmentPdfService
 
         // ── Printed name ──
         gfx.DrawString(fullName, SmallBoldFont, XBrushes.Black,
-            new XRect(PageMargin, y, contentWidth, 12), XStringFormats.TopCenter);
+            new XRect(x, y, width, 12), XStringFormats.TopCenter);
         y += 12;
 
         // ── Role label ──
         gfx.DrawString(roleLabel, SmallFont, XBrushes.Gray,
-            new XRect(PageMargin, y, contentWidth, 12), XStringFormats.TopCenter);
+            new XRect(x, y, width, 12), XStringFormats.TopCenter);
         y += 14;
 
         return y;

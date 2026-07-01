@@ -448,6 +448,7 @@ export const deliveryTermsApi = {
     downloadDocument: (id: string) => `${DT_BASE}/${id}/document`,
     downloadSignedDocument: (id: string) => `${DT_BASE}/${id}/signed-document`,
     downloadReturnDocument: (id: string) => `${DT_BASE}/${id}/return-document`,
+    downloadSignedReturnDocument: (id: string) => `${DT_BASE}/${id}/signed-return-document`,
 
     downloadDocumentBlob: async (id: string): Promise<Blob> => {
         const response = await apiFetch(`${DT_BASE}/${id}/document`);
@@ -475,6 +476,16 @@ export const deliveryTermsApi = {
             if (response.status === 401) throw new ApiError('Sessão expirada ou não autorizada. Faça login novamente.', 401);
             if (response.status === 404) throw new ApiError('Termo de devolução não encontrado.', 404);
             return handleError(response, 'Não foi possível baixar o Termo de Devolução.');
+        }
+        return response.blob();
+    },
+
+    downloadSignedReturnDocumentBlob: async (id: string): Promise<Blob> => {
+        const response = await apiFetch(`${DT_BASE}/${id}/signed-return-document`);
+        if (!response.ok) {
+            if (response.status === 401) throw new ApiError('Sessão expirada ou não autorizada. Faça login novamente.', 401);
+            if (response.status === 404) throw new ApiError('Termo de devolução assinado não encontrado.', 404);
+            return handleError(response, 'Não foi possível baixar o Termo de Devolução assinado.');
         }
         return response.blob();
     },

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Search, ChevronLeft, ChevronRight, RefreshCw, X, Download, Send, Upload, Undo2, FileText, Trash2 } from 'lucide-react';
+import { Plus, Search, ChevronLeft, ChevronRight, RefreshCw, X, Download, Send, Upload, Undo2, FileText, Trash2, Loader2 } from 'lucide-react';
 import { deliveryTermsApi, itEquipmentApi } from '../../lib/itEquipmentApi';
 import { api } from '../../lib/api';
 import type {
@@ -9,13 +9,15 @@ import type {
 } from '../../types/itEquipment';
 import { DELIVERY_TERM_STATUS_CONFIG, DELIVERY_ITEM_STATUS_CONFIG, RETURN_CONDITION_CONFIG } from '../../types/itEquipment';
 import { ConfirmationDialog } from '../../components/common/ConfirmationDialog';
+import { StatusBadge } from '../../components/common/ui/StatusBadge';
+import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 
 export default function DeliveryTermsPage() {
     const [listData, setListData] = useState<ITDeliveryTermListResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [actionLoading, setActionLoading] = useState(false);
-    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+    const [toast, setToast] = useState<{ message: string | null; type: FeedbackType }>({ message: null, type: 'success' });
     const [confirmAction, setConfirmAction] = useState<{
         title: string;
         message: string;
@@ -87,9 +89,9 @@ export default function DeliveryTermsPage() {
 
     // ── Toast ──
 
-    const showToast = (message: string, type: 'success' | 'error') => {
+    const showToast = (message: string, type: FeedbackType) => {
         setToast({ message, type });
-        setTimeout(() => setToast(null), 4000);
+        setTimeout(() => setToast(prev => ({ ...prev, message: null })), 4000);
     };
 
     // ── Actions ──
@@ -243,16 +245,13 @@ export default function DeliveryTermsPage() {
     return (
         <>
             {/* Toast */}
-            {toast && (
-                <div style={{
-                    position: 'fixed', top: 20, right: 20, zIndex: 9999,
-                    padding: '12px 20px', borderRadius: 8, color: '#fff', fontWeight: 500, fontSize: 14,
-                    background: toast.type === 'success' ? '#10b981' : '#ef4444',
-                    boxShadow: '0 4px 16px rgba(0,0,0,0.2)', animation: 'fadeIn 0.2s ease'
-                }}>
-                    {toast.message}
-                    <button onClick={() => setToast(null)} style={{ marginLeft: 12, background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}>✕</button>
-                </div>
+            {toast.message && (
+                <Feedback
+                    isFixed
+                    type={toast.type}
+                    message={toast.message}
+                    onClose={() => setToast(prev => ({ ...prev, message: null }))}
+                />
             )}
 
             {/* Confirmation Dialog */}
@@ -349,7 +348,7 @@ export default function DeliveryTermsPage() {
                                     <td style={tdStyle}>{term.employeePlant || '—'}</td>
                                     <td style={tdStyle}>{new Date(term.deliveryDate).toLocaleDateString('pt-PT')}</td>
                                     <td style={tdStyle}>
-                                        <StatusBadge status={term.status} config={DELIVERY_TERM_STATUS_CONFIG} />
+                                        <StatusBadge status={term.status} label={DELIVERY_TERM_STATUS_CONFIG[term.status]?.label} />
                                     </td>
                                     <td style={{ ...tdStyle, textAlign: 'center' }}>
                                         <span style={{ background: '#eff6ff', color: '#3b82f6', padding: '2px 10px', borderRadius: 10, fontWeight: 600, fontSize: 13 }}>
@@ -431,24 +430,14 @@ export default function DeliveryTermsPage() {
 //  EMBEDDED COMPONENTS
 // ═══════════════════════════════════════════════════════════════
 
-function StatusBadge({ status, config }: { status: string; config: Record<string, { label: string; color: string }> }) {
-    const cfg = config[status] || { label: status, color: '#6b7280' };
-    return (
-        <span style={{
-            display: 'inline-block', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600,
-            color: cfg.color, background: `${cfg.color}15`, border: `1px solid ${cfg.color}30`
-        }}>
-            {cfg.label}
-        </span>
-    );
-}
+// Function removed: StatusBadge
 
 // ─── Create Delivery Term Modal ───
 
 function CreateDeliveryTermModal({ onClose, onCreated, showToast }: {
     onClose: () => void;
     onCreated: (id: string) => void;
-    showToast: (msg: string, type: 'success' | 'error') => void;
+    showToast: (msg: string, type: FeedbackType) => void;
 }) {
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
@@ -462,6 +451,46 @@ function CreateDeliveryTermModal({ onClose, onCreated, showToast }: {
     const [notes, setNotes] = useState('');
     const [step, setStep] = useState<'info' | 'equipment'>('info');
     const [saving, setSaving] = useState(false);
+    const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+    const getFieldErrors = (fieldName: string): string[] | null => {
+        const normalizedField = fieldName.toLowerCase();
+        const keys = Object.keys(fieldErrors).filter(k => {
+            const normalizedKey = k.toLowerCase().replace(/^\$\./, '');
+            return normalizedKey === normalizedField || normalizedKey.endsWith('.' + normalizedField);
+        });
+        if (keys.length === 0) return null;
+        return keys.map(k => fieldErrors[k]);
+    };
+
+    const clearFieldError = (fieldName: string) => {
+        setFieldErrors(prev => {
+            const next = { ...prev };
+            const normalizedField = fieldName.toLowerCase();
+            const key = Object.keys(next).find(k => {
+                const normalizedKey = k.toLowerCase().replace(/^\$\./, '');
+                return normalizedKey === normalizedField || normalizedKey.endsWith('.' + normalizedField);
+            });
+            if (key) delete next[key];
+            return next;
+        });
+    };
+
+    const renderFieldError = (fieldName: string) => {
+        const errors = getFieldErrors(fieldName);
+        if (!errors) return null;
+        return (
+            <div style={{ color: '#EF4444', fontSize: '0.75rem', marginTop: '4px' }}>
+                {errors[0]}
+            </div>
+        );
+    };
+
+    const getInputStyle = (fieldName: string) => ({
+        ...inputStyle,
+        borderColor: getFieldErrors(fieldName) ? '#EF4444' : '#e5e7eb',
+        backgroundColor: getFieldErrors(fieldName) ? '#FEF2F2' : '#fff'
+    });
 
     // Master Data lookups
     const [companies, setCompanies] = useState<MasterDataCompany[]>([]);
@@ -534,10 +563,42 @@ function CreateDeliveryTermModal({ onClose, onCreated, showToast }: {
         });
     };
 
+    const handleNextStep = () => {
+        const errors: Record<string, string> = {};
+        
+        if (!name.trim()) errors.name = 'Nome do funcionário é obrigatório.';
+        if (email.trim()) {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email.trim())) {
+                errors.email = 'O e-mail informado é inválido.';
+            }
+        }
+        if (!companyId) errors.companyId = 'Empresa é obrigatória.';
+        if (!plantId) errors.plantId = 'Planta é obrigatória.';
+        if (!departmentId) errors.departmentId = 'Departamento é obrigatório.';
+        if (!deliveryDate) errors.deliveryDate = 'Data de entrega é obrigatória.';
+
+        if (Object.keys(errors).length > 0) {
+            setFieldErrors(errors);
+            return;
+        }
+        
+        setFieldErrors({});
+        setStep('equipment');
+    };
+
     const handleCreate = async () => {
-        if (!name.trim()) { showToast('Nome do funcionário é obrigatório.', 'error'); return; }
-        if (!companyId) { showToast('Empresa é obrigatória.', 'error'); return; }
-        if (!plantId) { showToast('Planta é obrigatória.', 'error'); return; }
+        const errors: Record<string, string> = {};
+        if (!name.trim()) errors.name = 'Nome do funcionário é obrigatório.';
+        if (!companyId) errors.companyId = 'Empresa é obrigatória.';
+        if (!plantId) errors.plantId = 'Planta é obrigatória.';
+        
+        if (Object.keys(errors).length > 0) {
+            setFieldErrors(errors);
+            setStep('info'); // back to info if accessed directly somehow
+            return;
+        }
+
         try {
             setSaving(true);
             const result = await deliveryTermsApi.create({
@@ -578,38 +639,43 @@ function CreateDeliveryTermModal({ onClose, onCreated, showToast }: {
                         <div style={formGridStyle}>
                             <div style={fieldStyle}>
                                 <label style={labelStyle}>Nome do Funcionário *</label>
-                                <input value={name} onChange={e => setName(e.target.value)} style={inputStyle} placeholder="Nome completo" />
+                                <input value={name} onChange={e => { setName(e.target.value); clearFieldError('name'); }} style={getInputStyle('name')} placeholder="Nome completo" />
+                                {renderFieldError('name')}
                             </div>
                             <div style={fieldStyle}>
                                 <label style={labelStyle}>E-mail</label>
-                                <input value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} placeholder="email@alpla.com" />
+                                <input value={email} onChange={e => { setEmail(e.target.value); clearFieldError('email'); }} style={getInputStyle('email')} placeholder="email@alpla.com" />
+                                {renderFieldError('email')}
                             </div>
                             <div style={fieldStyle}>
                                 <label style={labelStyle}>Empresa *</label>
-                                <select value={companyId} onChange={e => handleCompanyChange(e.target.value)} style={inputStyle}>
+                                <select value={companyId} onChange={e => { handleCompanyChange(e.target.value); clearFieldError('companyId'); }} style={getInputStyle('companyId')}>
                                     <option value="">Selecione...</option>
                                     {companies.filter(c => c.isActive).map(c => (
                                         <option key={c.id} value={c.id}>{c.name}</option>
                                     ))}
                                 </select>
+                                {renderFieldError('companyId')}
                             </div>
                             <div style={fieldStyle}>
                                 <label style={labelStyle}>Planta *</label>
-                                <select value={plantId} onChange={e => handlePlantChange(e.target.value)} style={{...inputStyle, opacity: companyId ? 1 : 0.5}} disabled={!companyId}>
+                                <select value={plantId} onChange={e => { handlePlantChange(e.target.value); clearFieldError('plantId'); }} style={{...getInputStyle('plantId'), opacity: companyId ? 1 : 0.5}} disabled={!companyId}>
                                     <option value="">{companyId ? 'Selecione...' : 'Selecione empresa primeiro'}</option>
                                     {plants.filter(p => p.isActive).map(p => (
                                         <option key={p.id} value={p.id}>{p.name}</option>
                                     ))}
                                 </select>
+                                {renderFieldError('plantId')}
                             </div>
                             <div style={fieldStyle}>
                                 <label style={labelStyle}>Departamento</label>
-                                <select value={departmentId} onChange={e => handleDepartmentChange(e.target.value)} style={inputStyle}>
+                                <select value={departmentId} onChange={e => { handleDepartmentChange(e.target.value); clearFieldError('departmentId'); }} style={getInputStyle('departmentId')}>
                                     <option value="">Selecione...</option>
                                     {departments.filter(d => d.isActive).map(d => (
                                         <option key={d.id} value={d.id}>{d.name}</option>
                                     ))}
                                 </select>
+                                {renderFieldError('departmentId')}
                             </div>
                             <div style={fieldStyle}>
                                 <label style={labelStyle}>Cargo</label>
@@ -617,7 +683,8 @@ function CreateDeliveryTermModal({ onClose, onCreated, showToast }: {
                             </div>
                             <div style={fieldStyle}>
                                 <label style={labelStyle}>Data de Entrega *</label>
-                                <input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)} style={inputStyle} />
+                                <input type="date" value={deliveryDate} onChange={e => { setDeliveryDate(e.target.value); clearFieldError('deliveryDate'); }} style={getInputStyle('deliveryDate')} />
+                                {renderFieldError('deliveryDate')}
                             </div>
                         </div>
                         <div style={{ ...fieldStyle, marginTop: 12 }}>
@@ -626,7 +693,7 @@ function CreateDeliveryTermModal({ onClose, onCreated, showToast }: {
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
                             <button onClick={onClose} style={btnSecondaryStyle}>Cancelar</button>
-                            <button onClick={() => setStep('equipment')} style={btnPrimaryStyle}>Selecionar Equipamentos →</button>
+                            <button onClick={handleNextStep} style={btnPrimaryStyle}>Selecionar Equipamentos →</button>
                         </div>
                     </>
                 )}
@@ -719,7 +786,7 @@ function DetailDrawer({ detail, loading, actionLoading, onClose, onGenerate, onS
     onRefresh: () => void;
     showToast: (msg: string, type: 'success' | 'error') => void;
 }) {
-    const handleDownload = async (type: 'delivery' | 'signed' | 'return') => {
+    const handleDownload = async (type: 'delivery' | 'signed' | 'return' | 'signed_return') => {
         if (!detail) return;
         try {
             let blob: Blob;
@@ -731,9 +798,12 @@ function DetailDrawer({ detail, loading, actionLoading, onClose, onGenerate, onS
             } else if (type === 'signed') {
                 blob = await deliveryTermsApi.downloadSignedDocumentBlob(detail.id);
                 filename = `Documento_Assinado_${detail.termNumber}.pdf`;
-            } else {
+            } else if (type === 'return') {
                 blob = await deliveryTermsApi.downloadReturnDocumentBlob(detail.id);
                 filename = `Termo_Devolucao_${detail.termNumber}.pdf`;
+            } else {
+                blob = await deliveryTermsApi.downloadSignedReturnDocumentBlob(detail.id);
+                filename = `Termo_Devolucao_Assinado_${detail.termNumber}.pdf`;
             }
             
             const url = window.URL.createObjectURL(blob);
@@ -760,7 +830,7 @@ function DetailDrawer({ detail, loading, actionLoading, onClose, onGenerate, onS
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, padding: '20px 24px 0 24px' }}>
                             <div>
                                 <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#111827' }}>{detail.termNumber}</h2>
-                                <StatusBadge status={detail.status} config={DELIVERY_TERM_STATUS_CONFIG} />
+                                <StatusBadge status={detail.status} label={DELIVERY_TERM_STATUS_CONFIG[detail.status]?.label} />
                             </div>
                             <div style={{ display: 'flex', gap: 6 }}>
                                 <button onClick={onRefresh} style={iconBtnStyle}><RefreshCw size={16} /></button>
@@ -804,10 +874,10 @@ function DetailDrawer({ detail, loading, actionLoading, onClose, onGenerate, onS
                                                     </div>
                                                 </div>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                    <StatusBadge status={item.itemStatus} config={DELIVERY_ITEM_STATUS_CONFIG} />
+                                                    <StatusBadge status={item.itemStatus} label={DELIVERY_ITEM_STATUS_CONFIG[item.itemStatus]?.label} />
                                                     {item.itemStatus === 'DELIVERED' && ['SIGNED', 'PARTIALLY_RETURNED', 'SENT', 'GENERATED'].includes(detail.status) && (
-                                                        <button onClick={() => onReturn(item.id)} style={{ ...iconBtnStyle, color: '#f59e0b' }} title="Devolver">
-                                                            <Undo2 size={14} />
+                                                        <button onClick={() => onReturn(item.id)} style={{ ...btnSecondaryStyle, padding: '4px 12px', fontSize: 12 }} title="Devolver">
+                                                            <Undo2 size={14} style={{ color: '#f59e0b' }} /> Devolver Equipamento
                                                         </button>
                                                     )}
                                                     {item.itemStatus === 'PENDING' && detail.status === 'DRAFT' && (
@@ -819,7 +889,7 @@ function DetailDrawer({ detail, loading, actionLoading, onClose, onGenerate, onS
                                             </div>
                                             {item.returnCondition && (
                                                 <div style={{ marginTop: 4, fontSize: 12, color: '#6b7280' }}>
-                                                    Condição: <StatusBadge status={item.returnCondition} config={RETURN_CONDITION_CONFIG} />
+                                                    Condição: <StatusBadge status={item.returnCondition} label={RETURN_CONDITION_CONFIG[item.returnCondition]?.label} />
                                                     {item.returnedAt && ` — ${new Date(item.returnedAt).toLocaleDateString('pt-PT')}`}
                                                 </div>
                                             )}
@@ -845,7 +915,12 @@ function DetailDrawer({ detail, loading, actionLoading, onClose, onGenerate, onS
                                         )}
                                         {detail.returnDocumentId && (
                                             <button onClick={() => handleDownload('return')} style={{ ...docLinkStyle, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%', fontFamily: 'inherit' }}>
-                                                <FileText size={16} style={{ color: '#f59e0b' }} /> Termo de Devolução (PDF)
+                                                <FileText size={16} style={{ color: '#f59e0b' }} /> Termo de Devolução (PDF Gerado)
+                                            </button>
+                                        )}
+                                        {detail.signedReturnDocumentId && (
+                                            <button onClick={() => handleDownload('signed_return')} style={{ ...docLinkStyle, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%', fontFamily: 'inherit' }}>
+                                                <FileText size={16} style={{ color: '#10b981' }} /> Termo de Devolução Assinado
                                             </button>
                                         )}
                                     </div>
@@ -867,22 +942,24 @@ function DetailDrawer({ detail, loading, actionLoading, onClose, onGenerate, onS
                                 {detail.status === 'GENERATED' && (
                                     <>
                                         <button onClick={onSend} disabled={actionLoading} style={btnPrimaryStyle}>
-                                            <Send size={14} /> Enviar por E-mail
+                                            {actionLoading ? <Loader2 size={14} className="spin" /> : <Send size={14} />} 
+                                            {actionLoading ? 'Enviando...' : 'Enviar por E-mail'}
                                         </button>
-                                        <label style={{ ...btnSecondaryStyle, cursor: 'pointer' }}>
+                                        <label style={{ ...btnSecondaryStyle, cursor: actionLoading ? 'default' : 'pointer', opacity: actionLoading ? 0.6 : 1 }}>
                                             <Upload size={14} /> Carregar Assinado
-                                            <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={onUploadSigned} style={{ display: 'none' }} />
+                                            <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={onUploadSigned} style={{ display: 'none' }} disabled={actionLoading} />
                                         </label>
                                     </>
                                 )}
                                 {detail.status === 'SENT' && (
                                     <>
                                         <button onClick={onSend} disabled={actionLoading} style={btnSecondaryStyle}>
-                                            <Send size={14} /> Reenviar E-mail
+                                            {actionLoading ? <Loader2 size={14} className="spin" /> : <Send size={14} />} 
+                                            {actionLoading ? 'Enviando...' : 'Reenviar E-mail'}
                                         </button>
-                                        <label style={{ ...btnPrimaryStyle, cursor: 'pointer' }}>
+                                        <label style={{ ...btnPrimaryStyle, cursor: actionLoading ? 'default' : 'pointer', opacity: actionLoading ? 0.6 : 1 }}>
                                             <Upload size={14} /> Carregar Assinado
-                                            <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={onUploadSigned} style={{ display: 'none' }} />
+                                            <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={onUploadSigned} style={{ display: 'none' }} disabled={actionLoading} />
                                         </label>
                                     </>
                                 )}
@@ -891,14 +968,19 @@ function DetailDrawer({ detail, loading, actionLoading, onClose, onGenerate, onS
                                         <Download size={14} /> Baixar PDF
                                     </button>
                                 )}
-                                {detail.status === 'CLOSED' && (
+                                {(detail.status === 'CLOSED' || detail.status === 'PARTIALLY_RETURNED') && (
                                     <>
                                         {detail.returnDocumentId && (
                                             <button onClick={() => handleDownload('return')} style={{ ...btnSecondaryStyle, fontFamily: 'inherit' }}>
                                                 <Download size={14} /> Baixar Termo de Devolução
                                             </button>
                                         )}
-                                        {detail.returnDocumentId && (
+                                        {detail.signedReturnDocumentId && (
+                                            <button onClick={() => handleDownload('signed_return')} style={{ ...btnSecondaryStyle, fontFamily: 'inherit' }}>
+                                                <Download size={14} /> Baixar Devolução Assinada
+                                            </button>
+                                        )}
+                                        {detail.returnDocumentId && !detail.signedReturnDocumentId && (
                                             <label style={{ ...btnPrimaryStyle, cursor: 'pointer' }}>
                                                 <Upload size={14} /> Carregar Devolução Assinada
                                                 <input type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={onUploadSignedReturn} style={{ display: 'none' }} />
@@ -1031,7 +1113,7 @@ const paginationBtnStyle: React.CSSProperties = {
 };
 
 const overlayStyle: React.CSSProperties = {
-    position: 'fixed', inset: 0, zIndex: 1000, display: 'flex',
+    position: 'fixed', inset: 0, zIndex: 'var(--z-modal, 2000)' as any, display: 'flex',
     alignItems: 'center', justifyContent: 'center',
     background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(2px)'
 };
@@ -1042,7 +1124,7 @@ const modalStyle: React.CSSProperties = {
 };
 
 const drawerOverlayStyle: React.CSSProperties = {
-    position: 'fixed', inset: 0, zIndex: 1000,
+    position: 'fixed', inset: 0, zIndex: 'var(--z-drawer)' as any,
     background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(1px)'
 };
 
@@ -1050,7 +1132,8 @@ const drawerStyle: React.CSSProperties = {
     position: 'fixed', right: 0, top: 0, bottom: 0, width: '520px', maxWidth: '90vw',
     background: '#fff', boxShadow: '-8px 0 32px rgba(0,0,0,0.15)',
     display: 'flex', flexDirection: 'column', overflow: 'auto',
-    animation: 'slideInRight 0.2s ease'
+    animation: 'slideInRight 0.2s ease',
+    zIndex: 'calc(var(--z-drawer) + 1)' as any
 };
 
 const sectionStyle: React.CSSProperties = {

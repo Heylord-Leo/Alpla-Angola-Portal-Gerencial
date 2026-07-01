@@ -2,6 +2,17 @@
 
 All notable changes to the Alpla Angola - Portal Gerencial project will be documented in this file.
 
+## [v2.205.0] - 2026-07-01
+
+### Added — IT Equipment Return & New Delivery Enforcement
+
+- **Legacy Transfer Removal**: Removed the "Trocar Utilizador" action from the Equipment Quick-View drawer and deprecated the backend `POST /api/itequipment/{id}/change-user` endpoint (now returns `410 Gone`). The system no longer allows silent transfer of equipment ownership bypassing the Delivery Terms workflow.
+- **Workflow Enforcement**: Added a disabled "Transferir Equipamento" guidance button to instruct users to first return the equipment and then create a new Delivery Term.
+- **Form Validation**: Replaced global red toast notifications with contextual inline modal validation for invalid email addresses in the New Delivery Term flow.
+- **PDF Layout Optimization**: Optimized the "Termo de Devolução" PDF to fit on a single page, reducing font sizes and signature block spacing to avoid unnecessary printing waste. Fixed the 'Código Imobilizado' overlapping issue in the equipment table.
+- **Email Instruction Update**: Updated the employee delivery email body to clearly instruct users to send or forward the signed document to `aovia1-it@alpla.com` instead of replying to the automated address.
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
 ## [v2.204.1] - 2026-06-30
 
 ### Fixed — IT Equipment Path Resolution & Email Dispatch Resiliency
