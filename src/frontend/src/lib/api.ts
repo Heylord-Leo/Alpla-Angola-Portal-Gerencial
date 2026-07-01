@@ -137,6 +137,11 @@ export const api = {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/users/me`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar perfil.');
             return response.json();
+        },
+        getAssignableRoles: async (): Promise<string[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/users/assignable-roles`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar funções disponíveis.');
+            return response.json();
         }
     },
     auth: {

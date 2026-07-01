@@ -2,7 +2,18 @@
 
 ## Current Version
 
-v2.205.0
+v2.205.1
+
+## [v2.205.1] - 2026-07-01
+
+### Fixed — User Administration Role Scopes & Validation
+
+- **Dynamic Role Scope**: Corrected a permission gap where Local Managers could arbitrarily assign restricted roles (like `HR` or `Import`) without possessing those permissions. The `AllowedRolesForLM` array was replaced with a dynamic backend check `GetAssignableRolesForCurrentUserAsync`.
+- **Target User Scope Protection**: Prevented Local Managers from editing or resetting passwords for users who possess roles outside the manager's permitted scope, replacing silent failures with a locked UI indicator.
+- **Corporate Email Validation**: Enforced strict validation for ALPLA corporate emails (ending in `@alpla.com`) across both frontend forms and backend API (`CreateUser` / `UpdateUser`), completely preventing the creation of incomplete accounts that would crash the email delivery service.
+- **Standardized Notifications**: Replaced custom modal toasts with the system-wide `<Feedback />` component in `UserManagement.tsx` to align with the rest of the application.
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
 
 ## [v2.205.0] - 2026-07-01
 
