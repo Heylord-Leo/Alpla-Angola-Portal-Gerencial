@@ -1,0 +1,62 @@
+# =============================================================================
+# Alpla Angola - Portal Gerencial
+# GitHub Actions Workflow: Sync PROD Data to TEST (Manual)
+# =============================================================================
+name: Sync PROD Data to TEST
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_restore:
+        description: 'Digite "RESTORE_PROD_TO_TEST" para confirmar o restore no TEST'
+        required: true
+        type: string
+      confirm_no_prod_changes:
+        description: 'Digite "I_UNDERSTAND_PROD_WILL_NOT_BE_MODIFIED" para confirmar a seguranca da PROD'
+        required: true
+        type: string
+      release_version:
+        description: 'Release atual (ex: v2.205.0)'
+        required: true
+        type: string
+
+concurrency:
+  group: sync-prod-data-test
+  cancel-in-progress: false
+
+jobs:
+  sync-data:
+    name: Sync PROD Data to TEST (${{ inputs.release_version }})
+    runs-on: [self-hosted, Windows, X64, iis, test, alpla-portal-test]
+    environment: test
+
+    steps:
+      # --- Checkout ---
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # --- Validar Inputs de Segurança ---
+      - name: Validate security inputs
+        shell: pwsh
+        run: |
+          if ("${{ inputs.confirm_restore }}" -ne "RESTORE_PROD_TO_TEST") {
+            throw "INPUT INVALIDO: confirm_restore deve ser exatamente RESTORE_PROD_TO_TEST."
+          }
+          if ("${{ inputs.confirm_no_prod_changes }}" -ne "I_UNDERSTAND_PROD_WILL_NOT_BE_MODIFIED") {
+            throw "INPUT INVALIDO: confirm_no_prod_changes deve ser exatamente I_UNDERSTAND_PROD_WILL_NOT_BE_MODIFIED."
+          }
+          if ("${{ inputs.release_version }}" -ne "v2.205.0") {
+            throw "INPUT INVALIDO: release_version deve ser exatamente v2.205.0."
+          }
+          Write-Host "Inputs de confirmacao validados com sucesso."
+
+      # --- Executar Script de Sincronizacao ---
+      - name: Run sync script
+        shell: pwsh
+        run: |
+          & "${{ github.workspace }}\scripts\db\sync-prod-data-test.ps1" `
+            -Environment TEST `
+            -ProdDbName "Portal-Gerencial" `
+            -TestDbName "Portal-Gerencial-Test" `
+            -ProdAppPath "C:\Apps\AlplaPortal\Prod" `
+            -TestAppPath "C:\Apps\AlplaPortal\Test"
