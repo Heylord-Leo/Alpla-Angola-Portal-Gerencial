@@ -255,23 +255,29 @@ if ($prodAttachments -eq $testAttachments) {
 # 5. Interrupção do IIS App Pool do TEST
 # ─────────────────────────────────────────────────────────────────────────────
 Import-Module WebAdministration
-$poolName = "AlplaPortal-Test-Api-Pool"
-$poolPath = "IIS:\AppPools\$poolName"
+$candidatePools = @(
+    "AlplaPortal-Test-Api-Pool",
+    "PortalGerencialTestApiPool",
+    "PortalGerencialTestAppPool",
+    "AlplaPortalTestPool",
+    "PortalGerencial-Test-Api-Pool"
+)
 
-if (Test-Path $poolPath) {
-    Write-Host "Parando o App Pool do TEST ($poolName)..." -ForegroundColor Yellow
-    Stop-WebAppPool -Name $poolName -ErrorAction SilentlyContinue
+$stoppedPools = @()
+
+foreach ($pool in $candidatePools) {
+    $poolPath = "IIS:\AppPools\$pool"
+    if (Test-Path $poolPath) {
+        Write-Host ("Parando o App Pool do TEST ({0})..." -f $pool) -ForegroundColor Yellow
+        Stop-WebAppPool -Name $pool -ErrorAction SilentlyContinue
+        $stoppedPools += $pool
+    }
+}
+
+if ($stoppedPools.Count -gt 0) {
     Start-Sleep -Seconds 3
 } else {
-    $fallbackPool = "AlplaPortalTestPool"
-    $fallbackPath = "IIS:\AppPools\$fallbackPool"
-    if (Test-Path $fallbackPath) {
-        Write-Host "Parando o App Pool do TEST ($fallbackPool)..." -ForegroundColor Yellow
-        Stop-WebAppPool -Name $fallbackPool -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 3
-    } else {
-        Write-Host "[WARN] Nenhum App Pool do TEST ('$poolName' ou '$fallbackPool') foi encontrado. Continuando sem parar o IIS." -ForegroundColor Yellow
-    }
+    Write-Host "[WARN] Nenhum App Pool do TEST (candidatos: AlplaPortal-Test-Api-Pool, PortalGerencialTestApiPool, etc.) foi encontrado. Continuando sem parar o IIS." -ForegroundColor Yellow
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -333,9 +339,11 @@ $connProd.Close()
 # ─────────────────────────────────────────────────────────────────────────────
 # 7. Restaurar Backup da PROD sobre o TEST (Conectando ao banco MASTER)
 # ─────────────────────────────────────────────────────────────────────────────
-Write-Host "Criando conexao administrativa ao banco MASTER..." -ForegroundColor Yellow
 $builder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder($testConnStr)
-$builder.InitialCatalog = "master"
+$dbServerLog = $builder.DataSource
+Write-Host ("Criando conexao administrativa ao banco master no servidor: {0}" -f $dbServerLog) -ForegroundColor Green
+
+$builder["Initial Catalog"] = "master"
 $masterConnStr = $builder.ConnectionString
 
 $connRestore = New-Object System.Data.SqlClient.SqlConnection($masterConnStr)
@@ -480,15 +488,11 @@ if ($prodAttachments -ne $testAttachments -and (Test-Path $prodAttachments)) {
 # ─────────────────────────────────────────────────────────────────────────────
 # 10. Reiniciar o IIS App Pool do TEST
 # ─────────────────────────────────────────────────────────────────────────────
-if (Test-Path $poolPath) {
-    Write-Host "Reiniciando o App Pool do TEST ($poolName)..." -ForegroundColor Yellow
-    Start-WebAppPool -Name $poolName -ErrorAction SilentlyContinue
-} else {
-    $fallbackPool = "AlplaPortalTestPool"
-    $fallbackPath = "IIS:\AppPools\$fallbackPool"
-    if (Test-Path $fallbackPath) {
-        Write-Host "Reiniciando o App Pool do TEST ($fallbackPool)..." -ForegroundColor Yellow
-        Start-WebAppPool -Name $fallbackPool -ErrorAction SilentlyContinue
+foreach ($pool in $stoppedPools) {
+    $poolPath = "IIS:\AppPools\$pool"
+    if (Test-Path $poolPath) {
+        Write-Host ("Reiniciando o App Pool do TEST ({0})..." -f $pool) -ForegroundColor Yellow
+        Start-WebAppPool -Name $pool -ErrorAction SilentlyContinue
     }
 }
 Write-Host "Processo concluido com sucesso!" -ForegroundColor Green
