@@ -4,28 +4,35 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.205.1
+v2.205.0
 
-## [v2.205.1] - 2026-07-01
+## [Unreleased]
 
-### Fixed — User Administration Role Scopes & Validation
+### Added — Prazo Mínimo por Grau de Necessidade (Criação de Pedido)
 
-- **Dynamic Role Scope**: Corrected a permission gap where Local Managers could arbitrarily assign restricted roles (like `HR` or `Import`) without possessing those permissions. The `AllowedRolesForLM` array was replaced with a dynamic backend check `GetAssignableRolesForCurrentUserAsync`.
-- **Target User Scope Protection**: Prevented Local Managers from editing or resetting passwords for users who possess roles outside the manager's permitted scope, replacing silent failures with a locked UI indicator.
-- **Corporate Email Validation**: Enforced strict validation for ALPLA corporate emails (ending in `@alpla.com`) across both frontend forms and backend API (`CreateUser` / `UpdateUser`), completely preventing the creation of incomplete accounts that would crash the email delivery service.
-- **Standardized Notifications**: Replaced custom modal toasts with the system-wide `<Feedback />` component in `UserManagement.tsx` to align with the rest of the application.
+- **Regra de Prazo Mínimo**: O campo "Necessário até" (`NeedByDateUtc`) passa a respeitar um prazo mínimo derivado do "Grau de Necessidade" (`NeedLevelId`) na criação de pedidos de **Cotação**: `CRITICO` → hoje, `URGENTE` → hoje + 1 dia, `NORMAL` → hoje + 7 dias, `BAIXO` → hoje + 15 dias.
+- **Preenchimento Automático**: Ao selecionar o grau, a data é preenchida automaticamente quando vazia e empurrada para a frente quando anterior ao mínimo (com aviso discreto). Datas posteriores ao mínimo são sempre preservadas.
+- **Bloqueio no Date Picker**: O `DateInput` passa a propagar `min`/`max` para o seletor nativo de data, desabilitando datas anteriores ao prazo mínimo no calendário.
+- **Validação Server-Side**: `POST /requests` rejeita (400) datas anteriores ao prazo mínimo do grau, impedindo bypass via API. Regra centralizada em `RequestConstants.NeedLevels` e espelhada no frontend em `lib/needByDate.ts`.
+- **Escopo**: Pedidos de **Pagamento** são isentos — o mesmo campo carrega a data de vencimento da fatura do fornecedor, que legitimamente pode estar no passado. A edição de rascunhos existentes permanece inalterada (o mínimo é relativo a "hoje" e invalidaria retroativamente rascunhos antigos válidos).
 
 **Guided Tour impact: existing tour reviewed, no changes needed.**
 
-## [v2.205.0] - 2026-07-01
+## [v2.205.0] - 2026-07-14
+
+### Added — Approval Batch Wizard & CC Rateio
+
+- **Approval Batch Wizard**: Implementação completa de assistente de aprovação em lote para pedidos de compra com etapas de overview, comparação de cotações, rateio por item, verificação orçamentária e adjudicação.
+- **Rateio por Item**: Suporte para divisão percentual ou nominal de custos de itens individuais entre múltiplos Centros de Custo (`RequestLineItemAllocation`).
+- **Agrupamento de P.O**: Agrupamento automático de pedidos aprovados sob a mesma P.O física (`RequestPoGroup`).
+- **OCR Conciliação**: Persistência de dados OCR extraídos em faturas fiscais para auditoria (`OcrDataRaw`).
+- **Visão Diária**: Adição da resolução diária ("Dias") no gráfico "Contexto Financeiro Visual" do drawer de aprovação.
 
 ### Added — IT Equipment Return & New Delivery Enforcement
 
-- **Legacy Transfer Removal**: Removed the "Trocar Utilizador" action from the Equipment Quick-View drawer and deprecated the backend `POST /api/itequipment/{id}/change-user` endpoint (now returns `410 Gone`). The system no longer allows silent transfer of equipment ownership bypassing the Delivery Terms workflow.
-- **Workflow Enforcement**: Added a disabled "Transferir Equipamento" guidance button to instruct users to first return the equipment and then create a new Delivery Term.
-- **Form Validation**: Replaced global red toast notifications with contextual inline modal validation for invalid email addresses in the New Delivery Term flow.
-- **PDF Layout Optimization**: Optimized the "Termo de Devolução" PDF to fit on a single page, reducing font sizes and signature block spacing to avoid unnecessary printing waste. Fixed the 'Código Imobilizado' overlapping issue in the equipment table.
-- **Email Instruction Update**: Updated the employee delivery email body to clearly instruct users to send or forward the signed document to `aovia1-it@alpla.com` instead of replying to the automated address.
+- **Legacy Transfer Removal**: Remoção da ação de transferência rápida de equipamentos no drawer do comprador, forçando o fluxo completo de devolução e emissão de novo Termo.
+- **Form Validation**: Validação inline contextual de e-mails corporativos no fluxo de termos.
+- **PDF Layout**: Otimização do layout do PDF de Termo de Devolução para caber em página única.
 
 **Guided Tour impact: existing tour reviewed, no changes needed.**
 ## [v2.204.1] - 2026-06-30

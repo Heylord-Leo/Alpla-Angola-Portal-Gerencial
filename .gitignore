@@ -60,3 +60,29 @@ scratch/
 backend.err
 
 tsconfig.tsbuildinfo
+
+# Scripts temporários locais de análise/teste
+/check_*.csx
+/drop_objects.csx
+/list_statuses.csx
+
+# Scripts PowerShell temporários locais
+/src/backend/query.ps1
+/src/backend/update.ps1
+
+# Scripts temporários de correção rápida
+fix_*.py
+patch_*.py
+
+# Logs, prompts e outputs locais
+last_prompt.txt
+out.txt
+test_results.txt
+error.txt
+workflow_analysis.md
+
+# Arquivos de backup comprimidos
+*.zip
+
+# Pasta local de uploads/anexos gerados em desenvolvimento
+src/backend/AlplaPortal.Api/data/attachments/
