@@ -282,14 +282,38 @@ if (-not (Test-Path $backupDirDb)) { New-Item -ItemType Directory -Path $backupD
 
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 
+function Get-SqlBackupClause {
+    param(
+        [System.Data.SqlClient.SqlConnection]$Connection,
+        [string]$BackupName
+    )
+
+    # 1. Detectar edicao do SQL Server
+    $editionCmd = $Connection.CreateCommand()
+    $editionCmd.CommandText = "SELECT CAST(SERVERPROPERTY('Edition') AS NVARCHAR(200)) AS Edition"
+    $edition = $editionCmd.ExecuteScalar()
+
+    Write-Host ("Detected SQL Server Edition: {0}" -f $edition) -ForegroundColor Green
+
+    # 2. Se a edicao contiver "Express", desabilitar compressao
+    if ($edition -like "*Express*") {
+        Write-Host "SQL Server Express detected. Backup compression is DISABLED." -ForegroundColor Yellow
+        return "WITH FORMAT, NAME = N'{0}'" -f $BackupName
+    } else {
+        Write-Host "Backup compression is ENABLED." -ForegroundColor Green
+        return "WITH FORMAT, COMPRESSION, NAME = N'{0}'" -f $BackupName
+    }
+}
+
 # Backup do TEST Atual (Pre-Restore)
 $testBackupFile = Join-Path $backupDirDb "${TestDbName}_${timestamp}_pre-sync.bak"
 Write-Host "Gerando backup de seguranca do TEST em: $testBackupFile..." -ForegroundColor Yellow
 $connTest = New-Object System.Data.SqlClient.SqlConnection($testConnStr)
 $connTest.Open()
+$testBackupClause = Get-SqlBackupClause -Connection $connTest -BackupName "Pre-Sync Backup"
 $bkCmdTest = $connTest.CreateCommand()
 $bkCmdTest.CommandTimeout = 300
-$bkCmdTest.CommandText = "BACKUP DATABASE [$TestDbName] TO DISK = N'$testBackupFile' WITH FORMAT, COMPRESSION, NAME = N'Pre-Sync Backup'"
+$bkCmdTest.CommandText = "BACKUP DATABASE [$TestDbName] TO DISK = N'$testBackupFile' $testBackupClause"
 $bkCmdTest.ExecuteNonQuery() | Out-Null
 $connTest.Close()
 
@@ -299,9 +323,10 @@ Write-Host "Gerando backup da PROD (Origem) em: $prodBackupFile..." -ForegroundC
 Write-Host "[ALERTA DE SEGURANCA] O backup '$prodBackupFile' CONTEM DADOS DE PRODUCAO. Acesso restrito obrigatorio!" -ForegroundColor Yellow
 $connProd = New-Object System.Data.SqlClient.SqlConnection($prodConnStr)
 $connProd.Open()
+$prodBackupClause = Get-SqlBackupClause -Connection $connProd -BackupName "Source Backup"
 $bkCmdProd = $connProd.CreateCommand()
 $bkCmdProd.CommandTimeout = 300
-$bkCmdProd.CommandText = "BACKUP DATABASE [$ProdDbName] TO DISK = N'$prodBackupFile' WITH FORMAT, COMPRESSION, NAME = N'Source Backup'"
+$bkCmdProd.CommandText = "BACKUP DATABASE [$ProdDbName] TO DISK = N'$prodBackupFile' $prodBackupClause"
 $bkCmdProd.ExecuteNonQuery() | Out-Null
 $connProd.Close()
 
