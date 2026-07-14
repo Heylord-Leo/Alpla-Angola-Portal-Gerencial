@@ -7,6 +7,7 @@ export interface RequestListItemDto {
     statusCode: string;
     statusDisplayOrder: number;
     statusBadgeColor: string;
+    displayWorkflowState?: string | null;
     requestTypeId: number;
     requestTypeName: string;
     requestTypeCode: string;
@@ -83,10 +84,31 @@ export interface RequestLineItemDto {
     ivaRateName: string | null;
     ivaRatePercent: number | null;
     dueDate: string | null;
+    quotationLifecycleStatus?: string | null;
+    notQuotedJustification?: string | null;
+    notQuotedProposedByName?: string | null;
+    notQuotedProposedAtUtc?: string | null;
 
     // Catalog linkage
     itemCatalogId: number | null;
     itemCatalogCode: string | null;
+    
+    // Awards and PO grouping
+    selectedQuotationItemId?: string | null;
+    requestPoGroupId?: string | null;
+
+    allocations?: RequestLineItemAllocationDto[];
+}
+
+export interface RequestLineItemAllocationDto {
+    id: string;
+    plantId: number;
+    plantName?: string | null;
+    costCenterId?: number | null;
+    costCenterName?: string | null;
+    costCenterCode?: string | null;
+    percentage: number;
+    allocationOrder: number;
 }
 
 export interface SavedQuotationItemDto {
@@ -95,6 +117,7 @@ export interface SavedQuotationItemDto {
     description: string;
     quantity: number;
     unitPrice: number;
+    currencyCode?: string;
     discountType: string | null;
     discountValue: number;
     ivaRateId: number | null;
@@ -112,12 +135,30 @@ export interface SavedQuotationItemDto {
     itemCatalogId?: number | null;
     itemCatalogCode?: string | null;
     
+    mappedRequestLineItemId?: string;
+    reconciliationStatus?: 'MAPPED' | 'NOT_QUOTED' | 'EXTRA_ITEM' | 'IGNORED' | 'SUBSTITUTE' | string;
+    reconciliationJustification?: string | null;
+    buyerJustification?: string | null;
+
     // Receiving Fields
     receivedQuantity?: number;
     divergenceNotes?: string;
     lineItemStatusCode?: string | null;
     lineItemStatusName?: string | null;
     lineItemStatusBadgeColor?: string | null;
+
+    historyInsight?: PurchaseHistoryInsightDto;
+}
+
+export interface PurchaseHistoryInsightDto {
+    hasHistory: boolean;
+    lastPurchaseDateUtc: string | null;
+    lastUnitPrice: number | null;
+    lastCurrency: string | null;
+    lastUom: string | null;
+    currentUnitPrice: number;
+    differencePercent: number | null;
+    status: 'NO_HISTORY' | 'LOWER_THAN_LAST' | 'SAME_AS_LAST' | 'HIGHER_THAN_LAST' | 'DIFFERENT_CURRENCY' | 'DIFFERENT_UOM';
 }
 
 export interface SavedQuotationDto {
@@ -125,6 +166,9 @@ export interface SavedQuotationDto {
     requestId: string;
     supplierId?: number;
     supplierNameSnapshot: string;
+    supplierPortalCode?: string;
+    supplierPrimaveraCode?: string;
+    supplierRegistrationStatus?: string;
     documentNumber?: string;
     documentDate?: string;
     currency: string;
@@ -141,6 +185,26 @@ export interface SavedQuotationDto {
     createdAtUtc: string;
     itemCount: number;
     items: SavedQuotationItemDto[];
+}
+
+export interface RequestPoGroupDto {
+    id: string;
+    requestId: string;
+    supplierId?: number | null;
+    supplierNameSnapshot?: string | null;
+    supplierNifSnapshot?: string | null;
+    currencyId?: number | null;
+    currencyCode?: string | null;
+    totalAmount: number;
+    paymentConditionCode?: string | null;
+    advancePaymentPercent?: number | null;
+    status: string;
+    purchaseOrderNumber?: string | null;
+    createdAtUtc: string;
+    createdByUserId: string;
+    lineItemCount: number;
+    attachmentCount: number;
+    payments?: RequestPaymentDto[];
 }
 
 export interface RequestStatusHistoryDto {
@@ -173,6 +237,7 @@ export interface RequestAttachmentDto {
     fileExtension: string;
     fileSizeMBytes: number;
     attachmentTypeCode: string;
+    requestPoGroupId?: string | null;
     uploadedAtUtc: string;
     uploadedByName: string;
 }
@@ -183,6 +248,8 @@ export interface RequestDetailsDto extends RequestListItemDto {
     lineItems: RequestLineItemDto[];
     attachments: RequestAttachmentDto[];
     quotations: SavedQuotationDto[];
+    poGroups: RequestPoGroupDto[];
+    approvalBatches?: any[];
     statusHistory: RequestStatusHistoryDto[];
     // B2P: Payment Condition
     paymentConditionCode?: string | null;
@@ -219,17 +286,22 @@ export interface OcrDraftItem {
     taxRate?: number; // Raw extracted tax percentage for suggestion hint
     totalPrice: number; // Front-end calculated preview
     isChecked?: boolean; // UI tracking variable for visual checklist
+    isAutoSuggested?: boolean; // UI tracking variable for auto-suggest logic
     itemCatalogId?: number | null; // Optional catalog reference
     itemCatalogCode?: string | null; // Optional catalog code for display/traceability
     ivaUncertain?: boolean; // True when OCR could not confidently identify item-level IVA
     ivaGlobalInferred?: boolean; // True when IVA was inferred from document summary, not extracted per item
     autoMatchStatus?: 'AUTO_MATCHED' | 'NEEDS_REVIEW' | null; // Catalog auto-match result from OCR
+    mappedRequestLineItemId?: string | null; // ID of the RequestLineItem this quotation item corresponds to
+    reconciliationStatus?: 'MAPPED' | 'NOT_QUOTED' | 'EXTRA_ITEM' | 'IGNORED' | 'SUBSTITUTE';
+    reconciliationJustification?: string | null;
 }
 
 export interface OcrDraft {
     supplierId: number | null;
     supplierNameSnapshot: string;
     supplierPortalCode?: string | null;
+    supplierPrimaveraCode?: string | null;
     supplierTaxId?: string;
     companyId?: number | null;
     extractedCompanyName?: string;
@@ -237,15 +309,26 @@ export interface OcrDraft {
     documentNumber: string;
     documentDate: string;
     dueDate?: string;
+    documentType?: 'PROFORMA' | 'FINAL';
     currency: string;
     extractedCurrency?: string; // Raw extracted currency for suggestion hint
     discountAmount: number; // Front-end user input
     totalAmount: number; // Front-end calculated preview
+    ocrTotalAmount?: number; // Raw total extracted by OCR
     proformaAttachmentId?: string; // Links attachment implicitly
     items: OcrDraftItem[];
     headerHasIva?: boolean; // True when the document header/totals indicate IVA exists
     globalVatInferred?: boolean; // True when global VAT was inferred from document summary and applied to all items
     inferredVatRatePercent?: number; // The inferred VAT rate percentage for display in UI banner
+    supplierRegistrationStatus?: string;
+    supplierAddress?: string;
+    supplierContactName?: string;
+    supplierEmail?: string;
+    supplierPhone?: string;
+    supplierBankAccountNumber?: string;
+    supplierBankIban?: string;
+    supplierBankSwift?: string;
+    supplierPaymentTerms?: string;
 }
 
 export interface LookupDto {
@@ -268,6 +351,7 @@ export interface SupplierSearchDto {
     portalCode: string;
     primaveraCode?: string;
     name: string;
+    registrationStatus?: string;
 }
 
 export interface CurrencyDto {
@@ -385,7 +469,8 @@ export interface RequestStatusDto {
 export interface TimelineStepDto {
     label: string;
     completedAt?: string;
-    state: 'completed' | 'current' | 'pending' | 'blocked';
+    /** 'skipped' = stage never executed (e.g. request closed without quotation) — rendered as "Não aplicável". */
+    state: 'completed' | 'current' | 'pending' | 'blocked' | 'skipped';
 }
 
 export interface RequestTimelineDto {
@@ -574,6 +659,8 @@ export interface ApprovalIntelligenceDto {
     departmentContext: DepartmentIntelligenceDto;
     overallAlerts: DecisionAlertDto[];
     budgetAvailability?: BudgetAvailabilityDto;
+    /** 'BATCH' = analysis scoped to the active ApprovalBatch (partial approval); 'REQUEST' = legacy whole-request analysis. */
+    scope?: 'BATCH' | 'REQUEST';
 }
 
 export interface BudgetAvailabilityDto {
@@ -594,6 +681,20 @@ export interface BudgetAvailabilityDto {
     utilizationPercent: number;
     infoMessage?: string;
     costCenterBreakdown?: BudgetCostCenterBreakdownDto[];
+    departmentCostCenters?: DepartmentCostCenterBudgetDto[];
+}
+
+export interface DepartmentCostCenterBudgetDto {
+    costCenterId?: number;
+    costCenterName: string;
+    plantName?: string;
+    annualBudget: number;
+    committedAmount: number;
+    availableAmount: number;
+    utilizationPercent: number;
+    status: string;
+    isUsedInScope: boolean;
+    hasBudgetConfigured: boolean;
 }
 
 export interface BudgetCostCenterBreakdownDto {
@@ -698,6 +799,7 @@ export interface FinanceListItemDto {
     isMissingDocuments: boolean;
     missingDocumentTypes: string[];
     availableFinanceActions: string[];
+    poGroups: RequestPoGroupDto[];
     // Buy-to-Pay (Phase 8)
     paymentCondition?: string | null;
     advancePaymentPercent?: number | null;
@@ -1023,5 +1125,19 @@ export interface IntegrationConnectionTestResultDto {
     message?: string;
     responseTimeMs?: number;
     testedAtUtc: string;
+}
+
+
+
+export interface RequestPaymentDto {
+    id: number;
+    paymentType: string;
+    paymentStatus: string;
+    plannedAmount: number;
+    actualPaidAmount: number | null;
+    scheduledDateUtc: string | null;
+    paidDateUtc: string | null;
+    currencyCode: string | null;
+    hasDivergence: boolean;
 }
 

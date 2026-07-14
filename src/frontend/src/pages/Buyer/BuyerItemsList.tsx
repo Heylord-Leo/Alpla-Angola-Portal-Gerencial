@@ -2,17 +2,22 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { useLocation, useSearchParams } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, FileText, CheckCircle2, X, Pencil, Trash2, ArrowLeft, AlertCircle, RefreshCcw, Hash, Calendar, UserPlus, AlertTriangle, BookOpen, MoreVertical, Package } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, FileText, CheckCircle2, X, Pencil, Trash2, ShieldCheck, AlertCircle, RefreshCcw, Hash, Calendar, UserPlus, AlertTriangle, BookOpen, MoreVertical, Package, PieChart, Layers, CheckSquare } from 'lucide-react';
 import { useAuth } from '../../features/auth/AuthContext';
 import { api } from '../../lib/api';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
-import { formatCurrencyAO, formatDate, getUrgencyStyle, computeFileHash, formatDateTime } from '../../lib/utils';
-import { SupplierAutocomplete } from '../../components/SupplierAutocomplete';
-import { completeQuotationAction } from '../../lib/workflow';
+import { formatCurrencyAO, formatDate, getUrgencyStyle, formatDateTime } from '../../lib/utils';
 import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModal';
 import { QuickSupplierModal } from '../../components/Buyer/QuickSupplierModal';
 import { QuickCurrencyModal } from '../../components/Buyer/QuickCurrencyModal';
-import { CatalogItemAutocomplete } from '../../components/CatalogItemAutocomplete';
+import { QuotationWizardModal } from './QuotationWizard/QuotationWizardModal';
+import { useQuotationWizardState } from './QuotationWizard/hooks/useQuotationWizardState';
+import { PartialApprovalBatchModal } from './PartialApprovalBatchModal';
+import { CancelApprovalBatchModal } from './CancelApprovalBatchModal';
+import { isQuotationItemSelectableForApproval, isLineItemEligibleForQuotation } from './batchEligibility';
+import { getBuyerItemStatus } from './buyerItemStatus';
+import { CloseNotQuotedModal } from './CloseNotQuotedModal';
+
 import { Tooltip } from '../../components/ui/Tooltip';
 import { Z_INDEX } from '../../constants/ui';
 import { DropdownPortal } from '../../components/ui/DropdownPortal';
@@ -26,7 +31,6 @@ import { createQuotationManagementGuide } from '../../features/guided-tour/live-
 import type { QuotationManagementState } from '../../features/guided-tour/live-guide/guides/quotationManagement.liveGuide';
 import { SavedQuotationDto, IvaRate, Unit, OcrDraft, OcrDraftItem, ReconciliationBatchDto } from '../../types';
 import { useOcrProcessor } from '../../hooks/useOcrProcessor';
-import { ReconciliationPanel } from '../../components/Buyer/ReconciliationPanel';
 import { RequestDrawerPresentation } from '../Requests/components/modern/RequestDrawerPresentation';
 import { useTablePreferences } from '../../hooks/useTablePreferences';
 
@@ -175,21 +179,39 @@ export function BuyerItemsList() {
     const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set());
     const [kebabMenuOpen, setKebabMenuOpen] = useState<string | null>(null);
     const [deleteConfirm, setDeleteConfirm] = useState<{ attachmentId: string; fileName: string } | null>(null);
-    const [addQuotationMode, setAddQuotationMode] = useState<Record<string, 'UPLOAD' | 'MANUAL' | null>>({});
+    
 
     // Step 2 & 3: Quotation Flow States
     const [importSelectedFiles, setImportSelectedFiles] = useState<Record<string, File[]>>({});
-    const [quotationFlowStep, setQuotationFlowStep] = useState<Record<string, 'SELECT_MODE' | 'EDIT_QUOTATION'>>({});
     const [ocrResults, setOcrResults] = useState<Record<string, any>>({});
     const [quotationDrafts, setQuotationDrafts] = useState<Record<string, QuotationDraft>>({});
     const [draftProformaFiles, setDraftProformaFiles] = useState<Record<string, File>>({});
     const [isSaving, setIsSaving] = useState(false);
     const [isProcessingOcr, setIsProcessingOcr] = useState<Record<string, boolean>>({});
     const [ocrErrors, setOcrErrors] = useState<Record<string, string | null>>({});
-    const [reconciliationBatches, setReconciliationBatches] = useState<Record<string, ReconciliationBatchDto>>({});
-    const [editingQuotationId, setEditingQuotationId] = useState<Record<string, string | null>>({});
+        const [editingQuotationId, setEditingQuotationId] = useState<Record<string, string | null>>({});
     const [highlightedRequestId, setHighlightedRequestId] = useState<string | null>(null);
     const [formErrors, setFormErrors] = useState<Record<string, Record<string, string>>>({});
+
+    const [partialApprovalModal, setPartialApprovalModal] = useState<{
+        show: boolean;
+        group: any | null;
+    }>({ show: false, group: null });
+
+    const [cancelApprovalModal, setCancelApprovalModal] = useState<{
+        show: boolean;
+        requestId: string;
+        batchId: string;
+        batchNumber: number;
+    }>({ show: false, requestId: '', batchId: '', batchNumber: 0 });
+
+    const [closeNotQuotedModal, setCloseNotQuotedModal] = useState<{
+        show: boolean;
+        requestId: string;
+        lineItemId: string;
+        itemDescription: string;
+        isLastPendingItem: boolean;
+    }>({ show: false, requestId: '', lineItemId: '', itemDescription: '', isLastPendingItem: false });
 
 
     // Approval Modal State
@@ -200,12 +222,7 @@ export function BuyerItemsList() {
         itemId: string | null,
         itemDescription: string | null,
         newStatusCode: string | null,
-        hasProforma: boolean,
-        hasSupplier: boolean,
-        itemsCount: number,
-        isLastItem: boolean,
-        quotationCount: number,
-        hasCompleteQuotation: boolean
+        isLastItem: boolean
     }>({
         show: false,
         type: null,
@@ -213,12 +230,7 @@ export function BuyerItemsList() {
         itemId: null,
         itemDescription: null,
         newStatusCode: null,
-        hasProforma: false,
-        hasSupplier: false,
-        itemsCount: 0,
-        isLastItem: false,
-        quotationCount: 0,
-        hasCompleteQuotation: false
+        isLastItem: false
     });
     const [approvalComment, setApprovalComment] = useState('');
     const [modalFeedback, setModalFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'error', message: null });
@@ -259,22 +271,6 @@ export function BuyerItemsList() {
         }, 1000);
         return () => clearInterval(interval);
     }, [fileDuplicateWarning?.isOpen]);
-
-    // Financial Integrity Gate Modal State
-    const [integrityModal, setIntegrityModal] = useState<{
-        show: boolean;
-        requestId: string;
-        itemsCount: number;
-        ocrOriginalTotal: number;
-        quotationTotal: number;
-        varianceAmount: number;
-        variancePercent: number;
-        toleranceApplied: number;
-        unresolvedReconciliationCount: number;
-        detail: string;
-    } | null>(null);
-    const [integrityJustification, setIntegrityJustification] = useState('');
-    const [integrityOverrideLoading, setIntegrityOverrideLoading] = useState(false);
 
     // Lookups
     const [ivaRates, setIvaRates] = useState<IvaRate[]>([]);
@@ -328,6 +324,197 @@ export function BuyerItemsList() {
 
     const { mapOcrResultToDraft, calculateItemTotal, calculateDraftTotal } = useOcrProcessor(ivaRates, units, currencies);
     const { user: currentUser } = useAuth();
+
+    // --- Quotation Wizard Integration ---
+    const quotationWizardState = useQuotationWizardState();
+    const [wizardActiveRequest, setWizardActiveRequest] = useState<any | null>(null);
+    const [temporaryWizardAttachmentIds, setTemporaryWizardAttachmentIds] = useState<string[]>([]);
+    
+    const handleWizardSaveQuotation = async (draft: OcrDraft) => {
+        if (!wizardActiveRequest) return { success: false, error: 'No active request' };
+        try {
+            const payload = {
+                source: 'OCR', // or draft.source if it exists
+                supplierId: draft.supplierId,
+                supplierNameSnapshot: draft.supplierNameSnapshot,
+                documentNumber: draft.documentNumber,
+                documentDate: draft.documentDate ? new Date(draft.documentDate).toISOString() : undefined,
+                currency: draft.currency || 'AOA',
+                discountAmount: draft.discountAmount || 0,
+                totalAmount: draft.totalAmount || 0,
+                proformaAttachmentId: draft.proformaAttachmentId,
+                // NOT_QUOTED items ARE persisted (zeroed) — they are document-level
+                // information ("this supplier did not quote this item") and must NOT
+                // touch the request line item's QuotationLifecycleStatus. The item
+                // stays pending on the request for future quotations. Only IGNORED
+                // lines are dropped.
+                items: draft.items.filter(i => ['MAPPED', 'SUBSTITUTE', 'EXTRA_ITEM', 'NOT_QUOTED'].includes(i.reconciliationStatus as string)).map((i, idx) => ({
+                    mappedRequestLineItemId: i.mappedRequestLineItemId,
+                    lineNumber: idx + 1,
+                    description: i.description || '',
+                    quantity: i.quantity || 0,
+                    unitPrice: i.unitPrice || 0,
+                    discountAmount: i.discountAmount || 0,
+                    ivaRateId: i.ivaRateId || null || 1,
+                    unitId: i.unitId || null,
+                    lineTotal: i.totalPrice || 0,
+                    itemCatalogId: i.itemCatalogId || null,
+                    reconciliationStatus: i.reconciliationStatus,
+                    reconciliationJustification: i.reconciliationJustification || null
+                }))
+            };
+
+            setIsSaving(true);
+            const requestId = wizardActiveRequest.requestId;
+            const isEditing = quotationWizardState.isEditing;
+            const quotationId = quotationWizardState.editingQuotationId;
+
+            if (isEditing && quotationId) {
+                await api.requests.updateQuotation(requestId, quotationId, payload);
+            } else {
+                // Only the creation endpoint enforces the Financial Integrity
+                // Gate (RequestsController.SaveQuotation), so ocrTotal is sent
+                // here only — never on updateQuotation. Guard against
+                // undefined/null/NaN/zero/non-numeric values: JSON.stringify
+                // drops an `undefined` property, so an invalid OCR total is
+                // simply omitted from the request body instead of sent as 0.
+                const ocrTotal = typeof draft.ocrTotalAmount === 'number' && Number.isFinite(draft.ocrTotalAmount) && draft.ocrTotalAmount > 0
+                    ? draft.ocrTotalAmount
+                    : undefined;
+                const createResult = await api.requests.saveQuotation(requestId, { ...payload, ocrTotal });
+
+                // Financial Integrity Gate (create-only): the backend responds
+                // with HTTP 409 + a normal (non-throwing) payload shape when the
+                // quotation total diverges from the OCR-extracted total. This
+                // must be treated as a failed save — never as success — since
+                // there is no override UX left in the Buyer wizard (removed
+                // together with the old "CONCLUIR COTAÇÃO" flow in Fase 1).
+                if (createResult && 'integrityCheckFailed' in createResult && createResult.integrityCheckFailed) {
+                    return {
+                        success: false,
+                        error: createResult.detail
+                            || `Divergência financeira detectada entre o total do documento (${formatCurrencyAO(createResult.ocrOriginalTotal, draft.currency)}) e o total da cotação (${formatCurrencyAO(createResult.quotationTotal, draft.currency)}). Ajuste os valores dos itens antes de salvar.`
+                    };
+                }
+            }
+
+            // "Não cotado nesta cotação" is deliberately document-scoped: it is
+            // saved inside the quotation payload above and never calls
+            // proposeNotQuoted / touches QuotationLifecycleStatus. Closing an
+            // item without quotation is a separate, explicit Buyer action
+            // ("Encerrar sem cotação" on the items table → closeNotQuoted).
+            await loadData();
+            quotationWizardState.closeWizard();
+            setWizardActiveRequest(null);
+            setTemporaryWizardAttachmentIds([]);
+            setFeedback({ type: 'success', message: isEditing ? 'Cotação atualizada com sucesso!' : 'Cotação registrada com sucesso!' });
+
+            return { success: true };
+        } catch (error: any) {
+            console.error('Error saving quotation from wizard:', error);
+            return { success: false, error: error.response?.data?.message || 'Erro ao salvar cotação.' };
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleUploadFileForWizard = async (file: File) => {
+        if (!wizardActiveRequest) return;
+        setIsProcessingOcr(prev => ({ ...prev, [wizardActiveRequest.requestId]: true }));
+        try {
+            const uploadData = await api.attachments.upload(wizardActiveRequest.requestId, [file], 'PROFORMA');
+            const attachmentId = uploadData[0].id;
+            setTemporaryWizardAttachmentIds(prev => [...prev, attachmentId]);
+            const result = await api.requests.ocrExtract(wizardActiveRequest.requestId, file);
+            const initialDraft = await mapOcrResultToDraft(result, attachmentId);
+            
+            quotationWizardState.setDraft(initialDraft);
+        } catch (error: any) {
+            console.error('Wizard OCR Error:', error);
+            setFeedback({ type: 'error', message: 'Erro ao processar documento via OCR.' });
+        } finally {
+            setIsProcessingOcr(prev => ({ ...prev, [wizardActiveRequest.requestId]: false }));
+        }
+    };
+
+    const handleReplaceDocumentForWizard = async (attachmentId: string) => {
+        if (!wizardActiveRequest || !quotationWizardState.editingQuotationId) return false;
+        try {
+            await api.requests.updateQuotation(wizardActiveRequest.requestId, quotationWizardState.editingQuotationId, {
+                proformaAttachmentId: attachmentId
+            } as any);
+            return true;
+        } catch (err) {
+            return false;
+        }
+    };
+
+    const handleOpenWizard = (group: any, mode: 'MANUAL' | 'UPLOAD', editQuotation?: SavedQuotationDto) => {
+        setWizardActiveRequest(group);
+        if (editQuotation) {
+            const draft: OcrDraft = {
+                supplierId: editQuotation.supplierId || null,
+                supplierNameSnapshot: editQuotation.supplierNameSnapshot || '',
+                documentNumber: editQuotation.documentNumber || '',
+                documentDate: editQuotation.documentDate ? editQuotation.documentDate.split('T')[0] : '',
+                currency: editQuotation.currency || 'AOA',
+                totalAmount: editQuotation.totalAmount || 0,
+                discountAmount: editQuotation.discountAmount || 0,
+                proformaAttachmentId: editQuotation.proformaAttachmentId || undefined,
+                items: editQuotation.items.map(item => ({
+                    mappedRequestLineItemId: item.mappedRequestLineItemId,
+                    lineNumber: item.lineNumber,
+                    description: item.description,
+                    quantity: item.quantity,
+                    unitId: item.unitId || null,
+                    unitPrice: item.unitPrice,
+                    ivaRateId: item.ivaRateId || null,
+                    totalPrice: item.lineTotal,
+                    discountAmount: item.discountAmount || 0,
+                    itemCatalogId: item.itemCatalogId || null,
+                    // Use the persisted reconciliation status — the old binary
+                    // MAPPED/NOT_QUOTED reconstruction silently degraded
+                    // SUBSTITUTE/EXTRA_ITEM and flipped persisted NOT_QUOTED
+                    // items (which DO carry a mappedRequestLineItemId) to MAPPED.
+                    reconciliationStatus: (item.reconciliationStatus || (item.mappedRequestLineItemId ? 'MAPPED' : 'NOT_QUOTED')) as OcrDraftItem['reconciliationStatus'],
+                    reconciliationJustification: item.reconciliationJustification || null
+                }))
+            };
+            quotationWizardState.openWizard('EDIT', draft, editQuotation.id, mode);
+        } else {
+            const initialDraft: OcrDraft = {
+                supplierId: null,
+                supplierNameSnapshot: '',
+                documentNumber: '',
+                documentDate: '',
+                currency: 'AOA',
+                totalAmount: 0,
+                discountAmount: 0,
+                // Only items still open for quotation (not already in a batch,
+                // approved, or formally handled as not-quoted) get a placeholder.
+                items: group.items
+                    .filter(isLineItemEligibleForQuotation)
+                    .map((i: any) => ({
+                        mappedRequestLineItemId: i.id,
+                        lineNumber: 0,
+                        description: i.description,
+                        quantity: i.quantity,
+                        unitId: i.unitId || null || null,
+                        unitPrice: 0,
+                        ivaRateId: null,
+                        totalPrice: 0,
+                        discountAmount: 0,
+                        itemCatalogId: null,
+                        reconciliationStatus: 'NOT_QUOTED'
+                    }))
+            };
+            quotationWizardState.openWizard('NEW', mode === 'UPLOAD' ? null : initialDraft, undefined, mode);
+        }
+    };
+
+
+    ;
+    // ------------------------------------------
 
     const location = useLocation();
     const locationState = location.state as { successMessage?: string, fromList?: string } | null;
@@ -490,7 +677,9 @@ export function BuyerItemsList() {
                     requestTitle: item.requestTitle,
                     requestDescription: item.requestDescription,
                     quotations: item.quotations || [],
-                    items: []
+                    approvalBatches: item.approvalBatches || [],
+                    items: [],
+                    lineItems: []
                 };
             }
             // If the group exists, sync proformaAttachments from the latest item that has them
@@ -503,8 +692,26 @@ export function BuyerItemsList() {
                 groups[item.requestId].supportingAttachments = item.supportingAttachments;
             }
             // Only add real line items to the group's items array
-            if (item.lineItemId) {
-                groups[item.requestId].items.push(item);
+            const itemId = item.lineItemId || item.id || item.requestLineItemId;
+            if (itemId) {
+                const alreadyExists = groups[item.requestId].items.some((i: any) => (i.lineItemId || i.id || i.requestLineItemId) === itemId);
+                if (!alreadyExists) {
+                    groups[item.requestId].items.push(item);
+                    groups[item.requestId].lineItems.push({
+                        id: itemId,
+                        lineNumber: item.lineNumber,
+                        description: item.itemDescription || item.description || item.productDescription || item.name || item.title,
+                        quantity: item.quantity ?? item.qty ?? item.requestedQuantity,
+                        unit: item.unitCode || item.unit || item.unitName,
+                        unitId: item.unitId || null,
+                        unitPrice: item.unitPrice,
+                        totalAmount: item.total || (item.unitPrice * (item.quantity ?? 1)),
+                        notes: item.notes,
+                        itemCatalogId: item.itemCatalogId,
+                        lineItemStatusCode: item.lineItemStatusCode,
+                        quotationLifecycleStatus: item.quotationLifecycleStatus,
+                    });
+                }
             }
         });
         return Object.values(groups);
@@ -531,141 +738,7 @@ export function BuyerItemsList() {
     };
 
     // Step 2 & 3: OCR Integration Handlers
-    const handleFileSelectForImport = (requestId: string, files: File[]) => {
-        setImportSelectedFiles(prev => ({ ...prev, [requestId]: files }));
-        // setQuotationFlowStep(prev => ({ ...prev, [requestId]: 'UPLOAD' })); // Removed or handled elsewhere
-        // Reset OCR results/errors when a new file is chosen
-        setOcrResults(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-        setOcrErrors(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-    };
-
-    const handleContinueWithDocument = async (requestId: string) => {
-        const file = importSelectedFiles[requestId]?.[0];
-        if (!file) return;
-
-        setIsProcessingOcr(prev => ({ ...prev, [requestId]: true }));
-        let hasDuplicateWarning = false;
-
-        try {
-            const hash = await computeFileHash(file);
-            const dupCheck = await api.attachments.checkDuplicate(hash);
-
-            if (dupCheck.isDuplicate) {
-                hasDuplicateWarning = true;
-                setFileDuplicateWarning({
-                    isOpen: true,
-                    requestId: requestId,
-                    fileName: file.name,
-                    requestNumber: dupCheck.requestNumber || 'Desconhecido',
-                    uploadedBy: dupCheck.uploadedBy,
-                    createdAtUtc: dupCheck.createdAtUtc,
-                    uploadCallback: () => {
-                        setFileDuplicateWarning(null);
-                        handleImportFiles(requestId, [file]);
-                    }
-                });
-                return;
-            }
-        } catch (err) {
-            console.error("Duplicate check failed:", err);
-        } finally {
-            if (!hasDuplicateWarning) {
-                setIsProcessingOcr(prev => ({ ...prev, [requestId]: false }));
-            }
-        }
-
-        await handleImportFiles(requestId, [file]);
-    };
-
-    const handleResetToSelect = (requestId: string) => {
-        setQuotationFlowStep(prev => ({ ...prev, [requestId]: 'SELECT_MODE' }));
-        setImportSelectedFiles(prev => ({ ...prev, [requestId]: [] }));
-        setOcrErrors(prev => ({ ...prev, [requestId]: null }));
-        // Ensure we clear any edit session state when returning to selection
-        setEditingQuotationId(prev => ({ ...prev, [requestId]: null }));
-
-        setDraftProformaFiles(prev => {
-            const next = { ...prev };
-            delete next[requestId];
-            return next;
-        });
-
-        setQuotationDrafts(prev => {
-            const next = { ...prev };
-            delete next[requestId];
-            return next;
-        });
-
-        // Important: Always clear OCR batches and form errors so they don't leak back if reopened.
-        setReconciliationBatches(prev => {
-            const next = { ...prev };
-            delete next[requestId];
-            return next;
-        });
-
-        setFormErrors(prev => {
-            const next = { ...prev };
-            delete next[requestId];
-            return next;
-        });
-    };
-
-    const handleImportFiles = async (requestId: string, files: File[]) => {
-        if (files.length === 0) return;
-
-        // Preemptive Client-side Extension Validation
-        const file = files[0];
-        const ext = file.name.split('.').pop()?.toLowerCase() || '';
-        if (!ALLOWED_EXTENSIONS.includes(ext)) {
-            setFeedback({
-                type: 'error',
-                message: `Arquivo não permitido. Formatos aceitos: ${ALLOWED_EXTENSIONS_MSG}.`
-            });
-            return;
-        }
-
-        setIsProcessingOcr(prev => ({ ...prev, [requestId]: true }));
-        setOcrErrors(prev => ({ ...prev, [requestId]: null }));
-        // Ensure any previous edit state is cleared for a new OCR flow
-        setEditingQuotationId(prev => ({ ...prev, [requestId]: null }));
-        setDraftProformaFiles(prev => {
-            const next = { ...prev };
-            delete next[requestId];
-            return next;
-        });
-        setImportSelectedFiles(prev => ({ ...prev, [requestId]: files }));
-
-        try {
-            // Part B: Persist the file first as PROFORMA attachment (using centralized utility)
-            const uploadData = await api.attachments.upload(requestId, [files[0]], 'PROFORMA');
-            const attachmentId = uploadData[0].id;
-
-            // Step 3: Real OCR Call
-            const result = await api.requests.ocrExtract(requestId, files[0]);
-            setOcrResults(prev => ({ ...prev, [requestId]: result }));
-
-            // Use shared OCR processor
-            const initialDraft = await mapOcrResultToDraft(result, attachmentId);
-
-            setQuotationDrafts(prev => ({ ...prev, [requestId]: initialDraft }));
-            setQuotationFlowStep(prev => ({ ...prev, [requestId]: 'EDIT_QUOTATION' }));
-
-            // Phase 2: Auto-load reconciliation after OCR
-            try {
-                const reconData = await api.requests.getReconciliation(requestId);
-                if (reconData && reconData.records && reconData.records.length > 0) {
-                    setReconciliationBatches(prev => ({ ...prev, [requestId]: reconData }));
-                }
-            } catch (reconErr) {
-                console.warn('Failed to load reconciliation:', reconErr);
-            }
-        } catch (error: any) {
-            setOcrErrors(prev => ({ ...prev, [requestId]: error.message }));
-            setQuotationFlowStep(prev => ({ ...prev, [requestId]: 'EDIT_QUOTATION' }));
-        } finally {
-            setIsProcessingOcr(prev => ({ ...prev, [requestId]: false }));
-        }
-    };
+    ;
 
     const handleUpdateQuotationHeader = (requestId: string, field: keyof QuotationDraft, value: any) => {
         setQuotationDrafts(prev => {
@@ -685,411 +758,15 @@ export function BuyerItemsList() {
         });
     };
 
-    const handleUpdateQuotationItem = (requestId: string, index: number, fieldOrData: keyof QuotationDraftItem | Partial<QuotationDraftItem>, value?: any) => {
-        setQuotationDrafts(prev => {
-            const draft = { ...prev[requestId] };
-            if (!draft.items) return prev;
-
-            const updatedItems = [...draft.items];
-
-            if (typeof fieldOrData === 'object') {
-                updatedItems[index] = { ...updatedItems[index], ...fieldOrData };
-            } else {
-                const field = fieldOrData as keyof QuotationDraftItem;
-                // If user manually changes the absolute discount amount, clear the reactive percentage
-                if (field === 'discountAmount') {
-                    updatedItems[index] = { ...updatedItems[index], discountAmount: value, discountPercent: undefined };
-                } else if (field === 'ivaRateId') {
-                    // CRITICAL UX: When user manually selects an IVA rate, the "uncertainty" state must be cleared.
-                    updatedItems[index] = { ...updatedItems[index], ivaRateId: value, ivaUncertain: false };
-                } else {
-                    updatedItems[index] = { ...updatedItems[index], [field]: value };
-                }
-            }
-
-            // Reactive discount recalculation if percentage is locked in
-            const item = updatedItems[index];
-            if (item.discountPercent !== undefined) {
-                const qty = item.quantity || 0;
-                const price = item.unitPrice || 0;
-                const pct = item.discountPercent!;
-                const recalculatedDiscount = Math.round(qty * price * (pct / 100) * 100) / 100;
-                updatedItems[index].discountAmount = recalculatedDiscount;
-            }
-
-            // Recalculate deterministic line logic using shared hook logic
-            updatedItems[index].totalPrice = calculateItemTotal(updatedItems[index]);
-
-            draft.items = updatedItems;
-
-            // Recalculate quotation total internally if needed
-            draft.totalAmount = calculateDraftTotal(draft);
-
-            return {
-                ...prev,
-                [requestId]: draft
-            };
-        });
-    };
-
     // Global discount logic replaced by item-level discounts (Option A)
 
     // Local calculation logic moved to shared useOcrProcessor hook
-
-    const handleAddQuotationItem = (requestId: string) => {
-        setQuotationDrafts(prev => {
-            const draft = prev[requestId] ? { ...prev[requestId] } : {
-                supplierId: null,
-                supplierNameSnapshot: '',
-                documentNumber: '',
-                documentDate: new Date().toISOString().split('T')[0],
-                currency: '',
-                discountAmount: 0,
-                totalAmount: 0,
-                items: []
-            } as QuotationDraft;
-
-            const nextLineNumber = (draft.items?.length || 0) + 1;
-
-            // Default unit from request line item if possible
-            const group = items.find(i => i.requestId === requestId);
-            const originalItem = group?.items?.find((i: any) => i.lineNumber === nextLineNumber);
-
-            const newItem: QuotationDraftItem = {
-                lineNumber: nextLineNumber,
-                description: '',
-                quantity: 1,
-                unitId: originalItem?.unitId || null,
-                unitPrice: 0,
-                ivaRateId: null,
-                totalPrice: 0,
-                discountAmount: 0
-            };
-            draft.items = [...(draft.items || []), newItem];
-            return { ...prev, [requestId]: draft };
-        });
-    };
-
-    const handleRemoveQuotationItem = (requestId: string, index: number) => {
-        setQuotationDrafts(prev => {
-            const draft = { ...prev[requestId] };
-            if (!draft.items) return prev;
-
-            const updatedItems = draft.items.filter((_, i) => i !== index);
-            draft.items = updatedItems;
-            draft.totalAmount = calculateDraftTotal(draft);
-            return { ...prev, [requestId]: draft };
-        });
-    };
-
-    const handleRestoreOcrOriginal = async (requestId: string) => {
-        const result = ocrResults[requestId];
-        if (!result) return;
-
-        const originalDraft = await mapOcrResultToDraft(result);
-        setQuotationDrafts(prev => ({ ...prev, [requestId]: originalDraft }));
-    };
-
-    const handleSaveQuotation = async (requestId: string) => {
-        const draft = quotationDrafts[requestId];
-        if (!draft) return;
-
-        if (draft.items.length === 0) {
-            setFeedback({ type: 'error', message: 'A cotação deve conter pelo menos um item.' });
-            return;
-        }
-
-        // Robust inline validation for header fields (Step 9.1)
-        const errors: Record<string, string> = {};
-        if (!draft.supplierId) errors.supplierId = 'Fornecedor é obrigatório.';
-        if (!draft.documentNumber || !draft.documentNumber.trim()) errors.documentNumber = 'Número do documento é obrigatório.';
-        if (!draft.documentDate) errors.documentDate = 'Data do documento é obrigatória.';
-        if (!draft.currency) errors.currency = 'Moeda é obrigatória.';
-
-        if (Object.keys(errors).length > 0) {
-            setFormErrors(prev => ({ ...prev, [requestId]: errors }));
-            setFeedback({ type: 'error', message: 'Por favor, corrija os erros destacados no formulário.' });
-            return;
-        }
-
-        try {
-            setIsSaving(true);
-            const sourceType = addQuotationMode[requestId]; // 'UPLOAD' or 'MANUAL'
-            const editId = editingQuotationId[requestId];
-
-            // Step 5: Process Proforma Upload PRE-EMPTIVELY BEFORE SAVE
-            let currentProformaId = draft.proformaAttachmentId;
-            try {
-                // If a new file is explicitly in the draft area, it takes precedence (replacement flow)
-                let fileToUpload: File | null = null;
-                if (draftProformaFiles[requestId]) {
-                    fileToUpload = draftProformaFiles[requestId];
-                } else if (sourceType === 'UPLOAD' && importSelectedFiles[requestId]?.[0] && !editId && !currentProformaId) {
-                    // For direct OCR initial save (only if not already uploaded during extraction)
-                    fileToUpload = importSelectedFiles[requestId][0];
-                }
-
-                if (fileToUpload) {
-                    // Preemptive Client-side Extension Validation
-                    const ext = fileToUpload.name.split('.').pop()?.toLowerCase() || '';
-                    if (!ALLOWED_EXTENSIONS.includes(ext)) {
-                        setFeedback({
-                            type: 'error',
-                            message: `Arquivo não permitido. Formatos aceitos: ${ALLOWED_EXTENSIONS_MSG}.`
-                        });
-                        setIsSaving(false);
-                        return;
-                    }
-
-                    const uploaded = await api.attachments.upload(requestId, [fileToUpload], 'PROFORMA');
-                    if (uploaded && uploaded.length > 0) {
-                        currentProformaId = uploaded[0].id;
-                    }
-                }
-
-                // Mandatory Validation: Must have EITHER a new upload OR an existing proforma ID
-                if (!currentProformaId) {
-                    setFeedback({ type: 'error', message: 'O documento Proforma é obrigatório para salvar a cotação.' });
-                    setIsSaving(false);
-                    return;
-                }
-            } catch (attError: any) {
-                console.error("Failed to upload proforma:", attError);
-                const errorMsg = attError.response?.data?.detail || attError.message || 'Falha ao processar o upload do documento.';
-                setFeedback({ type: 'error', message: errorMsg });
-                setIsSaving(false);
-                return;
-            }
-
-            // Duplicate Supplier Validation Check
-            const grouped = groupItemsByRequest(items);
-            const group = grouped.find(g => g.requestId === requestId);
-            const existingQuotations = group?.quotations || [];
-            const duplicate = existingQuotations.find((q: SavedQuotationDto) => q.supplierId === draft.supplierId && q.id !== editId);
-            if (duplicate) {
-                // Halt save, open resolution modal
-                setDuplicateSupplierModal({ show: true, requestId, draft: { ...draft, proformaAttachmentId: currentProformaId }, duplicate });
-                setIsSaving(false);
-                return;
-            }
-
-            // If we reached here, validations passed and it's not a duplicate.
-            // Trigger Confirmation Modal before real save
-            setShowApprovalModal({
-                show: true,
-                type: sourceType === 'UPLOAD' ? 'SAVE_QUOTATION_OCR' : 'SAVE_QUOTATION_MANUAL',
-                requestId,
-                itemId: null,
-                itemDescription: null,
-                newStatusCode: null,
-                hasProforma: false,
-                hasSupplier: true,
-                itemsCount: draft.items.length,
-                isLastItem: false,
-                quotationCount: 0,
-                hasCompleteQuotation: false
-            });
-        } catch (error: any) {
-            setFeedback({ type: 'error', message: error.message || 'Erro ao realizar validação.' });
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    const executeSaveQuotation = async (requestId: string) => {
-        try {
-            setIsSaving(true);
-            const sourceType = addQuotationMode[requestId];
-            const editId = editingQuotationId[requestId];
-            const draft = quotationDrafts[requestId];
-            const currentProformaId = draftProformaFiles[requestId]
-                ? (await api.attachments.upload(requestId, [draftProformaFiles[requestId]], 'PROFORMA')).id
-                : (draft.proformaAttachmentId || null);
-
-            const payload = {
-                supplierId: draft.supplierId,
-                supplierNameSnapshot: draft.supplierNameSnapshot,
-                documentNumber: draft.documentNumber,
-                documentDate: draft.documentDate ? new Date(draft.documentDate).toISOString() : null,
-                currency: draft.currency,
-                discountAmount: draft.discountAmount || 0,
-                totalAmount: draft.totalAmount,
-                sourceType: editId ? undefined : (sourceType === 'UPLOAD' ? 'OCR' : 'MANUAL'),
-                sourceFileName: editId ? undefined : (sourceType === 'UPLOAD' ? (importSelectedFiles[requestId]?.[0]?.name || null) : null),
-                proformaAttachmentId: currentProformaId,
-                items: draft.items.map(item => ({
-                    lineNumber: item.lineNumber,
-                    description: item.description,
-                    quantity: item.quantity,
-                    unitId: item.unitId,
-                    unitPrice: item.unitPrice,
-                    discountAmount: item.discountAmount || 0,
-                    ivaRateId: item.ivaRateId,
-                    itemCatalogId: item.itemCatalogId
-                }))
-            };
-
-            // Clear errors before attempt
-            setFormErrors(prev => ({ ...prev, [requestId]: {} }));
-
-            if (editId) {
-                await api.requests.updateQuotation(requestId, editId, payload);
-                setFeedback({ type: 'success', message: 'Cotação atualizada com sucesso!' });
-            } else {
-                await api.requests.saveQuotation(requestId, payload);
-                setFeedback({ type: 'success', message: 'Cotação salva com sucesso!' });
-            }
-
-            // Cleanup flow state on success
-            setQuotationFlowStep(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setQuotationDrafts(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setAddQuotationMode(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setOcrResults(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setEditingQuotationId(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setDraftProformaFiles(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setImportSelectedFiles(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setReconciliationBatches(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-
-            loadData();
-        } catch (error: any) {
-            setFeedback({ type: 'error', message: error.message || 'Erro ao salvar cotação.' });
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-
-    const handleCancelQuotation = async (requestId: string) => {
-        try {
-            const draft = quotationDrafts[requestId];
-            const isEditing = !!editingQuotationId[requestId];
-
-            // If creating a NEW quotation from OCR, the attachment was pre-uploaded. Clean it up.
-            if (!isEditing && draft?.proformaAttachmentId && addQuotationMode[requestId] === 'UPLOAD') {
-                setIsSaving(true);
-                try {
-                    await api.attachments.delete(draft.proformaAttachmentId);
-                } catch (e) {
-                    console.warn("Failed to delete orphaned attachment on cancel", e);
-                }
-                setIsSaving(false);
-            }
-
-            // Cleanup flow state
-            setQuotationFlowStep(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setQuotationDrafts(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setAddQuotationMode(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setOcrResults(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setEditingQuotationId(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setDraftProformaFiles(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setImportSelectedFiles(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setReconciliationBatches(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setFormErrors(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-        } catch (error) {
-            console.error("Error cancelling quotation:", error);
-            setIsSaving(false);
-        }
-    };
-
-
-    const confirmDuplicateReplacement = async () => {
-        const { requestId, draft, duplicate } = duplicateSupplierModal;
-        if (!requestId || !draft || !duplicate) return;
-
-        try {
-            setIsSaving(true);
-            const sourceType = addQuotationMode[requestId];
-            const editId = editingQuotationId[requestId];
-
-            const payload = {
-                supplierId: draft.supplierId,
-                supplierNameSnapshot: draft.supplierNameSnapshot,
-                documentNumber: draft.documentNumber,
-                documentDate: draft.documentDate ? new Date(draft.documentDate).toISOString() : null,
-                currency: draft.currency,
-                discountAmount: draft.discountAmount || 0,
-                totalAmount: draft.totalAmount,
-                sourceType: editId ? undefined : (sourceType === 'UPLOAD' ? 'OCR' : 'MANUAL'),
-                sourceFileName: editId ? undefined : (sourceType === 'UPLOAD' ? (importSelectedFiles[requestId]?.[0]?.name || null) : null),
-                proformaAttachmentId: draft.proformaAttachmentId,
-                items: draft.items.map(item => ({
-                    lineNumber: item.lineNumber,
-                    description: item.description,
-                    quantity: item.quantity,
-                    unitId: item.unitId,
-                    unitPrice: item.unitPrice,
-                    ivaRateId: item.ivaRateId,
-                    itemCatalogId: item.itemCatalogId
-                }))
-            };
-
-            // Issue the ATOMIC replace via the backend
-            await api.requests.saveQuotation(requestId, payload, duplicate.id);
-            setFeedback({ type: 'success', message: 'Cotação substituída com sucesso!' });
-
-            // Cleanup
-            setQuotationFlowStep(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setQuotationDrafts(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setAddQuotationMode(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setOcrResults(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setEditingQuotationId(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setDraftProformaFiles(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setImportSelectedFiles(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setReconciliationBatches(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-            setDuplicateSupplierModal({ show: false, requestId: '', draft: null, duplicate: null });
-
-            loadData();
-        } catch (error: any) {
-            setFeedback({ type: 'error', message: error.message || 'Erro ao substituir cotação.' });
-        } finally {
-            setIsSaving(false);
-        }
-    };
 
     const cancelDuplicateFlow = () => {
         setDuplicateSupplierModal({ show: false, requestId: '', draft: null, duplicate: null });
     };
 
 
-
-    const handleEditQuotation = (requestId: string, quotation: SavedQuotationDto) => {
-        // Map saved quotation to draft structure
-        const draft: QuotationDraft = {
-            supplierId: quotation.supplierId || null,
-            supplierNameSnapshot: quotation.supplierNameSnapshot,
-            documentNumber: quotation.documentNumber || '',
-            documentDate: quotation.documentDate ? quotation.documentDate.split('T')[0] : '',
-            currency: quotation.currency,
-            discountAmount: quotation.discountAmount || 0,
-            totalAmount: quotation.totalAmount,
-            proformaAttachmentId: quotation.proformaAttachmentId,
-            items: quotation.items.map(item => ({
-                lineNumber: item.lineNumber,
-                description: item.description,
-                quantity: item.quantity,
-                unitId: item.unitId || null,
-                unitPrice: item.unitPrice,
-                ivaRateId: item.ivaRateId,
-                totalPrice: item.lineTotal,
-                discountAmount: 0,
-                itemCatalogId: item.itemCatalogId
-            }))
-        };
-
-        setQuotationDrafts(prev => ({ ...prev, [requestId]: draft }));
-        setEditingQuotationId(prev => ({ ...prev, [requestId]: quotation.id }));
-        setQuotationFlowStep(prev => ({ ...prev, [requestId]: 'EDIT_QUOTATION' }));
-        setAddQuotationMode(prev => ({ ...prev, [requestId]: 'MANUAL' })); // For layout purposes
-
-        // Scroll and highlight Section B (Step 9.2)
-        setHighlightedRequestId(requestId);
-        setTimeout(() => setHighlightedRequestId(null), 2500);
-
-        setTimeout(() => {
-            const sectionB = document.getElementById(`section-b-${requestId}`);
-            if (sectionB) sectionB.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 100);
-    };
 
     const handleDeleteQuotation = async (requestId: string, quotationId: string) => {
         // Use ApprovalModal for confirmation
@@ -1102,22 +779,9 @@ export function BuyerItemsList() {
             itemId: quotationId, // Use itemId to pass quotationId
             itemDescription: `Cotação ${qRecord?.supplierNameSnapshot || ''} (Doc: ${qRecord?.documentNumber || ''})`,
             newStatusCode: null,
-            hasProforma: false,
-            hasSupplier: false,
-            itemsCount: 0,
-            isLastItem: false,
-            quotationCount: 0,
-            hasCompleteQuotation: false
+            isLastItem: false
         });
     };
-
-    const handleRemoveImportFile = (requestId: string) => {
-        setImportSelectedFiles(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-        setQuotationFlowStep(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-        setOcrResults(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-        setOcrErrors(prev => { const n = { ...prev }; delete n[requestId]; return n; });
-    };
-
 
     const handleDeleteProforma = async (attachmentId: string) => {
         // Trigger modal instead of native confirm
@@ -1147,72 +811,15 @@ export function BuyerItemsList() {
     };
 
 
-    const handleUpdateGroupSupplier = async (requestId: string, supplierId: number | null, supplierName: string) => {
-        try {
-            setIsSaving(true);
-            await api.requests.updateSupplier(requestId, supplierId);
-            setItems(prev => prev.map(i => i.requestId === requestId ? {
-                ...i,
-                requestSupplierId: supplierId,
-                requestSupplierName: supplierName
-            } : i));
-        } catch (err: any) {
-            setFeedback({ type: 'error', message: err.message || 'Erro ao atualizar fornecedor do pedido.' });
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    const handleCompleteQuotation = (requestId: string, hasProforma: boolean, hasSupplier: boolean, itemsCount: number, quotationCount: number, hasCompleteQuotation: boolean) => {
-        setShowApprovalModal({
-            show: true,
-            type: 'COMPLETE_QUOTATION',
-            requestId,
-            itemId: null,
-            itemDescription: null,
-            newStatusCode: null,
-            hasProforma,
-            hasSupplier,
-            itemsCount,
-            isLastItem: false,
-            quotationCount,
-            hasCompleteQuotation
-        });
-    };
-
     const handleModalAction = async () => {
-        const { requestId, itemId, newStatusCode, type, itemsCount } = showApprovalModal;
+        const { requestId, itemId, newStatusCode, type } = showApprovalModal;
         if (!requestId && type !== 'ITEM_STATUS_CHANGE') return;
 
         try {
             setIsSaving(true);
             setModalFeedback({ type: 'error', message: null });
 
-            if (type === 'COMPLETE_QUOTATION') {
-                const completionResult = await completeQuotationAction(requestId!, itemsCount, approvalComment);
-
-                // Financial Integrity Gate: check if backend returned integrity failure
-                if (completionResult && 'integrityCheckFailed' in completionResult && completionResult.integrityCheckFailed) {
-                    // Close the approval modal and show the integrity modal instead
-                    setShowApprovalModal({ show: false, type: null, requestId: null, itemId: null, itemDescription: null, newStatusCode: null, hasProforma: false, hasSupplier: false, itemsCount: 0, isLastItem: false, quotationCount: 0, hasCompleteQuotation: false });
-                    setApprovalComment('');
-                    setIntegrityModal({
-                        show: true,
-                        requestId: requestId!,
-                        itemsCount,
-                        ocrOriginalTotal: completionResult.ocrOriginalTotal,
-                        quotationTotal: completionResult.quotationTotal,
-                        varianceAmount: completionResult.varianceAmount,
-                        variancePercent: completionResult.variancePercent,
-                        toleranceApplied: completionResult.toleranceApplied,
-                        unresolvedReconciliationCount: completionResult.unresolvedReconciliationCount,
-                        detail: completionResult.detail
-                    });
-                    setIsSaving(false);
-                    return; // Do not proceed with normal flow
-                }
-                setFeedback({ type: 'success', message: 'Cotação concluída e enviada para aprovação.' });
-            } else if (type === 'CANCEL_REQUEST' && requestId) {
+            if (type === 'CANCEL_REQUEST' && requestId) {
                 await api.requests.cancel(requestId, approvalComment);
                 setFeedback({ type: 'success', message: 'Pedido cancelado com sucesso.' });
             } else if (type === 'ITEM_STATUS_CHANGE' && itemId && newStatusCode) {
@@ -1226,10 +833,10 @@ export function BuyerItemsList() {
                 await api.requests.deleteQuotation(requestId, itemId);
                 setFeedback({ type: 'success', message: 'Cotação excluída com sucesso.' });
             } else if ((type === 'SAVE_QUOTATION_OCR' || type === 'SAVE_QUOTATION_MANUAL') && requestId) {
-                await executeSaveQuotation(requestId);
+                /* legacy save removed */
             }
 
-            setShowApprovalModal({ show: false, type: null, requestId: null, itemId: null, itemDescription: null, newStatusCode: null, hasProforma: false, hasSupplier: false, itemsCount: 0, isLastItem: false, quotationCount: 0, hasCompleteQuotation: false });
+            setShowApprovalModal({ show: false, type: null, requestId: null, itemId: null, itemDescription: null, newStatusCode: null, isLastItem: false });
             setApprovalComment('');
 
             // Refresh data
@@ -1246,44 +853,6 @@ export function BuyerItemsList() {
         }
     };
 
-    // ═══════════════════════════════════════════════════════════════
-    // FINANCIAL INTEGRITY GATE — Override Handler
-    // ═══════════════════════════════════════════════════════════════
-    const handleIntegrityOverride = async () => {
-        if (!integrityModal || !integrityJustification.trim()) return;
-
-        try {
-            setIntegrityOverrideLoading(true);
-            const result = await completeQuotationAction(
-                integrityModal.requestId,
-                integrityModal.itemsCount,
-                '', // no additional comment
-                {
-                    financialIntegrityOverride: true,
-                    overrideJustification: integrityJustification.trim()
-                }
-            );
-
-            // Check if there's still an integrity failure (shouldn't happen with override, but safety check)
-            if (result && 'integrityCheckFailed' in result && result.integrityCheckFailed) {
-                setFeedback({ type: 'error', message: 'Override falhou. Verifique os dados e tente novamente.' });
-                return;
-            }
-
-            setFeedback({ type: 'success', message: 'Cotação concluída com override financeiro e enviada para aprovação.' });
-            setIntegrityModal(null);
-            setIntegrityJustification('');
-
-            // Refresh data
-            const response = await api.lineItems.list(searchTerm, itemStatus, requestStatus, undefined, undefined, undefined, page, pageSize);
-            setItems(response.data || []);
-        } catch (err: any) {
-            setFeedback({ type: 'error', message: err.message || 'Erro ao processar override financeiro.' });
-        } finally {
-            setIntegrityOverrideLoading(false);
-        }
-    };
-
     const handleAssignToMe = async (requestId: string) => {
         try {
             setIsSaving(true);
@@ -1295,6 +864,133 @@ export function BuyerItemsList() {
         } finally {
             setIsSaving(false);
         }
+    };
+
+    const handleOpenPartialApproval = (group: any) => {
+        setPartialApprovalModal({ show: true, group });
+    };
+
+    const handleOpenCancelApproval = (requestId: string, batchId: string, batchNumber: number) => {
+        setCancelApprovalModal({ show: true, requestId, batchId, batchNumber });
+    };
+
+    const handlePartialApprovalSubmit = async (submitData: { requestLineItemId: string, selectedQuotationItemId: string }[]) => {
+        if (!partialApprovalModal.group) return;
+        try {
+            await api.requests.createApprovalBatch(partialApprovalModal.group.requestId, submitData);
+            setPartialApprovalModal({ show: false, group: null });
+            setFeedback({ type: 'success', message: 'Lote de aprovação criado e enviado com sucesso.' });
+            loadData();
+        } catch (err: any) {
+            console.error('Error creating approval batch:', err);
+            setFeedback({ type: 'error', message: err.message || 'Falha ao criar lote de aprovação.' });
+        }
+    };
+
+    const handleCancelSuccess = () => {
+        setFeedback({ type: 'success', message: 'Lote de aprovação cancelado com sucesso.' });
+        loadData();
+    };
+
+    const calculateCoverage = (group: any) => {
+        const activeItems = (group.lineItems || []).filter((item: any) =>
+            item.lineItemStatusCode !== 'DELETED' && item.lineItemStatusCode !== 'CANCELLED'
+        );
+        const totalActive = activeItems.length;
+        const quotations = group.quotations || [];
+
+        // "Handled elsewhere" (not eligible for a new quotation) is not a single
+        // bucket — BATCH_ASSIGNED/QUOTATION_APPROVED are genuinely resolved,
+        // but NOT_QUOTED_PROPOSED is still awaiting a Requester/Area Approver
+        // decision (it can bounce back to pending on reject) and must never be
+        // reported as "fully quoted".
+        let inBatchOrApproved = 0;
+        let notQuotedProposed = 0;
+        let notQuotedAccepted = 0;
+        let closedNotQuoted = 0;
+        let readyToSend = 0;
+        let pending = 0;
+
+        activeItems.forEach((reqItem: any) => {
+            const lifecycle = reqItem.quotationLifecycleStatus;
+            if (lifecycle === 'NOT_QUOTED_PROPOSED') { notQuotedProposed++; return; }
+            if (lifecycle === 'NOT_QUOTED_ACCEPTED') { notQuotedAccepted++; return; }
+            if (lifecycle === 'CLOSED_NOT_QUOTED') { closedNotQuoted++; return; }
+            if (!isLineItemEligibleForQuotation(reqItem)) { inBatchOrApproved++; return; }
+
+            const hasCandidate = quotations.some((q: any) =>
+                (q.items || []).some((qi: any) =>
+                    qi.mappedRequestLineItemId === reqItem.id &&
+                    (qi.reconciliationStatus === 'MAPPED' || qi.reconciliationStatus === 'SUBSTITUTE') &&
+                    isQuotationItemSelectableForApproval(qi.id, group)
+                )
+            );
+            if (hasCandidate) readyToSend++;
+            else pending++;
+        });
+
+        const handledElsewhere = inBatchOrApproved + notQuotedProposed + notQuotedAccepted + closedNotQuoted;
+        const totalCovered = handledElsewhere + readyToSend;
+        const totalNotCovered = pending;
+
+        // AWAITING_DECISION takes priority over FULLY_QUOTED whenever nothing is
+        // left to quote (pending === 0) but a not-quoted proposal is still open —
+        // it can still bounce back to pending on reject, so it is never "done".
+        let status: 'NOT_QUOTED' | 'PARTIALLY_QUOTED' | 'FULLY_QUOTED' | 'AWAITING_DECISION' = 'NOT_QUOTED';
+        if (pending === 0 && notQuotedProposed > 0) {
+            status = 'AWAITING_DECISION';
+        } else if (pending === 0 && totalActive > 0) {
+            status = 'FULLY_QUOTED';
+        } else if (totalCovered > 0) {
+            status = 'PARTIALLY_QUOTED';
+        }
+
+        return {
+            totalActive,
+            totalCovered,
+            totalNotCovered,
+            handledElsewhere,
+            inBatchOrApproved,
+            notQuotedProposed,
+            notQuotedAccepted,
+            closedNotQuoted,
+            readyToSend,
+            status
+        };
+    };
+
+    const getEligibleItemsForPartialApproval = (group: any) => {
+        const reqItems: any[] = group.lineItems || [];
+        const quotations = group.quotations || [];
+        const eligibleList: any[] = [];
+
+        reqItems.forEach((reqItem: any) => {
+            if (reqItem.lineItemStatusCode === 'DELETED' || reqItem.lineItemStatusCode === 'CANCELLED') return;
+
+            const lifecycle = reqItem.quotationLifecycleStatus;
+            if (lifecycle !== null && lifecycle !== 'QUOTATION_PENDING') return;
+
+            if (
+                lifecycle === 'BATCH_ASSIGNED' || 
+                lifecycle === 'QUOTATION_APPROVED' || 
+                lifecycle === 'NOT_QUOTED_PROPOSED' || 
+                lifecycle === 'NOT_QUOTED_ACCEPTED'
+            ) return;
+
+            const hasCandidate = quotations.some((q: any) => 
+                (q.items || []).some((qi: any) => 
+                    qi.mappedRequestLineItemId === reqItem.id && 
+                    (qi.reconciliationStatus === 'MAPPED' || qi.reconciliationStatus === 'SUBSTITUTE') &&
+                    isQuotationItemSelectableForApproval(qi.id, group)
+                )
+            );
+
+            if (hasCandidate) {
+                eligibleList.push(reqItem);
+            }
+        });
+
+        return eligibleList;
     };
 
     // --- RENDER HELPERS ---
@@ -1333,13 +1029,12 @@ export function BuyerItemsList() {
     groupedRequestsRef.current = groupedRequests;
     const expandedRequestsRef = useRef(expandedRequests);
     expandedRequestsRef.current = expandedRequests;
-    const addQuotationModeRef = useRef(addQuotationMode);
-    addQuotationModeRef.current = addQuotationMode;
+    
+    
 
     const getGuideState = useCallback((): QuotationManagementState => {
         const groups = groupedRequestsRef.current;
         const expanded = expandedRequestsRef.current;
-        const addQMode = addQuotationModeRef.current;
         const firstGroup = groups.length > 0 ? groups[0] : null;
         return {
             hasVisibleGroups: groups.length > 0,
@@ -1347,7 +1042,7 @@ export function BuyerItemsList() {
             isAssignedToMe: firstGroup ? firstGroup.buyerId === currentUser?.id : false,
             hasBuyerAssigned: firstGroup ? !!firstGroup.buyerId : false,
             hasQuotations: firstGroup ? firstGroup.quotations.length > 0 : false,
-            isAddingQuotation: firstGroup ? !!addQMode[firstGroup.requestId] : false,
+            isAddingQuotation: false,
             requestStatusCode: firstGroup ? firstGroup.requestStatusCode : '',
         };
     }, [currentUser?.id]);
@@ -1806,7 +1501,7 @@ export function BuyerItemsList() {
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
                                                                             setKebabMenuOpen(null);
-                                                                            setShowApprovalModal({ show: true, type: 'CANCEL_REQUEST', requestId: group.requestId, itemId: null, itemDescription: null, newStatusCode: null, hasProforma: false, hasSupplier: false, itemsCount: 0, isLastItem: false, quotationCount: 0, hasCompleteQuotation: false });
+                                                                            setShowApprovalModal({ show: true, type: 'CANCEL_REQUEST', requestId: group.requestId, itemId: null, itemDescription: null, newStatusCode: null, isLastItem: false });
                                                                         }}
                                                                         disabled={isSaving}
                                                                         style={{
@@ -1831,6 +1526,95 @@ export function BuyerItemsList() {
 
                                 {isExpanded && (
                                     <div data-tour="buyer-open-request" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                                        {(() => {
+                                            const coverage = calculateCoverage(group);
+                                            const eligibleItems = getEligibleItemsForPartialApproval(group);
+                                            const hasEligibleItems = eligibleItems.length > 0;
+
+                                            return (
+                                                <div style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    padding: '16px 20px',
+                                                    backgroundColor: 'var(--color-bg-page)',
+                                                    border: '1px solid var(--color-border)',
+                                                    borderRadius: '12px',
+                                                    boxShadow: 'var(--shadow-sm)'
+                                                }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                                        <div style={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            width: '40px',
+                                                            height: '40px',
+                                                            borderRadius: '50%',
+                                                            backgroundColor: coverage.status === 'FULLY_QUOTED' ? '#e6f4ea' : coverage.status === 'AWAITING_DECISION' ? '#fef3c7' : coverage.status === 'PARTIALLY_QUOTED' ? '#fef7e0' : '#fce8e6',
+                                                            color: coverage.status === 'FULLY_QUOTED' ? '#137333' : coverage.status === 'AWAITING_DECISION' ? '#92400e' : coverage.status === 'PARTIALLY_QUOTED' ? '#b06000' : '#c5221f'
+                                                        }}>
+                                                            <PieChart size={22} />
+                                                        </div>
+                                                        <div>
+                                                            <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800, color: 'var(--color-text-main)' }}>
+                                                                Resumo de Cobertura das Cotações
+                                                            </h4>
+                                                            <div style={{ display: 'flex', gap: '12px', marginTop: '4px', fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 600, flexWrap: 'wrap' }}>
+                                                                <span>Itens Solicitados: <strong style={{ color: 'var(--color-text-main)' }}>{coverage.totalActive}</strong></span>
+                                                                {coverage.inBatchOrApproved > 0 && (<><span>•</span><span>Em lote/aprovação: <strong style={{ color: '#1a73e8' }}>{coverage.inBatchOrApproved}</strong></span></>)}
+                                                                {coverage.notQuotedProposed > 0 && (<><span>•</span><span>Não cotado aguardando decisão: <strong style={{ color: '#b45309' }}>{coverage.notQuotedProposed}</strong></span></>)}
+                                                                {coverage.notQuotedAccepted > 0 && (<><span>•</span><span>Não cotado aceito: <strong style={{ color: '#6b7280' }}>{coverage.notQuotedAccepted}</strong></span></>)}
+                                                                {coverage.closedNotQuoted > 0 && (<><span>•</span><span>Encerrado sem cotação: <strong style={{ color: '#6b7280' }}>{coverage.closedNotQuoted}</strong></span></>)}
+                                                                <span>•</span>
+                                                                <span>Cotados (prontos p/ envio): <strong style={{ color: '#137333' }}>{coverage.readyToSend}</strong></span>
+                                                                <span>•</span>
+                                                                <span>Pendentes: <strong style={{ color: '#c5221f' }}>{coverage.totalNotCovered}</strong></span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                        <span className="badge" style={{
+                                                            backgroundColor: coverage.status === 'FULLY_QUOTED' ? '#e6f4ea' : coverage.status === 'AWAITING_DECISION' ? '#fef3c7' : coverage.status === 'PARTIALLY_QUOTED' ? '#fef7e0' : '#fce8e6',
+                                                            color: coverage.status === 'FULLY_QUOTED' ? '#137333' : coverage.status === 'AWAITING_DECISION' ? '#92400e' : coverage.status === 'PARTIALLY_QUOTED' ? '#b06000' : '#c5221f',
+                                                            border: 'none',
+                                                            fontWeight: 800,
+                                                            fontSize: '0.75rem',
+                                                            padding: '6px 12px',
+                                                            borderRadius: '20px'
+                                                        }}>
+                                                            {coverage.status === 'FULLY_QUOTED' ? 'Totalmente Cotado' : coverage.status === 'AWAITING_DECISION' ? 'Aguardando Decisão' : coverage.status === 'PARTIALLY_QUOTED' ? 'Parcialmente Cotado' : 'Sem Cotação'}
+                                                        </span>
+                                                        {canMutateQuotation && mode === 'BUYER' && hasEligibleItems && (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleOpenPartialApproval(group);
+                                                                }}
+                                                                style={{
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '8px',
+                                                                    padding: '8px 16px',
+                                                                    backgroundColor: 'var(--color-primary)',
+                                                                    color: '#ffffff',
+                                                                    border: 'none',
+                                                                    borderRadius: '8px',
+                                                                    fontWeight: 800,
+                                                                    fontSize: '0.8rem',
+                                                                    cursor: 'pointer',
+                                                                    boxShadow: 'var(--shadow-sm)',
+                                                                    transition: 'all 0.2s ease-in-out'
+                                                                }}
+                                                                onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--color-primary-dark)'}
+                                                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--color-primary)'}
+                                                            >
+                                                                <CheckSquare size={14} /> Avançar itens cobertos para aprovação
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
 
                                         {isAdjustmentPhase && group.latestAdjustmentMessage && (
                                             <div style={{
@@ -1981,6 +1765,7 @@ export function BuyerItemsList() {
                                                                 <th style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9', width: '100px' }}>Total Est.</th>
                                                                 <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9', width: '80px' }}>Prioridade</th>
                                                                 <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9', width: '110px' }}>Tipo</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 900, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: '#6d28d9', width: '180px' }}>Status</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody>
@@ -1992,6 +1777,15 @@ export function BuyerItemsList() {
                                                                     'LOW': { bg: '#f0fdf4', text: '#16a34a', label: 'Baixa' }
                                                                 };
                                                                 const prio = priorityColors[item.itemPriority] || priorityColors['MEDIUM'];
+                                                                const itemStatus = getBuyerItemStatus(item, group);
+                                                                const isItemActionEligible = isLineItemEligibleForQuotation(item) && item.lineItemStatusCode !== 'CANCELLED' && item.lineItemStatusCode !== 'DELETED';
+                                                                // Copy varies by context: closing the LAST pending item ends the
+                                                                // quotation stage ("Encerrar sem cotação"), while with other items
+                                                                // still pending the action only affects this one ("Desconsiderar item").
+                                                                const pendingEligibleCount = group.items.filter((i: any) =>
+                                                                    isLineItemEligibleForQuotation(i) && i.lineItemStatusCode !== 'CANCELLED' && i.lineItemStatusCode !== 'DELETED'
+                                                                ).length;
+                                                                const isLastPendingItem = isItemActionEligible && pendingEligibleCount === 1;
 
                                                                 return (
                                                                     <tr key={item.lineItemId || idx} style={{
@@ -2053,6 +1847,54 @@ export function BuyerItemsList() {
                                                                             }}>
                                                                                 {isCatalog ? '✓ Catálogo' : '✎ Manual'}
                                                                             </span>
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                                                                                <span
+                                                                                    title={itemStatus.hint}
+                                                                                    style={{
+                                                                                        display: 'inline-block',
+                                                                                        backgroundColor: itemStatus.bg,
+                                                                                        color: itemStatus.text,
+                                                                                        border: `1px solid ${itemStatus.border}`,
+                                                                                        fontSize: '0.65rem',
+                                                                                        fontWeight: 800,
+                                                                                        padding: '3px 8px',
+                                                                                        borderRadius: '4px',
+                                                                                        lineHeight: 1.3,
+                                                                                        cursor: itemStatus.hint ? 'help' : 'default'
+                                                                                    }}
+                                                                                >
+                                                                                    {itemStatus.label}
+                                                                                </span>
+                                                                                {canMutateQuotation && mode === 'BUYER' && isItemActionEligible && (
+                                                                                    <button
+                                                                                        onClick={() => setCloseNotQuotedModal({
+                                                                                            show: true,
+                                                                                            requestId: group.requestId,
+                                                                                            lineItemId: item.lineItemId || item.id,
+                                                                                            itemDescription: `Linha ${item.lineNumber} — ${item.itemDescription || item.description || ''}`,
+                                                                                            isLastPendingItem
+                                                                                        })}
+                                                                                        title="O item deixará de ser considerado neste processo de cotação (exige motivo e justificativa)."
+                                                                                        style={{
+                                                                                            fontSize: '0.65rem',
+                                                                                            fontWeight: 700,
+                                                                                            color: '#6b7280',
+                                                                                            backgroundColor: 'transparent',
+                                                                                            border: '1px dashed #d1d5db',
+                                                                                            borderRadius: '4px',
+                                                                                            padding: '2px 8px',
+                                                                                            cursor: 'pointer',
+                                                                                            transition: 'all 0.15s'
+                                                                                        }}
+                                                                                        onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#f3f4f6'; e.currentTarget.style.color = '#374151'; }}
+                                                                                        onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#6b7280'; }}
+                                                                                    >
+                                                                                        {isLastPendingItem ? 'Encerrar sem cotação' : 'Desconsiderar item'}
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
                                                                         </td>
                                                                     </tr>
                                                                 );
@@ -2165,8 +2007,24 @@ export function BuyerItemsList() {
                                                                             {/* Maintenance Actions (Step 8.1) */}
                                                                             {canMutateQuotation && mode === 'BUYER' && (
                                                                                 <div style={{ display: 'flex', gap: '8px' }} onClick={(e) => e.stopPropagation()}>
-                                                                                    <button
-                                                                                        onClick={() => handleEditQuotation(group.requestId, q)}
+                                                                                    {(() => {
+                                                                                        const isUsedInBatch = group.approvalBatches?.some((po: any) => po.items?.some((poi: any) => q.items?.some((qi: any) => qi.id === poi.selectedQuotationItemId)));
+                                                                                        if (isUsedInBatch) {
+                                                                                            return (
+                                                                                                <div style={{
+                                                                                                    display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px',
+                                                                                                    backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px',
+                                                                                                    color: '#166534', fontWeight: 800, fontSize: '0.7rem',
+                                                                                                    textTransform: 'uppercase'
+                                                                                                }}>
+                                                                                                    <ShieldCheck size={12} /> Protegida por auditoria
+                                                                                                </div>
+                                                                                            );
+                                                                                        }
+                                                                                        return (
+                                                                                            <>
+                                                                                                <button
+                                                                                        onClick={() => handleOpenWizard(group, q.sourceType === 'OCR' ? 'UPLOAD' : 'MANUAL', q)}
                                                                                         style={{
                                                                                             display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px',
                                                                                             backgroundColor: 'var(--color-bg-surface)', border: '1px solid #bae6fd', borderRadius: '4px',
@@ -2191,6 +2049,9 @@ export function BuyerItemsList() {
                                                                                     >
                                                                                         <Trash2 size={12} /> Excluir
                                                                                     </button>
+                                                                                </>
+                                                                                        );
+                                                                                    })()}
                                                                                 </div>
                                                                             )}
 
@@ -2354,886 +2215,153 @@ export function BuyerItemsList() {
                                         {/* SECTION B: Add New Quotation */}
                                         {canMutateQuotation && mode === 'BUYER' && (
                                             <div
-                                                {...(groupIndex === 0 ? { 'data-guide': 'qm-add-quotation' } : {})}
-                                                id={`section-b-${group.requestId}`}
-                                                className={highlightedRequestId === group.requestId ? 'section-attention-highlight' : ''}
-                                                style={{
-                                                    padding: '24px',
-                                                    backgroundColor: 'var(--color-bg-surface)',
-                                                    border: '1px solid var(--color-border)',
-                                                    borderRadius: 'var(--radius-sm)',
-                                                    display: 'flex',
-                                                    flexDirection: 'column',
-                                                    gap: '20px',
-                                                    boxShadow: 'var(--shadow-md)',
-                                                    transition: 'all 0.3s ease'
-                                                }}
-                                            >
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-primary)', fontWeight: 800, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                                        <Plus size={18} /> SEÇÃO B: ADICIONAR NOVA COTAÇÃO
-                                                    </div>
-                                                    {addQuotationMode[group.requestId] && (
-                                                        <button
-                                                            onClick={() => {
-                                                                setAddQuotationMode(prev => ({ ...prev, [group.requestId]: null }));
-                                                                handleResetToSelect(group.requestId);
-                                                            }}
-                                                            style={{
-                                                                display: 'flex', alignItems: 'center', gap: '6px',
-                                                                backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1',
-                                                                color: 'var(--color-text-main)', fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer',
-                                                                textTransform: 'uppercase', padding: '6px 12px', borderRadius: '4px'
-                                                            }}
-                                                        >
-                                                            <ArrowLeft size={14} /> Voltar/Cancelar
-                                                        </button>
-                                                    )}
-                                                </div>
+        {...(groupIndex === 0 ? { 'data-guide': 'qm-add-quotation' } : {})}
+        id={`section-b-${group.requestId}`}
+        className={highlightedRequestId === group.requestId ? 'section-attention-highlight' : ''}
+        style={{
+            padding: '24px',
+            backgroundColor: 'var(--color-bg-surface)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-sm)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '20px',
+            boxShadow: 'var(--shadow-md)',
+            transition: 'all 0.3s ease'
+        }}
+    >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-primary)', fontWeight: 800, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <Plus size={18} /> SEÇÃO B: ADICIONAR NOVA COTAÇÃO
+            </div>
+        </div>
 
-                                                {!addQuotationMode[group.requestId] ? (
-                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                                                        <button
-                                                            onClick={() => setAddQuotationMode(prev => ({ ...prev, [group.requestId]: 'UPLOAD' }))}
-                                                            style={{
-                                                                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '32px 24px',
-                                                                backgroundColor: 'var(--color-bg-page)', border: '2px solid var(--color-border)', borderRadius: '8px',
-                                                                cursor: 'pointer', transition: 'all 0.2s', textAlign: 'center'
-                                                            }}
-                                                            onMouseOver={(e) => { e.currentTarget.style.borderColor = 'var(--color-primary)'; e.currentTarget.style.backgroundColor = '#f0f9ff'; }}
-                                                            onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.backgroundColor = '#f8fafc'; }}
-                                                        >
-                                                            <Upload size={32} color="var(--color-primary)" />
-                                                            <div>
-                                                                <div style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '0.9rem', marginBottom: '4px' }}>IMPORTAR DOCUMENTO</div>
-                                                                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: 1.4 }}>Extrair dados de cotação PDF/Imagem usando OCR</p>
-                                                            </div>
-                                                        </button>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+            <button
+                onClick={() => handleOpenWizard(group, 'UPLOAD')}
+                style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '32px 24px',
+                    backgroundColor: 'var(--color-bg-page)', border: '2px solid var(--color-border)', borderRadius: '8px',
+                    cursor: 'pointer', transition: 'all 0.2s', textAlign: 'center'
+                }}
+                onMouseOver={(e) => { e.currentTarget.style.borderColor = 'var(--color-primary)'; e.currentTarget.style.backgroundColor = '#f0f9ff'; }}
+                onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.backgroundColor = '#f8fafc'; }}
+            >
+                <Upload size={32} color="var(--color-primary)" />
+                <div>
+                    <div style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '0.9rem', marginBottom: '4px' }}>IMPORTAR DOCUMENTO</div>
+                    <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: 1.4 }}>Extrair dados de cotação PDF/Imagem usando OCR</p>
+                </div>
+            </button>
 
-                                                        <button
-                                                            onClick={() => {
-                                                                const blankDraft: QuotationDraft = {
-                                                                    supplierId: null,
-                                                                    supplierNameSnapshot: '',
-                                                                    documentNumber: '',
-                                                                    documentDate: '',
-                                                                    currency: '',
-                                                                    discountAmount: 0,
-                                                                    totalAmount: 0,
-                                                                    items: []
-                                                                };
-                                                                setQuotationDrafts(prev => ({ ...prev, [group.requestId]: blankDraft }));
-                                                                setQuotationFlowStep(prev => ({ ...prev, [group.requestId]: 'EDIT_QUOTATION' }));
-                                                                setAddQuotationMode(prev => ({ ...prev, [group.requestId]: 'MANUAL' }));
-                                                                // Crucial: Clear identity and proforma files for a new manual entry
-                                                                setEditingQuotationId(prev => ({ ...prev, [group.requestId]: null }));
-                                                                setDraftProformaFiles(prev => {
-                                                                    const next = { ...prev };
-                                                                    delete next[group.requestId];
-                                                                    return next;
-                                                                });
-                                                            }}
-                                                            style={{
-                                                                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '32px 24px',
-                                                                backgroundColor: '#fdf4ff', border: '2px solid #f5d0fe', borderRadius: '8px',
-                                                                cursor: 'pointer', transition: 'all 0.2s', textAlign: 'center'
-                                                            }}
-                                                            onMouseOver={(e) => { e.currentTarget.style.borderColor = '#d946ef'; e.currentTarget.style.backgroundColor = '#fae8ff'; }}
-                                                            onMouseOut={(e) => { e.currentTarget.style.borderColor = '#f5d0fe'; e.currentTarget.style.backgroundColor = '#fdf4ff'; }}
-                                                        >
-                                                            <Pencil size={32} color="#d946ef" />
-                                                            <div>
-                                                                <div style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '0.9rem', marginBottom: '4px' }}>INSERIR MANUALMENTE</div>
-                                                                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: 1.4 }}>Preencher dados da cotação manualmente do zero</p>
-                                                            </div>
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                                                        {addQuotationMode[group.requestId] === 'UPLOAD' && quotationFlowStep[group.requestId] !== 'EDIT_QUOTATION' && (
-                                                            <div style={{
-                                                                padding: '24px', backgroundColor: '#f0f9ff', border: '2px dashed #0ea5e9', borderRadius: '8px',
-                                                                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px'
-                                                            }}>
-                                                                <div style={{ textAlign: 'center' }}>
-                                                                    <div style={{ fontWeight: 800, color: '#0369a1', fontSize: '0.90rem', textTransform: 'uppercase' }}>Importação de Documento (Proforma)</div>
-                                                                    <p style={{ fontSize: '0.8rem', color: '#0c4a6e', margin: '4px 0 0' }}>Selecione o arquivo da cotação para iniciar.</p>
-                                                                </div>
-
-                                                                {!importSelectedFiles[group.requestId] || importSelectedFiles[group.requestId].length === 0 ? (
-                                                                    <label style={{
-                                                                        display: 'inline-flex', alignItems: 'center', gap: '10px', backgroundColor: '#0ea5e9', color: '#fff',
-                                                                        padding: '12px 24px', borderRadius: '6px', fontWeight: 800, fontSize: '0.85rem', cursor: 'pointer',
-                                                                        boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)'
-                                                                    }}>
-                                                                        <Upload size={20} /> SELECIONAR ARQUIVO
-                                                                        <input type="file" hidden onChange={(e) => { if (e.target.files && e.target.files.length > 0) { handleFileSelectForImport(group.requestId, Array.from(e.target.files)); e.target.value = ''; } }} />
-                                                                    </label>
-                                                                ) : (
-                                                                    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
-                                                                        <div style={{
-                                                                            display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px',
-                                                                            backgroundColor: 'var(--color-bg-surface)', border: '1px solid #bae6fd', borderRadius: '6px', width: '100%', maxWidth: '400px'
-                                                                        }}>
-                                                                            <FileText size={20} color="#0284c7" />
-                                                                            <span style={{ flex: 1, fontSize: '0.85rem', fontWeight: 700, color: '#0369a1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                                                {importSelectedFiles[group.requestId][0].name}
-                                                                            </span>
-                                                                            <div style={{ display: 'flex', gap: '4px' }}>
-                                                                                <label style={{ color: '#0284c7', padding: '6px', cursor: 'pointer' }} title="Trocar Arquivo">
-                                                                                    <Pencil size={16} />
-                                                                                    <input type="file" hidden onChange={(e) => { if (e.target.files && e.target.files.length > 0) { handleFileSelectForImport(group.requestId, Array.from(e.target.files)); e.target.value = ''; } }} />
-                                                                                </label>
-                                                                                <button onClick={() => handleRemoveImportFile(group.requestId)} style={{ color: '#ef4444', padding: '6px', background: 'none', border: 'none', cursor: 'pointer' }} title="Remover Arquivo">
-                                                                                    <Trash2 size={16} />
-                                                                                </button>
-                                                                            </div>
-                                                                        </div>
-
-                                                                        <button
-                                                                            onClick={() => handleContinueWithDocument(group.requestId)}
-                                                                            disabled={isProcessingOcr[group.requestId]}
-                                                                            style={{
-                                                                                backgroundColor: 'var(--color-primary)', color: '#fff', padding: '12px 32px', borderRadius: '6px',
-                                                                                fontWeight: 900, fontSize: '0.9rem', border: 'none', cursor: isProcessingOcr[group.requestId] ? 'not-allowed' : 'pointer',
-                                                                                textTransform: 'uppercase', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', marginTop: '8px',
-                                                                                display: 'flex', alignItems: 'center', gap: '8px', opacity: isProcessingOcr[group.requestId] ? 0.7 : 1
-                                                                            }}
-                                                                        >
-                                                                            {isProcessingOcr[group.requestId] ? (
-                                                                                <>Processando OCR...</>
-                                                                            ) : (
-                                                                                <>Iniciar OCR no documento <ChevronRight size={18} /></>
-                                                                            )}
-                                                                        </button>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        )}
-
-                                                        {/* EDITABLE DRAFT FLOW (OCR OR MANUAL) */}
-                                                        {quotationFlowStep[group.requestId] === 'EDIT_QUOTATION' && (
-                                                            <div className="quotation-review-area" style={{ border: '2px solid #e2e8f0', borderRadius: '8px', padding: '20px' }}>
-                                                                <div className="review-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '16px', borderBottom: '1px solid #e2e8f0' }}>
-                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                                        <div style={{
-                                                                            backgroundColor: addQuotationMode[group.requestId] === 'MANUAL' ? '#d946ef' : '#0ea5e9',
-                                                                            color: '#fff', padding: '6px 12px', borderRadius: '4px', fontWeight: 900, fontSize: '0.7rem', textTransform: 'uppercase'
-                                                                        }}>
-                                                                            {addQuotationMode[group.requestId] === 'MANUAL' ? 'MODO MANUAL' : 'MODO OCR'}
-                                                                        </div>
-                                                                        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: 'var(--color-text-main)' }}>
-                                                                            {editingQuotationId[group.requestId] ? 'Editar Cotação' : 'Registrar Nova Cotação'}
-                                                                        </h3>
-                                                                        {editingQuotationId[group.requestId] && (
-                                                                            <span style={{
-                                                                                backgroundColor: '#fef3c7', color: '#92400e', padding: '4px 10px',
-                                                                                borderRadius: '4px', fontSize: '0.65rem', fontWeight: 900,
-                                                                                border: '1px solid #fcd34d', textTransform: 'uppercase'
-                                                                            }}>
-                                                                                Modo: Editando Cotação
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-
-                                                                    <div className="review-actions" style={{ display: 'flex', gap: '12px' }}>
-                                                                        {addQuotationMode[group.requestId] === 'UPLOAD' && (
-                                                                            <button
-                                                                                onClick={() => handleRestoreOcrOriginal(group.requestId)}
-                                                                                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 700, backgroundColor: 'var(--color-bg-surface)', cursor: 'pointer' }}
-                                                                                title="Restaurar sugestões originais do OCR"
-                                                                            >
-                                                                                <RefreshCcw size={16} /> Restaurar OCR
-                                                                            </button>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-
-                                                                {ocrErrors[group.requestId] && (
-                                                                    <div style={{ backgroundColor: '#fef2f2', padding: '12px', borderRadius: '6px', border: '1px solid #fee2e2', color: '#b91c1c', fontSize: '0.8rem', fontWeight: 600, display: 'flex', gap: '10px', marginBottom: '20px' }}>
-                                                                        <AlertCircle size={18} /> {ocrErrors[group.requestId]}
-                                                                    </div>
-                                                                )}
-
-                                                                {!quotationDrafts[group.requestId] && isProcessingOcr[group.requestId] ? (
-                                                                    <div style={{ padding: '40px', textAlign: 'center' }}>
-                                                                        <div style={{ animation: 'spin 1s linear infinite', width: '32px', height: '32px', border: '4px solid #f1f5f9', borderTopColor: 'var(--color-primary)', borderRadius: '50%', margin: '0 auto 16px' }}></div>
-                                                                        <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>Extraindo dados do documento...</span>
-                                                                    </div>
-                                                                ) : quotationDrafts[group.requestId] ? (
-                                                                    <div className="quotation-form-body">
-                                                                        {/* STEP 1: Draft Editor Status Bar */}
-                                                                        <div style={{
-                                                                            display: 'flex',
-                                                                            justifyContent: 'space-between',
-                                                                            alignItems: 'center',
-                                                                            padding: '16px 20px',
-                                                                            backgroundColor: 'var(--color-bg-page)',
-                                                                            border: '1px solid var(--color-border)',
-                                                                            borderRadius: '8px',
-                                                                            marginBottom: '20px',
-                                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
-                                                                        }}>
-                                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                                                <div style={{
-                                                                                    backgroundColor: group.requestStatusCode === 'WAITING_QUOTATION' ? '#f59e0b' : '#64748b',
-                                                                                    color: '#fff',
-                                                                                    padding: '4px 10px',
-                                                                                    borderRadius: '4px',
-                                                                                    fontSize: '0.7rem',
-                                                                                    fontWeight: 900,
-                                                                                    textTransform: 'uppercase'
-                                                                                }}>
-                                                                                    {editingQuotationId[group.requestId] ? 'EDITANDO' : 'RASCUNHO'}
-                                                                                </div>
-                                                                                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-main)' }}>
-                                                                                    {editingQuotationId[group.requestId]
-                                                                                        ? 'Editando cotação existente — salve ou cancele para prosseguir.'
-                                                                                        : 'Registrando nova cotação — salve ou cancele para prosseguir.'}
-                                                                                </span>
-                                                                            </div>
-                                                                        </div>
-                                                                        {/* Phase 2: Reconciliation Panel */}
-                                                                        {reconciliationBatches[group.requestId] && group.items.length > 0 && (
-                                                                            <ReconciliationPanel
-                                                                                requestId={group.requestId}
-                                                                                batch={reconciliationBatches[group.requestId]}
-                                                                                onBatchUpdated={(updated) => setReconciliationBatches(prev => ({ ...prev, [group.requestId]: updated }))}
-                                                                            />
-                                                                        )}
-                                                                        <div className="form-header-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '24px', backgroundColor: 'var(--color-bg-page)', padding: '20px', borderRadius: '8px' }}>
-                                                                            <div style={{ gridColumn: 'span 3' }}>
-                                                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                                                                                    <label style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Fornecedor <span style={{ color: '#ef4444' }}>*</span></label>
-                                                                                    <button
-                                                                                        onClick={() => setQuickSupplierModal({
-                                                                                            show: true,
-                                                                                            requestId: group.requestId,
-                                                                                            initialName: quotationDrafts[group.requestId].supplierNameSnapshot,
-                                                                                            initialTaxId: quotationDrafts[group.requestId].supplierTaxId || ''
-                                                                                        })}
-                                                                                        style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
-                                                                                    >
-                                                                                        + NOVO FORNECEDOR
-                                                                                    </button>
-                                                                                </div>
-                                                                                <SupplierAutocomplete
-                                                                                    initialName={quotationDrafts[group.requestId].supplierNameSnapshot}
-                                                                                    onChange={(id, name) => {
-                                                                                        handleUpdateQuotationHeader(group.requestId, 'supplierId', id || null);
-                                                                                        handleUpdateQuotationHeader(group.requestId, 'supplierNameSnapshot', name || '');
-                                                                                    }}
-                                                                                />
-                                                                                {!quotationDrafts[group.requestId].supplierId && quotationDrafts[group.requestId].supplierNameSnapshot && (
-                                                                                    <div style={{ marginTop: '8px', padding: '10px 12px', backgroundColor: '#fff7ed', border: '1px solid #ffedd5', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                                                            <AlertCircle size={16} color="#c2410c" />
-                                                                                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#9a3412' }}>
-                                                                                                Fornecedor sugerido <strong>"{quotationDrafts[group.requestId].supplierNameSnapshot}"</strong> não encontrado no sistema.
-                                                                                            </span>
-                                                                                        </div>
-                                                                                        <button
-                                                                                            onClick={() => setQuickSupplierModal({
-                                                                                                show: true,
-                                                                                                requestId: group.requestId,
-                                                                                                initialName: quotationDrafts[group.requestId].supplierNameSnapshot,
-                                                                                                initialTaxId: quotationDrafts[group.requestId].supplierTaxId || ''
-                                                                                            })}
-                                                                                            style={{
-                                                                                                backgroundColor: '#f97316', color: '#fff', border: 'none', padding: '4px 10px',
-                                                                                                borderRadius: '4px', fontSize: '0.65rem', fontWeight: 800, cursor: 'pointer',
-                                                                                                textTransform: 'uppercase'
-                                                                                            }}
-                                                                                        >
-                                                                                            CRIAR AGORA
-                                                                                        </button>
-                                                                                    </div>
-                                                                                )}
-                                                                                {formErrors[group.requestId]?.supplierId && (
-                                                                                    <div style={{ color: '#ef4444', fontSize: '0.75rem', fontWeight: 700, marginTop: '4px' }}>{formErrors[group.requestId].supplierId}</div>
-                                                                                )}
-                                                                            </div>
-                                                                            <div>
-                                                                                <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Nº Documento <span style={{ color: '#ef4444' }}>*</span></label>
-                                                                                <input
-                                                                                    className="form-input"
-                                                                                    value={quotationDrafts[group.requestId].documentNumber}
-                                                                                    onChange={(e) => handleUpdateQuotationHeader(group.requestId, 'documentNumber', e.target.value)}
-                                                                                    placeholder="Ex: INV-123"
-                                                                                    style={{ width: '100%', padding: '10px', border: `1px solid ${formErrors[group.requestId]?.documentNumber ? '#ef4444' : 'var(--color-border)'}`, borderRadius: '4px', fontSize: '0.85rem' }}
-                                                                                />
-                                                                                {formErrors[group.requestId]?.documentNumber && (
-                                                                                    <div style={{ color: '#ef4444', fontSize: '0.75rem', fontWeight: 700, marginTop: '4px' }}>{formErrors[group.requestId].documentNumber}</div>
-                                                                                )}
-                                                                            </div>
-                                                                            <div style={{ gridColumn: 'span 2' }}>
-                                                                                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-primary)', textTransform: 'uppercase', marginBottom: '8px' }}>
-                                                                                    Documento da Cotação / Proforma
-                                                                                    <span style={{ color: '#ef4444', fontWeight: 800, textTransform: 'none', marginLeft: '6px' }}>(Obrigatório para Salvar e Concluir)</span>
-                                                                                </label>
-
-                                                                                {(() => {
-                                                                                    const newFile = draftProformaFiles[group.requestId];
-                                                                                    const existingId = quotationDrafts[group.requestId]?.proformaAttachmentId;
-
-                                                                                    // Case 1: New file selected (uploading)
-                                                                                    if (newFile) {
-                                                                                        return (
-                                                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px' }}>
-                                                                                                <FileText size={18} color="#166534" />
-                                                                                                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#166534', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                                                    {newFile.name}
-                                                                                                </span>
-                                                                                                <button
-                                                                                                    onClick={() => setDraftProformaFiles(prev => { const n = { ...prev }; delete n[group.requestId]; return n; })}
-                                                                                                    style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
-                                                                                                    title="Remover Arquivo"
-                                                                                                >
-                                                                                                    <Trash2 size={16} />
-                                                                                                </button>
-                                                                                            </div>
-                                                                                        );
-                                                                                    }
-
-                                                                                    // Case 2: Existing proforma from DB (edit mode)
-                                                                                    if (existingId) {
-                                                                                        // Map existingId to attachment info if available in group.quotations or proformaAttachments
-                                                                                        const attInfo = group.quotations.find((q: any) => q.proformaAttachmentId === existingId) ||
-                                                                                            group.proformaAttachments.find((a: any) => a.id === existingId);
-
-                                                                                        return (
-                                                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px' }}>
-                                                                                                <FileText size={18} color="#1e40af" />
-                                                                                                <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                                                                                                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1e40af', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                                                        {attInfo?.fileName || 'Documento Vinculado'}
-                                                                                                    </span>
-                                                                                                    <a
-                                                                                                        href={`/api/v1/attachments/download/${existingId}`}
-                                                                                                        target="_blank"
-                                                                                                        rel="noopener noreferrer"
-                                                                                                        style={{ fontSize: '0.65rem', color: '#2563eb', fontWeight: 700, textDecoration: 'underline' }}
-                                                                                                    >
-                                                                                                        Ver documento atual
-                                                                                                    </a>
-                                                                                                </div>
-                                                                                                <button
-                                                                                                    onClick={() => handleUpdateQuotationHeader(group.requestId, 'proformaAttachmentId', null)}
-                                                                                                    style={{ display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid #fee2e2', backgroundColor: 'var(--color-bg-surface)', color: '#ef4444', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 800, fontSize: '0.65rem', textTransform: 'uppercase' }}
-                                                                                                >
-                                                                                                    <Trash2 size={12} /> Remover e Trocar
-                                                                                                </button>
-                                                                                            </div>
-                                                                                        );
-                                                                                    }
-
-                                                                                    // Case 3: No file (mandatory state)
-                                                                                    return (
-                                                                                        <label style={{
-                                                                                            display: 'inline-flex', alignItems: 'center', gap: '8px',
-                                                                                            padding: '8px 16px', backgroundColor: '#fef2f2', color: '#b91c1c',
-                                                                                            border: '1px dashed #f87171', borderRadius: '4px', cursor: 'pointer',
-                                                                                            fontSize: '0.8rem', fontWeight: 700
-                                                                                        }}>
-                                                                                            <Upload size={16} /> Selecionar Arquivo
-                                                                                            <input
-                                                                                                type="file"
-                                                                                                hidden
-                                                                                                onChange={(e) => {
-                                                                                                    if (e.target.files && e.target.files.length > 0) {
-                                                                                                        const file = e.target.files[0];
-                                                                                                        setDraftProformaFiles(prev => ({ ...prev, [group.requestId]: file }));
-                                                                                                        e.target.value = '';
-                                                                                                    }
-                                                                                                }}
-                                                                                            />
-                                                                                        </label>
-                                                                                    );
-                                                                                })()}
-                                                                            </div>
-                                                                            <div style={{ gridColumn: '1 / -1', height: '1px', backgroundColor: 'var(--color-border)' }}></div>
-                                                                            <div>
-                                                                                <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Data <span style={{ color: '#ef4444' }}>*</span></label>
-                                                                                <input
-                                                                                    type="date"
-                                                                                    className="form-input"
-                                                                                    value={quotationDrafts[group.requestId].documentDate}
-                                                                                    onChange={(e) => handleUpdateQuotationHeader(group.requestId, 'documentDate', e.target.value)}
-                                                                                    style={{ width: '100%', padding: '9px', border: `1px solid ${formErrors[group.requestId]?.documentDate ? '#ef4444' : 'var(--color-border)'}`, borderRadius: '4px', fontSize: '0.85rem' }}
-                                                                                />
-                                                                                {formErrors[group.requestId]?.documentDate && (
-                                                                                    <div style={{ color: '#ef4444', fontSize: '0.75rem', fontWeight: 700, marginTop: '4px' }}>{formErrors[group.requestId].documentDate}</div>
-                                                                                )}
-                                                                            </div>
-                                                                            <div>
-                                                                                <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Moeda <span style={{ color: '#ef4444' }}>*</span></label>
-                                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                                                    <select
-                                                                                        className="form-input"
-                                                                                        value={quotationDrafts[group.requestId].currency}
-                                                                                        onChange={(e) => handleUpdateQuotationHeader(group.requestId, 'currency', e.target.value)}
-                                                                                        style={{
-                                                                                            width: '100%',
-                                                                                            padding: '10px',
-                                                                                            border: (formErrors[group.requestId]?.currency) ? '1px solid #ef4444' : (quotationDrafts[group.requestId].extractedCurrency && !quotationDrafts[group.requestId].currency ? '2px solid #f97316' : '1px solid var(--color-border)'),
-                                                                                            borderRadius: '4px',
-                                                                                            fontSize: '0.85rem'
-                                                                                        }}
-                                                                                    >
-                                                                                        <option value="">Selecione a moeda...</option>
-                                                                                        {currencies.map(c => (
-                                                                                            <option key={c.id} value={c.code}>{c.code} - {c.symbol}</option>
-                                                                                        ))}
-                                                                                    </select>
-                                                                                    {quotationDrafts[group.requestId].extractedCurrency && !quotationDrafts[group.requestId].currency && (
-                                                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                                                                                            <span style={{ fontSize: '0.65rem', color: '#f97316', fontWeight: 700 }}>
-                                                                                                Sugestão: {quotationDrafts[group.requestId].extractedCurrency}
-                                                                                            </span>
-                                                                                            <button
-                                                                                                onClick={() => setQuickCurrencyModal({ show: true, requestId: group.requestId, initialCode: quotationDrafts[group.requestId].extractedCurrency || '' })}
-                                                                                                style={{
-                                                                                                    fontSize: '0.6rem',
-                                                                                                    fontWeight: 900,
-                                                                                                    color: '#fff',
-                                                                                                    backgroundColor: '#f97316',
-                                                                                                    border: 'none',
-                                                                                                    padding: '2px 6px',
-                                                                                                    borderRadius: '3px',
-                                                                                                    cursor: 'pointer',
-                                                                                                    textTransform: 'uppercase'
-                                                                                                }}
-                                                                                            >
-                                                                                                CRIAR AGORA
-                                                                                            </button>
-                                                                                        </div>
-                                                                                    )}
-                                                                                </div>
-                                                                                {formErrors[group.requestId]?.currency && (
-                                                                                    <div style={{ color: '#ef4444', fontSize: '0.75rem', fontWeight: 700, marginTop: '4px' }}>{formErrors[group.requestId].currency}</div>
-                                                                                )}
-                                                                            </div>
-                                                                        </div>
-
-                                                                        <div className="form-items-area" style={{ marginBottom: '24px' }}>
-                                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                                                                <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Itens da Cotação</h4>
-                                                                                <button
-                                                                                    onClick={() => handleAddQuotationItem(group.requestId)}
-                                                                                    style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-primary)', fontWeight: 800, fontSize: '0.75rem', background: 'none', border: 'none', cursor: 'pointer' }}
-                                                                                >
-                                                                                    <Plus size={16} /> ADICIONAR ITEM
-                                                                                </button>
-                                                                            </div>
-
-                                                                            <div className="draft-items-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                                                                {quotationDrafts[group.requestId].items.length === 0 ? (
-                                                                                    <div style={{ padding: '32px', textAlign: 'center', backgroundColor: 'var(--color-bg-page)', border: '1px dashed #d1d5db', borderRadius: '8px' }}>
-                                                                                        <Plus size={24} style={{ margin: '0 auto 8px', color: '#9ca3af' }} />
-                                                                                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#6b7280', fontWeight: 600 }}>Nenhum item adicionado à cotação.</p>
-                                                                                        <button
-                                                                                            onClick={() => handleAddQuotationItem(group.requestId)}
-                                                                                            style={{ marginTop: '12px', fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
-                                                                                        >
-                                                                                            Clique para adicionar o primeiro item
-                                                                                        </button>
-                                                                                    </div>
-                                                                                ) : (
-                                                                                    <>
-                                                                                        <div style={{ display: 'grid', gridTemplateColumns: '32px 40px minmax(150px, 1fr) 60px 80px 100px 100px 110px 120px 40px', gap: '8px', padding: '0 12px', marginBottom: '4px' }}>
-                                                                                            <span></span>
-                                                                                            <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>#</span>
-                                                                                            <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Descrição do Item</span>
-                                                                                            <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase', textAlign: 'right' }}>Qtd</span>
-                                                                                            <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Unid</span>
-                                                                                            <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase', textAlign: 'right' }}>P. Unit</span>
-                                                                                            <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase', textAlign: 'right' }}>Desc. (AOA)</span>
-                                                                                            <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Taxa IVA</span>
-                                                                                            <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase', textAlign: 'right' }}>Total ({quotationDrafts[group.requestId].currency})</span>
-                                                                                            <span></span>
-                                                                                        </div>
-                                                                                        {quotationDrafts[group.requestId].items.map((item, idx) => (
-                                                                                            <div key={idx} style={{
-                                                                                                display: 'grid', gridTemplateColumns: '32px 40px minmax(150px, 1fr) 60px 80px 100px 100px 110px 120px 40px', gap: '8px', alignItems: 'center', padding: '12px',
-                                                                                                backgroundColor: item.isChecked ? '#ECFDF5' : 'var(--color-bg-surface)',
-                                                                                                border: item.isChecked ? '1px solid #10B981' : '1px solid #e2e8f0',
-                                                                                                borderRadius: '6px',
-                                                                                                transition: 'all 0.2s ease'
-                                                                                            }}>
-                                                                                                <div style={{ display: 'flex', justifyContent: 'center' }}>
-                                                                                                    <input
-                                                                                                        type="checkbox"
-                                                                                                        checked={item.isChecked || false}
-                                                                                                        onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'isChecked', e.target.checked)}
-                                                                                                        title="Marque esta linha para sinalizar que você já validou este item contra o documento físico."
-                                                                                                        style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#10B981' }}
-                                                                                                    />
-                                                                                                </div>
-                                                                                                <div style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--color-text-muted)', textAlign: 'center' }}>{item.lineNumber}</div>
-                                                                                                <CatalogItemAutocomplete
-                                                                                                    value={item.description}
-                                                                                                    itemCatalogId={item.itemCatalogId || null}
-                                                                                                    onChange={(description, catalogId, _catalogCode, defaultUnitId) => handleUpdateQuotationItem(group.requestId, idx, {
-                                                                                                        description: description,
-                                                                                                        itemCatalogId: catalogId || undefined,
-                                                                                                        unitId: defaultUnitId || item.unitId
-                                                                                                    })}
-                                                                                                    placeholder="Buscar no catálogo..."
-                                                                                                    style={{
-                                                                                                        padding: '8px',
-                                                                                                        border: '1px solid #e2e8f0',
-                                                                                                        borderRadius: '4px',
-                                                                                                        fontSize: '0.8rem',
-                                                                                                        width: '100%',
-                                                                                                        backgroundColor: 'var(--color-bg-page)'
-                                                                                                    }}
-                                                                                                />
-                                                                                                <input
-                                                                                                    type="number"
-                                                                                                    value={item.quantity || ''}
-                                                                                                    onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'quantity', parseFloat(e.target.value) || 0)}
-                                                                                                    style={{ padding: '8px', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.8rem', textAlign: 'right', WebkitAppearance: 'none', MozAppearance: 'textfield' }}
-                                                                                                />
-                                                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                                                                    <select
-                                                                                                        value={item.unitId || ''}
-                                                                                                        onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'unitId', e.target.value ? parseInt(e.target.value) : null)}
-                                                                                                        style={{ padding: '8px', border: item.unit && !item.unitId ? '2px solid #f97316' : '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.75rem', backgroundColor: 'var(--color-bg-page)', width: '100%' }}
-                                                                                                    >
-                                                                                                        <option value="">...</option>
-                                                                                                        {units.filter(u => u.isActive !== false || u.id === item.unitId).map(u => (
-                                                                                                            <option key={u.id} value={u.id}>{u.code}</option>
-                                                                                                        ))}
-                                                                                                    </select>
-                                                                                                    {item.unit && !item.unitId && (
-                                                                                                        <span style={{ fontSize: '0.6rem', color: '#f97316', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`Extraído: ${item.unit}`}>
-                                                                                                            Sugestão: {item.unit}
-                                                                                                        </span>
-                                                                                                    )}
-                                                                                                </div>
-                                                                                                <input
-                                                                                                    type="number"
-                                                                                                    value={item.unitPrice || ''}
-                                                                                                    onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'unitPrice', parseFloat(e.target.value) || 0)}
-                                                                                                    style={{ padding: '8px', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.8rem', textAlign: 'right', WebkitAppearance: 'none', MozAppearance: 'textfield' }}
-                                                                                                />
-                                                                                                <input
-                                                                                                    type="number"
-                                                                                                    value={item.discountAmount || ''}
-                                                                                                    onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'discountAmount', parseFloat(e.target.value) || 0)}
-                                                                                                    style={{ padding: '8px', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.8rem', textAlign: 'right', WebkitAppearance: 'none', MozAppearance: 'textfield' }}
-                                                                                                />
-                                                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                                                                    <select
-                                                                                                        value={item.ivaRateId || ''}
-                                                                                                        onChange={(e) => handleUpdateQuotationItem(group.requestId, idx, 'ivaRateId', e.target.value ? parseInt(e.target.value) : null)}
-                                                                                                        style={{
-                                                                                                            padding: '8px',
-                                                                                                            border: item.ivaUncertain
-                                                                                                                ? '2px solid #ef4444'
-                                                                                                                : (item.taxRate !== undefined && !item.ivaRateId ? '2px solid #f97316' : '1px solid #e2e8f0'),
-                                                                                                            borderRadius: '4px',
-                                                                                                            fontSize: '0.75rem',
-                                                                                                            backgroundColor: item.ivaUncertain ? 'rgba(239,68,68,0.06)' : 'var(--color-bg-page)',
-                                                                                                            width: '100%'
-                                                                                                        }}
-                                                                                                        title={item.ivaUncertain ? 'IVA não identificado pelo OCR. Verifique manualmente.' : undefined}
-                                                                                                    >
-                                                                                                        <option value="">Selecione IVA...</option>
-                                                                                                        {ivaRates.filter(r => r.isActive).map(r => (
-                                                                                                            <option key={r.id} value={r.id}>{r.name} ({r.ratePercent}%)</option>
-                                                                                                        ))}
-                                                                                                    </select>
-                                                                                                    {item.ivaUncertain && (
-                                                                                                        <span style={{ fontSize: '0.6rem', color: '#ef4444', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: '3px' }} title="O OCR não conseguiu identificar o IVA para este item. Verifique manualmente.">
-                                                                                                            <AlertCircle size={10} style={{ flexShrink: 0 }} />
-                                                                                                            IVA não identificado
-                                                                                                        </span>
-                                                                                                    )}
-                                                                                                    {!item.ivaUncertain && item.taxRate !== undefined && !item.ivaRateId && (
-                                                                                                        <span style={{ fontSize: '0.6rem', color: '#f97316', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`Extraído: ${item.taxRate}%`}>
-                                                                                                            Sugestão: {item.taxRate}%
-                                                                                                        </span>
-                                                                                                    )}
-                                                                                                </div>
-                                                                                                <div style={{ textAlign: 'right', fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-primary)' }}>
-                                                                                                    {formatCurrencyAO(item.totalPrice)}
-                                                                                                </div>
-                                                                                                <button
-                                                                                                    onClick={() => handleRemoveQuotationItem(group.requestId, idx)}
-                                                                                                    style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'center' }}
-                                                                                                >
-                                                                                                    <X size={16} />
-                                                                                                </button>
-                                                                                            </div>
-                                                                                        ))}
-                                                                                    </>
-                                                                                )}
-                                                                            </div>
-                                                                        </div>
-
-                                                                        {/* IVA Global Inference Success Banner */}
-                                                                        {quotationDrafts[group.requestId]?.globalVatInferred && quotationDrafts[group.requestId]?.inferredVatRatePercent !== undefined && (
-                                                                            <div style={{
-                                                                                display: 'flex', alignItems: 'center', gap: '8px',
-                                                                                padding: '10px 16px', borderRadius: '8px',
-                                                                                background: 'rgba(22,163,74,0.06)',
-                                                                                border: '1px solid rgba(34,197,94,0.3)',
-                                                                                fontSize: '0.8rem', color: '#166534',
-                                                                                marginBottom: '8px'
-                                                                            }}>
-                                                                                <CheckCircle2 size={16} style={{ flexShrink: 0 }} />
-                                                                                <span>
-                                                                                    IVA global de {quotationDrafts[group.requestId]?.inferredVatRatePercent}% identificado no resumo do documento e aplicado automaticamente a todos os itens.
-                                                                                </span>
-                                                                            </div>
-                                                                        )}
-
-                                                                        {/* IVA Uncertainty Contextual Banner (fallback when inference fails) */}
-                                                                        {!quotationDrafts[group.requestId]?.globalVatInferred && quotationDrafts[group.requestId]?.headerHasIva && quotationDrafts[group.requestId]?.items.some(i => i.ivaUncertain) && (
-                                                                            <div style={{
-                                                                                display: 'flex', alignItems: 'center', gap: '8px',
-                                                                                padding: '10px 16px', borderRadius: '8px',
-                                                                                background: 'rgba(239,68,68,0.06)',
-                                                                                border: '1px solid rgba(239,68,68,0.2)',
-                                                                                fontSize: '0.8rem', color: '#dc2626',
-                                                                                marginBottom: '8px'
-                                                                            }}>
-                                                                                <AlertTriangle size={16} style={{ flexShrink: 0 }} />
-                                                                                <span>
-                                                                                    <strong>Atenção:</strong> O documento contém IVA nos totais, mas o IVA por item não foi identificado pelo OCR.
-                                                                                    Verifique e corrija manualmente o campo IVA de cada item antes de salvar.
-                                                                                </span>
-                                                                            </div>
-                                                                        )}
-
-                                                                        <div className="form-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', backgroundColor: '#f0f9ff', borderRadius: '8px', border: '1px solid #bae6fd' }}>
-                                                                            <div style={{ display: 'flex', gap: '32px', flex: 1 }}>
-                                                                                <div style={{ textAlign: 'left' }}>
-                                                                                    <div style={{ fontSize: '0.7rem', fontWeight: 900, color: '#0369a1', textTransform: 'uppercase' }}>Subtotal Bruto</div>
-                                                                                    <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0c4a6e' }}>
-                                                                                        {(() => {
-                                                                                            const items = quotationDrafts[group.requestId]?.items || [];
-                                                                                            const gross = items.reduce((sum, item) => sum + ((item.quantity || 0) * (item.unitPrice || 0)), 0);
-                                                                                            return formatCurrencyAO(gross);
-                                                                                        })()}
-                                                                                    </div>
-                                                                                </div>
-                                                                                <div style={{ textAlign: 'left' }}>
-                                                                                    <div style={{ fontSize: '0.7rem', fontWeight: 900, color: '#0369a1', textTransform: 'uppercase', marginBottom: '4px' }}>Valor Desc. Itens</div>
-                                                                                    <div style={{ fontSize: '1rem', fontWeight: 800, color: '#dc2626' }}>
-                                                                                        {(() => {
-                                                                                            const items = quotationDrafts[group.requestId]?.items || [];
-                                                                                            const totalDiscount = items.reduce((sum, item) => sum + (Number(item.discountAmount) || 0), 0);
-                                                                                            return formatCurrencyAO(totalDiscount);
-                                                                                        })()}
-                                                                                    </div>
-                                                                                </div>
-                                                                                <div style={{ textAlign: 'left' }}>
-                                                                                    <div style={{ fontSize: '0.7rem', fontWeight: 900, color: '#0369a1', textTransform: 'uppercase', marginBottom: '4px' }}>Desconto Global</div>
-                                                                                    <input
-                                                                                        type="number"
-                                                                                        min="0"
-                                                                                        step="0.01"
-                                                                                        value={quotationDrafts[group.requestId]?.discountAmount || 0}
-                                                                                        onChange={(e) => handleUpdateQuotationHeader(group.requestId, 'discountAmount', parseFloat(e.target.value) || 0)}
-                                                                                        style={{ width: '120px', padding: '6px', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '0.9rem', fontWeight: 600, color: '#dc2626', backgroundColor: 'var(--color-bg-surface)' }}
-                                                                                    />
-                                                                                </div>
-                                                                                <div style={{ textAlign: 'left' }}>
-                                                                                    <div style={{ fontSize: '0.7rem', fontWeight: 900, color: '#0369a1', textTransform: 'uppercase' }}>Valor Total IVA</div>
-                                                                                    <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0284c7' }}>
-                                                                                        {(() => {
-                                                                                            const draft = quotationDrafts[group.requestId];
-                                                                                            const items = draft?.items || [];
-                                                                                            const iva = items.reduce((sum, item) => {
-                                                                                                const itemGross = (item.quantity || 0) * (item.unitPrice || 0);
-                                                                                                const itemDiscount = Number(item.discountAmount) || 0;
-                                                                                                const netSubtotal = Math.max(0, itemGross - itemDiscount);
-                                                                                                const selectedIva = ivaRates.find(r => r.id === item.ivaRateId);
-                                                                                                const ivaPercent = selectedIva ? selectedIva.ratePercent : 0;
-                                                                                                return sum + Math.round(netSubtotal * (ivaPercent / 100) * 100) / 100;
-                                                                                            }, 0);
-                                                                                            return formatCurrencyAO(iva);
-                                                                                        })()}
-                                                                                    </div>
-                                                                                </div>
-                                                                                <div style={{ textAlign: 'right', flex: 1 }}>
-                                                                                    <div style={{ fontSize: '0.7rem', fontWeight: 900, color: '#0369a1', textTransform: 'uppercase' }}>Valor Total da Cotação</div>
-                                                                                    <div style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--color-primary)' }}>
-                                                                                        {formatCurrencyAO(quotationDrafts[group.requestId].totalAmount)}
-                                                                                    </div>
-                                                                                </div>
-                                                                            </div>
-                                                                            <div style={{ display: 'flex', gap: '12px', marginLeft: '40px' }}>
-                                                                                <button
-                                                                                    onClick={() => handleCancelQuotation(group.requestId)}
-                                                                                    disabled={isSaving}
-                                                                                    style={{
-                                                                                        display: 'flex',
-                                                                                        alignItems: 'center',
-                                                                                        gap: '8px',
-                                                                                        backgroundColor: 'var(--color-bg-surface)',
-                                                                                        color: '#64748b',
-                                                                                        padding: '12px 24px',
-                                                                                        borderRadius: '6px',
-                                                                                        fontWeight: 800,
-                                                                                        fontSize: '0.9rem',
-                                                                                        border: '2px solid #e2e8f0',
-                                                                                        cursor: isSaving ? 'not-allowed' : 'pointer',
-                                                                                        opacity: isSaving ? 0.6 : 1,
-                                                                                        transition: 'all 0.2s'
-                                                                                    }}
-                                                                                >
-                                                                                    <X size={20} /> CANCELAR
-                                                                                </button>
-                                                                                <button
-                                                                                    onClick={() => handleSaveQuotation(group.requestId)}
-                                                                                    disabled={isSaving || !quotationDrafts[group.requestId].supplierId}
-                                                                                    style={{
-                                                                                        display: 'flex',
-                                                                                        alignItems: 'center',
-                                                                                        gap: '8px',
-                                                                                        backgroundColor: editingQuotationId[group.requestId] ? '#f97316' : '#059669', // Orange for edit (Step 9.5)
-                                                                                        color: '#fff',
-                                                                                        padding: '12px 32px',
-                                                                                        borderRadius: '6px',
-                                                                                        fontWeight: 900,
-                                                                                        fontSize: '0.9rem',
-                                                                                        border: 'none',
-                                                                                        cursor: (isSaving || !quotationDrafts[group.requestId].supplierId) ? 'not-allowed' : 'pointer',
-                                                                                        opacity: (isSaving || !quotationDrafts[group.requestId].supplierId) ? 0.6 : 1,
-                                                                                        transition: 'all 0.2s',
-                                                                                        boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)'
-                                                                                    }}
-                                                                                >
-                                                                                    {isSaving ? (
-                                                                                        <>Processando...</>
-                                                                                    ) : (
-                                                                                        <>
-                                                                                            <CheckCircle2 size={20} /> {editingQuotationId[group.requestId] ? 'ATUALIZAR COTAÇÃO' : 'SALVAR COTAÇÃO'}
-                                                                                        </>
-                                                                                    )}
-                                                                                </button>
-                                                                            </div>
-                                                                        </div>
-                                                                        {!quotationDrafts[group.requestId]?.supplierId && (
-                                                                            <p style={{ textAlign: 'right', fontSize: '0.75rem', color: '#b91c1c', fontWeight: 700, marginTop: '8px' }}>
-                                                                                * Selecione um fornecedor para habilitar o salvamento.
-                                                                            </p>
-                                                                        )}
-                                                                    </div>
-                                                                ) : null}
-                                                            </div>
-                                                        )}
-
-                                                        {/* Supplier Card - Only for PAYMENT or if not QUOTATION */}
-                                                        {group.requestTypeCode !== 'QUOTATION' && (
-                                                            <div style={{
-                                                                padding: '16px',
-                                                                backgroundColor: 'var(--color-bg-surface)',
-                                                                border: '1px solid var(--color-border)',
-                                                                borderRadius: '6px',
-                                                                display: 'flex',
-                                                                flexDirection: 'column',
-                                                                gap: '12px',
-                                                                marginTop: '24px'
-                                                            }}>
-                                                                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Fornecedor do Pedido (Geral)</div>
-                                                                <SupplierAutocomplete
-                                                                    onChange={(id, name) => handleUpdateGroupSupplier(group.requestId, id, name)}
-                                                                    initialName={group.requestSupplierName}
-                                                                    initialPortalCode={group.requestSupplierCode}
-                                                                    disabled={mode !== 'BUYER' || isSaving}
-                                                                />
-                                                                <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-                                                                    Este fornecedor será o destinatário principal do pedido na aprovação.
-                                                                </p>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
+            <button
+                onClick={() => handleOpenWizard(group, 'MANUAL')}
+                style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '32px 24px',
+                    backgroundColor: '#fdf4ff', border: '2px solid #f5d0fe', borderRadius: '8px',
+                    cursor: 'pointer', transition: 'all 0.2s', textAlign: 'center'
+                }}
+                onMouseOver={(e) => { e.currentTarget.style.borderColor = '#d946ef'; e.currentTarget.style.backgroundColor = '#fae8ff'; }}
+                onMouseOut={(e) => { e.currentTarget.style.borderColor = '#f5d0fe'; e.currentTarget.style.backgroundColor = '#fdf4ff'; }}
+            >
+                <Pencil size={32} color="#d946ef" />
+                <div>
+                    <div style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '0.9rem', marginBottom: '4px' }}>INSERIR MANUALMENTE</div>
+                    <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: 1.4 }}>Preencher dados da cotação manualmente do zero</p>
+                </div>
+            </button>
+        </div>
+    </div>
                                         )}
 
-                                        {/* PERSISTENT REQUEST-LEVEL ACTION: CONCLUIR COTAÇÃO */}
-                                        {group.requestStatusCode === 'WAITING_QUOTATION' && mode === 'BUYER' && isAssignedToMe && group.quotations.length > 0 && (
-                                            <div {...(groupIndex === 0 ? { 'data-guide': 'qm-complete-btn' } : {})} style={{
-                                                padding: '20px 24px',
-                                                backgroundColor: (!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]) ? '#fffbeb' : '#f0fdf4',
-                                                border: `2px solid ${(!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]) ? '#fcd34d' : '#86efac'}`,
-                                                borderRadius: '8px',
+                                        {/* SECTION C: Approval Batches */}
+                                        {group.approvalBatches && group.approvalBatches.length > 0 && (
+                                            <div style={{
+                                                padding: '24px',
+                                                backgroundColor: 'var(--color-bg-page)',
+                                                border: '1px solid var(--color-border)',
+                                                borderRadius: 'var(--radius-sm)',
                                                 display: 'flex',
-                                                justifyContent: 'space-between',
-                                                alignItems: 'center',
-                                                boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-                                                marginTop: '8px'
+                                                flexDirection: 'column',
+                                                gap: '20px',
+                                                marginTop: '16px'
                                             }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                    <div style={{
-                                                        backgroundColor: (!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]) ? '#f59e0b' : '#059669',
-                                                        color: '#fff',
-                                                        padding: '4px 10px',
-                                                        borderRadius: '4px',
-                                                        fontSize: '0.7rem',
-                                                        fontWeight: 900,
-                                                        textTransform: 'uppercase' as const
-                                                    }}>
-                                                        FLUXO GLOBAL
-                                                    </div>
-                                                    <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-main)' }}>
-                                                        {(!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId])
-                                                            ? 'Salve ou cancele a cotação em edição para concluir esta etapa.'
-                                                            : 'Deseja finalizar a etapa de cotação para este pedido completo?'}
-                                                    </span>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-primary)', fontWeight: 800, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                    <Layers size={18} /> LOTES DE APROVAÇÃO ENVIADOS
                                                 </div>
-                                                <div style={{ display: 'flex', gap: '12px' }}>
-                                                    {(!!addQuotationMode[group.requestId] || !!quotationFlowStep[group.requestId]) ? (
-                                                        <div style={{
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            gap: '8px',
-                                                            padding: '10px 24px',
-                                                            fontSize: '0.8rem',
-                                                            backgroundColor: '#fef3c7',
-                                                            border: '1px solid #fcd34d',
-                                                            color: '#92400e',
-                                                            borderRadius: '6px',
-                                                            fontWeight: 700
-                                                        }}>
-                                                            <AlertCircle size={16} /> Edição em andamento
-                                                        </div>
-                                                    ) : (
-                                                        <button
-                                                            onClick={() => {
-                                                                const anySupplierSet = !!group.requestSupplierId || group.items.every((item: any) => item.supplierId || item.supplierName);
-                                                                const qCount = group.quotations.length;
-                                                                const hasCompQ = group.quotations.some((q: SavedQuotationDto) =>
-                                                                    (q.itemCount > 0) && (!!q.proformaAttachmentId) && (!!q.supplierId)
-                                                                );
-                                                                const totalItemsCount = group.items.length + group.quotations.reduce((acc: number, q: SavedQuotationDto) => acc + q.itemCount, 0);
-                                                                handleCompleteQuotation(group.requestId, !!group.proformaId, anySupplierSet, totalItemsCount, qCount, hasCompQ);
-                                                            }}
-                                                            disabled={isSaving}
-                                                            style={{
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                    {group.approvalBatches.map((batch: any) => {
+                                                        const isReversible = ['WAITING_AREA_APPROVAL', 'AREA_ADJUSTMENT', 'WAITING_FINAL_APPROVAL', 'FINAL_ADJUSTMENT'].includes(batch.status);
+                                                        const batchBadgeColor = 
+                                                            batch.status === 'APPROVED' ? 'success' :
+                                                            batch.status === 'REJECTED' ? 'danger' :
+                                                            batch.status === 'CANCELLED' ? 'neutral' : 'warning';
+                                                        
+                                                        const batchStatusLabel = 
+                                                            batch.status === 'WAITING_AREA_APPROVAL' ? 'Aguardando Aprovação da Área' :
+                                                            batch.status === 'AREA_ADJUSTMENT' ? 'Ajuste da Área Requerido' :
+                                                            batch.status === 'WAITING_FINAL_APPROVAL' ? 'Aguardando Aprovação Final' :
+                                                            batch.status === 'FINAL_ADJUSTMENT' ? 'Ajuste Final Requerido' :
+                                                            batch.status === 'APPROVED' ? 'Aprovado' :
+                                                            batch.status === 'REJECTED' ? 'Rejeitado' :
+                                                            batch.status === 'CANCELLED' ? 'Cancelado' : batch.status;
+
+                                                        return (
+                                                            <div key={batch.id} style={{
+                                                                backgroundColor: 'var(--color-bg-surface)',
+                                                                border: '1px solid var(--color-border)',
+                                                                borderRadius: '8px',
+                                                                padding: '16px',
                                                                 display: 'flex',
-                                                                alignItems: 'center',
-                                                                gap: '8px',
-                                                                padding: '10px 24px',
-                                                                fontSize: '0.85rem',
-                                                                backgroundColor: isSaving ? '#e5e7eb' : '#059669',
-                                                                border: '1px solid #047857',
-                                                                color: isSaving ? '#9ca3af' : '#ffffff',
-                                                                borderRadius: '6px',
-                                                                fontWeight: 900,
-                                                                cursor: isSaving ? 'not-allowed' : 'pointer',
-                                                                boxShadow: isSaving ? 'none' : '0 4px 0px #046c4e'
-                                                            }}
-                                                            title="Finalizar etapa de cotação"
-                                                        >
-                                                            <CheckCircle2 size={18} /> CONCLUIR COTAÇÃO
-                                                        </button>
-                                                    )}
+                                                                justifyContent: 'space-between',
+                                                                alignItems: 'center'
+                                                            }}>
+                                                                <div>
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                                        <span style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--color-primary)' }}>
+                                                                            Lote #{batch.batchNumber}
+                                                                        </span>
+                                                                        <span className={`badge badge-sm badge-${batchBadgeColor}`}>
+                                                                            {batchStatusLabel}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '4px', display: 'flex', gap: '12px' }}>
+                                                                        <span>Criado em: {new Date(batch.createdAtUtc).toLocaleDateString('pt-PT')}</span>
+                                                                        <span>•</span>
+                                                                        <span>Itens: {batch.items?.length || 0}</span>
+                                                                    </div>
+                                                                    {batch.comment && (
+                                                                        <div style={{ fontSize: '0.8rem', color: 'var(--color-text-body)', marginTop: '8px', fontStyle: 'italic' }}>
+                                                                            "{batch.comment}"
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                {canMutateQuotation && mode === 'BUYER' && isReversible && (
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleOpenCancelApproval(group.requestId, batch.id, batch.batchNumber);
+                                                                        }}
+                                                                        style={{
+                                                                            padding: '6px 12px',
+                                                                            fontSize: '0.75rem',
+                                                                            fontWeight: 700,
+                                                                            color: '#dc2626',
+                                                                            backgroundColor: '#fef2f2',
+                                                                            border: '1px solid #fecaca',
+                                                                            borderRadius: '4px',
+                                                                            cursor: 'pointer',
+                                                                            transition: 'all 0.2s'
+                                                                        }}
+                                                                        onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#fee2e2'; }}
+                                                                        onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#fef2f2'; }}
+                                                                    >
+                                                                        Cancelar Lote
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
                                                 </div>
                                             </div>
                                         )}
@@ -3321,8 +2449,7 @@ export function BuyerItemsList() {
                 onClose={() => {
                     setShowApprovalModal({
                         show: false, type: null, requestId: null, itemId: null, itemDescription: null,
-                        newStatusCode: null, hasProforma: false, hasSupplier: false, itemsCount: 0, isLastItem: false,
-                        quotationCount: 0, hasCompleteQuotation: false
+                        newStatusCode: null, isLastItem: false
                     });
                     setApprovalComment('');
                     setModalFeedback({ type: 'error', message: null });
@@ -3503,7 +2630,7 @@ export function BuyerItemsList() {
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={confirmDuplicateReplacement}
+                                        onClick={() => {}}
                                         disabled={isSaving}
                                         style={{
                                             flex: 2, height: '48px', padding: '0 24px', backgroundColor: '#f59e0b', color: '#fff',
@@ -3620,226 +2747,66 @@ export function BuyerItemsList() {
                 onClose={() => setDrawerRequestId(null)}
             />
 
-            {/* ═══════════════════════════════════════════════════════════════ */}
-            {/* FINANCIAL INTEGRITY GATE — Mismatch Modal                      */}
-            {/* ═══════════════════════════════════════════════════════════════ */}
-            <AnimatePresence>
-                {integrityModal && integrityModal.show && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        style={{
-                            position: 'fixed', inset: 0,
-                            backgroundColor: 'rgba(0,0,0,0.4)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            zIndex: 10000, padding: '1rem'
-                        }}
-                        onClick={() => { setIntegrityModal(null); setIntegrityJustification(''); }}
-                    >
-                        <motion.div
-                            initial={{ scale: 0.92, opacity: 0, y: 20 }}
-                            animate={{ scale: 1, opacity: 1, y: 0 }}
-                            exit={{ scale: 0.92, opacity: 0, y: 20 }}
-                            transition={{ type: 'spring', damping: 25, stiffness: 400 }}
-                            onClick={e => e.stopPropagation()}
-                            style={{
-                                background: '#ffffff',
-                                border: '1px solid #e2e8f0',
-                                borderRadius: '12px',
-                                width: '100%', maxWidth: '560px',
-                                overflow: 'hidden',
-                                boxShadow: '0 20px 60px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05)'
-                            }}
-                        >
-                            {/* Header */}
-                            <div style={{
-                                padding: '1.25rem 1.5rem',
-                                borderBottom: '1px solid #e2e8f0',
-                                display: 'flex', alignItems: 'center', gap: '0.75rem',
-                                background: 'linear-gradient(135deg, rgba(234,179,8,0.08), rgba(234,88,12,0.04))'
-                            }}>
-                                <div style={{
-                                    width: '40px', height: '40px', borderRadius: '10px',
-                                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    flexShrink: 0
-                                }}>
-                                    <AlertTriangle size={20} color="#fff" />
-                                </div>
-                                <div>
-                                    <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#1e293b' }}>
-                                        Verificação de Integridade Financeira
-                                    </h3>
-                                    <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
-                                        O sistema detectou uma divergência entre os valores
-                                    </p>
-                                </div>
-                                <button
-                                    onClick={() => { setIntegrityModal(null); setIntegrityJustification(''); }}
-                                    style={{
-                                        marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer',
-                                        color: '#94a3b8', padding: '4px'
-                                    }}
-                                >
-                                    <X size={18} />
-                                </button>
-                            </div>
-
-                            {/* Body */}
-                            <div style={{ padding: '1.25rem 1.5rem' }}>
-                                {/* Explanation */}
-                                <p style={{ fontSize: '0.85rem', color: '#475569', margin: '0 0 1rem 0', lineHeight: 1.5 }}>
-                                    {integrityModal.detail}
-                                </p>
-
-                                {/* Comparison Table */}
-                                <div style={{
-                                    border: '1px solid #e2e8f0',
-                                    borderRadius: '8px', overflow: 'hidden', marginBottom: '1rem'
-                                }}>
-                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                                        <thead>
-                                            <tr style={{ background: '#f8fafc' }}>
-                                                <th style={{ padding: '0.6rem 1rem', textAlign: 'left', color: '#64748b', fontWeight: 600, borderBottom: '1px solid #e2e8f0', textTransform: 'uppercase', fontSize: '0.75rem' }}>Referência</th>
-                                                <th style={{ padding: '0.6rem 1rem', textAlign: 'right', color: '#64748b', fontWeight: 600, borderBottom: '1px solid #e2e8f0', textTransform: 'uppercase', fontSize: '0.75rem' }}>Valor</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr>
-                                                <td style={{ padding: '0.6rem 1rem', color: '#334155', borderBottom: '1px solid #f1f5f9' }}>
-                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                        <FileText size={14} style={{ color: '#3b82f6' }} />
-                                                        Total OCR (Documento Original)
-                                                    </span>
-                                                </td>
-                                                <td style={{ padding: '0.6rem 1rem', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#3b82f6', borderBottom: '1px solid #f1f5f9' }}>
-                                                    {integrityModal.ocrOriginalTotal.toLocaleString('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                </td>
-                                            </tr>
-                                            <tr>
-                                                <td style={{ padding: '0.6rem 1rem', color: '#334155', borderBottom: '1px solid #f1f5f9' }}>
-                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                        <Hash size={14} style={{ color: '#8b5cf6' }} />
-                                                        Total da Cotação (Sistema)
-                                                    </span>
-                                                </td>
-                                                <td style={{ padding: '0.6rem 1rem', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#8b5cf6', borderBottom: '1px solid #f1f5f9' }}>
-                                                    {integrityModal.quotationTotal.toLocaleString('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                </td>
-                                            </tr>
-                                            <tr style={{ background: integrityModal.varianceAmount !== 0 ? '#fef2f2' : 'transparent' }}>
-                                                <td style={{ padding: '0.6rem 1rem', color: '#334155' }}>
-                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                        <AlertTriangle size={14} style={{ color: '#ef4444' }} />
-                                                        Variação
-                                                    </span>
-                                                </td>
-                                                <td style={{ padding: '0.6rem 1rem', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#ef4444' }}>
-                                                    {integrityModal.varianceAmount > 0 ? '+' : ''}{integrityModal.varianceAmount.toLocaleString('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                    {' '}
-                                                    <span style={{ fontSize: '0.75rem', color: '#f87171' }}>
-                                                        ({integrityModal.variancePercent > 0 ? '+' : ''}{integrityModal.variancePercent.toFixed(2)}%)
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-
-                                {/* Unresolved reconciliation warning */}
-                                {integrityModal.unresolvedReconciliationCount > 0 && (
-                                    <div style={{
-                                        padding: '0.6rem 0.8rem', borderRadius: '8px',
-                                        background: '#fffbeb',
-                                        border: '1px solid #fde68a',
-                                        fontSize: '0.8rem', color: '#92400e',
-                                        display: 'flex', alignItems: 'center', gap: '0.5rem',
-                                        marginBottom: '1rem'
-                                    }}>
-                                        <AlertCircle size={14} />
-                                        {integrityModal.unresolvedReconciliationCount} item(ns) de reconciliação pendente(s) de revisão.
-                                    </div>
-                                )}
-
-                                {/* Override justification */}
-                                <div style={{ marginTop: '0.5rem' }}>
-                                    <label style={{
-                                        display: 'block', fontSize: '0.8rem', fontWeight: 600,
-                                        color: '#475569', marginBottom: '0.4rem'
-                                    }}>
-                                        Justificação para prosseguir (obrigatório):
-                                    </label>
-                                    <textarea
-                                        value={integrityJustification}
-                                        onChange={e => setIntegrityJustification(e.target.value)}
-                                        placeholder="Explique o motivo pelo qual deseja prosseguir com esta divergência financeira..."
-                                        rows={3}
-                                        style={{
-                                            width: '100%', padding: '0.6rem 0.8rem',
-                                            borderRadius: '8px',
-                                            border: '1px solid #cbd5e1',
-                                            background: '#f8fafc',
-                                            color: '#1e293b',
-                                            fontSize: '0.85rem', resize: 'vertical',
-                                            fontFamily: 'inherit',
-                                            boxSizing: 'border-box'
-                                        }}
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Footer Actions */}
-                            <div style={{
-                                padding: '1rem 1.5rem',
-                                borderTop: '1px solid #e2e8f0',
-                                display: 'flex', gap: '0.75rem', justifyContent: 'flex-end',
-                                background: '#f8fafc'
-                            }}>
-                                <button
-                                    onClick={() => { setIntegrityModal(null); setIntegrityJustification(''); }}
-                                    style={{
-                                        padding: '0.55rem 1.2rem', borderRadius: '8px',
-                                        border: '1px solid #cbd5e1',
-                                        background: '#ffffff',
-                                        color: '#475569',
-                                        fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer',
-                                        display: 'flex', alignItems: 'center', gap: '0.4rem'
-                                    }}
-                                >
-                                    <ArrowLeft size={15} />
-                                    Voltar e Corrigir
-                                </button>
-                                <button
-                                    onClick={handleIntegrityOverride}
-                                    disabled={!integrityJustification.trim() || integrityOverrideLoading}
-                                    style={{
-                                        padding: '0.55rem 1.2rem', borderRadius: '8px',
-                                        border: 'none',
-                                        background: !integrityJustification.trim() || integrityOverrideLoading
-                                            ? '#f1f5f9'
-                                            : 'linear-gradient(135deg, #f59e0b, #d97706)',
-                                        color: !integrityJustification.trim() || integrityOverrideLoading
-                                            ? '#94a3b8'
-                                            : '#fff',
-                                        fontSize: '0.85rem', fontWeight: 700, cursor: !integrityJustification.trim() || integrityOverrideLoading ? 'not-allowed' : 'pointer',
-                                        display: 'flex', alignItems: 'center', gap: '0.4rem',
-                                        transition: 'all 0.2s'
-                                    }}
-                                >
-                                    {integrityOverrideLoading ? (
-                                        <RefreshCcw size={15} style={{ animation: 'spin 1s linear infinite' }} />
-                                    ) : (
-                                        <CheckCircle2 size={15} />
-                                    )}
-                                    {integrityOverrideLoading ? 'Processando...' : 'Confirmar Override'}
-                                </button>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
             </div>
+
+            <PartialApprovalBatchModal
+                isOpen={partialApprovalModal.show}
+                onClose={() => setPartialApprovalModal({ show: false, group: null })}
+                group={partialApprovalModal.group}
+                onSubmit={handlePartialApprovalSubmit}
+            />
+
+            <CancelApprovalBatchModal
+                isOpen={cancelApprovalModal.show}
+                onClose={() => setCancelApprovalModal({ show: false, requestId: '', batchId: '', batchNumber: 0 })}
+                requestId={cancelApprovalModal.requestId}
+                batchId={cancelApprovalModal.batchId}
+                batchNumber={cancelApprovalModal.batchNumber}
+                onSuccess={handleCancelSuccess}
+            />
+
+            <CloseNotQuotedModal
+                isOpen={closeNotQuotedModal.show}
+                onClose={() => setCloseNotQuotedModal({ show: false, requestId: '', lineItemId: '', itemDescription: '', isLastPendingItem: false })}
+                requestId={closeNotQuotedModal.requestId}
+                lineItemId={closeNotQuotedModal.lineItemId}
+                itemDescription={closeNotQuotedModal.itemDescription}
+                isLastPendingItem={closeNotQuotedModal.isLastPendingItem}
+                onSuccess={() => {
+                    setFeedback({
+                        type: 'success',
+                        message: closeNotQuotedModal.isLastPendingItem
+                            ? 'Item encerrado sem cotação. Não há mais pendências de cotação neste pedido; a decisão foi registrada no histórico.'
+                            : 'Item desconsiderado neste processo de cotação. A decisão foi registrada no histórico do pedido.'
+                    });
+                    loadData();
+                }}
+            />
+
+            <QuotationWizardModal
+                request={wizardActiveRequest}
+                wizardState={quotationWizardState}
+                onSaveQuotation={handleWizardSaveQuotation}
+                isProcessingOcr={!!(wizardActiveRequest && isProcessingOcr[wizardActiveRequest.requestId])}
+                onUploadFile={handleUploadFileForWizard}
+                onCancelWizard={async () => {
+                    quotationWizardState.closeWizard();
+                    setWizardActiveRequest(null);
+                    if (temporaryWizardAttachmentIds.length > 0) {
+                        try {
+                            await Promise.all(temporaryWizardAttachmentIds.map(id => api.attachments.delete(id)));
+                        } catch (err) {
+                            console.error('Error cleaning up temporary wizard attachments:', err);
+                        }
+                        setTemporaryWizardAttachmentIds([]);
+                    }
+                }}
+                onReplaceDocument={handleReplaceDocumentForWizard}
+                ivaRates={ivaRates}
+                units={units}
+                currencies={currencies}
+            />
+
         </PageContainer>
     );
 }
