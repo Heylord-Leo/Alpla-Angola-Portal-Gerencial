@@ -1404,7 +1404,7 @@ public class ContractsController : BaseController
         {
             RequestId = request.Id,
             RequestNumber = requestNumber,
-            Message = $"Pedido de pagamento {requestNumber} criado com sucesso."
+            Message = $"Pedido de pagamento {requestNumber} criado com sucesso. Revise e submeta o pedido para aprovação."
         });
     }
 
