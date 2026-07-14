@@ -22,7 +22,7 @@ Write-Host "  Sync PROD Data to TEST - AOVIA1VMS011" -ForegroundColor Cyan
 Write-Host "=============================================" -ForegroundColor Cyan
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 1. Validações de Segurança de Caminhos (Assertions Fortes)
+# 1. Validações de Segurança de Nomes de Banco
 # ─────────────────────────────────────────────────────────────────────────────
 if ($TestDbName -ne "Portal-Gerencial-Test") {
     throw "ERRO DE SEGURANCA: O banco de destino deve ser estritamente 'Portal-Gerencial-Test'."
@@ -35,40 +35,20 @@ if ($ProdDbName -ne "Portal-Gerencial") {
 if ($ProdAppPath -notmatch '\\Prod$') { throw "VALIDACAO FALHOU: ProdAppPath deve terminar com '\Prod'." }
 if ($TestAppPath -notmatch '\\Test$') { throw "VALIDACAO FALHOU: TestAppPath deve terminar com '\Test'." }
 
-$prodAttachments = Join-Path $ProdAppPath "data\attachments"
-$testAttachments = Join-Path $TestAppPath "data\attachments"
-
-# Validar terminacoes dos caminhos de anexos
-if ($prodAttachments -notmatch '\\Prod\\data\\attachments$') { throw "VALIDACAO FALHOU: prodAttachments deve terminar com '\Prod\data\attachments'." }
-if ($testAttachments -notmatch '\\Test\\data\\attachments$') { throw "VALIDACAO FALHOU: testAttachments deve terminar com '\Test\data\attachments'." }
-
-if ($prodAttachments -eq $testAttachments) { throw "VALIDACAO FALHOU: Diretorios de anexos de PROD e TEST nao podem ser iguais." }
-
-# Lista de caminhos proibidos para o destino de anexos (proteger pastas criticas do sistema)
-$forbiddenPaths = @(
-    "C:\", "C:\Apps", "C:\Apps\AlplaPortal", "C:\Apps\AlplaPortal\Test",
-    "C:\Windows", "C:\Program Files"
-)
-foreach ($path in $forbiddenPaths) {
-    if ($testAttachments -eq $path -or (Join-Path $TestAppPath "data") -eq $path) {
-        throw "VALIDACAO FALHOU: O caminho de destino dos anexos nao pode ser um diretorio do sistema ou raiz: $path."
-    }
-}
-
-if (-not (Test-Path $prodAttachments)) {
-    throw "VALIDACAO FALHOU: Diretorio de anexos do PROD nao encontrado em: $prodAttachments"
-}
-
-if (-not (Test-Path $testAttachments)) {
-    Write-Host "Criando diretorio de anexos do TEST: $testAttachments" -ForegroundColor Yellow
-    New-Item -ItemType Directory -Path $testAttachments -Force | Out-Null
-}
-
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. Resgatar as Connection Strings dos Arquivos de Configuração
 # ─────────────────────────────────────────────────────────────────────────────
-$prodConfig = Join-Path $ProdAppPath "appsettings.json"
-$testConfig = Join-Path $TestAppPath "appsettings.Test.json"
+$prodConfig = Join-Path $ProdAppPath "api\appsettings.json"
+if (-not (Test-Path $prodConfig)) {
+    $prodConfig = Join-Path $ProdAppPath "appsettings.json"
+}
+$testConfig = Join-Path $TestAppPath "api\appsettings.Test.json"
+if (-not (Test-Path $testConfig)) {
+    $testConfig = Join-Path $TestAppPath "appsettings.Test.json"
+}
+if (-not (Test-Path $testConfig)) {
+    $testConfig = Join-Path $TestAppPath "api\appsettings.json"
+}
 if (-not (Test-Path $testConfig)) {
     $testConfig = Join-Path $TestAppPath "appsettings.json"
 }
@@ -82,14 +62,94 @@ $testJson = Get-Content $testConfig -Raw | ConvertFrom-Json
 $prodConnStr = $prodJson.ConnectionStrings.DefaultConnection
 $testConnStr = $testJson.ConnectionStrings.DefaultConnection
 
-if ([string]::IsNullOrWhiteSpace($prodConnStr)) { throw "ConnectionString de PROD vazia." }
-if ([string]::IsNullOrWhiteSpace($testConnStr)) { throw "ConnectionString de TEST vazia." }
+if ([string]::IsNullOrWhiteSpace($prodConnStr)) { throw "ConnectionString de PROD vazia no arquivo de configuracao." }
+if ([string]::IsNullOrWhiteSpace($testConnStr)) { throw "ConnectionString de TEST vazia no arquivo de configuracao." }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. Interrupção do IIS App Pool do TEST
+# 3. Resolução Dinâmica do Caminho de Armazenamento de Anexos
+# ─────────────────────────────────────────────────────────────────────────────
+function Resolve-AttachmentPath {
+    param(
+        [string]$AppPath,
+        [string]$ConfigPath,
+        [string]$ConfigKey,
+        [string]$DefaultRelativePath
+    )
+
+    $contentRoot = Join-Path $AppPath "api"
+    $configVal = $null
+
+    # 1. Ler arquivo de configuracao específico do ambiente
+    if (Test-Path $ConfigPath) {
+        $json = Get-Content $ConfigPath -Raw | ConvertFrom-Json
+        if ($ConfigKey -eq "AppConfig:AttachmentsStoragePath") {
+            $configVal = $json.AppConfig.AttachmentsStoragePath
+        }
+    }
+
+    # 2. Se vazio, ler arquivo base appsettings.json
+    if ([string]::IsNullOrWhiteSpace($configVal)) {
+        $baseConfig = Join-Path $contentRoot "appsettings.json"
+        if (Test-Path $baseConfig) {
+            $json = Get-Content $baseConfig -Raw | ConvertFrom-Json
+            if ($ConfigKey -eq "AppConfig:AttachmentsStoragePath") {
+                $configVal = $json.AppConfig.AttachmentsStoragePath
+            }
+        }
+    }
+
+    # 3. Fallback para default
+    if ([string]::IsNullOrWhiteSpace($configVal)) {
+        $configVal = $DefaultRelativePath
+    }
+
+    # Resolver caminho absoluto ou relativo
+    if ([System.IO.Path]::IsPathRooted($configVal)) {
+        return [System.IO.Path]::GetFullPath($configVal)
+    } else {
+        # Fallback 1: IIS ContentRootPath
+        $iisAttempt = [System.IO.Path]::GetFullPath((Join-Path $contentRoot $configVal))
+        if (Test-Path $iisAttempt) { return $iisAttempt }
+
+        # Fallback 2: Legacy climbing (../../..)
+        $legacyAttempt = [System.IO.Path]::GetFullPath((Join-Path $contentRoot (Join-Path "..\..\.." $configVal)))
+        if (Test-Path $legacyAttempt) { return $legacyAttempt }
+
+        # Se nenhum caminho físico ainda existir, devolve o caminho relativo resolvido pelo fallback legando
+        return $legacyAttempt
+    }
+}
+
+$prodAttachments = Resolve-AttachmentPath -AppPath $ProdAppPath -ConfigPath $prodConfig -ConfigKey "AppConfig:AttachmentsStoragePath" -DefaultRelativePath "data/attachments"
+$testAttachments = Resolve-AttachmentPath -AppPath $TestAppPath -ConfigPath $testConfig -ConfigKey "AppConfig:AttachmentsStoragePath" -DefaultRelativePath "data/attachments"
+
+Write-Host "Caminho de anexos resolvido para PROD: $prodAttachments" -ForegroundColor Green
+Write-Host "Caminho de anexos resolvido para TEST: $testAttachments" -ForegroundColor Green
+
+# Validações fortes dos caminhos resolvidos
+if ($prodAttachments -notmatch 'attachments$') {
+    throw "VALIDACAO FALHOU: O caminho resolvido de anexos da PROD deve terminar com 'attachments'. Caminho: $prodAttachments"
+}
+if ($testAttachments -notmatch 'attachments$') {
+    throw "VALIDACAO FALHOU: O caminho resolvido de anexos do TEST deve terminar com 'attachments'. Caminho: $testAttachments"
+}
+
+# Lista de caminhos proibidos para o destino de anexos (proteger pastas criticas do sistema)
+$forbiddenPaths = @(
+    "C:\", "C:\Apps", "C:\Apps\AlplaPortal", "C:\Apps\AlplaPortal\Test",
+    "C:\Windows", "C:\Program Files", "C:\Apps\AlplaPortal\Prod"
+)
+foreach ($path in $forbiddenPaths) {
+    if ($testAttachments -eq $path -or $testAttachments -eq (Join-Path $path "data")) {
+        throw "VALIDACAO FALHOU: O caminho de destino dos anexos nao pode ser um diretorio do sistema ou raiz: $path."
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. Interrupção do IIS App Pool do TEST
 # ─────────────────────────────────────────────────────────────────────────────
 Import-Module WebAdministration
-$poolName = "AlplaPortalTestPool"
+$poolName = "AlplaPortal-Test-Api-Pool" # Pool correspondente a API TEST configurada em GITHUB_ACTIONS_TEST_DEPLOYMENT.md
 $poolPath = "IIS:\AppPools\$poolName"
 
 if (Test-Path $poolPath) {
@@ -97,11 +157,20 @@ if (Test-Path $poolPath) {
     Stop-WebAppPool -Name $poolName -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 3
 } else {
-    Write-Host "[WARN] App Pool '$poolName' nao encontrado no IIS. Continuando sem parar pool." -ForegroundColor Yellow
+    # Tenta fallback para Pool alternativo
+    $fallbackPool = "AlplaPortalTestPool"
+    $fallbackPath = "IIS:\AppPools\$fallbackPool"
+    if (Test-Path $fallbackPath) {
+        Write-Host "Parando o App Pool do TEST ($fallbackPool)..." -ForegroundColor Yellow
+        Stop-WebAppPool -Name $fallbackPool -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 3
+    } else {
+        Write-Host "[WARN] Nenhum App Pool do TEST ('$poolName' ou '$fallbackPool') foi encontrado. Continuando sem parar o IIS." -ForegroundColor Yellow
+    }
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4. Criar Backups dos Bancos de Dados
+# 5. Criar Backups dos Bancos de Dados
 # ─────────────────────────────────────────────────────────────────────────────
 $backupDirDb = "C:\Apps\AlplaPortal\Test\backups\db"
 if (-not (Test-Path $backupDirDb)) { New-Item -ItemType Directory -Path $backupDirDb -Force | Out-Null }
@@ -132,7 +201,7 @@ $bkCmdProd.ExecuteNonQuery() | Out-Null
 $connProd.Close()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5. Restaurar Backup da PROD sobre o TEST (Conectando ao banco MASTER)
+# 6. Restaurar Backup da PROD sobre o TEST (Conectando ao banco MASTER)
 # ─────────────────────────────────────────────────────────────────────────────
 Write-Host "Criando conexao administrativa ao banco MASTER..." -ForegroundColor Yellow
 $builder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder($testConnStr)
@@ -188,7 +257,7 @@ $connRestore.Close()
 Write-Host "OK - Banco de dados restaurado com sucesso." -ForegroundColor Green
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. Neutralização e Ajustes Pós-Restore no TEST (Comandos Condicionais)
+# 7. Neutralização e Ajustes Pós-Restore no TEST (Comandos Condicionais)
 # ─────────────────────────────────────────────────────────────────────────────
 Write-Host "Executando comandos de neutralizacao pos-restore no TEST..." -ForegroundColor Yellow
 $connAdjust = New-Object System.Data.SqlClient.SqlConnection($testConnStr)
@@ -250,39 +319,53 @@ $connAdjust.Close()
 Write-Host "OK - Ajustes de seguranca aplicados." -ForegroundColor Green
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7. Backup e Cópia com Espelhamento (/MIR) de Anexos Físicos
+# 8. Sincronização de Anexos Físicos (Com detecção de compartilhamento de pasta)
 # ─────────────────────────────────────────────────────────────────────────────
-$backupDirAttachments = "C:\Apps\AlplaPortal\Test\backups\attachments"
-
-if (Test-Path $testAttachments) {
-    $attBackupFolder = Join-Path $backupDirAttachments "attachments_${timestamp}"
-    New-Item -ItemType Directory -Path $attBackupFolder -Force | Out-Null
-    
-    Write-Host "Criando backup dos anexos do TEST em: $attBackupFolder..." -ForegroundColor Yellow
-    
-    # Robocopy para backup
-    $backupParams = @($testAttachments, $attBackupFolder, "/E", "/NFL", "/NDL", "/NJH", "/NJS")
-    & robocopy.exe @backupParams
-    if ($LASTEXITCODE -ge 8) {
-        throw "Robocopy falhou com exit code $LASTEXITCODE ao gerar backup de anexos do TEST."
+if ($prodAttachments -eq $testAttachments) {
+    Write-Host "[WARN] PROD e TEST compartilham a mesma pasta de anexos fisica: $prodAttachments." -ForegroundColor Yellow
+    Write-Host "[WARN] Ignorando a etapa de copia de arquivos para evitar lock/espelhamento redundante." -ForegroundColor Yellow
+} else {
+    if (-not (Test-Path $prodAttachments)) {
+        Write-Host "[WARN] Diretorio de anexos da PROD nao existe ou esta vazio. Pulando copia de anexos." -ForegroundColor Yellow
+    } else {
+        $backupDirAttachments = "C:\Apps\AlplaPortal\Test\backups\attachments"
+        
+        # Backup dos anexos atuais do TEST se existirem
+        if (Test-Path $testAttachments) {
+            $attBackupFolder = Join-Path $backupDirAttachments "attachments_${timestamp}"
+            New-Item -ItemType Directory -Path $attBackupFolder -Force | Out-Null
+            
+            Write-Host "Criando backup dos anexos do TEST em: $attBackupFolder..." -ForegroundColor Yellow
+            $backupParams = @($testAttachments, $attBackupFolder, "/E", "/NFL", "/NDL", "/NJH", "/NJS")
+            & robocopy.exe @backupParams
+            if ($LASTEXITCODE -ge 8) {
+                throw "Robocopy falhou com exit code $LASTEXITCODE ao gerar backup de anexos do TEST."
+            }
+        }
+        
+        Write-Host "Espelhando anexos de PROD para o TEST (/MIR)..." -ForegroundColor Yellow
+        $mirrorParams = @($prodAttachments, $testAttachments, "/MIR", "/COPY:DAT", "/R:2", "/W:2", "/NFL", "/NDL", "/NJH", "/NJS")
+        & robocopy.exe @mirrorParams
+        
+        if ($LASTEXITCODE -ge 8) {
+            throw "Robocopy falhou com exit code $LASTEXITCODE ao espelhar os anexos de PROD para TEST."
+        }
+        Write-Host "OK - Anexos espelhados com sucesso." -ForegroundColor Green
     }
 }
 
-Write-Host "Espelhando anexos de PROD para o TEST (/MIR)..." -ForegroundColor Yellow
-# /MIR: Garante espelhamento exato, eliminando arquivos orfaos no TEST que nao existem mais no banco PROD
-$mirrorParams = @($prodAttachments, $testAttachments, "/MIR", "/COPY:DAT", "/R:2", "/W:2", "/NFL", "/NDL", "/NJH", "/NJS")
-& robocopy.exe @mirrorParams
-
-if ($LASTEXITCODE -ge 8) {
-    throw "Robocopy falhou com exit code $LASTEXITCODE ao espelhar os anexos de PROD para TEST."
-}
-Write-Host "OK - Anexos espelhados com sucesso." -ForegroundColor Green
-
 # ─────────────────────────────────────────────────────────────────────────────
-# 8. Reiniciar o IIS App Pool do TEST
+# 9. Reiniciar o IIS App Pool do TEST
 # ─────────────────────────────────────────────────────────────────────────────
 if (Test-Path $poolPath) {
     Write-Host "Reiniciando o App Pool do TEST ($poolName)..." -ForegroundColor Yellow
     Start-WebAppPool -Name $poolName -ErrorAction SilentlyContinue
+} else {
+    $fallbackPool = "AlplaPortalTestPool"
+    $fallbackPath = "IIS:\AppPools\$fallbackPool"
+    if (Test-Path $fallbackPath) {
+        Write-Host "Reiniciando o App Pool do TEST ($fallbackPool)..." -ForegroundColor Yellow
+        Start-WebAppPool -Name $fallbackPool -ErrorAction SilentlyContinue
+    }
 }
 Write-Host "Processo concluido com sucesso!" -ForegroundColor Green
