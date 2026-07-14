@@ -4,6 +4,7 @@ using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AlplaPortal.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260708190647_PhaseR1ReconciliationPersistence")]
+    partial class PhaseR1ReconciliationPersistence
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -222,131 +225,6 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .HasDatabaseName("IX_AnnualBudget_Hierarchy");
 
                     b.ToTable("AnnualBudgets");
-                });
-
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.ApprovalBatch", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal?>("ApprovedTotalAmount")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<int>("BatchNumber")
-                        .HasColumnType("int");
-
-                    b.Property<string>("BudgetJustification")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<string>("Comment")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("CreatedByUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("RequestId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("UpdatedByUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RequestId")
-                        .HasDatabaseName("IX_ApprovalBatch_RequestId");
-
-                    b.HasIndex("RequestId", "BatchNumber")
-                        .IsUnique()
-                        .HasDatabaseName("IX_ApprovalBatch_Request_BatchNumber");
-
-                    b.ToTable("ApprovalBatches");
-                });
-
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.ApprovalBatchExtraItemDecision", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("ApprovalBatchId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Comment")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("CreatedByUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Decision")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<Guid?>("GeneratedRequestLineItemId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("QuotationItemId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ApprovalBatchId")
-                        .HasDatabaseName("IX_ApprovalBatchExtraItemDecision_BatchId");
-
-                    b.HasIndex("GeneratedRequestLineItemId");
-
-                    b.HasIndex("QuotationItemId");
-
-                    b.ToTable("ApprovalBatchExtraItemDecisions");
-                });
-
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.ApprovalBatchItem", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("ApprovalBatchId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("RequestLineItemId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("SelectedQuotationItemId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ApprovalBatchId")
-                        .HasDatabaseName("IX_ApprovalBatchItem_BatchId");
-
-                    b.HasIndex("RequestLineItemId")
-                        .HasDatabaseName("IX_ApprovalBatchItem_LineItemId");
-
-                    b.HasIndex("SelectedQuotationItemId");
-
-                    b.ToTable("ApprovalBatchItems");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.BadgeLayout", b =>
@@ -5458,24 +5336,6 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Property<int>("LineNumber")
                         .HasColumnType("int");
 
-                    b.Property<DateTime?>("NotQuotedDecisionAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("NotQuotedDecisionByUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("NotQuotedDecisionComment")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("NotQuotedJustification")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime?>("NotQuotedProposedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("NotQuotedProposedByUserId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<string>("Notes")
                         .HasColumnType("nvarchar(max)");
 
@@ -5484,9 +5344,6 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
 
                     b.Property<decimal>("Quantity")
                         .HasColumnType("decimal(18,4)");
-
-                    b.Property<string>("QuotationLifecycleStatus")
-                        .HasColumnType("nvarchar(max)");
 
                     b.Property<decimal>("ReceivedQuantity")
                         .HasColumnType("decimal(18,4)");
@@ -5711,9 +5568,6 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Property<decimal?>("AdvancePaymentPercent")
                         .HasColumnType("decimal(9,4)");
 
-                    b.Property<Guid?>("ApprovalBatchId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
 
@@ -5764,8 +5618,6 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("ApprovalBatchId");
 
                     b.HasIndex("CurrencyId");
 
@@ -7023,70 +6875,6 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Navigation("Plant");
                 });
 
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.ApprovalBatch", b =>
-                {
-                    b.HasOne("AlplaPortal.Domain.Entities.Request", "Request")
-                        .WithMany("ApprovalBatches")
-                        .HasForeignKey("RequestId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Request");
-                });
-
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.ApprovalBatchExtraItemDecision", b =>
-                {
-                    b.HasOne("AlplaPortal.Domain.Entities.ApprovalBatch", "ApprovalBatch")
-                        .WithMany("ExtraItemDecisions")
-                        .HasForeignKey("ApprovalBatchId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("AlplaPortal.Domain.Entities.RequestLineItem", "GeneratedRequestLineItem")
-                        .WithMany()
-                        .HasForeignKey("GeneratedRequestLineItemId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("AlplaPortal.Domain.Entities.QuotationItem", "QuotationItem")
-                        .WithMany()
-                        .HasForeignKey("QuotationItemId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.Navigation("ApprovalBatch");
-
-                    b.Navigation("GeneratedRequestLineItem");
-
-                    b.Navigation("QuotationItem");
-                });
-
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.ApprovalBatchItem", b =>
-                {
-                    b.HasOne("AlplaPortal.Domain.Entities.ApprovalBatch", "ApprovalBatch")
-                        .WithMany("Items")
-                        .HasForeignKey("ApprovalBatchId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("AlplaPortal.Domain.Entities.RequestLineItem", "RequestLineItem")
-                        .WithMany()
-                        .HasForeignKey("RequestLineItemId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.HasOne("AlplaPortal.Domain.Entities.QuotationItem", "SelectedQuotationItem")
-                        .WithMany()
-                        .HasForeignKey("SelectedQuotationItemId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.Navigation("ApprovalBatch");
-
-                    b.Navigation("RequestLineItem");
-
-                    b.Navigation("SelectedQuotationItem");
-                });
-
             modelBuilder.Entity("AlplaPortal.Domain.Entities.BadgeLayout", b =>
                 {
                     b.HasOne("AlplaPortal.Domain.Entities.User", "CreatedByUser")
@@ -8319,11 +8107,6 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.RequestPoGroup", b =>
                 {
-                    b.HasOne("AlplaPortal.Domain.Entities.ApprovalBatch", "ApprovalBatch")
-                        .WithMany("PoGroups")
-                        .HasForeignKey("ApprovalBatchId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
                     b.HasOne("AlplaPortal.Domain.Entities.Currency", "Currency")
                         .WithMany()
                         .HasForeignKey("CurrencyId")
@@ -8339,8 +8122,6 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .WithMany()
                         .HasForeignKey("SupplierId")
                         .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("ApprovalBatch");
 
                     b.Navigation("Currency");
 
@@ -8556,15 +8337,6 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("AlplaPortal.Domain.Entities.ApprovalBatch", b =>
-                {
-                    b.Navigation("ExtraItemDecisions");
-
-                    b.Navigation("Items");
-
-                    b.Navigation("PoGroups");
-                });
-
             modelBuilder.Entity("AlplaPortal.Domain.Entities.BadgePrintHistory", b =>
                 {
                     b.Navigation("ReprintEvents");
@@ -8649,8 +8421,6 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.Request", b =>
                 {
-                    b.Navigation("ApprovalBatches");
-
                     b.Navigation("Attachments");
 
                     b.Navigation("LineItems");
