@@ -22,74 +22,163 @@ Write-Host "  Sync PROD Data to TEST - AOVIA1VMS011" -ForegroundColor Cyan
 Write-Host "=============================================" -ForegroundColor Cyan
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 1. Validações de Segurança de Nomes de Banco
+# 1. Resolver Pastas Reais das APIs (PROD e TEST)
 # ─────────────────────────────────────────────────────────────────────────────
-if ($TestDbName -ne "Portal-Gerencial-Test") {
-    throw "ERRO DE SEGURANCA: O banco de destino deve ser estritamente 'Portal-Gerencial-Test'."
-}
-if ($ProdDbName -ne "Portal-Gerencial") {
-    throw "ERRO DE SEGURANCA: O banco de origem deve ser estritamente 'Portal-Gerencial'."
+$prodApiPath = Join-Path $ProdAppPath "api"
+if (-not (Test-Path $prodApiPath)) {
+    $prodApiPath = $ProdAppPath
 }
 
-# Validar terminacoes dos caminhos de aplicacao
-if ($ProdAppPath -notmatch '\\Prod$') { throw "VALIDACAO FALHOU: ProdAppPath deve terminar com '\Prod'." }
-if ($TestAppPath -notmatch '\\Test$') { throw "VALIDACAO FALHOU: TestAppPath deve terminar com '\Test'." }
+$testApiPath = Join-Path $TestAppPath "api"
+if (-not (Test-Path $testApiPath)) {
+    $testApiPath = $TestAppPath
+}
+
+Write-Host "Pasta da API de PROD resolvida: $prodApiPath" -ForegroundColor Green
+Write-Host "Pasta da API de TEST resolvida: $testApiPath" -ForegroundColor Green
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. Resgatar as Connection Strings dos Arquivos de Configuração
 # ─────────────────────────────────────────────────────────────────────────────
-$prodConfig = Join-Path $ProdAppPath "api\appsettings.json"
-if (-not (Test-Path $prodConfig)) {
-    $prodConfig = Join-Path $ProdAppPath "appsettings.json"
-}
-$testConfig = Join-Path $TestAppPath "api\appsettings.Test.json"
-if (-not (Test-Path $testConfig)) {
-    $testConfig = Join-Path $TestAppPath "appsettings.Test.json"
-}
-if (-not (Test-Path $testConfig)) {
-    $testConfig = Join-Path $TestAppPath "api\appsettings.json"
-}
-if (-not (Test-Path $testConfig)) {
-    $testConfig = Join-Path $TestAppPath "appsettings.json"
+function Get-APIConnectionString {
+    param(
+        [string]$ApiPath,
+        [string]$EnvName
+    )
+
+    # Arquivos de configuracao em ordem de prioridade
+    $configFiles = @()
+    if ($EnvName -eq "PROD") {
+        $configFiles = @(
+            "appsettings.Production.json",
+            "appsettings.Prod.json",
+            "appsettings.json"
+        )
+    } else {
+        $configFiles = @(
+            "appsettings.Test.json",
+            "appsettings.Development.json",
+            "appsettings.json"
+        )
+    }
+
+    # Chaves de connection string em ordem de prioridade
+    $keys = @(
+        "DefaultConnection",
+        "PortalConnection",
+        "SqlConnection",
+        "ApplicationDbContext"
+    )
+
+    $resolvedConnStr = $null
+    $usedFile = $null
+    $usedKey = $null
+
+    foreach ($file in $configFiles) {
+        $fullPath = Join-Path $ApiPath $file
+        if (Test-Path $fullPath) {
+            try {
+                $json = Get-Content $fullPath -Raw | ConvertFrom-Json
+                if ($null -ne $json.ConnectionStrings) {
+                    foreach ($key in $keys) {
+                        $val = $json.ConnectionStrings.$key
+                        if (-not [string]::IsNullOrWhiteSpace($val)) {
+                            $resolvedConnStr = $val
+                            $usedFile = $file
+                            $usedKey = $key
+                            break
+                        }
+                    }
+                }
+            } catch {
+                Write-Host "[WARN] Erro ao processar arquivo $file: $_" -ForegroundColor Yellow
+            }
+        }
+        if (-not [string]::IsNullOrWhiteSpace($resolvedConnStr)) {
+            break
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($resolvedConnStr)) {
+        throw "ERRO: Connection string nao encontrada nos arquivos da API $EnvName em $ApiPath."
+    }
+
+    # Mascarar a connection string para exibir no log de forma segura
+    $masked = $resolvedConnStr
+    if ($masked -match 'Password=([^;]+)') {
+        $masked = $masked -replace 'Password=[^;]+', 'Password=********'
+    }
+    if ($masked -match 'pwd=([^;]+)') {
+        $masked = $masked -replace 'pwd=[^;]+', 'pwd=********'
+    }
+
+    Write-Host "ConnectionString resolvida para $EnvName a partir de '$usedFile' (Chave: '$usedKey')" -ForegroundColor Green
+    Write-Host "Mascarada: $masked" -ForegroundColor Green
+
+    return $resolvedConnStr
 }
 
-if (-not (Test-Path $prodConfig)) { throw "Configuracao de Producao nao encontrada em $prodConfig" }
-if (-not (Test-Path $testConfig)) { throw "Configuracao de Teste nao encontrada em $testConfig" }
-
-$prodJson = Get-Content $prodConfig -Raw | ConvertFrom-Json
-$testJson = Get-Content $testConfig -Raw | ConvertFrom-Json
-
-$prodConnStr = $prodJson.ConnectionStrings.DefaultConnection
-$testConnStr = $testJson.ConnectionStrings.DefaultConnection
-
-if ([string]::IsNullOrWhiteSpace($prodConnStr)) { throw "ConnectionString de PROD vazia no arquivo de configuracao." }
-if ([string]::IsNullOrWhiteSpace($testConnStr)) { throw "ConnectionString de TEST vazia no arquivo de configuracao." }
+$prodConnStr = Get-APIConnectionString -ApiPath $prodApiPath -EnvName "PROD"
+$testConnStr = Get-APIConnectionString -ApiPath $testApiPath -EnvName "TEST"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. Resolução Dinâmica do Caminho de Armazenamento de Anexos
+# 3. Validações de Segurança de Nomes de Banco nas Connection Strings
+# ─────────────────────────────────────────────────────────────────────────────
+function Get-DatabaseNameFromConnectionString {
+    param([string]$ConnectionString)
+    if ($ConnectionString -match 'Database=([^;]+)') {
+        return $Matches[1].Trim()
+    }
+    if ($ConnectionString -match 'Initial Catalog=([^;]+)') {
+        return $Matches[1].Trim()
+    }
+    return $null
+}
+
+$prodDbNameVal = Get-DatabaseNameFromConnectionString -ConnectionString $prodConnStr
+$testDbNameVal = Get-DatabaseNameFromConnectionString -ConnectionString $testConnStr
+
+Write-Host "Banco de dados extraido da Connection String de PROD: [$prodDbNameVal]" -ForegroundColor Green
+Write-Host "Banco de dados extraido da Connection String de TEST: [$testDbNameVal]" -ForegroundColor Green
+
+if ($prodDbNameVal -ne "Portal-Gerencial") {
+    throw "VALIDACAO FALHOU: O banco da connection string de PROD deve ser 'Portal-Gerencial'. Encontrado: '$prodDbNameVal'."
+}
+if ($testDbNameVal -ne "Portal-Gerencial-Test") {
+    throw "VALIDACAO FALHOU: O banco da connection string de TEST deve ser 'Portal-Gerencial-Test'. Encontrado: '$testDbNameVal'."
+}
+
+# Validacoes de caminhos fisicos
+if ($ProdAppPath -notmatch '\\Prod$') { throw "VALIDACAO FALHOU: ProdAppPath deve terminar com '\Prod'." }
+if ($TestAppPath -notmatch '\\Test$') { throw "VALIDACAO FALHOU: TestAppPath deve terminar com '\Test'." }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. Resolução Dinâmica do Caminho de Armazenamento de Anexos
 # ─────────────────────────────────────────────────────────────────────────────
 function Resolve-AttachmentPath {
     param(
-        [string]$AppPath,
-        [string]$ConfigPath,
+        [string]$ApiPath,
+        [string]$ConfigFileName,
         [string]$ConfigKey,
         [string]$DefaultRelativePath
     )
 
-    $contentRoot = Join-Path $AppPath "api"
     $configVal = $null
 
     # 1. Ler arquivo de configuracao específico do ambiente
-    if (Test-Path $ConfigPath) {
-        $json = Get-Content $ConfigPath -Raw | ConvertFrom-Json
-        if ($ConfigKey -eq "AppConfig:AttachmentsStoragePath") {
-            $configVal = $json.AppConfig.AttachmentsStoragePath
+    if (-not [string]::IsNullOrWhiteSpace($ConfigFileName)) {
+        $specificConfig = Join-Path $ApiPath $ConfigFileName
+        if (Test-Path $specificConfig) {
+            $json = Get-Content $specificConfig -Raw | ConvertFrom-Json
+            if ($ConfigKey -eq "AppConfig:AttachmentsStoragePath") {
+                $configVal = $json.AppConfig.AttachmentsStoragePath
+            }
         }
     }
 
     # 2. Se vazio, ler arquivo base appsettings.json
     if ([string]::IsNullOrWhiteSpace($configVal)) {
-        $baseConfig = Join-Path $contentRoot "appsettings.json"
+        $baseConfig = Join-Path $ApiPath "appsettings.json"
         if (Test-Path $baseConfig) {
             $json = Get-Content $baseConfig -Raw | ConvertFrom-Json
             if ($ConfigKey -eq "AppConfig:AttachmentsStoragePath") {
@@ -108,25 +197,33 @@ function Resolve-AttachmentPath {
         return [System.IO.Path]::GetFullPath($configVal)
     } else {
         # Fallback 1: IIS ContentRootPath
-        $iisAttempt = [System.IO.Path]::GetFullPath((Join-Path $contentRoot $configVal))
+        $iisAttempt = [System.IO.Path]::GetFullPath((Join-Path $ApiPath $configVal))
         if (Test-Path $iisAttempt) { return $iisAttempt }
 
         # Fallback 2: Legacy climbing (../../..)
-        $legacyAttempt = [System.IO.Path]::GetFullPath((Join-Path $contentRoot (Join-Path "..\..\.." $configVal)))
+        $legacyAttempt = [System.IO.Path]::GetFullPath((Join-Path $ApiPath (Join-Path "..\..\.." $configVal)))
         if (Test-Path $legacyAttempt) { return $legacyAttempt }
 
-        # Se nenhum caminho físico ainda existir, devolve o caminho relativo resolvido pelo fallback legando
         return $legacyAttempt
     }
 }
 
-$prodAttachments = Resolve-AttachmentPath -AppPath $ProdAppPath -ConfigPath $prodConfig -ConfigKey "AppConfig:AttachmentsStoragePath" -DefaultRelativePath "data/attachments"
-$testAttachments = Resolve-AttachmentPath -AppPath $TestAppPath -ConfigPath $testConfig -ConfigKey "AppConfig:AttachmentsStoragePath" -DefaultRelativePath "data/attachments"
+# Determinar os nomes dos arquivos específicos de configuracao para mapear anexos
+$prodConfigFileName = "appsettings.Production.json"
+if (-not (Test-Path (Join-Path $prodApiPath $prodConfigFileName))) { $prodConfigFileName = "appsettings.Prod.json" }
+if (-not (Test-Path (Join-Path $prodApiPath $prodConfigFileName))) { $prodConfigFileName = "appsettings.json" }
+
+$testConfigFileName = "appsettings.Test.json"
+if (-not (Test-Path (Join-Path $testApiPath $testConfigFileName))) { $testConfigFileName = "appsettings.Development.json" }
+if (-not (Test-Path (Join-Path $testApiPath $testConfigFileName))) { $testConfigFileName = "appsettings.json" }
+
+$prodAttachments = Resolve-AttachmentPath -ApiPath $prodApiPath -ConfigFileName $prodConfigFileName -ConfigKey "AppConfig:AttachmentsStoragePath" -DefaultRelativePath "data/attachments"
+$testAttachments = Resolve-AttachmentPath -ApiPath $testApiPath -ConfigFileName $testConfigFileName -ConfigKey "AppConfig:AttachmentsStoragePath" -DefaultRelativePath "data/attachments"
 
 Write-Host "Caminho de anexos resolvido para PROD: $prodAttachments" -ForegroundColor Green
 Write-Host "Caminho de anexos resolvido para TEST: $testAttachments" -ForegroundColor Green
 
-# Validações fortes dos caminhos resolvidos
+# Validações fortes dos caminhos de anexos
 if ($prodAttachments -notmatch 'attachments$') {
     throw "VALIDACAO FALHOU: O caminho resolvido de anexos da PROD deve terminar com 'attachments'. Caminho: $prodAttachments"
 }
@@ -134,7 +231,7 @@ if ($testAttachments -notmatch 'attachments$') {
     throw "VALIDACAO FALHOU: O caminho resolvido de anexos do TEST deve terminar com 'attachments'. Caminho: $testAttachments"
 }
 
-# Lista de caminhos proibidos para o destino de anexos (proteger pastas criticas do sistema)
+# Lista de caminhos proibidos para o destino de anexos
 $forbiddenPaths = @(
     "C:\", "C:\Apps", "C:\Apps\AlplaPortal", "C:\Apps\AlplaPortal\Test",
     "C:\Windows", "C:\Program Files", "C:\Apps\AlplaPortal\Prod"
@@ -145,11 +242,20 @@ foreach ($path in $forbiddenPaths) {
     }
 }
 
+if ($prodAttachments -eq $testAttachments) {
+    # Compartilhamento de pasta confirmado!
+    Write-Host "[WARN] PROD e TEST compartilham a mesma pasta de anexos fisica: $prodAttachments. Nenhuma copia de arquivos sera feita." -ForegroundColor Yellow
+} else {
+    if (-not (Test-Path $prodAttachments)) {
+        Write-Host "[WARN] Diretorio de anexos da PROD nao existe ou esta vazio. Pulando copia de anexos." -ForegroundColor Yellow
+    }
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
-# 4. Interrupção do IIS App Pool do TEST
+# 5. Interrupção do IIS App Pool do TEST
 # ─────────────────────────────────────────────────────────────────────────────
 Import-Module WebAdministration
-$poolName = "AlplaPortal-Test-Api-Pool" # Pool correspondente a API TEST configurada em GITHUB_ACTIONS_TEST_DEPLOYMENT.md
+$poolName = "AlplaPortal-Test-Api-Pool"
 $poolPath = "IIS:\AppPools\$poolName"
 
 if (Test-Path $poolPath) {
@@ -157,7 +263,6 @@ if (Test-Path $poolPath) {
     Stop-WebAppPool -Name $poolName -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 3
 } else {
-    # Tenta fallback para Pool alternativo
     $fallbackPool = "AlplaPortalTestPool"
     $fallbackPath = "IIS:\AppPools\$fallbackPool"
     if (Test-Path $fallbackPath) {
@@ -170,7 +275,7 @@ if (Test-Path $poolPath) {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5. Criar Backups dos Bancos de Dados
+# 6. Criar Backups dos Bancos de Dados
 # ─────────────────────────────────────────────────────────────────────────────
 $backupDirDb = "C:\Apps\AlplaPortal\Test\backups\db"
 if (-not (Test-Path $backupDirDb)) { New-Item -ItemType Directory -Path $backupDirDb -Force | Out-Null }
@@ -201,7 +306,7 @@ $bkCmdProd.ExecuteNonQuery() | Out-Null
 $connProd.Close()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. Restaurar Backup da PROD sobre o TEST (Conectando ao banco MASTER)
+# 7. Restaurar Backup da PROD sobre o TEST (Conectando ao banco MASTER)
 # ─────────────────────────────────────────────────────────────────────────────
 Write-Host "Criando conexao administrativa ao banco MASTER..." -ForegroundColor Yellow
 $builder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder($testConnStr)
@@ -257,7 +362,7 @@ $connRestore.Close()
 Write-Host "OK - Banco de dados restaurado com sucesso." -ForegroundColor Green
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7. Neutralização e Ajustes Pós-Restore no TEST (Comandos Condicionais)
+# 8. Neutralização e Ajustes Pós-Restore no TEST (Comandos Condicionais)
 # ─────────────────────────────────────────────────────────────────────────────
 Write-Host "Executando comandos de neutralizacao pos-restore no TEST..." -ForegroundColor Yellow
 $connAdjust = New-Object System.Data.SqlClient.SqlConnection($testConnStr)
@@ -319,43 +424,36 @@ $connAdjust.Close()
 Write-Host "OK - Ajustes de seguranca aplicados." -ForegroundColor Green
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 8. Sincronização de Anexos Físicos (Com detecção de compartilhamento de pasta)
+# 9. Sincronização de Anexos Físicos (Quando as pastas forem distintas)
 # ─────────────────────────────────────────────────────────────────────────────
-if ($prodAttachments -eq $testAttachments) {
-    Write-Host "[WARN] PROD e TEST compartilham a mesma pasta de anexos fisica: $prodAttachments." -ForegroundColor Yellow
-    Write-Host "[WARN] Ignorando a etapa de copia de arquivos para evitar lock/espelhamento redundante." -ForegroundColor Yellow
-} else {
-    if (-not (Test-Path $prodAttachments)) {
-        Write-Host "[WARN] Diretorio de anexos da PROD nao existe ou esta vazio. Pulando copia de anexos." -ForegroundColor Yellow
-    } else {
-        $backupDirAttachments = "C:\Apps\AlplaPortal\Test\backups\attachments"
+if ($prodAttachments -ne $testAttachments -and (Test-Path $prodAttachments)) {
+    $backupDirAttachments = "C:\Apps\AlplaPortal\Test\backups\attachments"
+    
+    # Backup dos anexos atuais do TEST se existirem
+    if (Test-Path $testAttachments) {
+        $attBackupFolder = Join-Path $backupDirAttachments "attachments_${timestamp}"
+        New-Item -ItemType Directory -Path $attBackupFolder -Force | Out-Null
         
-        # Backup dos anexos atuais do TEST se existirem
-        if (Test-Path $testAttachments) {
-            $attBackupFolder = Join-Path $backupDirAttachments "attachments_${timestamp}"
-            New-Item -ItemType Directory -Path $attBackupFolder -Force | Out-Null
-            
-            Write-Host "Criando backup dos anexos do TEST em: $attBackupFolder..." -ForegroundColor Yellow
-            $backupParams = @($testAttachments, $attBackupFolder, "/E", "/NFL", "/NDL", "/NJH", "/NJS")
-            & robocopy.exe @backupParams
-            if ($LASTEXITCODE -ge 8) {
-                throw "Robocopy falhou com exit code $LASTEXITCODE ao gerar backup de anexos do TEST."
-            }
-        }
-        
-        Write-Host "Espelhando anexos de PROD para o TEST (/MIR)..." -ForegroundColor Yellow
-        $mirrorParams = @($prodAttachments, $testAttachments, "/MIR", "/COPY:DAT", "/R:2", "/W:2", "/NFL", "/NDL", "/NJH", "/NJS")
-        & robocopy.exe @mirrorParams
-        
+        Write-Host "Criando backup dos anexos do TEST em: $attBackupFolder..." -ForegroundColor Yellow
+        $backupParams = @($testAttachments, $attBackupFolder, "/E", "/NFL", "/NDL", "/NJH", "/NJS")
+        & robocopy.exe @backupParams
         if ($LASTEXITCODE -ge 8) {
-            throw "Robocopy falhou com exit code $LASTEXITCODE ao espelhar os anexos de PROD para TEST."
+            throw "Robocopy falhou com exit code $LASTEXITCODE ao gerar backup de anexos do TEST."
         }
-        Write-Host "OK - Anexos espelhados com sucesso." -ForegroundColor Green
     }
+    
+    Write-Host "Espelhando anexos de PROD para o TEST (/MIR)..." -ForegroundColor Yellow
+    $mirrorParams = @($prodAttachments, $testAttachments, "/MIR", "/COPY:DAT", "/R:2", "/W:2", "/NFL", "/NDL", "/NJH", "/NJS")
+    & robocopy.exe @mirrorParams
+    
+    if ($LASTEXITCODE -ge 8) {
+        throw "Robocopy falhou com exit code $LASTEXITCODE ao espelhar os anexos de PROD para TEST."
+    }
+    Write-Host "OK - Anexos espelhados com sucesso." -ForegroundColor Green
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 9. Reiniciar o IIS App Pool do TEST
+# 10. Reiniciar o IIS App Pool do TEST
 # ─────────────────────────────────────────────────────────────────────────────
 if (Test-Path $poolPath) {
     Write-Host "Reiniciando o App Pool do TEST ($poolName)..." -ForegroundColor Yellow
