@@ -91,7 +91,7 @@ function Get-APIConnectionString {
                     }
                 }
             } catch {
-                Write-Host "[WARN] Erro ao processar arquivo $file: $_" -ForegroundColor Yellow
+                Write-Host ("[WARN] Erro ao processar arquivo {0}: {1}" -f $file, $_) -ForegroundColor Yellow
             }
         }
         if (-not [string]::IsNullOrWhiteSpace($resolvedConnStr)) {
