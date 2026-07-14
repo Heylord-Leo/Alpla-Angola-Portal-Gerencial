@@ -12,6 +12,16 @@ public class ExtractionHeaderDto
     public decimal? GrandTotal { get; set; }
     public decimal? DiscountAmount { get; set; }
 
+    // Optional Supplier Enrichment Fields
+    public string? VendorAddress { get; set; }
+    public string? VendorContactName { get; set; }
+    public string? VendorContactEmail { get; set; }
+    public string? VendorContactPhone { get; set; }
+    public string? VendorIban { get; set; }
+    public string? VendorBankAccount { get; set; }
+    public string? VendorSwift { get; set; }
+    public string? VendorPaymentTerms { get; set; }
+
     // ── Payment Condition OCR Extraction ──
     /// <summary>Classified payment condition: POST_PAID, ADVANCE_FULL, ADVANCE_PARTIAL, or null if not detected.</summary>
     public string? PaymentConditionType { get; set; }

@@ -35,7 +35,7 @@ public class AdminLogWriter
     /// Write an admin log entry. Best-effort: failure is logged to ILogger but
     /// does NOT propagate to the caller.
     /// </summary>
-    public async Task WriteAsync(string level, string source, string eventType, string message,
+    public virtual async Task WriteAsync(string level, string source, string eventType, string message,
         string? exceptionDetail = null, string? payload = null)
     {
         try

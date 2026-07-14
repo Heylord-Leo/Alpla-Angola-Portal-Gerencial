@@ -32,6 +32,8 @@ public class ApplicationDbContext : DbContext
 
     public DbSet<Request> Requests => Set<Request>();
     public DbSet<RequestLineItem> RequestLineItems => Set<RequestLineItem>();
+    public DbSet<RequestLineItemAllocation> RequestLineItemAllocations => Set<RequestLineItemAllocation>();
+    public DbSet<RequestPoGroup> RequestPoGroups => Set<RequestPoGroup>();
     public DbSet<RequestStatusHistory> RequestStatusHistories => Set<RequestStatusHistory>();
     public DbSet<RequestFieldChangeHistory> RequestFieldChangeHistories => Set<RequestFieldChangeHistory>();
     public DbSet<RequestAttachment> RequestAttachments => Set<RequestAttachment>();
@@ -48,6 +50,11 @@ public class ApplicationDbContext : DbContext
     public DbSet<ItemCatalog> ItemCatalogItems => Set<ItemCatalog>();
     public DbSet<OcrExtractedItem> OcrExtractedItems => Set<OcrExtractedItem>();
     public DbSet<ReconciliationRecord> ReconciliationRecords => Set<ReconciliationRecord>();
+
+    // Partial Quotation Approval (Batch Model)
+    public DbSet<ApprovalBatch> ApprovalBatches => Set<ApprovalBatch>();
+    public DbSet<ApprovalBatchItem> ApprovalBatchItems => Set<ApprovalBatchItem>();
+    public DbSet<ApprovalBatchExtraItemDecision> ApprovalBatchExtraItemDecisions => Set<ApprovalBatchExtraItemDecision>();
 
     // Integration Foundation (Phase 0)
     public DbSet<IntegrationProvider> IntegrationProviders => Set<IntegrationProvider>();
@@ -728,6 +735,11 @@ public class ApplicationDbContext : DbContext
                 .HasForeignKey(p => p.RequestId)
                 .OnDelete(DeleteBehavior.NoAction);
 
+            entity.HasOne(p => p.RequestPoGroup)
+                .WithMany(g => g.Payments)
+                .HasForeignKey(p => p.RequestPoGroupId)
+                .OnDelete(DeleteBehavior.NoAction);
+
             entity.HasOne(p => p.PaymentProofAttachment)
                 .WithMany()
                 .HasForeignKey(p => p.PaymentProofAttachmentId)
@@ -770,6 +782,11 @@ public class ApplicationDbContext : DbContext
             entity.HasOne(r => r.Request)
                 .WithMany(req => req.Reconciliations)
                 .HasForeignKey(r => r.RequestId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            entity.HasOne(r => r.RequestPoGroup)
+                .WithMany(g => g.Reconciliations)
+                .HasForeignKey(r => r.RequestPoGroupId)
                 .OnDelete(DeleteBehavior.NoAction);
 
             entity.HasOne(r => r.CreditNoteAttachment)
@@ -961,7 +978,9 @@ public class ApplicationDbContext : DbContext
             new RequestStatus { Id = 24, Code = "ADVANCE_PAYMENT_COMPLETED", Name = "Adiantamento Realizado", DisplayOrder = 24, BadgeColor = "#28a745" },
             new RequestStatus { Id = 25, Code = "WAITING_SUPPLIER_DELIVERY", Name = "Ag. Entrega/Serviço", DisplayOrder = 25, BadgeColor = "#6f42c1" },
             new RequestStatus { Id = 26, Code = "WAITING_RECONCILIATION", Name = "Ag. Reconciliação", DisplayOrder = 26, BadgeColor = "#fd7e14" },
-            new RequestStatus { Id = 22, Code = "WAITING_PO_CORRECTION", Name = "Devolvido para Compras", DisplayOrder = 22, BadgeColor = "red" }
+            new RequestStatus { Id = 22, Code = "WAITING_PO_CORRECTION", Name = "Devolvido para Compras", DisplayOrder = 22, BadgeColor = "red" },
+            new RequestStatus { Id = 27, Code = "PO_PARTIALLY_UPLOADED", Name = "P.O Parcialmente Registrada", DisplayOrder = 27, BadgeColor = "orange" },
+            new RequestStatus { Id = 28, Code = "ADVANCE_PAYMENT_SCHEDULED", Name = "Adiantamento Agendado", DisplayOrder = 28, BadgeColor = "#17a2b8" }
         );
 
         modelBuilder.Entity<Currency>().HasData(

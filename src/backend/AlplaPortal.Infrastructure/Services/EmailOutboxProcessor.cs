@@ -31,6 +31,7 @@ public class EmailOutboxProcessor : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<EmailOutboxProcessor> _logger;
+    private readonly IHostEnvironment _env;
 
     private const int PollingIntervalSeconds = 10;
     private const int BatchSize = 10;
@@ -41,14 +42,24 @@ public class EmailOutboxProcessor : BackgroundService
 
     public EmailOutboxProcessor(
         IServiceScopeFactory scopeFactory,
-        ILogger<EmailOutboxProcessor> logger)
+        ILogger<EmailOutboxProcessor> logger,
+        IHostEnvironment env)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _env = env;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // DEV-only: delay start so the startup warmup can prime query plans
+        // without EmailOutbox UPDATE statements competing for LocalDB locks.
+        if (_env.IsDevelopment())
+        {
+            _logger.LogInformation("EmailOutboxProcessor: DEV startup delay (20s) — waiting for query plan warmup.");
+            await Task.Delay(TimeSpan.FromSeconds(20), stoppingToken);
+        }
+
         _logger.LogInformation("EmailOutboxProcessor started. Polling every {Interval}s, batch size {BatchSize}.",
             PollingIntervalSeconds, BatchSize);
 
@@ -85,7 +96,7 @@ public class EmailOutboxProcessor : BackgroundService
         var now = DateTime.UtcNow;
         var claimedEntries = await context.EmailOutbox
             .FromSqlRaw(@"
-                UPDATE TOP({0}) EmailOutbox
+                UPDATE TOP({0}) EmailOutbox WITH (ROWLOCK)
                 SET Status = 'PROCESSING'
                 OUTPUT INSERTED.*
                 WHERE
@@ -125,12 +136,14 @@ public class EmailOutboxProcessor : BackgroundService
     {
         var cutoff = DateTime.UtcNow.AddMinutes(-StuckProcessingTimeoutMinutes);
 
-        var stuckCount = await context.EmailOutbox
-            .Where(e => e.Status == "PROCESSING" && e.CreatedAtUtc < cutoff)
-            .ExecuteUpdateAsync(setters => setters
-                .SetProperty(e => e.Status, "FAILED")
-                .SetProperty(e => e.LastError, $"Auto-recovered: stuck in PROCESSING for >{StuckProcessingTimeoutMinutes} min (app crash/restart)")
-                .SetProperty(e => e.NextRetryAtUtc, DateTime.UtcNow), ct);
+        var stuckCount = await context.Database.ExecuteSqlRawAsync(@"
+            UPDATE EmailOutbox WITH (ROWLOCK)
+            SET Status = 'FAILED',
+                LastError = {0},
+                NextRetryAtUtc = GETUTCDATE()
+            WHERE Status = 'PROCESSING' AND CreatedAtUtc < {1}",
+            $"Auto-recovered: stuck in PROCESSING for >{StuckProcessingTimeoutMinutes} min (app crash/restart)",
+            cutoff);
 
         if (stuckCount > 0)
         {

@@ -3,6 +3,7 @@ namespace AlplaPortal.Application.DTOs.Finance;
 using System;
 using System.Collections.Generic;
 using AlplaPortal.Application.DTOs.Common;
+using AlplaPortal.Application.DTOs.Requests;
 
 public class FinanceCurrencyValueDto
 {
@@ -108,6 +109,8 @@ public class FinanceListItemDto
     // ── Buy-to-Pay (Phase 8) ──
     public string? PaymentCondition { get; set; }
     public decimal? AdvancePaymentPercent { get; set; }
+
+    public List<RequestPoGroupDto> PoGroups { get; set; } = new();
 }
 
 public class FinanceListResponseDto

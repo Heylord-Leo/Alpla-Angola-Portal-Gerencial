@@ -7,6 +7,7 @@ using AlplaPortal.Application.DTOs.Extraction;
 using AlplaPortal.Application.Interfaces.Extraction;
 using AlplaPortal.Application.Models.Configuration;
 using AlplaPortal.Infrastructure.Services.Extraction;
+using AlplaPortal.Infrastructure.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -33,7 +34,9 @@ namespace AlplaPortal.Application.Tests
                     OpenAi = new OpenAiSettings { Enabled = true, TimeoutSeconds = 30 }
                 });
 
-            return new DocumentExtractionService(providers, mockSettingsService.Object, new NullLogger<DocumentExtractionService>());
+            var mockAdminLogWriter = new Mock<AdminLogWriter>(null, null, null);
+            
+            return new DocumentExtractionService(providers, mockSettingsService.Object, new NullLogger<DocumentExtractionService>(), mockAdminLogWriter.Object);
         }
 
         [Fact]

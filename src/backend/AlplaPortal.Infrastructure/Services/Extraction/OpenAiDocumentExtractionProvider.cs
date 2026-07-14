@@ -782,6 +782,14 @@ Output ONLY JSON with this structure:
     ""totalAmount"": number (Zwischensumme / Subtotal after all discounts, before tax),
     ""grandTotal"": number (Final total INCLUDING tax/IVA - this is what the buyer actually pays),
     ""discountAmount"": number (Global/commercial invoice-level discount, 0 if none — see rules above),
+    ""vendorAddress"": ""string or null (extract full supplier address)"",
+    ""vendorContactName"": ""string or null (extract supplier contact person)"",
+    ""vendorContactEmail"": ""string or null (extract supplier email)"",
+    ""vendorContactPhone"": ""string or null (extract supplier phone or fax)"",
+    ""vendorIban"": ""string or null (extract supplier IBAN)"",
+    ""vendorBankAccount"": ""string or null (extract supplier bank account number)"",
+    ""vendorSwift"": ""string or null (extract supplier SWIFT/BIC code)"",
+    ""vendorPaymentTerms"": ""string or null (extract exact payment terms text, like 'Pronto Pagamento' or '30 Dias')"",
     ""paymentCondition"": {
       ""type"": ""POST_PAID | ADVANCE_FULL | ADVANCE_PARTIAL | null"",
       ""rawText"": ""original payment terms text from document, or null"",
@@ -831,7 +839,15 @@ Output ONLY JSON with this structure:
                     Currency = header.TryGetProperty("currency", out var cur) ? cur.GetString() : null,
                     TotalAmount = header.TryGetProperty("totalAmount", out var ta) ? (ta.ValueKind == JsonValueKind.Number ? ta.GetDecimal() : 0) : null,
                     GrandTotal = header.TryGetProperty("grandTotal", out var gt) ? (gt.ValueKind == JsonValueKind.Number ? gt.GetDecimal() : 0) : null,
-                    DiscountAmount = header.TryGetProperty("discountAmount", out var da) ? (da.ValueKind == JsonValueKind.Number ? da.GetDecimal() : 0) : null
+                    DiscountAmount = header.TryGetProperty("discountAmount", out var da) ? (da.ValueKind == JsonValueKind.Number ? da.GetDecimal() : 0) : null,
+                    VendorAddress = header.TryGetProperty("vendorAddress", out var va) ? va.GetString() : null,
+                    VendorContactName = header.TryGetProperty("vendorContactName", out var vcn) ? vcn.GetString() : null,
+                    VendorContactEmail = header.TryGetProperty("vendorContactEmail", out var vce) ? vce.GetString() : null,
+                    VendorContactPhone = header.TryGetProperty("vendorContactPhone", out var vcp) ? vcp.GetString() : null,
+                    VendorIban = header.TryGetProperty("vendorIban", out var vi) ? vi.GetString() : null,
+                    VendorBankAccount = header.TryGetProperty("vendorBankAccount", out var vba) ? vba.GetString() : null,
+                    VendorSwift = header.TryGetProperty("vendorSwift", out var vs) ? vs.GetString() : null,
+                    VendorPaymentTerms = header.TryGetProperty("vendorPaymentTerms", out var vpt) ? vpt.GetString() : null
                 };
 
                 // Parse paymentCondition sub-object

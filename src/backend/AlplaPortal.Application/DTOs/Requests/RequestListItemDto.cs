@@ -12,6 +12,12 @@ public class RequestListItemDto
     public int StatusDisplayOrder { get; set; }
     public string StatusBadgeColor { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Computed workflow state for QUOTATION requests (not persisted).
+    /// For PAYMENT requests, mirrors StatusCode.
+    /// </summary>
+    public string? DisplayWorkflowState { get; set; }
+
     public int RequestTypeId { get; set; }
     public string RequestTypeName { get; set; } = string.Empty;
     public string RequestTypeCode { get; set; } = string.Empty;

@@ -15,6 +15,14 @@ public class QuotationItem
     public int? ItemCatalogId { get; set; }
     public ItemCatalog? ItemCatalog { get; set; }
     
+    // Mapping to original RequestLineItem (organizational only)
+    public Guid? MappedRequestLineItemId { get; set; }
+    public RequestLineItem? MappedRequestLineItem { get; set; }
+    
+    // Reconciliation (Phase R1)
+    public string ReconciliationStatus { get; set; } = "MAPPED";
+    public string? ReconciliationJustification { get; set; }
+    
     // Deterministic ordering
     public decimal Quantity { get; set; }
     public decimal UnitPrice { get; set; }

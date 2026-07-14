@@ -10,6 +10,13 @@ public class ApprovalIntelligenceDto
     public DepartmentIntelligenceDto DepartmentContext { get; set; } = new();
     public List<DecisionAlertDto> OverallAlerts { get; set; } = new();
     public BudgetAvailabilityDto? BudgetAvailability { get; set; }
+
+    /// <summary>
+    /// "BATCH" when the analysis is scoped to an active ApprovalBatch (partial
+    /// approval flow) — items, cost centers, alerts and the effective amount all
+    /// refer to the batch only. "REQUEST" for the legacy whole-request analysis.
+    /// </summary>
+    public string Scope { get; set; } = "REQUEST";
 }
 
 public class ItemIntelligenceDto

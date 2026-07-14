@@ -13,6 +13,15 @@ public class RequestDetailsDto
     public int StatusDisplayOrder { get; set; }
     public string StatusBadgeColor { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Computed workflow state for QUOTATION requests (not persisted).
+    /// For PAYMENT requests, mirrors StatusCode.
+    /// Values: QUOTATION_IN_PROGRESS, PARTIALLY_IN_APPROVAL, QUOTATION_IN_APPROVAL,
+    /// PARTIALLY_APPROVED, PARTIALLY_PO_ISSUED, MIXED_PROCESSING,
+    /// COMPLETED_WITH_CLOSURES, FULLY_COMPLETED, or legacy status code.
+    /// </summary>
+    public string? DisplayWorkflowState { get; set; }
+
     public int RequestTypeId { get; set; }
     public string RequestTypeName { get; set; } = string.Empty;
     public string RequestTypeCode { get; set; } = string.Empty;
@@ -65,9 +74,42 @@ public class RequestDetailsDto
     public Guid? SelectedQuotationId { get; set; }
 
     public List<RequestLineItemDto> LineItems { get; set; } = new();
+    public List<RequestPoGroupDto> PoGroups { get; set; } = new();
     public List<RequestAttachmentDto> Attachments { get; set; } = new();
     public List<RequestStatusHistoryDto> StatusHistory { get; set; } = new();
     public List<SavedQuotationDto> Quotations { get; set; } = new();
+    public List<RequestApprovalBatchDto> ApprovalBatches { get; set; } = new();
+}
+
+public class RequestApprovalBatchDto
+{
+    public Guid Id { get; set; }
+    public int BatchNumber { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string? Comment { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+
+    /// <summary>Budget justification recorded by the Area Approver when the batch was approved with a critical/over-budget cost center. Shown to the Final Approver.</summary>
+    public string? BudgetJustification { get; set; }
+    /// <summary>Snapshot of the batch total at final approval (null until then).</summary>
+    public decimal? ApprovedTotalAmount { get; set; }
+
+    public Guid CreatedByUserId { get; set; }
+    /// <summary>Batch creator (the Buyer). Enriched post-query.</summary>
+    public string? CreatedByUserName { get; set; }
+    public Guid? UpdatedByUserId { get; set; }
+    /// <summary>Last actor on the batch — after area approval, the Area Approver. Enriched post-query.</summary>
+    public string? UpdatedByUserName { get; set; }
+    public DateTime? UpdatedAtUtc { get; set; }
+
+    public List<RequestApprovalBatchItemDto> Items { get; set; } = new();
+}
+
+public class RequestApprovalBatchItemDto
+{
+    public Guid Id { get; set; }
+    public Guid RequestLineItemId { get; set; }
+    public Guid SelectedQuotationItemId { get; set; }
 }
 
 public class RequestLineItemDto
@@ -93,6 +135,12 @@ public class RequestLineItemDto
     public int? ItemCatalogId { get; set; }
     public string? ItemCatalogCode { get; set; }
 
+    // Quotation lifecycle (partial/batch approval flow) — read-only, backend-controlled
+    public string? QuotationLifecycleStatus { get; set; }
+    public string? NotQuotedJustification { get; set; }
+    public string? NotQuotedProposedByName { get; set; }
+    public DateTime? NotQuotedProposedAtUtc { get; set; }
+
     // Receiving Fields
     public decimal ReceivedQuantity { get; set; }
     public string? DivergenceNotes { get; set; }
@@ -113,6 +161,23 @@ public class RequestLineItemDto
     public int? CurrencyId { get; set; }
     public string? CurrencyCode { get; set; }
     public DateTime? DueDate { get; set; }
+    
+    public Guid? RequestPoGroupId { get; set; }
+    public Guid? SelectedQuotationItemId { get; set; }
+
+    public List<RequestLineItemAllocationDto> Allocations { get; set; } = new();
+}
+
+public class RequestLineItemAllocationDto
+{
+    public Guid Id { get; set; }
+    public int PlantId { get; set; }
+    public string? PlantName { get; set; }
+    public int? CostCenterId { get; set; }
+    public string? CostCenterName { get; set; }
+    public string? CostCenterCode { get; set; }
+    public decimal Percentage { get; set; }
+    public int AllocationOrder { get; set; }
 }
 
 public class RequestAttachmentDto
