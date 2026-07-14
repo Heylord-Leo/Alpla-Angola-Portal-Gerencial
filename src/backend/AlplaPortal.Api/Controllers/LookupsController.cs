@@ -741,7 +741,7 @@ public class LookupsController : ControllerBase
         var results = await queryable
             .OrderBy(s => s.Name)
             .Take(take)
-            .Select(s => new { s.Id, s.PortalCode, s.PrimaveraCode, s.Name, s.TaxId })
+            .Select(s => new { s.Id, s.PortalCode, s.PrimaveraCode, s.Name, s.TaxId, s.RegistrationStatus })
             .ToListAsync();
 
         return Ok(results);

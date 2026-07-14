@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authorization;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using AlplaPortal.Infrastructure.Services;
 
 [Authorize(Roles = RoleConstants.SystemAdministrator + "," + RoleConstants.Finance)]
 [ApiController]
@@ -83,15 +84,38 @@ public class FinanceBudgetController : BaseController
                 }
             }
 
-            int ccId = line.CostCenterId ?? 0;
-            
-            if (!ccCommitted.ContainsKey(ccId)) ccCommitted[ccId] = 0;
-            ccCommitted[ccId] += amountToAttribute;
-
-            if (isPaid)
+            if (line.Allocations != null && line.Allocations.Any())
             {
-                if (!ccPaid.ContainsKey(ccId)) ccPaid[ccId] = 0;
-                ccPaid[ccId] += amountToAttribute;
+                var allocs = line.Allocations.Select(a => (a.Id, a.Percentage, a.AllocationOrder)).ToList();
+                var distributed = AllocationHelper.DistributeAmount(amountToAttribute, allocs);
+
+                foreach (var alloc in line.Allocations)
+                {
+                    int ccId = alloc.CostCenterId; // CostCenterId is non-nullable int in entity, right? Let me check. Wait, in RequestLineItemAllocation it is int? No, let me assume it's int or int?. I'll just use alloc.CostCenterId
+                    var distAmount = distributed.FirstOrDefault(d => d.AllocationId == alloc.Id).Amount;
+
+                    if (!ccCommitted.ContainsKey(ccId)) ccCommitted[ccId] = 0;
+                    ccCommitted[ccId] += distAmount;
+
+                    if (isPaid)
+                    {
+                        if (!ccPaid.ContainsKey(ccId)) ccPaid[ccId] = 0;
+                        ccPaid[ccId] += distAmount;
+                    }
+                }
+            }
+            else
+            {
+                int ccId = line.CostCenterId ?? 0;
+                
+                if (!ccCommitted.ContainsKey(ccId)) ccCommitted[ccId] = 0;
+                ccCommitted[ccId] += amountToAttribute;
+
+                if (isPaid)
+                {
+                    if (!ccPaid.ContainsKey(ccId)) ccPaid[ccId] = 0;
+                    ccPaid[ccId] += amountToAttribute;
+                }
             }
         }
     }
@@ -111,6 +135,7 @@ public class FinanceBudgetController : BaseController
             .Include(r => r.Status)
             .Include(r => r.Currency)
             .Include(r => r.LineItems)
+                .ThenInclude(li => li.Allocations)
             .Include(r => r.Quotations)
                 .ThenInclude(q => q.Items)
             .Include(r => r.Department)
@@ -164,6 +189,9 @@ public class FinanceBudgetController : BaseController
             .Include(r => r.Status)
             .Include(r => r.LineItems)
                 .ThenInclude(li => li.CostCenter)
+            .Include(r => r.LineItems)
+                .ThenInclude(li => li.Allocations)
+                    .ThenInclude(a => a.CostCenter)
             .Include(r => r.Currency)
             .Include(r => r.Quotations)
                 .ThenInclude(q => q.Items)
@@ -196,8 +224,17 @@ public class FinanceBudgetController : BaseController
                     if (ccId == 0) ccNameLookup[ccId] = "Não Alocado / Departamento Geral";
                     else
                     {
-                        var ccEntity = req.LineItems.FirstOrDefault(li => li.CostCenterId == ccId)?.CostCenter;
-                        ccNameLookup[ccId] = ccEntity?.Name ?? $"CC {ccId}";
+                        // Check if it's in allocations first
+                        var ccEntityAlloc = req.LineItems.SelectMany(li => li.Allocations ?? Enumerable.Empty<RequestLineItemAllocation>()).FirstOrDefault(a => a.CostCenterId == ccId)?.CostCenter;
+                        if (ccEntityAlloc != null)
+                        {
+                            ccNameLookup[ccId] = ccEntityAlloc.Name;
+                        }
+                        else
+                        {
+                            var ccEntity = req.LineItems.FirstOrDefault(li => li.CostCenterId == ccId)?.CostCenter;
+                            ccNameLookup[ccId] = ccEntity?.Name ?? $"CC {ccId}";
+                        }
                     }
                 }
             }
@@ -227,6 +264,9 @@ public class FinanceBudgetController : BaseController
             .Include(r => r.Status)
             .Include(r => r.LineItems)
                 .ThenInclude(li => li.CostCenter)
+            .Include(r => r.LineItems)
+                .ThenInclude(li => li.Allocations)
+                    .ThenInclude(a => a.CostCenter)
             .Include(r => r.Currency)
             .Include(r => r.Quotations)
                 .ThenInclude(q => q.Items)
@@ -241,11 +281,25 @@ public class FinanceBudgetController : BaseController
         {
             foreach (var li in req.LineItems)
             {
-                int ccId = li.CostCenterId ?? 0;
-                if (!ccNameLookup.ContainsKey(ccId))
+                if (li.Allocations != null && li.Allocations.Any())
                 {
-                    if (ccId == 0) ccNameLookup[ccId] = "Não Alocado / Departamento Geral";
-                    else ccNameLookup[ccId] = li.CostCenter?.Name ?? $"CC {ccId}";
+                    foreach (var a in li.Allocations)
+                    {
+                        int ccId = a.CostCenterId;
+                        if (!ccNameLookup.ContainsKey(ccId))
+                        {
+                            ccNameLookup[ccId] = a.CostCenter?.Name ?? $"CC {ccId}";
+                        }
+                    }
+                }
+                else
+                {
+                    int ccId = li.CostCenterId ?? 0;
+                    if (!ccNameLookup.ContainsKey(ccId))
+                    {
+                        if (ccId == 0) ccNameLookup[ccId] = "Não Alocado / Departamento Geral";
+                        else ccNameLookup[ccId] = li.CostCenter?.Name ?? $"CC {ccId}";
+                    }
                 }
             }
         }

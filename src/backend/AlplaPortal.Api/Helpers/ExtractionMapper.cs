@@ -31,7 +31,15 @@ public static class ExtractionMapper
                     : null,
                 PaymentConditionAdvancePercent = internalResult.Header?.PaymentConditionAdvancePercent.HasValue == true
                     ? new OcrValueDto<decimal?> { Value = internalResult.Header.PaymentConditionAdvancePercent, Status = "suggested" }
-                    : null
+                    : null,
+                VendorAddress = !string.IsNullOrWhiteSpace(internalResult.Header?.VendorAddress) ? new OcrValueDto<string> { Value = internalResult.Header.VendorAddress, Status = "suggested" } : null,
+                VendorContactName = !string.IsNullOrWhiteSpace(internalResult.Header?.VendorContactName) ? new OcrValueDto<string> { Value = internalResult.Header.VendorContactName, Status = "suggested" } : null,
+                VendorContactEmail = !string.IsNullOrWhiteSpace(internalResult.Header?.VendorContactEmail) ? new OcrValueDto<string> { Value = internalResult.Header.VendorContactEmail, Status = "suggested" } : null,
+                VendorContactPhone = !string.IsNullOrWhiteSpace(internalResult.Header?.VendorContactPhone) ? new OcrValueDto<string> { Value = internalResult.Header.VendorContactPhone, Status = "suggested" } : null,
+                VendorIban = !string.IsNullOrWhiteSpace(internalResult.Header?.VendorIban) ? new OcrValueDto<string> { Value = internalResult.Header.VendorIban, Status = "suggested" } : null,
+                VendorBankAccount = !string.IsNullOrWhiteSpace(internalResult.Header?.VendorBankAccount) ? new OcrValueDto<string> { Value = internalResult.Header.VendorBankAccount, Status = "suggested" } : null,
+                VendorSwift = !string.IsNullOrWhiteSpace(internalResult.Header?.VendorSwift) ? new OcrValueDto<string> { Value = internalResult.Header.VendorSwift, Status = "suggested" } : null,
+                VendorPaymentTerms = !string.IsNullOrWhiteSpace(internalResult.Header?.VendorPaymentTerms) ? new OcrValueDto<string> { Value = internalResult.Header.VendorPaymentTerms, Status = "suggested" } : null
             },
             LineItemSuggestions = (internalResult.Items ?? new()).Select(item => new OcrLineItemSuggestionDto
             {
