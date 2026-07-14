@@ -1,3 +1,4 @@
+import React from 'react';
 import { useEffect, useState, useRef } from 'react';
 import { api } from '../../lib/api';
 import { FinanceListResponseDto } from '../../types';
@@ -60,7 +61,7 @@ export default function FinancePaymentsList() {
     const [flashedRequestId, setFlashedRequestId] = useState<string | null>(location.state?.flashRequestId || null);
     const [drawerRequestId, setDrawerRequestId] = useState<string | null>(null);
 
-    const [actionModal, setActionModal] = useState<{ show: boolean; action: FinanceActionType; requestId: string | null }>({ show: false, action: null, requestId: null });
+    const [actionModal, setActionModal] = useState<{ show: boolean; action: FinanceActionType; requestId: string | null; groupId: string | null; expectedAmount?: number }>({ show: false, action: null, requestId: null, groupId: null });
     const [processing, setProcessing] = useState(false);
     const [feedback, setFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'success', message: null });
 
@@ -75,6 +76,8 @@ export default function FinancePaymentsList() {
                 const el = document.getElementById(`payment-row-${flashedRequestId}`);
                 if (el) {
                     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } else {
+                    setFeedback({ type: 'info' as FeedbackType, message: 'Este pedido pode ainda não estar visível nesta lista. Verifique se o P.O. já foi registado ou ajuste os filtros.' });
                 }
             }, 300);
 
@@ -122,8 +125,19 @@ export default function FinancePaymentsList() {
         syncParamsToPrefs(newParams);
     };
 
-    const handleActionClick = (requestId: string, action: FinanceActionType) => {
-        setActionModal({ show: true, action, requestId });
+    const handleActionClick = (requestId: string, groupId: string, action: FinanceActionType) => {
+        // Compute expected amount from PO group or scheduled payment
+        let expectedAmount: number | undefined = undefined;
+        const requestItem = data?.pagedResult?.items.find(i => i.id === requestId);
+        if (requestItem?.poGroups) {
+            const poGroup = requestItem.poGroups.find((g: any) => g.id === groupId);
+            if (poGroup) {
+                // Check for scheduled payment with plannedAmount first
+                const scheduledPayment = poGroup.payments?.find((p: any) => p.paymentStatus === 'SCHEDULED' && p.plannedAmount > 0);
+                expectedAmount = scheduledPayment?.plannedAmount || poGroup.totalAmount || undefined;
+            }
+        }
+        setActionModal({ show: true, action, requestId, groupId, expectedAmount });
         setFeedback({ type: 'success', message: null });
     };
 
@@ -141,9 +155,9 @@ export default function FinancePaymentsList() {
                     await api.attachments.upload(actionModal.requestId, [payload.file], 'PAYMENT_SCHEDULE');
                 }
                 if (isAdvance) {
-                    await api.requests.scheduleAdvancePayment(actionModal.requestId, payload.notes || "Adiantamento agendado via portal");
+                    await api.requests.scheduleAdvancePayment(actionModal.requestId, { requestPoGroupId: actionModal.groupId!, scheduledDate: new Date(payload.date).toISOString(), comment: payload.notes || "Adiantamento agendado via portal" });
                 } else {
-                    await api.finance.schedulePayment(actionModal.requestId, new Date(payload.date).toISOString(), payload.notes || "Agendado via portal");
+                    await api.finance.schedulePayment(actionModal.requestId, actionModal.groupId!, new Date(payload.date).toISOString(), payload.notes || "Agendado via portal");
                 }
             } else if (action === 'PAY') {
                 let attachmentId: string | undefined = undefined;
@@ -156,13 +170,15 @@ export default function FinancePaymentsList() {
                 const actualPaidAmount = payload.amount ? parseFloat(payload.amount) : undefined;
                 const paymentDateUtc = payload.date ? new Date(payload.date).toISOString() : undefined;
                 if (isAdvance) {
-                    await api.requests.confirmAdvancePayment(actionModal.requestId, { 
+                    await api.requests.confirmAdvancePayment(actionModal.requestId, {
+                        requestPoGroupId: actionModal.groupId!, 
                         actualPaidAmount: actualPaidAmount || 0, 
+                        paidDate: paymentDateUtc!,
                         comment: payload.notes || "Adiantamento liquidado via portal",
                         paymentProofAttachmentId: attachmentId
                     });
                 } else {
-                    await api.finance.markAsPaid(actionModal.requestId, paymentDateUtc, payload.notes || "Liquidado via portal", actualPaidAmount);
+                    await api.finance.markAsPaid(actionModal.requestId, actionModal.groupId!, attachmentId!, actualPaidAmount!, paymentDateUtc!, payload.notes || "Liquidado via portal");
                 }
             } else if (action === 'RETURN' && payload.notes) {
                 await api.finance.returnForAdjustment(actionModal.requestId, payload.notes);
@@ -170,7 +186,7 @@ export default function FinancePaymentsList() {
                 await api.finance.addNote(actionModal.requestId, payload.notes);
             }
 
-            setActionModal({ show: false, action: null, requestId: null });
+            setActionModal({ show: false, action: null, requestId: null, groupId: null });
             loadData();
         } catch (err: any) {
             console.error(err);
@@ -214,6 +230,7 @@ export default function FinancePaymentsList() {
             case 'PAYMENT_COMPLETED': return 'O pagamento foi liquidado e aprovado.';
             case 'IN_FOLLOWUP': return 'Pagamento ok. Aguardando recebimento físico dos itens.';
             case 'CANCELLED': return 'Pedido foi cancelado e sem prosseguimento.';
+            case 'WAITING_RECEIPT': return 'Pagamento realizado. Aguardando Recibo Fiscal do Fornecedor (Fatura, Recibo ou VD) para finalizar.';
             default: return `Status atual: ${name}`;
         }
     };
@@ -327,96 +344,145 @@ export default function FinancePaymentsList() {
                     </tr>
                 </thead>
                 <tbody>
-                    {data.pagedResult.items.map((item, i) => (
-                        <tr key={item.id} id={`payment-row-${item.id}`} className={flashedRequestId === item.id.toString() ? 'flash-red-row' : ''} style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: i % 2 === 0 ? '#fff' : '#f8fafc' }}>
-                            <td style={{ padding: '16px' }}>
-                                <div style={{ fontWeight: 800, color: 'var(--color-primary)' }}>{item.requestNumber}</div>
-                                <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600 }}>{item.plantName}</div>
-                            </td>
-                            <td style={{ padding: '16px' }}>
-                                <div style={{ fontWeight: 700 }}>{item.supplierName}</div>
-                                <div style={{ fontSize: '0.85rem', color: '#64748b' }}>Req: {item.requesterName}</div>
-                            </td>
-                            <td style={{ padding: '16px', verticalAlign: 'top' }}>
-                                <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                                    <ModernTooltip content={
-                                        <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{getStatusTooltip(item.statusCode, item.statusName)}</div>
-                                    } side="top">
-                                        <span style={{ ...getBadgeStyle(item.statusBadgeColor), cursor: 'help' }}>{item.statusName}</span>
-                                    </ModernTooltip>
-
-                                    {item.statusCode === 'ADVANCE_PAYMENT_REQUIRED' && (
-                                        <span style={{ backgroundColor: '#fdf4ff', color: '#c026d3', border: '1px solid #f5d0fe', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700 }}>
-                                            Adiantamento {item.advancePaymentPercent ? `(${item.advancePaymentPercent}%)` : ''}
-                                        </span>
-                                    )}
-                                    {item.paymentCondition === 'ADVANCE_PAYMENT' && item.statusCode !== 'ADVANCE_PAYMENT_REQUIRED' && item.statusCode !== 'ADVANCE_PAYMENT_COMPLETED' && (
-                                        <span style={{ backgroundColor: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700 }}>
-                                            Saldo Final
-                                        </span>
-                                    )}
-
-                                    {item.paidDateUtc ? (
+                                        {data.pagedResult.items.map((item, i) => {
+                        const hasMultipleGroups = item.poGroups && item.poGroups.length > 1;
+                        
+                        return (
+                        <React.Fragment key={item.id}>
+                            <tr id={`payment-row-${item.id}`} className={flashedRequestId === item.id.toString() ? 'flash-red-row' : ''} style={{ borderBottom: hasMultipleGroups ? 'none' : '1px solid var(--color-border)', backgroundColor: i % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                                <td style={{ padding: '16px', verticalAlign: 'top' }}>
+                                    <div style={{ fontWeight: 800, color: 'var(--color-primary)' }}>{item.requestNumber}</div>
+                                    <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600 }}>{item.plantName}</div>
+                                </td>
+                                <td style={{ padding: '16px', verticalAlign: 'top' }}>
+                                    <div style={{ fontWeight: 700 }}>{hasMultipleGroups ? 'Vários Fornecedores' : item.supplierName}</div>
+                                    <div style={{ fontSize: '0.85rem', color: '#64748b' }}>Req: {item.requesterName}</div>
+                                </td>
+                                <td style={{ padding: '16px', verticalAlign: 'top' }}>
+                                    <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                                         <ModernTooltip content={
-                                            <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Data do pagamento: {new Date(item.paidDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</div>
+                                            <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{getStatusTooltip(item.statusCode, item.statusName)}</div>
                                         } side="top">
-                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#15803d', fontWeight: 800, fontSize: '0.75rem', cursor: 'help' }}>
-                                                <Check size={16} strokeWidth={3} /> Pago
-                                            </span>
+                                            <span style={{ ...getBadgeStyle(item.statusBadgeColor), cursor: 'help' }}>{item.statusName}</span>
                                         </ModernTooltip>
-                                    ) : item.scheduledDateUtc ? (
-                                        <ModernTooltip content={
-                                            <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Data de agendamento do pagamento: {new Date(item.scheduledDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</div>
-                                        } side="top">
-                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#0369a1', fontWeight: 800, fontSize: '0.75rem', cursor: 'help' }}>
-                                                <Clock size={16} strokeWidth={3} /> Agendado
+
+                                        {!hasMultipleGroups && item.statusCode === 'ADVANCE_PAYMENT_REQUIRED' && (
+                                            <span style={{ backgroundColor: '#fdf4ff', color: '#c026d3', border: '1px solid #f5d0fe', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700 }}>
+                                                Adiantamento {item.advancePaymentPercent ? `(${item.advancePaymentPercent}%)` : ''}
                                             </span>
-                                        </ModernTooltip>
-                                    ) : null}
-                                </div>
-                                {item.needByDateUtc && (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '8px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.80rem', fontWeight: 600, color: '#64748b' }}>
-                                            Original: {new Date(item.needByDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
-                                        </div>
-                                        {(item.scheduledDateUtc || item.isOverdue || item.isDueSoon) && (
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: item.isOverdue ? 800 : 700, color: item.isOverdue ? '#dc2626' : item.scheduledDateUtc ? '#0284c7' : item.isDueSoon ? '#d97706' : '#475569' }}>
-                                                <Clock size={16} />
-                                                {item.scheduledDateUtc ? `Agendado: ${new Date(item.scheduledDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}` : `Vence: ${new Date(item.needByDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}`}
-                                                {item.isOverdue && <span style={{ backgroundColor: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', border: '1px solid #fca5a5', fontSize: '0.75rem', fontWeight: 800 }}>Atrasado</span>}
-                                            </div>
                                         )}
+                                        {!hasMultipleGroups && item.paymentCondition === 'ADVANCE_PAYMENT' && item.statusCode !== 'ADVANCE_PAYMENT_REQUIRED' && item.statusCode !== 'ADVANCE_PAYMENT_COMPLETED' && (
+                                            <span style={{ backgroundColor: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700 }}>
+                                                Saldo Final
+                                            </span>
+                                        )}
+
+                                        {!hasMultipleGroups && item.paidDateUtc ? (
+                                            <ModernTooltip content={
+                                                <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Data do pagamento: {new Date(item.paidDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</div>
+                                            } side="top">
+                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#15803d', fontWeight: 800, fontSize: '0.75rem', cursor: 'help' }}>
+                                                    <Check size={16} strokeWidth={3} /> Pago
+                                                </span>
+                                            </ModernTooltip>
+                                        ) : !hasMultipleGroups && item.scheduledDateUtc ? (
+                                            <ModernTooltip content={
+                                                <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Data de agendamento do pagamento: {new Date(item.scheduledDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</div>
+                                            } side="top">
+                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#0369a1', fontWeight: 800, fontSize: '0.75rem', cursor: 'help' }}>
+                                                    <Clock size={16} strokeWidth={3} /> Agendado
+                                                </span>
+                                            </ModernTooltip>
+                                        ) : null}
                                     </div>
-                                )}
-                                {item.isMissingDocuments && (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px' }}>
-                                        {item.missingDocumentTypes.map(type => {
-                                            const label = type === 'PO' ? 'Sem P.O.' : type === 'PROFORMA' ? 'Sem Proforma' : 'Sem comprovativo';
-                                            return (
-                                                <div key={type} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', fontWeight: 800, color: '#ea580c', backgroundColor: '#fff7ed', padding: '2px 8px', border: '1px solid #fdba74', borderRadius: '4px', width: 'fit-content' }}>
-                                                    <AlertTriangle size={12} /> {label}
+                                    {!hasMultipleGroups && item.needByDateUtc && (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '8px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.80rem', fontWeight: 600, color: '#64748b' }}>
+                                                Original: {new Date(item.needByDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                                            </div>
+                                            {(item.scheduledDateUtc || item.isOverdue || item.isDueSoon) && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: item.isOverdue ? 800 : 700, color: item.isOverdue ? '#dc2626' : item.scheduledDateUtc ? '#0284c7' : item.isDueSoon ? '#d97706' : '#475569' }}>
+                                                    <Clock size={16} />
+                                                    {item.scheduledDateUtc ? `Agendado: ${new Date(item.scheduledDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}` : `Vence: ${new Date(item.needByDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}`}
+                                                    {item.isOverdue && <span style={{ backgroundColor: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', border: '1px solid #fca5a5', fontSize: '0.75rem', fontWeight: 800 }}>Atrasado</span>}
                                                 </div>
-                                            );
-                                        })}
+                                            )}
+                                        </div>
+                                    )}
+                                    {item.isMissingDocuments && (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px' }}>
+                                            {item.missingDocumentTypes.map(type => {
+                                                const label = type === 'PO' ? 'Sem P.O.' : type === 'PROFORMA' ? 'Sem Proforma' : 'Sem comprovativo';
+                                                return (
+                                                    <div key={type} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', fontWeight: 800, color: '#ea580c', backgroundColor: '#fff7ed', padding: '2px 8px', border: '1px solid #fdba74', borderRadius: '4px', width: 'fit-content' }}>
+                                                        <AlertTriangle size={12} /> {label}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </td>
+                                <td style={{ padding: '16px', fontWeight: 900, fontSize: '1.1rem', verticalAlign: 'top' }}>
+                                    {new Intl.NumberFormat('pt-AO', { style: 'currency', currency: item.currencyCode || 'AOA' }).format(item.amount)}
+                                </td>
+                                <td style={{ padding: '16px', textAlign: 'right', verticalAlign: 'top' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                        <KebabMenu options={[
+                                            ...(!hasMultipleGroups && item.availableFinanceActions.includes('SCHEDULE') && item.poGroups && item.poGroups.length > 0 ? [{ label: 'Agendar pagamento', icon: <Clock size={16} />, onClick: () => handleActionClick(item.id.toString(), item.poGroups[0].id, 'SCHEDULE') }] : []),
+                                            ...(!hasMultipleGroups && item.availableFinanceActions.includes('PAY') && item.poGroups && item.poGroups.length > 0 ? [{ label: 'Marcar como pago', icon: <Check size={16} />, onClick: () => handleActionClick(item.id.toString(), item.poGroups[0].id, 'PAY') }] : []),
+                                            { label: 'Detalhes', icon: <FileText size={16} />, onClick: () => setDrawerRequestId(item.id.toString()) },
+                                            ...(item.availableFinanceActions.includes('ADD_NOTE') && item.poGroups && item.poGroups.length > 0 ? [{ label: 'Adicionar Observação', icon: <MessageSquare size={16} />, onClick: () => handleActionClick(item.id.toString(), item.poGroups[0].id, 'NOTE') }] : []),
+                                            ...(!hasMultipleGroups && item.availableFinanceActions.includes('RETURN') && item.poGroups && item.poGroups.length > 0 ? [{ label: 'Devolver para ajuste', icon: <AlertTriangle size={16} color="#dc2626" />, onClick: () => handleActionClick(item.id.toString(), item.poGroups[0].id, 'RETURN') }] : [])
+                                        ]} />
                                     </div>
-                                )}
-                            </td>
-                            <td style={{ padding: '16px', fontWeight: 900, fontSize: '1.1rem' }}>
-                                {new Intl.NumberFormat('pt-AO', { style: 'currency', currency: item.currencyCode || 'AOA' }).format(item.amount)}
-                            </td>
-                            <td style={{ padding: '16px', textAlign: 'right' }}>
-                                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                                    <KebabMenu options={[
-                                        ...(item.availableFinanceActions.includes('SCHEDULE') ? [{ label: 'Agendar pagamento', icon: <Clock size={16} />, onClick: () => handleActionClick(item.id, 'SCHEDULE') }] : []),
-                                        ...(item.availableFinanceActions.includes('PAY') ? [{ label: 'Marcar como pago', icon: <Check size={16} />, onClick: () => handleActionClick(item.id, 'PAY') }] : []),
-                                        { label: 'Detalhes', icon: <FileText size={16} />, onClick: () => setDrawerRequestId(item.id.toString()) },
-                                        ...(item.availableFinanceActions.includes('ADD_NOTE') ? [{ label: 'Adicionar Observação', icon: <MessageSquare size={16} />, onClick: () => handleActionClick(item.id, 'NOTE') }] : []),
-                                        ...(item.availableFinanceActions.includes('RETURN') ? [{ label: 'Devolver para ajuste', icon: <AlertTriangle size={16} color="#dc2626" />, onClick: () => handleActionClick(item.id, 'RETURN') }] : [])
-                                    ]} />
-                                </div>
-                            </td>
-                        </tr>
-                    ))}
+                                </td>
+                            </tr>
+                            
+                            {hasMultipleGroups && (
+                                <tr style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: i % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                                    <td colSpan={5} style={{ padding: '0 16px 16px 16px' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', backgroundColor: 'rgba(0,0,0,0.02)', borderRadius: '8px', border: '1px dashed var(--color-border)' }}>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>Pagamentos por Fornecedor</div>
+                                            {item.poGroups.map(group => (
+                                                <div key={group.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', backgroundColor: '#fff', borderRadius: '6px', border: '1px solid var(--color-border)' }}>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                        <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{group.supplierNameSnapshot}</div>
+                                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                            <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-text-main)' }}>
+                                                                {new Intl.NumberFormat('pt-AO', { style: 'currency', currency: group.currencyCode || 'AOA' }).format(group.totalAmount)}
+                                                            </span>
+                                                            <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                                                                Status: {group.status}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                                        {item.availableFinanceActions.includes('SCHEDULE') && (group.status === 'ADVANCE_PAYMENT_REQUIRED' || group.status === 'PO_ISSUED' || group.status === 'WAITING_SUPPLIER_DELIVERY' || group.status === 'PO_CONFIRMED' || group.status === 'PAYMENT_REQUIRED') && (
+                                                            <button
+                                                                onClick={() => handleActionClick(item.id, group.id, 'SCHEDULE')}
+                                                                style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #0369a1', backgroundColor: '#f0f9ff', color: '#0369a1', fontWeight: 700, fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                                                            >
+                                                                <Clock size={14} /> Agendar
+                                                            </button>
+                                                        )}
+                                                        {item.availableFinanceActions.includes('PAY') && (group.status === 'ADVANCE_PAYMENT_SCHEDULED' || group.status === 'PAYMENT_SCHEDULED') && (
+                                                            <button
+                                                                onClick={() => handleActionClick(item.id, group.id, 'PAY')}
+                                                                style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #15803d', backgroundColor: '#f0fdf4', color: '#15803d', fontWeight: 700, fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                                                            >
+                                                                <Check size={14} /> Pagar
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </td>
+                                </tr>
+                            )}
+                        </React.Fragment>
+                        );
+                    })}
                     {data.pagedResult.items.length === 0 && (
                         <tr>
                             <td colSpan={5} style={{ padding: '40px', textAlign: 'center', fontWeight: 600, color: '#64748b' }}>
@@ -516,7 +582,8 @@ export default function FinancePaymentsList() {
                 show={actionModal.show}
                 action={actionModal.action}
                 isAdvance={data?.pagedResult?.items.find(i => i.id === actionModal.requestId)?.statusCode === 'ADVANCE_PAYMENT_REQUIRED'}
-                onClose={() => setActionModal({ show: false, action: null, requestId: null })}
+                expectedAmount={actionModal.expectedAmount}
+                onClose={() => setActionModal({ show: false, action: null, requestId: null, groupId: null })}
                 onConfirm={handleConfirmAction}
                 processing={processing}
                 feedback={feedback}

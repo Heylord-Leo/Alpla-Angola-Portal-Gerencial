@@ -21,7 +21,6 @@ import {
     Edit2,
     ArrowRight,
     CheckCircle,
-    Check,
     Clock
 } from 'lucide-react';
 
@@ -43,12 +42,15 @@ export interface RequestStatusActionPanelsProps {
     // Permission flags
     canExecuteOperationalAction: boolean;
     isQuotationPartiallyEditable: boolean;
+    isCopyMode?: boolean;
+
+    poGroups?: any[];
 
     // Modal setters
-    setShowRegisterPoModal: (show: boolean) => void;
+    setPoGroupIdForUpload: (groupId: string | null) => void;
     setShowCorrectPoModal: (show: boolean) => void;
     setShowReconciliationModal: (show: boolean) => void;
-    setShowApprovalModal: (val: { show: boolean; type: string }) => void;
+    setShowApprovalModal: (val: { show: boolean; type: string; groupId?: string }) => void;
 
     // Navigation
     navigate: (to: string, options?: any) => void;
@@ -63,8 +65,9 @@ export function RequestStatusActionPanels({
     status,
     requestTypeCode,
     isBuyer, isAreaApprover, isFinalApprover, isFinance, isReceiving,
-    canExecuteOperationalAction, isQuotationPartiallyEditable,
-    setShowRegisterPoModal, setShowCorrectPoModal, setShowReconciliationModal, setShowApprovalModal,
+    canExecuteOperationalAction, isQuotationPartiallyEditable, isCopyMode,
+    poGroups = [],
+    setPoGroupIdForUpload, setShowCorrectPoModal, setShowReconciliationModal, setShowApprovalModal,
     navigate, onDrawerClose,
     getRequestGuidance
 }: RequestStatusActionPanelsProps) {
@@ -147,24 +150,35 @@ export function RequestStatusActionPanels({
                         {/* ADDED: Operational Actions Buttons (Only visible to BUYER mode) */}
                         {/* Buyer actions */}
                         {isBuyer && (
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                {status === 'APPROVED' && (
-                                    <button 
-                                        onClick={() => setShowRegisterPoModal(true)}
-                                        className="btn-primary"
-                                        style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
-                                    >
-                                        <FileText size={14} /> REGISTRAR P.O
-                                    </button>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                {/* Group-level PO Registration */}
+                                {(status === 'APPROVED' || status === 'PO_PARTIALLY_UPLOADED') && poGroups && poGroups.length > 0 && (
+                                    poGroups.filter(g => g.status === 'WAITING_PO').map(group => (
+                                        <button 
+                                            key={`po-upload-${group.id}`}
+                                            onClick={() => setPoGroupIdForUpload(group.id)}
+                                            className="btn-primary"
+                                            style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                        >
+                                            <FileText size={14} /> REGISTRAR P.O ({group.supplierNameSnapshot})
+                                        </button>
+                                    ))
                                 )}
-                                {status === 'WAITING_PO_CORRECTION' && (
-                                    <button 
-                                        onClick={() => setShowCorrectPoModal(true)}
-                                        className="btn-primary"
-                                        style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#ea580c' }}
-                                    >
-                                        <Edit2 size={14} /> CORRIGIR P.O
-                                    </button>
+                                {/* Group-level PO Correction */}
+                                {(status === 'WAITING_PO_CORRECTION' || status === 'PO_PARTIALLY_UPLOADED') && poGroups && poGroups.length > 0 && (
+                                    poGroups.filter(g => g.status === 'WAITING_PO_CORRECTION').map(group => (
+                                        <button 
+                                            key={`po-correct-${group.id}`}
+                                            onClick={() => {
+                                                setPoGroupIdForUpload(group.id);
+                                                setShowCorrectPoModal(true);
+                                            }}
+                                            className="btn-primary"
+                                            style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#ea580c' }}
+                                        >
+                                            <Edit2 size={14} /> CORRIGIR P.O ({group.supplierNameSnapshot})
+                                        </button>
+                                    ))
                                 )}
                                 {/* TRANSITIONAL FALLBACK: Removed direct access from Buyer to enforce Receiving ownership */}
                             </div>
@@ -172,18 +186,17 @@ export function RequestStatusActionPanels({
 
                         {/* Receiving actions */}
                         {isReceiving && (
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                {status === 'PAYMENT_COMPLETED' && (
-                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                        <button 
-                                            onClick={() => setShowApprovalModal({ show: true, type: 'MOVE_TO_RECEIPT' })}
-                                            className="btn-primary"
-                                            style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
-                                        >
-                                            <ArrowRight size={14} /> MOVER PARA RECEBIMENTO
-                                        </button>
-                                    </div>
-                                )}
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                {poGroups && poGroups.filter(g => g.status === 'PAYMENT_COMPLETED' || g.status === 'PAG_REALIZADO').map(group => (
+                                    <button 
+                                        key={`move-to-receipt-${group.id}`}
+                                        onClick={() => setShowApprovalModal({ show: true, type: 'MOVE_TO_RECEIPT', groupId: group.id })}
+                                        className="btn-primary"
+                                        style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                    >
+                                        <ArrowRight size={14} /> MOVER PARA RECEBIMENTO ({group.supplierNameSnapshot})
+                                    </button>
+                                ))}
                             </div>
                         )}
 
@@ -211,24 +224,33 @@ export function RequestStatusActionPanels({
                             isFinance && status === 'PAYMENT_SCHEDULED' ? (
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <button 
-                                        onClick={() => setShowApprovalModal({ show: true, type: 'COMPLETE_PAYMENT' })}
+                                        onClick={() => {
+                                            if (onDrawerClose) onDrawerClose();
+                                            navigate('/finance/payments', { state: { flashRequestId: requestId } });
+                                        }}
                                         className="btn-primary"
                                         style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
                                     >
-                                        <Check size={14} /> CONFIRMAR PAGAMENTO
+                                        <ArrowRight size={14} /> CONFIRMAR NA TELA DE PAGAMENTOS
                                     </button>
                                 </div>
                             ) : (
-                                isFinance && status === 'WAITING_RECEIPT' && (
-                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                        <button 
-                                            onClick={() => setShowApprovalModal({ show: true, type: 'FINALIZE' })}
-                                            className="btn-success"
-                                            style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
-                                        >
-                                            <CheckCircle size={14} /> FINALIZAR PEDIDO
-                                        </button>
-                                    </div>
+                                !isFinance && status === 'PAYMENT_SCHEDULED' ? (
+                                    <span style={{ fontSize: '0.75rem', color: '#64748b', fontStyle: 'italic', display: 'flex', alignItems: 'center', height: '32px' }}>
+                                        A confirmação de pagamento deve ser realizada pelo Financeiro na tela de Pagamentos.
+                                    </span>
+                                ) : (
+                                    isFinance && status === 'WAITING_RECEIPT' && (
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            <button 
+                                                onClick={() => setShowApprovalModal({ show: true, type: 'FINALIZE' })}
+                                                className="btn-success"
+                                                style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                            >
+                                                <CheckCircle size={14} /> FINALIZAR PEDIDO (Recibo Fiscal)
+                                            </button>
+                                        </div>
+                                    )
                                 )
                             )
                         )}

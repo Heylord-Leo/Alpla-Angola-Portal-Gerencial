@@ -9,6 +9,8 @@ import { RequestAttachmentDto } from '../../types';
 interface FinalizeReceivingModalProps {
     requestId: string;
     requestNumber: string;
+    groupId: string;
+    groupName?: string;
     attachments: RequestAttachmentDto[];
     show: boolean;
     onClose: () => void;
@@ -19,6 +21,8 @@ interface FinalizeReceivingModalProps {
 export const FinalizeReceivingModal: React.FC<FinalizeReceivingModalProps> = ({
     requestId,
     requestNumber,
+    groupId,
+    groupName,
     attachments,
     show,
     onClose,
@@ -50,17 +54,17 @@ export const FinalizeReceivingModal: React.FC<FinalizeReceivingModalProps> = ({
 
             if (!hasReceipt && finalizeReceiptFile) {
                 try {
-                    await api.attachments.upload(requestId, [finalizeReceiptFile], 'RECEIPT');
+                    await api.attachments.upload(requestId, [finalizeReceiptFile], 'RECEIPT', groupId);
                 } catch (uploadErr: any) {
                     const errMsg = uploadErr instanceof Error ? uploadErr.message : (uploadErr?.response?.data?.message || 'Falha ao carregar recibo.');
-                    logger.error(`Erro ao carregar recibo final do pedido ${requestNumber}: ${errMsg}`, uploadErr, 'Global');
+                    logger.error(`Erro ao carregar recibo final do pedido ${requestNumber} (${groupName || groupId}): ${errMsg}`, uploadErr, 'Global');
                     setFinalizeFeedback({ type: 'error', message: errMsg });
                     setFinalizeProcessing(false);
                     return;
                 }
             }
 
-            await api.requests.confirmReceiving(requestId, finalizeComment);
+            await api.requests.confirmReceiving(requestId, groupId, finalizeComment);
             
             // Clean state and trigger success
             setFinalizeComment('');
@@ -97,13 +101,19 @@ export const FinalizeReceivingModal: React.FC<FinalizeReceivingModalProps> = ({
             onCloseFeedback={() => setFinalizeFeedback({ ...finalizeFeedback, message: null })}
             isPartial={isPartial}
         >
+            {groupName && (
+                <div style={{ marginBottom: '16px', padding: '8px', backgroundColor: '#EFF6FF', borderRadius: '4px', border: '1px solid #BFDBFE' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#1E40AF', textTransform: 'uppercase' }}>Confirmando recebimento para:</span>
+                    <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#1E3A8A' }}>{groupName}</div>
+                </div>
+            )}
             {(() => {
                 const hasReceipt = attachments?.some(
-                    (a: any) => a.attachmentTypeCode === 'RECEIPT' && !a.isDeleted
+                    (a: any) => a.attachmentTypeCode === 'RECEIPT' && !a.isDeleted && a.requestPoGroupId === groupId
                 );
                 
                 if (hasReceipt) {
-                    const receipt = attachments!.find((a: any) => a.attachmentTypeCode === 'RECEIPT' && !a.isDeleted);
+                    const receipt = attachments!.find((a: any) => a.attachmentTypeCode === 'RECEIPT' && !a.isDeleted && a.requestPoGroupId === groupId);
                     return (
                         <div>
                             <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>

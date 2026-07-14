@@ -12,7 +12,7 @@ interface DateInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement
  * while maintaining YYYY-MM-DD backend compatibility.
  * Now includes a hidden native date picker bridge for calendar support.
  */
-export function DateInput({ value, onChange, hasError, style, className, ...props }: DateInputProps) {
+export function DateInput({ value, onChange, hasError, style, className, min, max, ...props }: DateInputProps) {
     const [displayValue, setDisplayValue] = useState<string>('');
     const hiddenDateRef = useRef<HTMLInputElement>(null);
 
@@ -155,12 +155,15 @@ export function DateInput({ value, onChange, hasError, style, className, ...prop
                 <Calendar size={18} />
             </button>
 
-            {/* Hidden native picker bridge */}
+            {/* Hidden native picker bridge. min/max are applied here (not on the text input,
+                where they are inert) so the calendar itself greys out disallowed dates. */}
             <input
                 ref={hiddenDateRef}
                 type="date"
                 value={value || ''}
                 onChange={handleHiddenDateChange}
+                min={min}
+                max={max}
                 aria-hidden="true"
                 tabIndex={-1}
                 style={{

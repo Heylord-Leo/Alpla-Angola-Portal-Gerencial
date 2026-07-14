@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
     User, Building2, Factory,
     Calendar, Landmark, Download,
     Paperclip, AlertCircle, List,
     MessageSquare, Users, History as HistoryIcon, DollarSign,
     Target, TrendingUp, ArrowRightLeft, AlertTriangle, ShieldCheck,
-    BookOpen, X, Compass
+    BookOpen, X, Compass, Layers
 } from 'lucide-react';
 import { RequestDetailsDto, ApprovalIntelligenceDto } from '../../types';
 import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModal';
@@ -16,6 +16,10 @@ import { formatDate, formatCurrencyAO } from '../../lib/utils';
 import { motion } from 'framer-motion';
 import { useGuidedTourContext } from '../../features/guided-tour/GuidedTourProvider';
 import type { TourId } from '../../features/guided-tour/guidedTourTypes';
+import { ApprovalWizardModal } from './ApprovalWizardModal';
+import { ItemAssignment } from './WizardStepAllocation';
+import { AllocationReassignmentDto } from './WizardStepBudget';
+
 
 // Decision specific components
 import { DecisionHeader } from './components/DecisionHeader';
@@ -25,6 +29,8 @@ import { DecisionQuotationCard } from './components/DecisionQuotationCard';
 import { DecisionTimeline } from './components/DecisionTimeline';
 import { DecisionInsightsPanel } from './components/DecisionInsightsPanel';
 import { DecisionFinancialTrendLine } from './components/DecisionFinancialTrendLine';
+import { ItemAwardMatrix } from './components/ItemAwardMatrix';
+import { AwardSummary } from './components/AwardSummary';
 
 // --- Constants ---
 
@@ -36,6 +42,18 @@ const ATTACHMENT_TYPE_LABELS: Record<string, string> = {
     'GENERAL': 'Documento Geral',
     'INVOICE': 'Fatura',
     'RECEIPT': 'Recibo',
+};
+
+// Mirrors the labels used in Buyer/BuyerItemsList.tsx for ApprovalBatch.Status,
+// so the same batch status reads identically for Buyer and Approver.
+const BATCH_STATUS_LABELS: Record<string, string> = {
+    'WAITING_AREA_APPROVAL': 'Aguardando Aprovação da Área',
+    'AREA_ADJUSTMENT': 'Ajuste da Área Requerido',
+    'WAITING_FINAL_APPROVAL': 'Aguardando Aprovação Final',
+    'FINAL_ADJUSTMENT': 'Ajuste Final Requerido',
+    'APPROVED': 'Aprovado',
+    'REJECTED': 'Rejeitado',
+    'CANCELLED': 'Cancelado',
 };
 
 // --- Interfaces ---
@@ -62,6 +80,7 @@ export interface ApprovalDetailPanelProps {
 export function ApprovalDetailPanel({
     data,
     approvalStage,
+    isAreaApprover,
     onActionCompleted,
     onClose,
     onDataRefresh,
@@ -71,6 +90,63 @@ export function ApprovalDetailPanel({
     currentIndex,
     totalCount
 }: ApprovalDetailPanelProps) {
+
+    const activeBatch = data.approvalBatches?.find((b: any) => 
+        approvalStage === 'AREA' 
+            ? b.status === 'WAITING_AREA_APPROVAL' 
+            : b.status === 'WAITING_FINAL_APPROVAL'
+    );
+
+    const activeItems = activeBatch
+        ? (data.lineItems || []).filter(item =>
+            activeBatch.items?.some((bi: any) => bi.requestLineItemId === item.id)
+          )
+        : (data.lineItems || []);
+
+    // Batch-scoped view of the request for the Approval Wizard. The wizard and
+    // every step inside it (Allocation, Selection, Review, Overview) derive their
+    // item lists straight from request.lineItems, so when an active batch exists
+    // we hand it a request whose lineItems are ONLY the batch's items — items
+    // outside the batch (pending / NOT_QUOTED_PROPOSED) must neither appear nor
+    // block. We also stamp each item with the buyer-selected winner from
+    // ApprovalBatchItem (the source of truth in the batch model) so awards come
+    // pre-filled. Memoized because the wizard's init effect keys on the request
+    // object identity — a fresh object every render would wipe its state.
+    const wizardRequest = useMemo(() => {
+        if (!activeBatch) return data;
+        const batchLineItems = (data.lineItems || [])
+            .filter(item => activeBatch.items?.some((bi: any) => bi.requestLineItemId === item.id))
+            .map(item => {
+                const batchItem = activeBatch.items?.find((bi: any) => bi.requestLineItemId === item.id);
+                return batchItem?.selectedQuotationItemId
+                    ? { ...item, selectedQuotationItemId: batchItem.selectedQuotationItemId }
+                    : item;
+            });
+        return { ...data, lineItems: batchLineItems };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [data, approvalStage]);
+
+    // Effective amount of the active batch — the header must show the batch
+    // value, not the request's EstimatedTotalAmount (0 for quotation requests
+    // created without prices). Prefers the immutable final-approval snapshot;
+    // before that, sums the buyer-selected winning quotation items (their
+    // lineTotals are available via data.quotations).
+    const activeBatchTotal = useMemo(() => {
+        if (!activeBatch) return null;
+        if (activeBatch.approvedTotalAmount && activeBatch.approvedTotalAmount > 0) {
+            return activeBatch.approvedTotalAmount as number;
+        }
+        const lineTotalByQuotationItemId = new Map<string, number>();
+        (data.quotations || []).forEach(q =>
+            (q.items || []).forEach(qi => lineTotalByQuotationItemId.set(qi.id, qi.lineTotal || 0))
+        );
+        const sum = (activeBatch.items || []).reduce(
+            (acc: number, bi: any) => acc + (lineTotalByQuotationItemId.get(bi.selectedQuotationItemId) || 0),
+            0
+        );
+        return sum > 0 ? sum : null;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [data, approvalStage]);
 
     // Guided tour context
     const { startTour } = useGuidedTourContext();
@@ -103,14 +179,28 @@ export function ApprovalDetailPanel({
     const [costCenters, setCostCenters] = useState<any[]>([]);
     const [plants, setPlants] = useState<any[]>([]);
     const [itemAssignments, setItemAssignments] = useState<Record<string, { plantId: number | null, costCenterId: number | null }>>({});
+    const [itemAwards, setItemAwards] = useState<Record<string, string>>({});
     const [activeInsightItemId, setActiveInsightItemId] = useState<string | null>(null);
     const [activeAssignmentItemId, setActiveAssignmentItemId] = useState<string | null>(null);
     const [viewMode, setViewMode] = useState<'CARDS' | 'LIST'>(
-        (data.lineItems && data.lineItems.length > 5) ? 'LIST' : 'CARDS'
+        (activeItems && activeItems.length > 5) ? 'LIST' : 'CARDS'
     );
     const [insightSearchQ, setInsightSearchQ] = useState('');
+    const [isWizardOpen, setIsWizardOpen] = useState(false);
 
-    const isAreaApprovalStage = data.statusCode === 'WAITING_AREA_APPROVAL';
+    const isPayment = data.requestTypeCode === 'PAYMENT';
+    // Partial/batch approval means the request's own aggregate status (data.statusCode)
+    // can lag behind reality — e.g. it can still read WAITING_QUOTATION while one of its
+    // batches is already WAITING_AREA_APPROVAL, because other line items are still
+    // unresolved (pending quotation or a not-quoted proposal awaiting decision). The
+    // drawer must treat "area approval stage" as true whenever there IS an active batch
+    // to review, not only when the whole request's status says so.
+    const isAreaApprovalStage = approvalStage === 'AREA' && (
+        !!activeBatch ||
+        data.statusCode === 'WAITING_AREA_APPROVAL' ||
+        data.statusCode === 'WAITING_COST_CENTER' ||
+        isPayment
+    );
     const isFinalApprovalStage = data.statusCode === 'WAITING_FINAL_APPROVAL';
 
     useEffect(() => {
@@ -127,26 +217,31 @@ export function ApprovalDetailPanel({
         }
     }, [approvalStage, data.companyId]);
 
-    // Initialize item assignments from existing data
+    // Initialize item assignments and awards from existing data
     useEffect(() => {
-        if (data.lineItems) {
+        if (activeItems) {
             const initialMap: Record<string, { plantId: number | null, costCenterId: number | null }> = {};
-            data.lineItems.forEach(item => {
+            const initialAwards: Record<string, string> = {};
+            activeItems.forEach(item => {
                 initialMap[item.id] = {
                     plantId: item.plantId || null,
                     costCenterId: item.costCenterId || null
                 };
+                if (item.selectedQuotationItemId) {
+                    initialAwards[item.id] = item.selectedQuotationItemId;
+                }
             });
             setItemAssignments(initialMap);
-            if (data.lineItems.length > 0) {
-                if (!activeInsightItemId) setActiveInsightItemId(data.lineItems[0].id);
+            setItemAwards(initialAwards);
+            if (activeItems.length > 0) {
+                if (!activeInsightItemId) setActiveInsightItemId(activeItems[0].id);
                 if (!activeAssignmentItemId) {
-                    const firstPending = data.lineItems.find(i => !initialMap[i.id].plantId || !initialMap[i.id].costCenterId);
-                    setActiveAssignmentItemId(firstPending ? firstPending.id : data.lineItems[0].id);
+                    const firstPending = activeItems.find(i => !initialMap[i.id].plantId || !initialMap[i.id].costCenterId);
+                    setActiveAssignmentItemId(firstPending ? firstPending.id : activeItems[0].id);
                 }
             }
         }
-    }, [data.id, data.lineItems]);
+    }, [data.id, activeItems]);
 
     const fetchIntelligence = async () => {
         setLoadingIntelligence(true);
@@ -180,11 +275,7 @@ export function ApprovalDetailPanel({
 
     // --- Computed ---
     const isQuotation = data.requestTypeCode === 'QUOTATION';
-    const isPayment = data.requestTypeCode === 'PAYMENT';
     const selectedQuotation = data.quotations?.find(q => q.isSelected);
-    const hasWinnerSelected = !!selectedQuotation;
-
-    const activeItems = data.lineItems || [];
 
     // DEC-099/DEC-103: Cost Center & Plant Validation Logic
     const itemsMissingPlant = activeItems.filter(item => !itemAssignments[item.id]?.plantId);
@@ -228,14 +319,13 @@ export function ApprovalDetailPanel({
         return activeItems.some(item => item.id !== itemId && (!itemAssignments[item.id]?.plantId || !itemAssignments[item.id]?.costCenterId));
     };
 
-    // Winner selection is enabled for QUOTATION requests when the approver is in their decision stage
-    const canSelectWinner = isQuotation && (
-        (approvalStage === 'AREA' && isAreaApprovalStage) ||
-        (approvalStage === 'FINAL' && isFinalApprovalStage)
-    );
+    // Winner selection is handled via ItemAwardMatrix for AREA stage. Legacy card-level selection is disabled.
+    const canSelectWinner = false;
 
-    // Approve is blocked if winner not selected (Quotation) OR any Item Assignment is missing (Area Approval)
-    const isApproveBlocked = (isQuotation && !hasWinnerSelected) || (approvalStage === 'AREA' && isAreaApprovalStage && !allAssigned);
+    // const allItemsAwarded = activeItems.length > 0 && activeItems.every(i => !!itemAwards[i.id] || !!i.selectedQuotationItemId);
+
+    // Approve is blocked if winner not selected for every item (Quotation, Area Approval) OR any Item Assignment is missing (Area Approval)
+    // const isApproveBlocked = (isQuotation && approvalStage === 'AREA' && isAreaApprovalStage && !allItemsAwarded) || (approvalStage === 'AREA' && isAreaApprovalStage && !allAssigned);
 
     // REQUEST_ADJUSTMENT is hidden for PAYMENT requests
     const showAdjustmentAction = !isPayment;
@@ -257,27 +347,9 @@ export function ApprovalDetailPanel({
     const hasItemAboveAvg = itemsAboveAvg.length > 0;
 
     // --- Handlers ---
-
-    const handleQuotationWarningClick = () => {
-        document.getElementById('cotacoes-salvas-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        
-        setHighlightQuotationSection(true);
-        
-        setTimeout(() => {
-            setHighlightQuotationSection(false);
-        }, 5000);
-    };
-
-    const handleAllocationWarningClick = () => {
-        document.getElementById('itens-do-pedido-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        
-        setHighlightSection(true);
-        setHighlightFields(true);
-        
-        setTimeout(() => {
-            setHighlightSection(false);
-        }, 5000);
-    };
+    // (handleQuotationWarningClick / handleAllocationWarningClick were removed
+    // along with the operational warning banners — the area drawer is
+    // informative only; allocation/selection issues surface inside the Wizard.)
 
     const handleSelectWinner = async (quotationId: string) => {
         setQuotationProcessingId(quotationId);
@@ -299,73 +371,53 @@ export function ApprovalDetailPanel({
         }
     };
 
-    const handleApprovalAction = async (action: ApprovalActionType) => {
-        if (!action) return;
-
-        if (action === 'APPROVE') {
-            // DEC-099/DEC-103: item-level assignment validation
-            if (approvalStage === 'AREA' && !allAssigned) {
-                let msg = 'Todos os itens devem ter Planta e Centro de Custo atribuídos.';
-                if (countMissingPlant > 0 && countMissingCC > 0) msg = `Faltam ${countMissingPlant} plantas e ${countMissingCC} centros de custo.`;
-                else if (countMissingPlant > 0) msg = `Faltam ${countMissingPlant} plantas a serem definidas.`;
-                else msg = `Faltam ${countMissingCC} centros de custo a serem definidos.`;
-
-                setModalFeedback({ 
-                    type: 'error', 
-                    message: msg
-                });
-                return;
-            }
-
-            if (isQuotation) {
-                const selected = data.quotations?.find(q => q.isSelected);
-                if (!selected) {
-                    setModalFeedback({ type: 'error', message: 'É necessário selecionar uma cotação vencedora antes de aprovar.' });
-                    return;
-                }
-            }
-        }
-
-        // Validate comment for reject / adjustment
-        if ((action === 'REJECT' || action === 'REQUEST_ADJUSTMENT') && !approvalComment.trim()) {
-            setModalFeedback({
-                type: 'error',
-                message: action === 'REJECT' ? 'Informe o motivo da rejeição.' : 'Informe o motivo do reajuste.'
-            });
-            return;
-        }
-
+    const handleWizardSubmit = async (
+        action: ApprovalActionType, 
+        awards: Record<string, string>, 
+        assignments: Record<string, ItemAssignment>, 
+        comment: string, 
+        budgetJustification?: string,
+        reassignments?: AllocationReassignmentDto[],
+        allocations?: Record<string, any[]>,
+        extraItemDecisions?: Record<string, { decision: 'APPROVE' | 'REJECT' | 'ADJUST' | null; comment: string }>
+    ): Promise<boolean> => {
         setApprovalProcessing(true);
-        setModalFeedback({ type: 'error', message: null });
-
         try {
             let result;
             const isArea = isAreaApprovalStage;
 
             if (action === 'APPROVE') {
-                result = isArea
-                    ? await api.requests.approveArea(data.id, approvalComment, data.quotations?.find(q => q.isSelected)?.id, itemAssignments)
-                    : await api.requests.approveFinal(data.id, approvalComment);
+                result = activeBatch
+                    ? (isArea
+                        ? await api.requests.approveBatchArea(data.id, activeBatch.id, comment, awards, assignments, budgetJustification, reassignments, allocations, extraItemDecisions)
+                        : await api.requests.approveBatchFinal(data.id, activeBatch.id, comment))
+                    : (isArea
+                        ? await api.requests.approveArea(data.id, comment, awards, assignments, budgetJustification, reassignments, allocations, extraItemDecisions)
+                        : await api.requests.approveFinal(data.id, comment));
             } else if (action === 'REJECT') {
-                // DEC-FIX: Rejection does not require item allocation — omit itemAssignments
-                result = isArea
-                    ? await api.requests.rejectArea(data.id, approvalComment)
-                    : await api.requests.rejectFinal(data.id, approvalComment);
+                result = activeBatch
+                    ? (isArea
+                        ? await api.requests.rejectBatchArea(data.id, activeBatch.id, comment)
+                        : await api.requests.rejectBatchFinal(data.id, activeBatch.id, comment))
+                    : (isArea
+                        ? await api.requests.rejectArea(data.id, comment)
+                        : await api.requests.rejectFinal(data.id, comment));
             } else if (action === 'REQUEST_ADJUSTMENT') {
-                // DEC-FIX: Adjustment request does not require item allocation — omit itemAssignments
-                result = isArea
-                    ? await api.requests.requestAdjustmentArea(data.id, approvalComment)
-                    : await api.requests.requestAdjustmentFinal(data.id, approvalComment);
+                result = activeBatch
+                    ? (isArea
+                        ? await api.requests.requestAdjustmentBatchArea(data.id, activeBatch.id, comment)
+                        : await api.requests.requestAdjustmentBatchFinal(data.id, activeBatch.id, comment))
+                    : (isArea
+                        ? await api.requests.requestAdjustmentArea(data.id, comment)
+                        : await api.requests.requestAdjustmentFinal(data.id, comment));
             } else {
                 throw new Error('Ação inválida.');
             }
 
-            setShowApprovalModal({ show: false, type: null });
-            setApprovalComment('');
-            setModalFeedback({ type: 'error', message: null });
+            setIsWizardOpen(false);
             onActionCompleted(result.message || 'Ação concluída com sucesso.');
+            return true;
         } catch (err: any) {
-            // Extract detailed validation messages from ASP.NET field errors when available
             let errorMsg = err.message || 'Não foi possível concluir a ação. Tente novamente.';
             if (err.fieldErrors) {
                 const details = Object.entries(err.fieldErrors as Record<string, string[]>)
@@ -375,7 +427,8 @@ export function ApprovalDetailPanel({
                     errorMsg = details.join('. ');
                 }
             }
-            setModalFeedback({ type: 'error', message: errorMsg });
+            alert(errorMsg);
+            return false;
         } finally {
             setApprovalProcessing(false);
         }
@@ -394,7 +447,7 @@ export function ApprovalDetailPanel({
             label: 'Atribuição Financeira', 
             value: (approvalStage === 'AREA' && isAreaApprovalStage) 
                 ? (isUnifiedAssignment && unifiedCC ? `[${unifiedCC.code}] ${unifiedCC.name}` : 'Múltiplos / Pendente')
-                : data.costCenterCode || (data.lineItems?.[0]?.costCenterCode ? `[${data.lineItems[0].costCenterCode}]` : '---'), 
+                : data.costCenterCode || (activeItems?.[0]?.costCenterCode ? `[${activeItems[0].costCenterCode}]` : '---'), 
             icon: <Landmark size={12} /> 
         },
         { 
@@ -421,7 +474,7 @@ export function ApprovalDetailPanel({
                     statusCode={data.statusCode || ''}
                     statusName={data.statusName || ''}
                     statusBadgeColor={data.statusBadgeColor || ''}
-                    totalAmount={data.estimatedTotalAmount}
+                    totalAmount={activeBatchTotal ?? data.estimatedTotalAmount}
                     currencyCode={data.currencyCode || ''}
                     approvalStage={approvalStage}
                     onClose={onClose}
@@ -433,8 +486,55 @@ export function ApprovalDetailPanel({
                 />
             </div>
 
-            {/* Content Container */}
             <div style={{ maxWidth: '80rem', margin: '0 auto', width: '100%', padding: '16px 24px 96px 24px' }}>
+
+                {/* --- PARTIAL APPROVAL BANNER --- */}
+                {activeBatch && (
+                    <div data-tour="approval-drawer-batch-banner" style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '16px',
+                        padding: '16px 20px',
+                        backgroundColor: '#eff6ff',
+                        border: '1px solid #bfdbfe',
+                        borderRadius: '12px',
+                        marginBottom: '16px',
+                        boxShadow: 'var(--shadow-sm)'
+                    }}>
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '50%',
+                            backgroundColor: '#dbeafe',
+                            color: '#1d4ed8'
+                        }}>
+                            <Layers size={18} />
+                        </div>
+                        <div>
+                            <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 800, color: '#1e3a8a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                Lote de Aprovação Parcial (Lote #{activeBatch.batchNumber})
+                            </h4>
+                            <p style={{ margin: '2px 0 0 0', fontSize: '0.75rem', color: '#1e40af', lineHeight: 1.4, fontWeight: 500 }}>
+                                Apenas os itens pertencentes a este lote estão visíveis e incluídos nesta ação de aprovação. Os itens restantes do pedido continuam pendentes com o comprador.
+                            </p>
+                            {activeBatch.status !== data.statusCode && (
+                                <p style={{ margin: '8px 0 0 0', fontSize: '0.72rem', color: '#1e40af', lineHeight: 1.5 }}>
+                                    <strong>Pedido (status geral):</strong> {data.statusName || data.statusCode}
+                                    {' · '}
+                                    <strong>Lote #{activeBatch.batchNumber}:</strong> {BATCH_STATUS_LABELS[activeBatch.status] || activeBatch.status}
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* NOTE: the Area Approver's budget justification is rendered inside
+                     "Inteligência para Decisão > Disponibilidade Orçamental" (via
+                     DecisionInsightsPanel props below), next to the budget KPIs it
+                     refers to — not as a standalone banner here. */}
 
                 {/* --- ACTION BAR --- */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginBottom: '16px' }}>
@@ -493,7 +593,7 @@ export function ApprovalDetailPanel({
                 </div>
 
                 {/* --- INTELLIGENCE ALERTS (wrapper for tour) --- */}
-                {(hasItemAboveAvg || (isQuotation && !hasWinnerSelected) || (isAreaApprovalStage && !allAssigned)) && (
+                {hasItemAboveAvg && (
                     <div data-tour="approval-drawer-alerts">
                 {/* Price warning banner: shown ONLY when items are above historical average */}
                 {hasItemAboveAvg && (
@@ -518,46 +618,19 @@ export function ApprovalDetailPanel({
                     </div>
                 )}
 
-                {/* --- BLOCKING ALERTS --- */}
-                {isQuotation && !hasWinnerSelected && (
-                    <div 
-                        onClick={handleQuotationWarningClick}
-                        style={{
-                            marginBottom: '24px', width: '100%', backgroundColor: '#FEF2F2',
-                            border: '1px solid #FECACA', borderRadius: 'var(--radius-lg)', padding: '16px',
-                            display: 'flex', gap: '16px', boxShadow: 'var(--shadow-sm)', alignItems: 'flex-start',
-                            cursor: 'pointer'
-                        }}
-                    >
-                        <AlertCircle color="var(--color-status-red)" style={{ marginTop: '2px', flexShrink: 0 }} size={20} />
-                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ color: '#991B1B', fontWeight: 700, marginBottom: '4px' }}>Cotação Vencedora Obrigatória</span>
-                            <span style={{ color: '#B91C1C', fontSize: '0.875rem', lineHeight: 1.2 }}>
-                                Uma cotação vencedora deve ser selecionada para prosseguir com a aprovação.
-                            </span>
-                        </div>
-                    </div>
-                )}
-                
-                {isAreaApprovalStage && !allAssigned && (
-                    <div 
-                        onClick={handleAllocationWarningClick}
-                        style={{
-                            marginBottom: '24px', width: '100%', backgroundColor: '#FEF2F2',
-                            border: '1px solid #FECACA', borderRadius: 'var(--radius-lg)', padding: '16px',
-                            display: 'flex', gap: '16px', boxShadow: 'var(--shadow-sm)', alignItems: 'flex-start',
-                            cursor: 'pointer'
-                        }}
-                    >
-                        <AlertTriangle color="var(--color-status-red)" style={{ marginTop: '2px', flexShrink: 0 }} size={20} />
-                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ color: '#991B1B', fontWeight: 700, marginBottom: '4px' }}>Pendência de Alocação</span>
-                            <span style={{ color: '#B91C1C', fontSize: '0.875rem', lineHeight: 1.2 }}>
-                                Existem itens sem centro de custo ou planta definida. A aprovação requer a regularização destes campos.
-                            </span>
-                        </div>
-                    </div>
-                )}
+                {/* --- BLOCKING ALERTS ---
+                     The old "Atribuição de Itens Obrigatória" banner (single-winner-per-
+                     request model: data.quotations.find(q => q.isSelected)) was removed.
+                     It doesn't apply to the batch/partial-approval model — a batch can
+                     legitimately cover only some of the request's items, and winners are
+                     now awarded per item (ItemAwardMatrix), not as one quotation for the
+                     whole request. Blocking the drawer on this obsolete check no longer
+                     makes sense now that the real review happens per-batch in the Wizard. */}
+
+                {/* NOTE: the "Pendência de Alocação" blocking alert was removed. The
+                     area-approval drawer is informative only — plant/cost-center
+                     allocation is handled inside the Approval Wizard ("Revisar Pedido"),
+                     which validates it in its own Atribuição Financeira step. */}
                     </div>
                 )}
 
@@ -565,6 +638,16 @@ export function ApprovalDetailPanel({
                 <div data-tour="approval-drawer-request-info" style={{ marginBottom: '32px' }}>
                     <DecisionSummaryGrid items={summaryItems} />
                 </div>
+
+                {/* NOTE: the "Itens Propostos como Não Cotado" decision panel (Fase 3) was
+                     deliberately removed from this drawer. Product direction: the approval
+                     drawer is being phased out as an operational surface in favor of the
+                     Approval Batch Wizard, and a not-quoted decision is not a batch action —
+                     it must not gate or appear inside batch approval at all. The component
+                     itself (NotQuotedDecisionPanel/NotQuotedDecisionModal) is kept and still
+                     used from the Requester's RequestEdit.tsx; only this integration point
+                     was removed. Where this decision should ultimately live (buyer flow vs.
+                     a dedicated pendencies screen) is still to be decided. */}
 
                 {/* 2.5. CONTEXTO FINANCEIRO (Gráfico de Tendência) */}
                 <div data-tour="approval-drawer-financial-context" style={{ marginBottom: '32px' }}>
@@ -580,8 +663,12 @@ export function ApprovalDetailPanel({
                     </DecisionSection>
                 </div>
 
-                {/* 2.6. COTAÇÕES SALVAS (Moved after Contexto Financeiro Visual) */}
-                {isQuotation && (
+                {/* 2.6. COTAÇÕES SALVAS — hidden on the AREA drawer: quotation review,
+                     per-item winner display (ItemAwardMatrix / "Resumo da Atribuição")
+                     and everything operational now lives in the Approval Wizard. The
+                     section is preserved for FINAL approval, whose AwardSummary still
+                     depends on it. */}
+                {isQuotation && !isAreaApprovalStage && (
                     <motion.div
                         data-tour="approval-drawer-quotations"
                         id="cotacoes-salvas-section"
@@ -619,6 +706,44 @@ export function ApprovalDetailPanel({
                                             onToggleExpand={(id) => setExpandedQuotationId(prev => prev === id ? null : id)}
                                         />
                                     ))}
+                                </div>
+                            )}
+
+                            {isQuotation && approvalStage === 'AREA' && isAreaApprovalStage && data.quotations && data.quotations.length > 0 && (
+                                <div style={{ marginTop: '24px' }}>
+                                    <ItemAwardMatrix
+                                        items={activeItems}
+                                        quotations={data.quotations}
+                                        itemAwards={itemAwards}
+                                        onAwardChange={(lineItemId, quotationItemId) => {
+                                            setItemAwards(prev => ({
+                                                ...prev,
+                                                [lineItemId]: quotationItemId
+                                            }));
+                                        }}
+                                        onSelectAll={(quotationId) => {
+                                            const quotation = data.quotations?.find(q => q.id === quotationId);
+                                            if (!quotation || !quotation.items) return;
+                                            const newAwards = { ...itemAwards };
+                                            activeItems.forEach(item => {
+                                                const qItem = quotation.items.find(qi => qi.lineNumber === item.lineNumber);
+                                                if (qItem) {
+                                                    newAwards[item.id] = qItem.id;
+                                                }
+                                            });
+                                            setItemAwards(newAwards);
+                                        }}
+                                    />
+                                </div>
+                            )}
+
+                            {isQuotation && approvalStage === 'FINAL' && isFinalApprovalStage && (
+                                <div style={{ marginTop: '24px' }}>
+                                    <AwardSummary
+                                        poGroups={data.poGroups || []}
+                                        quotations={data.quotations || []}
+                                        attachments={data.attachments || []}
+                                    />
                                 </div>
                             )}
                         </DecisionSection>
@@ -718,6 +843,19 @@ export function ApprovalDetailPanel({
                                     hasQuotations: (data.quotations?.length || 0) > 0
                                 }}
                                 isSingleItemFocus={activeItems.length > 1}
+                                budgetJustification={approvalStage === 'FINAL' ? activeBatch?.budgetJustification : undefined}
+                                budgetJustificationAuthor={approvalStage === 'FINAL' ? activeBatch?.updatedByUserName : undefined}
+                                budgetJustificationDate={approvalStage === 'FINAL' && activeBatch?.updatedAtUtc ? formatDate(activeBatch.updatedAtUtc) : undefined}
+                                batchChecklist={approvalStage === 'FINAL' && activeBatch ? {
+                                    batchNumber: activeBatch.batchNumber,
+                                    itemCount: activeBatch.items?.length || 0,
+                                    areaApproved: ['WAITING_FINAL_APPROVAL', 'APPROVED'].includes(activeBatch.status),
+                                    winnersDefined: (activeBatch.items || []).every((bi: any) => !!bi.selectedQuotationItemId),
+                                    allocationDefined: activeItems.length > 0 && activeItems.every((li: any) =>
+                                        (li.allocations && li.allocations.length > 0 && li.allocations.every((a: any) => a.costCenterId)) || !!li.costCenterId
+                                    ),
+                                    budgetJustificationRegistered: !!activeBatch.budgetJustification
+                                } : undefined}
                             />
                         </div>
                     ) : (
@@ -731,7 +869,11 @@ export function ApprovalDetailPanel({
                 </DecisionSection>
                 </div>
 
-                {/* 4. ITENS DO PEDIDO (Adaptive Navigation) */}
+                {/* 4. ITENS DO PEDIDO (Adaptive Navigation) — hidden on the AREA drawer:
+                     batch items are reviewed/allocated inside the Approval Wizard, and
+                     items outside the batch must not appear as decision surface here.
+                     Kept for FINAL approval (read-only Planta/C.Custo context). */}
+                {!isAreaApprovalStage && (
                 <motion.div
                     data-tour="approval-drawer-items"
                     id="itens-do-pedido-section"
@@ -990,6 +1132,7 @@ export function ApprovalDetailPanel({
                     )}
                 </DecisionSection>
                 </motion.div>
+                )}
 
                 {/* 5. JUSTIFICATIVA / OBSERVAÇÕES (Always Open if present) */}
                 {data.description && (
@@ -1113,83 +1256,117 @@ export function ApprovalDetailPanel({
                 </div>
             </div>
 
-            {/* Sticky Action Footer */}
+            {/* Sticky Action Footer
+                 Area-approval stage: the drawer is informative only — the single
+                 operational action is opening the Approval Batch Wizard, where the
+                 actual approve/reject/adjustment happens against the active batch.
+                 Final-approval stage (no Wizard equivalent yet) keeps the original
+                 three-button footer unchanged. */}
             <div data-tour="approval-drawer-actions" style={{ position: 'sticky', bottom: 0, zIndex: 50, backgroundColor: 'var(--color-bg-page)', borderTop: '1px solid var(--color-border)', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', boxShadow: '0 -4px 12px -2px rgba(0,0,0,0.08)', width: '100%' }}>
-                {showAdjustmentAction && (
+                {isAreaApprovalStage ? (
                     <button
-                        onClick={() => setShowApprovalModal({ show: true, type: 'REQUEST_ADJUSTMENT' })}
+                        onClick={() => setIsWizardOpen(true)}
                         style={{
-                            padding: '12px 24px',
-                            backgroundColor: 'rgba(217, 119, 6, 0.06)',
-                            color: '#92400E',
-                            fontWeight: 800,
-                            border: '1.5px solid rgba(217, 119, 6, 0.3)',
+                            padding: '12px 32px',
                             borderRadius: 'var(--radius-lg)',
+                            fontWeight: 800,
                             display: 'flex',
                             alignItems: 'center',
                             gap: '8px',
                             textTransform: 'uppercase',
                             letterSpacing: '0.05em',
                             fontSize: '0.75rem',
+                            transition: 'all 0.2s ease',
+                            border: 'none',
+                            backgroundColor: '#16A34A',
+                            color: 'white',
                             cursor: 'pointer',
-                            transition: 'all 0.2s ease'
+                            boxShadow: '0 2px 8px rgba(22, 163, 74, 0.3)'
                         }}
-                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(217, 119, 6, 0.12)'; e.currentTarget.style.borderColor = 'rgba(217, 119, 6, 0.5)'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(217, 119, 6, 0.15)'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(217, 119, 6, 0.06)'; e.currentTarget.style.borderColor = 'rgba(217, 119, 6, 0.3)'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}
+                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#15803D'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(22, 163, 74, 0.4)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#16A34A'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(22, 163, 74, 0.3)'; }}
                     >
-                        <ArrowRightLeft size={16} /> Reajuste
+                        <ShieldCheck size={16} /> Revisar Pedido
                     </button>
+                ) : (
+                    <>
+                        {showAdjustmentAction && (
+                            <button
+                                onClick={() => setShowApprovalModal({ show: true, type: 'REQUEST_ADJUSTMENT' })}
+                                style={{
+                                    padding: '12px 24px',
+                                    backgroundColor: 'rgba(217, 119, 6, 0.06)',
+                                    color: '#92400E',
+                                    fontWeight: 800,
+                                    border: '1.5px solid rgba(217, 119, 6, 0.3)',
+                                    borderRadius: 'var(--radius-lg)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.05em',
+                                    fontSize: '0.75rem',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s ease'
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(217, 119, 6, 0.12)'; e.currentTarget.style.borderColor = 'rgba(217, 119, 6, 0.5)'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(217, 119, 6, 0.15)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(217, 119, 6, 0.06)'; e.currentTarget.style.borderColor = 'rgba(217, 119, 6, 0.3)'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}
+                            >
+                                <ArrowRightLeft size={16} /> Reajuste
+                            </button>
+                        )}
+                        <button
+                            onClick={() => setShowApprovalModal({ show: true, type: 'REJECT' })}
+                            style={{
+                                padding: '12px 24px',
+                                backgroundColor: 'rgba(239, 68, 68, 0.06)',
+                                color: '#991B1B',
+                                fontWeight: 800,
+                                border: '1.5px solid rgba(239, 68, 68, 0.25)',
+                                borderRadius: 'var(--radius-lg)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                fontSize: '0.75rem',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease'
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.12)'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.45)'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(239, 68, 68, 0.15)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.06)'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.25)'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}
+                        >
+                            <AlertTriangle size={16} /> Rejeitar
+                        </button>
+                        <button
+                            onClick={() => setShowApprovalModal({ show: true, type: 'APPROVE' })}
+                            style={{
+                                padding: '12px 32px',
+                                borderRadius: 'var(--radius-lg)',
+                                fontWeight: 800,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                fontSize: '0.75rem',
+                                transition: 'all 0.2s ease',
+                                border: 'none',
+                                backgroundColor: '#16A34A',
+                                color: 'white',
+                                cursor: 'pointer',
+                                boxShadow: '0 2px 8px rgba(22, 163, 74, 0.3)'
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#15803D'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(22, 163, 74, 0.4)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#16A34A'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(22, 163, 74, 0.3)'; }}
+                        >
+                            <ShieldCheck size={16} /> Aprovar
+                        </button>
+                    </>
                 )}
-                <button
-                    onClick={() => setShowApprovalModal({ show: true, type: 'REJECT' })}
-                    style={{
-                        padding: '12px 24px',
-                        backgroundColor: 'rgba(239, 68, 68, 0.06)',
-                        color: '#991B1B',
-                        fontWeight: 800,
-                        border: '1.5px solid rgba(239, 68, 68, 0.25)',
-                        borderRadius: 'var(--radius-lg)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        fontSize: '0.75rem',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease'
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.12)'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.45)'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(239, 68, 68, 0.15)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.06)'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.25)'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}
-                >
-                    <AlertTriangle size={16} /> Rejeitar
-                </button>
-                <button
-                    onClick={() => setShowApprovalModal({ show: true, type: 'APPROVE' })}
-                    disabled={isApproveBlocked}
-                    style={{
-                        padding: '12px 32px',
-                        borderRadius: 'var(--radius-lg)',
-                        fontWeight: 800,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        fontSize: '0.75rem',
-                        transition: 'all 0.2s ease',
-                        border: 'none',
-                        ...(isApproveBlocked 
-                            ? { backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-muted)', cursor: 'not-allowed', boxShadow: 'none' } 
-                            : { backgroundColor: '#16A34A', color: 'white', cursor: 'pointer', boxShadow: '0 2px 8px rgba(22, 163, 74, 0.3)' })
-                    }}
-                    onMouseEnter={(e) => { if (!isApproveBlocked) { e.currentTarget.style.backgroundColor = '#15803D'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(22, 163, 74, 0.4)'; }}}
-                    onMouseLeave={(e) => { if (!isApproveBlocked) { e.currentTarget.style.backgroundColor = '#16A34A'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(22, 163, 74, 0.3)'; }}}
-                >
-                    <ShieldCheck size={16} /> Aprovar
-                </button>
             </div>
 
-            {/* APPROVAL MODAL */}
+            {/* APPROVAL MODAL (For simple approval workflows) */}
             <ApprovalModal
                 show={showApprovalModal.show}
                 type={showApprovalModal.type}
@@ -1199,13 +1376,28 @@ export function ApprovalDetailPanel({
                     setApprovalComment('');
                     setModalFeedback({ type: 'error', message: null });
                 }}
-                onConfirm={handleApprovalAction}
+                onConfirm={(action) => handleWizardSubmit(action, itemAwards, itemAssignments, approvalComment)}
                 comment={approvalComment}
                 setComment={setApprovalComment}
                 processing={approvalProcessing}
                 feedback={modalFeedback}
                 onCloseFeedback={() => setModalFeedback({ type: 'error', message: null })}
                 selectedQuotationName={selectedQuotation?.supplierNameSnapshot || null}
+            />
+
+            {/* WIZARD MODAL (For Area Approval Quotes) */}
+            <ApprovalWizardModal
+                isOpen={isWizardOpen}
+                onClose={() => setIsWizardOpen(false)}
+                request={wizardRequest}
+                quotations={data.quotations || []}
+                plants={plants}
+                costCenters={costCenters}
+                onSubmitAction={handleWizardSubmit}
+                isSubmitting={approvalProcessing}
+                onDownloadAttachment={handleDownloadAttachment}
+                intelligence={intelligence}
+                approvalStage={approvalStage}
             />
 
             {/* HELP OVERLAY (MODAL) */}
@@ -1275,33 +1467,97 @@ export function ApprovalDetailPanel({
                                 </div>
                             </div>
 
-                            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-                                <div style={{ backgroundColor: '#fef3c7', padding: '12px', color: '#d97706', border: '2px solid #d97706' }}><Factory size={24} /></div>
-                                <div>
-                                    <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>Alocação de Centro de Custo</h4>
-                                    <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
-                                        <strong>O que é:</strong> Como aprovador da área, é a sua responsabilidade garantir que os custos da requisição sejam imputados ao local orçamentário correto. Para isso, vá à secção "Itens do pedido" e atribua uma <strong>Planta (Fábrica)</strong> e um <strong>Centro de Custo</strong> por cada linha do pedido.
-                                    </p>
-                                    <p style={{ margin: 0, fontSize: '14px', backgroundColor: '#f1f5f9', padding: '8px', borderLeft: '4px solid #94a3b8' }}>
-                                        <em>Distribuição Rápida (Bulk):</em> Para não selecionar individualmente todas as dezenas de itens que possam vir no pedido, defina o centro de custo apenas no primeiro item e cliquem no recém botão <strong>Aplicar aos X compatíveis</strong> que saltará no próprio cartão. Ele preencherá magicamente todos os itens vazios com essa exata parametrização de uma vez só!
-                                    </p>
-                                </div>
-                            </div>
+                            {isAreaApprovalStage ? (
+                                <>
+                                    {/* Area approval: the drawer is informative only — allocation,
+                                         batch review and the decision all happen inside the Wizard. */}
+                                    <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                                        <div style={{ backgroundColor: '#dcfce7', padding: '12px', color: '#16a34a', border: '2px solid #16a34a' }}><ShieldCheck size={24} /></div>
+                                        <div>
+                                            <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>Revisar Pedido — o Wizard de Aprovação</h4>
+                                            <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                                                Na aprovação de área, este painel serve apenas como <strong>contexto</strong>. Para aprovar, rejeitar ou solicitar reajuste, clique em <strong>Revisar Pedido</strong> e siga o Wizard. É nele que você fará a <strong>atribuição financeira</strong> (Planta e Centro de Custo por item, com distribuição rápida em massa), a <strong>revisão dos itens do lote</strong>, a <strong>análise orçamental</strong> e a <strong>decisão final</strong>.
+                                            </p>
+                                            <p style={{ margin: 0, fontSize: '14px', backgroundColor: '#f1f5f9', padding: '8px', borderLeft: '4px solid #94a3b8' }}>
+                                                <em>Importante:</em> O Wizard considera somente os itens do lote enviado para aprovação. Itens pendentes fora do lote continuam sob responsabilidade do comprador e não bloqueiam a aprovação deste lote.
+                                            </p>
+                                        </div>
+                                    </div>
 
-                            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-                                <div style={{ backgroundColor: '#f3f4f6', padding: '12px', color: '#4b5563', border: '2px solid #4b5563' }}><ShieldCheck size={24} /></div>
-                                <div>
-                                    <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>Passo a Passo da Aprovação (Checklist)</h4>
-                                    <ol style={{ margin: '8px 0', paddingLeft: '20px', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
-                                        <li style={{ marginBottom: '8px' }}><strong>1. Resumo e Entendimento:</strong> Revise acima quem solicitou, os níveis de urgência e leia atentamente a secção de Justificativas.</li>
-                                        <li style={{ marginBottom: '8px' }}><strong>2. Verificação de Alertas:</strong> Certifique-se de que não há caixas de aviso vermelhas ou amarelas no topo da tela sugerindo anomalias de preços ou pendência de alocação.</li>
-                                        <li style={{ marginBottom: '8px' }}><strong>3. Cotação e Valores:</strong> Para compras, analise a cotação selecionada. O valor está aderente? Verifique o Resumo Financeiro total.</li>
-                                        <li style={{ marginBottom: '8px' }}><strong>4. Mitigação de Riscos:</strong> Se houver gráfico de Contexto Visual, busque padrões anormais (ex: três pedidos iguais nos últimos 10 dias de um fornecedor).</li>
-                                        <li style={{ marginBottom: '8px' }}><strong>5. Alocação Obrigatória (Aprovadores de Filial):</strong> Certifique-se de alocar cada item listado à sua respetiva Fábrica (Planta) e Centro de Custo usando os seletivos por item.</li>
-                                        <li><strong>6. Decisão:</strong> Encontre as opções de encerramento na barra flutuante inferior. Para "Rejeitar" ou "Solicitar Ajuste", um comentário será mandatório.</li>
-                                    </ol>
-                                </div>
-                            </div>
+                                    <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                                        <div style={{ backgroundColor: '#eff6ff', padding: '12px', color: '#1d4ed8', border: '2px solid #1d4ed8' }}><Layers size={24} /></div>
+                                        <div>
+                                            <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>Fluxo por Lote Parcial</h4>
+                                            <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                                                Um pedido pode continuar em cotação enquanto um lote parcial de itens já está em aprovação. <strong>Isso é esperado</strong> — o status geral do pedido e o status do lote podem ser diferentes, e o banner no topo do painel mostra os dois.
+                                            </p>
+                                            <p style={{ margin: 0, fontSize: '14px', backgroundColor: '#f1f5f9', padding: '8px', borderLeft: '4px solid #94a3b8' }}>
+                                                <em>Itens sem cotação:</em> Itens desconsiderados/encerrados sem cotação são tratados no fluxo do comprador, não na aprovação de área.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                                        <div style={{ backgroundColor: '#f3f4f6', padding: '12px', color: '#4b5563', border: '2px solid #4b5563' }}><ShieldCheck size={24} /></div>
+                                        <div>
+                                            <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>Passo a Passo da Aprovação (Checklist)</h4>
+                                            <ol style={{ margin: '8px 0', paddingLeft: '20px', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                                                <li style={{ marginBottom: '8px' }}><strong>1. Resumo e Entendimento:</strong> Revise neste painel quem solicitou, os níveis de urgência e a secção de Justificativas.</li>
+                                                <li style={{ marginBottom: '8px' }}><strong>2. Contexto:</strong> Use o Contexto Financeiro Visual e a Inteligência para Decisão para identificar anomalias de preço ou gastos recorrentes.</li>
+                                                <li style={{ marginBottom: '8px' }}><strong>3. Lote Parcial:</strong> Se houver banner de lote, lembre-se: a revisão cobre apenas os itens desse lote.</li>
+                                                <li style={{ marginBottom: '8px' }}><strong>4. Revisar Pedido:</strong> Clique no botão no rodapé para abrir o Wizard de Aprovação.</li>
+                                                <li style={{ marginBottom: '8px' }}><strong>5. No Wizard:</strong> Faça a atribuição financeira (Planta e Centro de Custo), revise itens e valores do lote e verifique a disponibilidade orçamental.</li>
+                                                <li><strong>6. Decisão:</strong> Conclua no Wizard com Aprovar, Rejeitar ou Solicitar Reajuste. Para rejeição ou reajuste, o comentário é obrigatório.</li>
+                                            </ol>
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    {/* Final approval: the Final Approver reviews the Area's decision —
+                                         winners, values and allocation are already set and read-only here. */}
+                                    <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                                        <div style={{ backgroundColor: '#dcfce7', padding: '12px', color: '#16a34a', border: '2px solid #16a34a' }}><ShieldCheck size={24} /></div>
+                                        <div>
+                                            <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>Revisão da Decisão da Área</h4>
+                                            <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                                                Como Aprovador Final, o seu papel é <strong>revisar a decisão tomada pela área</strong>: confira o fornecedor vencedor e os itens aprovados (secções "Cotações Salvas" e "Itens do pedido"), os <strong>valores finais</strong> no Resumo Financeiro e a <strong>atribuição financeira</strong> (Planta e Centro de Custo) já definida por item. Estes dados são apresentados apenas para leitura — a escolha da área não é editada aqui.
+                                            </p>
+                                            <p style={{ margin: 0, fontSize: '14px', backgroundColor: '#f1f5f9', padding: '8px', borderLeft: '4px solid #94a3b8' }}>
+                                                <em>Lote parcial:</em> Quando houver banner de lote no topo, a sua decisão vale apenas para os itens desse lote. Itens pendentes fora do lote continuam com o comprador.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                                        <div style={{ backgroundColor: '#fef3c7', padding: '12px', color: '#d97706', border: '2px solid #d97706' }}><AlertTriangle size={24} /></div>
+                                        <div>
+                                            <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>Justificativa Orçamental</h4>
+                                            <p style={{ margin: '8px 0', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                                                Se a área aprovou o lote com um centro de custo <strong>crítico, esgotado ou sem orçamento</strong>, foi obrigada a registrar uma justificativa. Ela aparece dentro de <strong>Inteligência para Decisão → Disponibilidade Orçamental</strong>, junto aos indicadores de orçamento a que se refere.
+                                            </p>
+                                            <p style={{ margin: 0, fontSize: '14px', backgroundColor: '#f1f5f9', padding: '8px', borderLeft: '4px solid #94a3b8' }}>
+                                                <em>Importante:</em> Leia essa justificativa antes de decidir — ela explica por que a área optou por prosseguir apesar do alerta orçamental.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                                        <div style={{ backgroundColor: '#f3f4f6', padding: '12px', color: '#4b5563', border: '2px solid #4b5563' }}><ShieldCheck size={24} /></div>
+                                        <div>
+                                            <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>Passo a Passo da Aprovação Final (Checklist)</h4>
+                                            <ol style={{ margin: '8px 0', paddingLeft: '20px', fontSize: '14px', lineHeight: 1.6, color: '#334155' }}>
+                                                <li style={{ marginBottom: '8px' }}><strong>1. Resumo e Entendimento:</strong> Revise quem solicitou, os níveis de urgência e a secção de Justificativas do pedido.</li>
+                                                <li style={{ marginBottom: '8px' }}><strong>2. Decisão da Área:</strong> Confira o fornecedor vencedor e os itens aprovados pela área.</li>
+                                                <li style={{ marginBottom: '8px' }}><strong>3. Valores Finais:</strong> Verifique o Resumo Financeiro e compare com o Contexto Financeiro Visual em busca de padrões anormais.</li>
+                                                <li style={{ marginBottom: '8px' }}><strong>4. Atribuição Financeira:</strong> Confirme que cada item possui Planta e Centro de Custo coerentes com o orçamento da área.</li>
+                                                <li style={{ marginBottom: '8px' }}><strong>5. Alertas Orçamentais:</strong> Se houver justificativa orçamental da área (em Inteligência para Decisão → Disponibilidade Orçamental), leia-a antes de decidir.</li>
+                                                <li><strong>6. Decisão:</strong> Use a barra inferior para Aprovar, Rejeitar ou Solicitar Reajuste. Para rejeição ou reajuste, o comentário é obrigatório.</li>
+                                            </ol>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
 
                         </div>
                     </div>

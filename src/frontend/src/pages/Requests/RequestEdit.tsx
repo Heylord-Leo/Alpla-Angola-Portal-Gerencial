@@ -90,8 +90,8 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         quotationsSectionRef,
         showApprovalModal,
         setShowApprovalModal,
-        showRegisterPoModal,
-        setShowRegisterPoModal,
+        poGroupIdForUpload,
+        setPoGroupIdForUpload,
         showCorrectPoModal,
         setShowCorrectPoModal,
         showReconciliationModal,
@@ -104,6 +104,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         quickSupplierModal,
         setQuickSupplierModal,
         isBuyer,
+        isCreator,
         isAreaApprover,
         isFinalApprover,
         isFinance,
@@ -132,7 +133,8 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         handleAttachmentRefresh,
         loadData,
         navigate,
-        location
+        location,
+        poGroups
     } = useRequestDetail({ id: inputRequestId || undefined, onClose: onDrawerClose });
 
     const isDrawerMode = !!onDrawerClose;
@@ -341,7 +343,9 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     isReceiving={isReceiving}
                     canExecuteOperationalAction={canExecuteOperationalAction}
                     isQuotationPartiallyEditable={isQuotationPartiallyEditable}
-                    setShowRegisterPoModal={setShowRegisterPoModal}
+                    isCopyMode={isCopyMode}
+                    poGroups={poGroups || []}
+                    setPoGroupIdForUpload={setPoGroupIdForUpload}
                     setShowCorrectPoModal={setShowCorrectPoModal}
                     setShowReconciliationModal={setShowReconciliationModal}
                     setShowApprovalModal={setShowApprovalModal}
@@ -434,6 +438,13 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 formatCurrencyAO={formatCurrencyAO}
                 sectionTitleClassName={styles.sectionTitle}
             />
+
+            {/* NOTE: the NotQuotedDecisionPanel (accept/reject a buyer's not-quoted
+                proposal) was removed here. Product decision: closing an item without
+                quotation is now a final Buyer action ("Encerrar sem cotação" in the
+                Buyer workspace, status CLOSED_NOT_QUOTED) — no Requester/Approver
+                acceptance step. Legacy NOT_QUOTED_PROPOSED endpoints/components are
+                kept dormant for old data only. */}
 
             {/* Section: Cotações Salvas */}
             {requestTypeCode === 'QUOTATION' && status !== 'CANCELLED' && status !== 'REJECTED' && (
@@ -638,37 +649,29 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 />
             )}
 
-            {id && (
+            {/* Register PO Modal */}
+            {poGroupIdForUpload && (
                 (() => {
-                    let activeTotalAmount = Number(formData.estimatedTotalAmount) || 0;
-                    let activeSupplierName = supplierName;
-                    let activeCurrencyCode = currencies.find(c => c.id === Number(formData.currencyId))?.code || '';
-                    let activeSupplierId: number | null = formData.supplierId ? Number(formData.supplierId) : null;
-
-                    if (requestTypeCode === 'QUOTATION' && quotations.some(q => q.isSelected)) {
-                       const winner = quotations.find(q => q.isSelected)!;
-                       activeTotalAmount = winner.totalAmount;
-                       activeSupplierName = winner.supplierNameSnapshot;
-                       activeCurrencyCode = winner.currency || activeCurrencyCode;
-                       if (winner.supplierId) activeSupplierId = winner.supplierId;
-                    }
+                    const group = poGroups.find(g => g.id === poGroupIdForUpload);
+                    if (!group) return null;
 
                     return (
                         <RegisterPoModal
-                            show={showRegisterPoModal}
-                            requestId={id}
-                            supplierId={activeSupplierId}
+                            show={!!poGroupIdForUpload}
+                            requestId={id!}
+                            poGroupId={poGroupIdForUpload}
+                            supplierId={group.supplierId}
                             requestData={{
-                                totalAmount: activeTotalAmount,
-                                supplierName: activeSupplierName,
-                                currencyCode: activeCurrencyCode
+                                totalAmount: group.totalAmount,
+                                supplierName: group.supplierNameSnapshot,
+                                currencyCode: group.currencyCode || 'AOA'
                             }}
-                            onClose={() => setShowRegisterPoModal(false)}
+                            onClose={() => setPoGroupIdForUpload(null)}
                             onSuccess={async (msg) => {
-                                setShowRegisterPoModal(false);
+                                setPoGroupIdForUpload(null);
                                 setFeedback({ type: 'success', message: msg });
                                 // Reload state
-                                const data = await api.requests.get(id);
+                                const data = await api.requests.get(id!);
                                 setStatus(data.statusCode);
                                 setStatusFullName(data.statusName);
                                 setStatusBadgeColor(data.statusBadgeColor);
@@ -692,12 +695,18 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
             />
 
             {/* Correct PO Modal — only for WAITING_PO_CORRECTION correction flow (isolated from initial registration) */}
-            <CorrectPoModal
-                show={showCorrectPoModal}
-                requestId={id}
-                onClose={() => setShowCorrectPoModal(false)}
-                onSuccess={async (msg) => {
-                    setShowCorrectPoModal(false);
+            {poGroupIdForUpload && showCorrectPoModal && (
+                <CorrectPoModal
+                    show={showCorrectPoModal}
+                    requestId={id!}
+                    poGroupId={poGroupIdForUpload}
+                    onClose={() => {
+                        setShowCorrectPoModal(false);
+                        setPoGroupIdForUpload(null);
+                    }}
+                    onSuccess={async (msg) => {
+                        setShowCorrectPoModal(false);
+                        setPoGroupIdForUpload(null);
                     setFeedback({ type: 'success', message: msg });
                     const data = await api.requests.get(id);
                     setStatus(data.statusCode);
@@ -707,6 +716,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     setAttachments(data.attachments || []);
                 }}
             />
+            )}
 
             <QuickSupplierModal 
                 isOpen={quickSupplierModal.show}

@@ -8,13 +8,15 @@ export class ApiError extends Error {
     public fieldErrors?: Record<string, string[]>;
     public correlationId?: string;
     public errorCode?: string;
+    public rawText?: string;
 
-    constructor(message: string, status?: number, fieldErrors?: Record<string, string[]>, correlationId?: string, errorCode?: string) {
+    constructor(message: string, status?: number, fieldErrors?: Record<string, string[]>, correlationId?: string, errorCode?: string, rawText?: string) {
         super(message);
         this.status = status;
         this.fieldErrors = fieldErrors;
         this.correlationId = correlationId;
         this.errorCode = errorCode;
+        this.rawText = rawText;
         this.name = 'ApiError';
     }
 }
@@ -53,7 +55,10 @@ async function handleApiError(
         window.location.href = '/login';
     }
 
+    const clonedResponse = response.clone();
     const errJson = await response.json().catch(() => null);
+    const rawText = !errJson ? await clonedResponse.text().catch(() => '') : undefined;
+    
     const correlationId = response.headers.get('X-Correlation-ID') || undefined;
     // ... rest of logic
 
@@ -61,7 +66,7 @@ async function handleApiError(
         logger.log({
             level: 'Error',
             eventType: 'API_REQUEST_FAILED',
-            message: errJson?.detail || errJson?.title || defaultMessage,
+            message: errJson?.detail || errJson?.title || rawText || defaultMessage,
             componentKey,
             endpoint: response.url,
             statusCode: response.status,
@@ -85,6 +90,8 @@ async function handleApiError(
         errorMsg = 'Você não tem permissão para realizar esta ação.';
     } else if (errJson?.detail || errJson?.title || errJson?.message) {
         errorMsg = errJson.detail || errJson.title || errJson.message;
+    } else if (rawText) {
+        errorMsg = rawText;
     }
 
     const apiError = new ApiError(
@@ -92,7 +99,8 @@ async function handleApiError(
         response.status,
         undefined,
         errJson?.correlationId || correlationId,
-        errJson?.errorCode
+        errJson?.errorCode,
+        rawText
     );
     throw apiError;
 }
@@ -183,6 +191,92 @@ export const api = {
         }
     },
     requests: {
+        createApprovalBatch: async (requestId: string, items: { requestLineItemId: string, selectedQuotationItemId: string }[], comment?: string): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/batches`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items, comment })
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao criar lote de aprovação.');
+            return response.json();
+        },
+        cancelApprovalBatch: async (requestId: string, batchId: string, justification: string): Promise<void> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/batches/${batchId}/cancel`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ justification })
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao cancelar lote de aprovação.');
+        },
+        getApprovalBatches: async (requestId: string): Promise<any[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/batches`);
+            if (!response.ok) return handleApiError(response, 'Falha ao buscar lotes de aprovação.');
+            return response.json();
+        },
+        approveBatchArea: async (
+            requestId: string,
+            batchId: string,
+            comment?: string,
+            itemAwards?: Record<string, string>,
+            itemAssignments?: Record<string, { plantId: number | null, costCenterId: number | null }>,
+            budgetJustification?: string,
+            reassignments?: any[],
+            itemAllocations?: Record<string, any[]>,
+            extraItemDecisions?: Record<string, any>
+        ): Promise<{ message: string; statusCode: string }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/batches/${batchId}/area-approval/approve`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment, itemAwards, itemAssignments, budgetJustification, reassignments, itemAllocations, extraItemDecisions }),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao aprovar o lote.');
+            return response.json();
+        },
+        rejectBatchArea: async (requestId: string, batchId: string, comment: string): Promise<{ message: string; statusCode: string }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/batches/${batchId}/area-approval/reject`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment }),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao rejeitar o lote.');
+            return response.json();
+        },
+        requestAdjustmentBatchArea: async (requestId: string, batchId: string, comment: string): Promise<{ message: string; statusCode: string }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/batches/${batchId}/area-approval/request-adjustment`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment }),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao solicitar ajuste no lote.');
+            return response.json();
+        },
+        approveBatchFinal: async (requestId: string, batchId: string, comment?: string): Promise<{ message: string; statusCode: string }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/batches/${batchId}/final-approval/approve`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment }),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao aprovar o lote (Aprovação Final).');
+            return response.json();
+        },
+        rejectBatchFinal: async (requestId: string, batchId: string, comment: string): Promise<{ message: string; statusCode: string }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/batches/${batchId}/final-approval/reject`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment }),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao rejeitar o lote (Aprovação Final).');
+            return response.json();
+        },
+        requestAdjustmentBatchFinal: async (requestId: string, batchId: string, comment: string): Promise<{ message: string; statusCode: string }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/batches/${batchId}/final-approval/request-adjustment`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment }),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao solicitar ajuste no lote (Aprovação Final).');
+            return response.json();
+        },
         validateLine: async (payload: { companyId: number; itemCatalogCode: string; supplierId?: number | null }): Promise<import('../types').PrimaveraRequestValidationResultDto> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/validate-line`, {
                 method: 'POST',
@@ -342,13 +436,31 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao duplicar o pedido.');
             return response.json();
         },
-        approveArea: async (id: string, comment?: string, selectedQuotationId?: string, itemAssignments?: Record<string, { plantId: number | null, costCenterId: number | null }>): Promise<{ message: string; statusCode: string }> => {
+        getBudgetPreview: async (id: string, payload: { itemAwards: Record<string, string>, itemAssignments: Record<string, { plantId: number | null, costCenterId: number | null }>, itemAllocations?: Record<string, any[]>, extraItemDecisions?: Record<string, any> }): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/budget-preview`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar a pré-visualização do orçamento.');
+            return response.json();
+        },
+        approveArea: async (
+            id: string, 
+            comment?: string, 
+            itemAwards?: Record<string, string>, 
+            itemAssignments?: Record<string, { plantId: number | null, costCenterId: number | null }>, 
+            budgetJustification?: string,
+            reassignments?: any[],
+            itemAllocations?: Record<string, any[]>,
+            extraItemDecisions?: Record<string, any>
+        ): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/area-approval/approve`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ comment, selectedQuotationId, itemAssignments }),
+                body: JSON.stringify({ comment, itemAwards, itemAssignments, budgetJustification, reassignments, itemAllocations, extraItemDecisions }),
             });
             if (!response.ok) return handleApiError(response, 'Falha ao aprovar o pedido.');
             return response.json();
@@ -408,7 +520,7 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao solicitar ajuste no pedido (Aprovação Final).');
             return response.json();
         },
-        registerPo: async (id: string, payload: { comment?: string, hasMismatches?: boolean, overrideConfirmed?: boolean, mismatchDetails?: string, paymentConditionCode?: string, advancePaymentPercent?: number, paymentConditionSource?: string }): Promise<{ message: string; statusCode: string }> => {
+        registerPo: async (id: string, payload: { comment?: string, hasMismatches?: boolean, overrideConfirmed?: boolean, mismatchDetails?: string, paymentConditionCode?: string, advancePaymentPercent?: number, paymentConditionSource?: string, poGroupId?: string, purchaseOrderNumber?: string, extractedSupplierName?: string, extractedTotalAmount?: number, extractedCurrencyCode?: string, overrideDuplicateConfirmed?: boolean, duplicateOverrideComment?: string }): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/operational/register-po`, {
                 method: 'POST',
                 headers: { 
@@ -436,6 +548,7 @@ export const api = {
             const text = await response.text();
             return text ? JSON.parse(text) : { message: 'Atribuído com sucesso.', statusCode: 'OK' };
         },
+        /** @deprecated Use FinanceController.SchedulePayment via api.finance.schedulePayment instead. */
         schedulePayment: async (id: string, comment?: string): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/operational/schedule-payment`, {
                 method: 'POST',
@@ -447,6 +560,7 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao agendar pagamento.');
             return response.json();
         },
+        /** @deprecated Use FinanceController.MarkAsPaid via api.finance.markAsPaid instead. */
         completePayment: async (id: string, comment?: string): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/operational/complete-payment`, {
                 method: 'POST',
@@ -458,24 +572,24 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao completar pagamento.');
             return response.json();
         },
-        moveToReceipt: async (id: string, comment?: string): Promise<{ message: string; statusCode: string }> => {
+        moveToReceipt: async (id: string, groupId: string, comment?: string): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/operational/move-to-receipt`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ comment }),
+                body: JSON.stringify({ requestPoGroupId: groupId, comment }),
             });
             if (!response.ok) return handleApiError(response, 'Falha ao mover para aguardando recibo.');
             return response.json();
         },
-        confirmReceiving: async (id: string, comment?: string): Promise<{ message: string; statusCode: string }> => {
+        confirmReceiving: async (id: string, groupId: string, comment?: string): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/operational/confirm-receiving`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ comment }),
+                body: JSON.stringify({ requestPoGroupId: groupId, comment }),
             });
             if (!response.ok) return handleApiError(response, 'Falha ao confirmar recebimento.');
             return response.json();
@@ -493,16 +607,16 @@ export const api = {
         },
 
         // ── Buy-to-Pay (Advance Payment Lifecycle) ──
-        scheduleAdvancePayment: async (id: string, comment?: string): Promise<{ message: string; paymentId: number }> => {
+        scheduleAdvancePayment: async (id: string, payload: { requestPoGroupId: string, scheduledDate: string, comment?: string }): Promise<{ message: string; paymentId: number }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/b2p/schedule-advance`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ comment }),
+                body: JSON.stringify(payload),
             });
             if (!response.ok) return handleApiError(response, 'Falha ao agendar adiantamento.');
             return response.json();
         },
-        confirmAdvancePayment: async (id: string, payload: { actualPaidAmount: number; comment?: string; paymentProofAttachmentId?: string }): Promise<{ message: string; paymentId: number }> => {
+        confirmAdvancePayment: async (id: string, payload: { requestPoGroupId: string; actualPaidAmount: number; paidDate: string; comment?: string; paymentProofAttachmentId?: string }): Promise<{ message: string; paymentId: number }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/b2p/confirm-advance`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -587,6 +701,21 @@ export const api = {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(quotation),
             });
+            // Handle Financial Integrity Gate 409 response
+            if (response.status === 409) {
+                const body = await response.json();
+                if (body?.integrityCheckFailed) {
+                    return {
+                        integrityCheckFailed: true as const,
+                        ocrOriginalTotal: body.ocrOriginalTotal ?? 0,
+                        quotationTotal: body.quotationTotal ?? 0,
+                        varianceAmount: body.varianceAmount ?? 0,
+                        variancePercent: body.variancePercent ?? 0,
+                        toleranceApplied: body.toleranceApplied ?? 0,
+                        detail: body.detail ?? ''
+                    };
+                }
+            }
             if (!response.ok) return handleApiError(response, 'Falha ao salvar cotação.');
             return response.json();
         },
@@ -603,6 +732,42 @@ export const api = {
                 body: JSON.stringify(quotation),
             });
             if (!response.ok) return handleApiError(response, 'Falha ao atualizar cotação.');
+            return response.json();
+        },
+        proposeNotQuoted: async (requestId: string, lineItemId: string, justification: string): Promise<{ message: string; lineItemId: string; status: string }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/line-items/${lineItemId}/not-quoted/propose`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ justification }),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao propor item como não cotado.');
+            return response.json();
+        },
+        acceptNotQuoted: async (requestId: string, lineItemId: string, comment: string): Promise<{ message: string; lineItemId: string; status: string }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/line-items/${lineItemId}/not-quoted/accept`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment }),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao aceitar proposta de item não cotado.');
+            return response.json();
+        },
+        rejectNotQuoted: async (requestId: string, lineItemId: string, comment: string): Promise<{ message: string; lineItemId: string; status: string }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/line-items/${lineItemId}/not-quoted/reject`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment }),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao rejeitar proposta de item não cotado.');
+            return response.json();
+        },
+        closeNotQuoted: async (requestId: string, lineItemId: string, reasonCode: string, justification: string): Promise<{ message: string; lineItemId: string; status: string }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/line-items/${lineItemId}/close-not-quoted`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reasonCode, justification }),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao encerrar item sem cotação.');
             return response.json();
         },
         deleteQuotation: async (requestId: string, quotationId: string): Promise<void> => {
@@ -873,7 +1038,7 @@ export const api = {
              if (!response.ok) return handleApiError(response, 'Falha ao verificar duplicidade de anexo.');
              return response.json();
         },
-        upload: async (requestId: string, files: File[], typeCode: string): Promise<any> => {
+        upload: async (requestId: string, files: File[], typeCode: string, poGroupId?: string): Promise<any> => {
             const formData = new FormData();
             files.forEach(file => {
                 formData.append('files', file);
@@ -881,6 +1046,7 @@ export const api = {
             // We only send the 'files' array to avoid duplication in newer controller versions
             // but the controller still handles the single 'file' field for backward compatibility if needed.
             formData.append('typeCode', typeCode);
+            if (poGroupId) formData.append('poGroupId', poGroupId);
 
             const response = await apiFetch(`${API_BASE_URL}/api/v1/attachments/upload/${requestId}`, {
                 method: 'POST',
@@ -1572,21 +1738,21 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao exportar auditoria.');
             return response.blob();
         },
-        schedulePayment: async (id: string, actionDateUtc?: string, notes?: string): Promise<void> => {
+        schedulePayment: async (id: string, requestPoGroupId: string, scheduledDate: string, comment?: string): Promise<void> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/${id}/schedule`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ actionDateUtc, notes })
+                body: JSON.stringify({ requestPoGroupId, scheduledDate, comment })
             });
             if (!response.ok) return handleApiError(response, 'Falha ao agendar pagamento.');
         },
-        markAsPaid: async (id: string, actionDateUtc?: string, notes?: string, actualPaidAmount?: number): Promise<void> => {
+        markAsPaid: async (id: string, requestPoGroupId: string, paymentProofAttachmentId: string, actualPaidAmount: number, paidDate: string, comment?: string): Promise<void> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/${id}/pay`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ actionDateUtc, notes, actualPaidAmount })
+                body: JSON.stringify({ requestPoGroupId, paymentProofAttachmentId, actualPaidAmount, paidDate, comment })
             });
-            if (!response.ok) return handleApiError(response, 'Falha ao registar pagamento.');
+            if (!response.ok) return handleApiError(response, 'Falha ao confirmar pagamento.');
         },
         addNote: async (id: string, notes: string): Promise<void> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/${id}/note`, {

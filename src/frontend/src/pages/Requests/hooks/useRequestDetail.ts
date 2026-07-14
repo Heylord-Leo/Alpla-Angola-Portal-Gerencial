@@ -72,6 +72,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
     const [attachments, setAttachments] = useState<RequestAttachmentDto[]>([]);
     const [quotations, setQuotations] = useState<SavedQuotationDto[]>([]);
     const [selectedQuotationId, setSelectedQuotationId] = useState<string | null>(null);
+    const [poGroups, setPoGroups] = useState<any[]>([]);
 
     // Master Data
     const [units, setUnits] = useState<LookupDto[]>([]);
@@ -104,9 +105,10 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
     // Modals
     const [showApprovalModal, setShowApprovalModal] = useState<{
         show: boolean,
-        type: ApprovalActionType
+        type: ApprovalActionType,
+        groupId?: string
     }>({ show: false, type: null });
-    const [showRegisterPoModal, setShowRegisterPoModal] = useState(false);
+    const [poGroupIdForUpload, setPoGroupIdForUpload] = useState<string | null>(null);
     const [showCorrectPoModal, setShowCorrectPoModal] = useState(false);
     const [showReconciliationModal, setShowReconciliationModal] = useState(false);
     const [approvalComment, setApprovalComment] = useState('');
@@ -484,6 +486,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 setAttachments(data.attachments || []);
                 setQuotations(data.quotations || []);
                 setSelectedQuotationId(data.selectedQuotationId || null);
+                setPoGroups(data.poGroups || []);
             }
 
 
@@ -750,15 +753,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         }
     };
 
-    const handleRequestAction = async (action: ApprovalActionType) => {        if (action === 'APPROVE' && status === 'WAITING_AREA_APPROVAL' && requestTypeCode === 'QUOTATION') {
-            const selectedQ = quotations.find(q => q.isSelected);
-            if (!selectedQ) {
-                setModalFeedback({ type: 'error', message: 'É necessário selecionar uma cotação vencedora antes de aprovar.' });
-                return;
-            }
-        }
-
-        if (!id) return;
+    const handleRequestAction = async (action: ApprovalActionType) => {        if (!id) return;
 
         const actionRequiresComment = action === 'REJECT' || action === 'REQUEST_ADJUSTMENT' || action === 'CANCEL_REQUEST' || action === 'ITEM_STATUS_CHANGE';
 
@@ -779,11 +774,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         setModalFeedback({ type: 'error', message: null });
 
         // Mandatory Attachment Validations
-        if (action === 'SCHEDULE_PAYMENT' && !hasAttachment('PAYMENT_SCHEDULE')) {
-            setModalFeedback({ type: 'error', message: 'É necessário anexar o Cronograma de Pagamento antes de agendar.' });
-            return;
-        }
-        if ((action === 'COMPLETE_PAYMENT' || action === 'CONFIRM_ADVANCE') && !hasAttachment('PAYMENT_PROOF')) {
+        if (action === 'CONFIRM_ADVANCE' && !hasAttachment('PAYMENT_PROOF')) {
             setModalFeedback({ type: 'error', message: 'É necessário anexar o Comprovante de Pagamento antes de confirmar.' });
             return;
         }
@@ -820,7 +811,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
 
             if (action === 'APPROVE') {
                 result = isAreaApproval
-                    ? await api.requests.approveArea(id, approvalComment, quotations.find(q => q.isSelected)?.id)
+                    ? await api.requests.approveArea(id, approvalComment, undefined)
                     : await api.requests.approveFinal(id, approvalComment);
             } else if (action === 'REJECT') {
                 result = isAreaApproval
@@ -848,19 +839,18 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 await executeDeleteItem();
                 setShowApprovalModal({ show: false, type: null });
                 return;
-            } else if (action === 'SCHEDULE_PAYMENT') {
-                result = await api.requests.schedulePayment(id, approvalComment);
-            } else if (action === 'COMPLETE_PAYMENT') {
-                result = await api.requests.completePayment(id, approvalComment);
             } else if (action === 'SCHEDULE_ADVANCE') {
-                result = await api.requests.scheduleAdvancePayment(id, approvalComment);
+                const groupId = poGroups?.[0]?.id || '';
+                result = await api.requests.scheduleAdvancePayment(id, { requestPoGroupId: groupId, scheduledDate: new Date().toISOString(), comment: approvalComment });
             } else if (action === 'CONFIRM_ADVANCE') {
                 // Pass estimated total as fallback. A dedicated UI can be added later if partial advance amount needs to be specific.
-                result = await api.requests.confirmAdvancePayment(id, { actualPaidAmount: Number(formData.estimatedTotalAmount) || 0, comment: approvalComment });
+                const groupId = poGroups?.[0]?.id || '';
+                result = await api.requests.confirmAdvancePayment(id, { requestPoGroupId: groupId, actualPaidAmount: Number(formData.estimatedTotalAmount) || 0, paidDate: new Date().toISOString(), comment: approvalComment });
             } else if (action === 'CONFIRM_DELIVERY') {
                 result = await api.requests.confirmDelivery(id, approvalComment);
             } else if (action === 'MOVE_TO_RECEIPT') {
-                result = await api.requests.moveToReceipt(id, approvalComment);
+                if (!showApprovalModal.groupId) throw new Error("Grupo P.O. não especificado.");
+                result = await api.requests.moveToReceipt(id, showApprovalModal.groupId, approvalComment);
             } else if (action === 'FINALIZE') {
                 result = await api.requests.finalize(id, approvalComment);
             } else if (action === 'CANCEL_REQUEST') {
@@ -1063,8 +1053,8 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         quotationsSectionRef,
         showApprovalModal,
         setShowApprovalModal,
-        showRegisterPoModal,
-        setShowRegisterPoModal,
+        poGroupIdForUpload,
+        setPoGroupIdForUpload,
         showCorrectPoModal,
         setShowCorrectPoModal,
         showReconciliationModal,
@@ -1077,6 +1067,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         quickSupplierModal,
         setQuickSupplierModal,
         isBuyer,
+        isCreator,
         isAreaApprover,
         isFinalApprover,
         isFinance,
@@ -1110,6 +1101,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         loadData,
         navigate,
         location,
-        searchParams
+        searchParams,
+        poGroups
     };
 }

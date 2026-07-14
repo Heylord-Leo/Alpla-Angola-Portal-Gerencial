@@ -12,6 +12,7 @@ interface FinanceActionModalProps {
     show: boolean;
     action: FinanceActionType;
     isAdvance?: boolean;
+    expectedAmount?: number;
     onClose: () => void;
     onConfirm: (action: FinanceActionType, payload: { date?: string; notes?: string; file?: File | null; amount?: string }) => void;
     processing: boolean;
@@ -23,6 +24,7 @@ export function FinanceActionModal({
     show,
     action,
     isAdvance = false,
+    expectedAmount,
     onClose,
     onConfirm,
     processing,
@@ -45,9 +47,14 @@ export function FinanceActionModal({
             setNotes('');
             setDate('');
             setFile(null);
-            setAmount('');
+            // Pre-fill amount from expectedAmount when opening PAY modal
+            if (action === 'PAY' && expectedAmount && expectedAmount > 0) {
+                setAmount(expectedAmount.toFixed(2));
+            } else {
+                setAmount('');
+            }
         }
-    }, [show]);
+    }, [show, action, expectedAmount]);
 
     if (!show || !action) return null;
 
@@ -245,6 +252,11 @@ export function FinanceActionModal({
                                     placeholder="0,00"
                                     style={inputStyle}
                                 />
+                                {expectedAmount && expectedAmount > 0 && (
+                                    <div style={{ marginTop: '8px', fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
+                                        Valor esperado/agendado: {expectedAmount.toLocaleString('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} AOA
+                                    </div>
+                                )}
                             </div>
                         )}
 

@@ -14,6 +14,7 @@ export interface SearchableDropdownProps<T> {
     searchPlaceholder?: string;
     disabled?: boolean;
     hasError?: boolean;
+    hasWarning?: boolean;
     isUnresolved?: boolean;
     unresolvedMessage?: string;
     className?: string;
@@ -34,6 +35,7 @@ export function SearchableDropdown<T>({
     searchPlaceholder = 'Pesquisar...',
     disabled = false,
     hasError = false,
+    hasWarning = false,
     isUnresolved = false,
     unresolvedMessage = ' (SUGESTÃO OCR - NÃO ENCONTRADO)',
     className,
@@ -131,11 +133,11 @@ export function SearchableDropdown<T>({
     const triggerStyle: React.CSSProperties = {
         width: '100%',
         padding: '12px 14px',
-        border: `1px solid ${hasError ? '#EF4444' : 'var(--color-border)'}`,
-        boxShadow: hasError ? '0 0 0 3px rgba(239,68,68,0.25)' : 'var(--shadow-md)',
+        border: `1px solid ${hasError ? '#EF4444' : hasWarning ? '#d97706' : 'var(--color-border)'}`,
+        boxShadow: hasError ? '0 0 0 3px rgba(239,68,68,0.25)' : hasWarning ? '0 0 0 3px rgba(245,158,11,0.25)' : 'var(--shadow-md)',
         fontSize: '0.875rem',
         color: selectedDisplay ? 'var(--color-text-main)' : 'var(--color-placeholder)',
-        backgroundColor: hasError ? '#FEF2F2' : disabled ? 'var(--color-field-disabled-bg)' : '#ffffff',
+        backgroundColor: hasError ? '#FEF2F2' : hasWarning ? '#fffbeb' : disabled ? 'var(--color-field-disabled-bg)' : '#ffffff',
         cursor: disabled ? 'not-allowed' : 'pointer',
         display: 'flex',
         alignItems: 'center',

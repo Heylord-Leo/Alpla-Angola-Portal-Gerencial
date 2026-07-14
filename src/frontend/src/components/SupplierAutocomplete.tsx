@@ -6,10 +6,11 @@ import { SearchableDropdown } from './common/ui/SearchableDropdown';
 interface SupplierAutocompleteProps {
     initialName?: string;
     initialPortalCode?: string;
-    onChange: (id: number | null, name: string, portalCode?: string) => void;
+    onChange: (id: number | null, name: string, portalCode?: string, primaveraCode?: string, registrationStatus?: string) => void;
     placeholder?: string;
     disabled?: boolean;
     hasError?: boolean;
+    hasWarning?: boolean;
     isUnresolved?: boolean;
     className?: string;
     name?: string;
@@ -25,6 +26,7 @@ export function SupplierAutocomplete({
     placeholder = 'Selecionar fornecedor...',
     disabled = false,
     hasError = false,
+    hasWarning = false,
     isUnresolved = false,
     className,
     name = 'SupplierId'
@@ -43,9 +45,9 @@ export function SupplierAutocomplete({
 
     const handleChange = (item: SupplierSearchDto | null) => {
         if (item) {
-            onChange(item.id, item.name, item.portalCode);
+            onChange(item.id, item.name, item.portalCode, item.primaveraCode, item.registrationStatus);
         } else {
-            onChange(null, '', '');
+            onChange(null, '', '', '', undefined);
         }
     };
 
@@ -102,6 +104,7 @@ export function SupplierAutocomplete({
             searchPlaceholder="Pesquisar por nome ou código..."
             disabled={disabled}
             hasError={hasError}
+            hasWarning={hasWarning}
             isUnresolved={isUnresolved}
             className={className}
             name={name}
