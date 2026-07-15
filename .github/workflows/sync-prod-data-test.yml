@@ -53,6 +53,8 @@ jobs:
       # --- Executar Script de Sincronizacao ---
       - name: Run sync script
         shell: pwsh
+        env:
+          TEST_SQL_ADMIN_CONNECTION_STRING: ${{ secrets.TEST_SQL_ADMIN_CONNECTION_STRING }}
         run: |
           & "${{ github.workspace }}\scripts\db\sync-prod-data-test.ps1" `
             -Environment TEST `

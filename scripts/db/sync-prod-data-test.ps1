@@ -122,6 +122,62 @@ $prodConnStr = Get-APIConnectionString -ApiPath $prodApiPath -EnvName "PROD"
 $testConnStr = Get-APIConnectionString -ApiPath $testApiPath -EnvName "TEST"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 2.5 Obter Connection String Administrativa (GitHub Secret)
+# ─────────────────────────────────────────────────────────────────────────────
+$adminConnStr = $env:TEST_SQL_ADMIN_CONNECTION_STRING
+
+if ([string]::IsNullOrWhiteSpace($adminConnStr)) {
+    throw "TEST_SQL_ADMIN_CONNECTION_STRING nao definida. Configure a secret no environment test antes de executar o workflow."
+}
+
+# Mascarar a connection string administrativa para o log
+$adminMasked = $adminConnStr
+if ($adminMasked -match 'Password=([^;]+)') {
+    $adminMasked = $adminMasked -replace 'Password=[^;]+', 'Password=********'
+}
+if ($adminMasked -match 'pwd=([^;]+)') {
+    $adminMasked = $adminMasked -replace 'pwd=[^;]+', 'pwd=********'
+}
+
+Write-Host "Connection string administrativa encontrada via GitHub Secret TEST_SQL_ADMIN_CONNECTION_STRING." -ForegroundColor Green
+Write-Host "Mascarada: $adminMasked" -ForegroundColor Green
+
+$adminMasterBuilder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder($adminConnStr)
+$adminServer = $adminMasterBuilder.DataSource
+$adminMasterBuilder["Initial Catalog"] = "master"
+$adminMasterConnStr = $adminMasterBuilder.ConnectionString
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2.6 Validar Login e Permissões Administrativas
+# ─────────────────────────────────────────────────────────────────────────────
+$connAdminCheck = New-Object System.Data.SqlClient.SqlConnection($adminMasterConnStr)
+try {
+    $connAdminCheck.Open()
+    $chkCmd = $connAdminCheck.CreateCommand()
+    $chkCmd.CommandText = "SELECT SYSTEM_USER AS SysUser, IS_SRVROLEMEMBER('sysadmin') AS IsSysAdmin, IS_SRVROLEMEMBER('dbcreator') AS IsDbCreator"
+    $reader = $chkCmd.ExecuteReader()
+    $isSysAdmin = 0
+    $isDbCreator = 0
+    $sysUser = "unknown"
+    if ($reader.Read()) {
+        $sysUser = $reader["SysUser"]
+        $isSysAdmin = [int]$reader["IsSysAdmin"]
+        $isDbCreator = [int]$reader["IsDbCreator"]
+    }
+    $reader.Close()
+    $connAdminCheck.Close()
+
+    Write-Host ("Conectando ao banco master com usuario administrativo: {0}" -f $sysUser) -ForegroundColor Green
+    Write-Host ("Permissoes: SysAdmin={0}, DbCreator={1}" -f $isSysAdmin, $isDbCreator) -ForegroundColor Green
+
+    if ($isSysAdmin -eq 0 -and $isDbCreator -eq 0) {
+        throw "VALIDACAO FALHOU: O usuario '$sysUser' nao possui a role 'sysadmin' nem 'dbcreator' no SQL Server. Restore abortado."
+    }
+} catch {
+    throw "ERRO AO CONECTAR COM CREDENCIAIS ADMINISTRATIVAS: $_"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 3. Validações de Segurança de Nomes de Banco nas Connection Strings
 # ─────────────────────────────────────────────────────────────────────────────
 function Get-DatabaseNameFromConnectionString {
@@ -339,14 +395,10 @@ $connProd.Close()
 # ─────────────────────────────────────────────────────────────────────────────
 # 7. Restaurar Backup da PROD sobre o TEST (Conectando ao banco MASTER)
 # ─────────────────────────────────────────────────────────────────────────────
-$builder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder($testConnStr)
-$dbServerLog = $builder.DataSource
-Write-Host ("Criando conexao administrativa ao banco master no servidor: {0}" -f $dbServerLog) -ForegroundColor Green
+Write-Host ("Criando conexao administrativa ao banco master no servidor: {0}" -f $adminServer) -ForegroundColor Green
+Write-Host "Database: master" -ForegroundColor Green
 
-$builder["Initial Catalog"] = "master"
-$masterConnStr = $builder.ConnectionString
-
-$connRestore = New-Object System.Data.SqlClient.SqlConnection($masterConnStr)
+$connRestore = New-Object System.Data.SqlClient.SqlConnection($adminMasterConnStr)
 $connRestore.Open()
 
 # Script SQL Dinamico de Restore
