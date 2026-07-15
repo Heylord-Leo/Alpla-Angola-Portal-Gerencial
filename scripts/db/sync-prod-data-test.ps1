@@ -519,14 +519,14 @@ BEGIN
 END
 
 -- 3. Desativar integracoes com sistemas externos no TEST (Evitar chamadas a PROD)
-IF OBJECT_ID('IntegrationProviderSettings', 'U') IS NOT NULL
+IF OBJECT_ID('IntegrationProviders', 'U') IS NOT NULL
 BEGIN
-    UPDATE IntegrationProviderSettings SET [Value] = 'false' WHERE [Key] LIKE '%Enabled%';
-    PRINT 'Integracoes externas inativadas em IntegrationProviderSettings.';
+    UPDATE IntegrationProviders SET IsEnabled = 0;
+    PRINT 'Integracoes externas inativadas em IntegrationProviders.';
 END
 ELSE
 BEGIN
-    PRINT 'Tabela IntegrationProviderSettings nao encontrada.';
+    PRINT 'Tabela IntegrationProviders nao encontrada.';
 END
 "@
 
