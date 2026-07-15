@@ -147,6 +147,10 @@ $adminServer = $adminMasterBuilder.DataSource
 $adminMasterBuilder["Initial Catalog"] = "master"
 $adminMasterConnStr = $adminMasterBuilder.ConnectionString
 
+$adminTestBuilder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder($adminConnStr)
+$adminTestBuilder["Initial Catalog"] = "Portal-Gerencial-Test"
+$adminTestConnStr = $adminTestBuilder.ConnectionString
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 2.6 Validar Login e Permissões Administrativas
 # ─────────────────────────────────────────────────────────────────────────────
@@ -445,12 +449,36 @@ $rstCmd.CommandText = $restoreSql
 $rstCmd.ExecuteNonQuery() | Out-Null
 $connRestore.Close()
 Write-Host "OK - Banco de dados restaurado com sucesso." -ForegroundColor Green
+# ─────────────────────────────────────────────────────────────────────────────
+# 7.5 Remapear Usuário usr_portalgerencial_test no Banco de Dados TEST
+# ─────────────────────────────────────────────────────────────────────────────
+Write-Host "Mapeando o usuario usr_portalgerencial_test com o login correspondente..." -ForegroundColor Yellow
+$connUserRemap = New-Object System.Data.SqlClient.SqlConnection($adminTestConnStr)
+$connUserRemap.Open()
+
+$remapSql = @"
+IF EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'usr_portalgerencial_test')
+BEGIN
+    ALTER USER [usr_portalgerencial_test] WITH LOGIN = [usr_portalgerencial_test];
+END
+ELSE
+BEGIN
+    CREATE USER [usr_portalgerencial_test] FOR LOGIN [usr_portalgerencial_test];
+END
+ALTER ROLE db_owner ADD MEMBER [usr_portalgerencial_test];
+"@
+
+$remapCmd = $connUserRemap.CreateCommand()
+$remapCmd.CommandText = $remapSql
+$remapCmd.ExecuteNonQuery() | Out-Null
+$connUserRemap.Close()
+Write-Host "OK - Usuario de aplicacao remapeado e permissao db_owner concedida." -ForegroundColor Green
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 8. Neutralização e Ajustes Pós-Restore no TEST (Comandos Condicionais)
+# 8. Neutralização e Ajustes Pós-Restore no TEST (Comandos Condicionais com Conexão Admin)
 # ─────────────────────────────────────────────────────────────────────────────
 Write-Host "Executando comandos de neutralizacao pos-restore no TEST..." -ForegroundColor Yellow
-$connAdjust = New-Object System.Data.SqlClient.SqlConnection($testConnStr)
+$connAdjust = New-Object System.Data.SqlClient.SqlConnection($adminTestConnStr)
 $connAdjust.Open()
 
 $adjustSql = @"
@@ -507,6 +535,25 @@ $adjCmd.CommandText = $adjustSql
 $adjCmd.ExecuteNonQuery() | Out-Null
 $connAdjust.Close()
 Write-Host "OK - Ajustes de seguranca aplicados." -ForegroundColor Green
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8.5 Validar Conectividade da Connection String de TEST normal da aplicação
+# ─────────────────────────────────────────────────────────────────────────────
+Write-Host "Validando conectividade da connection string normal do TEST..." -ForegroundColor Yellow
+try {
+    $connTestVerify = New-Object System.Data.SqlClient.SqlConnection($testConnStr)
+    $connTestVerify.Open()
+    $verifyCmd = $connTestVerify.CreateCommand()
+    $verifyCmd.CommandText = "SELECT SYSTEM_USER AS SysUser, DB_NAME() AS DbName"
+    $readerVerify = $verifyCmd.ExecuteReader()
+    if ($readerVerify.Read()) {
+        Write-Host ("Sucesso - Conectado como: {0} no banco: {1}" -f $readerVerify["SysUser"], $readerVerify["DbName"]) -ForegroundColor Green
+    }
+    $readerVerify.Close()
+    $connTestVerify.Close()
+} catch {
+    throw "ERRO DE CONECTIVIDADE POS-RESTORE: A connection string normal do TEST falhou ao conectar: $_"
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 9. Sincronização de Anexos Físicos (Quando as pastas forem distintas)
