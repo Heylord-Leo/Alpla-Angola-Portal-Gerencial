@@ -84,13 +84,18 @@ jobs:
       - name: Install dotnet-ef tool
         shell: pwsh
         run: |
-          $efCheck = dotnet ef --version 2>&1
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "Installing dotnet-ef global tool..."
-            dotnet tool install --global dotnet-ef
-          } else {
-            Write-Host "dotnet-ef is available: $efCheck"
+          $toolsPath = Join-Path $env:USERPROFILE ".dotnet\tools"
+          $env:PATH = "$toolsPath;$env:PATH"
+          Add-Content -Path $env:GITHUB_PATH -Value $toolsPath
+          
+          Write-Host "Installing/Updating dotnet-ef global tool (v8.0.11)..."
+          dotnet tool update --global dotnet-ef --version 8.0.11
+          
+          $dotnetEf = Join-Path $toolsPath "dotnet-ef.exe"
+          if (-not (Test-Path $dotnetEf)) {
+            throw "dotnet-ef.exe nao encontrado apos instalacao."
           }
+          & $dotnetEf --version
 
       # --- Restore and Build ---
       - name: Restore backend dependencies
