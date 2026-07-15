@@ -201,19 +201,27 @@ $startupProject = Join-Path $RepoRoot "src\backend\AlplaPortal.Api"
 $sqlOutputFile = Join-Path $env:TEMP "apply-migrations-$Environment-$(Get-Date -Format 'yyyyMMdd_HHmmss').sql"
 
 # Ensure dotnet-ef tool is available
-$efToolCheck = dotnet ef --version 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Installing dotnet-ef tool..."
-    dotnet tool install --global dotnet-ef 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "::error::Failed to install dotnet-ef tool."
-        exit 1
-    }
+$toolsPath = Join-Path $env:USERPROFILE ".dotnet\tools"
+$env:PATH = "$toolsPath;$env:PATH"
+if ($env:GITHUB_PATH) {
+    Add-Content -Path $env:GITHUB_PATH -Value $toolsPath
 }
-Write-Host "dotnet ef version: $efToolCheck"
+
+$dotnetEf = Join-Path $toolsPath "dotnet-ef.exe"
+
+# Install/Update global dotnet-ef to a compatible version (8.0.11)
+Write-Host "Installing/Updating dotnet-ef global tool (v8.0.11)..." -ForegroundColor Yellow
+dotnet tool update --global dotnet-ef --version 8.0.11 2>&1
+
+if (-not (Test-Path $dotnetEf)) {
+    throw "dotnet-ef.exe nao encontrado em $dotnetEf apos instalacao."
+}
+
+$efToolCheck = & $dotnetEf --version 2>&1
+Write-Host "dotnet-ef version: $efToolCheck"
 
 # Generate idempotent SQL script (from start, covers all migrations)
-dotnet ef migrations script --idempotent `
+& $dotnetEf migrations script --idempotent `
     --project $infraProject `
     --startup-project $startupProject `
     --output $sqlOutputFile `
@@ -221,7 +229,7 @@ dotnet ef migrations script --idempotent `
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "::warning::dotnet ef script with --no-build failed. Trying with build..."
-    dotnet ef migrations script --idempotent `
+    & $dotnetEf migrations script --idempotent `
         --project $infraProject `
         --startup-project $startupProject `
         --output $sqlOutputFile 2>&1
