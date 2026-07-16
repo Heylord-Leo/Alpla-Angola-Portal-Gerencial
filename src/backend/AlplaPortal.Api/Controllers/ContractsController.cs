@@ -18,14 +18,17 @@ public class ContractsController : BaseController
 {
     private readonly ILogger<ContractsController> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly AlplaPortal.Application.Interfaces.IApprovalRoutingService _approvalRouting;
 
     public ContractsController(
         ApplicationDbContext context,
         ILogger<ContractsController> logger,
-        IServiceScopeFactory scopeFactory) : base(context)
+        IServiceScopeFactory scopeFactory,
+        AlplaPortal.Application.Interfaces.IApprovalRoutingService approvalRouting) : base(context)
     {
         _logger       = logger;
         _scopeFactory = scopeFactory;
+        _approvalRouting = approvalRouting;
     }
 
     // ─── Helpers ───
@@ -649,15 +652,19 @@ public class ContractsController : BaseController
         if (contract.StatusCode != ContractConstants.Statuses.Draft)
             return BadRequest("Apenas contratos em Rascunho podem ser submetidos para aprovação.");
 
-        // Fail-fast: resolve technical approver from department
-        if (!contract.Department.ResponsibleUserId.HasValue)
-            return BadRequest("Nenhum aprovador técnico configurado para o departamento deste contrato. Configure em Dados Mestre antes de submeter.");
+        // Fail-fast: resolve technical approver via DepartmentManagers (Phase C — the
+        // legacy Department.ResponsibleUserId no longer exists). Same strict cascade as
+        // area approval: plant-specific managers of the contract's plant, else global.
+        var techRouting = await _approvalRouting.ResolveAreaManagersAsync(contract.DepartmentId, contract.PlantId);
+        if (!techRouting.HasManagers)
+            return BadRequest("Nenhum responsável de área configurado para o departamento/planta deste contrato. Configure os managers em Dados Mestres → Departamentos antes de submeter.");
 
         // Fail-fast: resolve final approver from company
         if (!contract.Company.FinalApproverUserId.HasValue)
             return BadRequest("Nenhum aprovador final configurado para a empresa deste contrato. Configure em Dados Mestre antes de submeter.");
 
-        contract.TechnicalApproverId = contract.Department.ResponsibleUserId;
+        // Single technical approver slot: deterministic first manager of the resolved level.
+        contract.TechnicalApproverId = techRouting.Managers.First().UserId;
         contract.FinalApproverId = contract.Company.FinalApproverUserId;
         contract.StatusCode = ContractConstants.Statuses.UnderTechnicalReview;
         contract.UpdatedAtUtc = DateTime.UtcNow;

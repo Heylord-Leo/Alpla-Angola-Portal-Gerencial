@@ -25,6 +25,20 @@ public class UserDetailsDto
     public List<int> RoleIds { get; set; } = new();
     public List<int> PlantIds { get; set; } = new();
     public List<int> DepartmentIds { get; set; } = new();
+
+    /// <summary>
+    /// Read-only: area-approval responsibilities derived from DepartmentManagers.
+    /// Managed exclusively in Dados Mestres → Departamentos (Phase C).
+    /// </summary>
+    public List<UserApprovalResponsibilityDto> ApprovalResponsibilities { get; set; } = new();
+}
+
+public class UserApprovalResponsibilityDto
+{
+    public string DepartmentName { get; set; } = string.Empty;
+    /// <summary>Null = manager global (todas as plantas).</summary>
+    public string? PlantName { get; set; }
+    public bool IsActive { get; set; }
 }
 
 public class CreateUserDto

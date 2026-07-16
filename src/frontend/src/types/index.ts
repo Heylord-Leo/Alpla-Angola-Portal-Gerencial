@@ -244,6 +244,8 @@ export interface RequestAttachmentDto {
 
 // Keep details types minimal just to prove routing works later
 export interface RequestDetailsDto extends RequestListItemDto {
+    /** Fase B: nomes dos managers elegíveis enquanto a aprovação de área está pendente e sem decisor. */
+    eligibleAreaManagerNames?: string[] | null;
     description: string;
     lineItems: RequestLineItemDto[];
     attachments: RequestAttachmentDto[];
@@ -343,7 +345,8 @@ export interface LookupDto {
     taxId?: string;
     portalCode?: string;
     primaveraCode?: string;
-    responsibleUserId?: string;
+    /** Departamentos: número de managers de aprovação ativos (Fase C). */
+    managerCount?: number;
 }
 
 export interface SupplierSearchDto {

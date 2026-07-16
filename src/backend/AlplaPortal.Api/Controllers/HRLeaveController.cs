@@ -16,7 +16,7 @@ namespace AlplaPortal.Api.Controllers;
 ///
 /// Authorization model (two concerns):
 /// 1. Feature entitlement: System Administrator, HR role, or Department Manager
-///    (identified via Department.ResponsibleUserId)
+///    (identified via active DepartmentManagers rows — Phase C)
 /// 2. Data scope: filtered by plant scope, department scope, or managed departments
 ///
 /// Department Managers do NOT need the HR role to access leave management
@@ -181,9 +181,10 @@ public class HRLeaveController : ControllerBase
         }
 
         // Department Manager: sees employees they manage or in their managed departments
-        var managedDeptIds = await _context.Departments
-            .Where(d => d.ResponsibleUserId == userId)
-            .Select(d => d.Id)
+        var managedDeptIds = await _context.DepartmentManagers
+            .Where(dm => dm.UserId == userId && dm.IsActive)
+            .Select(dm => dm.DepartmentId)
+            .Distinct()
             .ToListAsync();
 
         if (managedDeptIds.Any())
@@ -241,9 +242,10 @@ public class HRLeaveController : ControllerBase
             return await GetScopedEmployeesQuery();
 
         // Department Manager check — delegate to standard scope
-        var managedDeptIds = await _context.Departments
-            .Where(d => d.ResponsibleUserId == CurrentUserId)
-            .Select(d => d.Id)
+        var managedDeptIds = await _context.DepartmentManagers
+            .Where(dm => dm.UserId == CurrentUserId && dm.IsActive)
+            .Select(dm => dm.DepartmentId)
+            .Distinct()
             .ToListAsync();
         if (managedDeptIds.Any())
             return await GetScopedEmployeesQuery();
@@ -299,8 +301,8 @@ public class HRLeaveController : ControllerBase
         // Local Manager has HR module access (scoped by UserPlantScopes + UserDepartmentScopes)
         if (roles.Contains(RoleConstants.LocalManager)) return true;
 
-        // Department Manager (ResponsibleUser of at least one department)
-        if (await _context.Departments.AnyAsync(d => d.ResponsibleUserId == userId))
+        // Department Manager (active DepartmentManagers row — Phase C: any plant or global)
+        if (await _context.DepartmentManagers.AnyAsync(dm => dm.UserId == userId && dm.IsActive))
             return true;
 
         // Self-calendar: any active user with a matching HREmployee record (by email)
@@ -1224,7 +1226,7 @@ public class HRLeaveController : ControllerBase
             scopeType = "hr";
         else if (roles.Contains(RoleConstants.LocalManager))
             scopeType = "department";
-        else if (await _context.Departments.AnyAsync(d => d.ResponsibleUserId == CurrentUserId))
+        else if (await _context.DepartmentManagers.AnyAsync(dm => dm.UserId == CurrentUserId && dm.IsActive))
             scopeType = "department";
         else
         {
@@ -1331,7 +1333,7 @@ public class HRLeaveController : ControllerBase
             scopeType = "department";
             scopeDescription = "Indicadores limitados ao seu escopo de gestão.";
         }
-        else if (await _context.Departments.AnyAsync(d => d.ResponsibleUserId == CurrentUserId))
+        else if (await _context.DepartmentManagers.AnyAsync(dm => dm.UserId == CurrentUserId && dm.IsActive))
         {
             scopeType = "department";
             scopeDescription = "Indicadores limitados ao seu escopo de gestão.";
@@ -1478,7 +1480,7 @@ public class HRLeaveController : ControllerBase
 
     /// <summary>
     /// Notifies the employee's responsible approver when a leave record reaches SUBMITTED.
-    /// Recipient resolution: HREmployee.ManagerUserId → Department.ResponsibleUserId → skip.
+    /// Recipient resolution: HREmployee.ManagerUserId → department managers (DepartmentManagers) → skip.
     /// Skips self-notification if the submitter is the resolved approver.
     /// </summary>
     private async Task NotifyApproverOnSubmitAsync(Guid leaveRecordId)
@@ -1501,15 +1503,19 @@ public class HRLeaveController : ControllerBase
 
             if (submitHistory == null) return;
 
-            // Resolve approver: ManagerUserId → Department.ResponsibleUserId → skip
+            // Resolve approver: ManagerUserId → department manager (DepartmentManagers) → skip.
+            // Phase C: HR keeps department-level semantics — any active manager of the
+            // department qualifies; global rows (PlantId NULL) are preferred for stability.
             Guid? approverId = record.Employee?.ManagerUserId;
 
             if (!approverId.HasValue && record.Employee?.PortalDepartmentId.HasValue == true)
             {
-                approverId = await _context.Departments
+                approverId = await _context.DepartmentManagers
                     .AsNoTracking()
-                    .Where(d => d.Id == record.Employee.PortalDepartmentId.Value)
-                    .Select(d => d.ResponsibleUserId)
+                    .Where(dm => dm.DepartmentId == record.Employee.PortalDepartmentId.Value
+                              && dm.IsActive && dm.User.IsActive)
+                    .OrderBy(dm => dm.PlantId == null ? 0 : 1).ThenBy(dm => dm.Id)
+                    .Select(dm => (Guid?)dm.UserId)
                     .FirstOrDefaultAsync();
             }
 

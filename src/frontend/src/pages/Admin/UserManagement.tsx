@@ -57,6 +57,7 @@ export default function UserManagement() {
     // Master Data
     const [allRoles, setAllRoles] = useState<any[]>([]);
     const [assignableRoleNames, setAssignableRoleNames] = useState<string[]>([]);
+    const [areaApproverRoleId, setAreaApproverRoleId] = useState<number | null>(null);
     const [allPlants, setAllPlants] = useState<any[]>([]);
     const [allDepts, setAllDepts] = useState<any[]>([]);
 
@@ -112,9 +113,15 @@ export default function UserManagement() {
             
             setAssignableRoleNames(assignableRoles);
 
+            // Fase C: "Area Approver" é derivada de DepartmentManagers — nunca
+            // atribuível manualmente, então nunca aparece como checkbox.
+            const areaApproverRole = roles.find((r: any) => r.roleName === ROLES.AREA_APPROVER);
+            setAreaApproverRoleId(areaApproverRole?.id ?? null);
+            const withoutDerived = roles.filter((r: any) => r.roleName !== ROLES.AREA_APPROVER);
+
             const filteredRoles = isSystemAdmin
-                ? roles
-                : roles.filter((r: any) => assignableRoles.includes(r.roleName));
+                ? withoutDerived
+                : withoutDerived.filter((r: any) => assignableRoles.includes(r.roleName));
 
             // Filter plants and departments for Local Manager scope (Case-insensitive Code match)
             const filteredPlants = isSystemAdmin
@@ -196,7 +203,7 @@ export default function UserManagement() {
                 fullName: userDetails.fullName,
                 email: userDetails.email,
                 isActive: userDetails.isActive,
-                roleIds: userDetails.roleIds,
+                roleIds: userDetails.roleIds.filter((id: number) => id !== areaApproverRoleId),
                 plantIds: userDetails.plantIds,
                 departmentIds: userDetails.departmentIds
             });
@@ -510,6 +517,25 @@ export default function UserManagement() {
                                         ))}
                                     </div>
                                 </section>
+
+                                {/* Fase C: responsabilidades de aprovação derivadas de DepartmentManagers — somente leitura */}
+                                {editingUser && (editingUser as any).approvalResponsibilities?.length > 0 && (
+                                    <section>
+                                        <label style={s.labelSm}>Responsabilidades de Aprovação (derivadas)</label>
+                                        <p style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginBottom: 8, fontWeight: 600, lineHeight: 1.4 }}>
+                                            A role "Aprovador de Área" é concedida automaticamente por estes vínculos.
+                                            Gerido em Dados Mestres → Departamentos (não editável aqui).
+                                        </p>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                            {(editingUser as any).approvalResponsibilities.map((r: any, idx: number) => (
+                                                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid var(--color-border)', fontSize: 11, fontWeight: 700, background: 'var(--color-bg-page)', opacity: r.isActive ? 1 : 0.5 }}>
+                                                    <span>{r.departmentName} — {r.plantName || 'Global'}</span>
+                                                    {!r.isActive && <span style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>(inativo)</span>}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </section>
+                                )}
 
                                 {/* HR Scope Validation Warning */}
                                 {allRoles.some((r: any) => r.roleName === 'HR' && formData.roleIds.includes(r.id)) && 

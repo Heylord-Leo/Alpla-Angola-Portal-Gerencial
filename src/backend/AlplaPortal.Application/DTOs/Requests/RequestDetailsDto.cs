@@ -41,6 +41,14 @@ public class RequestDetailsDto
     public Guid? AreaApproverId { get; set; }
     public string? AreaApproverName { get; set; }
 
+    /// <summary>
+    /// Phase B (DepartmentManager routing): while the request awaits area approval and
+    /// nobody has decided yet (AreaApproverId null), the names of the managers eligible
+    /// to decide — feeds the "Pendente — N responsáveis elegíveis" display.
+    /// Null for other statuses / already-decided requests.
+    /// </summary>
+    public List<string>? EligibleAreaManagerNames { get; set; }
+
     public Guid? FinalApproverId { get; set; }
     public string? FinalApproverName { get; set; }
 

@@ -37,17 +37,19 @@ public class RequestsController : BaseController
     private readonly IPrimaveraRequestValidationService _primaveraValidationService;
     private readonly IGroupBuilderService _groupBuilderService;
     private readonly IRequestStatusSyncService _statusSyncService;
+    private readonly IApprovalRoutingService _approvalRouting;
 
     public RequestsController(
-        ApplicationDbContext context, 
-        IDocumentExtractionService extractionService, 
+        ApplicationDbContext context,
+        IDocumentExtractionService extractionService,
         AdminLogWriter adminLog,
         ILogger<RequestsController> logger,
         INotificationService notificationService,
         IWorkflowNotificationOrchestrator orchestrator,
         IPrimaveraRequestValidationService primaveraValidationService,
         IGroupBuilderService groupBuilderService,
-        IRequestStatusSyncService statusSyncService) : base(context)
+        IRequestStatusSyncService statusSyncService,
+        IApprovalRoutingService approvalRouting) : base(context)
     {
         _extractionService = extractionService;
         _adminLog = adminLog;
@@ -57,6 +59,38 @@ public class RequestsController : BaseController
         _primaveraValidationService = primaveraValidationService;
         _groupBuilderService = groupBuilderService;
         _statusSyncService = statusSyncService;
+        _approvalRouting = approvalRouting;
+    }
+
+    /// <summary>
+    /// Area-approval authorization — DepartmentManager as single source of truth:
+    /// System Administrator, OR active manager of the request's department (plant-specific
+    /// or global — D1), OR the legacy nominee (see <see cref="IsLegacyNamedAreaApprover"/>).
+    /// The manually assigned "Area Approver" role grants nothing by itself.
+    /// </summary>
+    private async Task<bool> CanActAsAreaManagerAsync(Guid actorId, Request request)
+    {
+        if (CurrentUserRoles.Contains(RoleConstants.SystemAdministrator)) return true;
+        if (IsLegacyNamedAreaApprover(request, actorId)) return true;
+        return await _approvalRouting.IsAreaManagerAsync(actorId, request.DepartmentId, request.PlantId);
+    }
+
+    /// <summary>
+    /// Phase C — TEMPORARY compatibility, kept only for requests submitted BEFORE the
+    /// Phase B cut: those were nominated to a single approver via the old
+    /// Department.ResponsibleUserId model. Post-cut requests reach the area stage with
+    /// AreaApproverId == null (the field is only written when someone decides), so no
+    /// new request can ever satisfy this clause. Remove once no in-flight request in
+    /// PRODUCTION matches: WAITING_AREA_APPROVAL/WAITING_COST_CENTER with AreaApproverId
+    /// set (audit query in docs/department-manager-routing-redesign-plan.md §16.1).
+    /// In Development on 16/07/2026 the dependent count was ZERO.
+    /// </summary>
+    private static bool IsLegacyNamedAreaApprover(Request request, Guid actorId)
+    {
+        var statusCode = request.Status?.Code;
+        return request.AreaApproverId == actorId
+            && (statusCode == RequestConstants.Statuses.WaitingAreaApproval
+             || statusCode == RequestConstants.Statuses.WaitingCostCenter);
     }
 
     /// <summary>
@@ -122,7 +156,6 @@ public class RequestsController : BaseController
         var currentUserId = CurrentUserId;
         var roles = CurrentUserRoles;
         var isAdmin = roles.Contains(RoleConstants.SystemAdministrator);
-        var isAreaApprover = roles.Contains(RoleConstants.AreaApprover);
         var isFinalApprover = roles.Contains(RoleConstants.FinalApprover);
         var isBuyer = roles.Contains(RoleConstants.Buyer);
         var isFinance = roles.Contains(RoleConstants.Finance);
@@ -133,7 +166,7 @@ public class RequestsController : BaseController
         // ── My Tasks Criteria (reuses the same logic as GetRequests myTasksCriteria) ──
         Expression<Func<AlplaPortal.Domain.Entities.Request, bool>> myTasksCriteria = r =>
             (r.RequesterId == currentUserId && (r.Status!.Code == RequestConstants.Statuses.Draft || r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment))) ||
-            ((isAreaApprover || r.AreaApproverId == currentUserId) && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
+            ((r.AreaApproverId == currentUserId || _context.DepartmentManagers.Any(dm => dm.UserId == currentUserId && dm.IsActive && dm.DepartmentId == r.DepartmentId && (dm.PlantId == null || (r.PlantId != null && dm.PlantId == r.PlantId)))) && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
             (isFinalApprover && r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval) ||
             (isBuyer && (r.Status!.Code == RequestConstants.Statuses.WaitingQuotation || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Quotation)) && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
             (isFinance && ((r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled)) ||
@@ -473,7 +506,6 @@ public class RequestsController : BaseController
         var userId = CurrentUserId;
         var roles = CurrentUserRoles;
         bool isAdmin = roles.Contains(RoleConstants.SystemAdministrator);
-        bool isAreaApprover = roles.Contains(RoleConstants.AreaApprover);
         bool isFinalApprover = roles.Contains(RoleConstants.FinalApprover);
 
         var query = await GetScopedRequestsQuery();
@@ -483,15 +515,23 @@ public class RequestsController : BaseController
 
         // 1. Logic for Area Approvals
         // Rules: status is WAITING_AREA_APPROVAL or WAITING_COST_CENTER, OR has active WAITING_AREA_APPROVAL batch
-        // Responsibility: User has AreaApprover role, OR r.AreaApproverId matches exactly, OR user is Admin
+        // Responsibility (Phase B — DepartmentManager routing, D1): Admin sees all;
+        // otherwise the user must be an active manager of the request's department
+        // (plant-specific or global), or the legacy nominee on an old in-flight request.
+        // The manually assigned "Area Approver" role no longer grants queue visibility.
         var areaStatuses = new[] { RequestConstants.Statuses.WaitingAreaApproval, RequestConstants.Statuses.WaitingCostCenter };
-        var areaQuery = query.Where(r => 
+        var areaQuery = query.Where(r =>
             areaStatuses.Contains(r.Status!.Code) ||
             r.ApprovalBatches.Any(b => b.Status == RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval)
         );
-        if (!isAdmin && !isAreaApprover)
+        if (!isAdmin)
         {
-            areaQuery = areaQuery.Where(r => r.AreaApproverId == userId);
+            areaQuery = areaQuery.Where(r =>
+                r.AreaApproverId == userId ||
+                _context.DepartmentManagers.Any(dm =>
+                    dm.UserId == userId && dm.IsActive
+                    && dm.DepartmentId == r.DepartmentId
+                    && (dm.PlantId == null || (r.PlantId != null && dm.PlantId == r.PlantId))));
         }
 
         // 2. Logic for Final Approvals
@@ -643,7 +683,6 @@ public class RequestsController : BaseController
         // --- Role based Responsibility Filter ---
         var currentUserId = CurrentUserId;
         var roles = CurrentUserRoles;
-        var isAreaApprover = roles.Contains(RoleConstants.AreaApprover);
         var isFinalApprover = roles.Contains(RoleConstants.FinalApprover);
         var isBuyer = roles.Contains(RoleConstants.Buyer);
         var isFinance = roles.Contains(RoleConstants.Finance);
@@ -655,7 +694,7 @@ public class RequestsController : BaseController
             // Solicitante: Em rascunho, ajuste ou Aprovado (Pagamento - para acompanhamento/vencimento)
             (r.RequesterId == currentUserId && (r.Status!.Code == RequestConstants.Statuses.Draft || r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment))) ||
             // Aprovador de Área (Role ou explicitamente designado)
-            ((isAreaApprover || r.AreaApproverId == currentUserId) && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
+            ((r.AreaApproverId == currentUserId || _context.DepartmentManagers.Any(dm => dm.UserId == currentUserId && dm.IsActive && dm.DepartmentId == r.DepartmentId && (dm.PlantId == null || (r.PlantId != null && dm.PlantId == r.PlantId)))) && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
             // Aprovador Final
             (isFinalApprover && r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval) ||
             // Comprador
@@ -665,7 +704,7 @@ public class RequestsController : BaseController
             (isBuyer && r.RequestType!.Code == RequestConstants.Types.Quotation && !new[] { RequestConstants.Statuses.Cancelled, RequestConstants.Statuses.Rejected, RequestConstants.Statuses.Completed, RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(r.Status!.Code) && r.LineItems.Any(li => !li.IsDeleted && (li.QuotationLifecycleStatus == null || li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.QuotationPending)) && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
             // Solicitante / Aprovador de Área — NOT_QUOTED proposals awaiting decision
             // Shows QUOTATION requests where at least one active item has a pending not-quoted proposal
-            ((r.RequesterId == currentUserId || isAreaApprover) && r.RequestType!.Code == RequestConstants.Types.Quotation && !new[] { RequestConstants.Statuses.Cancelled, RequestConstants.Statuses.Rejected, RequestConstants.Statuses.Completed, RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(r.Status!.Code) && r.LineItems.Any(li => !li.IsDeleted && li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.NotQuotedProposed)) ||
+            ((r.RequesterId == currentUserId || _context.DepartmentManagers.Any(dm => dm.UserId == currentUserId && dm.IsActive && dm.DepartmentId == r.DepartmentId && (dm.PlantId == null || (r.PlantId != null && dm.PlantId == r.PlantId)))) && r.RequestType!.Code == RequestConstants.Types.Quotation && !new[] { RequestConstants.Statuses.Cancelled, RequestConstants.Statuses.Rejected, RequestConstants.Statuses.Completed, RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(r.Status!.Code) && r.LineItems.Any(li => !li.IsDeleted && li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.NotQuotedProposed)) ||
             // Financeiro
             (isFinance && ((r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled || r.Status!.Code == "ADVANCE_PAYMENT_REQUIRED" || r.Status!.Code == "WAITING_RECONCILIATION")) ||
             // Recebimento (Requester ou Role)
@@ -679,13 +718,13 @@ public class RequestsController : BaseController
         {
             query = query.Where(r => !(
                 (r.RequesterId == currentUserId && (r.Status!.Code == RequestConstants.Statuses.Draft || r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment))) ||
-                (isAreaApprover && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
+                ((r.AreaApproverId == currentUserId || _context.DepartmentManagers.Any(dm => dm.UserId == currentUserId && dm.IsActive && dm.DepartmentId == r.DepartmentId && (dm.PlantId == null || (r.PlantId != null && dm.PlantId == r.PlantId)))) && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
                 (isFinalApprover && r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval) ||
                 (isBuyer && (r.Status!.Code == RequestConstants.Statuses.WaitingQuotation || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Quotation) || r.Status!.Code == "WAITING_SUPPLIER_DELIVERY") && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
                 // Comprador — partial quotation: QUOTATION requests with pending line items
                 (isBuyer && r.RequestType!.Code == RequestConstants.Types.Quotation && !new[] { RequestConstants.Statuses.Cancelled, RequestConstants.Statuses.Rejected, RequestConstants.Statuses.Completed, RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(r.Status!.Code) && r.LineItems.Any(li => !li.IsDeleted && (li.QuotationLifecycleStatus == null || li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.QuotationPending)) && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
                 // Solicitante / Aprovador de Área — NOT_QUOTED proposals awaiting decision
-                ((r.RequesterId == currentUserId || isAreaApprover) && r.RequestType!.Code == RequestConstants.Types.Quotation && !new[] { RequestConstants.Statuses.Cancelled, RequestConstants.Statuses.Rejected, RequestConstants.Statuses.Completed, RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(r.Status!.Code) && r.LineItems.Any(li => !li.IsDeleted && li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.NotQuotedProposed)) ||
+                ((r.RequesterId == currentUserId || _context.DepartmentManagers.Any(dm => dm.UserId == currentUserId && dm.IsActive && dm.DepartmentId == r.DepartmentId && (dm.PlantId == null || (r.PlantId != null && dm.PlantId == r.PlantId)))) && r.RequestType!.Code == RequestConstants.Types.Quotation && !new[] { RequestConstants.Statuses.Cancelled, RequestConstants.Statuses.Rejected, RequestConstants.Statuses.Completed, RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(r.Status!.Code) && r.LineItems.Any(li => !li.IsDeleted && li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.NotQuotedProposed)) ||
                 (isFinance && ((r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled || r.Status!.Code == "ADVANCE_PAYMENT_REQUIRED" || r.Status!.Code == "WAITING_RECONCILIATION")) ||
                 ((r.RequesterId == currentUserId || isReceiver) && (receivingCodes.Contains(r.Status!.Code) || r.Status!.Code == "WAITING_SUPPLIER_DELIVERY"))
             ));
@@ -1271,6 +1310,15 @@ public class RequestsController : BaseController
 
         if (request == null) return NotFound();
 
+        // Phase B: pending area approval with nobody decided yet → expose the eligible
+        // managers (DepartmentManager routing) for the "Pendente — N responsáveis
+        // elegíveis" display. Legacy nominated requests keep showing AreaApproverName.
+        if (request.StatusCode == "WAITING_AREA_APPROVAL" && request.AreaApproverId == null)
+        {
+            var eligibleRouting = await _approvalRouting.ResolveAreaManagersAsync(request.DepartmentId, request.PlantId);
+            request.EligibleAreaManagerNames = eligibleRouting.Managers.Select(m => m.FullName).ToList();
+        }
+
         // Enrich not-quoted proposer display name — NotQuotedProposedByUserId has no
         // EF navigation property, so it isn't available inside the projection above.
         var notQuotedProposers = await _context.RequestLineItems
@@ -1491,9 +1539,10 @@ public class RequestsController : BaseController
             CapexOpexClassificationId = null, // Not copied: downstream process data
             NeedByDateUtc = null, // Must be explicitly re-entered for the new request
             
-            // Participants SHOULD remain copied as they represent the same business structure
+            // Participants SHOULD remain copied as they represent the same business structure.
+            // (Phase B: AreaApproverId is not copied — it is decided-by audit, resolved
+            // via DepartmentManagers on the new request.)
             BuyerId = request.BuyerId,
-            AreaApproverId = request.AreaApproverId,
             FinalApproverId = request.FinalApproverId,
 
             LineItems = new List<RequestLineItemDto>(), // Only header is copied at creation stage
@@ -1821,8 +1870,10 @@ public class RequestsController : BaseController
             
             SupplierId = dto.SupplierId,
             BuyerId = dto.BuyerId, // Let it be null
-            AreaApproverId = department?.ResponsibleUserId, // Auto-resolved
-            FinalApproverId = company?.FinalApproverUserId, // Auto-resolved
+            // Phase B: AreaApproverId is no longer nominated — it stays null until an
+            // area manager actually decides (routing via DepartmentManagers at submit).
+            AreaApproverId = null,
+            FinalApproverId = company?.FinalApproverUserId, // Auto-resolved (final approval unchanged)
             
             StatusId = initialStatus.Id,
             RequesterId = actorId,
@@ -2180,10 +2231,11 @@ public class RequestsController : BaseController
         // --- Restricted Fields in Quotation Stage ---
         if (isQuotationStage)
         {
-            // Block structural workflow changes
-            if (request.RequestTypeId != dto.RequestTypeId || 
-                request.BuyerId != dto.BuyerId || 
-                request.AreaApproverId != dto.AreaApproverId || 
+            // Block structural workflow changes.
+            // (Phase B: AreaApproverId is decided-by audit, not a form participant —
+            // removed from this comparison; the DTO no longer carries it.)
+            if (request.RequestTypeId != dto.RequestTypeId ||
+                request.BuyerId != dto.BuyerId ||
                 request.FinalApproverId != dto.FinalApproverId ||
                 request.PlantId != dto.PlantId ||
                 request.CompanyId != dto.CompanyId)
@@ -2202,13 +2254,9 @@ public class RequestsController : BaseController
             if (request.RequestTypeId != dto.RequestTypeId) { request.RequestTypeId = dto.RequestTypeId; changedFields.Add("Tipo de Pedido"); changed = true; }
             if (request.BuyerId != dto.BuyerId) { request.BuyerId = dto.BuyerId; changedFields.Add("Comprador"); changed = true; }
             
-            // Auto-resolve AreaApprover if Department changed
-            if (request.DepartmentId != dto.DepartmentId)
-            {
-                var newDept = await _context.Departments.FirstOrDefaultAsync(d => d.Id == dto.DepartmentId);
-                request.AreaApproverId = newDept?.ResponsibleUserId;
-            }
-            
+            // Phase B: changing the department no longer nominates an AreaApprover —
+            // routing is resolved from DepartmentManagers at submit/decision time.
+
             // Auto-resolve FinalApprover if Company changed
             if (request.CompanyId != dto.CompanyId)
             {
@@ -2359,12 +2407,33 @@ public class RequestsController : BaseController
         // 2. Perform Submission Validation
         var errors = new List<string>();
 
-        // Resolving workflow actors from master-data
-        if (request.Department != null && request.Department.ResponsibleUserId.HasValue)
+        // Phase B — area routing via DepartmentManagers (single source of truth).
+        // The request is NOT nominated to a single approver anymore: AreaApproverId
+        // stays null until a manager actually decides. Submission requires at least
+        // one resolvable manager for (department, plant); Department.ResponsibleUserId
+        // is no longer consulted.
+        var areaRouting = await _approvalRouting.ResolveAreaManagersAsync(request.DepartmentId, request.PlantId);
+        if (!areaRouting.HasManagers)
         {
-            request.AreaApproverId = request.Department.ResponsibleUserId;
-        }
+            var deptName = request.Department?.Name ?? request.DepartmentId.ToString();
+            var plantName = request.PlantId.HasValue
+                ? (await _context.Plants.AsNoTracking().Where(p => p.Id == request.PlantId.Value).Select(p => p.Name).FirstOrDefaultAsync()) ?? request.PlantId.Value.ToString()
+                : "—";
 
+            await _adminLog.WriteAsync("Error", "RequestsController", "APPROVAL_ROUTING_NO_MANAGER",
+                $"Submissão bloqueada: nenhum responsável de aprovação configurado para o departamento {deptName} (planta {plantName}).",
+                payload: $"RequestId: {request.Id}. DepartmentId: {request.DepartmentId}. PlantId: {request.PlantId?.ToString() ?? "null"}. Ator: {actorId}.");
+
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Erro de Validação",
+                Detail = $"Não existe responsável de aprovação configurado para o departamento {deptName} na planta {plantName}. Configure os managers em Dados Mestres → Departamentos.",
+                Status = 400
+            });
+        }
+        request.AreaApproverId = null; // decided-by semantics: filled only when a manager acts
+
+        // Final approval unchanged (out of Phase B scope).
         if (request.Company != null && request.Company.FinalApproverUserId.HasValue)
         {
             request.FinalApproverId = request.Company.FinalApproverUserId;
@@ -2377,13 +2446,9 @@ public class RequestsController : BaseController
             errors.Add("A descrição do pedido é obrigatória.");
         if (request.DepartmentId == 0)
             errors.Add("O departamento é obrigatório.");
-            
+
         // BuyerId validation removed (now allows unassigned requests)
-        
-        // Ensure structural rules are enforced AFTER resolution
-        if (request.AreaApproverId == null || request.AreaApproverId == Guid.Empty)
-            errors.Add("Não foi possível determinar o Aprovador de Área. Verifique se o Departamento selecionado tem um responsável definido no cadastro.");
-            
+
         if (request.FinalApproverId == null || request.FinalApproverId == Guid.Empty)
             errors.Add("Não foi possível determinar o Aprovador Final. Verifique se a Empresa correspondente possui um aprovador final definido no cadastro.");
 
@@ -4802,10 +4867,6 @@ public class RequestsController : BaseController
     {
         var actorId = CurrentUserId;
 
-        // Role-based Authorization: strictly enforce Area Approver role
-        if (!CurrentUserRoles.Contains(RoleConstants.AreaApprover))
-            return StatusCode(403, "Apenas o papel de Aprovador de Área pode realizar aprovações nesta etapa.");
-
         var request = await _context.Requests
             .Include(r => r.RequestType)
             .Include(r => r.Status)
@@ -4814,6 +4875,29 @@ public class RequestsController : BaseController
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (request == null) return NotFound();
+
+        // Phase B authorization — DepartmentManager is the source of truth (D1):
+        // admin, manager of the request's department/plant (specific or global), or the
+        // legacy nominee on an old in-flight request. The manual role grants nothing.
+        if (!await CanActAsAreaManagerAsync(actorId, request))
+            return StatusCode(403, "Você não é responsável pelo departamento/planta deste pedido.");
+
+        // Concurrency between multiple eligible managers: if another manager already
+        // decided (status moved past area approval), answer 409 with the decider's name.
+        if (request.Status!.Code != "WAITING_AREA_APPROVAL" && request.AreaApproverId != null
+            && (request.Status.Code == "WAITING_FINAL_APPROVAL" || request.Status.Code == "REJECTED" || request.Status.Code == "AREA_ADJUSTMENT"))
+        {
+            var deciderName = await _context.Users.AsNoTracking()
+                .Where(u => u.Id == request.AreaApproverId)
+                .Select(u => u.FullName)
+                .FirstOrDefaultAsync() ?? "outro aprovador";
+            return Conflict(new ProblemDetails
+            {
+                Title = "Pedido Já Decidido",
+                Detail = $"Este pedido já foi decidido por {deciderName}.",
+                Status = 409
+            });
+        }
 
         // Winner Selection Validation (only for Quotation Approve)
         if (request.RequestType!.Code == "QUOTATION" && action == "APPROVE")
@@ -5162,6 +5246,10 @@ public class RequestsController : BaseController
             "REQUEST_ADJUSTMENT" => "Pedido devolvido para reajuste com sucesso.",
             _ => "Operação realizada com sucesso."
         };
+
+        // Phase B — decided-by semantics: AreaApproverId records who actually took the
+        // area decision. Written only after authorization and status checks passed.
+        request.AreaApproverId = actorId;
 
         var result = await ApplyStatusChangeAndSyncItemsAsync(request, targetStatusCode, action, historyComment, successMessage, actorId, overrideEventCode);
 
@@ -6497,13 +6585,14 @@ public class RequestsController : BaseController
 
         if (request == null) return NotFound(new ProblemDetails { Title = "Pedido não encontrado.", Status = 404 });
 
-        // Role check: Only Area Approver can select a winner (Final Approver can only review)
-        if (!CurrentUserRoles.Contains(RoleConstants.AreaApprover))
+        // Phase B: winner selection is part of the area review — requires area-manager
+        // titularity for this request's department/plant (or admin / legacy nominee).
+        if (!await CanActAsAreaManagerAsync(actorId, request))
         {
             if (CurrentUserRoles.Contains(RoleConstants.FinalApprover))
                 return StatusCode(403, "O Aprovador Final não pode alterar o vencedor selecionado pela área.");
-            
-            return StatusCode(403, "Apenas o papel de Aprovação de Área pode selecionar a cotação vencedora.");
+
+            return StatusCode(403, "Você não é responsável pelo departamento/planta deste pedido.");
         }
 
         // Status Rule: Only WAITING_AREA_APPROVAL allows winning selection
@@ -7176,20 +7265,11 @@ public class RequestsController : BaseController
         if (request.RequestType?.Code != RequestConstants.Types.Quotation)
             return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Esta ação é permitida apenas para pedidos de Cotação.", Status = 400 });
 
-        // 3. Authorization: Requester OR scoped AreaApprover
+        // 3. Authorization (Phase B): Requester OR area manager of this request's
+        // department/plant (DepartmentManager routing — the manual role grants nothing).
         var isRequester = request.RequesterId == actorId;
-        var isAreaApprover = CurrentUserRoles.Contains(RoleConstants.AreaApprover);
-
-        if (!isRequester && !isAreaApprover)
-            return StatusCode(403, new ProblemDetails { Title = "Acesso Negado", Detail = "Apenas o solicitante ou o aprovador de área podem aceitar propostas de item não cotado.", Status = 403 });
-
-        // Scoped AreaApprover must have plant/department scope
-        if (!isRequester && isAreaApprover)
-        {
-            var scopedQuery = await GetScopedRequestsQuery();
-            if (!await scopedQuery.AnyAsync(r => r.Id == requestId))
-                return StatusCode(403, new ProblemDetails { Title = "Acesso Negado", Detail = "Você não tem escopo de acesso para este pedido.", Status = 403 });
-        }
+        if (!isRequester && !await CanActAsAreaManagerAsync(actorId, request))
+            return StatusCode(403, new ProblemDetails { Title = "Acesso Negado", Detail = "Apenas o solicitante ou o responsável de área do departamento/planta podem aceitar propostas de item não cotado.", Status = 403 });
 
         // 4. Find the line item
         var lineItem = request.LineItems.FirstOrDefault(li => li.Id == lineItemId && !li.IsDeleted);
@@ -7312,20 +7392,11 @@ public class RequestsController : BaseController
         if (request.RequestType?.Code != RequestConstants.Types.Quotation)
             return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Esta ação é permitida apenas para pedidos de Cotação.", Status = 400 });
 
-        // 3. Authorization: Requester OR scoped AreaApprover
+        // 3. Authorization (Phase B): Requester OR area manager of this request's
+        // department/plant (DepartmentManager routing — the manual role grants nothing).
         var isRequester = request.RequesterId == actorId;
-        var isAreaApprover = CurrentUserRoles.Contains(RoleConstants.AreaApprover);
-
-        if (!isRequester && !isAreaApprover)
-            return StatusCode(403, new ProblemDetails { Title = "Acesso Negado", Detail = "Apenas o solicitante ou o aprovador de área podem rejeitar propostas de item não cotado.", Status = 403 });
-
-        // Scoped AreaApprover must have plant/department scope
-        if (!isRequester && isAreaApprover)
-        {
-            var scopedQuery = await GetScopedRequestsQuery();
-            if (!await scopedQuery.AnyAsync(r => r.Id == requestId))
-                return StatusCode(403, new ProblemDetails { Title = "Acesso Negado", Detail = "Você não tem escopo de acesso para este pedido.", Status = 403 });
-        }
+        if (!isRequester && !await CanActAsAreaManagerAsync(actorId, request))
+            return StatusCode(403, new ProblemDetails { Title = "Acesso Negado", Detail = "Apenas o solicitante ou o responsável de área do departamento/planta podem rejeitar propostas de item não cotado.", Status = 403 });
 
         // 4. Find the line item
         var lineItem = request.LineItems.FirstOrDefault(li => li.Id == lineItemId && !li.IsDeleted);

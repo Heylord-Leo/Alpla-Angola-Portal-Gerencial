@@ -4,6 +4,7 @@ using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AlplaPortal.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260715210124_AddDepartmentManagers")]
+    partial class AddDepartmentManagers
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1330,7 +1333,12 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<Guid?>("ResponsibleUserId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("ResponsibleUserId");
 
                     b.ToTable("Departments");
 
@@ -7383,6 +7391,16 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Plant");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.Department", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.User", "ResponsibleUser")
+                        .WithMany()
+                        .HasForeignKey("ResponsibleUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("ResponsibleUser");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.DepartmentManager", b =>

@@ -336,7 +336,14 @@ export const WizardStepOverview: React.FC<WizardStepOverviewProps> = ({ request,
                         {[
                             { label: 'Solicitante', value: request.requesterName },
                             { label: 'Comprador', value: request.buyerName || '—' },
-                            { label: 'Aprovador de Área', value: request.areaApproverName || '—' },
+                            {
+                                // Fase B: antes da decisão mostra os managers elegíveis; depois, o decisor real.
+                                label: 'Aprovador de Área',
+                                value: request.areaApproverName
+                                    || (request.eligibleAreaManagerNames && request.eligibleAreaManagerNames.length > 0
+                                        ? `Pendente — ${request.eligibleAreaManagerNames.length} responsáve${request.eligibleAreaManagerNames.length > 1 ? 'is' : 'l'}: ${request.eligibleAreaManagerNames.join(', ')}`
+                                        : '—')
+                            },
                             { label: 'Aprovador Final', value: request.finalApproverName || '—' },
                         ].map((p, idx) => (
                             <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>

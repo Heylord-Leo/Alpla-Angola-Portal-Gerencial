@@ -237,9 +237,10 @@ public class HRScheduleController : ControllerBase
             return query;
         }
 
-        var managedDeptIds = await _context.Departments
-            .Where(d => d.ResponsibleUserId == userId)
-            .Select(d => d.Id)
+        var managedDeptIds = await _context.DepartmentManagers
+            .Where(dm => dm.UserId == userId && dm.IsActive)
+            .Select(dm => dm.DepartmentId)
+            .Distinct()
             .ToListAsync();
 
         if (managedDeptIds.Any())
@@ -271,7 +272,7 @@ public class HRScheduleController : ControllerBase
         if (roles.Contains(RoleConstants.LocalManager))
             return "department";
         var userId = CurrentUserId;
-        var managesDepts = _context.Departments.Any(d => d.ResponsibleUserId == userId);
+        var managesDepts = _context.DepartmentManagers.Any(dm => dm.UserId == userId && dm.IsActive);
         if (managesDepts)
             return "department";
         return "self";

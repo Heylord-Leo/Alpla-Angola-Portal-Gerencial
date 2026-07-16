@@ -15,10 +15,13 @@ namespace AlplaPortal.Api.Controllers;
 public class LineItemsController : BaseController
 {
     private readonly ILogger<LineItemsController> _logger;
+    private readonly AlplaPortal.Application.Interfaces.IApprovalRoutingService _approvalRouting;
 
-    public LineItemsController(ApplicationDbContext context, ILogger<LineItemsController> logger) : base(context)
+    public LineItemsController(ApplicationDbContext context, ILogger<LineItemsController> logger,
+        AlplaPortal.Application.Interfaces.IApprovalRoutingService approvalRouting) : base(context)
     {
         _logger = logger;
+        _approvalRouting = approvalRouting;
     }
 
     [HttpGet]
@@ -643,11 +646,18 @@ public class LineItemsController : BaseController
     [HttpPatch("{id}/cost-center")]
     public async Task<IActionResult> UpdateCostCenter(Guid id, [FromBody] UpdateLineItemCostCenterDto dto)
     {
-        if (!CurrentUserRoles.Contains(RoleConstants.AreaApprover)) 
-            return StatusCode(403, "Centro de Custo só pode ser editado pelo Aprovador de Área.");
-
-        var item = await _context.RequestLineItems.FindAsync(id);
+        var item = await _context.RequestLineItems.Include(li => li.Request).FirstOrDefaultAsync(li => li.Id == id);
         if (item == null) return NotFound();
+
+        // Phase B: cost-center assignment is an area-review action — requires manager
+        // titularity for the request's department/plant (DepartmentManager routing),
+        // admin, or the legacy nominee. The manual role grants nothing.
+        var costCenterActorId = CurrentUserId;
+        var isAuthorized = CurrentUserRoles.Contains(RoleConstants.SystemAdministrator)
+            || item.Request!.AreaApproverId == costCenterActorId
+            || await _approvalRouting.IsAreaManagerAsync(costCenterActorId, item.Request!.DepartmentId, item.Request!.PlantId);
+        if (!isAuthorized)
+            return StatusCode(403, "Você não é responsável pelo departamento/planta deste pedido.");
 
         if (dto.CostCenterId.HasValue)
         {

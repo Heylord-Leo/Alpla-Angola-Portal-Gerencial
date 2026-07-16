@@ -1186,6 +1186,29 @@ export const api = {
             const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/departments/${id}/toggle-active`, { method: 'PUT' });
             if (!res.ok) return handleApiError(res, 'Falha ao alternar estado do departamento.');
         },
+        // Department Managers (aprovação de área por departamento + planta — Fase A)
+        getDepartmentManagers: async (departmentId: number): Promise<any[]> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/departments/${departmentId}/managers`);
+            if (!res.ok) return handleApiError(res, 'Falha ao carregar managers do departamento.');
+            return res.json();
+        },
+        addDepartmentManager: async (departmentId: number, data: { userId: string; plantId: number | null }): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/departments/${departmentId}/managers`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao adicionar manager.');
+            return res.json();
+        },
+        toggleDepartmentManager: async (departmentId: number, managerId: number): Promise<void> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/departments/${departmentId}/managers/${managerId}/toggle-active`, { method: 'PUT' });
+            if (!res.ok) return handleApiError(res, 'Falha ao alternar estado do manager.');
+        },
+        removeDepartmentManager: async (departmentId: number, managerId: number): Promise<void> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/departments/${departmentId}/managers/${managerId}`, { method: 'DELETE' });
+            if (!res.ok) return handleApiError(res, 'Falha ao remover manager.');
+        },
         getPlants: async (companyId?: number, includeInactive = false): Promise<any[]> => {
             const params = new URLSearchParams();
             if (companyId) params.append('companyId', companyId.toString());

@@ -535,13 +535,8 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
             setIvaRates(ivaData);
 
 
-            if (form.departmentId && !form.areaApproverId) {
-                const dept = dData.find(d => d.id === Number(form.departmentId));
-                if (dept && dept.responsibleUserId) {
-                    form.areaApproverId = dept.responsibleUserId;
-                }
-            }
-
+            // (Fase B: o aprovador de área não é mais pré-nomeado a partir do
+            // responsável do departamento — roteamento via DepartmentManagers.)
             setFormData(form);
             setInitialFormData(form);
         } catch (err: any) {
@@ -575,14 +570,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         setFormData(prev => {
             const next = { ...prev, [name]: value };
 
-            // Auto-fill Area Approver from Department - DEC-082
-            if (name === 'departmentId' && value) {
-                const dept = departments.find(d => d.id === Number(value));
-                if (dept && dept.responsibleUserId) {
-                    next.areaApproverId = dept.responsibleUserId;
-                }
-            }
-
+            // (Fase B: trocar o departamento não pré-nomeia aprovador de área.)
             return next;
         });
         clearFieldError(name);
@@ -667,7 +655,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 ? new Date(formData.needByDateUtc).toISOString() 
                 : null,
             buyerId: formData.buyerId || null,
-            areaApproverId: formData.areaApproverId || null,
+            // areaApproverId removido (Fase B): o backend resolve o roteamento de área
             finalApproverId: formData.finalApproverId || null
         };
 

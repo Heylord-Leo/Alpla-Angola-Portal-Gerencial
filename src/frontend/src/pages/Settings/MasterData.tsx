@@ -10,6 +10,7 @@ import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { CatalogItemsPanel } from './CatalogItemsPanel';
 import { ApNotificationsPanel } from './ApNotificationsPanel';
+import { DepartmentManagersGrid } from './DepartmentManagersGrid';
 
 function debounce<T extends (...args: any[]) => void>(fn: T, delay: number) {
     let timeoutId: number | undefined;
@@ -55,7 +56,6 @@ export function MasterData() {
         portalCode: '',
         primaveraCode: '',
         companyId: 0,
-        responsibleUserId: '',
         finalApproverUserId: '',
         ratePercent: 0
     });
@@ -163,7 +163,6 @@ export function MasterData() {
             primaveraCode: item.primaveraCode || '',
             // Plants use companyId; CostCenters reuse companyId to carry plantId
             companyId: type === 'costCenter' ? (item.plantId || 0) : (item.companyId || 0),
-            responsibleUserId: item.responsibleUserId || '',
             finalApproverUserId: item.finalApproverUserId || '',
             ratePercent: item.ratePercent || 0
         });
@@ -183,7 +182,7 @@ export function MasterData() {
 
         setEditMode({ type: defaultType, id: null });
         setValidationErrors({});
-        setFormData({ code: '', name: '', symbol: '', allowsDecimalQuantity: false, taxId: '', portalCode: '', primaveraCode: '', companyId: 0, responsibleUserId: '', finalApproverUserId: '', ratePercent: 0 });
+        setFormData({ code: '', name: '', symbol: '', allowsDecimalQuantity: false, taxId: '', portalCode: '', primaveraCode: '', companyId: 0, finalApproverUserId: '', ratePercent: 0 });
     };
 
     const handleSave = async (e: React.FormEvent) => {
@@ -215,7 +214,7 @@ export function MasterData() {
                     await api.lookups.createNeedLevel({ code: formData.code, name: formData.name });
                 }
             } else if (activeTab === 'departments') {
-                const deptPayload = { code: formData.code, name: formData.name, responsibleUserId: formData.responsibleUserId || null as any };
+                const deptPayload = { code: formData.code, name: formData.name };
                 if (editMode.id) {
                     await api.lookups.updateDepartment(editMode.id, deptPayload);
                 } else {
@@ -644,26 +643,19 @@ export function MasterData() {
 
                         {activeTab === 'departments' && (
                             <div>
-                                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-main)', textTransform: 'uppercase', marginBottom: '6px' }}>Responsável (Aprovador de Área)</label>
-                                <select
-                                    style={{
-                                        width: '100%',
-                                        padding: '12px',
-                                        backgroundColor: 'white',
-                                        border: '2px solid var(--color-border)',
-                                        fontSize: '0.85rem',
-                                        fontWeight: 600,
-                                        outline: 'none'
-                                    }}
-                                    value={formData.responsibleUserId}
-                                    onChange={e => setFormData({ ...formData, responsibleUserId: e.target.value })}
-                                >
-                                    <option value="">Selecione o Responsável...</option>
-                                    {users.filter(u => u.roles?.includes(ROLES.AREA_APPROVER)).map(u => (
-                                        <option key={u.id} value={u.id}>{u.fullName}</option>
-                                    ))}
-                                </select>
-                                <p style={{ marginTop: '4px', fontSize: '0.65rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>Este usuário será auto-preenchido como "Aprovador de Área" nos pedidos criados para este departamento.</p>
+                                {editMode.id != null && (
+                                    <DepartmentManagersGrid
+                                        departmentId={editMode.id}
+                                        departmentCode={formData.code}
+                                        plants={plants}
+                                        users={users}
+                                    />
+                                )}
+                                {editMode.id == null && (
+                                    <p style={{ marginTop: '12px', fontSize: '0.65rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                                        Salve o departamento primeiro para cadastrar os managers de aprovação por planta.
+                                    </p>
+                                )}
                             </div>
                         )}
 
@@ -784,7 +776,7 @@ export function MasterData() {
                                     <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>% Taxa</th>
                                 )}
                                 {activeTab === 'departments' && (
-                                    <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Responsável</th>
+                                    <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Managers de Aprovação</th>
                                 )}
                                 {activeTab === 'companies' && (
                                     <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Aprovador Final</th>
@@ -884,7 +876,7 @@ export function MasterData() {
                                     <td style={{ padding: '16px', fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-primary)' }}>{d.code}</td>
                                     <td style={{ padding: '16px', fontSize: '0.85rem', fontWeight: 600 }}>{d.name}</td>
                                     <td style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-                                        {users.find(u => u.id === d.responsibleUserId)?.fullName || '-'}
+                                        {(d as any).managerCount > 0 ? `${(d as any).managerCount} manager${(d as any).managerCount > 1 ? 's' : ''}` : '—'}
                                     </td>
                                     <td style={{ padding: '16px', fontSize: '0.8rem' }}>
                                         <span className={`badge ${d.isActive ? 'badge-success' : 'badge-neutral'}`}>

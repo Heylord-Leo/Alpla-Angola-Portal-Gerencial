@@ -141,6 +141,46 @@ public class UserRoleAssignmentConfiguration : IEntityTypeConfiguration<UserRole
         builder.HasKey(ura => new { ura.UserId, ura.RoleId });
     }
 }
+
+public class DepartmentManagerConfiguration : IEntityTypeConfiguration<DepartmentManager>
+{
+    public void Configure(EntityTypeBuilder<DepartmentManager> builder)
+    {
+        builder.HasKey(dm => dm.Id);
+
+        // Same user may manage several plants of a department (and be global besides),
+        // but never the same (department, plant) twice. SQL Server unique indexes only
+        // treat NULL as a duplicate-able value with a filter, so global rows (PlantId
+        // NULL) get their own filtered unique index.
+        builder.HasIndex(dm => new { dm.DepartmentId, dm.PlantId, dm.UserId })
+            .IsUnique()
+            .HasFilter("[PlantId] IS NOT NULL");
+        builder.HasIndex(dm => new { dm.DepartmentId, dm.UserId })
+            .IsUnique()
+            .HasFilter("[PlantId] IS NULL")
+            .HasDatabaseName("IX_DepartmentManagers_DepartmentId_UserId_Global");
+
+        // Hot paths: resolution/queue by (department, plant) and inverse lookup by user.
+        builder.HasIndex(dm => new { dm.DepartmentId, dm.PlantId, dm.IsActive });
+        builder.HasIndex(dm => new { dm.UserId, dm.IsActive });
+
+        // Users/departments/plants are deactivated, never deleted — block cascade.
+        builder.HasOne(dm => dm.Department)
+            .WithMany(d => d.Managers)
+            .HasForeignKey(dm => dm.DepartmentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(dm => dm.Plant)
+            .WithMany()
+            .HasForeignKey(dm => dm.PlantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(dm => dm.User)
+            .WithMany()
+            .HasForeignKey(dm => dm.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
 public class QuotationConfiguration : IEntityTypeConfiguration<Quotation>
 {
     public void Configure(EntityTypeBuilder<Quotation> builder)

@@ -23,16 +23,38 @@ public class ApprovalBatchController : BaseController
     private readonly ILogger<ApprovalBatchController> _logger;
     private readonly IRequestStatusSyncService _statusSyncService;
     private readonly IGroupBuilderService _groupBuilderService;
+    private readonly IApprovalRoutingService _approvalRouting;
 
     public ApprovalBatchController(
         ApplicationDbContext context,
         ILogger<ApprovalBatchController> logger,
         IRequestStatusSyncService statusSyncService,
-        IGroupBuilderService groupBuilderService) : base(context)
+        IGroupBuilderService groupBuilderService,
+        IApprovalRoutingService approvalRouting) : base(context)
     {
         _logger = logger;
         _statusSyncService = statusSyncService;
         _groupBuilderService = groupBuilderService;
+        _approvalRouting = approvalRouting;
+    }
+
+    /// <summary>
+    /// Phase B area-approval authorization for batch actions: admin, active manager of
+    /// the request's department/plant (specific or global — D1), or the legacy nominee
+    /// on an old in-flight request. The manual "Area Approver" role grants nothing.
+    /// A batch always belongs to a single request, so the per-request check covers the
+    /// whole batch.
+    /// </summary>
+    private async Task<bool> CanActAsAreaManagerAsync(Guid actorId, Request request)
+    {
+        if (CurrentUserRoles.Contains(RoleConstants.SystemAdministrator)) return true;
+        // Phase C — TEMPORARY legacy-nominee compatibility (pre-Phase-B requests only:
+        // post-cut requests reach the area stage with AreaApproverId == null, so no new
+        // request ever satisfies this). The area-stage scoping is guaranteed by the
+        // callers (batch loaded/validated in WAITING_AREA_APPROVAL). Remove when PROD
+        // has no pending nominated requests (redesign plan §16.1 audit query).
+        if (request.AreaApproverId == actorId) return true;
+        return await _approvalRouting.IsAreaManagerAsync(actorId, request.DepartmentId, request.PlantId);
     }
 
     /// <summary>
@@ -193,6 +215,20 @@ public class ApprovalBatchController : BaseController
             });
         }
 
+        // ── 5.1. Phase B routing guard: a batch enters WAITING_AREA_APPROVAL, so at
+        // least one area manager must be resolvable for the request's department/plant.
+        // Department.ResponsibleUserId is no longer consulted.
+        var areaRouting = await _approvalRouting.ResolveAreaManagersAsync(request.DepartmentId, request.PlantId);
+        if (!areaRouting.HasManagers)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Erro de Validação",
+                Detail = "Não existe responsável de aprovação configurado para o departamento/planta deste pedido. Configure os managers em Dados Mestres → Departamentos.",
+                Status = 400
+            });
+        }
+
         // ── 6. Create ApprovalBatch ──
         var maxBatchNumber = request.ApprovalBatches.Any()
             ? request.ApprovalBatches.Max(b => b.BatchNumber)
@@ -340,11 +376,7 @@ public class ApprovalBatchController : BaseController
     {
         var actorId = CurrentUserId;
 
-        // ── 1. Role check ──
-        if (!CurrentUserRoles.Contains(RoleConstants.AreaApprover))
-            return StatusCode(403, "Apenas o papel de Aprovador de Área pode realizar aprovações nesta etapa.");
-
-        // ── 2. Load request ──
+        // ── 1. Load request ──
         var request = await _context.Requests
             .Include(r => r.RequestType)
             .Include(r => r.Status)
@@ -357,6 +389,10 @@ public class ApprovalBatchController : BaseController
 
         if (request == null)
             return NotFound(new ProblemDetails { Title = "Pedido não encontrado.", Status = 404 });
+
+        // ── 2. Authorization (Phase B — DepartmentManager titularity, D1) ──
+        if (!await CanActAsAreaManagerAsync(actorId, request))
+            return StatusCode(403, "Você não é responsável pelo departamento/planta deste pedido.");
 
         // ── 3. Scope check ──
         var scopedQuery = await GetScopedRequestsQuery();
@@ -631,6 +667,7 @@ public class ApprovalBatchController : BaseController
         batch.BudgetJustification = dto.BudgetJustification?.Trim();
         batch.UpdatedAtUtc = DateTime.UtcNow;
         batch.UpdatedByUserId = actorId;
+        request.AreaApproverId = actorId; // Phase B: records who actually decided the area stage
 
         // ── 13. History entry ──
         string historyComment = $"Aprovação da Área do Lote #{batch.BatchNumber} realizada. {dto.Comment}".Trim();
@@ -691,14 +728,15 @@ public class ApprovalBatchController : BaseController
     {
         var actorId = CurrentUserId;
 
-        if (!CurrentUserRoles.Contains(RoleConstants.AreaApprover))
-            return StatusCode(403, "Apenas o papel de Aprovador de Área pode realizar rejeições nesta etapa.");
-
         if (string.IsNullOrWhiteSpace(dto.Comment))
             return BadRequest(new ProblemDetails { Title = "Comentário Obrigatório", Detail = "É necessário informar o motivo da rejeição.", Status = 400 });
 
         var (request, batch, error) = await LoadAndValidateBatch(requestId, batchId, RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval);
         if (error != null) return error;
+
+        // Phase B authorization — DepartmentManager titularity (D1)
+        if (!await CanActAsAreaManagerAsync(actorId, request!))
+            return StatusCode(403, "Você não é responsável pelo departamento/planta deste pedido.");
 
         // ── Return batch items to QUOTATION_PENDING ──
         var batchItemRliIds = batch!.Items.Select(bi => bi.RequestLineItemId).ToHashSet();
@@ -734,6 +772,7 @@ public class ApprovalBatchController : BaseController
         batch.Status = RequestConstants.ApprovalBatchStatuses.Rejected;
         batch.UpdatedAtUtc = DateTime.UtcNow;
         batch.UpdatedByUserId = actorId;
+        request!.AreaApproverId = actorId; // Phase B: records who actually decided the area stage
 
         // ── History entry ──
         _context.RequestStatusHistories.Add(new RequestStatusHistory
@@ -767,14 +806,15 @@ public class ApprovalBatchController : BaseController
     {
         var actorId = CurrentUserId;
 
-        if (!CurrentUserRoles.Contains(RoleConstants.AreaApprover))
-            return StatusCode(403, "Apenas o papel de Aprovador de Área pode solicitar reajuste nesta etapa.");
-
         if (string.IsNullOrWhiteSpace(dto.Comment))
             return BadRequest(new ProblemDetails { Title = "Comentário Obrigatório", Detail = "É necessário informar o motivo do reajuste.", Status = 400 });
 
         var (request, batch, error) = await LoadAndValidateBatch(requestId, batchId, RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval);
         if (error != null) return error;
+
+        // Phase B authorization — DepartmentManager titularity (D1)
+        if (!await CanActAsAreaManagerAsync(actorId, request!))
+            return StatusCode(403, "Você não é responsável pelo departamento/planta deste pedido.");
 
         // ── Clear allocations for batch items ──
         var batchItemRliIds = batch!.Items.Select(bi => bi.RequestLineItemId).ToHashSet();
@@ -804,6 +844,7 @@ public class ApprovalBatchController : BaseController
         batch.Status = RequestConstants.ApprovalBatchStatuses.AreaAdjustment;
         batch.UpdatedAtUtc = DateTime.UtcNow;
         batch.UpdatedByUserId = actorId;
+        request!.AreaApproverId = actorId; // Phase B: records who actually decided the area stage
 
         // ── History entry ──
         _context.RequestStatusHistories.Add(new RequestStatusHistory

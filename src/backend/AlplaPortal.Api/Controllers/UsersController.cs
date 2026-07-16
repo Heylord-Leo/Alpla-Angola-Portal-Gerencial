@@ -1,5 +1,6 @@
 using AlplaPortal.Application.DTOs.Users;
 using AlplaPortal.Application.Interfaces;
+using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Logging;
@@ -128,6 +129,20 @@ public class UsersController : BaseController
 
         if (user == null) return NotFound();
 
+        // Phase C: read-only view of area-approval responsibilities, derived from
+        // DepartmentManagers. Edited exclusively in Dados Mestres → Departamentos.
+        var approvalResponsibilities = await _context.DepartmentManagers
+            .AsNoTracking()
+            .Where(dm => dm.UserId == id)
+            .OrderBy(dm => dm.Department.Name).ThenBy(dm => dm.PlantId == null ? 0 : 1)
+            .Select(dm => new UserApprovalResponsibilityDto
+            {
+                DepartmentName = dm.Department.Name,
+                PlantName = dm.Plant != null ? dm.Plant.Name : null,
+                IsActive = dm.IsActive
+            })
+            .ToListAsync();
+
         return Ok(new UserDetailsDto
         {
             Id = user.Id,
@@ -137,8 +152,27 @@ public class UsersController : BaseController
             MustChangePassword = user.MustChangePassword,
             RoleIds = user.UserRoleAssignments.Select(ra => ra.RoleId).ToList(),
             PlantIds = user.UserPlantScopes.Select(ps => ps.PlantId).ToList(),
-            DepartmentIds = user.UserDepartmentScopes.Select(ds => ds.DepartmentId).ToList()
+            DepartmentIds = user.UserDepartmentScopes.Select(ds => ds.DepartmentId).ToList(),
+            ApprovalResponsibilities = approvalResponsibilities
         });
+    }
+
+    /// <summary>
+    /// Phase C guard: the "Area Approver" role is derived from DepartmentManagers and can
+    /// never be assigned manually. Old clients that still send it get a controlled error
+    /// instead of a silently ineffective assignment.
+    /// </summary>
+    private async Task<string?> ValidateNoManualAreaApproverAsync(List<int> roleIds)
+    {
+        var areaApproverRoleId = await _context.Roles
+            .Where(r => r.RoleName == RoleConstants.AreaApprover)
+            .Select(r => (int?)r.Id)
+            .FirstOrDefaultAsync();
+
+        if (areaApproverRoleId.HasValue && roleIds.Contains(areaApproverRoleId.Value))
+            return "A role Area Approver é atribuída automaticamente através do cadastro de managers por departamento e planta (Dados Mestres → Departamentos).";
+
+        return null;
     }
 
     private readonly string[] _allowedCorporateDomains = new[] { "alpla.com" };
@@ -221,6 +255,12 @@ public class UsersController : BaseController
             PasswordHash = null,
             CreatedAt = DateTime.UtcNow
         };
+
+        // Phase C: "Area Approver" is derived-only — reject manual assignment for every
+        // caller, including System Administrators and old clients.
+        var manualAreaApproverError = await ValidateNoManualAreaApproverAsync(dto.RoleIds);
+        if (manualAreaApproverError != null)
+            return BadRequest(new { message = manualAreaApproverError });
 
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
@@ -363,6 +403,12 @@ public class UsersController : BaseController
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
+            // Phase C: "Area Approver" is derived-only — reject manual assignment for
+            // every caller, including System Administrators and old clients.
+            var manualAreaApproverError = await ValidateNoManualAreaApproverAsync(dto.RoleIds);
+            if (manualAreaApproverError != null)
+                return BadRequest(new { message = manualAreaApproverError });
+
             // Clear existing assignments
             _context.UserRoleAssignments.RemoveRange(user.UserRoleAssignments);
             _context.UserPlantScopes.RemoveRange(user.UserPlantScopes);
@@ -459,13 +505,17 @@ public class UsersController : BaseController
         
         if (currentUserRoles.Contains("System Administrator"))
         {
-            return await _context.Roles.Select(r => r.RoleName).ToListAsync();
+            // Phase C: "Area Approver" is derived from DepartmentManagers — never
+            // manually assignable, so it is not offered to any administrator.
+            return await _context.Roles
+                .Where(r => r.RoleName != RoleConstants.AreaApprover)
+                .Select(r => r.RoleName)
+                .ToListAsync();
         }
 
         var roles = new List<string>
         {
             "Requester",
-            "Area Approver",
             "Receiving",
             "Viewer / Management"
         };

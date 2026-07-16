@@ -1226,7 +1226,15 @@ export function ApprovalDetailPanel({
                         {[
                             { label: 'Solicitante', name: data.requesterName, role: 'Buyer/User' },
                             { label: 'Comprador Atribuído', name: data.buyerName, role: 'Procurement' },
-                            { label: 'Aprovador da Área', name: data.areaApproverName, role: 'Area Manager' },
+                            {
+                                // Fase B: antes da decisão mostra os managers elegíveis; depois, o decisor real.
+                                label: 'Aprovador da Área',
+                                name: data.areaApproverName
+                                    || (data.eligibleAreaManagerNames && data.eligibleAreaManagerNames.length > 0
+                                        ? `Pendente — ${data.eligibleAreaManagerNames.length} responsáve${data.eligibleAreaManagerNames.length > 1 ? 'is' : 'l'}: ${data.eligibleAreaManagerNames.join(', ')}`
+                                        : null),
+                                role: 'Area Manager'
+                            },
                             { label: 'Aprovador Final', name: data.finalApproverName, role: 'C-Level / Admin' }
                         ].map((p, idx) => (
                             <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '16px', backgroundColor: 'var(--color-bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)' }}>

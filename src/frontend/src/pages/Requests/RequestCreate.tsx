@@ -297,14 +297,11 @@ export function RequestCreate() {
                 next.companyId = String(filteredCompanies[0].id);
             }
 
-            // Auto-select department when only one is in scope
+            // Auto-select department when only one is in scope.
+            // (Fase B: o aprovador de área não é mais pré-nomeado — o roteamento é
+            // resolvido pelo backend via DepartmentManagers no submit/decisão.)
             if (filteredDepartments.length === 1 && !next.departmentId) {
-                const soloDept = filteredDepartments[0];
-                next.departmentId = String(soloDept.id);
-                // Auto-resolve area approver from the department's responsible user
-                if (soloDept.responsibleUserId) {
-                    next.areaApproverId = soloDept.responsibleUserId;
-                }
+                next.departmentId = String(filteredDepartments[0].id);
             }
 
             return next;
@@ -595,13 +592,9 @@ export function RequestCreate() {
                 }
             }
 
-            if (name === 'departmentId' && value) {
-                const dept = departments.find(d => d.id === Number(value));
-                if (dept && dept.responsibleUserId) {
-                    next.areaApproverId = dept.responsibleUserId;
-                }
-            }
-            
+            // (Fase B: trocar o departamento não pré-nomeia aprovador de área —
+            // o roteamento é resolvido pelo backend via DepartmentManagers.)
+
             return next;
         });
         clearFieldError(name);
@@ -715,7 +708,7 @@ export function RequestCreate() {
                 ? new Date(formData.needByDateUtc).toISOString() 
                 : null,
             buyerId: formData.buyerId || null,
-            areaApproverId: formData.areaApproverId || null,
+            // areaApproverId removido (Fase B): o backend resolve o roteamento de área
             finalApproverId: formData.finalApproverId || null,
             lineItems: Number(formData.requestTypeId) === 2 && paymentDraft ? paymentDraft.items.map((item, index) => ({
                 lineNumber: index + 1,

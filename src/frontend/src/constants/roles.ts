@@ -32,7 +32,7 @@ export const ROLE_DISPLAY_NAMES: Record<string, string> = {
  * Used to provide contextual help tooltips in the administration modules.
  */
 export const ROLE_DESCRIPTIONS: Record<string, string> = {
-    [ROLES.AREA_APPROVER]: 'Aprova pedidos da sua área antes da aprovação final.',
+    [ROLES.AREA_APPROVER]: 'Aprova pedidos da sua área antes da aprovação final. Role derivada: concedida automaticamente aos managers cadastrados em Dados Mestres → Departamentos.',
     [ROLES.BUYER]: 'Gere cotações, fornecedores e o andamento do processo de compra.',
     [ROLES.CONTRACTS]: 'Acompanha e gere contratos relacionados ao processo de compras.',
     [ROLES.FINAL_APPROVER]: 'Realiza a aprovação final dos pedidos conforme as regras do sistema.',

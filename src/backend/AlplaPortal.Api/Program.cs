@@ -109,6 +109,11 @@ builder.Services.AddScoped<IStatusAggregationService, StatusAggregationService>(
 builder.Services.AddScoped<IApprovalIntelligenceService, ApprovalIntelligenceService>();
 builder.Services.AddScoped<IRequestStatusSyncService, RequestStatusSyncService>();
 
+// Department Manager redesign — single source of truth for area-approval routing
+builder.Services.AddScoped<IApprovalRoutingService, ApprovalRoutingService>();
+builder.Services.AddScoped<DepartmentManagerService>();
+builder.Services.AddScoped<AreaApproverReconciliationService>();
+
 // Proforma Deadline Alerts — daily background check (first BackgroundService in the project)
 builder.Services.AddHostedService<ProformaDeadlineAlertService>();
 

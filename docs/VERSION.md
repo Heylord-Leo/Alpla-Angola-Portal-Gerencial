@@ -2,7 +2,20 @@
 
 ## Current Version
 
-v2.205.0
+v2.206.0
+
+## [v2.206.0] - 2026-07-16
+
+### Changed — Redesign de Aprovação de Área por DepartmentManager (Fases A+B+C)
+
+- **`DepartmentManagers` (Departamento + Planta)** é a fonte única de configuração da aprovação de área: submit, fila, autorização (individual e em lote), e-mails e a claim derivada "Area Approver" resolvem exclusivamente pelo novo cadastro (managers específicos por planta com cobertura por managers globais).
+- **Legado removido**: `Department.ResponsibleUserId` dropado do modelo e do banco (com snapshots de auditoria); atribuições manuais da role "Area Approver" removidas e bloqueadas pela API — a role existe apenas como claim derivada no login.
+- **`Request.AreaApproverId`** passou a registrar **quem decidiu** (null até a decisão); histórico preservado integralmente.
+- **HR e Contratos** migrados para resolver gestores por `DepartmentManagers`; Local Manager permanece exclusivamente administração de usuários.
+- **Dados Mestres → Departamentos**: grade de managers por planta/global com auto-criação de escopos de visibilidade (D3); **Cadastro de Usuários**: seção somente leitura de responsabilidades derivadas.
+- **Relatório administrativo** `GET /api/admin/reports/area-approver-reconciliation` (JSON/CSV) com classificações e `LegacyPendingRequests` (gate para remover a compatibilidade temporária `IsLegacyNamedAreaApprover`).
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
 
 ## [v2.205.0] - 2026-07-14
 

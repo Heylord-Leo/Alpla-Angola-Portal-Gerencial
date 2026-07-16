@@ -15,6 +15,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<UserDepartmentScope> UserDepartmentScopes => Set<UserDepartmentScope>();
 
     public DbSet<Department> Departments => Set<Department>();
+    public DbSet<DepartmentManager> DepartmentManagers => Set<DepartmentManager>();
     public DbSet<Company> Companies => Set<Company>();
     public DbSet<Plant> Plants => Set<Plant>();
     public DbSet<Supplier> Suppliers => Set<Supplier>();
@@ -221,12 +222,8 @@ public class ApplicationDbContext : DbContext
             .HasForeignKey(a => a.CurrencyId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // Department Responsible User mapping (ambiguity resolution)
-        modelBuilder.Entity<Department>()
-            .HasOne(d => d.ResponsibleUser)
-            .WithMany()
-            .HasForeignKey(d => d.ResponsibleUserId)
-            .OnDelete(DeleteBehavior.SetNull);
+        // (Phase C: legacy Department.ResponsibleUserId mapping removed — area/HR
+        // responsibility lives exclusively in DepartmentManagers.)
 
         // Standard User -> Department link
         modelBuilder.Entity<User>()

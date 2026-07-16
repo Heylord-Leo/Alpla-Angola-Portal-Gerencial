@@ -7,8 +7,12 @@ public class Department
     public string? Code { get; set; }
     public bool IsActive { get; set; } = true;
 
-    public Guid? ResponsibleUserId { get; set; }
-    public User? ResponsibleUser { get; set; }
+    /// <summary>
+    /// Area/HR responsibility is configured exclusively here (per plant, or global with
+    /// PlantId NULL). The legacy single ResponsibleUserId column was removed in Phase C
+    /// of the DepartmentManager redesign.
+    /// </summary>
+    public ICollection<DepartmentManager> Managers { get; set; } = new List<DepartmentManager>();
 }
 
 public class Company
