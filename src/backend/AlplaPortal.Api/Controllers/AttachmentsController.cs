@@ -37,13 +37,14 @@ public class AttachmentsController : BaseController
     }
 
     [HttpPost("upload/{requestId}")]
-    public async Task<IActionResult> Upload(Guid requestId, [FromForm] List<IFormFile> files, [FromForm] IFormFile? file, [FromForm] string typeCode)
+    public async Task<IActionResult> Upload(Guid requestId, [FromForm] List<IFormFile> files, [FromForm] IFormFile? file, [FromForm] string typeCode, [FromForm] Guid? poGroupId = null)
     {
         // Scoped check: Ensure user can access this request
         var scopedQuery = await GetScopedRequestsQuery();
         var request = await scopedQuery
             .Include(r => r.Status)
             .Include(r => r.RequestType)
+            .Include(r => r.PoGroups)
             .FirstOrDefaultAsync(r => r.Id == requestId);
         
         if (request == null) return NotFound("Pedido não encontrado ou sem permissão de acesso.");
@@ -106,7 +107,16 @@ public class AttachmentsController : BaseController
                 detail = "O documento Proforma só pode ser carregado nos estágios de Rascunho, Reajuste ou Cotação.";
                 break;
             case AttachmentConstants.Types.PurchaseOrder:
-                isUploadable = new[] { "APPROVED", RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.WaitingPoCorrection }.Contains(statusCode);
+                isUploadable = new[] { "APPROVED", RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.WaitingPoCorrection, RequestConstants.Statuses.PoPartiallyUploaded }.Contains(statusCode);
+                // QUOTATION group-first: allow PO upload when the target group is WAITING_PO/WAITING_PO_CORRECTION
+                if (!isUploadable && poGroupId.HasValue && request.RequestType?.Code == RequestConstants.Types.Quotation)
+                {
+                    var targetGroup = await _context.RequestPoGroups.FirstOrDefaultAsync(g => g.Id == poGroupId.Value && g.RequestId == requestId);
+                    if (targetGroup != null && new[] { RequestConstants.PoGroupStatuses.WaitingPo, RequestConstants.PoGroupStatuses.WaitingPoCorrection }.Contains(targetGroup.Status))
+                    {
+                        isUploadable = true;
+                    }
+                }
                 detail = "O documento P.O só pode ser carregado a partir do estágio de Aprovação ou quando devolvido para correção.";
                 break;
             case AttachmentConstants.Types.PaymentSchedule:
@@ -115,6 +125,16 @@ public class AttachmentsController : BaseController
                 break;
             case AttachmentConstants.Types.PaymentProof:
                 isUploadable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.AdvancePaymentRequired, RequestConstants.Statuses.AdvancePaymentCompleted }.Contains(statusCode);
+                // QUOTATION group-first: allow payment proof when the target group is in a finance-eligible status
+                if (!isUploadable && poGroupId.HasValue && request.RequestType?.Code == RequestConstants.Types.Quotation)
+                {
+                    var targetPayGroup = await _context.RequestPoGroups.FirstOrDefaultAsync(g => g.Id == poGroupId.Value && g.RequestId == requestId);
+                    var financeEligibleGroupStatuses = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.AdvancePaymentRequired, RequestConstants.Statuses.AdvancePaymentScheduled, RequestConstants.Statuses.AdvancePaymentCompleted };
+                    if (targetPayGroup != null && financeEligibleGroupStatuses.Contains(targetPayGroup.Status))
+                    {
+                        isUploadable = true;
+                    }
+                }
                 if (isUploadable && statusCode == RequestConstants.Statuses.AdvancePaymentCompleted && !CurrentUserRoles.Contains(RoleConstants.Finance) && !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
                 {
                     isUploadable = false;
@@ -148,6 +168,86 @@ public class AttachmentsController : BaseController
                 Detail = detail,
                 Status = 400
             });
+        }
+
+        // ── QUOTATION group-linkage enforcement for PO and PaymentProof ──
+        // When a QUOTATION request has PO groups, PO/PaymentProof uploads MUST be linked to a valid group.
+        // PAYMENT requests and legacy QUOTATION without groups preserve existing behavior.
+        var isQuotationWithGroups = request.RequestType?.Code == RequestConstants.Types.Quotation
+            && request.PoGroups != null && request.PoGroups.Any();
+
+        if (isQuotationWithGroups && typeCodeStr == AttachmentConstants.Types.PurchaseOrder)
+        {
+            if (!poGroupId.HasValue)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Grupo P.O. Obrigatório",
+                    Detail = "Para pedidos do tipo Cotação com grupos de P.O., é obrigatório informar o RequestPoGroupId ao carregar a P.O.",
+                    Status = 400
+                });
+            }
+            var poGroup = request.PoGroups.FirstOrDefault(g => g.Id == poGroupId.Value);
+            if (poGroup == null)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Grupo P.O. Inválido",
+                    Detail = "O RequestPoGroupId informado não pertence a este pedido.",
+                    Status = 400
+                });
+            }
+            var allowedPoGroupStatuses = new[] { RequestConstants.PoGroupStatuses.WaitingPo, RequestConstants.PoGroupStatuses.WaitingPoCorrection };
+            if (!allowedPoGroupStatuses.Contains(poGroup.Status))
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Upload Bloqueado",
+                    Detail = $"O Grupo P.O. não está em status que permita upload de P.O. Status atual: {poGroup.Status}. Status permitidos: {string.Join(", ", allowedPoGroupStatuses)}.",
+                    Status = 400
+                });
+            }
+        }
+
+        if (isQuotationWithGroups && typeCodeStr == AttachmentConstants.Types.PaymentProof)
+        {
+            if (!poGroupId.HasValue)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Grupo P.O. Obrigatório",
+                    Detail = "Para pedidos do tipo Cotação com grupos de P.O., é obrigatório informar o RequestPoGroupId ao carregar o comprovante de pagamento.",
+                    Status = 400
+                });
+            }
+            var payGroup = request.PoGroups.FirstOrDefault(g => g.Id == poGroupId.Value);
+            if (payGroup == null)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Grupo P.O. Inválido",
+                    Detail = "O RequestPoGroupId informado não pertence a este pedido.",
+                    Status = 400
+                });
+            }
+            var financeEligible = new[] { 
+                RequestConstants.Statuses.PoIssued, 
+                RequestConstants.Statuses.PaymentScheduled, 
+                RequestConstants.Statuses.PaymentCompleted, 
+                RequestConstants.Statuses.InFollowup, 
+                RequestConstants.Statuses.AdvancePaymentRequired, 
+                RequestConstants.Statuses.AdvancePaymentScheduled, 
+                RequestConstants.Statuses.AdvancePaymentCompleted 
+            };
+            if (!financeEligible.Contains(payGroup.Status))
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Upload Bloqueado",
+                    Detail = $"O Grupo P.O. não está em status que permita upload de comprovante de pagamento. Status atual: {payGroup.Status}.",
+                    Status = 400
+                });
+            }
         }
 
         var actorId = CurrentUserId;
@@ -186,6 +286,7 @@ public class AttachmentsController : BaseController
             {
                 Id = fileId,
                 RequestId = requestId,
+                RequestPoGroupId = poGroupId,
                 FileName = sanitizedDisplayFileName, // Audit-safe and display-safe
                 FileExtension = extension,
                 FileSizeMBytes = (decimal)f.Length / (1024 * 1024),

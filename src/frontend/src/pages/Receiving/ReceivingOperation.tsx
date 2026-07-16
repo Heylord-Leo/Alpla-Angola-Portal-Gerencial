@@ -48,7 +48,7 @@ const ReceivingOperation: React.FC = () => {
     type: 'LINE_ITEM' | 'QUOTATION_ITEM';
   } | null>(null);
 
-  const [finalizeModalOpen, setFinalizeModalOpen] = useState(false);
+  const [finalizeModalState, setFinalizeModalState] = useState<{ show: boolean, groupId: string | null, groupName?: string }>({ show: false, groupId: null });
 
   const fetchRequest = async () => {
     if (!id) return;
@@ -88,19 +88,24 @@ const ReceivingOperation: React.FC = () => {
     if (!request) return [];
     
     return winningQuotation 
-      ? winningQuotation.items.map((qi: any) => ({
-          id: qi.id,
-          lineNumber: qi.lineNumber,
-          description: qi.description,
-          quantity: qi.quantity,
-          receivedQty: qi.receivedQuantity || 0,
-          unit: request.lineItems[0]?.unit || 'UN',
-          statusName: qi.lineItemStatusName || 'Pendente',
-          statusCode: qi.lineItemStatusCode || 'PENDING',
-          statusColor: qi.lineItemStatusBadgeColor || '#EAB308',
-          notes: qi.divergenceNotes,
-          type: 'QUOTATION_ITEM' as const
-        }))
+      ? winningQuotation.items.map((qi: any) => {
+          const correspondingLineItem = request.lineItems?.find((li: any) => li.selectedQuotationItemId === qi.id);
+          const requestPoGroupId = correspondingLineItem?.requestPoGroupId;
+          return {
+            id: qi.id,
+            lineNumber: qi.lineNumber,
+            description: qi.description,
+            quantity: qi.quantity,
+            receivedQty: qi.receivedQuantity || 0,
+            unit: request.lineItems[0]?.unit || 'UN',
+            statusName: qi.lineItemStatusName || 'Pendente',
+            statusCode: qi.lineItemStatusCode || 'PENDING',
+            statusColor: qi.lineItemStatusBadgeColor || '#EAB308',
+            notes: qi.divergenceNotes,
+            type: 'QUOTATION_ITEM' as const,
+            requestPoGroupId
+          };
+        })
       : request.lineItems.map((li: any) => ({
           id: li.id,
           lineNumber: li.lineNumber,
@@ -112,7 +117,8 @@ const ReceivingOperation: React.FC = () => {
           statusCode: li.lineItemStatusCode || 'PENDING',
           statusColor: li.lineItemStatusBadgeColor || '#EAB308',
           notes: li.divergenceNotes,
-          type: 'LINE_ITEM' as const
+          type: 'LINE_ITEM' as const,
+          requestPoGroupId: li.requestPoGroupId
         }));
   }, [request, winningQuotation]);
 
@@ -144,8 +150,8 @@ const ReceivingOperation: React.FC = () => {
     }
   };
 
-  const handleFinalizeClick = () => {
-    setFinalizeModalOpen(true);
+  const handleFinalizeClick = (groupId: string, groupName: string) => {
+    setFinalizeModalState({ show: true, groupId, groupName });
   };
 
 
@@ -200,9 +206,9 @@ const ReceivingOperation: React.FC = () => {
             </div>
         }
         primaryActions={
-            !isReadOnly && (
+            !isReadOnly && (!request.poGroups || request.poGroups.length === 0) && (
                 <button
-                    onClick={handleFinalizeClick}
+                    onClick={() => handleFinalizeClick('', '')}
                     className="btn-primary"
                     style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
                 >
@@ -249,75 +255,170 @@ const ReceivingOperation: React.FC = () => {
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: '24px' }}>
         {/* Main Items Block */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          <div className={isHighlighted ? 'section-attention-highlight' : ''} style={cardStyle}>
-            <div style={sectionHeaderStyle}>
-              <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 900, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <FileText size={18} color="var(--color-primary)" />
-                Conferência de Itens Autorizados
-              </h3>
-              {isQuotationFlow && (
-                <div style={{ fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(var(--color-primary-rgb), 0.1)', padding: '4px 8px', border: '1px solid var(--color-primary)' }}>
-                   <Info size={12} /> Baseado na Cotação Vencedora
-                </div>
-              )}
-            </div>
-
-            <div style={{ overflowX: 'auto' }}>
-              <StandardTable>
-                <thead>
-                  <tr style={{ backgroundColor: '#FAFAFA', borderBottom: '1px solid var(--color-border)' }}>
-                    <th style={{ width: '50px', textAlign: 'center', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>#</th>
-                    <th style={{ padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Descrição</th>
-                    <th style={{ width: '150px', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Qtd Autorizada</th>
-                    <th style={{ width: '150px', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Qtd Recebida</th>
-                    <th style={{ width: '160px', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Status</th>
-                    <th style={{ width: '140px', textAlign: 'center', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Ação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {operationalItems.map((item: any) => (
-                    <tr key={item.id || item.lineNumber}>
-                      <td style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontWeight: 800, padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>{item.lineNumber}</td>
-                      <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
-                        <div style={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.85rem' }}>{item.description}</div>
-                        {item.notes && (
-                           <div style={{ marginTop: '8px', padding: '8px', backgroundColor: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '0.75rem', fontWeight: 700, display: 'flex', gap: '6px', borderRadius: '4px' }}>
-                             <AlertTriangle size={14} style={{ flexShrink: 0 }} />
-                             <span>OBS: {item.notes}</span>
-                           </div>
-                        )}
-                      </td>
-                      <td style={{ fontWeight: 700, color: 'var(--color-text-muted)', padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
-                        {item.quantity} {item.unit}
-                      </td>
-                      <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
-                        <span style={{ fontWeight: 900, color: item.receivedQty > 0 ? 'var(--color-primary)' : 'var(--color-text-muted)' }}>
-                          {item.receivedQty} {item.unit}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
-                        <div 
-                          className={`badge ${item.statusCode === 'RECEIVED' ? 'badge-success' : 'badge-warning'}`}
-                          style={{ width: '100%', justifyContent: 'center', fontSize: '0.6rem', padding: '2px 8px' }}
-                        >
-                          {item.statusName}
+          {(request.poGroups && request.poGroups.length > 0) ? (
+            request.poGroups.map((group: any) => {
+              const groupItems = operationalItems.filter((i: any) => i.requestPoGroupId === group.id);
+              if (groupItems.length === 0) return null;
+              
+              const isGroupReadOnly = isReadOnly || !['WAITING_RECEIPT', 'IN_FOLLOWUP', 'PAYMENT_COMPLETED', 'WAITING_SUPPLIER_DELIVERY', 'PAG_REALIZADO', 'RECEBIMENTO_ANDAMENTO'].includes(group.status);
+              
+              return (
+                <div key={group.id} className={isHighlighted ? 'section-attention-highlight' : ''} style={cardStyle}>
+                  <div style={sectionHeaderStyle}>
+                    <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 900, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <FileText size={18} color="var(--color-primary)" />
+                      Conferência: {group.supplierNameSnapshot}
+                    </h3>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      {isQuotationFlow && (
+                        <div style={{ fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(var(--color-primary-rgb), 0.1)', padding: '4px 8px', border: '1px solid var(--color-primary)' }}>
+                           <Info size={12} /> Cotação Vencedora
                         </div>
-                      </td>
-                      <td style={{ textAlign: 'center', padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
+                      )}
+                      <div style={{ fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(var(--color-primary-rgb), 0.1)', padding: '4px 8px', border: '1px solid var(--color-primary)' }}>
+                         <Info size={12} /> Status: {group.statusName || group.status}
+                      </div>
+                      {!isGroupReadOnly && (
                         <button
-                          onClick={() => handleOpenModal(item)}
-                          className="btn-secondary"
-                          style={{ padding: '6px 12px', fontSize: '0.7rem', width: '100%', opacity: isReadOnly ? 0.7 : 1, borderRadius: '6px' }}
+                            onClick={() => handleFinalizeClick(group.id, group.supplierNameSnapshot)}
+                            className="btn-primary"
+                            style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '28px', padding: '0 12px', fontSize: '0.7rem' }}
                         >
-                          {isReadOnly ? 'VER DETALHES' : 'REGISTRAR'}
+                            <CheckCircle size={14} />
+                            CONFIRMAR RECEBIMENTO
                         </button>
-                      </td>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <StandardTable>
+                      <thead>
+                        <tr style={{ backgroundColor: '#FAFAFA', borderBottom: '1px solid var(--color-border)' }}>
+                          <th style={{ width: '50px', textAlign: 'center', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>#</th>
+                          <th style={{ padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Descrição</th>
+                          <th style={{ width: '150px', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Qtd Autorizada</th>
+                          <th style={{ width: '150px', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Qtd Recebida</th>
+                          <th style={{ width: '160px', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Status</th>
+                          <th style={{ width: '140px', textAlign: 'center', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Ação</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {groupItems.map((item: any) => (
+                          <tr key={item.id || item.lineNumber}>
+                            <td style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontWeight: 800, padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>{item.lineNumber}</td>
+                            <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
+                              <div style={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.85rem' }}>{item.description}</div>
+                              {item.notes && (
+                                 <div style={{ marginTop: '8px', padding: '8px', backgroundColor: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '0.75rem', fontWeight: 700, display: 'flex', gap: '6px', borderRadius: '4px' }}>
+                                   <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+                                   <span>OBS: {item.notes}</span>
+                                 </div>
+                              )}
+                            </td>
+                            <td style={{ fontWeight: 700, color: 'var(--color-text-muted)', padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
+                              {item.quantity} {item.unit}
+                            </td>
+                            <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
+                              <span style={{ fontWeight: 900, color: item.receivedQty > 0 ? 'var(--color-primary)' : 'var(--color-text-muted)' }}>
+                                {item.receivedQty} {item.unit}
+                              </span>
+                            </td>
+                            <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
+                              <div 
+                                className={`badge ${item.statusCode === 'RECEIVED' ? 'badge-success' : 'badge-warning'}`}
+                                style={{ width: '100%', justifyContent: 'center', fontSize: '0.6rem', padding: '2px 8px' }}
+                              >
+                                {item.statusName}
+                              </div>
+                            </td>
+                            <td style={{ textAlign: 'center', padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
+                              <button
+                                onClick={() => handleOpenModal(item)}
+                                className="btn-secondary"
+                                style={{ padding: '6px 12px', fontSize: '0.7rem', width: '100%', opacity: isGroupReadOnly ? 0.7 : 1, borderRadius: '6px' }}
+                              >
+                                {isGroupReadOnly ? 'VER DETALHES' : 'REGISTRAR'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </StandardTable>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className={isHighlighted ? 'section-attention-highlight' : ''} style={cardStyle}>
+              <div style={sectionHeaderStyle}>
+                <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 900, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <FileText size={18} color="var(--color-primary)" />
+                  Conferência de Itens Autorizados
+                </h3>
+                {isQuotationFlow && (
+                  <div style={{ fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(var(--color-primary-rgb), 0.1)', padding: '4px 8px', border: '1px solid var(--color-primary)' }}>
+                     <Info size={12} /> Baseado na Cotação Vencedora
+                  </div>
+                )}
+              </div>
+  
+              <div style={{ overflowX: 'auto' }}>
+                <StandardTable>
+                  <thead>
+                    <tr style={{ backgroundColor: '#FAFAFA', borderBottom: '1px solid var(--color-border)' }}>
+                      <th style={{ width: '50px', textAlign: 'center', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>#</th>
+                      <th style={{ padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Descrição</th>
+                      <th style={{ width: '150px', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Qtd Autorizada</th>
+                      <th style={{ width: '150px', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Qtd Recebida</th>
+                      <th style={{ width: '160px', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'left' }}>Status</th>
+                      <th style={{ width: '140px', textAlign: 'center', padding: '14px 20px', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Ação</th>
                     </tr>
-                  ))}
-                </tbody>
-              </StandardTable>
+                  </thead>
+                  <tbody>
+                    {operationalItems.map((item: any) => (
+                      <tr key={item.id || item.lineNumber}>
+                        <td style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontWeight: 800, padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>{item.lineNumber}</td>
+                        <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
+                          <div style={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.85rem' }}>{item.description}</div>
+                          {item.notes && (
+                             <div style={{ marginTop: '8px', padding: '8px', backgroundColor: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '0.75rem', fontWeight: 700, display: 'flex', gap: '6px', borderRadius: '4px' }}>
+                               <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+                               <span>OBS: {item.notes}</span>
+                             </div>
+                          )}
+                        </td>
+                        <td style={{ fontWeight: 700, color: 'var(--color-text-muted)', padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
+                          {item.quantity} {item.unit}
+                        </td>
+                        <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
+                          <span style={{ fontWeight: 900, color: item.receivedQty > 0 ? 'var(--color-primary)' : 'var(--color-text-muted)' }}>
+                            {item.receivedQty} {item.unit}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
+                          <div 
+                            className={`badge ${item.statusCode === 'RECEIVED' ? 'badge-success' : 'badge-warning'}`}
+                            style={{ width: '100%', justifyContent: 'center', fontSize: '0.6rem', padding: '2px 8px' }}
+                          >
+                            {item.statusName}
+                          </div>
+                        </td>
+                        <td style={{ textAlign: 'center', padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
+                          <button
+                            onClick={() => handleOpenModal(item)}
+                            className="btn-secondary"
+                            style={{ padding: '6px 12px', fontSize: '0.7rem', width: '100%', opacity: isReadOnly ? 0.7 : 1, borderRadius: '6px' }}
+                          >
+                            {isReadOnly ? 'VER DETALHES' : 'REGISTRAR'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </StandardTable>
+              </div>
             </div>
-          </div>
+          )}
 
           <div style={{ marginTop: '24px' }}>
             <RequestAttachments
@@ -426,16 +527,18 @@ const ReceivingOperation: React.FC = () => {
       <FinalizeReceivingModal
         requestId={request.id}
         requestNumber={request.requestNumber || ''}
+        groupId={finalizeModalState.groupId || ''}
+        groupName={finalizeModalState.groupName}
         attachments={request.attachments || []}
-        show={finalizeModalOpen}
-        onClose={() => setFinalizeModalOpen(false)}
+        show={finalizeModalState.show}
+        onClose={() => setFinalizeModalState({ show: false, groupId: null })}
         onSuccess={(msg) => {
-            setFinalizeModalOpen(false);
+            setFinalizeModalState({ show: false, groupId: null });
             if (msg) {
                 navigate('/receiving/workspace', { state: { successMessage: msg } });
             }
         }}
-        isPartial={!allReceived}
+        isPartial={finalizeModalState.groupId ? operationalItems.filter(i => i.requestPoGroupId === finalizeModalState.groupId).some(i => i.statusCode !== 'RECEIVED') : !allReceived}
       />
     </motion.div>
   );

@@ -1,9 +1,11 @@
 namespace AlplaPortal.Api.Controllers;
+using System.Diagnostics;
 
 using AlplaPortal.Application.DTOs.Requests;
 using AlplaPortal.Domain.Events;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Application.DTOs.Common;
+using AlplaPortal.Infrastructure.Services.Approvals;
 using AlplaPortal.Application.DTOs.Extraction;
 using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Application.Interfaces.Extraction;
@@ -19,6 +21,7 @@ using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
 using AlplaPortal.Application.DTOs.Integration;
 using AlplaPortal.Application.Interfaces.Integration;
+using AlplaPortal.Application.Interfaces.Purchasing;
 
 
 [Authorize]
@@ -32,15 +35,21 @@ public class RequestsController : BaseController
     private readonly INotificationService _notificationService;
     private readonly IWorkflowNotificationOrchestrator _orchestrator;
     private readonly IPrimaveraRequestValidationService _primaveraValidationService;
+    private readonly IGroupBuilderService _groupBuilderService;
+    private readonly IRequestStatusSyncService _statusSyncService;
+    private readonly IApprovalRoutingService _approvalRouting;
 
     public RequestsController(
-        ApplicationDbContext context, 
-        IDocumentExtractionService extractionService, 
+        ApplicationDbContext context,
+        IDocumentExtractionService extractionService,
         AdminLogWriter adminLog,
         ILogger<RequestsController> logger,
         INotificationService notificationService,
         IWorkflowNotificationOrchestrator orchestrator,
-        IPrimaveraRequestValidationService primaveraValidationService) : base(context)
+        IPrimaveraRequestValidationService primaveraValidationService,
+        IGroupBuilderService groupBuilderService,
+        IRequestStatusSyncService statusSyncService,
+        IApprovalRoutingService approvalRouting) : base(context)
     {
         _extractionService = extractionService;
         _adminLog = adminLog;
@@ -48,6 +57,40 @@ public class RequestsController : BaseController
         _notificationService = notificationService;
         _orchestrator = orchestrator;
         _primaveraValidationService = primaveraValidationService;
+        _groupBuilderService = groupBuilderService;
+        _statusSyncService = statusSyncService;
+        _approvalRouting = approvalRouting;
+    }
+
+    /// <summary>
+    /// Area-approval authorization — DepartmentManager as single source of truth:
+    /// System Administrator, OR active manager of the request's department (plant-specific
+    /// or global — D1), OR the legacy nominee (see <see cref="IsLegacyNamedAreaApprover"/>).
+    /// The manually assigned "Area Approver" role grants nothing by itself.
+    /// </summary>
+    private async Task<bool> CanActAsAreaManagerAsync(Guid actorId, Request request)
+    {
+        if (CurrentUserRoles.Contains(RoleConstants.SystemAdministrator)) return true;
+        if (IsLegacyNamedAreaApprover(request, actorId)) return true;
+        return await _approvalRouting.IsAreaManagerAsync(actorId, request.DepartmentId, request.PlantId);
+    }
+
+    /// <summary>
+    /// Phase C — TEMPORARY compatibility, kept only for requests submitted BEFORE the
+    /// Phase B cut: those were nominated to a single approver via the old
+    /// Department.ResponsibleUserId model. Post-cut requests reach the area stage with
+    /// AreaApproverId == null (the field is only written when someone decides), so no
+    /// new request can ever satisfy this clause. Remove once no in-flight request in
+    /// PRODUCTION matches: WAITING_AREA_APPROVAL/WAITING_COST_CENTER with AreaApproverId
+    /// set (audit query in docs/department-manager-routing-redesign-plan.md §16.1).
+    /// In Development on 16/07/2026 the dependent count was ZERO.
+    /// </summary>
+    private static bool IsLegacyNamedAreaApprover(Request request, Guid actorId)
+    {
+        var statusCode = request.Status?.Code;
+        return request.AreaApproverId == actorId
+            && (statusCode == RequestConstants.Statuses.WaitingAreaApproval
+             || statusCode == RequestConstants.Statuses.WaitingCostCenter);
     }
 
     /// <summary>
@@ -74,7 +117,7 @@ public class RequestsController : BaseController
                 WaitingQuotation = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingQuotation && r.RequestType!.Code == RequestConstants.Types.Quotation),
                 WaitingAreaApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval),
                 WaitingFinalApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval || r.Status!.Code == RequestConstants.Statuses.WaitingCostCenter),
-                AwaitingPo = g.Count(r => r.Status!.Code == RequestConstants.Statuses.FinalApproved),
+                AwaitingPo = g.Count(r => r.Status!.Code == RequestConstants.Statuses.FinalApproved || r.Status!.Code == RequestConstants.Statuses.QuotationCompleted || r.Status!.Code == RequestConstants.Statuses.WaitingPoCorrection),
                 InAdjustment = g.Count(r => r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment),
                 InAttention = g.Count(r => !terminalStates.Contains(r.Status!.Code) && r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < in4Days)
             })
@@ -113,7 +156,6 @@ public class RequestsController : BaseController
         var currentUserId = CurrentUserId;
         var roles = CurrentUserRoles;
         var isAdmin = roles.Contains(RoleConstants.SystemAdministrator);
-        var isAreaApprover = roles.Contains(RoleConstants.AreaApprover);
         var isFinalApprover = roles.Contains(RoleConstants.FinalApprover);
         var isBuyer = roles.Contains(RoleConstants.Buyer);
         var isFinance = roles.Contains(RoleConstants.Finance);
@@ -124,7 +166,7 @@ public class RequestsController : BaseController
         // ── My Tasks Criteria (reuses the same logic as GetRequests myTasksCriteria) ──
         Expression<Func<AlplaPortal.Domain.Entities.Request, bool>> myTasksCriteria = r =>
             (r.RequesterId == currentUserId && (r.Status!.Code == RequestConstants.Statuses.Draft || r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment))) ||
-            ((isAreaApprover || r.AreaApproverId == currentUserId) && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
+            ((r.AreaApproverId == currentUserId || _context.DepartmentManagers.Any(dm => dm.UserId == currentUserId && dm.IsActive && dm.DepartmentId == r.DepartmentId && (dm.PlantId == null || (r.PlantId != null && dm.PlantId == r.PlantId)))) && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
             (isFinalApprover && r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval) ||
             (isBuyer && (r.Status!.Code == RequestConstants.Statuses.WaitingQuotation || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Quotation)) && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
             (isFinance && ((r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled)) ||
@@ -464,7 +506,6 @@ public class RequestsController : BaseController
         var userId = CurrentUserId;
         var roles = CurrentUserRoles;
         bool isAdmin = roles.Contains(RoleConstants.SystemAdministrator);
-        bool isAreaApprover = roles.Contains(RoleConstants.AreaApprover);
         bool isFinalApprover = roles.Contains(RoleConstants.FinalApprover);
 
         var query = await GetScopedRequestsQuery();
@@ -473,29 +514,48 @@ public class RequestsController : BaseController
         var in4Days = today.AddDays(4);
 
         // 1. Logic for Area Approvals
-        // Rules: status is WAITING_AREA_APPROVAL or WAITING_COST_CENTER
-        // Responsibility: User has AreaApprover role, OR r.AreaApproverId matches exactly, OR user is Admin
+        // Rules: status is WAITING_AREA_APPROVAL or WAITING_COST_CENTER, OR has active WAITING_AREA_APPROVAL batch
+        // Responsibility (Phase B — DepartmentManager routing, D1): Admin sees all;
+        // otherwise the user must be an active manager of the request's department
+        // (plant-specific or global), or the legacy nominee on an old in-flight request.
+        // The manually assigned "Area Approver" role no longer grants queue visibility.
         var areaStatuses = new[] { RequestConstants.Statuses.WaitingAreaApproval, RequestConstants.Statuses.WaitingCostCenter };
-        var areaQuery = query.Where(r => areaStatuses.Contains(r.Status!.Code));
-        if (!isAdmin && !isAreaApprover)
+        var areaQuery = query.Where(r =>
+            areaStatuses.Contains(r.Status!.Code) ||
+            r.ApprovalBatches.Any(b => b.Status == RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval)
+        );
+        if (!isAdmin)
         {
-            areaQuery = areaQuery.Where(r => r.AreaApproverId == userId);
+            areaQuery = areaQuery.Where(r =>
+                r.AreaApproverId == userId ||
+                _context.DepartmentManagers.Any(dm =>
+                    dm.UserId == userId && dm.IsActive
+                    && dm.DepartmentId == r.DepartmentId
+                    && (dm.PlantId == null || (r.PlantId != null && dm.PlantId == r.PlantId))));
         }
 
         // 2. Logic for Final Approvals
-        // Rules: status is WAITING_FINAL_APPROVAL
+        // Rules: status is WAITING_FINAL_APPROVAL, OR has active WAITING_FINAL_APPROVAL batch
         // Responsibility: either user has Final Approver role or user is Admin
         var finalStatuses = new[] { RequestConstants.Statuses.WaitingFinalApproval };
-        var finalQuery = query.Where(r => finalStatuses.Contains(r.Status!.Code));
+        var finalQuery = query.Where(r => 
+            finalStatuses.Contains(r.Status!.Code) ||
+            r.ApprovalBatches.Any(b => b.Status == RequestConstants.ApprovalBatchStatuses.WaitingFinalApproval)
+        );
         if (!isAdmin && !isFinalApprover)
         {
             // If not admin and not final approver, show nothing in this queue
             finalQuery = finalQuery.Where(r => false);
         }
 
+        var _sw = Stopwatch.StartNew();
+
         // 3. Execution and Projection
         var areaTasks = await ProjectToListItem(areaQuery, today, tomorrow, in4Days);
         var finalTasks = await ProjectToListItem(finalQuery, today, tomorrow, in4Days);
+        
+        _sw.Stop();
+        _logger.LogInformation("[PERF] GetPendingApprovals executing ProjectToListItem took {Elapsed}ms", _sw.ElapsedMilliseconds);
 
         return Ok(new PendingApprovalsResponseDto
         {
@@ -577,7 +637,12 @@ public class RequestsController : BaseController
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
+        var _swTotal = Stopwatch.StartNew();
+        var _sw = Stopwatch.StartNew();
+
         var query = await GetScopedRequestsQuery();
+        _logger.LogInformation("[PERF GetRequests] 1-ScopeResolution: {Elapsed}ms", _sw.ElapsedMilliseconds);
+
         var today = DateTime.UtcNow.Date;
         var tomorrow = today.AddDays(1);
         var in4Days = today.AddDays(4);
@@ -618,7 +683,6 @@ public class RequestsController : BaseController
         // --- Role based Responsibility Filter ---
         var currentUserId = CurrentUserId;
         var roles = CurrentUserRoles;
-        var isAreaApprover = roles.Contains(RoleConstants.AreaApprover);
         var isFinalApprover = roles.Contains(RoleConstants.FinalApprover);
         var isBuyer = roles.Contains(RoleConstants.Buyer);
         var isFinance = roles.Contains(RoleConstants.Finance);
@@ -630,11 +694,17 @@ public class RequestsController : BaseController
             // Solicitante: Em rascunho, ajuste ou Aprovado (Pagamento - para acompanhamento/vencimento)
             (r.RequesterId == currentUserId && (r.Status!.Code == RequestConstants.Statuses.Draft || r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment))) ||
             // Aprovador de Área (Role ou explicitamente designado)
-            ((isAreaApprover || r.AreaApproverId == currentUserId) && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
+            ((r.AreaApproverId == currentUserId || _context.DepartmentManagers.Any(dm => dm.UserId == currentUserId && dm.IsActive && dm.DepartmentId == r.DepartmentId && (dm.PlantId == null || (r.PlantId != null && dm.PlantId == r.PlantId)))) && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
             // Aprovador Final
             (isFinalApprover && r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval) ||
             // Comprador
             (isBuyer && (r.Status!.Code == RequestConstants.Statuses.WaitingQuotation || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Quotation) || r.Status!.Code == "WAITING_SUPPLIER_DELIVERY") && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
+            // Comprador — partial quotation: QUOTATION requests with pending line items requiring buyer action (regardless of parent status)
+            // Excludes terminal statuses (CANCELLED, REJECTED, COMPLETED, PAID, PAYMENT_COMPLETED) to prevent closed requests with legacy null QLStatus items from appearing
+            (isBuyer && r.RequestType!.Code == RequestConstants.Types.Quotation && !new[] { RequestConstants.Statuses.Cancelled, RequestConstants.Statuses.Rejected, RequestConstants.Statuses.Completed, RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(r.Status!.Code) && r.LineItems.Any(li => !li.IsDeleted && (li.QuotationLifecycleStatus == null || li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.QuotationPending)) && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
+            // Solicitante / Aprovador de Área — NOT_QUOTED proposals awaiting decision
+            // Shows QUOTATION requests where at least one active item has a pending not-quoted proposal
+            ((r.RequesterId == currentUserId || _context.DepartmentManagers.Any(dm => dm.UserId == currentUserId && dm.IsActive && dm.DepartmentId == r.DepartmentId && (dm.PlantId == null || (r.PlantId != null && dm.PlantId == r.PlantId)))) && r.RequestType!.Code == RequestConstants.Types.Quotation && !new[] { RequestConstants.Statuses.Cancelled, RequestConstants.Statuses.Rejected, RequestConstants.Statuses.Completed, RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(r.Status!.Code) && r.LineItems.Any(li => !li.IsDeleted && li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.NotQuotedProposed)) ||
             // Financeiro
             (isFinance && ((r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled || r.Status!.Code == "ADVANCE_PAYMENT_REQUIRED" || r.Status!.Code == "WAITING_RECONCILIATION")) ||
             // Recebimento (Requester ou Role)
@@ -648,9 +718,13 @@ public class RequestsController : BaseController
         {
             query = query.Where(r => !(
                 (r.RequesterId == currentUserId && (r.Status!.Code == RequestConstants.Statuses.Draft || r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment))) ||
-                (isAreaApprover && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
+                ((r.AreaApproverId == currentUserId || _context.DepartmentManagers.Any(dm => dm.UserId == currentUserId && dm.IsActive && dm.DepartmentId == r.DepartmentId && (dm.PlantId == null || (r.PlantId != null && dm.PlantId == r.PlantId)))) && r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval) ||
                 (isFinalApprover && r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval) ||
                 (isBuyer && (r.Status!.Code == RequestConstants.Statuses.WaitingQuotation || (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Quotation) || r.Status!.Code == "WAITING_SUPPLIER_DELIVERY") && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
+                // Comprador — partial quotation: QUOTATION requests with pending line items
+                (isBuyer && r.RequestType!.Code == RequestConstants.Types.Quotation && !new[] { RequestConstants.Statuses.Cancelled, RequestConstants.Statuses.Rejected, RequestConstants.Statuses.Completed, RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(r.Status!.Code) && r.LineItems.Any(li => !li.IsDeleted && (li.QuotationLifecycleStatus == null || li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.QuotationPending)) && (r.BuyerId == currentUserId || r.BuyerId == null)) ||
+                // Solicitante / Aprovador de Área — NOT_QUOTED proposals awaiting decision
+                ((r.RequesterId == currentUserId || _context.DepartmentManagers.Any(dm => dm.UserId == currentUserId && dm.IsActive && dm.DepartmentId == r.DepartmentId && (dm.PlantId == null || (r.PlantId != null && dm.PlantId == r.PlantId)))) && r.RequestType!.Code == RequestConstants.Types.Quotation && !new[] { RequestConstants.Statuses.Cancelled, RequestConstants.Statuses.Rejected, RequestConstants.Statuses.Completed, RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(r.Status!.Code) && r.LineItems.Any(li => !li.IsDeleted && li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.NotQuotedProposed)) ||
                 (isFinance && ((r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled || r.Status!.Code == "ADVANCE_PAYMENT_REQUIRED" || r.Status!.Code == "WAITING_RECONCILIATION")) ||
                 ((r.RequesterId == currentUserId || isReceiver) && (receivingCodes.Contains(r.Status!.Code) || r.Status!.Code == "WAITING_SUPPLIER_DELIVERY"))
             ));
@@ -658,6 +732,7 @@ public class RequestsController : BaseController
         // --- 
 
         // 2. Calculate Dashboard Summary (Aware of base filters, but before status filters)
+        _sw.Restart();
         var counts = await query
             .GroupBy(r => 1)
             .Select(g => new
@@ -665,16 +740,20 @@ public class RequestsController : BaseController
                 Total = g.Count(),
                 WaitingQuotation = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingQuotation && r.RequestType!.Code == RequestConstants.Types.Quotation),
                 AwaitingApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval || r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval || r.Status!.Code == RequestConstants.Statuses.WaitingCostCenter),
-                AwaitingPo = g.Count(r => r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Quotation),
+                AwaitingPo = g.Count(r => (r.Status!.Code == RequestConstants.Statuses.FinalApproved || r.Status!.Code == RequestConstants.Statuses.QuotationCompleted || r.Status!.Code == RequestConstants.Statuses.WaitingPoCorrection) && r.RequestType!.Code == RequestConstants.Types.Quotation),
                 AwaitingPayment = g.Count(r => (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled),
                 Completed = g.Count(r => r.Status!.Code == "COMPLETED") // COMPLETED status not yet in constants
             })
             .OrderBy(g => 1)
             .FirstOrDefaultAsync();
 
+        _logger.LogInformation("[PERF GetRequests] 2-DashboardCounts: {Elapsed}ms", _sw.ElapsedMilliseconds);
+        _sw.Restart();
+
         var pendingMyApprovalCount = await query
             .Where(myTasksCriteria)
             .CountAsync(r => r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval || r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval || r.Status!.Code == RequestConstants.Statuses.WaitingCostCenter);
+        _logger.LogInformation("[PERF GetRequests] 3-PendingMyApproval: {Elapsed}ms", _sw.ElapsedMilliseconds);
 
         var summary = new DashboardSummaryDto
         {
@@ -704,6 +783,7 @@ public class RequestsController : BaseController
 
         // 3a. Calculate Filtered Total (Monetary Total)
         // Opting for SelectMany / DefaultIfEmpty to compute sum on database-side without N+1 or local evaluation
+        _sw.Restart();
         var filteredTotal = await query
             .SelectMany(
                 r => r.Quotations.Where(q => q.Id == r.SelectedQuotationId).DefaultIfEmpty(),
@@ -722,10 +802,13 @@ public class RequestsController : BaseController
             .Distinct()
             .ToListAsync();
 
+        _logger.LogInformation("[PERF GetRequests] 4-FilteredTotalAndCurrencies: {Elapsed}ms", _sw.ElapsedMilliseconds);
+
         summary.FilteredTotal = filteredTotal;
         summary.FilteredCurrencyCodes = filteredCurrencyCodes ?? new List<string>();
 
         // 3c. Calculate Filtered Trend (MTD vs PMTD)
+        _sw.Restart();
         var now = DateTime.UtcNow;
         var currentMtdStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         
@@ -784,8 +867,12 @@ public class RequestsController : BaseController
             summary.FilteredTotalTrendLabel = "Sem comparativo";
         }
 
+        _logger.LogInformation("[PERF GetRequests] 5-MTDTrend: {Elapsed}ms", _sw.ElapsedMilliseconds);
+
         // 4. Final Projection and Pagination
+        _sw.Restart();
         var totalCount = await query.CountAsync();
+        _logger.LogInformation("[PERF GetRequests] 6-PaginationCount: {Elapsed}ms", _sw.ElapsedMilliseconds);
 
         if (!string.IsNullOrWhiteSpace(sortBy))
         {
@@ -858,6 +945,7 @@ public class RequestsController : BaseController
                 .ThenByDescending(r => r.CreatedAtUtc);
         }
 
+        _sw.Restart();
         var items = await query
             .Select(r => new
             {
@@ -925,6 +1013,54 @@ public class RequestsController : BaseController
             .Take(pageSize)
             .ToListAsync();
 
+        _logger.LogInformation("[PERF GetRequests] 7-ItemsQuery: {Elapsed}ms (page={Page}, pageSize={PageSize})", _sw.ElapsedMilliseconds, page, pageSize);
+
+        // ── Hydrate DisplayWorkflowState for QUOTATION requests ──
+        var quotationRequestIds = items
+            .Where(i => i.RequestTypeCode == RequestConstants.Types.Quotation)
+            .Select(i => i.Id)
+            .ToList();
+
+        if (quotationRequestIds.Any())
+        {
+            var batchData = await _context.Requests
+                .AsNoTracking()
+                .Where(r => quotationRequestIds.Contains(r.Id))
+                .Select(r => new
+                {
+                    r.Id,
+                    LineItems = r.LineItems.Where(li => !li.IsDeleted).ToList(),
+                    Batches = r.ApprovalBatches.ToList(),
+                    PoGroups = r.PoGroups.ToList(),
+                    StatusCode = r.Status!.Code
+                })
+                .AsSplitQuery()
+                .ToListAsync();
+
+            var lookup = batchData.ToDictionary(x => x.Id);
+            foreach (var item in items)
+            {
+                if (lookup.TryGetValue(item.Id, out var data))
+                {
+                    item.DisplayWorkflowState = _statusSyncService.ComputeDisplayWorkflowState(
+                        RequestConstants.Types.Quotation,
+                        data.StatusCode,
+                        data.LineItems,
+                        data.Batches,
+                        data.PoGroups);
+                }
+            }
+        }
+
+        // PAYMENT requests: mirror status code
+        foreach (var item in items.Where(i => i.RequestTypeCode == RequestConstants.Types.Payment))
+        {
+            item.DisplayWorkflowState = item.StatusCode;
+        }
+
+        _swTotal.Stop();
+        _logger.LogInformation("[PERF GetRequests] TOTAL: {Elapsed}ms | items={Count} totalCount={TotalCount}", _swTotal.ElapsedMilliseconds, items.Count, totalCount);
+
         return Ok(new RequestListResponseDto
         {
             PagedResult = new PagedResult<RequestListItemDto>
@@ -941,6 +1077,8 @@ public class RequestsController : BaseController
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<RequestDetailsDto>> GetRequest(Guid id)
     {
+        var _sw = Stopwatch.StartNew();
+        
         // To avoid massive cartesian product and improve performance, we project into the DTO directly.
         // However, the repeated FirstOrDefault calls for the selected quotation can be expensive.
         // We ensure Unit is projected for items.
@@ -1037,8 +1175,44 @@ public class RequestsController : BaseController
                     CurrencyCode = li.Currency != null ? li.Currency.Code : null,
                     DueDate = li.DueDate,
                     ItemCatalogId = li.ItemCatalogId,
-                    ItemCatalogCode = li.ItemCatalogItem != null ? li.ItemCatalogItem.Code : null
+                    ItemCatalogCode = li.ItemCatalogItem != null ? li.ItemCatalogItem.Code : null,
+                    QuotationLifecycleStatus = li.QuotationLifecycleStatus,
+                    NotQuotedJustification = li.NotQuotedJustification,
+                    NotQuotedProposedAtUtc = li.NotQuotedProposedAtUtc,
+                    RequestPoGroupId = li.RequestPoGroupId,
+                    SelectedQuotationItemId = li.SelectedQuotationItemId,
+                    Allocations = li.Allocations != null ? li.Allocations.Select(a => new RequestLineItemAllocationDto
+                    {
+                        Id = a.Id,
+                        PlantId = a.PlantId,
+                        PlantName = a.Plant != null ? a.Plant.Name : null,
+                        CostCenterId = a.CostCenterId,
+                        CostCenterName = a.CostCenter != null ? a.CostCenter.Name : null,
+                        CostCenterCode = a.CostCenter != null ? a.CostCenter.Code : null,
+                        Percentage = a.Percentage,
+                        AllocationOrder = a.AllocationOrder
+                    }).ToList() : new List<RequestLineItemAllocationDto>()
                 }).ToList(),
+
+                PoGroups = r.PoGroups.Select(g => new RequestPoGroupDto
+                {
+                    Id = g.Id,
+                    RequestId = g.RequestId,
+                    SupplierId = g.SupplierId,
+                    SupplierNameSnapshot = g.SupplierNameSnapshot,
+                    SupplierNifSnapshot = g.SupplierNifSnapshot,
+                    CurrencyId = g.CurrencyId,
+                    CurrencyCode = g.CurrencyCode,
+                    TotalAmount = g.TotalAmount,
+                    PaymentConditionCode = g.PaymentConditionCode,
+                    AdvancePaymentPercent = g.AdvancePaymentPercent,
+                    Status = g.Status,
+                    PurchaseOrderNumber = g.PurchaseOrderNumber,
+                    CreatedAtUtc = g.CreatedAtUtc,
+                    CreatedByUserId = g.CreatedByUserId,
+                    LineItemCount = g.LineItems.Count,
+                    AttachmentCount = g.PoAttachments.Count
+                }).OrderBy(g => g.CreatedAtUtc).ToList(),
 
                 Attachments = r.Attachments.Where(a => !a.IsDeleted).Select(a => new RequestAttachmentDto
                 {
@@ -1068,6 +1242,9 @@ public class RequestsController : BaseController
                     RequestId = q.RequestId,
                     SupplierId = q.SupplierId,
                     SupplierNameSnapshot = q.SupplierNameSnapshot,
+                    SupplierPortalCode = q.Supplier != null ? q.Supplier.PortalCode : null,
+                    SupplierPrimaveraCode = q.Supplier != null ? q.Supplier.PrimaveraCode : null,
+                    SupplierRegistrationStatus = q.Supplier != null ? q.Supplier.RegistrationStatus : null,
                     DocumentNumber = q.DocumentNumber,
                     DocumentDate = q.DocumentDate,
                     Currency = q.Currency,
@@ -1090,6 +1267,9 @@ public class RequestsController : BaseController
                         LineTotal = qi.LineTotal,
                         ItemCatalogId = qi.ItemCatalogId,
                         ItemCatalogCode = qi.ItemCatalog != null ? qi.ItemCatalog.Code : null,
+                        MappedRequestLineItemId = qi.MappedRequestLineItemId,
+                        ReconciliationStatus = qi.ReconciliationStatus,
+                        ReconciliationJustification = qi.ReconciliationJustification,
                         UnitId = qi.UnitId,
                         // Ensure Unit properties are projected; EF Core will join Units table
                         UnitName = qi.Unit != null ? qi.Unit.Name : null,
@@ -1100,12 +1280,95 @@ public class RequestsController : BaseController
                         LineItemStatusName = qi.LineItemStatus != null ? qi.LineItemStatus.Name : null,
                         LineItemStatusBadgeColor = qi.LineItemStatus != null ? qi.LineItemStatus.BadgeColor : null
                     }).ToList()
-                }).OrderByDescending(q => q.CreatedAtUtc).ToList()
+                }).OrderByDescending(q => q.CreatedAtUtc).ToList(),
+
+                ApprovalBatches = r.ApprovalBatches.Select(b => new RequestApprovalBatchDto
+                {
+                    Id = b.Id,
+                    BatchNumber = b.BatchNumber,
+                    Status = b.Status,
+                    Comment = b.Comment,
+                    CreatedAtUtc = b.CreatedAtUtc,
+                    BudgetJustification = b.BudgetJustification,
+                    ApprovedTotalAmount = b.ApprovedTotalAmount,
+                    CreatedByUserId = b.CreatedByUserId,
+                    UpdatedByUserId = b.UpdatedByUserId,
+                    UpdatedAtUtc = b.UpdatedAtUtc,
+                    Items = b.Items.Select(bi => new RequestApprovalBatchItemDto
+                    {
+                        Id = bi.Id,
+                        RequestLineItemId = bi.RequestLineItemId,
+                        SelectedQuotationItemId = bi.SelectedQuotationItemId
+                    }).ToList()
+                }).OrderByDescending(b => b.CreatedAtUtc).ToList()
             })
             .AsSplitQuery()
             .FirstOrDefaultAsync();
+            
+        _sw.Stop();
+        _logger.LogInformation("[PERF] GetRequest(id) database query and projection took {Elapsed}ms for RequestId: {Id}", _sw.ElapsedMilliseconds, id);
 
         if (request == null) return NotFound();
+
+        // Phase B: pending area approval with nobody decided yet → expose the eligible
+        // managers (DepartmentManager routing) for the "Pendente — N responsáveis
+        // elegíveis" display. Legacy nominated requests keep showing AreaApproverName.
+        if (request.StatusCode == "WAITING_AREA_APPROVAL" && request.AreaApproverId == null)
+        {
+            var eligibleRouting = await _approvalRouting.ResolveAreaManagersAsync(request.DepartmentId, request.PlantId);
+            request.EligibleAreaManagerNames = eligibleRouting.Managers.Select(m => m.FullName).ToList();
+        }
+
+        // Enrich not-quoted proposer display name — NotQuotedProposedByUserId has no
+        // EF navigation property, so it isn't available inside the projection above.
+        var notQuotedProposers = await _context.RequestLineItems
+            .Where(li => li.RequestId == id && li.NotQuotedProposedByUserId != null)
+            .Select(li => new { LineItemId = li.Id, li.NotQuotedProposedByUserId })
+            .ToListAsync();
+
+        if (notQuotedProposers.Any())
+        {
+            var proposerUserIds = notQuotedProposers.Select(x => x.NotQuotedProposedByUserId!.Value).Distinct().ToList();
+            var proposerNamesById = await _context.Users
+                .Where(u => proposerUserIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id, u => u.FullName);
+
+            foreach (var proposer in notQuotedProposers)
+            {
+                var lineItemDto = request.LineItems.FirstOrDefault(li => li.Id == proposer.LineItemId);
+                if (lineItemDto != null && proposerNamesById.TryGetValue(proposer.NotQuotedProposedByUserId!.Value, out var name))
+                {
+                    lineItemDto.NotQuotedProposedByName = name;
+                }
+            }
+        }
+
+        // Enrich batch actor display names — ApprovalBatch has no User navigation
+        // properties, so names aren't available inside the projection above.
+        if (request.ApprovalBatches.Any())
+        {
+            var batchUserIds = request.ApprovalBatches
+                .SelectMany(b => new[] { (Guid?)b.CreatedByUserId, b.UpdatedByUserId })
+                .Where(uid => uid.HasValue)
+                .Select(uid => uid!.Value)
+                .Distinct()
+                .ToList();
+
+            var batchUserNamesById = await _context.Users
+                .Where(u => batchUserIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id, u => u.FullName);
+
+            foreach (var batchDto in request.ApprovalBatches)
+            {
+                if (batchUserNamesById.TryGetValue(batchDto.CreatedByUserId, out var createdName))
+                    batchDto.CreatedByUserName = createdName;
+                if (batchDto.UpdatedByUserId.HasValue && batchUserNamesById.TryGetValue(batchDto.UpdatedByUserId.Value, out var updatedName))
+                    batchDto.UpdatedByUserName = updatedName;
+            }
+        }
+
+        // Compute DisplayWorkflowState (read-only, not persisted)
+        request.DisplayWorkflowState = await _statusSyncService.ComputeDisplayWorkflowStateAsync(id);
 
         // Enrich with Selected Quotation data if applicable to avoid redundant subqueries in the projection
         if (request.SelectedQuotationId.HasValue)
@@ -1118,6 +1381,106 @@ public class RequestsController : BaseController
                 request.EstimatedTotalAmount = selectedQ.TotalAmount;
                 request.CurrencyCode = selectedQ.Currency;
                 request.SupplierPortalCode = null; // Direct from snapshot
+            }
+        }
+
+        // ── DEC: Purchase History Insight for Quotations (Step 3) ──
+        if (request.Quotations != null && request.Quotations.Any())
+        {
+            var currentSupplierIds = request.Quotations.Where(q => q.SupplierId.HasValue).Select(q => q.SupplierId!.Value).Distinct().ToList();
+            if (currentSupplierIds.Any())
+            {
+                var validStatusCodes = new[] { "PO_ISSUED", "PAYMENT_SCHEDULED", "PAID", "PAYMENT_COMPLETED", "COMPLETED" };
+                
+                var allQItems = request.Quotations.SelectMany(q => q.Items).ToList();
+                var catalogIds = allQItems.Where(qi => qi.ItemCatalogId.HasValue).Select(qi => qi.ItemCatalogId!.Value).Distinct().ToList();
+                var descriptions = allQItems.Where(qi => !qi.ItemCatalogId.HasValue && !string.IsNullOrWhiteSpace(qi.Description))
+                                            .Select(qi => qi.Description.Trim().ToLower()).Distinct().ToList();
+
+                if (catalogIds.Any() || descriptions.Any())
+                {
+                    // Query historical QuotationItems that were part of a selected quotation in a completed request
+                    var historyQuery = _context.QuotationItems
+                        .Include(qi => qi.Unit)
+                        .Include(qi => qi.Quotation)
+                        .Include(qi => qi.Quotation.Request)
+                        .Include(qi => qi.Quotation.Request.Status)
+                        .Where(qi => 
+                            qi.Quotation.SupplierId.HasValue && currentSupplierIds.Contains(qi.Quotation.SupplierId.Value) &&
+                            qi.Quotation.Request.Status != null && validStatusCodes.Contains(qi.Quotation.Request.Status.Code) &&
+                            qi.Quotation.Request.SelectedQuotationId == qi.QuotationId &&
+                            qi.Quotation.Request.Id != request.Id
+                        );
+
+                    var historyItems = await historyQuery.ToListAsync();
+
+                    // Map by SupplierId
+                    var historyBySupplier = historyItems
+                        .Where(hi => 
+                            (hi.ItemCatalogId.HasValue && catalogIds.Contains(hi.ItemCatalogId.Value)) ||
+                            (!hi.ItemCatalogId.HasValue && !string.IsNullOrWhiteSpace(hi.Description) && descriptions.Contains(hi.Description.Trim().ToLower()))
+                        )
+                        .GroupBy(hi => hi.Quotation.SupplierId!.Value)
+                        .ToDictionary(g => g.Key, g => g.ToList());
+
+                    foreach (var q in request.Quotations)
+                    {
+                        if (!q.SupplierId.HasValue || !historyBySupplier.ContainsKey(q.SupplierId.Value)) continue;
+                        
+                        var supplierHistory = historyBySupplier[q.SupplierId.Value];
+
+                        foreach (var qi in q.Items)
+                        {
+                            var matches = supplierHistory.Where(hi => 
+                                (qi.ItemCatalogId.HasValue && hi.ItemCatalogId == qi.ItemCatalogId) ||
+                                (!qi.ItemCatalogId.HasValue && !hi.ItemCatalogId.HasValue && hi.Description?.Trim().ToLower() == qi.Description?.Trim().ToLower())
+                            ).ToList();
+
+                            if (matches.Any())
+                            {
+                                var bestMatch = matches.OrderByDescending(hi => 
+                                    hi.Quotation.Request.ApprovedAtUtc ?? hi.Quotation.Request.ActualPaidAtUtc ?? hi.Quotation.Request.UpdatedAtUtc ?? hi.Quotation.Request.CreatedAtUtc
+                                ).First();
+
+                                var insight = new PurchaseHistoryInsightDto
+                                {
+                                    HasHistory = true,
+                                    LastPurchaseDateUtc = bestMatch.Quotation.Request.ApprovedAtUtc ?? bestMatch.Quotation.Request.ActualPaidAtUtc ?? bestMatch.Quotation.Request.UpdatedAtUtc ?? bestMatch.Quotation.Request.CreatedAtUtc,
+                                    LastUnitPrice = bestMatch.UnitPrice,
+                                    LastCurrency = bestMatch.Quotation.Currency,
+                                    LastUom = bestMatch.Unit?.Code,
+                                    CurrentUnitPrice = qi.UnitPrice
+                                };
+
+                                if (q.Currency != insight.LastCurrency)
+                                {
+                                    insight.Status = "DIFFERENT_CURRENCY";
+                                }
+                                else if (qi.UnitCode != insight.LastUom)
+                                {
+                                    insight.Status = "DIFFERENT_UOM";
+                                }
+                                else
+                                {
+                                    if (bestMatch.UnitPrice > 0)
+                                    {
+                                        insight.DifferencePercent = Math.Round(((qi.UnitPrice - bestMatch.UnitPrice) / bestMatch.UnitPrice) * 100, 1);
+                                    }
+                                    else
+                                    {
+                                        insight.DifferencePercent = 0;
+                                    }
+
+                                    if (qi.UnitPrice < bestMatch.UnitPrice) insight.Status = "LOWER_THAN_LAST";
+                                    else if (qi.UnitPrice > bestMatch.UnitPrice) insight.Status = "HIGHER_THAN_LAST";
+                                    else insight.Status = "SAME_AS_LAST";
+                                }
+
+                                qi.HistoryInsight = insight;
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -1176,9 +1539,10 @@ public class RequestsController : BaseController
             CapexOpexClassificationId = null, // Not copied: downstream process data
             NeedByDateUtc = null, // Must be explicitly re-entered for the new request
             
-            // Participants SHOULD remain copied as they represent the same business structure
+            // Participants SHOULD remain copied as they represent the same business structure.
+            // (Phase B: AreaApproverId is not copied — it is decided-by audit, resolved
+            // via DepartmentManagers on the new request.)
             BuyerId = request.BuyerId,
-            AreaApproverId = request.AreaApproverId,
             FinalApproverId = request.FinalApproverId,
 
             LineItems = new List<RequestLineItemDto>(), // Only header is copied at creation stage
@@ -1195,6 +1559,7 @@ public class RequestsController : BaseController
             .AsNoTracking()
             .Include(r => r.Status)
             .Include(r => r.RequestType)
+            .Include(r => r.LineItems)
             .Include(r => r.StatusHistories)
                 .ThenInclude(sh => sh.NewStatus)
             .FirstOrDefaultAsync(r => r.Id == id);
@@ -1205,13 +1570,27 @@ public class RequestsController : BaseController
         var currentStatusCode = request.Status!.Code;
         var history = request.StatusHistories.OrderBy(sh => sh.CreatedAtUtc).ToList();
 
-        var stages = typeCode == "QUOTATION" 
-            ? GetQuotationStages() 
+        var stages = typeCode == "QUOTATION"
+            ? GetQuotationStages()
             : GetPaymentStages();
 
         var terminalStates = new[] { "REJECTED", "CANCELLED", "COMPLETED", "QUOTATION_COMPLETED" };
         bool isTerminal = terminalStates.Contains(currentStatusCode);
         bool isRejectionPath = currentStatusCode == "REJECTED" || currentStatusCode == "CANCELLED";
+
+        // A request auto-closed because every item was closed without quotation
+        // (Buyer's CLOSED_NOT_QUOTED, or the legacy accepted proposal) jumps
+        // straight from the quotation stage to COMPLETED — the approval/PO/
+        // payment/receiving stages never happened and must render as skipped,
+        // not as implicitly completed.
+        var activeLineItems = request.LineItems.Where(li => !li.IsDeleted).ToList();
+        bool completedWithoutQuotation =
+            currentStatusCode == "COMPLETED" &&
+            typeCode == "QUOTATION" &&
+            activeLineItems.Count > 0 &&
+            activeLineItems.All(li =>
+                li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.ClosedNotQuoted ||
+                li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.NotQuotedAccepted);
 
         // Identify the last stage that the request actually entered
         int lastStageWithHistoryIndex = -1;
@@ -1220,6 +1599,19 @@ public class RequestsController : BaseController
             if (history.Any(h => stages[i].StatusCodes.Contains(h.NewStatus.Code)))
             {
                 lastStageWithHistoryIndex = i;
+            }
+        }
+
+        // Last NON-terminal stage the request actually entered — the boundary
+        // between "implicitly passed" (e.g. Rascunho) and "skipped" stages when
+        // the request auto-closed without quotation. The terminal stage itself
+        // (Concluído) always has history in that flow, so it must be excluded.
+        int lastNonTerminalStageWithHistoryIndex = -1;
+        for (int i = 0; i < stages.Count - 1; i++)
+        {
+            if (history.Any(h => stages[i].StatusCodes.Contains(h.NewStatus.Code)))
+            {
+                lastNonTerminalStageWithHistoryIndex = i;
             }
         }
 
@@ -1270,13 +1662,22 @@ public class RequestsController : BaseController
                 }
                 else if (isTerminal && !isRejectionPath)
                 {
-                    // For successful terminal states (COMPLETED), stages BEFORE the current stage 
+                    // For successful terminal states (COMPLETED), stages BEFORE the current stage
                     // should be considered completed even if they lack explicit history.
                     if (currentStageIndex != -1 && i < currentStageIndex)
                     {
-                        step.State = "completed";
-                        // Use a fallback date if no history exists (e.g. request creation or next available history)
-                        step.CompletedAt = history.FirstOrDefault(h => h.CreatedAtUtc >= request.CreatedAtUtc)?.CreatedAtUtc ?? request.CreatedAtUtc;
+                        if (completedWithoutQuotation && i > lastNonTerminalStageWithHistoryIndex)
+                        {
+                            // Closed without quotation: stages after the last stage the
+                            // request actually reached (Cotação) were never executed.
+                            step.State = "skipped";
+                        }
+                        else
+                        {
+                            step.State = "completed";
+                            // Use a fallback date if no history exists (e.g. request creation or next available history)
+                            step.CompletedAt = history.FirstOrDefault(h => h.CreatedAtUtc >= request.CreatedAtUtc)?.CreatedAtUtc ?? request.CreatedAtUtc;
+                        }
                     }
                     else
                     {
@@ -1380,9 +1781,30 @@ public class RequestsController : BaseController
             return BadRequest(new ProblemDetails 
             { 
                 Title = "Erro de Validação", 
-                Detail = "A Data de Necessidade é obrigatória para pedidos de Cotação.", 
-                Status = 400 
+                Detail = "A Data de Necessidade é obrigatória para pedidos de Cotação.",
+                Status = 400
             });
+        }
+
+        // 2.1. Need-level minimum lead time (Quotation only).
+        // The "Necessário até" date may not precede the minimum implied by the Grau de Necessidade.
+        // Payment requests are exempt: there the same field carries the supplier invoice due date,
+        // which is legitimately allowed to be in the past.
+        if (requestTypeEntity.Code == RequestConstants.Types.Quotation && dto.NeedByDateUtc.HasValue && dto.NeedLevelId.HasValue)
+        {
+            var needLevel = await _context.NeedLevels.AsNoTracking()
+                .FirstOrDefaultAsync(nl => nl.Id == dto.NeedLevelId!.Value);
+
+            var minNeedByDate = RequestConstants.NeedLevels.GetMinNeedByDate(needLevel?.Code, DateTime.UtcNow);
+            if (minNeedByDate.HasValue && dto.NeedByDateUtc.Value.Date < minNeedByDate.Value)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Erro de Validação",
+                    Detail = $"A data “Necessário até” não pode ser anterior ao prazo mínimo do grau {needLevel!.Name}. Data mínima: {minNeedByDate.Value:dd/MM/yyyy}.",
+                    Status = 400
+                });
+            }
         }
 
         var initialStatusCode = requestTypeEntity.Code == "QUOTATION" ? "WAITING_QUOTATION" : "DRAFT";
@@ -1448,8 +1870,10 @@ public class RequestsController : BaseController
             
             SupplierId = dto.SupplierId,
             BuyerId = dto.BuyerId, // Let it be null
-            AreaApproverId = department?.ResponsibleUserId, // Auto-resolved
-            FinalApproverId = company?.FinalApproverUserId, // Auto-resolved
+            // Phase B: AreaApproverId is no longer nominated — it stays null until an
+            // area manager actually decides (routing via DepartmentManagers at submit).
+            AreaApproverId = null,
+            FinalApproverId = company?.FinalApproverUserId, // Auto-resolved (final approval unchanged)
             
             StatusId = initialStatus.Id,
             RequesterId = actorId,
@@ -1807,10 +2231,11 @@ public class RequestsController : BaseController
         // --- Restricted Fields in Quotation Stage ---
         if (isQuotationStage)
         {
-            // Block structural workflow changes
-            if (request.RequestTypeId != dto.RequestTypeId || 
-                request.BuyerId != dto.BuyerId || 
-                request.AreaApproverId != dto.AreaApproverId || 
+            // Block structural workflow changes.
+            // (Phase B: AreaApproverId is decided-by audit, not a form participant —
+            // removed from this comparison; the DTO no longer carries it.)
+            if (request.RequestTypeId != dto.RequestTypeId ||
+                request.BuyerId != dto.BuyerId ||
                 request.FinalApproverId != dto.FinalApproverId ||
                 request.PlantId != dto.PlantId ||
                 request.CompanyId != dto.CompanyId)
@@ -1829,13 +2254,9 @@ public class RequestsController : BaseController
             if (request.RequestTypeId != dto.RequestTypeId) { request.RequestTypeId = dto.RequestTypeId; changedFields.Add("Tipo de Pedido"); changed = true; }
             if (request.BuyerId != dto.BuyerId) { request.BuyerId = dto.BuyerId; changedFields.Add("Comprador"); changed = true; }
             
-            // Auto-resolve AreaApprover if Department changed
-            if (request.DepartmentId != dto.DepartmentId)
-            {
-                var newDept = await _context.Departments.FirstOrDefaultAsync(d => d.Id == dto.DepartmentId);
-                request.AreaApproverId = newDept?.ResponsibleUserId;
-            }
-            
+            // Phase B: changing the department no longer nominates an AreaApprover —
+            // routing is resolved from DepartmentManagers at submit/decision time.
+
             // Auto-resolve FinalApprover if Company changed
             if (request.CompanyId != dto.CompanyId)
             {
@@ -1986,12 +2407,33 @@ public class RequestsController : BaseController
         // 2. Perform Submission Validation
         var errors = new List<string>();
 
-        // Resolving workflow actors from master-data
-        if (request.Department != null && request.Department.ResponsibleUserId.HasValue)
+        // Phase B — area routing via DepartmentManagers (single source of truth).
+        // The request is NOT nominated to a single approver anymore: AreaApproverId
+        // stays null until a manager actually decides. Submission requires at least
+        // one resolvable manager for (department, plant); Department.ResponsibleUserId
+        // is no longer consulted.
+        var areaRouting = await _approvalRouting.ResolveAreaManagersAsync(request.DepartmentId, request.PlantId);
+        if (!areaRouting.HasManagers)
         {
-            request.AreaApproverId = request.Department.ResponsibleUserId;
-        }
+            var deptName = request.Department?.Name ?? request.DepartmentId.ToString();
+            var plantName = request.PlantId.HasValue
+                ? (await _context.Plants.AsNoTracking().Where(p => p.Id == request.PlantId.Value).Select(p => p.Name).FirstOrDefaultAsync()) ?? request.PlantId.Value.ToString()
+                : "—";
 
+            await _adminLog.WriteAsync("Error", "RequestsController", "APPROVAL_ROUTING_NO_MANAGER",
+                $"Submissão bloqueada: nenhum responsável de aprovação configurado para o departamento {deptName} (planta {plantName}).",
+                payload: $"RequestId: {request.Id}. DepartmentId: {request.DepartmentId}. PlantId: {request.PlantId?.ToString() ?? "null"}. Ator: {actorId}.");
+
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Erro de Validação",
+                Detail = $"Não existe responsável de aprovação configurado para o departamento {deptName} na planta {plantName}. Configure os managers em Dados Mestres → Departamentos.",
+                Status = 400
+            });
+        }
+        request.AreaApproverId = null; // decided-by semantics: filled only when a manager acts
+
+        // Final approval unchanged (out of Phase B scope).
         if (request.Company != null && request.Company.FinalApproverUserId.HasValue)
         {
             request.FinalApproverId = request.Company.FinalApproverUserId;
@@ -2004,13 +2446,9 @@ public class RequestsController : BaseController
             errors.Add("A descrição do pedido é obrigatória.");
         if (request.DepartmentId == 0)
             errors.Add("O departamento é obrigatório.");
-            
+
         // BuyerId validation removed (now allows unassigned requests)
-        
-        // Ensure structural rules are enforced AFTER resolution
-        if (request.AreaApproverId == null || request.AreaApproverId == Guid.Empty)
-            errors.Add("Não foi possível determinar o Aprovador de Área. Verifique se o Departamento selecionado tem um responsável definido no cadastro.");
-            
+
         if (request.FinalApproverId == null || request.FinalApproverId == Guid.Empty)
             errors.Add("Não foi possível determinar o Aprovador Final. Verifique se a Empresa correspondente possui um aprovador final definido no cadastro.");
 
@@ -2602,8 +3040,79 @@ public class RequestsController : BaseController
     }
 
     [HttpPost("{id:guid}/quotations")]
+    
+    private bool ValidateReconciliation(SaveQuotationRequestDto dto, out string errorMessage)
+    {
+        errorMessage = string.Empty;
+        foreach (var item in dto.Items)
+        {
+            if (item.ReconciliationStatus == "LEGACY_UNMAPPED")
+            {
+                errorMessage = "O status LEGACY_UNMAPPED n\u00e3o pode ser criado por novas requisi\u00e7\u00f5es.";
+                return false;
+            }
+            if (item.ReconciliationStatus == "MAPPED" && !item.MappedRequestLineItemId.HasValue)
+            {
+                errorMessage = "Itens MAPPED precisam ter um MappedRequestLineItemId associado.";
+                return false;
+            }
+            if (item.ReconciliationStatus == "SUBSTITUTE")
+            {
+                if (!item.MappedRequestLineItemId.HasValue)
+                {
+                    errorMessage = "Itens SUBSTITUTE precisam ter um MappedRequestLineItemId associado.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(item.ReconciliationJustification))
+                {
+                    errorMessage = "Itens SUBSTITUTE precisam de uma justificativa.";
+                    return false;
+                }
+            }
+            if (item.ReconciliationStatus == "EXTRA_ITEM")
+            {
+                if (item.MappedRequestLineItemId.HasValue)
+                {
+                    errorMessage = "Itens EXTRA_ITEM n\u00e3o podem ter um MappedRequestLineItemId associado.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(item.ReconciliationJustification))
+                {
+                    errorMessage = "Itens EXTRA_ITEM precisam de uma justificativa.";
+                    return false;
+                }
+            }
+            if (item.ReconciliationStatus == "IGNORED" && item.MappedRequestLineItemId.HasValue)
+            {
+                errorMessage = "Itens IGNORED n\u00e3o podem ter um MappedRequestLineItemId associado.";
+                return false;
+            }
+            if (item.ReconciliationStatus == "NOT_QUOTED")
+            {
+                if (!item.MappedRequestLineItemId.HasValue)
+                {
+                    errorMessage = "Itens NOT_QUOTED precisam ter um MappedRequestLineItemId associado.";
+                    return false;
+                }
+                if (item.Quantity != 0 || item.UnitPrice != 0 || item.DiscountAmount != 0)
+                {
+                    errorMessage = "Itens NOT_QUOTED devem ter valores financeiros zerados.";
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    [HttpPost("{id:guid}/quotations")]
     public async Task<ActionResult<SavedQuotationDto>> SaveQuotation(Guid id, [FromQuery] Guid? replaceQuotationId, [FromBody] SaveQuotationRequestDto dto)
     {
+        
+        if (!ValidateReconciliation(dto, out string saveError))
+        {
+            return BadRequest(new ProblemDetails { Title = "Reconciliation Validation Failed", Detail = saveError, Status = 400 });
+        }
+
         var actorId = CurrentUserId;
         var user = await _context.Users.FindAsync(actorId);
         if (user == null) return Unauthorized();
@@ -2632,23 +3141,31 @@ public class RequestsController : BaseController
         }
 
         // Duplicate Supplier Protection
-        if (request.Quotations.Any(q => q.SupplierId == dto.SupplierId && q.Id != replaceQuotationId))
+        var existingQuotations = request.Quotations.Where(q => q.SupplierId == dto.SupplierId && q.Id != replaceQuotationId).ToList();
+        if (existingQuotations.Any())
         {
-            return Conflict(new ProblemDetails 
-            { 
-                Title = "Regra de Negócio Violada", 
-                Detail = "Já existe uma cotação para este fornecedor. Confirme a substituição ou escolha outro fornecedor.",
-                Status = 409
-            });
+            var existingQuotationItemIds = existingQuotations.SelectMany(q => q.Items).Select(i => i.Id).ToList();
+            var isAuditProtected = await _context.Set<ApprovalBatchItem>()
+                .AnyAsync(abi => existingQuotationItemIds.Contains(abi.SelectedQuotationItemId));
+
+            if (!isAuditProtected)
+            {
+                return Conflict(new ProblemDetails 
+                { 
+                    Title = "Regra de Negócio Violada", 
+                    Detail = "Já existe uma cotação para este fornecedor. Confirme a substituição ou escolha outro fornecedor.",
+                    Status = 409
+                });
+            }
         }
 
         // Basic Validation
-        if (dto.SupplierId <= 0) return BadRequest("O fornecedor é obrigatório.");
-        if (string.IsNullOrWhiteSpace(dto.Currency)) return BadRequest("A moeda é obrigatória.");
-        if (dto.Items == null || !dto.Items.Any()) return BadRequest("A cotação deve conter pelo menos um item.");
+        if (dto.SupplierId <= 0) return BadRequest(new ProblemDetails { Title = "Validação de Cotação", Detail = "O fornecedor é obrigatório.", Status = 400 });
+        if (string.IsNullOrWhiteSpace(dto.Currency)) return BadRequest(new ProblemDetails { Title = "Validação de Cotação", Detail = "A moeda é obrigatória.", Status = 400 });
+        if (dto.Items == null || !dto.Items.Any()) return BadRequest(new ProblemDetails { Title = "Validação de Cotação", Detail = "A cotação deve conter pelo menos um item.", Status = 400 });
 
         var supplier = await _context.Suppliers.FindAsync(dto.SupplierId);
-        if (supplier == null) return BadRequest("Fornecedor selecionado não existe.");
+        if (supplier == null) return BadRequest(new ProblemDetails { Title = "Validação de Cotação", Detail = "Fornecedor selecionado não existe.", Status = 400 });
         
         var ivaRates = await _context.IvaRates.ToDictionaryAsync(i => i.Id, i => i.RatePercent);
 
@@ -2687,14 +3204,19 @@ public class RequestsController : BaseController
 
         foreach (var item in dto.Items)
         {
-            if (string.IsNullOrWhiteSpace(item.Description)) return BadRequest("Todos os itens devem ter uma descrição.");
-            if (item.Quantity <= 0) return BadRequest("A quantidade deve ser maior que zero.");
-            if (item.UnitPrice < 0) return BadRequest("O preço unitário não pode ser negativo.");
+            if (string.IsNullOrWhiteSpace(item.Description)) return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = "Todos os itens devem ter uma descrição.", Status = 400 });
+            
+            if (item.Quantity <= 0 && item.ReconciliationStatus != "NOT_QUOTED" && item.ReconciliationStatus != "IGNORED") 
+            {
+                return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = $"Item {item.LineNumber}: A quantidade deve ser maior que zero.", Status = 400 });
+            }
+            
+            if (item.UnitPrice < 0) return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = "O preço unitário não pode ser negativo.", Status = 400 });
 
             decimal grossSubtotal = Round2(item.Quantity * item.UnitPrice);
             decimal itemDiscount = Round2(item.DiscountAmount);
-            if (itemDiscount < 0) return BadRequest("O desconto do item não pode ser negativo.");
-            if (itemDiscount > grossSubtotal) return BadRequest("O desconto não pode exceder o subtotal bruto no item " + item.LineNumber);
+            if (itemDiscount < 0) return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = "O desconto do item não pode ser negativo.", Status = 400 });
+            if (itemDiscount > grossSubtotal) return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = "O desconto não pode exceder o subtotal bruto no item " + item.LineNumber, Status = 400 });
 
             decimal netSubtotal = Math.Max(0, grossSubtotal - itemDiscount);
             decimal ivaPercent = item.IvaRateId.HasValue && ivaRates.TryGetValue(item.IvaRateId.Value, out var rate) ? rate : 0m;
@@ -2717,7 +3239,10 @@ public class RequestsController : BaseController
                 IvaRatePercent = ivaPercent,
                 GrossSubtotal = grossSubtotal,
                 IvaAmount = ivaAmount,
-                LineTotal = lineTotal
+                LineTotal = lineTotal,
+                MappedRequestLineItemId = item.MappedRequestLineItemId,
+                ReconciliationStatus = item.ReconciliationStatus,
+                ReconciliationJustification = item.ReconciliationJustification
             });
         }
 
@@ -2741,6 +3266,63 @@ public class RequestsController : BaseController
         quotation.TotalTaxableBase = taxableBase;
         quotation.TotalIvaAmount = adjustedIva;
         quotation.TotalAmount = Round2(taxableBase + adjustedIva);
+
+        // ═══════════════════════════════════════════════════════════════
+        // Phase 1: Per-Quotation Financial Integrity Gate
+        // ═══════════════════════════════════════════════════════════════
+        if (dto.OcrTotal.HasValue && dto.OcrTotal.Value > 0 && !dto.FinancialIntegrityOverride)
+        {
+            var ocrBaseline = dto.OcrTotal.Value;
+            var validStatuses = new[] { "MAPPED", "SUBSTITUTE", "EXTRA_ITEM" };
+            
+            var consideredGross = quotation.Items.Where(i => validStatuses.Contains(i.ReconciliationStatus)).Sum(i => i.GrossSubtotal);
+            var consideredDiscount = quotation.Items.Where(i => validStatuses.Contains(i.ReconciliationStatus)).Sum(i => i.DiscountAmount);
+            var consideredNet = Round2(Math.Max(0, consideredGross - consideredDiscount));
+            
+            // Adjust global discount proportionally to the considered items
+            decimal globalDiscountRatio = netAfterItemDiscounts > 0 ? (consideredNet / netAfterItemDiscounts) : 0m;
+            decimal consideredGlobalDiscount = Round2(globalDiscount * globalDiscountRatio);
+            
+            decimal consideredTaxableBase = Round2(Math.Max(0, consideredNet - consideredGlobalDiscount));
+            
+            var consideredIvaAmount = quotation.Items.Where(i => validStatuses.Contains(i.ReconciliationStatus)).Sum(i => i.IvaAmount);
+            decimal consideredAdjustedIva = Round2(consideredIvaAmount * (consideredNet > 0 ? (consideredTaxableBase / consideredNet) : 1m));
+            
+            decimal quotationConsideredTotal = Round2(consideredTaxableBase + consideredAdjustedIva);
+
+            // Using standard 2.00 threshold for variances
+            var varianceAmount = Math.Abs(ocrBaseline - quotationConsideredTotal);
+            if (varianceAmount > 2.00m)
+            {
+                var variancePercent = ocrBaseline > 0 ? (varianceAmount / ocrBaseline) * 100m : 100m;
+                return StatusCode(409, new
+                {
+                    integrityCheckFailed = true,
+                    ocrOriginalTotal = ocrBaseline,
+                    quotationTotal = quotationConsideredTotal,
+                    varianceAmount = varianceAmount,
+                    variancePercent = Math.Round(variancePercent, 2),
+                    toleranceApplied = 2.00m,
+                    detail = $"Divergência detectada ({varianceAmount:N2} {quotation.Currency}). A cotação não pode ser salva sem justificação explícita."
+                });
+            }
+        }
+
+        if (dto.FinancialIntegrityOverride && !string.IsNullOrWhiteSpace(dto.OverrideJustification))
+        {
+            var auditHistory = new RequestStatusHistory
+            {
+                Id = Guid.NewGuid(),
+                RequestId = request.Id,
+                ActorUserId = actorId,
+                ActionTaken = "FINANCIAL_INTEGRITY_OVERRIDEN",
+                PreviousStatusId = request.StatusId,
+                NewStatusId = request.StatusId,
+                Comment = $"Alerta de integridade financeira ignorado ao salvar cotação. Justificação: {dto.OverrideJustification}",
+                CreatedAtUtc = DateTime.UtcNow
+            };
+            _context.RequestStatusHistories.Add(auditHistory);
+        }
 
         _context.Quotations.Add(quotation);
 
@@ -2779,6 +3361,9 @@ public class RequestsController : BaseController
             RequestId = quotation.RequestId,
             SupplierId = quotation.SupplierId,
             SupplierNameSnapshot = quotation.SupplierNameSnapshot,
+            SupplierPortalCode = quotation.Supplier != null ? quotation.Supplier.PortalCode : null,
+            SupplierPrimaveraCode = quotation.Supplier != null ? quotation.Supplier.PrimaveraCode : null,
+            SupplierRegistrationStatus = quotation.Supplier != null ? quotation.Supplier.RegistrationStatus : null,
             DocumentNumber = quotation.DocumentNumber,
             DocumentDate = quotation.DocumentDate,
             Currency = quotation.Currency,
@@ -2799,6 +3384,9 @@ public class RequestsController : BaseController
                 LineNumber = qi.LineNumber,
                 Description = qi.Description,
                 Quantity = qi.Quantity,
+                MappedRequestLineItemId = qi.MappedRequestLineItemId,
+                ReconciliationStatus = qi.ReconciliationStatus,
+                ReconciliationJustification = qi.ReconciliationJustification,
                 UnitId = qi.UnitId,
                 UnitName = qi.Unit?.Name,
                 UnitCode = qi.Unit?.Code,
@@ -2819,6 +3407,12 @@ public class RequestsController : BaseController
     [HttpPut("{requestId}/quotations/{quotationId}")]
     public async Task<ActionResult<SavedQuotationDto>> UpdateQuotation([FromRoute] Guid requestId, [FromRoute] Guid quotationId, [FromBody] SaveQuotationRequestDto dto)
     {
+        
+        if (!ValidateReconciliation(dto, out string saveError))
+        {
+            return BadRequest(new ProblemDetails { Title = "Reconciliation Validation Failed", Detail = saveError, Status = 400 });
+        }
+
         var actorId = CurrentUserId;
         var user = await _context.Users.FindAsync(actorId);
         if (user == null) return Unauthorized();
@@ -2848,24 +3442,39 @@ public class RequestsController : BaseController
         if (quotation == null) return NotFound("Cotação não encontrada.");
 
         // Duplicate Supplier Protection
-        var requestWithQuotations = await _context.Requests.Include(r => r.Quotations).FirstOrDefaultAsync(r => r.Id == requestId);
-        if (requestWithQuotations != null && requestWithQuotations.Quotations.Any(q => q.SupplierId == dto.SupplierId && q.Id != quotationId))
+        var requestWithQuotations = await _context.Requests
+            .Include(r => r.Quotations)
+                .ThenInclude(q => q.Items)
+            .FirstOrDefaultAsync(r => r.Id == requestId);
+            
+        if (requestWithQuotations != null)
         {
-            return Conflict(new ProblemDetails 
-            { 
-                Title = "Regra de Negócio Violada", 
-                Detail = "Já existe uma cotação para este fornecedor. Confirme a substituição ou escolha outro fornecedor.",
-                Status = 409
-            });
+            var existingQuotations = requestWithQuotations.Quotations.Where(q => q.SupplierId == dto.SupplierId && q.Id != quotationId).ToList();
+            if (existingQuotations.Any())
+            {
+                var existingQuotationItemIds = existingQuotations.SelectMany(q => q.Items).Select(i => i.Id).ToList();
+                var isAuditProtected = await _context.Set<ApprovalBatchItem>()
+                    .AnyAsync(abi => existingQuotationItemIds.Contains(abi.SelectedQuotationItemId));
+
+                if (!isAuditProtected)
+                {
+                    return Conflict(new ProblemDetails 
+                    { 
+                        Title = "Regra de Negócio Violada", 
+                        Detail = "Já existe uma cotação para este fornecedor. Confirme a substituição ou escolha outro fornecedor.",
+                        Status = 409
+                    });
+                }
+            }
         }
 
         // Validation (Explicitly including Currency as per user requirement)
-        if (dto.SupplierId <= 0) return BadRequest("O fornecedor é obrigatório.");
-        if (string.IsNullOrWhiteSpace(dto.Currency)) return BadRequest("A moeda é obrigatória.");
-        if (dto.Items == null || !dto.Items.Any()) return BadRequest("A cotação deve conter pelo menos um item.");
+        if (dto.SupplierId <= 0) return BadRequest(new ProblemDetails { Title = "Validação de Cotação", Detail = "O fornecedor é obrigatório.", Status = 400 });
+        if (string.IsNullOrWhiteSpace(dto.Currency)) return BadRequest(new ProblemDetails { Title = "Validação de Cotação", Detail = "A moeda é obrigatória.", Status = 400 });
+        if (dto.Items == null || !dto.Items.Any()) return BadRequest(new ProblemDetails { Title = "Validação de Cotação", Detail = "A cotação deve conter pelo menos um item.", Status = 400 });
 
         var supplier = await _context.Suppliers.FindAsync(dto.SupplierId);
-        if (supplier == null) return BadRequest("Fornecedor selecionado não existe.");
+        if (supplier == null) return BadRequest(new ProblemDetails { Title = "Validação de Cotação", Detail = "Fornecedor selecionado não existe.", Status = 400 });
 
         // Update Header
         if (quotation.ProformaAttachmentId != dto.ProformaAttachmentId)
@@ -2885,53 +3494,119 @@ public class RequestsController : BaseController
         quotation.DocumentDate = dto.DocumentDate;
         quotation.Currency = dto.Currency.ToUpper();
 
-        // Replace Items (Explicitly tracking via DbContext directly to avoid navigation confusion)
-        if (quotation.Items.Any())
+        // Replace Items (Merge/Upsert logic to preserve IDs and avoid FK constraints)
+        var existingItemIds = quotation.Items.Select(i => i.Id).ToList();
+        var referencedItemIds = await _context.Set<ApprovalBatchItem>()
+            .Where(abi => existingItemIds.Contains(abi.SelectedQuotationItemId))
+            .Select(abi => abi.SelectedQuotationItemId)
+            .ToListAsync();
+
+        var existingItemsList = quotation.Items.ToList();
+        var itemsToRemove = new List<QuotationItem>();
+
+        foreach (var existing in existingItemsList)
         {
-            _context.QuotationItems.RemoveRange(quotation.Items);
+            var dtoItem = dto.Items.FirstOrDefault(d => 
+                (d.MappedRequestLineItemId.HasValue && existing.MappedRequestLineItemId == d.MappedRequestLineItemId) ||
+                (!d.MappedRequestLineItemId.HasValue && !existing.MappedRequestLineItemId.HasValue && d.LineNumber == existing.LineNumber)
+            );
+
+            if (dtoItem == null)
+            {
+                if (referencedItemIds.Contains(existing.Id))
+                {
+                    return Conflict(new ProblemDetails 
+                    { 
+                        Title = "Ação Bloqueada", 
+                        Detail = $"O item da cotação '{existing.Description}' está em um lote de aprovação e não pode ser removido. Faça o ajuste dos valores em vez de removê-lo.", 
+                        Status = 409 
+                    });
+                }
+                itemsToRemove.Add(existing);
+            }
         }
+
+        _context.QuotationItems.RemoveRange(itemsToRemove);
+        foreach(var rm in itemsToRemove) { quotation.Items.Remove(rm); }
 
         var ivaRates = await _context.IvaRates.ToDictionaryAsync(i => i.Id, i => i.RatePercent);
 
         foreach (var item in dto.Items)
         {
-            if (string.IsNullOrWhiteSpace(item.Description)) return BadRequest("Todos os itens devem ter uma descrição.");
-            if (item.Quantity <= 0) return BadRequest("A quantidade deve ser maior que zero.");
-            if (item.UnitPrice < 0) return BadRequest("O preço unitário não pode ser negativo.");
+            if (string.IsNullOrWhiteSpace(item.Description)) return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = "Todos os itens devem ter uma descrição.", Status = 400 });
+            
+            if (item.Quantity <= 0 && item.ReconciliationStatus != "NOT_QUOTED" && item.ReconciliationStatus != "IGNORED") 
+            {
+                return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = $"Item {item.LineNumber}: A quantidade deve ser maior que zero.", Status = 400 });
+            }
+            
+            if (item.UnitPrice < 0) return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = "O preço unitário não pode ser negativo.", Status = 400 });
 
             decimal grossSubtotal = Round2(item.Quantity * item.UnitPrice);
             decimal itemDiscount = Round2(item.DiscountAmount);
-            if (itemDiscount < 0) return BadRequest("O desconto do item não pode ser negativo.");
-            if (itemDiscount > grossSubtotal) return BadRequest("O desconto não pode exceder o subtotal bruto no item " + item.LineNumber);
+            if (itemDiscount < 0) return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = "O desconto do item não pode ser negativo.", Status = 400 });
+            if (itemDiscount > grossSubtotal) return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = "O desconto não pode exceder o subtotal bruto no item " + item.LineNumber, Status = 400 });
 
             decimal netSubtotal = Math.Max(0, grossSubtotal - itemDiscount);
             decimal ivaPercent = item.IvaRateId.HasValue && ivaRates.TryGetValue(item.IvaRateId.Value, out var rate) ? rate : 0m;
             decimal ivaAmount = Round2(netSubtotal * (ivaPercent / 100m));
             decimal lineTotal = Round2(netSubtotal + ivaAmount);
 
-            _context.QuotationItems.Add(new QuotationItem
+            var existing = quotation.Items.FirstOrDefault(e => 
+                (item.MappedRequestLineItemId.HasValue && e.MappedRequestLineItemId == item.MappedRequestLineItemId) ||
+                (!item.MappedRequestLineItemId.HasValue && !e.MappedRequestLineItemId.HasValue && e.LineNumber == item.LineNumber)
+            );
+
+            if (existing != null)
             {
-                Id = Guid.NewGuid(),
-                QuotationId = quotation.Id,
-                LineNumber = item.LineNumber,
-                Description = item.Description,
-                UnitId = item.UnitId,
-                ItemCatalogId = item.ItemCatalogId,
-                Quantity = item.Quantity,
-                UnitPrice = item.UnitPrice,
-                DiscountAmount = itemDiscount,
-                DiscountPercent = item.DiscountPercent,
-                IvaRateId = item.IvaRateId,
-                IvaRatePercent = ivaPercent,
-                GrossSubtotal = grossSubtotal,
-                IvaAmount = ivaAmount,
-                LineTotal = lineTotal
-            });
+                existing.LineNumber = item.LineNumber;
+                existing.Description = item.Description;
+                existing.UnitId = item.UnitId;
+                existing.ItemCatalogId = item.ItemCatalogId;
+                existing.Quantity = item.Quantity;
+                existing.UnitPrice = item.UnitPrice;
+                existing.DiscountAmount = itemDiscount;
+                existing.DiscountPercent = item.DiscountPercent;
+                existing.IvaRateId = item.IvaRateId;
+                existing.IvaRatePercent = ivaPercent;
+                existing.GrossSubtotal = grossSubtotal;
+                existing.IvaAmount = ivaAmount;
+                existing.LineTotal = lineTotal;
+                existing.MappedRequestLineItemId = item.MappedRequestLineItemId;
+                existing.ReconciliationStatus = item.ReconciliationStatus;
+                existing.ReconciliationJustification = item.ReconciliationJustification;
+            }
+            else
+            {
+                var newItem = new QuotationItem
+                {
+                    Id = Guid.NewGuid(),
+                    QuotationId = quotation.Id,
+                    LineNumber = item.LineNumber,
+                    Description = item.Description,
+                    UnitId = item.UnitId,
+                    ItemCatalogId = item.ItemCatalogId,
+                    Quantity = item.Quantity,
+                    UnitPrice = item.UnitPrice,
+                    DiscountAmount = itemDiscount,
+                    DiscountPercent = item.DiscountPercent,
+                    IvaRateId = item.IvaRateId,
+                    IvaRatePercent = ivaPercent,
+                    GrossSubtotal = grossSubtotal,
+                    IvaAmount = ivaAmount,
+                    LineTotal = lineTotal,
+                    MappedRequestLineItemId = item.MappedRequestLineItemId,
+                    ReconciliationStatus = item.ReconciliationStatus,
+                    ReconciliationJustification = item.ReconciliationJustification
+                };
+                _context.QuotationItems.Add(newItem);
+                quotation.Items.Add(newItem);
+            }
         }
 
-        decimal totalGross = _context.QuotationItems.Local.Where(qi => qi.QuotationId == quotation.Id).Sum(i => i.GrossSubtotal);
-        decimal sumItemDiscounts = _context.QuotationItems.Local.Where(qi => qi.QuotationId == quotation.Id).Sum(i => i.DiscountAmount);
-        decimal totalItemIva = _context.QuotationItems.Local.Where(qi => qi.QuotationId == quotation.Id).Sum(i => i.IvaAmount);
+        decimal totalGross = quotation.Items.Sum(i => i.GrossSubtotal);
+        decimal sumItemDiscounts = quotation.Items.Sum(i => i.DiscountAmount);
+        decimal totalItemIva = quotation.Items.Sum(i => i.IvaAmount);
         decimal netAfterItemDiscounts = Round2(Math.Max(0, totalGross - sumItemDiscounts));
 
         // Global (commercial) discount from DTO — reduces the taxable base further
@@ -2998,6 +3673,9 @@ public class RequestsController : BaseController
             RequestId = quotation.RequestId,
             SupplierId = quotation.SupplierId,
             SupplierNameSnapshot = quotation.SupplierNameSnapshot,
+            SupplierPortalCode = quotation.Supplier != null ? quotation.Supplier.PortalCode : null,
+            SupplierPrimaveraCode = quotation.Supplier != null ? quotation.Supplier.PrimaveraCode : null,
+            SupplierRegistrationStatus = quotation.Supplier != null ? quotation.Supplier.RegistrationStatus : null,
             DocumentNumber = quotation.DocumentNumber,
             DocumentDate = quotation.DocumentDate,
             Currency = quotation.Currency,
@@ -3018,6 +3696,9 @@ public class RequestsController : BaseController
                 LineNumber = qi.LineNumber,
                 Description = qi.Description,
                 Quantity = qi.Quantity,
+                MappedRequestLineItemId = qi.MappedRequestLineItemId,
+                ReconciliationStatus = qi.ReconciliationStatus,
+                ReconciliationJustification = qi.ReconciliationJustification,
                 UnitId = qi.UnitId,
                 UnitName = qi.Unit?.Name,
                 UnitCode = qi.Unit?.Code,
@@ -3062,6 +3743,21 @@ public class RequestsController : BaseController
             .FirstOrDefaultAsync(q => q.Id == quotationId && q.RequestId == id);
 
         if (quotation == null) return NotFound("Cotação não encontrada.");
+
+        // Check if any quotation item is used in an approval batch
+        var quotationItemIds = quotation.Items.Select(i => i.Id).ToList();
+        var isReferencedByBatch = await _context.Set<ApprovalBatchItem>()
+            .AnyAsync(abi => quotationItemIds.Contains(abi.SelectedQuotationItemId));
+
+        if (isReferencedByBatch)
+        {
+            return Conflict(new ProblemDetails 
+            { 
+                Title = "Ação Bloqueada", 
+                Detail = "Esta cotação já foi utilizada em um lote de aprovação e não pode ser excluída. Faça um reajuste ou adicione uma nova revisão/cotação.", 
+                Status = 409 
+            });
+        }
 
         if (quotation.ProformaAttachmentId.HasValue)
         {
@@ -3923,7 +4619,7 @@ public class RequestsController : BaseController
     [HttpPost("{id}/area-approval/approve")]
     public async Task<IActionResult> ApproveArea(Guid id, [FromBody] ApprovalActionDto dto)
     {
-        return await ProcessAreaApproval(id, "APPROVE", "WAITING_FINAL_APPROVAL", dto.Comment, dto.SelectedQuotationId, dto.ItemAssignments);
+        return await ProcessAreaApproval(id, "APPROVE", "WAITING_FINAL_APPROVAL", dto);
     }
 
     [HttpPost("{id}/area-approval/reject")]
@@ -3932,7 +4628,7 @@ public class RequestsController : BaseController
         if (string.IsNullOrWhiteSpace(dto.Comment))
             return BadRequest(new ProblemDetails { Title = "Comentário Obrigatório", Detail = "Informe o motivo da rejeição.", Status = 400 });
 
-        return await ProcessAreaApproval(id, "REJECT", "REJECTED", dto.Comment, dto.SelectedQuotationId, dto.ItemAssignments, WorkflowEventCodes.AreaRejected);
+        return await ProcessAreaApproval(id, "REJECT", "REJECTED", dto, WorkflowEventCodes.AreaRejected);
     }
 
     [HttpPost("{id}/area-approval/request-adjustment")]
@@ -3941,7 +4637,7 @@ public class RequestsController : BaseController
         if (string.IsNullOrWhiteSpace(dto.Comment))
             return BadRequest(new ProblemDetails { Title = "Comentário Obrigatório", Detail = "Informe o motivo do reajuste.", Status = 400 });
 
-        return await ProcessAreaApproval(id, "REQUEST_ADJUSTMENT", "AREA_ADJUSTMENT", dto.Comment, dto.SelectedQuotationId, dto.ItemAssignments, WorkflowEventCodes.AreaAdjustment);
+        return await ProcessAreaApproval(id, "REQUEST_ADJUSTMENT", "AREA_ADJUSTMENT", dto, WorkflowEventCodes.AreaAdjustment);
     }
 
     [HttpPost("{id}/final-approval/approve")]
@@ -3994,9 +4690,13 @@ public class RequestsController : BaseController
         if (request.RequestType!.Code == "PAYMENT" && action == "REQUEST_ADJUSTMENT")
             return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Pedidos de Pagamento não permitem reajuste. Apenas aprovação ou rejeição são permitidas.", Status = 400 });
 
-        if (action == "APPROVE" && request.RequestType!.Code == "QUOTATION" && !request.SelectedQuotationId.HasValue)
+        if (action == "APPROVE" && request.RequestType!.Code == "QUOTATION")
         {
-            return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Não é possível aprovar um pedido de Cotação sem selecionar a cotação vencedora primeiro.", Status = 400 });
+            var hasGroups = await _context.RequestPoGroups.AnyAsync(g => g.RequestId == id);
+            if (!hasGroups)
+            {
+                return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Não é possível aprovar um pedido de Cotação sem grupos de compras definidos.", Status = 400 });
+            }
         }
 
         string historyComment = action switch
@@ -4020,14 +4720,39 @@ public class RequestsController : BaseController
         // This snapshot serves as the baseline for divergence detection at payment.
         if (action == "APPROVE")
         {
-            if (request.RequestType!.Code == RequestConstants.Types.Quotation && request.SelectedQuotationId.HasValue)
+            if (request.RequestType!.Code == RequestConstants.Types.Quotation)
             {
-                var winnerQuotation = await _context.Quotations
-                    .FirstOrDefaultAsync(q => q.Id == request.SelectedQuotationId.Value);
-                if (winnerQuotation != null)
+                var poGroups = await _context.RequestPoGroups
+                    .Where(g => g.RequestId == id)
+                    .ToListAsync();
+
+                if (poGroups.Any())
                 {
-                    request.ApprovedTotalAmount = winnerQuotation.TotalAmount;
-                    request.ApprovedCurrencyCode = winnerQuotation.Currency;
+                    var groupTotal = poGroups.Sum(g => g.TotalAmount);
+                    
+                    // Defensive fallback: if PO group totals are zero (e.g. legacy data or builder
+                    // ran before the QuotationItem.LineTotal fix), recalculate from awarded items.
+                    if (groupTotal <= 0)
+                    {
+                        var awardedTotal = await _context.RequestLineItems
+                            .Where(li => li.RequestId == id && !li.IsDeleted && li.SelectedQuotationItemId.HasValue)
+                            .Join(_context.Set<QuotationItem>(),
+                                li => li.SelectedQuotationItemId, qi => qi.Id,
+                                (li, qi) => qi.LineTotal)
+                            .SumAsync(t => t);
+                        
+                        if (awardedTotal > 0)
+                        {
+                            _logger.LogWarning(
+                                "Request {RequestId}: PO group total was {GroupTotal}, recalculated from awarded items: {AwardedTotal}",
+                                id, groupTotal, awardedTotal);
+                            groupTotal = awardedTotal;
+                        }
+                    }
+                    
+                    request.ApprovedTotalAmount = groupTotal;
+                    var distinctCurrencies = poGroups.Select(g => g.CurrencyCode).Distinct().ToList();
+                    request.ApprovedCurrencyCode = distinctCurrencies.Count > 1 ? "MULTIPLE" : distinctCurrencies.FirstOrDefault();
                 }
             }
             else
@@ -4044,82 +4769,453 @@ public class RequestsController : BaseController
                 }
             }
             request.ApprovedAtUtc = DateTime.UtcNow;
+
+            // ── Payment Request: Auto-create PO Group ──────────────────────
+            // Payment Requests don't go through the quotation/award/GroupBuilder path.
+            // Create a single PO group from the request's supplier, currency, and
+            // estimated total so the Buyer can register the P.O. after final approval.
+            if (request.RequestType!.Code == RequestConstants.Types.Payment)
+            {
+                var existingGroups = await _context.RequestPoGroups
+                    .AnyAsync(g => g.RequestId == id);
+
+                if (!existingGroups)
+                {
+                    var currencyObj = request.CurrencyId.HasValue
+                        ? await _context.Currencies.FindAsync(request.CurrencyId.Value)
+                        : null;
+                    var supplier = request.SupplierId.HasValue
+                        ? await _context.Suppliers.FindAsync(request.SupplierId.Value)
+                        : null;
+
+                    if (supplier == null && request.SupplierId.HasValue)
+                    {
+                        _logger.LogWarning(
+                            "ProcessFinalApproval — Payment Request {RequestId} ({RequestNumber}) has SupplierId={SupplierId} but Supplier entity not found.",
+                            id, request.RequestNumber, request.SupplierId);
+                    }
+
+                    var paymentGroup = new RequestPoGroup
+                    {
+                        RequestId = request.Id,
+                        SupplierId = request.SupplierId,
+                        SupplierNameSnapshot = supplier?.Name ?? "Fornecedor não definido",
+                        SupplierNifSnapshot = supplier?.TaxId,
+                        CurrencyId = currencyObj?.Id,
+                        CurrencyCode = currencyObj?.Code ?? "AOA",
+                        TotalAmount = request.EstimatedTotalAmount,
+                        PaymentConditionCode = request.PaymentConditionCode,
+                        AdvancePaymentPercent = request.AdvancePaymentPercent,
+                        Status = RequestConstants.PoGroupStatuses.WaitingPo,
+                        CreatedAtUtc = DateTime.UtcNow,
+                        CreatedByUserId = actorId
+                    };
+
+                    _context.RequestPoGroups.Add(paymentGroup);
+
+                    _logger.LogInformation(
+                        "ProcessFinalApproval — Auto-created PO group for Payment Request {RequestId} ({RequestNumber}). " +
+                        "Supplier: {Supplier}, Amount: {Amount:N2} {Currency}, GroupId: {GroupId}",
+                        id, request.RequestNumber,
+                        paymentGroup.SupplierNameSnapshot,
+                        paymentGroup.TotalAmount,
+                        paymentGroup.CurrencyCode,
+                        paymentGroup.Id);
+                }
+            }
+
+            // ── PO Group Activation: PENDING → WAITING_PO ──────────────────────
+            // PO groups are created at Area Approval (via GroupBuilderService) with
+            // status PENDING. At Final Approval, they must be activated to WAITING_PO
+            // so the Buyer can register/upload the P.O.
+            var pendingPoGroups = await _context.RequestPoGroups
+                .Where(g => g.RequestId == id && g.Status == RequestConstants.PoGroupStatuses.Pending)
+                .ToListAsync();
+
+            foreach (var pg in pendingPoGroups)
+            {
+                pg.Status = RequestConstants.PoGroupStatuses.WaitingPo;
+            }
+
+            _logger.LogInformation(
+                "ProcessFinalApproval — PO Group activation for Request {RequestId} ({RequestNumber}), " +
+                "Type: {RequestType}. Total PO groups: {TotalGroups}, Transitioned PENDING→WAITING_PO: {TransitionedCount}. " +
+                "Group details: [{GroupDetails}]",
+                id,
+                request.RequestNumber,
+                request.RequestType?.Code,
+                pendingPoGroups.Count + (await _context.RequestPoGroups.CountAsync(g => g.RequestId == id && g.Status != RequestConstants.PoGroupStatuses.Pending)),
+                pendingPoGroups.Count,
+                string.Join("; ", pendingPoGroups.Select(g => $"GroupId={g.Id}, Supplier={g.SupplierNameSnapshot}, Amount={g.TotalAmount:N2} {g.CurrencyCode}"))
+            );
+
+            if (!pendingPoGroups.Any())
+            {
+                _logger.LogWarning(
+                    "ProcessFinalApproval — No PENDING PO groups found for Request {RequestId} ({RequestNumber}). " +
+                    "This may indicate groups were not created at Area Approval or were already transitioned.",
+                    id, request.RequestNumber);
+            }
+
+            await _context.SaveChangesAsync();
         }
 
         return await ApplyStatusChangeAndSyncItemsAsync(request, targetStatusCode, action, historyComment, successMessage, actorId, overrideEventCode);
     }
 
-    private async Task<IActionResult> ProcessAreaApproval(Guid id, string action, string targetStatusCode, string? comment, Guid? selectedQuotationId, Dictionary<Guid, ItemApprovalAssignmentDto>? itemAssignments, string? overrideEventCode = null)
+    private async Task<IActionResult> ProcessAreaApproval(Guid id, string action, string targetStatusCode, ApprovalActionDto dto, string? overrideEventCode = null)
     {
         var actorId = CurrentUserId;
-
-        // Role-based Authorization: strictly enforce Area Approver role
-        if (!CurrentUserRoles.Contains(RoleConstants.AreaApprover))
-            return StatusCode(403, "Apenas o papel de Aprovador de Área pode realizar aprovações nesta etapa.");
 
         var request = await _context.Requests
             .Include(r => r.RequestType)
             .Include(r => r.Status)
             .Include(r => r.LineItems)
+                .ThenInclude(li => li.Allocations)
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (request == null) return NotFound();
 
+        // Phase B authorization — DepartmentManager is the source of truth (D1):
+        // admin, manager of the request's department/plant (specific or global), or the
+        // legacy nominee on an old in-flight request. The manual role grants nothing.
+        if (!await CanActAsAreaManagerAsync(actorId, request))
+            return StatusCode(403, "Você não é responsável pelo departamento/planta deste pedido.");
+
+        // Concurrency between multiple eligible managers: if another manager already
+        // decided (status moved past area approval), answer 409 with the decider's name.
+        if (request.Status!.Code != "WAITING_AREA_APPROVAL" && request.AreaApproverId != null
+            && (request.Status.Code == "WAITING_FINAL_APPROVAL" || request.Status.Code == "REJECTED" || request.Status.Code == "AREA_ADJUSTMENT"))
+        {
+            var deciderName = await _context.Users.AsNoTracking()
+                .Where(u => u.Id == request.AreaApproverId)
+                .Select(u => u.FullName)
+                .FirstOrDefaultAsync() ?? "outro aprovador";
+            return Conflict(new ProblemDetails
+            {
+                Title = "Pedido Já Decidido",
+                Detail = $"Este pedido já foi decidido por {deciderName}.",
+                Status = 409
+            });
+        }
+
         // Winner Selection Validation (only for Quotation Approve)
         if (request.RequestType!.Code == "QUOTATION" && action == "APPROVE")
         {
-            if (!selectedQuotationId.HasValue)
+            var activeItems = request.LineItems.Where(li => !li.IsDeleted).ToList();
+            
+            // Process Extra Items before validation
+            if (dto.ExtraItemDecisions != null && dto.ExtraItemDecisions.Any())
+            {
+                var extraIds = dto.ExtraItemDecisions.Keys.ToList();
+                var extraQItems = await _context.QuotationItems
+                    .Include(qi => qi.Quotation)
+                    .Where(qi => extraIds.Contains(qi.Id) && qi.Quotation.RequestId == id)
+                    .ToListAsync();
+
+                foreach (var qi in extraQItems)
+                {
+                    var decision = dto.ExtraItemDecisions[qi.Id];
+                    if (decision.Decision == "APPROVE")
+                    {
+                        int nextLineNumber = activeItems.Any() ? activeItems.Max(i => i.LineNumber) + 1 : 1;
+                        var newLineItem = new RequestLineItem
+                        {
+                            Id = Guid.NewGuid(),
+                            RequestId = id,
+                            LineNumber = nextLineNumber,
+                            Description = "[Item Adicional] " + qi.Description,
+                            Quantity = qi.Quantity,
+                            UnitId = qi.UnitId,
+                            UnitPrice = qi.UnitPrice,
+                            TotalAmount = qi.LineTotal,
+                            IsDeleted = false,
+                            CreatedAtUtc = DateTime.UtcNow,
+                            CreatedByUserId = actorId
+                        };
+                        _context.RequestLineItems.Add(newLineItem);
+                        activeItems.Add(newLineItem);
+
+                        dto.ItemAwards ??= new Dictionary<Guid, Guid>();
+                        dto.ItemAwards[newLineItem.Id] = qi.Id;
+
+                        if (dto.ItemAssignments != null && dto.ItemAssignments.TryGetValue(qi.Id, out var assignment))
+                        {
+                            dto.ItemAssignments.Remove(qi.Id);
+                            dto.ItemAssignments[newLineItem.Id] = assignment;
+                        }
+
+                        if (dto.ItemAllocations != null && dto.ItemAllocations.TryGetValue(qi.Id, out var allocations))
+                        {
+                            dto.ItemAllocations.Remove(qi.Id);
+                            dto.ItemAllocations[newLineItem.Id] = allocations;
+                        }
+                    }
+                    else if (decision.Decision == "REJECT")
+                    {
+                        _context.RequestStatusHistories.Add(new RequestStatusHistory
+                        {
+                            Id = Guid.NewGuid(),
+                            RequestId = id,
+                            ActorUserId = actorId,
+                            ActionTaken = "EXTRA_ITEM_REJECTED",
+                            PreviousStatusId = request.StatusId,
+                            NewStatusId = request.StatusId, // Keep same status
+                            Comment = $"Item Adicional Rejeitado ({qi.Quotation.SupplierNameSnapshot}): {qi.Description}. Motivo: {decision.Comment}",
+                            CreatedAtUtc = DateTime.UtcNow
+                        });
+                    }
+                }
+            }
+
+            if (dto.ItemAwards == null || !activeItems.All(i => dto.ItemAwards.ContainsKey(i.Id)))
             {
                 return BadRequest(new ProblemDetails 
                 { 
-                    Title = "Vencedor não Selecionado", 
-                    Detail = "É necessário selecionar um fornecedor vencedor para aprovar um pedido de cotação.", 
+                    Title = "Vencedor Incompleto", 
+                    Detail = "É necessário selecionar uma cotação vencedora para cada item do pedido.", 
                     Status = 400 
                 });
             }
 
-            // Verify if the quotation belongs to this request
-            var quotationExists = await _context.Quotations.AnyAsync(q => q.Id == selectedQuotationId && q.RequestId == id);
-            if (!quotationExists)
+            // Verify if all selected quotation items belong to quotations of this request
+            var selectedQuotationItemIds = dto.ItemAwards.Values.Distinct().ToList();
+            var validQuotationItems = await _context.QuotationItems
+                .Where(qi => selectedQuotationItemIds.Contains(qi.Id) && qi.Quotation.RequestId == id)
+                .Select(qi => new { qi.Id, qi.QuotationId })
+                .ToListAsync();
+
+            var validQuotationItemIds = validQuotationItems.Select(x => x.Id).ToList();
+
+            if (validQuotationItemIds.Count != selectedQuotationItemIds.Count)
             {
                 return BadRequest(new ProblemDetails 
                 { 
                     Title = "Cotação Inválida", 
-                    Detail = "A cotação selecionada não pertence a este pedido.", 
+                    Detail = "Um ou mais itens de cotação selecionados são inválidos ou não pertencem a este pedido.", 
                     Status = 400 
                 });
             }
 
-            request.SelectedQuotationId = selectedQuotationId;
+            // Save the awards to the line items and record audit history
+            var targetStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == targetStatusCode);
+            foreach (var item in activeItems)
+            {
+                item.SelectedQuotationItemId = dto.ItemAwards[item.Id];
+                
+                if (targetStatus != null)
+                {
+                    _context.RequestStatusHistories.Add(new RequestStatusHistory
+                    {
+                        Id = Guid.NewGuid(),
+                        RequestId = request.Id,
+                        ActorUserId = actorId,
+                        ActionTaken = WorkflowEventCodes.QuotationItemAwarded,
+                        PreviousStatusId = request.StatusId,
+                        NewStatusId = targetStatus.Id,
+                        Comment = $"Item #{item.LineNumber} - Vencedor selecionado: Cotação Item {item.SelectedQuotationItemId}",
+                        CreatedAtUtc = DateTime.UtcNow
+                    });
+                }
+            }
+
+            // Legacy compatibility: Set SelectedQuotationId if exactly one quotation won all items
+            var distinctQuotationIds = validQuotationItems.Select(x => x.QuotationId).Distinct().ToList();
+            if (distinctQuotationIds.Count == 1)
+            {
+                request.SelectedQuotationId = distinctQuotationIds.First();
+            }
+            else
+            {
+                request.SelectedQuotationId = null;
+            }
         }
 
-        // Cost Center Propagation (DEC-085/DEC-099: Per-item Allocation)
+        // Multi-Allocation Propagation (Phase 1)
         if (action == "APPROVE")
         {
             var activeItems = request.LineItems.Where(li => !li.IsDeleted).ToList();
             
-            // 1. Validate that we have both Plant and CC for every active item
+            // 1. Process 3-tier fallback allocation logic
             foreach (var item in activeItems)
             {
-                if (itemAssignments == null || !itemAssignments.TryGetValue(item.Id, out var assignment) || !assignment.PlantId.HasValue || assignment.PlantId <= 0 || !assignment.CostCenterId.HasValue || assignment.CostCenterId <= 0)
-                {
-                    string missingLabel = string.Empty;
-                    if (itemAssignments == null || !itemAssignments.TryGetValue(item.Id, out var a)) missingLabel = "Planta e Centro de Custo";
-                    else if ((!a.PlantId.HasValue || a.PlantId <= 0) && (!a.CostCenterId.HasValue || a.CostCenterId <= 0)) missingLabel = "Planta e Centro de Custo";
-                    else if (!a.PlantId.HasValue || a.PlantId <= 0) missingLabel = "Planta";
-                    else missingLabel = "Centro de Custo";
+                var allocsToSave = new List<RequestLineItemAllocation>();
 
+                if (dto.ItemAllocations != null && dto.ItemAllocations.TryGetValue(item.Id, out var allocLines) && allocLines.Any())
+                {
+                    // Tier 1: ItemAllocations present
+                    if (allocLines.Count > 10)
+                    {
+                        return BadRequest(new ProblemDetails { Title = "Excesso de Alocações", Detail = $"O item #{item.LineNumber} possui mais de 10 alocações.", Status = 400 });
+                    }
+
+                    if (allocLines.Any(a => a.Percentage <= 0))
+                    {
+                        return BadRequest(new ProblemDetails { Title = "Percentagem Inválida", Detail = $"O item #{item.LineNumber} possui alocações com percentagem igual ou inferior a zero.", Status = 400 });
+                    }
+
+                    var totalPercent = allocLines.Sum(a => a.Percentage);
+                    if (totalPercent != 100m)
+                    {
+                        return BadRequest(new ProblemDetails { Title = "Percentagem Inválida", Detail = $"A soma das percentagens do item #{item.LineNumber} deve ser 100% (atual: {totalPercent}%).", Status = 400 });
+                    }
+
+                    int order = 0;
+                    foreach (var al in allocLines)
+                    {
+                        allocsToSave.Add(new RequestLineItemAllocation
+                        {
+                            Id = Guid.NewGuid(),
+                            RequestLineItemId = item.Id,
+                            PlantId = al.PlantId,
+                            CostCenterId = al.CostCenterId,
+                            Percentage = al.Percentage,
+                            AllocationOrder = order++,
+                            Comment = al.Comment,
+                            CreatedAtUtc = DateTime.UtcNow,
+                            CreatedByUserId = actorId
+                        });
+                    }
+                }
+                else if (dto.ItemAssignments != null && dto.ItemAssignments.TryGetValue(item.Id, out var assignment) && assignment.PlantId.HasValue && assignment.PlantId > 0 && assignment.CostCenterId.HasValue && assignment.CostCenterId > 0)
+                {
+                    // Tier 2: ItemAssignments present
+                    allocsToSave.Add(new RequestLineItemAllocation
+                    {
+                        Id = Guid.NewGuid(),
+                        RequestLineItemId = item.Id,
+                        PlantId = assignment.PlantId.Value,
+                        CostCenterId = assignment.CostCenterId.Value,
+                        Percentage = 100m,
+                        AllocationOrder = 0,
+                        CreatedAtUtc = DateTime.UtcNow,
+                        CreatedByUserId = actorId
+                    });
+                }
+                else
+                {
+                    // Tier 3: Reject missing allocation
                     return BadRequest(new ProblemDetails
                     {
                         Title = "Atribuição de Item Incompleta",
-                        Detail = $"O item #{item.LineNumber} está sem {missingLabel} atribuído. A aprovação da área exige definição de Planta e Centro de Custo para todos os itens.",
+                        Detail = $"O item #{item.LineNumber} está sem alocação financeira definida. A aprovação exige a definição de Planta e Centro de Custo para todos os itens.",
+                        Status = 400
+                    });
+                }
+
+                // Apply new allocations
+                if (item.Allocations == null) item.Allocations = new List<RequestLineItemAllocation>();
+                
+                // We clear existing allocations and insert the new ones (since area approval overwrites drafts/previous)
+                _context.RequestLineItemAllocations.RemoveRange(item.Allocations);
+                item.Allocations.Clear();
+
+                foreach (var a in allocsToSave)
+                {
+                    item.Allocations.Add(a);
+                }
+
+                // Legacy fields sync
+                var highestAlloc = allocsToSave.OrderByDescending(a => a.Percentage).ThenBy(a => a.AllocationOrder).ThenBy(a => a.CostCenterId).First();
+                item.PlantId = highestAlloc.PlantId;
+                item.CostCenterId = highestAlloc.CostCenterId;
+            }
+
+            // Budget Verification
+            var overallStatus = await BudgetCalculationHelper.EvaluateOverallBudgetStatusAsync(_context, request, dto.ItemAwards, dto.ItemAssignments, dto.ItemAllocations);
+            var criticalStatuses = new[] { "CRITICAL", "OVER_BUDGET", "NO_BUDGET", "CURRENCY_MISMATCH" };
+            if (criticalStatuses.Contains(overallStatus))
+            {
+                if (string.IsNullOrWhiteSpace(dto.BudgetJustification) || dto.BudgetJustification.Trim().Length < 20)
+                {
+                    return BadRequest(new ProblemDetails
+                    {
+                        Title = "Justificativa de Orçamento Obrigatória",
+                        Detail = "O impacto orçamental deste pedido é Crítico ou Acima do Orçamento. É obrigatório fornecer uma justificativa orçamental com pelo menos 20 caracteres.",
                         Status = 400
                     });
                 }
                 
-                // 2. Persist the decided Plant and Cost Center to the line item
-                item.PlantId = assignment.PlantId.Value;
-                item.CostCenterId = assignment.CostCenterId.Value;
+                // Save the justification in the comments/history
+                dto.Comment = $"[Aprovação c/ Exceção Orçamental] Justificativa: {dto.BudgetJustification.Trim()}\n\nObservações: {dto.Comment}".Trim();
+            }
+
+            // Alternative Budget Reassignments Verification & Audit
+            if (dto.Reassignments != null && dto.Reassignments.Any())
+            {
+                var allowedPlantIds = await _context.UserPlantScopes
+                    .Where(s => s.UserId == CurrentUserId)
+                    .Select(s => s.PlantId)
+                    .ToListAsync();
+
+                foreach (var reassignment in dto.Reassignments)
+                {
+                    // Validate Reason
+                    if (string.IsNullOrWhiteSpace(reassignment.Reason) || reassignment.Reason.Trim().Length < 20)
+                    {
+                        return BadRequest(new ProblemDetails
+                        {
+                            Title = "Motivo de Alteração Obrigatório",
+                            Detail = "É obrigatório fornecer um motivo válido (mínimo 20 caracteres) para a alteração do centro de custo.",
+                            Status = 400
+                        });
+                    }
+
+                    // Validate Plant Scope (skip if SystemAdmin)
+                    if (!CurrentUserRoles.Contains(RoleConstants.SystemAdministrator) && !allowedPlantIds.Contains(reassignment.NewPlantId))
+                    {
+                        return StatusCode(403, "Você não tem permissão para realocar itens para a planta selecionada.");
+                    }
+
+                    // Validate Cost Center belongs to Plant and is valid
+                    var cc = await _context.CostCenters.FirstOrDefaultAsync(c => c.Id == reassignment.NewCostCenterId && c.PlantId == reassignment.NewPlantId);
+                    if (cc == null && reassignment.NewCostCenterId.HasValue)
+                    {
+                        return BadRequest(new ProblemDetails { Title = "Centro de Custo Inválido", Detail = "O centro de custo selecionado não pertence à planta informada ou não existe.", Status = 400 });
+                    }
+
+                    // Validate Budget Line active
+                    var budgetLine = await _context.AnnualBudgets.FirstOrDefaultAsync(b => b.DepartmentId == request.DepartmentId 
+                                                                                   && b.CompanyId == request.CompanyId
+                                                                                   && b.CostCenterId == reassignment.NewCostCenterId 
+                                                                                   && b.Year == request.CreatedAtUtc.Year 
+                                                                                   && b.CurrencyId == request.CurrencyId
+                                                                                   && b.IsActive);
+                    if (budgetLine == null)
+                    {
+                        return BadRequest(new ProblemDetails { Title = "Orçamento Inválido", Detail = "A rubrica orçamental selecionada não está ativa ou não pertence ao contexto deste pedido.", Status = 400 });
+                    }
+
+                    // Validate items
+                    var invalidItems = reassignment.AffectedItemIds.Where(id => !request.LineItems.Any(li => li.Id == id && !li.IsDeleted)).ToList();
+                    if (invalidItems.Any())
+                    {
+                        return BadRequest(new ProblemDetails { Title = "Itens Inválidos", Detail = "Um ou mais itens afetados pela realocação são inválidos ou não pertencem a este pedido.", Status = 400 });
+                    }
+
+                    // Log History
+                    var oldPlant = await _context.Plants.FindAsync(reassignment.OldPlantId);
+                    var oldCc = reassignment.OldCostCenterId.HasValue ? await _context.CostCenters.FindAsync(reassignment.OldCostCenterId) : null;
+                    var oldPlantName = oldPlant?.Name ?? "Desconhecida";
+                    var oldCcName = oldCc?.Name ?? "Orçamento Geral";
+
+                    var newPlant = await _context.Plants.FindAsync(reassignment.NewPlantId);
+                    var newCcName = cc?.Name ?? "Orçamento Geral";
+
+                    string auditMsg = $"[Alteração de Centro de Custo] De: {oldPlantName} / {oldCcName} Para: {newPlant?.Name} / {newCcName}. Itens afetados: {reassignment.AffectedItemIds.Count}. Motivo: {reassignment.Reason.Trim()}";
+                    
+                    _context.RequestStatusHistories.Add(new RequestStatusHistory
+                    {
+                        Id = Guid.NewGuid(),
+                        RequestId = request.Id,
+                        ActorUserId = actorId,
+                        ActionTaken = "REALLOCATION",
+                        PreviousStatusId = request.StatusId,
+                        NewStatusId = request.StatusId,
+                        Comment = auditMsg,
+                        CreatedAtUtc = DateTime.UtcNow
+                    });
+                }
             }
         }
 
@@ -4137,10 +5233,10 @@ public class RequestsController : BaseController
 
         string historyComment = action switch
         {
-            "APPROVE" => $"Aprovação da Área realizada. {comment}".Trim(),
-            "REJECT" => $"Pedido rejeitado na Aprovação da Área. Motivo: {comment}",
-            "REQUEST_ADJUSTMENT" => $"Solicitado reajuste (Rework) na Aprovação da Área. Motivo: {comment}",
-            _ => comment ?? string.Empty
+            "APPROVE" => $"Aprovação da Área realizada. {dto.Comment}".Trim(),
+            "REJECT" => $"Pedido rejeitado na Aprovação da Área. Motivo: {dto.Comment}",
+            "REQUEST_ADJUSTMENT" => $"Solicitado reajuste (Rework) na Aprovação da Área. Motivo: {dto.Comment}",
+            _ => dto.Comment ?? string.Empty
         };
 
         string successMessage = action switch
@@ -4151,13 +5247,39 @@ public class RequestsController : BaseController
             _ => "Operação realizada com sucesso."
         };
 
-        return await ApplyStatusChangeAndSyncItemsAsync(request, targetStatusCode, action, historyComment, successMessage, actorId, overrideEventCode);
+        // Phase B — decided-by semantics: AreaApproverId records who actually took the
+        // area decision. Written only after authorization and status checks passed.
+        request.AreaApproverId = actorId;
+
+        var result = await ApplyStatusChangeAndSyncItemsAsync(request, targetStatusCode, action, historyComment, successMessage, actorId, overrideEventCode);
+
+        // Stage 4: Build request PO groups after Area Approval if it's an approved Quotation
+        if (request.RequestType!.Code == "QUOTATION" && action == "APPROVE" && result is OkObjectResult)
+        {
+            await _groupBuilderService.BuildGroupsForRequestAsync(request.Id);
+        }
+
+        return result;
     }
 
     [HttpPost("{id}/operational/register-po")]
     public async Task<IActionResult> RegisterPo(Guid id, [FromBody] RegisterPoActionDto dto)
     {
-        if (!await HasAttachmentAsync(id, RequestAttachment.TYPE_PO))
+        var roles = CurrentUserRoles;
+        if (!roles.Contains(RoleConstants.Buyer))
+            return StatusCode(403, "Apenas o Comprador pode registrar a P.O.");
+
+        if (!dto.PoGroupId.HasValue)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Ação Bloqueada",
+                Detail = "O Grupo de P.O é obrigatório.",
+                Status = 400
+            });
+        }
+
+        if (!await HasGroupAttachmentAsync(dto.PoGroupId.Value, RequestAttachment.TYPE_PO))
         {
             return BadRequest(new ProblemDetails
             {
@@ -4167,24 +5289,37 @@ public class RequestsController : BaseController
             });
         }
 
-        if (dto.HasMismatches && !dto.OverrideConfirmed)
+        // ── Backend Duplicate PO Validation ──
+        if (!string.IsNullOrWhiteSpace(dto.PurchaseOrderNumber))
         {
-            return BadRequest(new ProblemDetails
-            {
-                Title = "Ação Bloqueada",
-                Detail = "Existem divergências entre a P.O e o pedido. É necessário confirmar o override para prosseguir.",
-                Status = 400
-            });
-        }
+            var duplicateGroup = await _context.RequestPoGroups
+                .Include(g => g.Request)
+                .Include(g => g.Supplier)
+                .Where(g => g.PurchaseOrderNumber == dto.PurchaseOrderNumber && g.Id != dto.PoGroupId.Value)
+                .FirstOrDefaultAsync();
 
-        if (dto.HasMismatches && string.IsNullOrWhiteSpace(dto.Comment))
-        {
-             return BadRequest(new ProblemDetails
+            if (duplicateGroup != null)
             {
-                Title = "Ação Bloqueada",
-                Detail = "Quando há divergências confirmadas, um comentário justificativo é obrigatório.",
-                Status = 400
-            });
+                if (!dto.OverrideDuplicateConfirmed)
+                {
+                    return BadRequest(new ProblemDetails
+                    {
+                        Title = "DUPLICATE_PO",
+                        Detail = $"O número de P.O {dto.PurchaseOrderNumber} já está registrado no Pedido {duplicateGroup.Request?.RequestNumber} (Fornecedor: {duplicateGroup.Supplier?.Name}, Status: {duplicateGroup.Status}). Confirme se deseja prosseguir.",
+                        Status = 400
+                    });
+                }
+                
+                if (string.IsNullOrWhiteSpace(dto.DuplicateOverrideComment))
+                {
+                    return BadRequest(new ProblemDetails
+                    {
+                        Title = "Ação Bloqueada",
+                        Detail = "Quando um número de P.O duplicado é confirmado, uma justificativa é obrigatória.",
+                        Status = 400
+                    });
+                }
+            }
         }
 
         // ── B2P: Validate payment condition (required — no silent default) ──
@@ -4230,21 +5365,135 @@ public class RequestsController : BaseController
 
         bool isAdvancePayment = paymentCondition != RequestConstants.PaymentConditions.PostPaid;
 
-        string finalComment = dto.Comment ?? string.Empty;
-        if (dto.HasMismatches)
-        {
-            finalComment += $"\n[ALERTA DE SISTEMA: Override de divergência na OCR]\n{dto.MismatchDetails}";
-        }
-
-        // Determine action code: initial registration vs. correction after Finance return
+        // ── Find Request and the specific PO Group ──
         var request = await _context.Requests
             .Include(r => r.Status)
+            .Include(r => r.RequestType)
             .Include(r => r.Currency)
+            .Include(r => r.PoGroups)
+                .ThenInclude(g => g.Supplier)
             .FirstOrDefaultAsync(r => r.Id == id);
 
-        if (request == null) return NotFound();
+        if (request == null) return NotFound("Pedido não encontrado.");
 
-        var isCorrection = request.Status?.Code == RequestConstants.Statuses.WaitingPoCorrection;
+        var poGroup = request.PoGroups.FirstOrDefault(g => g.Id == dto.PoGroupId.Value);
+        if (poGroup == null) return NotFound("Grupo P.O não encontrado.");
+
+        // ── Block PO for DRAFT suppliers ──
+        if (poGroup.Supplier != null && poGroup.Supplier.RegistrationStatus == "DRAFT")
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Fornecedor em Rascunho",
+                Detail = "Não é possível registrar P.O. para um fornecedor em rascunho (Cadastro de fornecedor necessário). O fornecedor deve ser validado primeiro.",
+                Status = 400
+            });
+        }
+
+        // ── Backend OCR Validation against Group ──
+        var backendMismatches = new List<string>();
+        
+        if (dto.ExtractedTotalAmount.HasValue && Math.Abs(dto.ExtractedTotalAmount.Value - poGroup.TotalAmount) > 1.0m)
+        {
+            backendMismatches.Add($"Total divergente: Identificado {dto.ExtractedTotalAmount.Value:N2} (Esperado: {poGroup.TotalAmount:N2})");
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto.ExtractedCurrencyCode) && !dto.ExtractedCurrencyCode.Equals(poGroup.CurrencyCode, StringComparison.OrdinalIgnoreCase))
+        {
+            backendMismatches.Add($"Moeda divergente: Identificada {dto.ExtractedCurrencyCode} (Esperada: {poGroup.CurrencyCode})");
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto.ExtractedSupplierName))
+        {
+            var extractedSupplier = dto.ExtractedSupplierName.ToLowerInvariant();
+            var expectedSupplier = poGroup.Supplier?.Name?.ToLowerInvariant() ?? "";
+            
+            var tokens1 = extractedSupplier.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            var tokens2 = expectedSupplier.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            var intersection = tokens1.Intersect(tokens2).Count();
+            var maxLen = Math.Max(tokens1.Length, tokens2.Length);
+            
+            if (maxLen > 0 && ((double)intersection / maxLen) < 0.6)
+            {
+                backendMismatches.Add($"Fornecedor divergente: Identificado \"{dto.ExtractedSupplierName}\" (Esperado: \"{poGroup.Supplier?.Name}\")");
+            }
+        }
+
+        if (backendMismatches.Any())
+        {
+            if (!dto.OverrideConfirmed)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "OCR_MISMATCH",
+                    Detail = string.Join(" | ", backendMismatches),
+                    Status = 400
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(dto.Comment))
+            {
+                 return BadRequest(new ProblemDetails
+                {
+                    Title = "Ação Bloqueada",
+                    Detail = "Quando há divergências confirmadas, um comentário justificativo é obrigatório.",
+                    Status = 400
+                });
+            }
+        }
+
+        string finalComment = $"[Grupo P.O.: {poGroup.Supplier?.Name} | Total: {poGroup.TotalAmount:N2} | GroupId: {poGroup.Id.ToString().Substring(0,8)}] ";
+
+        if (backendMismatches.Any())
+        {
+            finalComment += $"Divergência OCR confirmada pelo comprador. Divergências: {string.Join(", ", backendMismatches)}. Justificativa: {dto.Comment}. ";
+        }
+        else if (!string.IsNullOrWhiteSpace(dto.Comment))
+        {
+            finalComment += $"Justificativa: {dto.Comment}. ";
+        }
+
+        if (dto.OverrideDuplicateConfirmed)
+        {
+            finalComment += $"Número de P.O. duplicado confirmado pelo comprador. P.O.: {dto.PurchaseOrderNumber}. Justificativa: {dto.DuplicateOverrideComment}. ";
+        }
+
+        // ── Status Guard: group-first for QUOTATION, request-level for PAYMENT ──
+        if (request.RequestType?.Code == RequestConstants.Types.Quotation)
+        {
+            // QUOTATION: validate by PO group status, not parent request status
+            var allowedGroupStatuses = new[] { 
+                RequestConstants.PoGroupStatuses.WaitingPo, 
+                RequestConstants.PoGroupStatuses.WaitingPoCorrection 
+            };
+            if (!allowedGroupStatuses.Contains(poGroup.Status))
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Ação Inválida",
+                    Detail = $"O Grupo P.O não está em status que permita registro de P.O. " +
+                             $"Status atual do grupo: {poGroup.Status}. " +
+                             $"Status permitidos: {string.Join(", ", allowedGroupStatuses)}.",
+                    Status = 400
+                });
+            }
+        }
+        else
+        {
+            // PAYMENT: preserve existing request-level status guard
+            var allowedRequestStatuses = new[] { "APPROVED", RequestConstants.Statuses.WaitingPoCorrection, RequestConstants.Statuses.PoPartiallyUploaded };
+            if (request.Status == null || !allowedRequestStatuses.Contains(request.Status.Code))
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Ação Inválida",
+                    Detail = $"Não é possível registrar P.O no status atual do pedido ({request.Status?.Code}).",
+                    Status = 400
+                });
+            }
+        }
+
+        var isCorrection = poGroup.Status == RequestConstants.Statuses.WaitingPoCorrection;
         var actionCode = isCorrection ? "REREGISTER_PO" : "REGISTER_PO";
 
         if (isCorrection && string.IsNullOrWhiteSpace(finalComment))
@@ -4252,61 +5501,155 @@ public class RequestsController : BaseController
             finalComment = "P.O corrigida após devolução por Finanças.";
         }
 
-        // ── B2P: Persist payment condition on Request ──
-        request.PaymentConditionCode = paymentCondition;
-        request.AdvancePaymentPercent = advancePercent;
-        request.PaymentConditionSource = dto.PaymentConditionSource ?? "USER_SELECTED";
-        request.UpdatedAtUtc = DateTime.UtcNow;
-        request.UpdatedByUserId = CurrentUserId;
-        await _context.SaveChangesAsync();
+        // ── B2P: Persist payment condition on RequestPoGroup ──
+        poGroup.PaymentConditionCode = paymentCondition;
+        poGroup.AdvancePaymentPercent = advancePercent;
+        if (!string.IsNullOrWhiteSpace(dto.PurchaseOrderNumber)) 
+        {
+            poGroup.PurchaseOrderNumber = dto.PurchaseOrderNumber;
+        }
+        poGroup.UpdatedAtUtc = DateTime.UtcNow;
+        poGroup.UpdatedByUserId = CurrentUserId;
 
-        // ── B2P: Determine target status based on payment condition ──
-        string targetStatusCode;
+        string targetGroupStatusCode;
         string successMsg;
 
         if (isAdvancePayment)
         {
-            targetStatusCode = RequestConstants.Statuses.AdvancePaymentRequired;
+            targetGroupStatusCode = RequestConstants.Statuses.AdvancePaymentRequired;
             successMsg = isCorrection
                 ? "P.O corrigida e re-registrada com sucesso. Adiantamento necessário."
                 : $"P.O registrada com sucesso. Adiantamento de {advancePercent}% necessário.";
 
-            // Add payment condition info to comment
             finalComment += $"\n[Condição de Pagamento: {paymentCondition} — {advancePercent}%]";
-
-            // ── B2P: Create advance payment record ──
-            var approvedTotal = request.ApprovedTotalAmount ?? request.EstimatedTotalAmount;
-            var currencyCode = request.ApprovedCurrencyCode ?? request.Currency?.Code ?? "AOA";
 
             var advancePayment = new RequestPayment
             {
                 RequestId = request.Id,
+                RequestPoGroupId = poGroup.Id,
                 PaymentType = RequestPayment.PaymentTypes.Advance,
                 PaymentSequence = 1,
                 PlannedPercent = advancePercent,
-                PlannedAmount = Math.Round(approvedTotal * (advancePercent!.Value / 100m), 2),
-                CurrencyCode = currencyCode,
+                PlannedAmount = Math.Round(poGroup.TotalAmount * (advancePercent!.Value / 100m), 2),
+                CurrencyCode = poGroup.CurrencyCode ?? "AOA",
                 PaymentStatus = RequestPayment.PaymentStatuses.Planned,
                 CreatedByUserId = CurrentUserId,
                 CreatedAtUtc = DateTime.UtcNow,
                 Notes = $"Adiantamento de {advancePercent}% criado automaticamente no registro da P.O."
             };
             _context.RequestPayments.Add(advancePayment);
-            await _context.SaveChangesAsync();
         }
         else
         {
-            // POST_PAID: follow existing flow (PO_ISSUED)
-            targetStatusCode = "PO_ISSUED";
+            // POST_PAID
+            targetGroupStatusCode = RequestConstants.Statuses.PoIssued;
             successMsg = isCorrection ? "P.O corrigida e re-registrada com sucesso." : "P.O registrada com sucesso.";
         }
 
-        return await ProcessCommonOperationalTransition(id, actionCode, targetStatusCode, new[] { "APPROVED", RequestConstants.Statuses.WaitingPoCorrection }, finalComment, successMsg);
+        finalComment += successMsg;
+
+        // Change group status
+        poGroup.Status = targetGroupStatusCode;
+
+        // Add history log
+        var history = new RequestStatusHistory
+        {
+            RequestId = request.Id,
+            ActorUserId = CurrentUserId, // Ensure the field is ActorUserId or ActorId depending on model
+            ActionTaken = actionCode,
+            CreatedAtUtc = DateTime.UtcNow,
+            Comment = finalComment
+            // Target status might need ID, we'll see
+        };
+        
+        var newStatusForHistory = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == targetGroupStatusCode);
+        if (newStatusForHistory != null)
+        {
+            history.NewStatusId = newStatusForHistory.Id;
+        }
+
+        _context.RequestStatusHistories.Add(history);
+
+        // Evaluate parent request status
+        var allGroups = request.PoGroups.ToList();
+        var pendingGroups = allGroups.Count(g => 
+            g.Status == RequestConstants.PoGroupStatuses.Pending || 
+            g.Status == RequestConstants.PoGroupStatuses.WaitingPo || 
+            g.Status == RequestConstants.Statuses.WaitingPoCorrection);
+
+        // For QUOTATION: also check for unresolved quotation items without PO groups
+        bool hasPendingQuotationItems = false;
+        if (request.RequestType?.Code == RequestConstants.Types.Quotation)
+        {
+            var lineItemStatuses = await _context.RequestLineItems
+                .Where(li => li.RequestId == request.Id && !li.IsDeleted)
+                .Select(li => li.QuotationLifecycleStatus)
+                .ToListAsync();
+
+            hasPendingQuotationItems = lineItemStatuses.Any(status =>
+                status == null ||
+                status == RequestConstants.QuotationLifecycleStatuses.QuotationPending ||
+                status == RequestConstants.QuotationLifecycleStatuses.BatchAssigned ||
+                status == RequestConstants.QuotationLifecycleStatuses.NotQuotedProposed);
+        }
+
+        string newRequestStatusCode;
+        if (pendingGroups == 0 && !hasPendingQuotationItems)
+        {
+            // All POs uploaded AND no pending quotation items
+            if (allGroups.Any(g => g.Status == RequestConstants.Statuses.AdvancePaymentRequired))
+            {
+                newRequestStatusCode = RequestConstants.Statuses.AdvancePaymentRequired;
+            }
+            else
+            {
+                newRequestStatusCode = RequestConstants.Statuses.PoIssued;
+            }
+        }
+        else if (pendingGroups < allGroups.Count || hasPendingQuotationItems)
+        {
+            // Some groups still pending OR unresolved quotation items exist
+            newRequestStatusCode = RequestConstants.Statuses.PoPartiallyUploaded;
+        }
+        else
+        {
+            newRequestStatusCode = "APPROVED";
+        }
+
+        if (request.Status.Code != newRequestStatusCode)
+        {
+            var newStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == newRequestStatusCode);
+            if (newStatus != null)
+            {
+                request.StatusId = newStatus.Id;
+            }
+        }
+
+        request.UpdatedAtUtc = DateTime.UtcNow;
+        request.UpdatedByUserId = CurrentUserId;
+
+        await _context.SaveChangesAsync();
+
+        // ── Notifications ──
+        try {
+            await _orchestrator.EmitAsync(new WorkflowEvent
+            {
+                EventCode = "PO_REGISTERED",
+                RequestId = request.Id,
+                ActionTaken = "REGISTER_PO",
+                TargetStatusCode = request.Status!.Code,
+                ActorUserId = CurrentUserId,
+                CorrelationId = Guid.NewGuid()
+            });
+        } catch { }
+
+        return Ok(new { message = successMsg });
     }
 
     [HttpPost("{id}/operational/schedule-payment")]
     public async Task<IActionResult> SchedulePayment(Guid id, [FromBody] ApprovalActionDto dto)
     {
+        _logger.LogWarning("[DEPRECATED] Legacy schedule-payment called for Request {RequestId}. Use FinanceController.SchedulePayment instead.", id);
         if (!await HasAttachmentAsync(id, RequestAttachment.TYPE_PAYMENT_SCHEDULE))
         {
             return BadRequest(new ProblemDetails
@@ -4323,6 +5666,7 @@ public class RequestsController : BaseController
     [HttpPost("{id}/operational/complete-payment")]
     public async Task<IActionResult> CompletePayment(Guid id, [FromBody] ApprovalActionDto dto)
     {
+        _logger.LogWarning("[DEPRECATED] Legacy complete-payment called for Request {RequestId}. Use FinanceController.MarkAsPaid instead.", id);
         if (!await HasAttachmentAsync(id, RequestAttachment.TYPE_PAYMENT_PROOF))
         {
             return BadRequest(new ProblemDetails
@@ -4339,36 +5683,45 @@ public class RequestsController : BaseController
     // ── Buy-to-Pay: Advance Payment Lifecycle Endpoints ──
 
     [HttpPost("{id}/b2p/schedule-advance")]
-    public async Task<IActionResult> ScheduleAdvancePayment(Guid id, [FromBody] ApprovalActionDto dto)
+    public async Task<IActionResult> ScheduleAdvancePayment(Guid id, [FromBody] ScheduleAdvancePaymentDto dto)
     {
         var actorId = CurrentUserId;
+        var roles = CurrentUserRoles;
+        if (!roles.Contains(RoleConstants.Finance))
+            return StatusCode(403, "Apenas o Financeiro pode agendar o adiantamento.");
+
         var request = await _context.Requests
+            .Include(r => r.PoGroups)
             .Include(r => r.Status)
             .Include(r => r.Payments)
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (request == null) return NotFound();
 
-        if (request.Status?.Code != RequestConstants.Statuses.AdvancePaymentRequired)
-            return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "O pedido não está em status de adiantamento necessário.", Status = 400 });
+        var group = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
+        if (group == null) return BadRequest("Grupo P.O não encontrado no request.");
 
-        // Find the planned advance payment
+        if (group.Status != RequestConstants.Statuses.AdvancePaymentRequired)
+            return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = $"O grupo não está em status de adiantamento necessário. Status atual: {group.Status}", Status = 400 });
+
+        // Find the planned advance payment for this group
         var advancePayment = request.Payments
-            .FirstOrDefault(p => p.PaymentType == RequestPayment.PaymentTypes.Advance && p.PaymentStatus == RequestPayment.PaymentStatuses.Planned);
+            .FirstOrDefault(p => p.RequestPoGroupId == group.Id && p.PaymentType == RequestPayment.PaymentTypes.Advance && p.PaymentStatus == RequestPayment.PaymentStatuses.Planned);
 
         if (advancePayment == null)
-            return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Não existe pagamento adiantado planejado para este pedido.", Status = 400 });
+            return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Não existe pagamento adiantado planejado para este grupo.", Status = 400 });
 
         // Update payment status
         advancePayment.PaymentStatus = RequestPayment.PaymentStatuses.Scheduled;
-        advancePayment.ScheduledDateUtc = DateTime.UtcNow;
+        advancePayment.ScheduledDateUtc = dto.ScheduledDate;
         advancePayment.ScheduledByUserId = actorId;
         advancePayment.UpdatedByUserId = actorId;
         advancePayment.UpdatedAtUtc = DateTime.UtcNow;
-        await _context.SaveChangesAsync();
 
-        // Stay at ADVANCE_PAYMENT_REQUIRED — scheduling doesn't change request status
-        // Just add timeline entry
+        // Group transitions to ADVANCE_PAYMENT_SCHEDULED
+        group.Status = RequestConstants.Statuses.AdvancePaymentScheduled;
+        group.UpdatedAtUtc = DateTime.UtcNow;
+
         var currentStatus = await _context.RequestStatuses.FirstAsync(s => s.Code == request.Status!.Code);
         _context.RequestStatusHistories.Add(new RequestStatusHistory
         {
@@ -4378,15 +5731,21 @@ public class RequestsController : BaseController
             ActionTaken = "SCHEDULE_ADVANCE",
             PreviousStatusId = currentStatus.Id,
             NewStatusId = currentStatus.Id,
-            Comment = dto.Comment ?? "Adiantamento agendado.",
+            Comment = $"[Grupo P.O.: {group.SupplierNameSnapshot}] " + (dto.Comment ?? "Adiantamento agendado."),
             CreatedAtUtc = DateTime.UtcNow
         });
+        
         request.UpdatedAtUtc = DateTime.UtcNow;
         request.UpdatedByUserId = actorId;
         await _context.SaveChangesAsync();
+        
+        // Aggregate to update parent status
+        var _statusAggregationService = HttpContext.RequestServices.GetRequiredService<IStatusAggregationService>();
+        await _statusAggregationService.AggregateRequestStatusAsync(id);
 
         return Ok(new { message = "Adiantamento agendado com sucesso.", paymentId = advancePayment.Id });
     }
+
 
     [HttpPost("{id}/b2p/confirm-advance")]
     public async Task<IActionResult> ConfirmAdvancePayment(Guid id, [FromBody] ConfirmAdvancePaymentDto dto)
@@ -4397,33 +5756,50 @@ public class RequestsController : BaseController
             return StatusCode(403, "Apenas o Financeiro pode confirmar o adiantamento.");
 
         var request = await _context.Requests
+            .Include(r => r.PoGroups)
             .Include(r => r.Status)
             .Include(r => r.Payments)
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (request == null) return NotFound();
 
-        if (request.Status?.Code != RequestConstants.Statuses.AdvancePaymentRequired)
-            return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "O pedido não está em status de adiantamento necessário.", Status = 400 });
+        var group = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
+        if (group == null) return BadRequest("Grupo P.O não encontrado no request.");
 
-        // Find the scheduled or planned advance payment
+        if (group.Status != RequestConstants.Statuses.AdvancePaymentRequired && group.Status != RequestConstants.Statuses.AdvancePaymentScheduled)
+            return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = $"O grupo não está em status de adiantamento. Status atual: {group.Status}", Status = 400 });
+
+        // Find the scheduled or planned advance payment for this group
         var advancePayment = request.Payments
-            .Where(p => p.PaymentType == RequestPayment.PaymentTypes.Advance)
+            .Where(p => p.RequestPoGroupId == group.Id && p.PaymentType == RequestPayment.PaymentTypes.Advance)
             .Where(p => p.PaymentStatus == RequestPayment.PaymentStatuses.Scheduled || p.PaymentStatus == RequestPayment.PaymentStatuses.Planned)
             .OrderByDescending(p => p.PaymentSequence)
             .FirstOrDefault();
 
         if (advancePayment == null)
-            return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Não existe pagamento adiantado pendente para este pedido.", Status = 400 });
+            return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Não existe pagamento adiantado pendente para este grupo.", Status = 400 });
 
         // Validate actual paid amount
         if (dto.ActualPaidAmount <= 0)
             return BadRequest(new ProblemDetails { Title = "Valor Inválido", Detail = "O valor pago deve ser maior que zero.", Status = 400 });
 
+        // Validate and link payment proof attachment if provided
+        var attachment = await _context.RequestAttachments
+            .FirstOrDefaultAsync(a => a.Id == dto.PaymentProofAttachmentId && a.RequestId == id && !a.IsDeleted);
+            
+        if (attachment == null)
+            return BadRequest(new ProblemDetails { Title = "Anexo Inválido", Detail = "O comprovativo de pagamento não foi encontrado ou não pertence a este pedido.", Status = 400 });
+
+        if (attachment.AttachmentTypeCode != AttachmentConstants.Types.PaymentProof)
+            return BadRequest(new ProblemDetails { Title = "Anexo Inválido", Detail = "O ficheiro enviado não é um comprovativo de pagamento válido.", Status = 400 });
+
+        advancePayment.PaymentProofAttachmentId = dto.PaymentProofAttachmentId;
+        attachment.RequestPoGroupId = group.Id; // link attachment to group
+
         // Update payment
         advancePayment.PaymentStatus = RequestPayment.PaymentStatuses.Completed;
         advancePayment.ActualPaidAmount = dto.ActualPaidAmount;
-        advancePayment.PaidDateUtc = DateTime.UtcNow;
+        advancePayment.PaidDateUtc = dto.PaidDate;
         advancePayment.PaidByUserId = actorId;
         advancePayment.UpdatedByUserId = actorId;
         advancePayment.UpdatedAtUtc = DateTime.UtcNow;
@@ -4437,32 +5813,11 @@ public class RequestsController : BaseController
             advancePayment.DivergenceNotes = dto.Comment;
         }
 
-        // Validate and link payment proof attachment if provided
-        if (dto.PaymentProofAttachmentId.HasValue)
-        {
-            var attachment = await _context.RequestAttachments
-                .FirstOrDefaultAsync(a => a.Id == dto.PaymentProofAttachmentId.Value && a.RequestId == id && !a.IsDeleted);
-                
-            if (attachment == null)
-                return BadRequest(new ProblemDetails { Title = "Anexo Inválido", Detail = "O comprovativo de pagamento não foi encontrado ou não pertence a este pedido.", Status = 400 });
+        group.Status = RequestConstants.Statuses.AdvancePaymentCompleted;
+        group.UpdatedAtUtc = DateTime.UtcNow;
 
-            if (attachment.AttachmentTypeCode != AttachmentConstants.Types.PaymentProof)
-                return BadRequest(new ProblemDetails { Title = "Anexo Inválido", Detail = "O ficheiro enviado não é um comprovativo de pagamento válido.", Status = 400 });
-
-            advancePayment.PaymentProofAttachmentId = dto.PaymentProofAttachmentId;
-        }
-
-        await _context.SaveChangesAsync();
-
-        // ── Auto-transition: ADVANCE_PAYMENT_REQUIRED → ADVANCE_PAYMENT_COMPLETED → WAITING_SUPPLIER_DELIVERY ──
-        var advCompletedStatus = await _context.RequestStatuses.FirstAsync(s => s.Code == RequestConstants.Statuses.AdvancePaymentCompleted);
-        var waitingDeliveryStatus = await _context.RequestStatuses.FirstAsync(s => s.Code == RequestConstants.Statuses.WaitingSupplierDelivery);
         var prevStatusId = request.StatusId;
 
-        // Step 1: ADVANCE_PAYMENT_COMPLETED
-        request.StatusId = advCompletedStatus.Id;
-        request.UpdatedAtUtc = DateTime.UtcNow;
-        request.UpdatedByUserId = actorId;
         _context.RequestStatusHistories.Add(new RequestStatusHistory
         {
             Id = Guid.NewGuid(),
@@ -4470,30 +5825,23 @@ public class RequestsController : BaseController
             ActorUserId = actorId,
             ActionTaken = "CONFIRM_ADVANCE",
             PreviousStatusId = prevStatusId,
-            NewStatusId = advCompletedStatus.Id,
-            Comment = $"Adiantamento de {advancePayment.ActualPaidAmount} confirmado. {dto.Comment}",
+            NewStatusId = prevStatusId, // Keep parent request status id context
+            Comment = $"[Grupo P.O.: {group.SupplierNameSnapshot}] Adiantamento de {advancePayment.ActualPaidAmount} confirmado. {dto.Comment ?? ""}",
             CreatedAtUtc = DateTime.UtcNow
         });
-        await _context.SaveChangesAsync();
-
-        // Step 2: Auto → WAITING_SUPPLIER_DELIVERY
-        request.StatusId = waitingDeliveryStatus.Id;
+        
         request.UpdatedAtUtc = DateTime.UtcNow;
-        _context.RequestStatusHistories.Add(new RequestStatusHistory
-        {
-            Id = Guid.NewGuid(),
-            RequestId = request.Id,
-            ActorUserId = actorId,
-            ActionTaken = "AUTO_ADVANCE_TO_DELIVERY",
-            PreviousStatusId = advCompletedStatus.Id,
-            NewStatusId = waitingDeliveryStatus.Id,
-            Comment = "Transição automática: adiantamento confirmado → aguardando entrega/serviço.",
-            CreatedAtUtc = DateTime.UtcNow
-        });
+        request.UpdatedByUserId = actorId;
+
         await _context.SaveChangesAsync();
 
-        return Ok(new { message = "Adiantamento confirmado. Pedido aguardando entrega/serviço.", paymentId = advancePayment.Id });
+        // Aggregate to update parent status
+        var _statusAggregationService = HttpContext.RequestServices.GetRequiredService<IStatusAggregationService>();
+        await _statusAggregationService.AggregateRequestStatusAsync(id);
+
+        return Ok(new { message = "Adiantamento confirmado.", paymentId = advancePayment.Id });
     }
+
 
     [HttpPost("{id}/b2p/reconcile")]
     public async Task<IActionResult> ReconcileRequest(Guid id, [FromBody] SubmitReconciliationDto dto)
@@ -4629,25 +5977,73 @@ public class RequestsController : BaseController
     }
 
     [HttpPost("{id}/operational/move-to-receipt")]
-    public async Task<IActionResult> MoveToReceipt(Guid id, [FromBody] ApprovalActionDto dto)
+    public async Task<IActionResult> MoveToReceipt(Guid id, [FromBody] ConfirmReceivingDto dto)
     {
+        var roles = CurrentUserRoles;
+        if (!roles.Contains(RoleConstants.Receiving))
+            return StatusCode(403, "Apenas o Almoxarifado/Recebimento pode acessar esta função.");
+
+        var _statusAggregationService = HttpContext.RequestServices.GetRequiredService<IStatusAggregationService>();
+
         var request = await _context.Requests
             .Include(r => r.RequestType)
             .Include(r => r.Status)
+            .Include(r => r.PoGroups)
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (request == null) return NotFound();
 
-        // Unified post-PO operational flow: strictly from PAYMENT_COMPLETED for all types
-    string[] requiredStatuses = new[] { "PAYMENT_COMPLETED" };
+        var poGroup = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
+        if (poGroup == null) return BadRequest(new { message = "Grupo P.O. não encontrado." });
 
-    return await ProcessTransition(id, "MOVE_TO_RECEIPT", "WAITING_RECEIPT", requiredStatuses, dto.Comment, "Pedido movido para aguardando recibo.", new[] { "PAYMENT", "QUOTATION" });
+        // Unified post-PO operational flow: strictly from PAYMENT_COMPLETED for all types
+        string[] requiredStatuses = new[] { "PAYMENT_COMPLETED" };
+
+        if (!requiredStatuses.Contains(poGroup.Status))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Ação Inválida",
+                Detail = $"O grupo não está em um status válido para mover para recebimento. Status atual: {poGroup.Status}.",
+                Status = 400
+            });
+        }
+
+        var oldStatusId = request.StatusId;
+        poGroup.Status = "WAITING_RECEIPT";
+        poGroup.UpdatedAtUtc = DateTime.UtcNow;
+
+        var targetStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == "WAITING_RECEIPT");
+        if (targetStatus == null) return StatusCode(500, "Status 'WAITING_RECEIPT' não configurado.");
+
+        var history = new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = request.Id,
+            ActorUserId = CurrentUserId,
+            ActionTaken = "MOVE_TO_RECEIPT",
+            PreviousStatusId = oldStatusId, // Keep parent status id for tracking
+            NewStatusId = targetStatus.Id,
+            Comment = $"[Grupo P.O.: {poGroup.SupplierNameSnapshot ?? "N/A"} | GroupId: {poGroup.Id.ToString().Substring(0, 8)}] " + (dto.Comment ?? "Pedido movido para aguardando recibo."),
+            CreatedAtUtc = DateTime.UtcNow
+        };
+        _context.RequestStatusHistories.Add(history);
+
+        await _context.SaveChangesAsync();
+        await _statusAggregationService.AggregateRequestStatusAsync(request.Id);
+
+        return Ok(new { Message = "Grupo movido para aguardando recibo.", StatusCode = "WAITING_RECEIPT" });
     }
 
     [HttpPost("{id}/operational/confirm-receiving")]
-    public async Task<IActionResult> ConfirmReceiving(Guid id, [FromBody] ApprovalActionDto dto)
+    public async Task<IActionResult> ConfirmReceiving(Guid id, [FromBody] ConfirmReceivingDto dto)
     {
         var actorId = CurrentUserId;
+        var roles = CurrentUserRoles;
+        if (!roles.Contains(RoleConstants.Receiving))
+            return StatusCode(403, "Apenas o Almoxarifado/Recebimento pode confirmar o recebimento.");
+
+        var _statusAggregationService = HttpContext.RequestServices.GetRequiredService<IStatusAggregationService>();
 
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
@@ -4655,6 +6051,13 @@ public class RequestsController : BaseController
             var request = await _context.Requests
                 .Include(r => r.RequestType)
                 .Include(r => r.Status)
+                .Include(r => r.PoGroups)
+                    .ThenInclude(g => g.LineItems)
+                        .ThenInclude(li => li.SelectedQuotationItem)
+                            .ThenInclude(qi => qi.LineItemStatus)
+                .Include(r => r.PoGroups)
+                    .ThenInclude(g => g.LineItems)
+                        .ThenInclude(li => li.LineItemStatus)
                 .Include(r => r.LineItems)
                     .ThenInclude(li => li.LineItemStatus)
                 .Include(r => r.Quotations)
@@ -4665,26 +6068,31 @@ public class RequestsController : BaseController
 
             if (request == null) return NotFound();
 
+            var poGroup = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
+            if (poGroup == null) return BadRequest(new { message = "Grupo P.O. não encontrado." });
+
             // Status Rule: Must be in WAITING_RECEIPT, IN_FOLLOWUP, PAYMENT_COMPLETED, or WAITING_SUPPLIER_DELIVERY to confirm receiving
             var allowedStatuses = new[] { "WAITING_RECEIPT", "IN_FOLLOWUP", RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.WaitingSupplierDelivery };
-            if (!allowedStatuses.Contains(request.Status!.Code))
+            if (!allowedStatuses.Contains(poGroup.Status))
             {
                 return BadRequest(new ProblemDetails
                 {
                     Title = "Ação Inválida",
-                    Detail = $"O pedido não está em um status válido para confirmação de recebimento. Status atual: {request.Status.Code}.",
+                    Detail = $"O grupo não está em um status válido para confirmação de recebimento. Status atual: {poGroup.Status}.",
                     Status = 400
                 });
             }
 
             // Determine next status: WAITING_RECEIPT (all received) or IN_FOLLOWUP (partial)
             // Business rule: Receiving NEVER moves to COMPLETED
-            string nextStatusCode = RequestWorkflowHelper.DeterminePostConfirmReceivingStatus(request);
+            string nextStatusCode = RequestWorkflowHelper.DetermineGroupPostConfirmReceivingStatus(poGroup);
             var targetStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == nextStatusCode);
             if (targetStatus == null) return StatusCode(500, $"Status '{nextStatusCode}' não configurado.");
 
             var oldStatusId = request.StatusId;
-            request.StatusId = targetStatus.Id;
+            poGroup.Status = targetStatus.Code;
+            poGroup.UpdatedAtUtc = DateTime.UtcNow;
+            
             request.UpdatedAtUtc = DateTime.UtcNow;
             request.UpdatedByUserId = actorId;
 
@@ -4697,14 +6105,19 @@ public class RequestsController : BaseController
                 ActionTaken = "CONFIRM_RECEIVING",
                 PreviousStatusId = oldStatusId,
                 NewStatusId = targetStatus.Id,
-                Comment = dto.Comment ?? (nextStatusCode == "WAITING_RECEIPT"
-                    ? "Recebimento de itens confirmado com sucesso. Aguardando recibo do fornecedor."
-                    : "Recebimento parcial confirmado. Itens pendentes movidos para acompanhamento."),
+                Comment = $"[Grupo P.O.: {poGroup.SupplierNameSnapshot ?? "N/A"} | GroupId: {poGroup.Id.ToString().Substring(0, 8)}] " + 
+                          (dto.Comment ?? (nextStatusCode == "WAITING_RECEIPT"
+                              ? "Recebimento de itens confirmado com sucesso. Aguardando recibo do fornecedor."
+                              : "Recebimento parcial confirmado. Itens pendentes movidos para acompanhamento.")),
                 CreatedAtUtc = DateTime.UtcNow
             };
             _context.RequestStatusHistories.Add(history);
 
             await _context.SaveChangesAsync();
+            
+            // Re-aggregate the parent status
+            await _statusAggregationService.AggregateRequestStatusAsync(request.Id);
+            
             await transaction.CommitAsync();
 
             // Notification dispatch
@@ -4780,13 +6193,82 @@ public class RequestsController : BaseController
                 });
             }
 
+            // ── Phase 8: QUOTATION-specific finalization guards ──
+            if (request.RequestType!.Code == RequestConstants.Types.Quotation)
+            {
+                // Reload with full relationships for guard checks
+                await _context.Entry(request).Collection(r => r.LineItems).LoadAsync();
+                await _context.Entry(request).Collection(r => r.ApprovalBatches).LoadAsync();
+                await _context.Entry(request).Collection(r => r.PoGroups).LoadAsync();
+
+                var activeItems = request.LineItems.Where(li => !li.IsDeleted).ToList();
+
+                // Guard A: All items must be quotation-terminal
+                var nonTerminalItems = activeItems.Where(li =>
+                    li.QuotationLifecycleStatus == null ||
+                    li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.QuotationPending ||
+                    li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.BatchAssigned ||
+                    li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.NotQuotedProposed
+                ).ToList();
+
+                if (nonTerminalItems.Any())
+                {
+                    return BadRequest(new ProblemDetails
+                    {
+                        Title = "Finalização Bloqueada",
+                        Detail = $"Existem {nonTerminalItems.Count} item(ns) com ciclo de cotação pendente. " +
+                                 "Todos os itens devem estar aprovados ou aceitos como não cotados.",
+                        Status = 400
+                    });
+                }
+
+                // Guard B: No active approval batches
+                var activeBatchStatuses = new[]
+                {
+                    RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval,
+                    RequestConstants.ApprovalBatchStatuses.WaitingFinalApproval,
+                    RequestConstants.ApprovalBatchStatuses.AreaAdjustment,
+                    RequestConstants.ApprovalBatchStatuses.FinalAdjustment
+                };
+                var activeBatchesInApproval = request.ApprovalBatches
+                    .Where(b => activeBatchStatuses.Contains(b.Status)).ToList();
+
+                if (activeBatchesInApproval.Any())
+                {
+                    return BadRequest(new ProblemDetails
+                    {
+                        Title = "Finalização Bloqueada",
+                        Detail = $"Existem {activeBatchesInApproval.Count} lote(s) de aprovação em andamento.",
+                        Status = 400
+                    });
+                }
+
+                // Guard C: All active PO groups must be ready to finalize
+                var activePoGroups = request.PoGroups
+                    .Where(g => g.Status != RequestConstants.PoGroupStatuses.Cancelled).ToList();
+
+                var blockedGroups = activePoGroups
+                    .Where(g => !RequestConstants.PoGroupStatuses.ReadyToFinalize.Contains(g.Status)).ToList();
+
+                if (blockedGroups.Any())
+                {
+                    return BadRequest(new ProblemDetails
+                    {
+                        Title = "Finalização Bloqueada",
+                        Detail = $"Existem {blockedGroups.Count} grupo(s) P.O. que ainda não estão prontos para " +
+                                 $"finalização: {string.Join(", ", blockedGroups.Select(g => $"{g.SupplierNameSnapshot} ({g.Status})"))}.",
+                        Status = 400
+                    });
+                }
+            }
+
             // Receipt validation: Supplier financial receipt is mandatory
             if (!await HasAttachmentAsync(id, RequestAttachment.TYPE_RECEIPT))
             {
                 return BadRequest(new ProblemDetails
                 {
                     Title = "Ação Bloqueada",
-                    Detail = "É necessário anexar o Recibo do Fornecedor antes de finalizar o pedido.",
+                    Detail = "É necessário anexar o Recibo Fiscal do Fornecedor (Fatura, Recibo, ou VD) antes de finalizar o pedido.",
                     Status = 400
                 });
             }
@@ -4799,6 +6281,20 @@ public class RequestsController : BaseController
             request.StatusId = targetStatus.Id;
             request.UpdatedAtUtc = DateTime.UtcNow;
             request.UpdatedByUserId = actorId;
+
+            // Phase 8: Mark all active PO groups as COMPLETED for QUOTATION requests
+            if (request.RequestType!.Code == RequestConstants.Types.Quotation)
+            {
+                // PoGroups already loaded by guard block above
+                var poGroupsToComplete = request.PoGroups
+                    .Where(g => g.Status != RequestConstants.PoGroupStatuses.Cancelled &&
+                                g.Status != RequestConstants.PoGroupStatuses.Completed).ToList();
+                foreach (var group in poGroupsToComplete)
+                {
+                    group.Status = RequestConstants.PoGroupStatuses.Completed;
+                    group.UpdatedAtUtc = DateTime.UtcNow;
+                }
+            }
 
             // Create Status History entry
             var history = new RequestStatusHistory
@@ -4906,6 +6402,7 @@ public class RequestsController : BaseController
     public async Task<IActionResult> CompleteQuotation(Guid id, [FromBody] ApprovalActionDto dto)
     {
         var request = await _context.Requests
+            .Include(r => r.RequestType)
             .Include(r => r.Status)
             .Include(r => r.LineItems)
             .Include(r => r.Quotations)
@@ -4915,6 +6412,17 @@ public class RequestsController : BaseController
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (request == null) return NotFound();
+
+        // Phase 5.5 Compatibility Audit Fix: Block request-level CompleteQuotation for QUOTATION type
+        if (request.RequestType?.Code == RequestConstants.Types.Quotation)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Ação Obsoleta",
+                Detail = "Fluxo de cotação por pedido foi substituído pelo envio de lotes de aprovação. Use o wizard de cotação para criar/submeter um ApprovalBatch.",
+                Status = 400
+            });
+        }
 
         // 1. Validation Logic: Prioritize Quotation-based model if quotations exist
         bool hasSavedQuotations = request.Quotations.Any();
@@ -4937,6 +6445,40 @@ public class RequestsController : BaseController
                     Detail = "É necessário que pelo menos uma cotação salva esteja completa (com fornecedor, itens e documento anexo) antes de concluir.",
                     Status = 400
                 });
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // MAPPING COVERAGE VALIDATION
+            // Every active request line item must be mapped by at least one
+            // quotation item. Without this, the Area Approval matrix shows
+            // all cells as "— não cotado —", creating a dead-end.
+            // ═══════════════════════════════════════════════════════════════
+            var activeRequestLineItemIds = request.LineItems
+                .Where(l => !l.IsDeleted)
+                .Select(l => l.Id)
+                .ToHashSet();
+
+            if (activeRequestLineItemIds.Any())
+            {
+                var mappedLineItemIds = request.Quotations
+                    .SelectMany(q => q.Items)
+                    .Where(qi => qi.MappedRequestLineItemId.HasValue && 
+                                 (qi.ReconciliationStatus == "MAPPED" || qi.ReconciliationStatus == "SUBSTITUTE"))
+                    .Select(qi => qi.MappedRequestLineItemId!.Value)
+                    .ToHashSet();
+
+                var unmappedCount = activeRequestLineItemIds.Except(mappedLineItemIds).Count();
+
+                if (unmappedCount > 0)
+                {
+                    return BadRequest(new ProblemDetails
+                    {
+                        Title = "Mapeamento Incompleto",
+                        Detail = "Não é possível concluir a etapa de cotação. Ainda existem itens solicitados sem cotação.",
+                        Status = 400,
+                        Extensions = { ["unmappedItemCount"] = unmappedCount }
+                    });
+                }
             }
         }
         else if (hasLegacyItems)
@@ -4979,166 +6521,19 @@ public class RequestsController : BaseController
         if (!CurrentUserRoles.Contains(RoleConstants.Buyer))
             return StatusCode(403, "Apenas o Comprador pode concluir a etapa de cotação.");
 
+
         // ═══════════════════════════════════════════════════════════════
-        // FINANCIAL INTEGRITY GATE
-        // Compares the quotation being completed against the OCR baseline.
-        // Blocks progression on real mismatch unless buyer provides
-        // explicit override with mandatory justification.
+        // REWORK-AWARE TRANSITION
+        // Detect if this is a rework resubmission (from AREA_ADJUSTMENT or
+        // FINAL_ADJUSTMENT) and use a distinct action + audit comment.
         // ═══════════════════════════════════════════════════════════════
-        if (request.OcrOriginalGrandTotal.HasValue && hasSavedQuotations)
-        {
-            var ocrBaseline = request.OcrOriginalGrandTotal.Value;
+        var isRework = request.Status!.Code is "AREA_ADJUSTMENT" or "FINAL_ADJUSTMENT";
+        var transitionAction = isRework ? "QUOTATION_RESUBMITTED" : "COMPLETE_QUOTATION";
+        var transitionComment = isRework
+            ? "Cotação reajustada pelo comprador e reenviada para aprovação da área."
+            : "Cotação concluída e enviada para aprovação da área.";
 
-            // Determine the quotation being completed:
-            // If only one quotation exists, use it. Otherwise, use the most recently
-            // created quotation (the one the buyer is actively finalizing).
-            var targetQuotation = request.Quotations.Count == 1
-                ? request.Quotations.First()
-                : request.Quotations.OrderByDescending(q => q.CreatedAtUtc).First();
-
-            var quotationTotal = targetQuotation.TotalAmount;
-            var varianceAmount = Math.Round(quotationTotal - ocrBaseline, 2, MidpointRounding.AwayFromZero);
-            var variancePercent = ocrBaseline != 0
-                ? Math.Round((varianceAmount / ocrBaseline) * 100, 2, MidpointRounding.AwayFromZero)
-                : 0m;
-
-            var tolerance = RequestConstants.FinancialIntegrity.CalculateTolerance(ocrBaseline);
-            var hasMismatch = Math.Abs(varianceAmount) > tolerance;
-
-            // Check for unresolved reconciliation records
-            var unresolvedReconciliation = await _context.ReconciliationRecords
-                .Where(r => r.RequestId == id
-                    && r.BuyerReviewStatus == "PENDING"
-                    && (r.MatchStatus == "REVIEW_REQUIRED" || r.MatchStatus == "MISSING_REQUESTED_ITEM"))
-                .CountAsync();
-
-            var hasReconciliationIssues = unresolvedReconciliation > 0;
-            var integrityCheckTriggered = hasMismatch || hasReconciliationIssues;
-
-            if (integrityCheckTriggered)
-            {
-                // Audit: Log detection event (regardless of override)
-                var detectionPayload = System.Text.Json.JsonSerializer.Serialize(new
-                {
-                    ocrOriginalTotal = ocrBaseline,
-                    quotationTotal,
-                    varianceAmount,
-                    variancePercent,
-                    toleranceApplied = tolerance,
-                    toleranceAbsoluteFloor = RequestConstants.FinancialIntegrity.AbsoluteFloor,
-                    toleranceRelativeThreshold = RequestConstants.FinancialIntegrity.RelativeThreshold,
-                    unresolvedReconciliationCount = unresolvedReconciliation,
-                    hasMismatch,
-                    hasReconciliationIssues,
-                    quotationId = targetQuotation.Id,
-                    requestId = id
-                });
-
-                if (!dto.FinancialIntegrityOverride)
-                {
-                    // === BLOCKED: Buyer must review and either correct or override ===
-
-                    // Audit: Log the blocking event
-                    _context.RequestStatusHistories.Add(new RequestStatusHistory
-                    {
-                        Id = Guid.NewGuid(),
-                        RequestId = id,
-                        ActorUserId = CurrentUserId,
-                        ActionTaken = "FINANCIAL_INTEGRITY_BLOCKED",
-                        PreviousStatusId = request.StatusId,
-                        NewStatusId = request.StatusId,
-                        Comment = $"Conclusão bloqueada: divergência financeira detectada. " +
-                                  $"OCR Original: {ocrBaseline:N2}, Cotação: {quotationTotal:N2}, " +
-                                  $"Variação: {varianceAmount:N2} ({variancePercent:N2}%), " +
-                                  $"Tolerância aplicada: {tolerance:N2}. " +
-                                  $"Itens de reconciliação pendentes: {unresolvedReconciliation}.",
-                        CreatedAtUtc = DateTime.UtcNow
-                    });
-                    await _context.SaveChangesAsync();
-
-                    await _adminLog.WriteAsync("WARN", "RequestsController",
-                        "FINANCIAL_INTEGRITY_BLOCKED",
-                        $"Quotation completion blocked for Request {request.RequestNumber}: " +
-                        $"OCR={ocrBaseline:N2}, Qt={quotationTotal:N2}, Var={varianceAmount:N2} ({variancePercent:N2}%)",
-                        payload: detectionPayload);
-
-                    // Build structured error detail
-                    var detail = hasMismatch
-                        ? $"O total da cotação ({quotationTotal:N2}) difere do total original do documento OCR ({ocrBaseline:N2}) " +
-                          $"em {Math.Abs(varianceAmount):N2} ({Math.Abs(variancePercent):N2}%), excedendo a tolerância de {tolerance:N2}."
-                        : $"Existem {unresolvedReconciliation} item(ns) de reconciliação pendentes de revisão.";
-
-                    if (hasMismatch && hasReconciliationIssues)
-                    {
-                        detail += $" Adicionalmente, existem {unresolvedReconciliation} item(ns) de reconciliação pendentes.";
-                    }
-
-                    return Conflict(new ProblemDetails
-                    {
-                        Title = "Verificação de Integridade Financeira",
-                        Detail = detail,
-                        Status = 409,
-                        Extensions =
-                        {
-                            ["integrityCheckFailed"] = true,
-                            ["ocrOriginalTotal"] = ocrBaseline,
-                            ["quotationTotal"] = quotationTotal,
-                            ["varianceAmount"] = varianceAmount,
-                            ["variancePercent"] = variancePercent,
-                            ["toleranceApplied"] = tolerance,
-                            ["unresolvedReconciliationCount"] = unresolvedReconciliation,
-                            ["quotationId"] = targetQuotation.Id
-                        }
-                    });
-                }
-                else
-                {
-                    // === OVERRIDE: Buyer acknowledged mismatch with justification ===
-
-                    if (string.IsNullOrWhiteSpace(dto.OverrideJustification))
-                    {
-                        return BadRequest(new ProblemDetails
-                        {
-                            Title = "Justificação Obrigatória",
-                            Detail = "É necessário fornecer uma justificação escrita para prosseguir com a divergência financeira.",
-                            Status = 400
-                        });
-                    }
-
-                    // Audit: Log the override acceptance
-                    _context.RequestStatusHistories.Add(new RequestStatusHistory
-                    {
-                        Id = Guid.NewGuid(),
-                        RequestId = id,
-                        ActorUserId = CurrentUserId,
-                        ActionTaken = "FINANCIAL_INTEGRITY_OVERRIDE",
-                        PreviousStatusId = request.StatusId,
-                        NewStatusId = request.StatusId,
-                        Comment = $"Override financeiro aceite. " +
-                                  $"OCR Original: {ocrBaseline:N2}, Cotação: {quotationTotal:N2}, " +
-                                  $"Variação: {varianceAmount:N2} ({variancePercent:N2}%), " +
-                                  $"Tolerância aplicada: {tolerance:N2}. " +
-                                  $"Justificação: {dto.OverrideJustification}",
-                        CreatedAtUtc = DateTime.UtcNow
-                    });
-                    await _context.SaveChangesAsync();
-
-                    await _adminLog.WriteAsync("WARN", "RequestsController",
-                        "FINANCIAL_INTEGRITY_OVERRIDE",
-                        $"Financial integrity override accepted for Request {request.RequestNumber}: " +
-                        $"OCR={ocrBaseline:N2}, Qt={quotationTotal:N2}, Var={varianceAmount:N2} ({variancePercent:N2}%). " +
-                        $"Justification: {dto.OverrideJustification}",
-                        payload: detectionPayload);
-
-                    // Proceed with normal completion flow below
-                }
-            }
-        }
-        // ═══════════════════════════════════════════════════════════════
-        // END FINANCIAL INTEGRITY GATE
-        // ═══════════════════════════════════════════════════════════════
-
-        var result = await ProcessQuotationTransition(id, "COMPLETE_QUOTATION", "WAITING_AREA_APPROVAL", new[] { "WAITING_QUOTATION", "AREA_ADJUSTMENT", "FINAL_ADJUSTMENT" }, dto.Comment, "Cotação concluída e enviada para aprovação da área.");
+        var result = await ProcessQuotationTransition(id, transitionAction, "WAITING_AREA_APPROVAL", new[] { "WAITING_QUOTATION", "AREA_ADJUSTMENT", "FINAL_ADJUSTMENT" }, dto.Comment ?? transitionComment, transitionComment);
         
         // R1 FIX: Wrap notification dispatch in try-catch so notification failures
         // do not propagate and mask the successful quotation transition.
@@ -5148,12 +6543,12 @@ public class RequestsController : BaseController
             {
                 await _orchestrator.EmitAsync(new WorkflowEvent
                 {
-                    EventCode = WorkflowEventCodes.QuotationCompleted,
+                    EventCode = isRework ? WorkflowEventCodes.QuotationResubmitted : WorkflowEventCodes.QuotationCompleted,
                     RequestId = request.Id,
                     RequestNumber = request.RequestNumber ?? "S/N",
                     RequestTitle = request.Title ?? "",
                     TargetStatusCode = "WAITING_AREA_APPROVAL",
-                    ActionTaken = "COMPLETE_QUOTATION",
+                    ActionTaken = transitionAction,
                     ActorUserId = CurrentUserId,
                     ActorName = (await _context.Users.FindAsync(CurrentUserId))?.FullName ?? "Sistema",
                     CorrelationId = Guid.NewGuid(), // No history entry for this path; generate unique ID
@@ -5167,7 +6562,7 @@ public class RequestsController : BaseController
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Non-critical: notification dispatch failed for QuotationCompleted on Request {RequestId}", request.Id);
+                _logger.LogWarning(ex, "Non-critical: notification dispatch failed for {EventType} on Request {RequestId}", transitionAction, request.Id);
             }
         }
 
@@ -5190,13 +6585,14 @@ public class RequestsController : BaseController
 
         if (request == null) return NotFound(new ProblemDetails { Title = "Pedido não encontrado.", Status = 404 });
 
-        // Role check: Only Area Approver can select a winner (Final Approver can only review)
-        if (!CurrentUserRoles.Contains(RoleConstants.AreaApprover))
+        // Phase B: winner selection is part of the area review — requires area-manager
+        // titularity for this request's department/plant (or admin / legacy nominee).
+        if (!await CanActAsAreaManagerAsync(actorId, request))
         {
             if (CurrentUserRoles.Contains(RoleConstants.FinalApprover))
                 return StatusCode(403, "O Aprovador Final não pode alterar o vencedor selecionado pela área.");
-            
-            return StatusCode(403, "Apenas o papel de Aprovação de Área pode selecionar a cotação vencedora.");
+
+            return StatusCode(403, "Você não é responsável pelo departamento/planta deste pedido.");
         }
 
         // Status Rule: Only WAITING_AREA_APPROVAL allows winning selection
@@ -5542,6 +6938,8 @@ public class RequestsController : BaseController
             ("SCHEDULE_PAYMENT", "PAYMENT_SCHEDULED") => WorkflowEventCodes.PaymentScheduled,
             ("COMPLETE_PAYMENT", "PAYMENT_COMPLETED") => WorkflowEventCodes.PaymentCompleted,
             ("CANCELLED", "CANCELLED") => WorkflowEventCodes.RequestCancelled,
+            // Rework resubmission (buyer corrected quotation after area/final return)
+            ("QUOTATION_RESUBMITTED", "WAITING_AREA_APPROVAL") => WorkflowEventCodes.QuotationResubmitted,
             // REJECT and REQUEST_ADJUSTMENT are ambiguous (area vs. final) — handled via overrideEventCode
             _ => null
         };
@@ -5638,6 +7036,11 @@ public class RequestsController : BaseController
         return await _context.RequestAttachments.AnyAsync(a => a.RequestId == requestId && a.AttachmentTypeCode == typeCode && !a.IsDeleted);
     }
 
+    private async Task<bool> HasGroupAttachmentAsync(Guid poGroupId, string typeCode)
+    {
+        return await _context.RequestAttachments.AnyAsync(a => a.RequestPoGroupId == poGroupId && a.AttachmentTypeCode == typeCode && !a.IsDeleted);
+    }
+
     private class StageDef
     {
         public string Label { get; set; } = string.Empty;
@@ -5717,5 +7120,499 @@ public class RequestsController : BaseController
         {
             _logger.LogWarning(logEx, "Failed to write OCR audit log for file {FileName}", fileName);
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Phase 7 — Not-Quoted Workflow Endpoints
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Buyer proposes a line item as not-quoted.
+    /// Sets QuotationLifecycleStatus = NOT_QUOTED_PROPOSED with justification.
+    /// </summary>
+    [HttpPost("{requestId}/line-items/{lineItemId}/not-quoted/propose")]
+    public async Task<IActionResult> ProposeNotQuoted(Guid requestId, Guid lineItemId, [FromBody] NotQuotedProposeDto dto)
+    {
+        var actorId = CurrentUserId;
+
+        // 1. Role check: Buyer only
+        if (!CurrentUserRoles.Contains(RoleConstants.Buyer))
+            return StatusCode(403, new ProblemDetails { Title = "Acesso Negado", Detail = "Apenas compradores podem propor item como não cotado.", Status = 403 });
+
+        // 2. Load request with line items
+        var request = await _context.Requests
+            .Include(r => r.RequestType)
+            .Include(r => r.Status)
+            .Include(r => r.LineItems)
+            .FirstOrDefaultAsync(r => r.Id == requestId);
+
+        if (request == null)
+            return NotFound(new ProblemDetails { Title = "Pedido não encontrado.", Status = 404 });
+
+        // 3. Scope check via GetScopedRequestsQuery (plant/department)
+        var scopedQuery = await GetScopedRequestsQuery();
+        if (!await scopedQuery.AnyAsync(r => r.Id == requestId))
+            return NotFound(new ProblemDetails { Title = "Pedido não encontrado.", Status = 404 });
+
+        // 4. QUOTATION only
+        if (request.RequestType?.Code != RequestConstants.Types.Quotation)
+            return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Esta ação é permitida apenas para pedidos de Cotação.", Status = 400 });
+
+        // 5. Buyer assignment check
+        if (request.BuyerId != null && request.BuyerId != actorId)
+            return StatusCode(403, new ProblemDetails { Title = "Acesso Negado", Detail = "Você não é o comprador atribuído a este pedido.", Status = 403 });
+
+        // 6. Find the line item
+        var lineItem = request.LineItems.FirstOrDefault(li => li.Id == lineItemId && !li.IsDeleted);
+        if (lineItem == null)
+            return NotFound(new ProblemDetails { Title = "Item não encontrado", Detail = "O item não pertence a este pedido ou foi excluído.", Status = 404 });
+
+        // 7. Lifecycle guard: must be null or QUOTATION_PENDING
+        var lifecycle = lineItem.QuotationLifecycleStatus;
+        if (lifecycle != null && lifecycle != RequestConstants.QuotationLifecycleStatuses.QuotationPending)
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Item Indisponível",
+                Detail = $"O item #{lineItem.LineNumber} não pode ser proposto como não cotado. Status atual: {lifecycle}.",
+                Status = 400
+            });
+
+        // 8. Active batch guard: item must not be in an active (non-rejected) batch
+        var activeBatchStatuses = new[]
+        {
+            RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval,
+            RequestConstants.ApprovalBatchStatuses.AreaAdjustment,
+            RequestConstants.ApprovalBatchStatuses.WaitingFinalApproval,
+            RequestConstants.ApprovalBatchStatuses.FinalAdjustment,
+            RequestConstants.ApprovalBatchStatuses.Approved
+        };
+
+        var isInActiveBatch = await _context.Set<ApprovalBatchItem>()
+            .AnyAsync(bi => bi.RequestLineItemId == lineItemId
+                            && bi.ApprovalBatch.RequestId == requestId
+                            && activeBatchStatuses.Contains(bi.ApprovalBatch.Status));
+
+        if (isInActiveBatch)
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Item em Lote Ativo",
+                Detail = $"O item #{lineItem.LineNumber} está em um lote de aprovação ativo e não pode ser proposto como não cotado.",
+                Status = 400
+            });
+
+        // 9. Justification validation: required, min 20 chars
+        if (string.IsNullOrWhiteSpace(dto.Justification))
+            return BadRequest(new ProblemDetails { Title = "Justificação Obrigatória", Detail = "Informe a justificação para propor o item como não cotado.", Status = 400 });
+
+        if (dto.Justification.Trim().Length < 20)
+            return BadRequest(new ProblemDetails { Title = "Justificação Insuficiente", Detail = "A justificação deve ter pelo menos 20 caracteres.", Status = 400 });
+
+        // 10. Mutations
+        lineItem.QuotationLifecycleStatus = RequestConstants.QuotationLifecycleStatuses.NotQuotedProposed;
+        lineItem.NotQuotedJustification = dto.Justification.Trim();
+        lineItem.NotQuotedProposedByUserId = actorId;
+        lineItem.NotQuotedProposedAtUtc = DateTime.UtcNow;
+
+        // Clear stale decision fields from a previous rejected proposal
+        lineItem.NotQuotedDecisionByUserId = null;
+        lineItem.NotQuotedDecisionAtUtc = null;
+        lineItem.NotQuotedDecisionComment = null;
+
+        lineItem.UpdatedAtUtc = DateTime.UtcNow;
+        lineItem.UpdatedByUserId = actorId;
+
+        // 11. Status history
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = requestId,
+            ActorUserId = actorId,
+            ActionTaken = "NOT_QUOTED_PROPOSED",
+            PreviousStatusId = request.StatusId,
+            NewStatusId = request.StatusId,
+            Comment = $"Item #{lineItem.LineNumber} (\"{lineItem.Description}\") proposto como não cotado. Justificação: {dto.Justification.Trim()}",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        // 12. Sync status (before SaveChanges — SyncStatusAsync mutates but does not save)
+        await _statusSyncService.SyncStatusAsync(requestId, actorId);
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = $"Item #{lineItem.LineNumber} proposto como não cotado com sucesso.", lineItemId, status = "NOT_QUOTED_PROPOSED" });
+    }
+
+    /// <summary>
+    /// Requester or scoped Area Approver accepts a not-quoted proposal.
+    /// Sets QuotationLifecycleStatus = NOT_QUOTED_ACCEPTED (terminal).
+    /// </summary>
+    [HttpPost("{requestId}/line-items/{lineItemId}/not-quoted/accept")]
+    public async Task<IActionResult> AcceptNotQuoted(Guid requestId, Guid lineItemId, [FromBody] NotQuotedDecisionDto dto)
+    {
+        var actorId = CurrentUserId;
+
+        // 1. Load request
+        var request = await _context.Requests
+            .Include(r => r.RequestType)
+            .Include(r => r.Status)
+            .Include(r => r.LineItems)
+            .FirstOrDefaultAsync(r => r.Id == requestId);
+
+        if (request == null)
+            return NotFound(new ProblemDetails { Title = "Pedido não encontrado.", Status = 404 });
+
+        // 2. QUOTATION only
+        if (request.RequestType?.Code != RequestConstants.Types.Quotation)
+            return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Esta ação é permitida apenas para pedidos de Cotação.", Status = 400 });
+
+        // 3. Authorization (Phase B): Requester OR area manager of this request's
+        // department/plant (DepartmentManager routing — the manual role grants nothing).
+        var isRequester = request.RequesterId == actorId;
+        if (!isRequester && !await CanActAsAreaManagerAsync(actorId, request))
+            return StatusCode(403, new ProblemDetails { Title = "Acesso Negado", Detail = "Apenas o solicitante ou o responsável de área do departamento/planta podem aceitar propostas de item não cotado.", Status = 403 });
+
+        // 4. Find the line item
+        var lineItem = request.LineItems.FirstOrDefault(li => li.Id == lineItemId && !li.IsDeleted);
+        if (lineItem == null)
+            return NotFound(new ProblemDetails { Title = "Item não encontrado", Detail = "O item não pertence a este pedido ou foi excluído.", Status = 404 });
+
+        // 5. Lifecycle guard: must be NOT_QUOTED_PROPOSED
+        if (lineItem.QuotationLifecycleStatus != RequestConstants.QuotationLifecycleStatuses.NotQuotedProposed)
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Ação Inválida",
+                Detail = $"O item #{lineItem.LineNumber} não está com proposta de não cotado pendente. Status atual: {lineItem.QuotationLifecycleStatus ?? "null"}.",
+                Status = 400
+            });
+
+        // 6. Comment validation
+        if (string.IsNullOrWhiteSpace(dto.Comment))
+            return BadRequest(new ProblemDetails { Title = "Comentário Obrigatório", Detail = "Informe o comentário para aceitar a proposta de item não cotado.", Status = 400 });
+
+        // 7. Mutations — terminal status
+        lineItem.QuotationLifecycleStatus = RequestConstants.QuotationLifecycleStatuses.NotQuotedAccepted;
+        lineItem.NotQuotedDecisionByUserId = actorId;
+        lineItem.NotQuotedDecisionAtUtc = DateTime.UtcNow;
+        lineItem.NotQuotedDecisionComment = dto.Comment.Trim();
+
+        lineItem.UpdatedAtUtc = DateTime.UtcNow;
+        lineItem.UpdatedByUserId = actorId;
+
+        // 8. Status history
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = requestId,
+            ActorUserId = actorId,
+            ActionTaken = "NOT_QUOTED_ACCEPTED",
+            PreviousStatusId = request.StatusId,
+            NewStatusId = request.StatusId,
+            Comment = $"Proposta de item não cotado aceita para item #{lineItem.LineNumber} (\"{lineItem.Description}\"). Comentário: {dto.Comment.Trim()}",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        // 9. Sync status
+        await _statusSyncService.SyncStatusAsync(requestId, actorId);
+
+        // 10. Phase 8: Auto-close check — all items NOT_QUOTED_ACCEPTED, no PO groups, no active batches
+        var allActiveItems = request.LineItems.Where(li => !li.IsDeleted).ToList();
+        var allNotQuotedAccepted = allActiveItems.All(li =>
+            li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.NotQuotedAccepted);
+
+        if (allNotQuotedAccepted)
+        {
+            var activeBatchStatuses = new[]
+            {
+                RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval,
+                RequestConstants.ApprovalBatchStatuses.WaitingFinalApproval,
+                RequestConstants.ApprovalBatchStatuses.AreaAdjustment,
+                RequestConstants.ApprovalBatchStatuses.FinalAdjustment
+            };
+            var hasActiveBatches = await _context.ApprovalBatches
+                .AnyAsync(b => b.RequestId == requestId && activeBatchStatuses.Contains(b.Status));
+
+            var hasActivePoGroups = await _context.RequestPoGroups
+                .AnyAsync(g => g.RequestId == requestId &&
+                               g.Status != RequestConstants.PoGroupStatuses.Cancelled);
+
+            if (!hasActiveBatches && !hasActivePoGroups)
+            {
+                var completedStatus = await _context.RequestStatuses
+                    .FirstOrDefaultAsync(s => s.Code == RequestConstants.Statuses.Completed);
+                if (completedStatus != null)
+                {
+                    var previousStatusId = request.StatusId;
+                    request.StatusId = completedStatus.Id;
+                    request.UpdatedAtUtc = DateTime.UtcNow;
+                    request.UpdatedByUserId = actorId;
+
+                    _context.RequestStatusHistories.Add(new RequestStatusHistory
+                    {
+                        Id = Guid.NewGuid(),
+                        RequestId = requestId,
+                        ActorUserId = actorId,
+                        ActionTaken = "AUTO_CLOSE_ALL_NOT_QUOTED",
+                        PreviousStatusId = previousStatusId,
+                        NewStatusId = completedStatus.Id,
+                        Comment = "Pedido encerrado automaticamente — todos os itens foram aceitos como não cotados, " +
+                                  "sem lotes de aprovação ou grupos P.O. ativos.",
+                        CreatedAtUtc = DateTime.UtcNow
+                    });
+                }
+            }
+        }
+        // NOTE: Do NOT auto-close if any items are QUOTATION_APPROVED without PO groups.
+        // That is an inconsistent/incomplete state, not a valid closure.
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = $"Proposta de item não cotado aceita para item #{lineItem.LineNumber}.", lineItemId, status = "NOT_QUOTED_ACCEPTED" });
+    }
+
+    /// <summary>
+    /// Requester or scoped Area Approver rejects a not-quoted proposal.
+    /// Returns item to QuotationLifecycleStatus = null (pending pool).
+    /// </summary>
+    [HttpPost("{requestId}/line-items/{lineItemId}/not-quoted/reject")]
+    public async Task<IActionResult> RejectNotQuoted(Guid requestId, Guid lineItemId, [FromBody] NotQuotedDecisionDto dto)
+    {
+        var actorId = CurrentUserId;
+
+        // 1. Load request
+        var request = await _context.Requests
+            .Include(r => r.RequestType)
+            .Include(r => r.Status)
+            .Include(r => r.LineItems)
+            .FirstOrDefaultAsync(r => r.Id == requestId);
+
+        if (request == null)
+            return NotFound(new ProblemDetails { Title = "Pedido não encontrado.", Status = 404 });
+
+        // 2. QUOTATION only
+        if (request.RequestType?.Code != RequestConstants.Types.Quotation)
+            return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Esta ação é permitida apenas para pedidos de Cotação.", Status = 400 });
+
+        // 3. Authorization (Phase B): Requester OR area manager of this request's
+        // department/plant (DepartmentManager routing — the manual role grants nothing).
+        var isRequester = request.RequesterId == actorId;
+        if (!isRequester && !await CanActAsAreaManagerAsync(actorId, request))
+            return StatusCode(403, new ProblemDetails { Title = "Acesso Negado", Detail = "Apenas o solicitante ou o responsável de área do departamento/planta podem rejeitar propostas de item não cotado.", Status = 403 });
+
+        // 4. Find the line item
+        var lineItem = request.LineItems.FirstOrDefault(li => li.Id == lineItemId && !li.IsDeleted);
+        if (lineItem == null)
+            return NotFound(new ProblemDetails { Title = "Item não encontrado", Detail = "O item não pertence a este pedido ou foi excluído.", Status = 404 });
+
+        // 5. Lifecycle guard: must be NOT_QUOTED_PROPOSED
+        if (lineItem.QuotationLifecycleStatus != RequestConstants.QuotationLifecycleStatuses.NotQuotedProposed)
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Ação Inválida",
+                Detail = $"O item #{lineItem.LineNumber} não está com proposta de não cotado pendente. Status atual: {lineItem.QuotationLifecycleStatus ?? "null"}.",
+                Status = 400
+            });
+
+        // 6. Comment validation
+        if (string.IsNullOrWhiteSpace(dto.Comment))
+            return BadRequest(new ProblemDetails { Title = "Comentário Obrigatório", Detail = "Informe o motivo da rejeição da proposta de item não cotado.", Status = 400 });
+
+        // 7. Mutations — return to pending pool
+        lineItem.QuotationLifecycleStatus = null; // Back to pending pool (consistent with batch rejection pattern)
+        lineItem.NotQuotedDecisionByUserId = actorId;
+        lineItem.NotQuotedDecisionAtUtc = DateTime.UtcNow;
+        lineItem.NotQuotedDecisionComment = dto.Comment.Trim();
+        // Preserve NotQuotedJustification for audit trail
+
+        lineItem.UpdatedAtUtc = DateTime.UtcNow;
+        lineItem.UpdatedByUserId = actorId;
+
+        // 8. Status history
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = requestId,
+            ActorUserId = actorId,
+            ActionTaken = "NOT_QUOTED_REJECTED",
+            PreviousStatusId = request.StatusId,
+            NewStatusId = request.StatusId,
+            Comment = $"Proposta de item não cotado rejeitada para item #{lineItem.LineNumber} (\"{lineItem.Description}\"). Motivo: {dto.Comment.Trim()}",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        // 9. Sync status
+        await _statusSyncService.SyncStatusAsync(requestId, actorId);
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = $"Proposta de item não cotado rejeitada para item #{lineItem.LineNumber}. Item retornado ao pool de cotação.", lineItemId, status = "QUOTATION_PENDING" });
+    }
+
+    /// <summary>
+    /// Buyer closes a line item without quotation — a final Buyer decision with
+    /// mandatory reason + justification. Sets QuotationLifecycleStatus = CLOSED_NOT_QUOTED.
+    /// Replaces the legacy propose/accept/reject not-quoted flow: no Requester or
+    /// Area Approver acceptance is involved.
+    /// </summary>
+    [HttpPost("{requestId}/line-items/{lineItemId}/close-not-quoted")]
+    public async Task<IActionResult> CloseNotQuoted(Guid requestId, Guid lineItemId, [FromBody] CloseNotQuotedDto dto)
+    {
+        var actorId = CurrentUserId;
+
+        // 1. Role check: Buyer only
+        if (!CurrentUserRoles.Contains(RoleConstants.Buyer))
+            return StatusCode(403, new ProblemDetails { Title = "Acesso Negado", Detail = "Apenas compradores podem encerrar itens sem cotação.", Status = 403 });
+
+        // 2. Load request with line items
+        var request = await _context.Requests
+            .Include(r => r.RequestType)
+            .Include(r => r.Status)
+            .Include(r => r.LineItems)
+            .FirstOrDefaultAsync(r => r.Id == requestId);
+
+        if (request == null)
+            return NotFound(new ProblemDetails { Title = "Pedido não encontrado.", Status = 404 });
+
+        // 3. Scope check via GetScopedRequestsQuery (plant/department)
+        var scopedQuery = await GetScopedRequestsQuery();
+        if (!await scopedQuery.AnyAsync(r => r.Id == requestId))
+            return NotFound(new ProblemDetails { Title = "Pedido não encontrado.", Status = 404 });
+
+        // 4. QUOTATION only
+        if (request.RequestType?.Code != RequestConstants.Types.Quotation)
+            return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Esta ação é permitida apenas para pedidos de Cotação.", Status = 400 });
+
+        // 5. Buyer assignment check
+        if (request.BuyerId != null && request.BuyerId != actorId)
+            return StatusCode(403, new ProblemDetails { Title = "Acesso Negado", Detail = "Você não é o comprador atribuído a este pedido.", Status = 403 });
+
+        // 6. Find the line item
+        var lineItem = request.LineItems.FirstOrDefault(li => li.Id == lineItemId && !li.IsDeleted);
+        if (lineItem == null)
+            return NotFound(new ProblemDetails { Title = "Item não encontrado", Detail = "O item não pertence a este pedido ou foi excluído.", Status = 404 });
+
+        // 7. Lifecycle guard: must be null or QUOTATION_PENDING
+        var lifecycle = lineItem.QuotationLifecycleStatus;
+        if (lifecycle != null && lifecycle != RequestConstants.QuotationLifecycleStatuses.QuotationPending)
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Item Indisponível",
+                Detail = $"O item #{lineItem.LineNumber} não pode ser encerrado sem cotação. Status atual: {lifecycle}.",
+                Status = 400
+            });
+
+        // 8. Active batch guard: item must not be in an active/approved batch
+        var activeBatchStatuses = new[]
+        {
+            RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval,
+            RequestConstants.ApprovalBatchStatuses.AreaAdjustment,
+            RequestConstants.ApprovalBatchStatuses.WaitingFinalApproval,
+            RequestConstants.ApprovalBatchStatuses.FinalAdjustment,
+            RequestConstants.ApprovalBatchStatuses.Approved
+        };
+
+        var isInActiveBatch = await _context.Set<ApprovalBatchItem>()
+            .AnyAsync(bi => bi.RequestLineItemId == lineItemId
+                            && bi.ApprovalBatch.RequestId == requestId
+                            && activeBatchStatuses.Contains(bi.ApprovalBatch.Status));
+
+        if (isInActiveBatch)
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Item em Lote Ativo",
+                Detail = $"O item #{lineItem.LineNumber} está em um lote de aprovação ativo e não pode ser encerrado sem cotação.",
+                Status = 400
+            });
+
+        // 9. Reason + justification validation
+        if (string.IsNullOrWhiteSpace(dto.ReasonCode))
+            return BadRequest(new ProblemDetails { Title = "Motivo Obrigatório", Detail = "Selecione o motivo do encerramento sem cotação.", Status = 400 });
+
+        if (string.IsNullOrWhiteSpace(dto.Justification) || dto.Justification.Trim().Length < 20)
+            return BadRequest(new ProblemDetails { Title = "Justificação Insuficiente", Detail = "A justificação deve ter pelo menos 20 caracteres.", Status = 400 });
+
+        var reason = dto.ReasonCode.Trim();
+        var justification = dto.Justification.Trim();
+
+        // 10. Mutations — terminal Buyer decision. Reuses the existing not-quoted
+        // audit columns (no migration): justification holds the composed text,
+        // proposer fields hold the closing actor/time.
+        lineItem.QuotationLifecycleStatus = RequestConstants.QuotationLifecycleStatuses.ClosedNotQuoted;
+        lineItem.NotQuotedJustification = $"Motivo: {reason}\nJustificativa: {justification}";
+        lineItem.NotQuotedProposedByUserId = actorId;
+        lineItem.NotQuotedProposedAtUtc = DateTime.UtcNow;
+        lineItem.NotQuotedDecisionByUserId = null;
+        lineItem.NotQuotedDecisionAtUtc = null;
+        lineItem.NotQuotedDecisionComment = null;
+
+        lineItem.UpdatedAtUtc = DateTime.UtcNow;
+        lineItem.UpdatedByUserId = actorId;
+
+        // 11. Status history
+        var actorUser = await _context.Users.FindAsync(actorId);
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = requestId,
+            ActorUserId = actorId,
+            ActionTaken = "ITEM_CLOSED_NOT_QUOTED",
+            PreviousStatusId = request.StatusId,
+            NewStatusId = request.StatusId,
+            Comment = $"{actorUser?.FullName ?? "Comprador"} encerrou o item \"{lineItem.Description}\" (Linha {lineItem.LineNumber}) sem cotação.\n" +
+                      $"Motivo: {reason}.\nJustificativa: {justification}",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        // 12. Sync status (before SaveChanges — SyncStatusAsync mutates but does not save)
+        await _statusSyncService.SyncStatusAsync(requestId, actorId);
+
+        // 13. Auto-close check — all items terminally closed as not-quoted
+        // (new CLOSED_NOT_QUOTED or legacy NOT_QUOTED_ACCEPTED), no active
+        // batches, no active PO groups. Mirrors the legacy accept endpoint.
+        var allActiveItems = request.LineItems.Where(li => !li.IsDeleted).ToList();
+        var allClosedNotQuoted = allActiveItems.All(li =>
+            li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.ClosedNotQuoted ||
+            li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.NotQuotedAccepted);
+
+        if (allClosedNotQuoted)
+        {
+            var hasActiveBatches = await _context.ApprovalBatches
+                .AnyAsync(b => b.RequestId == requestId && activeBatchStatuses.Contains(b.Status));
+
+            var hasActivePoGroups = await _context.RequestPoGroups
+                .AnyAsync(g => g.RequestId == requestId &&
+                               g.Status != RequestConstants.PoGroupStatuses.Cancelled);
+
+            if (!hasActiveBatches && !hasActivePoGroups)
+            {
+                var completedStatus = await _context.RequestStatuses
+                    .FirstOrDefaultAsync(s => s.Code == RequestConstants.Statuses.Completed);
+                if (completedStatus != null)
+                {
+                    var previousStatusId = request.StatusId;
+                    request.StatusId = completedStatus.Id;
+                    request.UpdatedAtUtc = DateTime.UtcNow;
+                    request.UpdatedByUserId = actorId;
+
+                    _context.RequestStatusHistories.Add(new RequestStatusHistory
+                    {
+                        Id = Guid.NewGuid(),
+                        RequestId = requestId,
+                        ActorUserId = actorId,
+                        ActionTaken = "AUTO_CLOSE_ALL_NOT_QUOTED",
+                        PreviousStatusId = previousStatusId,
+                        NewStatusId = completedStatus.Id,
+                        Comment = "Pedido encerrado automaticamente — todos os itens foram encerrados sem cotação, " +
+                                  "sem lotes de aprovação ou grupos P.O. ativos.",
+                        CreatedAtUtc = DateTime.UtcNow
+                    });
+                }
+            }
+        }
+        // NOTE: Do NOT auto-close if any items are QUOTATION_APPROVED without PO groups.
+        // That is an inconsistent/incomplete state, not a valid closure.
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = $"Item #{lineItem.LineNumber} encerrado sem cotação.", lineItemId, status = RequestConstants.QuotationLifecycleStatuses.ClosedNotQuoted });
     }
 }

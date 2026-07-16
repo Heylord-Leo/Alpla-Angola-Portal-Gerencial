@@ -58,6 +58,7 @@ public class LineItemDetailsDto
 
     // Item Lookups
     public string? LineItemStatusCode { get; set; }
+    public string? QuotationLifecycleStatus { get; set; }
     public string? LineItemStatusName { get; set; }
     public string? LineItemStatusBadgeColor { get; set; }
     public string? UnitCode { get; set; }
@@ -93,4 +94,5 @@ public class LineItemDetailsDto
     public string? LatestAdjustmentRole { get; set; }
     public DateTime? LatestAdjustmentDateUtc { get; set; }
     public List<SavedQuotationDto>? Quotations { get; set; }
+    public object? ApprovalBatches { get; set; }
 }

@@ -2,30 +2,36 @@
 
 ## Current Version
 
-v2.205.1
+v2.206.0
 
-## [v2.205.1] - 2026-07-01
+## [v2.206.0] - 2026-07-16
 
-### Fixed — User Administration Role Scopes & Validation
+### Changed — Redesign de Aprovação de Área por DepartmentManager (Fases A+B+C)
 
-- **Dynamic Role Scope**: Corrected a permission gap where Local Managers could arbitrarily assign restricted roles (like `HR` or `Import`) without possessing those permissions. The `AllowedRolesForLM` array was replaced with a dynamic backend check `GetAssignableRolesForCurrentUserAsync`.
-- **Target User Scope Protection**: Prevented Local Managers from editing or resetting passwords for users who possess roles outside the manager's permitted scope, replacing silent failures with a locked UI indicator.
-- **Corporate Email Validation**: Enforced strict validation for ALPLA corporate emails (ending in `@alpla.com`) across both frontend forms and backend API (`CreateUser` / `UpdateUser`), completely preventing the creation of incomplete accounts that would crash the email delivery service.
-- **Standardized Notifications**: Replaced custom modal toasts with the system-wide `<Feedback />` component in `UserManagement.tsx` to align with the rest of the application.
+- **`DepartmentManagers` (Departamento + Planta)** é a fonte única de configuração da aprovação de área: submit, fila, autorização (individual e em lote), e-mails e a claim derivada "Area Approver" resolvem exclusivamente pelo novo cadastro (managers específicos por planta com cobertura por managers globais).
+- **Legado removido**: `Department.ResponsibleUserId` dropado do modelo e do banco (com snapshots de auditoria); atribuições manuais da role "Area Approver" removidas e bloqueadas pela API — a role existe apenas como claim derivada no login.
+- **`Request.AreaApproverId`** passou a registrar **quem decidiu** (null até a decisão); histórico preservado integralmente.
+- **HR e Contratos** migrados para resolver gestores por `DepartmentManagers`; Local Manager permanece exclusivamente administração de usuários.
+- **Dados Mestres → Departamentos**: grade de managers por planta/global com auto-criação de escopos de visibilidade (D3); **Cadastro de Usuários**: seção somente leitura de responsabilidades derivadas.
+- **Relatório administrativo** `GET /api/admin/reports/area-approver-reconciliation` (JSON/CSV) com classificações e `LegacyPendingRequests` (gate para remover a compatibilidade temporária `IsLegacyNamedAreaApprover`).
 
 **Guided Tour impact: existing tour reviewed, no changes needed.**
 
-## [v2.205.0] - 2026-07-01
+## [v2.205.0] - 2026-07-14
+
+### Added — Approval Batch Wizard & CC Rateio
+
+- **Approval Batch Wizard**: Implementação completa de assistente de aprovação em lote para pedidos de compra com etapas de overview, comparação de cotações, rateio por item, verificação orçamentária e adjudicação.
+- **Rateio por Item**: Suporte para divisão percentual ou nominal de custos de itens individuais entre múltiplos Centros de Custo (`RequestLineItemAllocation`).
+- **Agrupamento de P.O**: Agrupamento automático de pedidos aprovados sob a mesma P.O física (`RequestPoGroup`).
+- **OCR Conciliação**: Persistência de dados OCR extraídos em faturas fiscais para auditoria (`OcrDataRaw`).
+- **Visão Diária**: Adição da resolução diária ("Dias") no gráfico "Contexto Financeiro Visual" do drawer de aprovação.
 
 ### Added — IT Equipment Return & New Delivery Enforcement
 
-- **Legacy Transfer Removal**: Removed the "Trocar Utilizador" action from the Equipment Quick-View drawer and deprecated the backend `POST /api/itequipment/{id}/change-user` endpoint (now returns `410 Gone`). The system no longer allows silent transfer of equipment ownership bypassing the Delivery Terms workflow.
-- **Workflow Enforcement**: Added a disabled "Transferir Equipamento" guidance button to instruct users to first return the equipment and then create a new Delivery Term.
-- **Form Validation**: Replaced global red toast notifications with contextual inline modal validation for invalid email addresses in the New Delivery Term flow.
-- **PDF Layout Optimization**: Optimized the "Termo de Devolução" PDF to fit on a single page, reducing font sizes and signature block spacing to avoid unnecessary printing waste. Fixed the 'Código Imobilizado' overlapping issue in the equipment table.
-- **Email Instruction Update**: Updated the employee delivery email body to clearly instruct users to send or forward the signed document to `aovia1-it@alpla.com` instead of replying to the automated address.
-
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+- **Legacy Transfer Removal**: Remoção da ação de transferência rápida de equipamentos no drawer do comprador, forçando o fluxo completo de devolução e emissão de novo Termo.
+- **Form Validation**: Validação inline contextual de e-mails corporativos no fluxo de termos.
+- **PDF Layout**: Otimização do layout do PDF de Termo de Devolução para caber em página única.
 
 ## [v2.204.1] - 2026-06-30
 

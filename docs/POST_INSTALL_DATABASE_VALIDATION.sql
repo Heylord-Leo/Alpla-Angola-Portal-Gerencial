@@ -60,7 +60,11 @@ INSERT INTO @criticalColumns VALUES
     ('Users', 'LockoutEndUtc'),
     ('Users', 'MustChangePassword'),
     ('CostCenters', 'PlantId'),
-    ('Departments', 'ResponsibleUserId'),
+    -- Phase C (DepartmentManager redesign): Departments.ResponsibleUserId was DROPPED;
+    -- area responsibility now lives in the DepartmentManagers table.
+    ('DepartmentManagers', 'DepartmentId'),
+    ('DepartmentManagers', 'PlantId'),
+    ('DepartmentManagers', 'UserId'),
     ('Suppliers', 'PortalCode'),
     ('Suppliers', 'PrimaveraCode'),
     ('Suppliers', 'Origin'),

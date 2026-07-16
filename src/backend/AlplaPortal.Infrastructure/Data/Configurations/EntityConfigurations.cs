@@ -36,6 +36,11 @@ public class RequestConfiguration : IEntityTypeConfiguration<Request>
                .WithOne(a => a.Request)
                .HasForeignKey(a => a.RequestId)
                .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(r => r.PoGroups)
+               .WithOne(g => g.Request)
+               .HasForeignKey(g => g.RequestId)
+               .OnDelete(DeleteBehavior.Cascade);
     }
 }
 
@@ -50,6 +55,51 @@ public class RequestLineItemConfiguration : IEntityTypeConfiguration<RequestLine
         builder.Property(li => li.TotalAmount).HasColumnType("decimal(18,2)");
         builder.Property(li => li.DiscountPercent).HasColumnType("decimal(9,4)");
         builder.Property(li => li.DiscountAmount).HasColumnType("decimal(18,2)");
+
+        builder.HasOne(li => li.RequestPoGroup)
+               .WithMany(g => g.LineItems)
+               .HasForeignKey(li => li.RequestPoGroupId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasOne(li => li.SelectedQuotationItem)
+               .WithMany()
+               .HasForeignKey(li => li.SelectedQuotationItemId)
+               .OnDelete(DeleteBehavior.NoAction);
+    }
+}
+
+public class RequestLineItemAllocationConfiguration : IEntityTypeConfiguration<RequestLineItemAllocation>
+{
+    public void Configure(EntityTypeBuilder<RequestLineItemAllocation> builder)
+    {
+        builder.HasKey(a => a.Id);
+
+        builder.Property(a => a.Percentage)
+               .HasColumnType("decimal(9,4)");
+
+        builder.Property(a => a.Comment)
+               .HasMaxLength(500);
+
+        builder.HasOne(a => a.RequestLineItem)
+               .WithMany(li => li.Allocations)
+               .HasForeignKey(a => a.RequestLineItemId)
+               .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(a => a.Plant)
+               .WithMany()
+               .HasForeignKey(a => a.PlantId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasOne(a => a.CostCenter)
+               .WithMany()
+               .HasForeignKey(a => a.CostCenterId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasIndex(a => a.RequestLineItemId)
+               .HasDatabaseName("IX_Allocation_LineItemId");
+
+        builder.HasIndex(a => a.CostCenterId)
+               .HasDatabaseName("IX_Allocation_CostCenterId");
     }
 }
 
@@ -75,6 +125,11 @@ public class RequestAttachmentConfiguration : IEntityTypeConfiguration<RequestAt
                .WithMany()
                .HasForeignKey(a => a.UploadedByUserId)
                .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasOne(a => a.RequestPoGroup)
+               .WithMany(g => g.PoAttachments)
+               .HasForeignKey(a => a.RequestPoGroupId)
+               .OnDelete(DeleteBehavior.NoAction);
     }
 }
 
@@ -84,6 +139,46 @@ public class UserRoleAssignmentConfiguration : IEntityTypeConfiguration<UserRole
     {
         // Composite Primary Key for junction table
         builder.HasKey(ura => new { ura.UserId, ura.RoleId });
+    }
+}
+
+public class DepartmentManagerConfiguration : IEntityTypeConfiguration<DepartmentManager>
+{
+    public void Configure(EntityTypeBuilder<DepartmentManager> builder)
+    {
+        builder.HasKey(dm => dm.Id);
+
+        // Same user may manage several plants of a department (and be global besides),
+        // but never the same (department, plant) twice. SQL Server unique indexes only
+        // treat NULL as a duplicate-able value with a filter, so global rows (PlantId
+        // NULL) get their own filtered unique index.
+        builder.HasIndex(dm => new { dm.DepartmentId, dm.PlantId, dm.UserId })
+            .IsUnique()
+            .HasFilter("[PlantId] IS NOT NULL");
+        builder.HasIndex(dm => new { dm.DepartmentId, dm.UserId })
+            .IsUnique()
+            .HasFilter("[PlantId] IS NULL")
+            .HasDatabaseName("IX_DepartmentManagers_DepartmentId_UserId_Global");
+
+        // Hot paths: resolution/queue by (department, plant) and inverse lookup by user.
+        builder.HasIndex(dm => new { dm.DepartmentId, dm.PlantId, dm.IsActive });
+        builder.HasIndex(dm => new { dm.UserId, dm.IsActive });
+
+        // Users/departments/plants are deactivated, never deleted — block cascade.
+        builder.HasOne(dm => dm.Department)
+            .WithMany(d => d.Managers)
+            .HasForeignKey(dm => dm.DepartmentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(dm => dm.Plant)
+            .WithMany()
+            .HasForeignKey(dm => dm.PlantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(dm => dm.User)
+            .WithMany()
+            .HasForeignKey(dm => dm.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
 public class QuotationConfiguration : IEntityTypeConfiguration<Quotation>
@@ -199,3 +294,121 @@ public class EmailOutboxEntryConfiguration : IEntityTypeConfiguration<EmailOutbo
                .HasDatabaseName("IX_EmailOutbox_Processing_CreatedAt");
     }
 }
+
+public class RequestPoGroupConfiguration : IEntityTypeConfiguration<RequestPoGroup>
+{
+    public void Configure(EntityTypeBuilder<RequestPoGroup> builder)
+    {
+        builder.HasKey(g => g.Id);
+
+        builder.Property(g => g.SupplierNameSnapshot).HasMaxLength(255);
+        builder.Property(g => g.SupplierNifSnapshot).HasMaxLength(50);
+        builder.Property(g => g.CurrencyCode).HasMaxLength(10);
+        builder.Property(g => g.PaymentConditionCode).HasMaxLength(50);
+        builder.Property(g => g.Status).IsRequired().HasMaxLength(50);
+        builder.Property(g => g.PurchaseOrderNumber).HasMaxLength(100);
+        builder.Property(g => g.TotalAmount).HasColumnType("decimal(18,2)");
+        builder.Property(g => g.AdvancePaymentPercent).HasColumnType("decimal(9,4)");
+
+        builder.HasOne(g => g.Supplier)
+               .WithMany()
+               .HasForeignKey(g => g.SupplierId)
+               .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(g => g.Currency)
+               .WithMany()
+               .HasForeignKey(g => g.CurrencyId)
+               .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(g => g.ApprovalBatch)
+               .WithMany(b => b.PoGroups)
+               .HasForeignKey(g => g.ApprovalBatchId)
+               .OnDelete(DeleteBehavior.NoAction);
+    }
+}
+
+// ── Partial Quotation Approval Entity Configurations ──
+
+public class ApprovalBatchConfiguration : IEntityTypeConfiguration<ApprovalBatch>
+{
+    public void Configure(EntityTypeBuilder<ApprovalBatch> builder)
+    {
+        builder.HasKey(b => b.Id);
+
+        builder.Property(b => b.Status).IsRequired().HasMaxLength(50);
+        builder.Property(b => b.Comment).HasMaxLength(2000);
+        builder.Property(b => b.BudgetJustification).HasMaxLength(2000);
+        builder.Property(b => b.ApprovedTotalAmount).HasColumnType("decimal(18,2)");
+
+        builder.HasOne(b => b.Request)
+               .WithMany(r => r.ApprovalBatches)
+               .HasForeignKey(b => b.RequestId)
+               .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(b => b.Items)
+               .WithOne(i => i.ApprovalBatch)
+               .HasForeignKey(i => i.ApprovalBatchId)
+               .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(b => b.ExtraItemDecisions)
+               .WithOne(d => d.ApprovalBatch)
+               .HasForeignKey(d => d.ApprovalBatchId)
+               .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasIndex(b => b.RequestId)
+               .HasDatabaseName("IX_ApprovalBatch_RequestId");
+
+        builder.HasIndex(b => new { b.RequestId, b.BatchNumber })
+               .IsUnique()
+               .HasDatabaseName("IX_ApprovalBatch_Request_BatchNumber");
+    }
+}
+
+public class ApprovalBatchItemConfiguration : IEntityTypeConfiguration<ApprovalBatchItem>
+{
+    public void Configure(EntityTypeBuilder<ApprovalBatchItem> builder)
+    {
+        builder.HasKey(i => i.Id);
+
+        builder.HasOne(i => i.RequestLineItem)
+               .WithMany()
+               .HasForeignKey(i => i.RequestLineItemId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasOne(i => i.SelectedQuotationItem)
+               .WithMany()
+               .HasForeignKey(i => i.SelectedQuotationItemId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasIndex(i => i.ApprovalBatchId)
+               .HasDatabaseName("IX_ApprovalBatchItem_BatchId");
+
+        builder.HasIndex(i => i.RequestLineItemId)
+               .HasDatabaseName("IX_ApprovalBatchItem_LineItemId");
+    }
+}
+
+public class ApprovalBatchExtraItemDecisionConfiguration : IEntityTypeConfiguration<ApprovalBatchExtraItemDecision>
+{
+    public void Configure(EntityTypeBuilder<ApprovalBatchExtraItemDecision> builder)
+    {
+        builder.HasKey(d => d.Id);
+
+        builder.Property(d => d.Decision).IsRequired().HasMaxLength(20);
+        builder.Property(d => d.Comment).HasMaxLength(2000);
+
+        builder.HasOne(d => d.QuotationItem)
+               .WithMany()
+               .HasForeignKey(d => d.QuotationItemId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasOne(d => d.GeneratedRequestLineItem)
+               .WithMany()
+               .HasForeignKey(d => d.GeneratedRequestLineItemId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasIndex(d => d.ApprovalBatchId)
+               .HasDatabaseName("IX_ApprovalBatchExtraItemDecision_BatchId");
+    }
+}
+

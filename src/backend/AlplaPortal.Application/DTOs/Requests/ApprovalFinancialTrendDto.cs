@@ -7,7 +7,7 @@ public class ApprovalFinancialTrendDto
 {
     public Guid RequestId { get; set; }
     public string Currency { get; set; } = string.Empty;
-    public string Resolution { get; set; } = "MONTH"; // "MONTH" or "WEEK"
+    public string Resolution { get; set; } = "MONTH"; // "MONTH", "WEEK" or "DAY"
     public string Scope { get; set; } = "PLANT"; // "PLANT" or "DEPARTMENT"
     public List<FinancialTrendPointDto> DataPoints { get; set; } = new();
 }

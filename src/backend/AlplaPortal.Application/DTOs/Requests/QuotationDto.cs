@@ -18,6 +18,11 @@ public class SaveQuotationRequestDto
     public string? SourceFileName { get; set; }
     public Guid? ProformaAttachmentId { get; set; }
 
+    // Financial Integrity Fields (Per-Quotation)
+    public decimal? OcrTotal { get; set; }
+    public bool FinancialIntegrityOverride { get; set; }
+    public string? OverrideJustification { get; set; }
+
     public List<SaveQuotationItemDto> Items { get; set; } = new();
 }
 
@@ -32,6 +37,10 @@ public class SaveQuotationItemDto
     public decimal? DiscountPercent { get; set; }
     public int? IvaRateId { get; set; }
     public int? ItemCatalogId { get; set; } // Optional catalog item linkage
+    public Guid? MappedRequestLineItemId { get; set; } // Link back to original request line item
+    
+    public string ReconciliationStatus { get; set; } = "MAPPED";
+    public string? ReconciliationJustification { get; set; }
 }
 
 public class SavedQuotationDto
@@ -56,7 +65,24 @@ public class SavedQuotationDto
     public DateTime CreatedAtUtc { get; set; }
     public int ItemCount { get; set; }
     
+    // Additional Supplier Identity Fields for Wizard UX
+    public string? SupplierPortalCode { get; set; }
+    public string? SupplierPrimaveraCode { get; set; }
+    public string? SupplierRegistrationStatus { get; set; }
+
     public List<SavedQuotationItemDto> Items { get; set; } = new();
+}
+
+public class PurchaseHistoryInsightDto
+{
+    public bool HasHistory { get; set; }
+    public DateTime? LastPurchaseDateUtc { get; set; }
+    public decimal? LastUnitPrice { get; set; }
+    public string? LastCurrency { get; set; }
+    public string? LastUom { get; set; }
+    public decimal CurrentUnitPrice { get; set; }
+    public decimal? DifferencePercent { get; set; }
+    public string Status { get; set; } = "NO_HISTORY";
 }
 
 public class SavedQuotationItemDto
@@ -83,6 +109,11 @@ public class SavedQuotationItemDto
 
     public int? ItemCatalogId { get; set; }
     public string? ItemCatalogCode { get; set; }
+    
+    public Guid? MappedRequestLineItemId { get; set; }
+    
+    public string ReconciliationStatus { get; set; } = "MAPPED";
+    public string? ReconciliationJustification { get; set; }
 
     // Receiving Fields
     public decimal ReceivedQuantity { get; set; }
@@ -90,4 +121,6 @@ public class SavedQuotationItemDto
     public string? LineItemStatusCode { get; set; }
     public string? LineItemStatusName { get; set; }
     public string? LineItemStatusBadgeColor { get; set; }
+
+    public PurchaseHistoryInsightDto? HistoryInsight { get; set; }
 }

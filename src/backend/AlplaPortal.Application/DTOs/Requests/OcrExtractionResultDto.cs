@@ -49,6 +49,30 @@ public class OcrHeaderSuggestionsDto
     [JsonPropertyName("discountAmount")]
     public OcrValueDto<decimal>? DiscountAmount { get; set; }
 
+    [JsonPropertyName("vendorAddress")]
+    public OcrValueDto<string>? VendorAddress { get; set; }
+
+    [JsonPropertyName("vendorContactName")]
+    public OcrValueDto<string>? VendorContactName { get; set; }
+
+    [JsonPropertyName("vendorContactEmail")]
+    public OcrValueDto<string>? VendorContactEmail { get; set; }
+
+    [JsonPropertyName("vendorContactPhone")]
+    public OcrValueDto<string>? VendorContactPhone { get; set; }
+
+    [JsonPropertyName("vendorIban")]
+    public OcrValueDto<string>? VendorIban { get; set; }
+
+    [JsonPropertyName("vendorBankAccount")]
+    public OcrValueDto<string>? VendorBankAccount { get; set; }
+
+    [JsonPropertyName("vendorSwift")]
+    public OcrValueDto<string>? VendorSwift { get; set; }
+
+    [JsonPropertyName("vendorPaymentTerms")]
+    public OcrValueDto<string>? VendorPaymentTerms { get; set; }
+
     [JsonPropertyName("paymentCondition")]
     public OcrValueDto<string>? PaymentCondition { get; set; }
 

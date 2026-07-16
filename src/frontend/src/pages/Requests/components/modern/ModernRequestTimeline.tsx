@@ -117,6 +117,7 @@ export function ModernRequestTimeline({ requestId }: ModernRequestTimelineProps)
                     const isCompleted = step.state === 'completed';
                     const isCurrent = step.state === 'current';
                     const isBlocked = step.state === 'blocked';
+                    const isSkipped = step.state === 'skipped';
                     const isLast = index === timeline.steps.length - 1;
 
                     return (
@@ -131,12 +132,13 @@ export function ModernRequestTimeline({ requestId }: ModernRequestTimelineProps)
                             {/* Marker Circle */}
                             <motion.div
                                 variants={circleVariants}
+                                title={isSkipped ? 'Etapa não realizada — pedido encerrado sem cotação.' : undefined}
                                 style={{
                                     width: '40px',
                                     height: '40px',
                                     borderRadius: '50%',
                                     backgroundColor: isCompleted ? 'var(--color-primary)' : '#fff',
-                                    border: isCurrent ? '2px solid var(--color-primary)' : isCompleted ? 'none' : '2px solid var(--color-border)',
+                                    border: isCurrent ? '2px solid var(--color-primary)' : isCompleted ? 'none' : isSkipped ? '2px dashed var(--color-border)' : '2px solid var(--color-border)',
                                     color: isCompleted ? '#fff' : isCurrent ? 'var(--color-primary)' : 'var(--color-text-muted)',
                                     display: 'flex',
                                     alignItems: 'center',
@@ -151,6 +153,8 @@ export function ModernRequestTimeline({ requestId }: ModernRequestTimelineProps)
                                     <Check size={20} strokeWidth={4} />
                                 ) : isBlocked ? (
                                     <X size={20} strokeWidth={4} style={{ color: 'var(--color-status-red)' }} />
+                                ) : isSkipped ? (
+                                    <X size={18} strokeWidth={3} style={{ color: 'var(--color-text-muted)' }} />
                                 ) : (
                                     <span style={{ fontSize: isCurrent ? '0.9rem' : '0.8rem', fontWeight: 900 }}>{index + 1}</span>
                                 )}
@@ -170,12 +174,32 @@ export function ModernRequestTimeline({ requestId }: ModernRequestTimelineProps)
                                     fontWeight: 800,
                                     textTransform: 'uppercase',
                                     color: isCurrent ? 'var(--color-primary)' : isCompleted ? 'var(--color-text-main)' : 'var(--color-text-muted)',
-                                    opacity: isBlocked ? 0.7 : 1,
+                                    opacity: (isBlocked || isSkipped) ? 0.7 : 1,
                                     lineHeight: 1.2,
                                     marginBottom: '4px'
                                 }}>
                                     {step.label}
                                 </div>
+                                {isSkipped && (
+                                    <span
+                                        title="Etapa não realizada — pedido encerrado sem cotação."
+                                        style={{
+                                            display: 'inline-block',
+                                            backgroundColor: 'var(--color-bg-page)',
+                                            border: '1px solid var(--color-border)',
+                                            color: 'var(--color-text-muted)',
+                                            padding: '2px 8px',
+                                            borderRadius: 'var(--radius-full)',
+                                            fontSize: '0.6rem',
+                                            fontWeight: 800,
+                                            letterSpacing: '0.05em',
+                                            textTransform: 'uppercase',
+                                            cursor: 'help'
+                                        }}
+                                    >
+                                        Não aplicável
+                                    </span>
+                                )}
                                 {step.completedAt && (
                                     <div style={{ display: 'flex', flexDirection: 'column', opacity: 0.7 }}>
                                         <span style={{ fontSize: '0.65rem', fontWeight: 700, fontFamily: 'monospace' }}>

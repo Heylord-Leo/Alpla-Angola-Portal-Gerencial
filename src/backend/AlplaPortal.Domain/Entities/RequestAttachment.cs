@@ -7,6 +7,9 @@ public class RequestAttachment
     public Guid RequestId { get; set; }
     public Request Request { get; set; } = null!;
 
+    public Guid? RequestPoGroupId { get; set; }
+    public RequestPoGroup? RequestPoGroup { get; set; }
+
     public string FileName { get; set; } = string.Empty;
     public string FileExtension { get; set; } = string.Empty;
     public decimal FileSizeMBytes { get; set; }

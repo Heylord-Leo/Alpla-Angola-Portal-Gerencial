@@ -11,9 +11,11 @@ using AlplaPortal.Infrastructure.Services.Extraction;
 using AlplaPortal.Infrastructure.Services.Integration;
 using AlplaPortal.Infrastructure.Services.Auth;
 using AlplaPortal.Infrastructure.Services.Approvals;
+using AlplaPortal.Application.Interfaces.Purchasing;
 using AlplaPortal.Application.Interfaces.MonthlyChanges;
 using AlplaPortal.Application.Interfaces.Operations;
 using AlplaPortal.Infrastructure.Services.MonthlyChanges;
+using AlplaPortal.Infrastructure.Services.Purchasing;
 using AlplaPortal.Infrastructure.Services.Integration.Operations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -99,8 +101,18 @@ builder.Services.AddScoped<IMonthlyChangesOrchestrator, MonthlyChangesOrchestrat
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IWorkflowNotificationOrchestrator, WorkflowNotificationOrchestrator>();
 
+// Purchasing Module
+builder.Services.AddScoped<IGroupBuilderService, GroupBuilderService>();
+builder.Services.AddScoped<IStatusAggregationService, StatusAggregationService>();
+
 // Approval Intelligence
 builder.Services.AddScoped<IApprovalIntelligenceService, ApprovalIntelligenceService>();
+builder.Services.AddScoped<IRequestStatusSyncService, RequestStatusSyncService>();
+
+// Department Manager redesign — single source of truth for area-approval routing
+builder.Services.AddScoped<IApprovalRoutingService, ApprovalRoutingService>();
+builder.Services.AddScoped<DepartmentManagerService>();
+builder.Services.AddScoped<AreaApproverReconciliationService>();
 
 // Proforma Deadline Alerts — daily background check (first BackgroundService in the project)
 builder.Services.AddHostedService<ProformaDeadlineAlertService>();
@@ -335,6 +347,176 @@ using (var scope = app.Services.CreateScope())
 
         // In Development only: log warning and continue (enables local iteration)
         Console.WriteLine("[STARTUP] WARNING: Development environment — continuing despite migration failure. Fix the database before testing.");
+    }
+}
+
+// ── DEV-ONLY: Connection pool + query plan warmup ─────────────────────
+// LocalDB auto-suspends after ~5 minutes of inactivity. After a cold restart,
+// the first real query would pay ~10-27s for plan compilation per query shape.
+// This warmup forces that cost here at startup instead of on the first user request.
+if (app.Environment.IsDevelopment())
+{
+    try
+    {
+        using var warmupScope = app.Services.CreateScope();
+        var warmupCtx = warmupScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        // Allow up to 120s per query — cold LocalDB plan compilation for complex
+        // projections can exceed the default 30s CommandTimeout.
+        warmupCtx.Database.SetCommandTimeout(120);
+        
+        var swTotal = System.Diagnostics.Stopwatch.StartNew();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var canConnect = await warmupCtx.Database.CanConnectAsync();
+        sw.Stop();
+        Console.WriteLine($"[DEV Warmup] CanConnectAsync = {canConnect} ({sw.ElapsedMilliseconds}ms)");
+        
+        if (canConnect)
+        {
+            // 1. Requests table — simple count (primes base Requests table plan)
+            sw.Restart();
+            await warmupCtx.Requests.AsNoTracking().CountAsync();
+            sw.Stop();
+            Console.WriteLine($"[DEV Warmup] Requests.Count() = {sw.ElapsedMilliseconds}ms");
+
+            // 2. LineItems list — matches GetLineItems Count query shape
+            //    (SelectMany + status filter + type filter)
+            sw.Restart();
+            var liStatuses = new[] {
+                "WAITING_QUOTATION", "AREA_ADJUSTMENT", "FINAL_ADJUSTMENT",
+                "PAYMENT_COMPLETED", "IN_FOLLOWUP",
+                "WAITING_AREA_APPROVAL", "WAITING_FINAL_APPROVAL", "WAITING_COST_CENTER"
+            };
+            await warmupCtx.Requests.AsNoTracking()
+                .Where(r => !r.IsCancelled && r.RequestType!.Code == "QUOTATION")
+                .Where(r => liStatuses.Contains(r.Status!.Code))
+                .SelectMany(
+                    r => r.LineItems.Where(li => !li.IsDeleted).DefaultIfEmpty(),
+                    (r, li) => new { r.Id, LineItemId = li != null ? (Guid?)li.Id : null })
+                .CountAsync();
+            sw.Stop();
+            Console.WriteLine($"[DEV Warmup] LineItems Count shape = {sw.ElapsedMilliseconds}ms");
+
+            // 3. LineItems list — page query shape (EXACT replica of GetLineItems projection)
+            //    SQL Server caches plans by exact SQL text hash.
+            //    Property names MUST match production code for identical column aliases.
+            sw.Restart();
+            await warmupCtx.Requests.AsNoTracking()
+                .Where(r => !r.IsCancelled && r.RequestType!.Code == "QUOTATION")
+                .Where(r => liStatuses.Contains(r.Status!.Code))
+                .SelectMany(
+                    r => r.LineItems.Where(li => !li.IsDeleted).DefaultIfEmpty(),
+                    (r, li) => new { Request = r, LineItem = li })
+                .OrderByDescending(x => x.Request.CreatedAtUtc)
+                .ThenBy(x => x.Request.Id)
+                .ThenBy(x => x.LineItem != null ? x.LineItem.LineNumber : 0)
+                .Skip(0)
+                .Take(1)
+                .Select(x => new
+                {
+                    LineItem = x.LineItem,
+                    RequestId = x.Request.Id,
+                    RequestNumber = x.Request.RequestNumber,
+                    RequestTitle = x.Request.Title,
+                    RequestDescription = x.Request.Description,
+                    RequestStatusName = x.Request.Status!.Name,
+                    RequestStatusCode = x.Request.Status!.Code,
+                    RequestStatusBadgeColor = x.Request.Status!.BadgeColor,
+                    RequestTypeCode = x.Request.RequestType!.Code,
+                    RequestTypeName = x.Request.RequestType!.Name,
+                    RequestPlantId = x.Request.PlantId,
+                    RequestPlantName = x.Request.Plant != null ? x.Request.Plant.Name : (string?)null,
+                    RequesterName = x.Request.Requester!.FullName,
+                    RequesterEmail = x.Request.Requester!.Email,
+                    NeedByDateUtc = x.Request.NeedByDateUtc,
+                    DepartmentName = x.Request.Department!.Name,
+                    CompanyId = x.Request.CompanyId,
+                    RequestSupplierId = x.Request.SupplierId,
+                    RequestSupplierName = x.Request.Supplier != null ? x.Request.Supplier.Name : (string?)null,
+                    RequestSupplierCode = x.Request.Supplier != null ? x.Request.Supplier.PortalCode : (string?)null,
+                    RequestCurrencyId = x.Request.CurrencyId,
+                    RequestCurrencyCode = x.Request.Currency != null ? x.Request.Currency.Code : (string?)null,
+                    RequestUpdatedAtUtc = x.Request.UpdatedAtUtc,
+                    RequestCreatedAtUtc = x.Request.CreatedAtUtc,
+                    RequestBuyerId = x.Request.BuyerId,
+                    RequestBuyerName = x.Request.Buyer != null ? x.Request.Buyer.FullName : (string?)null,
+                    RequestBuyerEmail = x.Request.Buyer != null ? x.Request.Buyer.Email : (string?)null,
+                    RequestAreaApproverId = x.Request.AreaApproverId,
+                    RequestAreaApproverName = x.Request.AreaApprover != null ? x.Request.AreaApprover.FullName : (string?)null,
+                    RequestAreaApproverEmail = x.Request.AreaApprover != null ? x.Request.AreaApprover.Email : (string?)null,
+                    RequestFinalApproverId = x.Request.FinalApproverId,
+                    RequestFinalApproverName = x.Request.FinalApprover != null ? x.Request.FinalApprover.FullName : (string?)null,
+                    RequestFinalApproverEmail = x.Request.FinalApprover != null ? x.Request.FinalApprover.Email : (string?)null,
+                    ItemPlantName = x.LineItem != null && x.LineItem.Plant != null ? x.LineItem.Plant.Name : (string?)null,
+                    ItemUnitCode = x.LineItem != null && x.LineItem.Unit != null ? x.LineItem.Unit.Code : (string?)null,
+                    ItemCurrencyCode = x.LineItem != null && x.LineItem.Currency != null ? x.LineItem.Currency.Code : (string?)null,
+                    ItemStatusName = x.LineItem != null && x.LineItem.LineItemStatus != null ? x.LineItem.LineItemStatus.Name : (string?)null,
+                    ItemStatusCode = x.LineItem != null && x.LineItem.LineItemStatus != null ? x.LineItem.LineItemStatus.Code : (string?)null,
+                    ItemStatusBadgeColor = x.LineItem != null && x.LineItem.LineItemStatus != null ? x.LineItem.LineItemStatus.BadgeColor : (string?)null,
+                    ItemSupplierName = x.LineItem != null && x.LineItem.Supplier != null ? x.LineItem.Supplier.Name : (x.LineItem != null ? x.LineItem.SupplierName : (string?)null),
+                    ItemSupplierCode = x.LineItem != null && x.LineItem.Supplier != null ? x.LineItem.Supplier.PortalCode : (string?)null,
+                    ItemPrimaveraCode = x.LineItem != null && x.LineItem.Supplier != null ? x.LineItem.Supplier.PrimaveraCode : (string?)null,
+                    ItemCostCenterName = x.LineItem != null && x.LineItem.CostCenter != null ? x.LineItem.CostCenter.Name : (string?)null,
+                    ItemCostCenterCode = x.LineItem != null && x.LineItem.CostCenter != null ? x.LineItem.CostCenter.Code : (string?)null,
+                    ItemCatalogId = x.LineItem != null ? x.LineItem.ItemCatalogId : (int?)null
+                })
+                .ToListAsync();
+            sw.Stop();
+            Console.WriteLine($"[DEV Warmup] LineItems Page shape = {sw.ElapsedMilliseconds}ms");
+
+            // 4. Finance payments — count query shape (status filter + attachment exists)
+            sw.Restart();
+            var finStatuses = new[] { "PO_ISSUED", "PAYMENT_SCHEDULED", "PAID" };
+            await warmupCtx.Requests.AsNoTracking()
+                .Where(r => finStatuses.Contains(r.Status!.Code)
+                    && r.Attachments.Any(a => !a.IsDeleted && a.AttachmentTypeCode == "PO"))
+                .CountAsync();
+            sw.Stop();
+            Console.WriteLine($"[DEV Warmup] Finance Count shape = {sw.ElapsedMilliseconds}ms");
+
+            // 5. Finance payments — page query shape (joins + PoGroups)
+            sw.Restart();
+            await warmupCtx.Requests.AsNoTracking()
+                .Where(r => finStatuses.Contains(r.Status!.Code)
+                    && r.Attachments.Any(a => !a.IsDeleted && a.AttachmentTypeCode == "PO"))
+                .Include(r => r.Status)
+                .Include(r => r.RequestType)
+                .Include(r => r.Quotations)
+                .Include(r => r.PoGroups).ThenInclude(g => g.Payments)
+                .OrderByDescending(r => r.NeedByDateUtc)
+                .Take(1)
+                .Select(r => new { r.Id, r.RequestNumber, StatusCode = r.Status!.Code })
+                .ToListAsync();
+            sw.Stop();
+            Console.WriteLine($"[DEV Warmup] Finance Page shape = {sw.ElapsedMilliseconds}ms");
+
+            // 6. Dashboard / GetRequests — count + page shape (multi-Include)
+            sw.Restart();
+            await warmupCtx.Requests.AsNoTracking()
+                .Include(r => r.Status)
+                .Include(r => r.RequestType)
+                .Include(r => r.Requester)
+                .Include(r => r.Department)
+                .OrderByDescending(r => r.CreatedAtUtc)
+                .Take(1)
+                .Select(r => new { r.Id, r.RequestNumber, StatusCode = r.Status!.Code, TypeCode = r.RequestType!.Code })
+                .ToListAsync();
+            sw.Stop();
+            Console.WriteLine($"[DEV Warmup] Dashboard/Requests Page shape = {sw.ElapsedMilliseconds}ms");
+
+            // 7. EmailOutbox — recover stuck entries shape (raw SQL plan)
+            sw.Restart();
+            await warmupCtx.Database.ExecuteSqlRawAsync(
+                "SELECT COUNT(*) FROM EmailOutbox WITH (NOLOCK) WHERE Status = 'PROCESSING'");
+            sw.Stop();
+            Console.WriteLine($"[DEV Warmup] EmailOutbox shape = {sw.ElapsedMilliseconds}ms");
+
+            swTotal.Stop();
+            Console.WriteLine($"[DEV Warmup] Query plan priming completed in {swTotal.ElapsedMilliseconds}ms");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[DEV Warmup] Non-fatal error — {ex.Message}");
     }
 }
 

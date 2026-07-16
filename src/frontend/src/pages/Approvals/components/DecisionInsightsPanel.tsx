@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AlertCircle, AlertTriangle, Info, Package, TrendingUp, TrendingDown, Minus, CheckCircle2, AlertOctagon, Eye, BarChart3, HelpCircle, Wallet, ChevronDown, ChevronRight } from 'lucide-react';
-import { ApprovalIntelligenceDto, ItemIntelligenceDto, BudgetAvailabilityDto } from '../../../types';
+import { ApprovalIntelligenceDto, ItemIntelligenceDto, BudgetAvailabilityDto, DepartmentCostCenterBudgetDto } from '../../../types';
 import { Tooltip } from '../../../components/ui/Tooltip';
 
 // --- Interfaces ---
@@ -19,16 +19,39 @@ interface DecisionInsightsPanelProps {
     requestData?: RequestContextData;
     onDrillDown?: (item: ItemIntelligenceDto) => void;
     isSingleItemFocus?: boolean;
+    /** Area Approver's budget justification (batch approved with a critical/
+     *  over-budget cost center). Rendered inside "Disponibilidade Orçamental".
+     *  The caller decides when to pass it (e.g. FINAL stage only). */
+    budgetJustification?: string | null;
+    /** Display name of who recorded the justification (Area Approver). */
+    budgetJustificationAuthor?: string | null;
+    /** Pre-formatted display date of when the justification was recorded. */
+    budgetJustificationDate?: string | null;
+    /** Batch-specific checklist for the FINAL stage — replaces the area-oriented
+     *  "Checklist de Legitimidade" concepts (request-level supplier, CC pending)
+     *  that don't apply once a batch reached final approval. */
+    batchChecklist?: {
+        batchNumber: number;
+        itemCount: number;
+        areaApproved: boolean;
+        winnersDefined: boolean;
+        allocationDefined: boolean;
+        budgetJustificationRegistered: boolean;
+    };
 }
 
 // --- Main Component ---
 
-export function DecisionInsightsPanel({ 
-    intelligence, 
-    approvalStage, 
-    requestData, 
+export function DecisionInsightsPanel({
+    intelligence,
+    approvalStage,
+    requestData,
     onDrillDown,
-    isSingleItemFocus 
+    isSingleItemFocus,
+    budgetJustification,
+    budgetJustificationAuthor,
+    budgetJustificationDate,
+    batchChecklist
 }: DecisionInsightsPanelProps) {
     if (!intelligence) return null;
 
@@ -108,8 +131,25 @@ export function DecisionInsightsPanel({
         </div>
     ) : null;
 
-    const budgetBlock = intelligence.budgetAvailability ? (
-        <BudgetAvailabilityBlock budget={intelligence.budgetAvailability} />
+    // The Area Approver's budget justification belongs with the budget analysis
+    // itself — rendered right below the availability KPIs. When no budget data
+    // is available but a justification exists, the section still renders so the
+    // note is never lost.
+    const justificationNote = budgetJustification ? (
+        <BudgetJustificationNote
+            text={budgetJustification}
+            author={budgetJustificationAuthor}
+            date={budgetJustificationDate}
+        />
+    ) : null;
+
+    const budgetBlock = (intelligence.budgetAvailability || justificationNote) ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {intelligence.budgetAvailability
+                ? <BudgetAvailabilityBlock budget={intelligence.budgetAvailability} isBatchScoped={intelligence.scope === 'BATCH'} />
+                : <SectionLabel>Disponibilidade Orçamental</SectionLabel>}
+            {justificationNote}
+        </div>
     ) : null;
 
     // --- Role-aware section ordering ---
@@ -127,12 +167,15 @@ export function DecisionInsightsPanel({
 
             {/* --- ROLE-SPECIFIC EMPHASIS BLOCK --- */}
             {isArea ? (
-                <AreaEmphasisBlock 
-                    intelligence={intelligence} 
-                    requestData={requestData} 
+                <AreaEmphasisBlock
+                    intelligence={intelligence}
+                    requestData={requestData}
                 />
             ) : (
-                <FinalEmphasisBlock intelligence={intelligence} />
+                <>
+                    {batchChecklist && <BatchFinalChecklistBlock checklist={batchChecklist} />}
+                    <FinalEmphasisBlock intelligence={intelligence} />
+                </>
             )}
 
             {/* --- SHARED SECTIONS (role-ordered) --- */}
@@ -270,6 +313,97 @@ function AreaEmphasisBlock({ intelligence, requestData }: {
     );
 }
 
+// --- Final Emphasis: Checklist da Aprovação Final (batch model) ---
+
+// Batch-oriented replacement for the area "Checklist de Legitimidade": by the
+// time a batch reaches final approval, allocation and winners were enforced at
+// area approval — the Final Approver validates the DECISION, not the request's
+// legitimacy. Rendered only when the caller provides batch data (FINAL + batch).
+function BatchFinalChecklistBlock({ checklist }: {
+    checklist: NonNullable<DecisionInsightsPanelProps['batchChecklist']>;
+}) {
+    const rows: { label: string; ok: boolean; detail: string }[] = [
+        {
+            label: 'Cotação aprovada pela área',
+            ok: checklist.areaApproved,
+            detail: checklist.areaApproved ? 'Sim' : 'Pendente'
+        },
+        {
+            label: 'Fornecedor vencedor',
+            ok: checklist.winnersDefined,
+            detail: checklist.winnersDefined ? 'Definido' : 'Pendente'
+        },
+        {
+            label: 'Atribuição financeira',
+            ok: checklist.allocationDefined,
+            detail: checklist.allocationDefined ? 'Definida' : 'Pendente'
+        },
+        {
+            label: 'Justificativa orçamental',
+            ok: true,
+            detail: checklist.budgetJustificationRegistered
+                ? 'Registrada — ver Disponibilidade Orçamental'
+                : 'Não necessária'
+        },
+        {
+            label: 'Itens do lote',
+            ok: checklist.itemCount > 0,
+            detail: `Lote #${checklist.batchNumber} — ${checklist.itemCount} ${checklist.itemCount === 1 ? 'item' : 'itens'}`
+        },
+    ];
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <SectionLabel>Checklist da Aprovação Final</SectionLabel>
+            <div style={{
+                border: '1px solid var(--color-border)',
+                backgroundColor: 'var(--color-bg-surface)',
+                borderRadius: 'var(--radius-lg)',
+                overflow: 'hidden',
+                boxShadow: 'var(--shadow-sm)'
+            }}>
+                {rows.map((row, idx) => (
+                    <div key={idx} style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '12px 20px',
+                        borderBottom: idx < rows.length - 1 ? '1px solid var(--color-border)' : 'none',
+                    }}>
+                        <div style={{ display: 'flex', flexShrink: 0 }}>
+                            {row.ok ? (
+                                <CheckCircle2 size={16} strokeWidth={3} style={{ color: '#16a34a' }} />
+                            ) : (
+                                <AlertOctagon size={16} strokeWidth={3} style={{ color: '#f97316' }} />
+                            )}
+                        </div>
+                        <span style={{
+                            fontSize: '0.75rem',
+                            fontWeight: 900,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.04em',
+                            color: 'black',
+                            minWidth: '200px'
+                        }}>
+                            {row.label}
+                        </span>
+                        <span style={{
+                            fontSize: '0.85rem',
+                            fontWeight: 700,
+                            color: row.ok ? 'black' : 'var(--color-status-orange)',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                        }}>
+                            {row.detail}
+                        </span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 // --- Final Emphasis: Visão Financeira Comparativa ---
 
 function FinalEmphasisBlock({ intelligence }: { intelligence: ApprovalIntelligenceDto }) {
@@ -368,10 +502,50 @@ function FinalEmphasisBlock({ intelligence }: { intelligence: ApprovalIntelligen
 }
 
 // ====================================
+// Budget Justification Note
+// ====================================
+
+// Discreet amber note shown inside "Disponibilidade Orçamental": the Area
+// Approver's mandatory justification when the batch was approved with a
+// critical/over-budget cost center.
+function BudgetJustificationNote({ text, author, date }: { text: string; author?: string | null; date?: string | null }) {
+    return (
+        <div style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '10px',
+            padding: '12px 14px',
+            backgroundColor: '#fffbeb',
+            border: '1px solid #fde68a',
+            borderLeft: '4px solid #f59e0b',
+            borderRadius: 'var(--radius-md)'
+        }}>
+            <AlertTriangle size={14} style={{ color: '#b45309', flexShrink: 0, marginTop: '2px' }} />
+            <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '0.65rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#92400e' }}>
+                    Justificativa Orçamental
+                </div>
+                <div style={{ fontSize: '0.65rem', fontWeight: 700, color: '#a16207', marginTop: '2px' }}>
+                    Registrada durante a aprovação de área.
+                </div>
+                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#78350f', lineHeight: 1.5, marginTop: '8px', whiteSpace: 'pre-wrap' }}>
+                    {text}
+                </div>
+                {(author || date) && (
+                    <div style={{ fontSize: '0.65rem', fontWeight: 700, color: '#a16207', marginTop: '8px' }}>
+                        Registrada por {author || 'Aprovador de Área'}{date ? ` em ${date}` : ''}.
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ====================================
 // Budget Availability Block
 // ====================================
 
-function BudgetAvailabilityBlock({ budget }: { budget: BudgetAvailabilityDto }) {
+function BudgetAvailabilityBlock({ budget, isBatchScoped }: { budget: BudgetAvailabilityDto; isBatchScoped?: boolean }) {
     const [showCCDetail, setShowCCDetail] = useState(false);
 
     const statusColors: Record<string, string> = {
@@ -403,6 +577,13 @@ function BudgetAvailabilityBlock({ budget }: { budget: BudgetAvailabilityDto }) 
                         {budget.infoMessage || 'Orçamento não configurado para esta combinação.'}
                     </span>
                 </div>
+                {budget.departmentCostCenters && budget.departmentCostCenters.length > 0 && (
+                    <DepartmentCostCentersBlock
+                        costCenters={budget.departmentCostCenters}
+                        currencyCode={budget.currencyCode}
+                        isBatchScoped={isBatchScoped}
+                    />
+                )}
             </div>
         );
     }
@@ -474,7 +655,7 @@ function BudgetAvailabilityBlock({ budget }: { budget: BudgetAvailabilityDto }) 
                 <BudgetKpi label="Orçamento Anual" value={fmtCurrency(budget.annualBudget)} />
                 <BudgetKpi label="Comprometido" value={fmtCurrency(budget.committedAmount)} />
                 <BudgetKpi label="Disponível Antes" value={fmtCurrency(budget.availableBefore)} />
-                <BudgetKpi label="Valor do Pedido" value={fmtCurrency(budget.currentRequestAmount)} highlight />
+                <BudgetKpi label={isBatchScoped ? 'Valor do Lote' : 'Valor do Pedido'} value={fmtCurrency(budget.currentRequestAmount)} highlight />
                 <BudgetKpi
                     label="Disponível Após"
                     value={fmtCurrency(budget.availableAfter)}
@@ -540,6 +721,15 @@ function BudgetAvailabilityBlock({ budget }: { budget: BudgetAvailabilityDto }) 
                 </div>
             )}
 
+            {/* Department cost centers — read-only overview */}
+            {budget.departmentCostCenters && budget.departmentCostCenters.length > 0 && (
+                <DepartmentCostCentersBlock
+                    costCenters={budget.departmentCostCenters}
+                    currencyCode={budget.currencyCode}
+                    isBatchScoped={isBatchScoped}
+                />
+            )}
+
             {/* Pulse animation for EXCEEDED */}
             {budget.status === 'EXCEEDED' && (
                 <style>{`
@@ -548,6 +738,107 @@ function BudgetAvailabilityBlock({ budget }: { budget: BudgetAvailabilityDto }) 
                         50% { opacity: 0.6; }
                     }
                 `}</style>
+            )}
+        </div>
+    );
+}
+
+/**
+ * Read-only overview of the department's cost centers inside "Disponibilidade
+ * Orçamental": every budgeted CC plus scope-used CCs without budget, with the
+ * ones used by the active batch highlighted. Informational only — no editing,
+ * no selection, no CC switching.
+ */
+function DepartmentCostCentersBlock({ costCenters, currencyCode, isBatchScoped }: {
+    costCenters: DepartmentCostCenterBudgetDto[];
+    currencyCode: string;
+    isBatchScoped?: boolean;
+}) {
+    const [expanded, setExpanded] = useState(false);
+
+    const statusColors: Record<string, string> = {
+        OK: 'var(--color-success, #22c55e)',
+        WARNING: 'var(--color-status-orange, #f59e0b)',
+        CRITICAL: 'var(--color-status-red, #ef4444)',
+        EXCEEDED: 'var(--color-status-red, #dc2626)'
+    };
+    const statusLabels: Record<string, string> = {
+        OK: 'Disponível',
+        WARNING: 'Atenção',
+        CRITICAL: 'Crítico',
+        EXCEEDED: 'Excedido'
+    };
+
+    const fmtCurrency = (v: number) => v.toLocaleString('pt-AO', { style: 'currency', currency: currencyCode || 'AOA' });
+    const usedBadgeLabel = isBatchScoped ? 'Selecionado neste lote' : 'Utilizado neste pedido';
+
+    return (
+        <div>
+            <button
+                onClick={() => setExpanded(!expanded)}
+                style={{
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    fontSize: '0.65rem', fontWeight: 950, textTransform: 'uppercase',
+                    color: 'var(--color-primary)', letterSpacing: '0.05em', padding: '4px 0'
+                }}
+            >
+                {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                Centros de custo do departamento ({costCenters.length})
+            </button>
+            {expanded && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
+                    {costCenters.map((cc, idx) => {
+                        const color = cc.hasBudgetConfigured
+                            ? (statusColors[cc.status] || statusColors.OK)
+                            : 'var(--color-text-muted)';
+                        return (
+                            <div key={cc.costCenterId ?? `general-${idx}`} style={{
+                                padding: '10px 14px',
+                                border: cc.isUsedInScope
+                                    ? '1px solid var(--color-primary)'
+                                    : '1px solid var(--color-border)',
+                                borderRadius: 'var(--radius-md)',
+                                backgroundColor: cc.isUsedInScope
+                                    ? 'var(--color-primary-soft, rgba(59,130,246,0.06))'
+                                    : 'var(--color-bg-surface)',
+                                borderLeft: `3px solid ${color}`
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                        {cc.isUsedInScope && (
+                                            <span style={{
+                                                fontSize: '0.55rem', fontWeight: 950, textTransform: 'uppercase',
+                                                letterSpacing: '0.05em', padding: '2px 8px', borderRadius: '999px',
+                                                backgroundColor: 'var(--color-primary)', color: '#fff'
+                                            }}>
+                                                {usedBadgeLabel}
+                                            </span>
+                                        )}
+                                        <span style={{ fontSize: '0.7rem', fontWeight: 950, color: 'var(--color-text-main)' }}>
+                                            {cc.costCenterName}{cc.plantName ? ` / ${cc.plantName}` : ''}
+                                        </span>
+                                    </div>
+                                    <span style={{
+                                        fontSize: '0.6rem', fontWeight: 950, textTransform: 'uppercase',
+                                        color
+                                    }}>
+                                        {cc.hasBudgetConfigured
+                                            ? `${statusLabels[cc.status] || cc.status} · ${cc.utilizationPercent.toFixed(1)}%`
+                                            : 'Sem orçamento configurado'}
+                                    </span>
+                                </div>
+                                {cc.hasBudgetConfigured && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', fontSize: '0.65rem', color: 'var(--color-text-muted)', fontWeight: 800 }}>
+                                        <span>Orçamento anual: {fmtCurrency(cc.annualBudget)}</span>
+                                        <span>Comprometido: {fmtCurrency(cc.committedAmount)}</span>
+                                        <span style={{ color, fontWeight: 950 }}>Disponível: {fmtCurrency(cc.availableAmount)}</span>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
             )}
         </div>
     );

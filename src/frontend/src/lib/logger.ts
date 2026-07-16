@@ -2,14 +2,15 @@ import { API_BASE_URL } from './api';
 
 export type LogLevel = 'Information' | 'Warning' | 'Error';
 
-export type FrontendComponentKey = 'Global' | 'OcrSettings' | 'AdminApi' | 'SyncApi';
+export type FrontendComponentKey = 'Global' | 'OcrSettings' | 'AdminApi' | 'SyncApi' | 'buyer-items-list';
 
 export type FrontendEventType = 
     | 'RUNTIME_ERROR' 
     | 'UNHANDLED_REJECTION' 
     | 'API_REQUEST_FAILED' 
     | 'OCR_SETTINGS_UI_ERROR' 
-    | 'FRONTEND_EVENT';
+    | 'FRONTEND_EVENT'
+    | 'QUOTATION_SAVE_FAILED';
 
 interface LogPayload {
     level: LogLevel;

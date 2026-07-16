@@ -20,6 +20,7 @@ interface SupplierRegistrationCheck {
 interface RegisterPoModalProps {
     show: boolean;
     requestId: string;
+    poGroupId: string;
     supplierId?: number | null;
     requestData: {
         totalAmount: number;
@@ -30,7 +31,7 @@ interface RegisterPoModalProps {
     onSuccess: (message: string) => void;
 }
 
-export function RegisterPoModal({ show, requestId, supplierId, requestData, onClose, onSuccess }: RegisterPoModalProps) {
+export function RegisterPoModal({ show, requestId, poGroupId, supplierId, requestData, onClose, onSuccess }: RegisterPoModalProps) {
     const [file, setFile] = useState<File | null>(null);
     const [comment, setComment] = useState('');
     const [processing, setProcessing] = useState(false);
@@ -46,6 +47,15 @@ export function RegisterPoModal({ show, requestId, supplierId, requestData, onCl
         extractedSupplier?: string;
     } | null>(null);
     const [overrideConfirmed, setOverrideConfirmed] = useState(false);
+
+    // PO Number State
+    const [purchaseOrderNumber, setPurchaseOrderNumber] = useState('');
+
+    // Backend Overrides State
+    const [backendOcrMismatch, setBackendOcrMismatch] = useState<{ details: string } | null>(null);
+    const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
+    const [overrideDuplicateConfirmed, setOverrideDuplicateConfirmed] = useState(false);
+    const [duplicateOverrideComment, setDuplicateOverrideComment] = useState('');
 
     // Supplier Registration Guard
     const [regCheck, setRegCheck] = useState<SupplierRegistrationCheck | null>(null);
@@ -64,6 +74,11 @@ export function RegisterPoModal({ show, requestId, supplierId, requestData, onCl
             setComment('');
             setOcrResult(null);
             setOverrideConfirmed(false);
+            setPurchaseOrderNumber('');
+            setBackendOcrMismatch(null);
+            setDuplicateWarning(null);
+            setOverrideDuplicateConfirmed(false);
+            setDuplicateOverrideComment('');
             setFeedback({ type: 'error', message: null });
             setRegCheck(null);
             setPaymentCondition('');
@@ -130,6 +145,11 @@ export function RegisterPoModal({ show, requestId, supplierId, requestData, onCl
             
             const extractedTotal = Number(suggestions?.grandTotal?.value) || 0;
             const extractedSupplier = suggestions?.supplierName?.value || '';
+            const extractedPoNumber = suggestions?.purchaseOrderNumber?.value || suggestions?.documentNumber?.value || '';
+
+            if (extractedPoNumber && !purchaseOrderNumber) {
+                setPurchaseOrderNumber(extractedPoNumber);
+            }
 
             const mismatches: string[] = [];
             let hasMismatches = false;
@@ -213,39 +233,82 @@ export function RegisterPoModal({ show, requestId, supplierId, requestData, onCl
             return;
         }
 
-        if (ocrResult?.hasMismatches && !overrideConfirmed) {
-            setFeedback({ type: 'error', message: 'Confirme estar ciente das divergências antes de registrar.' });
+        if (!purchaseOrderNumber.trim()) {
+            setFeedback({ type: 'error', message: 'O número da P.O é obrigatório.' });
             return;
         }
 
+        // Frontend check
+        if (ocrResult?.hasMismatches && !overrideConfirmed) {
+            setFeedback({ type: 'error', message: 'Confirme estar ciente das divergências (avaliação prévia) antes de registrar.' });
+            return;
+        }
         if (ocrResult?.hasMismatches && !comment.trim()) {
-            setFeedback({ type: 'error', message: 'Um comentário justificativo é obrigatório quando há divergências.' });
+            setFeedback({ type: 'error', message: 'Um comentário justificativo é obrigatório quando há divergências (avaliação prévia).' });
+            return;
+        }
+
+        // Backend blocks (Duplicate PO)
+        if (duplicateWarning && !overrideDuplicateConfirmed) {
+            setFeedback({ type: 'error', message: 'Confirme estar ciente da duplicidade de P.O antes de continuar.' });
+            return;
+        }
+        if (duplicateWarning && overrideDuplicateConfirmed && !duplicateOverrideComment.trim()) {
+            setFeedback({ type: 'error', message: 'Um comentário justificativo é obrigatório para registrar P.O duplicada.' });
+            return;
+        }
+
+        // Backend blocks (OCR)
+        if (backendOcrMismatch && !overrideConfirmed) {
+            setFeedback({ type: 'error', message: 'Confirme estar ciente das divergências detectadas pelo sistema central.' });
+            return;
+        }
+        if (backendOcrMismatch && overrideConfirmed && !comment.trim()) {
+            setFeedback({ type: 'error', message: 'Um comentário justificativo é obrigatório para as divergências do sistema central.' });
             return;
         }
 
         setProcessing(true);
         setFeedback({ type: 'error', message: null });
+        setBackendOcrMismatch(null);
+        setDuplicateWarning(null);
 
         try {
             // 1. Upload the file first
-            await api.attachments.upload(requestId, [file], 'PO');
+            await api.attachments.upload(requestId, [file], 'PO', poGroupId);
 
             // 2. Register PO status transition (with B2P payment condition)
             const result = await api.requests.registerPo(requestId, {
+                poGroupId,
                 comment,
                 hasMismatches: ocrResult?.hasMismatches || false,
                 overrideConfirmed,
                 mismatchDetails: ocrResult?.details ? ocrResult.details.join('; ') : '',
                 paymentConditionCode: paymentCondition,
                 advancePaymentPercent: paymentCondition === 'ADVANCE_PARTIAL' ? advancePercent : undefined,
-                paymentConditionSource: paymentConditionSource || 'USER_SELECTED'
+                paymentConditionSource: paymentConditionSource || 'USER_SELECTED',
+                purchaseOrderNumber: purchaseOrderNumber.trim(),
+                extractedSupplierName: ocrResult?.extractedSupplier,
+                extractedTotalAmount: ocrResult?.extractedTotal,
+                overrideDuplicateConfirmed,
+                duplicateOverrideComment: duplicateOverrideComment.trim()
             });
 
             onSuccess(result.message || 'P.O registrada com sucesso!');
             
         } catch (err: any) {
-            setFeedback({ type: 'error', message: err.message || 'Não foi possível registrar a P.O. Tente novamente.' });
             setProcessing(false);
+            
+            if (err.title === 'DUPLICATE_PO') {
+                setDuplicateWarning(err.detail || 'Número de P.O já existente.');
+                return;
+            }
+            if (err.title === 'OCR_MISMATCH') {
+                setBackendOcrMismatch({ details: err.detail || 'Divergências validadas pelo sistema central.' });
+                return;
+            }
+
+            setFeedback({ type: 'error', message: err.message || 'Não foi possível registrar a P.O. Tente novamente.' });
         }
     };
 
@@ -253,6 +316,7 @@ export function RegisterPoModal({ show, requestId, supplierId, requestData, onCl
         setFile(null);
         setOcrResult(null);
         setOverrideConfirmed(false);
+        setBackendOcrMismatch(null);
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
@@ -395,6 +459,54 @@ export function RegisterPoModal({ show, requestId, supplierId, requestData, onCl
                                     {requestData.supplierName}
                                 </div>
                             </div>
+                        </div>
+
+                        <div style={{ marginBottom: '20px' }}>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
+                                Número da P.O <span style={{ color: '#ef4444' }}>*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={purchaseOrderNumber}
+                                onChange={(e) => {
+                                    setPurchaseOrderNumber(e.target.value);
+                                    setDuplicateWarning(null); // clear warning if user changes PO number
+                                }}
+                                placeholder="Ex: PO-2024-001"
+                                style={inputStyle}
+                            />
+                            {duplicateWarning && (
+                                <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} style={{ marginTop: '12px', padding: '16px', backgroundColor: '#fef2f2', border: '2px solid #ef4444', borderRadius: '8px' }}>
+                                    <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '12px' }}>
+                                        <AlertTriangle size={20} color="#ef4444" style={{ flexShrink: 0 }} />
+                                        <div>
+                                            <h4 style={{ margin: '0 0 4px 0', color: '#b91c1c', fontSize: '0.9rem', fontWeight: 800 }}>P.O Duplicada (SISTEMA CENTRAL)</h4>
+                                            <p style={{ margin: 0, color: '#991b1b', fontSize: '0.8rem', fontWeight: 600 }}>{duplicateWarning}</p>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', backgroundColor: '#fee2e2', padding: '12px', borderRadius: '4px', marginBottom: '12px' }}>
+                                        <input 
+                                            type="checkbox" 
+                                            id="overrideDuplicateConfirm"
+                                            checked={overrideDuplicateConfirmed}
+                                            onChange={(e) => setOverrideDuplicateConfirmed(e.target.checked)}
+                                            style={{ marginTop: '2px', cursor: 'pointer', width: '16px', height: '16px' }}
+                                        />
+                                        <label htmlFor="overrideDuplicateConfirm" style={{ cursor: 'pointer', color: '#991b1b', fontSize: '0.8rem', fontWeight: 700, lineHeight: 1.4 }}>
+                                            Confirmar uso do número de P.O duplicado sob minha responsabilidade.
+                                        </label>
+                                    </div>
+                                    {overrideDuplicateConfirmed && (
+                                        <textarea
+                                            value={duplicateOverrideComment}
+                                            onChange={(e) => setDuplicateOverrideComment(e.target.value)}
+                                            placeholder="Justificativa obrigatória para P.O duplicada..."
+                                            rows={2}
+                                            style={{ ...inputStyle, resize: 'none', borderColor: '#ef4444' }}
+                                        />
+                                    )}
+                                </motion.div>
+                            )}
                         </div>
 
                         <div style={{ marginBottom: '24px' }}>
@@ -599,6 +711,31 @@ export function RegisterPoModal({ show, requestId, supplierId, requestData, onCl
                                                     transition={{ repeat: Infinity, ease: 'easeInOut', duration: 1.8 }}
                                                     style={{ width: '40%', height: '100%', backgroundColor: '#2563EB', borderRadius: '2px' }}
                                                 />
+                                            </div>
+                                        </motion.div>
+                                    ) : backendOcrMismatch ? (
+                                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ padding: '24px', backgroundColor: '#fff7ed', border: '2px solid #ef4444', borderRadius: '8px' }}>
+                                            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '16px' }}>
+                                                <ShieldAlert size={24} color="#ef4444" style={{ flexShrink: 0 }} />
+                                                <div>
+                                                    <h4 style={{ margin: '0 0 4px 0', color: '#b91c1c', fontSize: '1rem', fontWeight: 800 }}>Divergência Detectada (SISTEMA CENTRAL)</h4>
+                                                    <p style={{ margin: 0, color: '#991b1b', fontSize: '0.85rem', fontWeight: 600 }}>O sistema central rejeitou a validação da P.O pelo(s) motivo(s):</p>
+                                                </div>
+                                            </div>
+                                            <p style={{ margin: '0 0 20px 0', color: '#991b1b', fontSize: '0.85rem', fontWeight: 700 }}>
+                                                {backendOcrMismatch.details}
+                                            </p>
+                                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', backgroundColor: '#fee2e2', padding: '16px', borderRadius: '4px' }}>
+                                                <input 
+                                                    type="checkbox" 
+                                                    id="overrideConfirmBackend"
+                                                    checked={overrideConfirmed}
+                                                    onChange={(e) => setOverrideConfirmed(e.target.checked)}
+                                                    style={{ marginTop: '2px', cursor: 'pointer', width: '16px', height: '16px' }}
+                                                />
+                                                <label htmlFor="overrideConfirmBackend" style={{ cursor: 'pointer', color: '#991b1b', fontSize: '0.85rem', fontWeight: 700, lineHeight: 1.4 }}>
+                                                    Estou ciente das divergências reportadas e confirmo a emissão sob minha responsabilidade.
+                                                </label>
                                             </div>
                                         </motion.div>
                                     ) : ocrResult ? (

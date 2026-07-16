@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { RequestActionHeader, BreadcrumbItem } from './components/RequestActionHeader';
 import { scrollToFirstError } from '../../lib/validation';
 import { DateInput } from '../../components/DateInput';
+import { getMinNeedByDate, getMinLeadDays, isBeforeMinNeedByDate, getMinNeedByHint, getMinNeedByError, getNeedByAdjustmentNotice } from '../../lib/needByDate';
 import { computeFileHash, formatDateTime } from '../../lib/utils';
 import { CatalogItemAutocomplete } from '../../components/CatalogItemAutocomplete';
 import { useCatalogItemReconciliation } from '../../hooks/useCatalogItemReconciliation';
@@ -46,7 +47,9 @@ export function RequestCreate() {
     const [scopeError, setScopeError] = useState<string | null>(null);
     const [lookupsError, setLookupsError] = useState<string | null>(null);
     const [attachments, setAttachments] = useState<File[]>([]);
-    
+    // Discreet notice shown when "Necessário até" is pushed forward to honour the need-level minimum
+    const [needByAdjustmentNotice, setNeedByAdjustmentNotice] = useState<string | null>(null);
+
     // Payment OCR States
     const [ivaRates, setIvaRates] = useState<IvaRate[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
@@ -99,8 +102,8 @@ export function RequestCreate() {
     // Reconciliation Engine — unified for both payment and requester items
     const [showReconciliationWarning, setShowReconciliationWarning] = useState(false);
     const activeItems: ReconcilableItem[] = Number(formData.requestTypeId) === 2 && paymentDraft
-        ? paymentDraft.items
-        : requesterItems;
+        ? paymentDraft.items as any[]
+        : requesterItems as any[];
     const reconciliation = useCatalogItemReconciliation(activeItems);
 
     const initialFormDataRef = useRef(formData);
@@ -237,6 +240,35 @@ export function RequestCreate() {
     );
     const filteredDepartments = departments.filter(d => allowedDepartmentCodes.includes(d.code));
 
+    // Need-level lead time: the "Necessário até" date may not precede the minimum implied by the
+    // selected Grau de Necessidade. Quotation only — on Payment requests the same field carries the
+    // supplier invoice due date, which is legitimately allowed to be in the past.
+    const isQuotationType = Number(formData.requestTypeId) === 1;
+    const selectedNeedLevel = needLevels.find(nl => nl.id === Number(formData.needLevelId));
+    const minNeedByDate = isQuotationType ? getMinNeedByDate(selectedNeedLevel?.code) : null;
+    const minNeedByLeadDays = isQuotationType ? getMinLeadDays(selectedNeedLevel?.code) : null;
+    const isBelowMinNeedByDate = isBeforeMinNeedByDate(formData.needByDateUtc, minNeedByDate);
+
+    /**
+     * Given the form values the user is moving to, returns the "Necessário até" date that honours the
+     * need-level minimum: auto-filled when empty, pushed forward when it falls short, kept otherwise.
+     */
+    const resolveNeedByDate = (requestTypeId: string, needLevelId: string, currentNeedByDate: string) => {
+        if (Number(requestTypeId) !== 1) return { needByDate: currentNeedByDate, notice: null as string | null };
+
+        const level = needLevels.find(nl => nl.id === Number(needLevelId));
+        const minDate = getMinNeedByDate(level?.code);
+        if (!minDate || !level) return { needByDate: currentNeedByDate, notice: null as string | null };
+
+        if (!currentNeedByDate) {
+            return { needByDate: minDate, notice: null as string | null };
+        }
+        if (isBeforeMinNeedByDate(currentNeedByDate, minDate)) {
+            return { needByDate: minDate, notice: getNeedByAdjustmentNotice(level.name, minDate) };
+        }
+        return { needByDate: currentNeedByDate, notice: null as string | null };
+    };
+
     // Diagnostic log: plant + department scope filter result (non-sensitive)
     useEffect(() => {
         if (!isScopeLoading && plants.length > 0) {
@@ -265,14 +297,11 @@ export function RequestCreate() {
                 next.companyId = String(filteredCompanies[0].id);
             }
 
-            // Auto-select department when only one is in scope
+            // Auto-select department when only one is in scope.
+            // (Fase B: o aprovador de área não é mais pré-nomeado — o roteamento é
+            // resolvido pelo backend via DepartmentManagers no submit/decisão.)
             if (filteredDepartments.length === 1 && !next.departmentId) {
-                const soloDept = filteredDepartments[0];
-                next.departmentId = String(soloDept.id);
-                // Auto-resolve area approver from the department's responsible user
-                if (soloDept.responsibleUserId) {
-                    next.areaApproverId = soloDept.responsibleUserId;
-                }
+                next.departmentId = String(filteredDepartments[0].id);
             }
 
             return next;
@@ -529,8 +558,23 @@ export function RequestCreate() {
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
+
+        // Selecting/changing the need level (or switching request type) re-applies the minimum
+        // lead time to "Necessário até": fill when empty, push forward when it falls short, keep otherwise.
+        let resolvedNeedBy: { needByDate: string; notice: string | null } | null = null;
+        if (name === 'needLevelId' || name === 'requestTypeId') {
+            resolvedNeedBy = resolveNeedByDate(
+                name === 'requestTypeId' ? value : formData.requestTypeId,
+                name === 'needLevelId' ? value : formData.needLevelId,
+                formData.needByDateUtc
+            );
+            setNeedByAdjustmentNotice(resolvedNeedBy.notice);
+            if (resolvedNeedBy.needByDate !== formData.needByDateUtc) clearFieldError('NeedByDateUtc');
+        }
+
         setFormData(prev => {
             const next = { ...prev, [name]: value };
+            if (resolvedNeedBy) next.needByDateUtc = resolvedNeedBy.needByDate;
             if (name === 'companyId') {
                 next.plantId = '';
                 if (value) {
@@ -548,13 +592,9 @@ export function RequestCreate() {
                 }
             }
 
-            if (name === 'departmentId' && value) {
-                const dept = departments.find(d => d.id === Number(value));
-                if (dept && dept.responsibleUserId) {
-                    next.areaApproverId = dept.responsibleUserId;
-                }
-            }
-            
+            // (Fase B: trocar o departamento não pré-nomeia aprovador de área —
+            // o roteamento é resolvido pelo backend via DepartmentManagers.)
+
             return next;
         });
         clearFieldError(name);
@@ -613,6 +653,9 @@ export function RequestCreate() {
             const isPayment = Number(formData.requestTypeId) === 2;
             if (!formData.needByDateUtc) {
                 newErrors['NeedByDateUtc'] = [isPayment ? 'A data de vencimento é obrigatória para pedidos de Pagamento.' : 'A data Necessário Até é obrigatória para pedidos de Cotação.'];
+            } else if (isBelowMinNeedByDate && selectedNeedLevel && minNeedByDate) {
+                // Need-level minimum lead time (Quotation only) — mirrors the server-side rule.
+                newErrors['NeedByDateUtc'] = [getMinNeedByError(selectedNeedLevel.name, minNeedByDate)];
             }
         }
 
@@ -665,7 +708,7 @@ export function RequestCreate() {
                 ? new Date(formData.needByDateUtc).toISOString() 
                 : null,
             buyerId: formData.buyerId || null,
-            areaApproverId: formData.areaApproverId || null,
+            // areaApproverId removido (Fase B): o backend resolve o roteamento de área
             finalApproverId: formData.finalApproverId || null,
             lineItems: Number(formData.requestTypeId) === 2 && paymentDraft ? paymentDraft.items.map((item, index) => ({
                 lineNumber: index + 1,
@@ -731,7 +774,7 @@ export function RequestCreate() {
                 });
             } else {
                 const isPayment = Number(formData.requestTypeId) === 2;
-                const successMsg = isPayment ? 'Pedido de Pagamento gerado. Preencha os restantes dados e anexe a fatura/nota.' : fallbackSuccessMessage;
+                const successMsg = isPayment ? 'Confira os dados do pedido e clique em "Submeter" para enviar para aprovação.' : fallbackSuccessMessage;
 
                 navigate(`/requests/${result.id}/edit`, {
                     replace: true,
@@ -1680,15 +1723,34 @@ export function RequestCreate() {
                                             {Number(formData.requestTypeId) === 2 ? 'Data de vencimento' : 'Necessário até (Data limite)'} <span style={{ color: 'red' }}>*</span>
                                             <DateInput
                                                 required name="needByDateUtc" value={formData.needByDateUtc}
+                                                min={minNeedByDate ?? undefined}
                                                 onChange={(val) => {
                                                     setFormData(prev => ({ ...prev, needByDateUtc: val }));
                                                     clearFieldError('NeedByDateUtc');
+                                                    setNeedByAdjustmentNotice(null);
                                                 }}
-                                                hasError={!!getFieldErrors('NeedByDateUtc')}
+                                                hasError={!!getFieldErrors('NeedByDateUtc') || isBelowMinNeedByDate}
                                                 style={getInputStyle('NeedByDateUtc')}
                                             />
                                             {renderFieldError('NeedByDateUtc')}
-                                            {!getFieldErrors('NeedByDateUtc') && formData.needByDateUtc && new Date(formData.needByDateUtc).getTime() < new Date().setHours(0, 0, 0, 0) && (
+                                            {!getFieldErrors('NeedByDateUtc') && isBelowMinNeedByDate && selectedNeedLevel && minNeedByDate && (
+                                                <div style={{ color: '#EF4444', fontSize: '0.75rem', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                                                    <AlertCircle size={12} />
+                                                    {getMinNeedByError(selectedNeedLevel.name, minNeedByDate)}
+                                                </div>
+                                            )}
+                                            {!getFieldErrors('NeedByDateUtc') && !isBelowMinNeedByDate && needByAdjustmentNotice && (
+                                                <div style={{ color: '#D97706', fontSize: '0.75rem', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                                                    <AlertTriangle size={12} />
+                                                    {needByAdjustmentNotice}
+                                                </div>
+                                            )}
+                                            {!getFieldErrors('NeedByDateUtc') && !isBelowMinNeedByDate && !needByAdjustmentNotice && minNeedByDate && minNeedByLeadDays !== null && selectedNeedLevel && (
+                                                <div style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem', marginTop: '4px' }}>
+                                                    {getMinNeedByHint(selectedNeedLevel.name, minNeedByDate, minNeedByLeadDays)}
+                                                </div>
+                                            )}
+                                            {!getFieldErrors('NeedByDateUtc') && !isBelowMinNeedByDate && formData.needByDateUtc && new Date(formData.needByDateUtc).getTime() < new Date().setHours(0, 0, 0, 0) && (
                                                 <div style={{ color: '#D97706', fontSize: '0.75rem', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
                                                     <AlertTriangle size={12} />
                                                     {Number(formData.requestTypeId) === 2 ? 'O documento está vencido.' : 'A data selecionada está no passado.'}

@@ -145,4 +145,8 @@ public class Request
     // ── Buy-to-Pay: Child Tables ──
     public ICollection<RequestPayment> Payments { get; set; } = new List<RequestPayment>();
     public ICollection<RequestReconciliation> Reconciliations { get; set; } = new List<RequestReconciliation>();
+    public ICollection<RequestPoGroup> PoGroups { get; set; } = new List<RequestPoGroup>();
+
+    // ── Partial Quotation Approval ──
+    public ICollection<ApprovalBatch> ApprovalBatches { get; set; } = new List<ApprovalBatch>();
 }

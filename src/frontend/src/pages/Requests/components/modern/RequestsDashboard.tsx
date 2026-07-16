@@ -8,7 +8,6 @@ import { ActionCarouselWidget } from './ActionCarouselWidget';
 import { RequestsTableWidget } from './RequestsTableWidget';
 import { RequestDrawerPresentation } from './RequestDrawerPresentation';
 import { FilterDropdown } from '../../../../components/ui/FilterDropdown';
-import { CorrectPoModal } from '../../../../components/CorrectPoModal';
 import { useTablePreferences } from '../../../../hooks/useTablePreferences';
 import { GuideModal, GuideModalSection } from '../../../../components/ui/GuideModal';
 import { PlayCircle, Compass, MoreVertical, Info } from 'lucide-react';
@@ -46,9 +45,6 @@ export function RequestsDashboard() {
 
     // Navigation state (Drawer)
     const [drawerRequestId, setDrawerRequestId] = useState<string | null>(null);
-
-    // P.O. Correction Modal state
-    const [correctPoRequestId, setCorrectPoRequestId] = useState<string | null>(null);
 
     // Help Modal state
     const [currentHelpSection, setCurrentHelpSection] = useState<'action' | 'explorer' | 'main' | null>(null);
@@ -375,7 +371,7 @@ export function RequestsDashboard() {
                 <ActionCarouselWidget
                     summary={summary}
                     onRowClick={handleRowClick}
-                    onCorrectPoClick={(requestId) => setCorrectPoRequestId(requestId)}
+                    onCorrectPoClick={(requestId) => navigate(`/requests/${requestId}`)}
                     onHelpClick={() => setCurrentHelpSection('action')}
                 />
                 </div>
@@ -609,17 +605,6 @@ export function RequestsDashboard() {
                 isOpen={!!drawerRequestId}
                 onClose={() => {
                     setDrawerRequestId(null);
-                    loadData();
-                }}
-            />
-
-            {/* ── P.O. Correction Modal ── */}
-            <CorrectPoModal
-                show={!!correctPoRequestId}
-                requestId={correctPoRequestId || ''}
-                onClose={() => setCorrectPoRequestId(null)}
-                onSuccess={() => {
-                    setCorrectPoRequestId(null);
                     loadData();
                 }}
             />

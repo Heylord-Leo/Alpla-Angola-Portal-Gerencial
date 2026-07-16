@@ -37,6 +37,29 @@ public static class RequestWorkflowHelper
     }
 
     /// <summary>
+    /// Checks whether all items belonging to a specific PO group have been physically received.
+    /// </summary>
+    public static bool AreAllGroupItemsReceived(RequestPoGroup group)
+    {
+        if (group.LineItems == null || !group.LineItems.Any())
+            return false;
+
+        return group.LineItems.Where(li => !li.IsDeleted).All(li => 
+            li.SelectedQuotationItemId.HasValue && li.SelectedQuotationItem != null
+                ? li.SelectedQuotationItem.LineItemStatus?.Code == "RECEIVED"
+                : li.LineItemStatus?.Code == "RECEIVED"
+        );
+    }
+
+    /// <summary>
+    /// Determines the next status for a PO Group after a Receiving "confirm receiving" action.
+    /// </summary>
+    public static string DetermineGroupPostConfirmReceivingStatus(RequestPoGroup group)
+    {
+        return AreAllGroupItemsReceived(group) ? "WAITING_RECEIPT" : "IN_FOLLOWUP";
+    }
+
+    /// <summary>
     /// [DEPRECATED] Preserved for backward compatibility. Use DeterminePostConfirmReceivingStatus instead.
     /// This method previously returned "COMPLETED" which bypassed the financial receipt step.
     /// Now delegates to DeterminePostConfirmReceivingStatus (never returns COMPLETED).

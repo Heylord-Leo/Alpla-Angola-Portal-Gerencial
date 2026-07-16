@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
 namespace AlplaPortal.Domain.Entities;
@@ -61,6 +62,42 @@ public class RequestLineItem
     public string? DivergenceNotes { get; set; }
 
     public bool IsDeleted { get; set; }
+
+    public Guid? RequestPoGroupId { get; set; }
+    public RequestPoGroup? RequestPoGroup { get; set; }
+
+    public Guid? SelectedQuotationItemId { get; set; }
+    public QuotationItem? SelectedQuotationItem { get; set; }
+
+    // ── Partial Quotation Approval: Lifecycle Fields ──
+
+    /// <summary>
+    /// Quotation lifecycle status for partial batch approval:
+    /// null (legacy/pending), QUOTATION_PENDING, BATCH_ASSIGNED, QUOTATION_APPROVED,
+    /// NOT_QUOTED_PROPOSED, NOT_QUOTED_ACCEPTED.
+    /// </summary>
+    public string? QuotationLifecycleStatus { get; set; }
+
+    /// <summary>Justification required when proposing item as not-quoted (min 20 chars).</summary>
+    public string? NotQuotedJustification { get; set; }
+
+    /// <summary>User who proposed the item as not-quoted.</summary>
+    public Guid? NotQuotedProposedByUserId { get; set; }
+
+    /// <summary>UTC timestamp when item was proposed as not-quoted.</summary>
+    public DateTime? NotQuotedProposedAtUtc { get; set; }
+
+    /// <summary>User who accepted/rejected the not-quoted proposal.</summary>
+    public Guid? NotQuotedDecisionByUserId { get; set; }
+
+    /// <summary>UTC timestamp of the not-quoted acceptance/rejection.</summary>
+    public DateTime? NotQuotedDecisionAtUtc { get; set; }
+
+    /// <summary>Comment from the decision-maker when accepting/rejecting the not-quoted proposal (e.g., rejection reason).</summary>
+    public string? NotQuotedDecisionComment { get; set; }
+
+    /// <summary>Financial allocation lines (1..N, sum of percentages = 100%). Used for split allocation across plants/cost centers.</summary>
+    public ICollection<RequestLineItemAllocation> Allocations { get; set; } = new List<RequestLineItemAllocation>();
 
     public DateTime CreatedAtUtc { get; set; }
     public Guid CreatedByUserId { get; set; }

@@ -15,10 +15,13 @@ namespace AlplaPortal.Api.Controllers;
 public class LineItemsController : BaseController
 {
     private readonly ILogger<LineItemsController> _logger;
+    private readonly AlplaPortal.Application.Interfaces.IApprovalRoutingService _approvalRouting;
 
-    public LineItemsController(ApplicationDbContext context, ILogger<LineItemsController> logger) : base(context)
+    public LineItemsController(ApplicationDbContext context, ILogger<LineItemsController> logger,
+        AlplaPortal.Application.Interfaces.IApprovalRoutingService approvalRouting) : base(context)
     {
         _logger = logger;
+        _approvalRouting = approvalRouting;
     }
 
     [HttpGet]
@@ -44,7 +47,12 @@ public class LineItemsController : BaseController
             .AsNoTracking()
             .Where(r => !r.IsCancelled && r.RequestType!.Code == RequestConstants.Types.Quotation);
 
-        // Security: Filter to only show items for requests in specific allowed statuses
+        // Security: Filter to only show items for requests in specific allowed statuses.
+        // For QUOTATION requests with partial approval, the request must also appear if:
+        //   (b) it has at least one active item with QuotationLifecycleStatus null or QUOTATION_PENDING; OR
+        //   (c) it has a batch in AREA_ADJUSTMENT or FINAL_ADJUSTMENT (rework).
+        // Conditions (b) and (c) are scoped to QUOTATION requests only so PAYMENT requests
+        // are never included just because their line items have QuotationLifecycleStatus = null.
         var allowedStatuses = new[] 
         { 
             RequestConstants.Statuses.WaitingQuotation, 
@@ -56,7 +64,27 @@ public class LineItemsController : BaseController
             RequestConstants.Statuses.WaitingFinalApproval, 
             RequestConstants.Statuses.WaitingCostCenter 
         };
-        filteredRequests = filteredRequests.Where(r => allowedStatuses.Contains(r.Status!.Code));
+
+        var reworkBatchStatuses = new[]
+        {
+            RequestConstants.ApprovalBatchStatuses.AreaAdjustment,
+            RequestConstants.ApprovalBatchStatuses.FinalAdjustment
+        };
+
+        filteredRequests = filteredRequests.Where(r =>
+            // (a) Legacy status in allowed list — applies to both QUOTATION and PAYMENT
+            allowedStatuses.Contains(r.Status!.Code)
+            // (b+c) QUOTATION-only: pending items or rework batches
+            || (
+                r.RequestType!.Code == RequestConstants.Types.Quotation
+                && (
+                    r.LineItems.Any(li => !li.IsDeleted
+                        && (li.QuotationLifecycleStatus == null
+                            || li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.QuotationPending))
+                    || r.ApprovalBatches.Any(b => reworkBatchStatuses.Contains(b.Status))
+                )
+            )
+        );
 
         if (department.HasValue)
         {
@@ -216,6 +244,9 @@ public class LineItemsController : BaseController
                         RequestId = q.RequestId,
                         SupplierId = q.SupplierId,
                         SupplierNameSnapshot = q.SupplierNameSnapshot,
+                        SupplierPortalCode = q.Supplier != null ? q.Supplier.PortalCode : null,
+                        SupplierPrimaveraCode = q.Supplier != null ? q.Supplier.PrimaveraCode : null,
+                        SupplierRegistrationStatus = q.Supplier != null ? q.Supplier.RegistrationStatus : null,
                         DocumentNumber = q.DocumentNumber,
                         DocumentDate = q.DocumentDate,
                         Currency = q.Currency,
@@ -242,12 +273,32 @@ public class LineItemsController : BaseController
                             UnitCode = qi.Unit != null ? qi.Unit.Code : null,
                             IvaRateId = qi.IvaRateId,
                             IvaRatePercent = qi.IvaRatePercent,
+                            DiscountAmount = qi.DiscountAmount,
+                            DiscountPercent = qi.DiscountPercent,
                             GrossSubtotal = qi.GrossSubtotal,
                             IvaAmount = qi.IvaAmount,
-                            LineTotal = qi.LineTotal
+                            LineTotal = qi.LineTotal,
+                            ItemCatalogId = qi.ItemCatalogId,
+                            ItemCatalogCode = qi.ItemCatalog != null ? qi.ItemCatalog.Code : null,
+                            MappedRequestLineItemId = qi.MappedRequestLineItemId,
+                            ReconciliationStatus = qi.ReconciliationStatus,
+                            ReconciliationJustification = qi.ReconciliationJustification
                         }).ToList()
                     })
-                    .ToList()
+                    .ToList(),
+                ApprovalBatches = r.ApprovalBatches.Select(b => new
+                {
+                    b.Id,
+                    b.BatchNumber,
+                    b.Status,
+                    b.CreatedAtUtc,
+                    Items = b.Items.Select(bi => new
+                    {
+                        bi.Id,
+                        bi.RequestLineItemId,
+                        bi.SelectedQuotationItemId
+                    }).ToList()
+                }).ToList()
             })
             .ToListAsync();
         
@@ -304,6 +355,7 @@ public class LineItemsController : BaseController
                 RequestCurrencyCode = x.RequestCurrencyCode,
                 
                 LineItemStatusCode = x.ItemStatusCode,
+                QuotationLifecycleStatus = x.LineItem != null ? x.LineItem.QuotationLifecycleStatus : null,
                 LineItemStatusName = x.ItemStatusName,
                 LineItemStatusBadgeColor = x.ItemStatusBadgeColor,
                 
@@ -338,15 +390,60 @@ public class LineItemsController : BaseController
                 LatestAdjustmentRole = latestAdj != null ? (latestAdj.NewStatusCode == "AREA_ADJUSTMENT" ? "Aprovador de Área" : (latestAdj.NewStatusCode == "FINAL_ADJUSTMENT" ? "Aprovador Final" : "Aprovador")) : null,
                 LatestAdjustmentDateUtc = latestAdj?.CreatedAtUtc,
                 
-                Quotations = rd?.Quotations ?? new List<SavedQuotationDto>()
+                Quotations = rd?.Quotations ?? new List<SavedQuotationDto>(),
+                ApprovalBatches = rd?.ApprovalBatches?.Cast<object>().ToList() ?? new List<object>()
             };
         }).ToList();
 
         swOverall.Stop();
         
+        // ═══ TEMPORARY DIAGNOSTIC: BUG-REWORK-030 ═══
+        // Log exact payload for requests in Adjustment status to identify failed button conditions
+        // TODO: Remove after root cause confirmed
+        var adjustmentItems = finalItems.Where(f => f.RequestStatusCode == "AREA_ADJUSTMENT" || f.RequestStatusCode == "FINAL_ADJUSTMENT").ToList();
+        if (adjustmentItems.Any())
+        {
+            var currentUserId = CurrentUserId;
+            var groupedByRequest = adjustmentItems.GroupBy(f => f.RequestId).ToList();
+            foreach (var reqGroup in groupedByRequest)
+            {
+                var first = reqGroup.First();
+                _logger.LogWarning(
+                    "[DIAG:REWORK-BUTTON] ─── Backend Payload for {RequestNumber} ───\n" +
+                    "  RequestId:        {RequestId}\n" +
+                    "  StatusCode:       {StatusCode}\n" +
+                    "  RequestTypeCode:  {RequestTypeCode}\n" +
+                    "  BuyerId:          {BuyerId}\n" +
+                    "  BuyerName:        {BuyerName}\n" +
+                    "  BuyerEmail:       {BuyerEmail}\n" +
+                    "  CurrentUserId:    {CurrentUserId}\n" +
+                    "  isAssignedToMe:   {IsAssigned}\n" +
+                    "  QuotationCount:   {QuotationCount}\n" +
+                    "  QuotationIds:     {QuotationIds}\n" +
+                    "  LineItemCount:    {LineItemCount}\n" +
+                    "  AreaApproverId:   {AreaApproverId}\n" +
+                    "  FinalApproverId:  {FinalApproverId}",
+                    first.RequestNumber,
+                    first.RequestId,
+                    first.RequestStatusCode,
+                    first.RequestTypeCode,
+                    first.BuyerId?.ToString() ?? "NULL",
+                    first.BuyerName ?? "NULL",
+                    first.BuyerEmail ?? "NULL",
+                    currentUserId,
+                    first.BuyerId.HasValue && first.BuyerId.Value == currentUserId,
+                    first.Quotations?.Count ?? 0,
+                    first.Quotations != null ? string.Join(", ", first.Quotations.Select(q => q.Id)) : "NONE",
+                    reqGroup.Count(f => f.LineItemId.HasValue),
+                    first.AreaApproverId?.ToString() ?? "NULL",
+                    first.FinalApproverId?.ToString() ?? "NULL"
+                );
+            }
+        }
+        // ═══ END TEMPORARY DIAGNOSTIC ═══
+
         // Log performance metrics
-        _logger.LogInformation("Perf: GetLineItems total {0}ms [Count: {1}ms, Page: {2}ms, Related: {3}ms]. Rows: {4}", 
-            swOverall.ElapsedMilliseconds, swCount.ElapsedMilliseconds, swPage.ElapsedMilliseconds, swRelated.ElapsedMilliseconds, finalItems.Count);
+        _logger.LogInformation($"Perf: GetLineItems total {swOverall.ElapsedMilliseconds}ms [Count: {swCount.ElapsedMilliseconds}ms, Page: {swPage.ElapsedMilliseconds}ms, Related: {swRelated.ElapsedMilliseconds}ms]. Rows: {finalItems.Count}");
 
         return Ok(new { Data = finalItems, TotalCount = totalCount, Page = page, PageSize = pageSize });
     }
@@ -549,11 +646,18 @@ public class LineItemsController : BaseController
     [HttpPatch("{id}/cost-center")]
     public async Task<IActionResult> UpdateCostCenter(Guid id, [FromBody] UpdateLineItemCostCenterDto dto)
     {
-        if (!CurrentUserRoles.Contains(RoleConstants.AreaApprover)) 
-            return StatusCode(403, "Centro de Custo só pode ser editado pelo Aprovador de Área.");
-
-        var item = await _context.RequestLineItems.FindAsync(id);
+        var item = await _context.RequestLineItems.Include(li => li.Request).FirstOrDefaultAsync(li => li.Id == id);
         if (item == null) return NotFound();
+
+        // Phase B: cost-center assignment is an area-review action — requires manager
+        // titularity for the request's department/plant (DepartmentManager routing),
+        // admin, or the legacy nominee. The manual role grants nothing.
+        var costCenterActorId = CurrentUserId;
+        var isAuthorized = CurrentUserRoles.Contains(RoleConstants.SystemAdministrator)
+            || item.Request!.AreaApproverId == costCenterActorId
+            || await _approvalRouting.IsAreaManagerAsync(costCenterActorId, item.Request!.DepartmentId, item.Request!.PlantId);
+        if (!isAuthorized)
+            return StatusCode(403, "Você não é responsável pelo departamento/planta deste pedido.");
 
         if (dto.CostCenterId.HasValue)
         {
@@ -582,6 +686,7 @@ public class LineItemsController : BaseController
              return Forbid("Apenas o papel de Recebimento ou Comprador pode registrar recebimento.");
 
         var item = await _context.RequestLineItems
+            .Include(li => li.RequestPoGroup)
             .Include(li => li.Request)
                 .ThenInclude(r => r.Status)
             .Include(li => li.LineItemStatus)
@@ -589,9 +694,13 @@ public class LineItemsController : BaseController
 
         if (item == null) return NotFound();
 
-        // Validation: Request must be in a valid receiving status
+        // Validation: Group must be in a valid receiving status
         var allowedRequestStatuses = new[] { "PAYMENT_COMPLETED", "WAITING_RECEIPT", "IN_FOLLOWUP", RequestConstants.Statuses.WaitingSupplierDelivery };
-        if (!allowedRequestStatuses.Contains(item.Request.Status!.Code))
+        if (item.RequestPoGroup != null && !allowedRequestStatuses.Contains(item.RequestPoGroup.Status))
+        {
+            return Conflict(new ProblemDetails { Title = "Ação Bloqueada", Detail = $"O grupo P.O. não está em fase de recebimento. Status atual: {item.RequestPoGroup.Status}", Status = 409 });
+        }
+        else if (item.RequestPoGroup == null && !allowedRequestStatuses.Contains(item.Request.Status!.Code))
         {
             return Conflict(new ProblemDetails { Title = "Ação Bloqueada", Detail = "O pedido não está em fase de recebimento.", Status = 409 });
         }
@@ -615,8 +724,17 @@ public class LineItemsController : BaseController
 
         if (qi == null) return NotFound();
 
+        // Find the matching RequestLineItem to resolve the group
+        var rli = await _context.RequestLineItems
+            .Include(li => li.RequestPoGroup)
+            .FirstOrDefaultAsync(li => li.SelectedQuotationItemId == qi.Id);
+
         var allowedRequestStatuses = new[] { "PAYMENT_COMPLETED", "WAITING_RECEIPT", "IN_FOLLOWUP", RequestConstants.Statuses.WaitingSupplierDelivery };
-        if (!allowedRequestStatuses.Contains(qi.Quotation.Request.Status!.Code))
+        if (rli != null && rli.RequestPoGroup != null && !allowedRequestStatuses.Contains(rli.RequestPoGroup.Status))
+        {
+            return Conflict(new ProblemDetails { Title = "Ação Bloqueada", Detail = $"O grupo P.O. não está em fase de recebimento. Status atual: {rli.RequestPoGroup.Status}", Status = 409 });
+        }
+        else if ((rli == null || rli.RequestPoGroup == null) && !allowedRequestStatuses.Contains(qi.Quotation.Request.Status!.Code))
         {
             return Conflict(new ProblemDetails { Title = "Ação Bloqueada", Detail = "O pedido não está em fase de recebimento.", Status = 409 });
         }

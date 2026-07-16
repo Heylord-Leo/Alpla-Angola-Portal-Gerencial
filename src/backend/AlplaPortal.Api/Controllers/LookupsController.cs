@@ -1,4 +1,6 @@
+using AlplaPortal.Application.DTOs.Requests;
 using AlplaPortal.Infrastructure.Data;
+using AlplaPortal.Infrastructure.Services.Approvals;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -11,11 +13,13 @@ public class LookupsController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
     private readonly ILogger<LookupsController> _logger;
+    private readonly DepartmentManagerService _departmentManagers;
 
-    public LookupsController(ApplicationDbContext context, ILogger<LookupsController> logger)
+    public LookupsController(ApplicationDbContext context, ILogger<LookupsController> logger, DepartmentManagerService departmentManagers)
     {
         _context = context;
         _logger = logger;
+        _departmentManagers = departmentManagers;
     }
 
     [HttpGet("units")]
@@ -505,7 +509,13 @@ public class LookupsController : ControllerBase
 
         var items = await query
             .OrderBy(d => d.Name)
-            .Select(d => new { d.Id, d.Code, d.Name, d.IsActive, d.ResponsibleUserId })
+            .Select(d => new
+            {
+                d.Id, d.Code, d.Name, d.IsActive,
+                // Phase C: single legacy responsible removed — expose the managers count
+                // so the Master Data list can show configuration coverage.
+                ManagerCount = d.Managers.Count(m => m.IsActive)
+            })
             .ToListAsync();
 
         return Ok(items);
@@ -519,15 +529,14 @@ public class LookupsController : ControllerBase
         { 
             Code = dto.Code?.ToUpper() ?? string.Empty, 
             Name = dto.Name, 
-            IsActive = true,
-            ResponsibleUserId = dto.ResponsibleUserId
+            IsActive = true
         };
         _context.Departments.Add(entity);
         
         try
         {
             await _context.SaveChangesAsync();
-            return Created($"/api/v1/lookups/departments/{entity.Id}", new { entity.Id, entity.Code, entity.Name, entity.IsActive, entity.ResponsibleUserId });
+            return Created($"/api/v1/lookups/departments/{entity.Id}", new { entity.Id, entity.Code, entity.Name, entity.IsActive });
         }
         catch (DbUpdateException ex)
         {
@@ -550,14 +559,13 @@ public class LookupsController : ControllerBase
             return Conflict(new ProblemDetails
             {
                 Title = "Regra de Negócio Violada",
-                Detail = "Este registro já possui pedidos vinculados. O nome e o código não podem ser alterados para preservar a integridade do histórico. No entanto, o responsável pode ser atualizado normalmente.",
+                Detail = "Este registro já possui pedidos vinculados. O nome e o código não podem ser alterados para preservar a integridade do histórico. Os managers de aprovação podem ser geridos normalmente na grade abaixo.",
                 Status = 409
             });
         }
 
         entity.Code = dto.Code?.ToUpper() ?? string.Empty;
         entity.Name = dto.Name;
-        entity.ResponsibleUserId = dto.ResponsibleUserId;
 
         try
         {
@@ -576,9 +584,60 @@ public class LookupsController : ControllerBase
     {
         var entity = await _context.Departments.FindAsync(id);
         if (entity == null) return NotFound();
-        
+
         entity.IsActive = !entity.IsActive;
         await _context.SaveChangesAsync();
+        return NoContent();
+    }
+
+    // ── Department Managers (área de aprovação por departamento + planta) ──
+    // DepartmentManagers are the ONLY configuration for area/HR responsibility
+    // (per plant, or global with PlantId NULL). Legacy single responsible removed in Phase C.
+
+    [HttpGet("departments/{id}/managers")]
+    [Authorize(Roles = "System Administrator")]
+    public async Task<IActionResult> GetDepartmentManagers(int id)
+    {
+        if (!await _context.Departments.AnyAsync(d => d.Id == id)) return NotFound();
+        return Ok(await _departmentManagers.ListAsync(id));
+    }
+
+    /// <summary>
+    /// Adds a manager. Rule D3: missing visibility scopes (UserDepartmentScope +
+    /// UserPlantScope — all active plants for a global manager) are auto-created in
+    /// the same transaction and reported back for the UI confirmation.
+    /// </summary>
+    [HttpPost("departments/{id}/managers")]
+    [Authorize(Roles = "System Administrator")]
+    public async Task<IActionResult> AddDepartmentManager(int id, [FromBody] AddDepartmentManagerDto dto)
+    {
+        try
+        {
+            var result = await _departmentManagers.AddAsync(id, dto.UserId!.Value, dto.PlantId);
+            return Created($"/api/v1/lookups/departments/{id}/managers/{result.Manager.Id}", result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ProblemDetails { Title = "Erro de Validação", Detail = ex.Message, Status = 400 });
+        }
+    }
+
+    [HttpPut("departments/{id}/managers/{managerId}/toggle-active")]
+    [Authorize(Roles = "System Administrator")]
+    public async Task<IActionResult> ToggleDepartmentManagerActive(int id, int managerId)
+    {
+        var newState = await _departmentManagers.ToggleActiveAsync(id, managerId);
+        if (newState == null) return NotFound();
+        return Ok(new { IsActive = newState.Value });
+    }
+
+    /// <summary>Removes the manager row. Visibility scopes are intentionally kept (D3).</summary>
+    [HttpDelete("departments/{id}/managers/{managerId}")]
+    [Authorize(Roles = "System Administrator")]
+    public async Task<IActionResult> RemoveDepartmentManager(int id, int managerId)
+    {
+        var removed = await _departmentManagers.RemoveAsync(id, managerId);
+        if (!removed) return NotFound();
         return NoContent();
     }
 
@@ -741,7 +800,7 @@ public class LookupsController : ControllerBase
         var results = await queryable
             .OrderBy(s => s.Name)
             .Take(take)
-            .Select(s => new { s.Id, s.PortalCode, s.PrimaveraCode, s.Name, s.TaxId })
+            .Select(s => new { s.Id, s.PortalCode, s.PrimaveraCode, s.Name, s.TaxId, s.RegistrationStatus })
             .ToListAsync();
 
         return Ok(results);
@@ -2214,7 +2273,6 @@ public class CreateLookupDto
     public string? Code { get; set; }
     public string Name { get; set; } = string.Empty;
     public int CompanyId { get; set; } // Only used for Plants
-    public Guid? ResponsibleUserId { get; set; } // Only used for Departments
     public Guid? FinalApproverUserId { get; set; } // Only used for Companies
 }
 

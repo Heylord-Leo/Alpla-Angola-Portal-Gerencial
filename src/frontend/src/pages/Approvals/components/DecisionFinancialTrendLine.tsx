@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 import { api } from '../../../lib/api';
 import { Loader2 } from 'lucide-react';
@@ -26,7 +26,7 @@ interface DecisionFinancialTrendLineProps {
 export function DecisionFinancialTrendLine({ requestId }: DecisionFinancialTrendLineProps) {
   const [data, setData] = useState<ApprovalFinancialTrendDto | null>(null);
   const [loading, setLoading] = useState(true);
-  const [resolution, setResolution] = useState<'MONTH' | 'WEEK'>('MONTH');
+  const [resolution, setResolution] = useState<'MONTH' | 'WEEK' | 'DAY'>('MONTH');
   const [scope, setScope] = useState<'PLANT' | 'DEPARTMENT'>('DEPARTMENT');
 
   useEffect(() => {
@@ -63,6 +63,37 @@ export function DecisionFinancialTrendLine({ requestId }: DecisionFinancialTrend
     }).format(value);
   };
 
+  // Normalizar os pontos de dados para garantir números válidos no frontend
+  const normalizedDataPoints = useMemo(() => {
+    if (!data?.dataPoints) return [];
+    return data.dataPoints.map(point => ({
+      ...point,
+      approvedAmount: Number(point.approvedAmount ?? 0) || 0,
+      paidAmount: Number(point.paidAmount ?? 0) || 0,
+      approvedCount: Number(point.approvedCount ?? 0) || 0,
+      paidCount: Number(point.paidCount ?? 0) || 0,
+    }));
+  }, [data]);
+
+  const maxTrendValue = useMemo(() => {
+    if (normalizedDataPoints.length === 0) return 0;
+    return Math.max(
+      0,
+      ...normalizedDataPoints.map(item => Math.max(item.approvedAmount, item.paidAmount))
+    );
+  }, [normalizedDataPoints]);
+
+  const yAxisMax = maxTrendValue === 0 ? 1000 : Math.ceil(maxTrendValue * 1.15);
+
+  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+    console.log('[DecisionFinancialTrendLine] Render:', {
+      resolution,
+      scope,
+      dataPoints: normalizedDataPoints,
+      yAxisMax
+    });
+  }
+
   return (
     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       {/* Controls */}
@@ -78,6 +109,22 @@ export function DecisionFinancialTrendLine({ requestId }: DecisionFinancialTrend
         borderRadius: '0.375rem' 
       }}>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button
+            onClick={() => setResolution('DAY')}
+            style={{
+              padding: '0.25rem 0.75rem',
+              fontSize: '0.75rem',
+              fontWeight: 500,
+              borderRadius: '0.25rem',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              ...(resolution === 'DAY' 
+                ? { backgroundColor: '#1E40AF', color: '#FFFFFF', border: '1px solid #1E40AF' }
+                : { backgroundColor: 'var(--color-bg-surface)', color: '#4B5563', border: '1px solid #E5E7EB' })
+            }}
+          >
+            Dias
+          </button>
           <button
             onClick={() => setResolution('WEEK')}
             style={{
@@ -185,8 +232,9 @@ export function DecisionFinancialTrendLine({ requestId }: DecisionFinancialTrend
         {data && data.dataPoints.length > 0 && (
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
-              data={data.dataPoints}
-              margin={{ top: 10, right: 10, left: 20, bottom: 0 }}
+              key={`${resolution}-${scope}`}
+              data={normalizedDataPoints}
+              margin={{ top: 10, right: 10, left: 20, bottom: 10 }}
             >
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
               <XAxis 
@@ -197,6 +245,7 @@ export function DecisionFinancialTrendLine({ requestId }: DecisionFinancialTrend
                 dy={10}
               />
               <YAxis 
+                domain={[0, yAxisMax]}
                 tickFormatter={(value) => {
                   if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
                   if (value >= 1000) return (value / 1000).toFixed(0) + 'k';
@@ -250,6 +299,8 @@ export function DecisionFinancialTrendLine({ requestId }: DecisionFinancialTrend
                 strokeWidth={3}
                 dot={{ r: 4, strokeWidth: 2 }}
                 activeDot={{ r: 6 }}
+                connectNulls={true}
+                isAnimationActive={false}
               />
               <Line 
                 type="monotone" 
@@ -259,6 +310,8 @@ export function DecisionFinancialTrendLine({ requestId }: DecisionFinancialTrend
                 strokeWidth={3}
                 dot={{ r: 4, strokeWidth: 2 }}
                 activeDot={{ r: 6 }}
+                connectNulls={true}
+                isAnimationActive={false}
               />
             </LineChart>
           </ResponsiveContainer>

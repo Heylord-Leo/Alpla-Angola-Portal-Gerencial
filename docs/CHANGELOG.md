@@ -4,28 +4,80 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.205.1
+v2.206.0
 
-## [v2.205.1] - 2026-07-01
+## [Unreleased]
 
-### Fixed — User Administration Role Scopes & Validation
+## [v2.206.0] - 2026-07-16
 
-- **Dynamic Role Scope**: Corrected a permission gap where Local Managers could arbitrarily assign restricted roles (like `HR` or `Import`) without possessing those permissions. The `AllowedRolesForLM` array was replaced with a dynamic backend check `GetAssignableRolesForCurrentUserAsync`.
-- **Target User Scope Protection**: Prevented Local Managers from editing or resetting passwords for users who possess roles outside the manager's permitted scope, replacing silent failures with a locked UI indicator.
-- **Corporate Email Validation**: Enforced strict validation for ALPLA corporate emails (ending in `@alpla.com`) across both frontend forms and backend API (`CreateUser` / `UpdateUser`), completely preventing the creation of incomplete accounts that would crash the email delivery service.
-- **Standardized Notifications**: Replaced custom modal toasts with the system-wide `<Feedback />` component in `UserManagement.tsx` to align with the rest of the application.
+### Removed — Limpeza do Modelo Legado de Aprovação de Área (Fase C do Redesign)
+
+- **`Department.ResponsibleUserId` removido** do modelo, DTOs, controllers e do banco (migration `PhaseCRemoveLegacyAreaApprovalConfig`: drop de FK/índice/coluna, com snapshot de auditoria `_PhaseC_DepartmentResponsibleBackup`). `DepartmentManagers` é a única configuração de responsabilidade de área.
+- **Atribuições manuais da role "Area Approver" removidas** do banco (com snapshot `_PhaseC_AreaApproverManualAssignmentsBackup`; `Down()` restaura). A linha da role permanece em `Roles` — ela existe exclusivamente como **claim derivada** no login. A API **rejeita** (400 controlado) qualquer tentativa de atribuição manual, inclusive por System Administrator, e a role saiu das assignable-roles e do checkbox da UI.
+- **HR migrado**: os 10 pontos de `HRLeaveController`/`HRAttendanceController`/`HRScheduleController` que identificavam o "Department Manager" por `ResponsibleUserId` (aprovação de férias, escalas, calendários) e o `managedDepartmentIds` do login agora derivam de `DepartmentManagers` (nível de departamento — planta específica ou global contam). Local Manager permanece 100% separado (administração de usuários).
+- **Contratos migrados**: `TechnicalApproverId` resolvido no submit via `IApprovalRoutingService` (cascata dept+planta do contrato; primeiro manager do nível resolvido). Os gates de leitura de contratos continuam pela claim derivada — documentado que contratos usam claim genérica, não titularidade por pedido.
+- **Cadastro de usuários**: nova seção somente leitura "Responsabilidades de Aprovação (derivadas)" no drawer (dept — planta/Global, ativo/inativo), com orientação "gerido em Dados Mestres → Departamentos"; hydration do formulário filtra o id da role derivada como defesa contra resíduos.
+- **Dados Mestres → Departamentos**: campo "Responsável (Legado)" totalmente removido; a grade de managers é a única configuração; lista mostra a contagem de managers ativos (`managerCount`).
+- **Compatibilidade legada explicitada**: cláusula de nomeado antigo isolada no método `IsLegacyNamedAreaApprover` (restrito a `WAITING_AREA_APPROVAL`/`WAITING_COST_CENTER`; pedidos pós-corte nunca se beneficiam, pois chegam à etapa com `AreaApproverId` null). O relatório de reconciliação ganhou a lista `LegacyPendingRequests` — quando vazia em PROD, a cláusula pode ser removida. Em Development (16/07/2026): **0 dependentes**.
+- **`Request.AreaApproverId` intacto** (histórico/decisor); pedidos concluídos preservados (verificado: 25 registros históricos íntegros pós-migration em DEV).
+- Pré-check registrado em DEV antes da migration: OK_DERIVADO 2 · PERDE_ACESSO 2 (Departamento Administracao, Manager Manual) · SO_CADASTRO 3 · 4 atribuições manuais removidas · 3 departamentos ativos ainda sem manager (Admin, Financeiro, Logística — submits bloqueiam até cadastro).
 
 **Guided Tour impact: existing tour reviewed, no changes needed.**
 
-## [v2.205.0] - 2026-07-01
+### Changed — Corte Definitivo: Aprovação de Área por DepartmentManager (Fase B do Redesign)
+
+- **DepartmentManager é a fonte única de verdade** para a aprovação de área — sem feature flag, sem fluxo paralelo. `Department.ResponsibleUserId` deixou de participar de qualquer pedido/evento novo (a coluna permanece até a Fase C; módulo HR e contratos não foram alterados).
+- **Claim "Area Approver" derivada**: no login, a role é concedida exclusivamente a quem tem ≥1 linha ativa em `DepartmentManagers` (usuário ativo, planta ativa). A atribuição manual da role é ignorada na montagem das claims — deixa de dar fila, aprovação e e-mails. Mudanças de manager exigem novo login/renovação de token. O checkbox manual permanece na UI até a Fase C.
+- **Submit**: não pré-nomeia aprovador. Exige ≥1 manager resolvível para (departamento, planta); sem manager → 400 com mensagem acionável + AdminLog `APPROVAL_ROUTING_NO_MANAGER`, sem alteração parcial de status. Mesmo guard na criação de lote de aprovação (entrada da cotação na etapa de área).
+- **`Request.AreaApproverId` muda de semântica**: de "nomeado" para **"quem decidiu"** — null até a decisão; gravado com o ator ao aprovar/rejeitar/pedir reajuste (individual e em lote, somente após autorização).
+- **Fila e contadores** (pendências, my-tasks, not-quoted): visibilidade por subquery EF em `DepartmentManagers` (manager da planta OU global vê; manager de outra planta não; role manual isolada não) + cláusula legada `AreaApproverId == usuário` para pedidos antigos em andamento + admin.
+- **Autorização de decisão** (aprovar/rejeitar/reajuste, lote, seleção de vencedor, centro de custo, not-quoted): admin OU manager do departamento/planta (D1: específico ou global; outra planta nunca) OU nomeado legado. 403 claro: "Você não é responsável pelo departamento/planta deste pedido". Concorrência entre managers: segundo a decidir recebe **409** "Este pedido já foi decidido por {nome}".
+- **E-mails**: `[AÇÃO NECESSÁRIA]` vai a **todos** os managers do nível resolvido pela cascata estrita (específicos da planta; senão globais; nunca o legado). Zero destinatários → AdminLog `APPROVAL_EMAIL_NO_RECIPIENT`. Informativos de pagamento e alertas de proforma corrigidos para departamento+planta (fim do vazamento entre plantas). Outbox/dedup/retry/DEAD_LETTER intactos.
+- **Exibição**: pedidos pendentes sem decisor mostram "Pendente — N responsáveis: nomes" (campo novo `eligibleAreaManagerNames` no detalhe); após a decisão, o nome do decisor real. Pedidos antigos nomeados exibem o nome legado.
+- **Frontend**: auto-fill e envio de `areaApproverId` removidos da criação/edição; campo removido dos DTOs de draft; Dados Mestres marca o campo "Responsável" como legado sem efeito.
+- **Relatório de reconciliação**: resposta JSON ganhou `phaseNote` explicitando que `PERDE_ACESSO` já está sem acesso funcional a pedidos novos.
+- **Compatibilidade preservada** apenas para pedidos antigos em andamento (nomeado vê/decide; histórico intacto; pedido sem planta resolve por managers globais).
+- **Testes**: 26 testes na área de Approvals (cascata sem fallback legado, assimetria D1 e-mail×autorização, claim derivada via login real com Moq, D3, D2, planta inativa excluída).
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
+
+### Added — Department Managers por Planta (Fase A do Redesign de Aprovação de Área)
+
+- **Nova tabela `DepartmentManagers`**: responsáveis de aprovação de área por Departamento + Planta (`PlantId NULL` = manager global). Unique composto por (departamento, planta, usuário) e índices para resolução e fila. Seed idempotente na migration: cada `Department.ResponsibleUserId` existente vira manager global — comportamento atual preservado.
+- **`IApprovalRoutingService`** (`ApprovalRoutingService`): resolução em cascata (planta específica → global → responsável legado) com regra D1 — `ResolveAreaManagersAsync` (e-mail) estrito; `IsAreaManagerAsync` (autorização) inclusivo (planta OU global; outra planta nunca). **Ainda não conectado ao workflow** — submit, fila, aprovação e e-mails seguem no caminho legado até a Fase B.
+- **CRUD de managers** em `Lookups → departments/{id}/managers` com regra D3: ao adicionar um manager, os escopos de visibilidade ausentes (`UserDepartmentScope` + `UserPlantScope`; todas as plantas ativas para manager global) são criados na mesma transação e devolvidos no response. Remoção/desativação nunca remove escopos.
+- **Relatório de reconciliação** `GET /api/admin/reports/area-approver-reconciliation` (JSON/CSV): classifica usuários em `OK_DERIVADO`, `PERDE_ACESSO`, `SO_CADASTRO`, `INATIVO_COM_VINCULO`, `INCONSISTENTE` — pré-requisito da Fase C (D2).
+- **Dados Mestres → Departamentos**: nova grade "Managers de Aprovação de Área (por Planta)" no editor do departamento, com aviso prévio dos escopos que serão auto-criados e confirmação posterior. Campo "Responsável" mantido e rotulado como **Legado**.
+- **Testes**: 21 testes unitários novos (cascata, assimetria D1, filtros de inativo/sem e-mail, D3, reativação sem violar unique, classificações D2).
+- **Sem mudança de comportamento em produção**: nenhum fluxo de aprovação, fila, submit ou e-mail foi alterado nesta fase.
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
+
+### Added — Prazo Mínimo por Grau de Necessidade (Criação de Pedido)
+
+- **Regra de Prazo Mínimo**: O campo "Necessário até" (`NeedByDateUtc`) passa a respeitar um prazo mínimo derivado do "Grau de Necessidade" (`NeedLevelId`) na criação de pedidos de **Cotação**: `CRITICO` → hoje, `URGENTE` → hoje + 1 dia, `NORMAL` → hoje + 7 dias, `BAIXO` → hoje + 15 dias.
+- **Preenchimento Automático**: Ao selecionar o grau, a data é preenchida automaticamente quando vazia e empurrada para a frente quando anterior ao mínimo (com aviso discreto). Datas posteriores ao mínimo são sempre preservadas.
+- **Bloqueio no Date Picker**: O `DateInput` passa a propagar `min`/`max` para o seletor nativo de data, desabilitando datas anteriores ao prazo mínimo no calendário.
+- **Validação Server-Side**: `POST /requests` rejeita (400) datas anteriores ao prazo mínimo do grau, impedindo bypass via API. Regra centralizada em `RequestConstants.NeedLevels` e espelhada no frontend em `lib/needByDate.ts`.
+- **Escopo**: Pedidos de **Pagamento** são isentos — o mesmo campo carrega a data de vencimento da fatura do fornecedor, que legitimamente pode estar no passado. A edição de rascunhos existentes permanece inalterada (o mínimo é relativo a "hoje" e invalidaria retroativamente rascunhos antigos válidos).
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
+
+## [v2.205.0] - 2026-07-14
+
+### Added — Approval Batch Wizard & CC Rateio
+
+- **Approval Batch Wizard**: Implementação completa de assistente de aprovação em lote para pedidos de compra com etapas de overview, comparação de cotações, rateio por item, verificação orçamentária e adjudicação.
+- **Rateio por Item**: Suporte para divisão percentual ou nominal de custos de itens individuais entre múltiplos Centros de Custo (`RequestLineItemAllocation`).
+- **Agrupamento de P.O**: Agrupamento automático de pedidos aprovados sob a mesma P.O física (`RequestPoGroup`).
+- **OCR Conciliação**: Persistência de dados OCR extraídos em faturas fiscais para auditoria (`OcrDataRaw`).
+- **Visão Diária**: Adição da resolução diária ("Dias") no gráfico "Contexto Financeiro Visual" do drawer de aprovação.
 
 ### Added — IT Equipment Return & New Delivery Enforcement
 
-- **Legacy Transfer Removal**: Removed the "Trocar Utilizador" action from the Equipment Quick-View drawer and deprecated the backend `POST /api/itequipment/{id}/change-user` endpoint (now returns `410 Gone`). The system no longer allows silent transfer of equipment ownership bypassing the Delivery Terms workflow.
-- **Workflow Enforcement**: Added a disabled "Transferir Equipamento" guidance button to instruct users to first return the equipment and then create a new Delivery Term.
-- **Form Validation**: Replaced global red toast notifications with contextual inline modal validation for invalid email addresses in the New Delivery Term flow.
-- **PDF Layout Optimization**: Optimized the "Termo de Devolução" PDF to fit on a single page, reducing font sizes and signature block spacing to avoid unnecessary printing waste. Fixed the 'Código Imobilizado' overlapping issue in the equipment table.
-- **Email Instruction Update**: Updated the employee delivery email body to clearly instruct users to send or forward the signed document to `aovia1-it@alpla.com` instead of replying to the automated address.
+- **Legacy Transfer Removal**: Remoção da ação de transferência rápida de equipamentos no drawer do comprador, forçando o fluxo completo de devolução e emissão de novo Termo.
+- **Form Validation**: Validação inline contextual de e-mails corporativos no fluxo de termos.
+- **PDF Layout**: Otimização do layout do PDF de Termo de Devolução para caber em página única.
 
 **Guided Tour impact: existing tour reviewed, no changes needed.**
 ## [v2.204.1] - 2026-06-30

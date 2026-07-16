@@ -30,6 +30,7 @@ export interface QuotationDraftItem {
     itemCatalogId?: number | null; // Linked catalog item (from autocomplete selection)
     itemCatalogCode?: string | null; // Catalog item code for display/traceability
     autoMatchStatus?: 'AUTO_MATCHED' | 'NEEDS_REVIEW' | null; // Catalog auto-match result from OCR
+    mappedRequestLineItemId?: string | null; // Mapped original request line item ID
 }
 
 export interface QuotationDraft {

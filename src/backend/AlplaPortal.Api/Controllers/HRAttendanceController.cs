@@ -1003,8 +1003,8 @@ public class HRAttendanceController : ControllerBase
         // Local Manager has HR module access (scoped by UserPlantScopes + UserDepartmentScopes)
         if (roles.Contains(RoleConstants.LocalManager)) return true;
 
-        // Department Manager (ResponsibleUser of at least one department)
-        if (await _context.Departments.AnyAsync(d => d.ResponsibleUserId == userId))
+        // Department Manager (active DepartmentManagers row — Phase C: any plant or global)
+        if (await _context.DepartmentManagers.AnyAsync(dm => dm.UserId == userId && dm.IsActive))
             return true;
 
         // Self-calendar: any active user with a matching HREmployee record (by email)
@@ -1125,9 +1125,10 @@ public class HRAttendanceController : ControllerBase
         }
 
         // Department Manager: sees employees they manage or in their managed departments
-        var managedDeptIds = await _context.Departments
-            .Where(d => d.ResponsibleUserId == userId)
-            .Select(d => d.Id)
+        var managedDeptIds = await _context.DepartmentManagers
+            .Where(dm => dm.UserId == userId && dm.IsActive)
+            .Select(dm => dm.DepartmentId)
+            .Distinct()
             .ToListAsync();
 
         if (managedDeptIds.Any())
@@ -1387,7 +1388,7 @@ public class HRAttendanceController : ControllerBase
             return "department";
         // Check if user manages any departments
         var userId = CurrentUserId;
-        var managesDepts = _context.Departments.Any(d => d.ResponsibleUserId == userId);
+        var managesDepts = _context.DepartmentManagers.Any(dm => dm.UserId == userId && dm.IsActive);
         if (managesDepts)
             return "department";
         return "self";

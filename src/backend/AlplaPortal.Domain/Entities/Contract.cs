@@ -145,7 +145,7 @@ public class Contract
 
     /// <summary>
     /// User assigned as Technical Approver for Stage 1.
-    /// Resolved from Department.ResponsibleUserId at submission time.
+    /// Resolved from DepartmentManagers (department + plant cascade) at submission time.
     /// Null until the contract enters UNDER_TECHNICAL_REVIEW.
     /// </summary>
     public Guid? TechnicalApproverId { get; set; }

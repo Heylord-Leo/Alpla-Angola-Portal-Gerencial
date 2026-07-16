@@ -29,13 +29,16 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
     private readonly ILogger<WorkflowNotificationOrchestrator> _logger;
     private readonly AdminLogWriter _adminLog;
 
+    private readonly IApprovalRoutingService _approvalRouting;
+
     public WorkflowNotificationOrchestrator(
         ApplicationDbContext context,
         INotificationService notificationService,
         IEmailService emailService,
         IConfiguration config,
         ILogger<WorkflowNotificationOrchestrator> logger,
-        AdminLogWriter adminLog)
+        AdminLogWriter adminLog,
+        IApprovalRoutingService approvalRouting)
     {
         _context = context;
         _notificationService = notificationService;
@@ -43,6 +46,7 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         _config = config;
         _logger = logger;
         _adminLog = adminLog;
+        _approvalRouting = approvalRouting;
     }
 
     public async Task EmitAsync(WorkflowEvent evt)
@@ -256,13 +260,15 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 emailBodyOverride: $"A cotação para o pedido <b>{reqRef}</b> foi submetida pelo departamento de compras e enviada para a Aprovação de Área.");
         }
 
-        // 2. Notify the Area Approver(s) with the Contexto Financeiro Departamental
-        if (!evt.AreaApproverId.HasValue && !evt.DepartmentId.HasValue) return;
-
+        // 2. Notify the Area Manager(s) with the Contexto Financeiro Departamental.
+        // Phase B: recipients come EXCLUSIVELY from the DepartmentManager routing
+        // (strict cascade — plant-specific, else global, else none). evt.AreaApproverId
+        // and Department.ResponsibleUserId are no longer used to pick recipients.
         var req = await _context.Requests.AsNoTracking().FirstOrDefaultAsync(r => r.Id == evt.RequestId);
         if (req == null) return;
 
         var deptId = evt.DepartmentId ?? req.DepartmentId;
+        var plantId = evt.PlantId ?? req.PlantId;
         var thisAmount = req.EstimatedTotalAmount;
         var monthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         
@@ -292,37 +298,25 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
 
         var subjectOverride = $"[AÇÃO NECESSÁRIA] Aprovação de Área pendente - Pedido {reqRef}";
 
-        if (evt.AreaApproverId.HasValue)
+        var routing = await _approvalRouting.ResolveAreaManagersAsync(deptId, plantId);
+        if (!routing.HasManagers)
         {
-            // If the specific Area Approver is known (e.g. from the Request payload)
-            await AddUserRecipientAsync(recipients, evt.AreaApproverId,
-                emailSubjectOverride: subjectOverride,
-                emailBodyOverride: htmlOverride);
+            _logger.LogError(
+                "APPROVAL_EMAIL_NO_RECIPIENT: no area manager resolvable for Request {RequestId} (Dept {DeptId}, Plant {PlantId}, Event {EventCode})",
+                evt.RequestId, deptId, plantId, evt.EventCode);
+            await _adminLog.WriteAsync("Error", "WorkflowNotificationOrchestrator", "APPROVAL_EMAIL_NO_RECIPIENT",
+                $"Nenhum responsável de área resolvível para o pedido {reqRef}. Nenhum e-mail de aprovação foi enviado.",
+                payload: $"RequestId: {evt.RequestId}. DepartmentId: {deptId}. PlantId: {plantId?.ToString() ?? "null"}. Evento: {evt.EventCode}. Motivo: sem DepartmentManager ativo (específico ou global).");
+            return;
         }
-        else
+
+        foreach (var manager in routing.Managers)
         {
-            // If we only have Department ID, notify all Area Approvers for that department
-            var areaApproverRole = await _context.Roles.AsNoTracking().FirstOrDefaultAsync(r => r.RoleName == RoleConstants.AreaApprover);
-            if (areaApproverRole == null) return;
-
-            var areaApprovers = await _context.UserDepartmentScopes
-                .AsNoTracking()
-                .Include(uds => uds.User)
-                .Where(uds => uds.DepartmentId == deptId && uds.User.IsActive)
-                .Where(uds => _context.UserRoleAssignments.Any(ura => ura.UserId == uds.UserId && ura.RoleId == areaApproverRole.Id))
-                .Select(uds => uds.User)
-                .ToListAsync();
-
-            foreach (var approver in areaApprovers)
+            recipients.Add(new NotificationRecipient(manager.UserId, manager.Email, manager.FullName)
             {
-                if (approver.Id == evt.RequesterId) continue; // Skip if the requester is the area approver (prevents duplicate specific emails)
-                
-                recipients.Add(new NotificationRecipient(approver.Id, approver.Email, approver.FullName)
-                {
-                    EmailSubjectOverride = subjectOverride,
-                    EmailBodyOverride = htmlOverride
-                });
-            }
+                EmailSubjectOverride = subjectOverride,
+                EmailBodyOverride = htmlOverride
+            });
         }
     }
 
@@ -385,16 +379,11 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             ? await _context.Currencies.AsNoTracking().Where(c => c.Id == req.CurrencyId).Select(c => c.Code).FirstOrDefaultAsync() ?? "AOA" 
             : "AOA";
 
-        var areaApproverRole = await _context.Roles.AsNoTracking().FirstOrDefaultAsync(r => r.RoleName == RoleConstants.AreaApprover);
-        if (areaApproverRole == null) return;
-
-        var areaApprovers = await _context.UserDepartmentScopes
-            .AsNoTracking()
-            .Include(uds => uds.User)
-            .Where(uds => uds.DepartmentId == evt.DepartmentId.Value && uds.User.IsActive)
-            .Where(uds => _context.UserRoleAssignments.Any(ura => ura.UserId == uds.UserId && ura.RoleId == areaApproverRole.Id))
-            .Select(uds => uds.User)
-            .ToListAsync();
+        // Phase B: departmental payment info goes to the area managers resolved by
+        // department + PLANT (strict cascade) — fixes the cross-plant leak where every
+        // approver with a department scope received it regardless of plant.
+        var paymentRouting = await _approvalRouting.ResolveAreaManagersAsync(evt.DepartmentId.Value, evt.PlantId ?? req.PlantId);
+        var areaApprovers = paymentRouting.Managers;
 
         var paymentState = evt.EventCode == WorkflowEventCodes.PaymentScheduled ? "Agendado" : "Realizado";
         var htmlOverride = $@"
@@ -413,9 +402,9 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         foreach (var approver in areaApprovers)
         {
             // The Requester is already receiving the raw Requester-scoped email above. We bypass if they are the same person.
-            if (approver.Id == evt.RequesterId) continue;
+            if (approver.UserId == evt.RequesterId) continue;
 
-            recipients.Add(new NotificationRecipient(approver.Id, approver.Email, approver.FullName)
+            recipients.Add(new NotificationRecipient(approver.UserId, approver.Email, approver.FullName)
             {
                 EmailSubjectOverride = subjectOverride,
                 EmailBodyOverride = htmlOverride

@@ -12,6 +12,9 @@ public class RequestPayment
     public Guid RequestId { get; set; }
     public Request Request { get; set; } = null!;
 
+    public Guid? RequestPoGroupId { get; set; }
+    public RequestPoGroup? RequestPoGroup { get; set; }
+
     // ── Payment Classification ──
     /// <summary>
     /// Type of payment: ADVANCE, FINAL_BALANCE, REGULARIZATION, REFUND, OTHER.

@@ -13,6 +13,9 @@ public class RequestReconciliation
     public Guid RequestId { get; set; }
     public Request Request { get; set; } = null!;
 
+    public Guid? RequestPoGroupId { get; set; }
+    public RequestPoGroup? RequestPoGroup { get; set; }
+
     // ── Sequencing ──
     /// <summary>
     /// Sequential version number (1, 2, 3...) for multiple reconciliation attempts.

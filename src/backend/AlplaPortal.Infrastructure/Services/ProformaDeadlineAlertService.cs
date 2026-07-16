@@ -239,7 +239,7 @@ public class ProformaDeadlineAlertService : BackgroundService
 
         if (request.Status?.Code == "WAITING_AREA_APPROVAL")
         {
-            // Prefer explicit AreaApproverId
+            // Legacy in-flight nominee (requests submitted before the Phase B cut)
             if (request.AreaApproverId.HasValue)
             {
                 var user = await context.Users.AsNoTracking()
@@ -249,26 +249,12 @@ public class ProformaDeadlineAlertService : BackgroundService
             }
             else
             {
-                // Fan-out: all active Area Approvers scoped to this department
-                var areaApproverRole = await context.Roles.AsNoTracking()
-                    .FirstOrDefaultAsync(r => r.RoleName == RoleConstants.AreaApprover);
-
-                if (areaApproverRole != null)
-                {
-                    var approvers = await context.UserDepartmentScopes
-                        .AsNoTracking()
-                        .Include(uds => uds.User)
-                        .Where(uds =>
-                            uds.DepartmentId == request.DepartmentId
-                            && uds.User.IsActive
-                            && context.UserRoleAssignments.Any(ura =>
-                                ura.UserId == uds.UserId && ura.RoleId == areaApproverRole.Id))
-                        .Select(uds => uds.User)
-                        .ToListAsync();
-
-                    foreach (var a in approvers)
-                        recipients.Add(new AlertRecipient(a.Id, a.Email, a.FullName));
-                }
+                // Phase B: resolve via DepartmentManager routing (department + plant,
+                // strict cascade). No role fan-out, no Department.ResponsibleUserId.
+                var routing = new Approvals.ApprovalRoutingService(context);
+                var resolved = await routing.ResolveAreaManagersAsync(request.DepartmentId, request.PlantId);
+                foreach (var m in resolved.Managers)
+                    recipients.Add(new AlertRecipient(m.UserId, m.Email, m.FullName));
             }
         }
         else if (request.Status?.Code == "WAITING_FINAL_APPROVAL")

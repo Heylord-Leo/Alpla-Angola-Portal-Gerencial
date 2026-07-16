@@ -1,6 +1,7 @@
 using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Application.Models.Auth;
 using AlplaPortal.Application.Models.Configuration;
+using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -160,6 +161,19 @@ public class AuthService : IAuthService
             .Select(ura => ura.Role.RoleName)
             .ToListAsync();
 
+        // ── Derived "Area Approver" claim (DepartmentManager redesign, Phase B) ──
+        // The manual role assignment is IGNORED as a source of permission: the claim
+        // exists iff the user has at least one active DepartmentManager row. Manager
+        // changes therefore only take effect on the next login/token renewal.
+        roles.RemoveAll(r => r == RoleConstants.AreaApprover);
+        var isDepartmentManager = await _context.DepartmentManagers
+            .AnyAsync(dm => dm.UserId == user.Id && dm.IsActive
+                         && (dm.PlantId == null || dm.Plant!.IsActive));
+        if (isDepartmentManager)
+        {
+            roles.Add(RoleConstants.AreaApprover);
+        }
+
         // Fetch organizational scope for immediate frontend availability
         var plantCodes = await _context.UserPlantScopes
             .Where(ups => ups.UserId == user.Id)
@@ -173,10 +187,12 @@ public class AuthService : IAuthService
             .Select(uds => uds.Department.Code ?? string.Empty)
             .ToListAsync();
 
-        // HR Module: Fetch departments where this user is the ResponsibleUser (Department Manager)
-        var managedDepartmentIds = await _context.Departments
-            .Where(d => d.ResponsibleUserId == user.Id)
-            .Select(d => d.Id)
+        // HR Module: departments this user manages — Phase C: derived from active
+        // DepartmentManagers rows (department-level; plant-specific and global both count).
+        var managedDepartmentIds = await _context.DepartmentManagers
+            .Where(dm => dm.UserId == user.Id && dm.IsActive)
+            .Select(dm => dm.DepartmentId)
+            .Distinct()
             .ToListAsync();
 
         var token = _jwtService.GenerateToken(user, roles);

@@ -38,8 +38,9 @@ public class UpdateRequestDraftDto
 
     public int? SupplierId { get; set; }
 
-    // Workflow Participants
+    // Workflow Participants.
+    // (Phase B: AreaApproverId removed — area routing comes from DepartmentManagers;
+    // Request.AreaApproverId records who decided, never a nomination.)
     public Guid? BuyerId { get; set; }
-    public Guid? AreaApproverId { get; set; }
     public Guid? FinalApproverId { get; set; }
 }

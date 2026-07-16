@@ -11,11 +11,12 @@ import { RequestDetailsDto, RequestAttachmentDto } from '../types';
 interface CorrectPoModalProps {
     show: boolean;
     requestId: string;
+    poGroupId: string;
     onClose: () => void;
     onSuccess: (message: string) => void;
 }
 
-export function CorrectPoModal({ show, requestId, onClose, onSuccess }: CorrectPoModalProps) {
+export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess }: CorrectPoModalProps) {
     const [loading, setLoading] = useState(true);
     const [requestData, setRequestData] = useState<RequestDetailsDto | null>(null);
     const [returnReason, setReturnReason] = useState<string>('');
@@ -90,9 +91,9 @@ export function CorrectPoModal({ show, requestId, onClose, onSuccess }: CorrectP
                     setReturnDate(returnEvent.createdAtUtc || '');
                 }
 
-                // Find the existing PO attachment
+                // Find the existing PO attachment for this group
                 const poAttachment = details.attachments
-                    ?.filter((a: RequestAttachmentDto) => a.attachmentTypeCode === 'PO')
+                    ?.filter((a: RequestAttachmentDto) => a.attachmentTypeCode === 'PO' && a.requestPoGroupId === poGroupId)
                     .sort((a: RequestAttachmentDto, b: RequestAttachmentDto) => 
                         new Date(b.uploadedAtUtc).getTime() - new Date(a.uploadedAtUtc).getTime()
                     )[0] || null;
@@ -271,10 +272,11 @@ export function CorrectPoModal({ show, requestId, onClose, onSuccess }: CorrectP
 
         try {
             // 1. Upload the new PO file
-            await api.attachments.upload(requestId, [file], 'PO');
+            await api.attachments.upload(requestId, [file], 'PO', poGroupId);
 
             // 2. Register PO (transitions back to PO_ISSUED)
             const result = await api.requests.registerPo(requestId, {
+                poGroupId,
                 comment: comment || 'P.O corrigida após devolução por Finanças.',
                 hasMismatches: ocrResult?.hasMismatches || false,
                 overrideConfirmed,

@@ -3,24 +3,32 @@ import type { TourStep } from '../guidedTourTypes';
 /**
  * Approval Drawer — Area Approval Tour
  *
- * 8-step tour for the Quick Overview Drawer when opened from
- * the Area Approval queue. Focuses on operational validation:
- * allocation, cost center, plant, quotation, items, alerts.
+ * Reflects the batch/partial-approval model: the area drawer is INFORMATIVE
+ * only — every operational action (financial allocation, batch item review,
+ * budget check, approve/reject/adjust) happens inside the Approval Wizard,
+ * opened via the "Revisar Pedido" button.
  *
  * All targets use stable `data-tour` attributes.
- * Missing targets are skipped gracefully by `filterActiveSteps()`.
+ * Missing targets are skipped gracefully by `filterActiveSteps()` — e.g. the
+ * partial-batch banner step only shows when the request has an active batch.
  */
 export const APPROVAL_DRAWER_AREA_STEPS: TourStep[] = [
     {
         target: '[data-tour="approval-drawer-header"]',
         title: 'Resumo do Pedido',
-        content: 'Aqui você confirma o número do pedido, o estado atual, o tipo de pedido e o valor total antes de tomar uma decisão.',
+        content: 'Aqui você vê o número do pedido, o estado atual, o tipo e o valor total. Esta tela é informativa — a aprovação em si será feita no Wizard, aberto pelo botão "Revisar Pedido".',
+        placement: 'bottom',
+    },
+    {
+        target: '[data-tour="approval-drawer-batch-banner"]',
+        title: 'Lote de Aprovação Parcial',
+        content: 'Este pedido pode ainda estar em cotação, mas este lote parcial já está aguardando a sua aprovação. O status geral do pedido e o status do lote podem ser diferentes — isso é esperado. O Wizard revisará apenas os itens deste lote; itens pendentes fora do lote continuam com o comprador e não bloqueiam esta aprovação.',
         placement: 'bottom',
     },
     {
         target: '[data-tour="approval-drawer-alerts"]',
-        title: 'Alertas de Validação',
-        content: 'Estes alertas indicam pendências que podem impedir ou orientar a aprovação, como cotação vencedora obrigatória, centro de custo, planta ou documentos em falta.',
+        title: 'Alerta de Preços',
+        content: 'Quando algum item está com preço acima da média histórica, um alerta informativo aparece aqui. Ele não bloqueia a aprovação — use-o como contexto para questionar valores dentro do Wizard.',
         placement: 'bottom',
     },
     {
@@ -30,33 +38,21 @@ export const APPROVAL_DRAWER_AREA_STEPS: TourStep[] = [
         placement: 'bottom',
     },
     {
-        target: '[data-tour="approval-drawer-financial-allocation"]',
-        title: 'Atribuição Financeira',
-        content: 'Verifique se os itens possuem centro de custo, planta e alocação financeira correta antes de aprovar.',
-        placement: 'bottom',
-    },
-    {
         target: '[data-tour="approval-drawer-financial-context"]',
         title: 'Contexto Financeiro',
-        content: 'Esta área ajuda a entender o impacto do pedido no orçamento, comparando valores por período, planta ou departamento conforme os filtros disponíveis.',
+        content: 'Use o contexto financeiro para entender o histórico de pagamentos deste departamento/fornecedor e apoiar a sua decisão.',
         placement: 'bottom',
     },
     {
-        target: '[data-tour="approval-drawer-quotations"]',
-        title: 'Cotações e Documentos',
-        content: 'Revise as cotações registradas, documentos anexados e a cotação vencedora selecionada para apoiar sua decisão.',
-        placement: 'top',
-    },
-    {
-        target: '[data-tour="approval-drawer-items"]',
-        title: 'Itens do Pedido',
-        content: 'Confira os itens solicitados, quantidades, valores, centro de custo e dados necessários para validar a necessidade do pedido.',
-        placement: 'top',
+        target: '[data-tour="approval-drawer-financial-allocation"]',
+        title: 'Inteligência para Decisão',
+        content: 'Estatísticas de preço histórico por item, cruzadas com o ERP. Itens marcados a vermelho estão acima do preço médio pago — leve essa informação para a revisão no Wizard.',
+        placement: 'bottom',
     },
     {
         target: '[data-tour="approval-drawer-actions"]',
-        title: 'Ações de Aprovação',
-        content: 'Use estas ações para solicitar reajuste, rejeitar ou aprovar o pedido. A aprovação só deve ocorrer quando as informações estiverem corretas.',
+        title: 'Revisar Pedido',
+        content: 'Clique em "Revisar Pedido" para abrir o Wizard de Aprovação. É nele que você fará a atribuição financeira (planta e centro de custo), a revisão dos itens do lote, a análise orçamental e a decisão final: aprovar, rejeitar ou solicitar reajuste.',
         placement: 'top',
     },
 ];

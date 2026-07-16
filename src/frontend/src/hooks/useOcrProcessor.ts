@@ -145,6 +145,8 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
         // Part A: Supplier Matching (multi-strategy)
         let matchedSupplierId: number | null = null;
         let extractedSupplierPortalCode: string | null = null;
+        let extractedSupplierPrimaveraCode: string | null = null;
+        let extractedSupplierRegistrationStatus: string | undefined = undefined;
         
         if (extractedSupplierName && typeof extractedSupplierName === 'string') {
             try {
@@ -185,6 +187,8 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
                 if (match) {
                     matchedSupplierId = match.id;
                     extractedSupplierPortalCode = match.portalCode;
+                    extractedSupplierPrimaveraCode = match.primaveraCode;
+                    extractedSupplierRegistrationStatus = match.registrationStatus;
                 }
 
                 // --- Supplier Match Diagnostics ---
@@ -258,6 +262,8 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
             supplierId: matchedSupplierId,
             supplierNameSnapshot: extractedSupplierName,
             supplierPortalCode: extractedSupplierPortalCode,
+            supplierPrimaveraCode: extractedSupplierPrimaveraCode,
+            supplierRegistrationStatus: extractedSupplierRegistrationStatus,
             supplierTaxId: extractedSupplierTaxId,
             companyId: matchedCompanyId,
             extractedCompanyName: extractedBilledCompany,
@@ -269,7 +275,16 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
             extractedCurrency: extractedCurrency,
             discountAmount: getSafeValue<number>(suggestions?.discountAmount, 0),
             totalAmount: getSafeValue<number>(suggestions?.grandTotal, 0) || getSafeValue<number>(suggestions?.totalAmount, 0),
+            ocrTotalAmount: getSafeValue<number>(suggestions?.grandTotal, 0) || getSafeValue<number>(suggestions?.totalAmount, 0),
             proformaAttachmentId: attachmentId,
+            supplierAddress: getSafeValue<string>(suggestions?.vendorAddress, '') || getSafeValue<string>(suggestions?.supplierAddress, ''),
+            supplierContactName: getSafeValue<string>(suggestions?.vendorContactName, '') || getSafeValue<string>(suggestions?.supplierContactName, ''),
+            supplierEmail: getSafeValue<string>(suggestions?.vendorContactEmail, '') || getSafeValue<string>(suggestions?.vendorEmail, '') || getSafeValue<string>(suggestions?.supplierEmail, ''),
+            supplierPhone: getSafeValue<string>(suggestions?.vendorContactPhone, '') || getSafeValue<string>(suggestions?.vendorPhone, '') || getSafeValue<string>(suggestions?.supplierPhone, ''),
+            supplierBankAccountNumber: getSafeValue<string>(suggestions?.vendorBankAccount, '') || getSafeValue<string>(suggestions?.supplierBankAccount, ''),
+            supplierBankIban: getSafeValue<string>(suggestions?.vendorIban, '') || getSafeValue<string>(suggestions?.supplierIban, ''),
+            supplierBankSwift: getSafeValue<string>(suggestions?.vendorSwift, '') || getSafeValue<string>(suggestions?.supplierSwift, ''),
+            supplierPaymentTerms: getSafeValue<string>(suggestions?.vendorPaymentTerms, '') || getSafeValue<string>(suggestions?.supplierPaymentTerms, ''),
             items: (result.integration?.lineItemSuggestions || []).map((item: any, index: number) => {
                 const extractedUnit = item.unit || '';
                 const matchedUnitCode = resolveUnitAlias(extractedUnit);
