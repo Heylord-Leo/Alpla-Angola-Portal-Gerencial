@@ -6,6 +6,8 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 v2.206.0
 
+## [Unreleased]
+
 ## [v2.206.0] - 2026-07-16
 
 ### Removed — Limpeza do Modelo Legado de Aprovação de Área (Fase C do Redesign)
