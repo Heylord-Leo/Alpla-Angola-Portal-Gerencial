@@ -162,7 +162,12 @@ jobs:
     name: Deploy TEST (${{ inputs.version }})
     needs: build
     runs-on: [self-hosted, Windows, X64, iis, test, alpla-portal-test]
-    timeout-minutes: 15
+    # Raised from 15 to 45 min: this self-hosted runner has very low egress
+    # throughput to the GitHub/Azure Blob artifact backend (~0.6 Mbit/s measured),
+    # so downloading the ~121 MB api-artifact alone can exceed the old 15 min budget
+    # and the job was being cancelled mid-download. This does NOT fix the network;
+    # it only stops the premature cancellation while the slow link is investigated.
+    timeout-minutes: 45
     environment: test
 
     env:
@@ -509,13 +514,16 @@ jobs:
             throw "Smoke test failed"
           }
 
-      # --- Summary ---
-      - name: Deployment summary
-        if: always()
+      # --- Summary (success) ---
+      # Only prints a "deployment completed" summary when every prior step
+      # actually succeeded. Never runs on failure/cancellation, so it can no
+      # longer claim a version was deployed when the job did not finish.
+      - name: Deployment summary (success)
+        if: success()
         shell: pwsh
         run: |
           Write-Host "============================================="
-          Write-Host "  Deployment Summary"
+          Write-Host "  Deployment COMPLETED"
           Write-Host "============================================="
           Write-Host "Version:      ${{ inputs.version }}"
           Write-Host "Environment:  TEST"
@@ -525,8 +533,31 @@ jobs:
           Write-Host "Web Pool:     ${{ vars.IIS_WEB_APPPOOL }}"
           Write-Host "Health URL:   ${{ vars.TEST_API_HEALTH_URL }}"
           Write-Host "============================================="
-          Write-Host ""
-          Write-Host "NOTE: If pending migrations are detected, this workflow will"
-          Write-Host "BLOCK startup. Run 'Apply TEST Migrations' workflow first."
+          Write-Host "Version ${{ inputs.version }} is deployed and the smoke test passed."
+          Write-Host "============================================="
+
+      # --- Summary (failure / cancellation) ---
+      # Runs when the job failed or was cancelled (e.g. the artifact download
+      # exceeding the timeout). Makes clear the deploy did NOT complete and that
+      # the IIS App Pools were only restored to their running state — no claim
+      # is made that the target version was deployed.
+      - name: Deployment summary (not completed)
+        if: failure() || cancelled()
+        shell: pwsh
+        run: |
+          Write-Host "============================================="
+          Write-Host "  Deployment NOT COMPLETED"
+          Write-Host "============================================="
+          Write-Host "Environment:  TEST"
+          Write-Host "Requested:    ${{ inputs.version }} (NOT confirmed deployed)"
+          Write-Host "Outcome:      job ${{ job.status }} — the deployment did not finish."
+          Write-Host "---------------------------------------------"
+          Write-Host "The IIS App Pools were only RESTARTED/RESTORED to a running"
+          Write-Host "state by the always() step. This does NOT mean the new files"
+          Write-Host "were deployed. The server may be running the PREVIOUS version"
+          Write-Host "or a partially-updated state."
+          Write-Host "---------------------------------------------"
+          Write-Host "Do NOT assume ${{ inputs.version }} is live. Review the failed"
+          Write-Host "step above, then re-run the deployment once resolved."
           Write-Host "See: docs/DEPLOYMENT_CHECKLIST.md"
           Write-Host "============================================="
