@@ -2,7 +2,18 @@
 
 ## Current Version
 
-v2.207.0
+v2.207.1
+
+## [v2.207.1] - 2026-07-17
+
+### Fixed — Estabilização do design-time do EF Core (tooling de migrations)
+
+- `DesignTimeDbContextFactory` (Infrastructure) cria o `ApplicationDbContext` para o `dotnet ef` sem construir/rodar o host da API (`Program.cs`); o guard de connection-string de runtime permanece inalterado e nunca é executado em design time.
+- `dotnet-ef` fixado localmente em **8.0.11** via `.config/dotnet-tools.json`; scripts/workflows removem a dependência da ferramenta global e passam a validar a versão efetiva (falham se ≠ 8.0.11).
+- Geração idempotente em **Release** com `--no-build` (tentativa única e determinística), usando **Infrastructure como startup project** para evitar a execução do `Program.cs`.
+- Paridade entre os workflows `apply-migrations-test.yml` e `apply-migrations-prod.yml`.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.207.0] - 2026-07-17
 
