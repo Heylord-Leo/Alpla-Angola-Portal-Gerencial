@@ -5319,13 +5319,17 @@ public class RequestsController : BaseController
 
                 // Apply new allocations
                 if (item.Allocations == null) item.Allocations = new List<RequestLineItemAllocation>();
-                
+
                 // We clear existing allocations and insert the new ones (since area approval overwrites drafts/previous)
                 _context.RequestLineItemAllocations.RemoveRange(item.Allocations);
                 item.Allocations.Clear();
 
                 foreach (var a in allocsToSave)
                 {
+                    // Explicit DbSet.Add is required: the PK Guid is client-set, so an entity
+                    // reached only through the navigation would be tracked as Modified
+                    // (UPDATE on a row that never existed → DbUpdateConcurrencyException).
+                    _context.RequestLineItemAllocations.Add(a);
                     item.Allocations.Add(a);
                 }
 
@@ -7058,7 +7062,32 @@ public class RequestsController : BaseController
         // Auto-sync Line Items (Centralized logic)
         await SyncLineItemStatusesAsync(request, targetRequestStatusCode: targetStatusCode, actorUserId: actorUserId);
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            // A row this approval expected to update/delete no longer matches the database
+            // (e.g., two eligible approvers acting at once). The transaction has already been
+            // rolled back by EF; surface a structured 409 instead of a 500 with a stack trace.
+            // Other DbUpdateException kinds are intentionally NOT treated as concurrency.
+            _logger.LogError(ex,
+                "Approval concurrency conflict on Request {RequestId} (Action: {ActionTaken}, Target: {TargetStatus}, TraceId: {TraceId})",
+                request.Id, actionTaken, targetStatusCode, HttpContext.TraceIdentifier);
+
+            return Conflict(new ProblemDetails
+            {
+                Title = "Conflito de concorrência",
+                Detail = "O pedido foi alterado por outra operação. Atualize os dados e tente novamente.",
+                Status = 409,
+                Extensions =
+                {
+                    ["code"] = "APPROVAL_CONCURRENCY_CONFLICT",
+                    ["traceId"] = HttpContext.TraceIdentifier
+                }
+            });
+        }
 
         // --- Workflow Notification Emission (fire-and-forget, non-blocking) ---
         try

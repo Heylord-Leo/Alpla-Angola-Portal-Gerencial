@@ -2171,3 +2171,18 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
 - **Alternatives considered:** Rewriting historical migrations to wrap raw SQL in `EXEC` (rejected: never modify applied history); disabling the historical seeds (rejected: same); one big transaction around the script (rejected: EF scripts are multi-batch and `sqlcmd` file execution cannot wrap DDL batches transactionally without invasive rewriting).
 - **Consequences:** Re-runs generate only the pending range, avoiding the compile error; divergent histories are caught early and safely; empty and no-pending databases are handled explicitly.
 - **Related:** [DEC-144](#dec-144--design-time-dbcontext-factory--repo-pinned-dotnet-ef-tool), [DEC-139](#dec-139), DEPLOYMENT_CHECKLIST.md § EF Core Migration Checklist
+
+---
+
+## DEC-146 — Explicit DbSet.Add for New Entities with Client-Generated Guid PKs Reached via Navigation
+
+- **Date:** 2026-07-18
+- **Status:** Accepted
+- **Context:** Area approval of PAYMENT requests failed deterministically with HTTP 500 (`DbUpdateConcurrencyException`, "expected to affect 1 row(s), but actually affected 0"). Live diagnosis (exception.Entries capture) proved the cause: new `RequestLineItemAllocation` entities — whose Guid PK is client-set (`Guid.NewGuid()`) — were added ONLY to a tracked parent's navigation collection (`item.Allocations.Add(a)`). EF's change detection, seeing a filled key on an entity discovered through navigation, tracked them as **Modified** (assumed existing) instead of **Added**, emitting an UPDATE against a row that never existed (0 rows → concurrency exception). The batch flow (`ApprovalBatchController`) was unaffected because it already calls `_context.RequestLineItemAllocations.Add(a)` explicitly.
+- **Decision:**
+    1. **Pattern rule:** new entities with client-generated (pre-filled) Guid PKs that are attached to already-tracked parents via navigation collections MUST also be explicitly registered on the DbSet (`_context.<Set>.Add(entity)`) so they are tracked as `Added` and produce INSERTs. Navigation-only adds are reserved for entities whose keys are store-assigned sentinels.
+    2. **Structured concurrency contract:** approval flows catch `DbUpdateConcurrencyException` exclusively (never other `DbUpdateException` kinds) and return ProblemDetails 409 with `code=APPROVAL_CONCURRENCY_CONFLICT` and a user-actionable message — never a 500 with a stack trace. The backend logs the technical error with the request TraceIdentifier.
+    3. **Out of scope (future, separate):** a real concurrency token (`RowVersion`) on `Request` for deterministic conflict detection between simultaneous approvers.
+- **Alternatives considered:** RowVersion as the immediate fix (rejected: the bug is incorrect tracking, not real concurrency — a token would not prevent it); marking entries `Added` via `Entry(a).State` (rejected: `DbSet.Add` is the idiomatic, graph-safe equivalent); removing the client-set Guid so EF generates it (rejected: wider behavioral change, unnecessary).
+- **Consequences:** PAYMENT area approval works (validated end-to-end in DEV: single POST → 200, 4 allocations inserted); QUOTATION individual approval — same corrected block — is covered structurally; regression tests (`AreaApprovalAllocationTrackingTests`) pin the tracking states (old `Deleted` / new `Added`) and reproduce the original bug pattern as a guard.
+- **Related:** RequestsController `ProcessAreaApproval` / `ApplyStatusChangeAndSyncItemsAsync`; ApprovalBatchController (reference implementation, unchanged)

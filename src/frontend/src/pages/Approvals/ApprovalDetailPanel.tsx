@@ -418,6 +418,18 @@ export function ApprovalDetailPanel({
             onActionCompleted(result.message || 'Ação concluída com sucesso.');
             return true;
         } catch (err: any) {
+            // Structured concurrency conflict (another approver/operation changed the request):
+            // close the wizard and refresh the queue/detail instead of a technical alert. The
+            // user must review the fresh data — never auto-retry the approval.
+            const isConcurrencyConflict = err?.status === 409 &&
+                (err?.errorCode === 'APPROVAL_CONCURRENCY_CONFLICT' || err?.details?.code === 'APPROVAL_CONCURRENCY_CONFLICT');
+            if (isConcurrencyConflict) {
+                setIsWizardOpen(false);
+                setShowApprovalModal({ show: false, type: null });
+                onActionCompleted('O pedido foi alterado por outra operação. Os dados foram atualizados — verifique e tente novamente.');
+                return false;
+            }
+
             let errorMsg = err.message || 'Não foi possível concluir a ação. Tente novamente.';
             if (err.fieldErrors) {
                 const details = Object.entries(err.fieldErrors as Record<string, string[]>)

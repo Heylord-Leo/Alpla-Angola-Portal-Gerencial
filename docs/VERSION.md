@@ -2,7 +2,17 @@
 
 ## Current Version
 
-v2.207.2
+v2.207.3
+
+## [v2.207.3] - 2026-07-18
+
+### Fixed — Aprovação de Área de pedidos PAYMENT (500 → funcional) e conflito de concorrência estruturado
+
+- **Correção do tracking de alocações**: as novas `RequestLineItemAllocation` criadas na aprovação de área passam a ser registradas explicitamente no DbSet (`Added` → INSERT). Antes, a entidade com Guid client-generated alcançada só pela navegação era rastreada como `Modified`, gerando UPDATE em linha inexistente e `DbUpdateConcurrencyException` (HTTP 500 determinístico em PAYMENT; QUOTATION individual igualmente vulnerável).
+- **Resposta 409 estruturada** (`APPROVAL_CONCURRENCY_CONFLICT`) para conflitos reais de concorrência na aprovação, sem stack trace; frontend mostra mensagem amigável, encerra "Processando..." e recarrega os dados (sem retry automático).
+- **Testes de regressão SQL** para o padrão de substituição de alocações (antigas `Deleted`, novas `Added`, persistência via INSERT) incluindo guard que reproduz o bug original.
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
 
 ## [v2.207.2] - 2026-07-17
 

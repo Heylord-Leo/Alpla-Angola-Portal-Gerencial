@@ -4,9 +4,24 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.207.2
+v2.207.3
 
 ## [Unreleased]
+
+## [v2.207.3] - 2026-07-18
+
+### Fixed — Aprovação de Área de pedidos PAYMENT (500 determinístico) e conflito de concorrência estruturado
+
+- **Correção da aprovação de área de pedidos PAYMENT**: `POST /requests/{id}/area-approval/approve` retornava HTTP 500 (`DbUpdateConcurrencyException`, "expected to affect 1 row(s), but actually affected 0") em toda aprovação — reproduzido deterministicamente com um único POST.
+- **Novas `RequestLineItemAllocation` registradas explicitamente como `Added`**: no bloco Multi-Allocation Propagation de `ProcessAreaApproval`, cada nova alocação agora é adicionada ao DbSet (`_context.RequestLineItemAllocations.Add(a)`) além da navigation collection, forçando INSERT — espelhando o padrão já correto do fluxo de lote (`ApprovalBatchController`, inalterado).
+- **Prevenção de UPDATE indevido para Guid client-generated inexistente**: a causa raiz era o EF classificar como `Modified` (entidade "existente") uma alocação nova com PK Guid já preenchida, descoberta apenas via navegação — emitindo UPDATE numa linha que nunca existiu (0 rows → exceção). QUOTATION aprovado pelo fluxo individual usava o mesmo bloco e estava igualmente vulnerável; PAYMENT era o único caminho sem alternativa (o lote é bloqueado para PAYMENT).
+- **Resposta 409 `APPROVAL_CONCURRENCY_CONFLICT` para conflitos reais**: `ApplyStatusChangeAndSyncItemsAsync` captura exclusivamente `DbUpdateConcurrencyException` (outras `DbUpdateException` não são tratadas como concorrência) e devolve ProblemDetails 409 com `code=APPROVAL_CONCURRENCY_CONFLICT`, título "Conflito de concorrência" e mensagem "O pedido foi alterado por outra operação. Atualize os dados e tente novamente." — sem stack trace; erro técnico logado no backend com correlation ID (TraceIdentifier); rollback preservado; sem retry.
+- **Frontend (Central de Aprovações)**: o 409 estruturado fecha o wizard/modal, encerra o estado "Processando...", exibe mensagem amigável e recarrega a fila/pedido; sem reenvio automático e sem `alert()` técnico.
+- **Testes de regressão SQL** (`AreaApprovalAllocationTrackingTests`, LocalDB): caminho feliz (novas alocações `Added` antes do SaveChanges → INSERTs persistidos, sem exceção), guard que reproduz o bug original (padrão navigation-only → `Modified` → `DbUpdateConcurrencyException`), e substituição com alocações pré-existentes (antigas `Deleted` e removidas, novas `Added` e inseridas, IDs disjuntos, ordem e percentagens preservadas).
+- **Validação runtime (DEV)**: pedido PAYMENT real aprovado com um único POST → HTTP 200, 4 alocações inseridas, status `WAITING_FINAL_APPROVAL`, histórico `APPROVE` registrado, zero erros de concorrência.
+- **Limitações registradas**: QUOTATION individual usa o mesmo bloco corrigido (cobertura estrutural + testes; sem runtime fim-a-fim por ausência de cenário pronto); o contrato 409 foi validado por código/testes, não por corrida física simultânea; `RowVersion` permanece melhoria futura separada (DEC-146).
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
 
 ## [v2.207.2] - 2026-07-17
 
