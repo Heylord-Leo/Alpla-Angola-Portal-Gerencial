@@ -612,7 +612,13 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Supplier>().HasIndex(s => s.PortalCode).IsUnique();
         modelBuilder.Entity<Supplier>().HasIndex(s => s.Name).IsUnique();
         modelBuilder.Entity<Supplier>().HasIndex(s => s.PrimaveraCode).IsUnique().HasFilter("[PrimaveraCode] IS NOT NULL AND [PrimaveraCode] <> ''");
+        // Phase 4 — NIF uniqueness (prevents concurrent same-NIF duplicates). Filtered so multiple
+        // NULL/empty TaxIds remain allowed. The SupplierCreationService persists TaxId normalized so
+        // this index is functionally sufficient for the service write paths.
+        modelBuilder.Entity<Supplier>().HasIndex(s => s.TaxId).IsUnique().HasFilter("[TaxId] IS NOT NULL AND [TaxId] <> ''");
         modelBuilder.Entity<Supplier>().HasIndex(s => s.RegistrationStatus);
+        // Internal company NIF (Company.TaxId) — unique per company when present (filtered so multiple nulls are allowed).
+        modelBuilder.Entity<Company>().HasIndex(c => c.TaxId).IsUnique().HasFilter("[TaxId] IS NOT NULL AND [TaxId] <> ''");
 
         // ─── Supplier Document Configuration (Ficha de Fornecedor) ───
         modelBuilder.Entity<SupplierDocument>(entity =>
@@ -1086,8 +1092,8 @@ public class ApplicationDbContext : DbContext
         });
 
         modelBuilder.Entity<Company>().HasData(
-            new Company { Id = 1, Name = "AlplaPLASTICO", Code = "APA", IsActive = true },
-            new Company { Id = 2, Name = "AlplaSOPRO", Code = "APS", IsActive = true }
+            new Company { Id = 1, Name = "AlplaPLASTICO", Code = "APA", TaxId = "5417567485", IsActive = true },
+            new Company { Id = 2, Name = "AlplaSOPRO", Code = "APS", TaxId = "5001760246", IsActive = true }
         );
 
         modelBuilder.Entity<Plant>().HasData(

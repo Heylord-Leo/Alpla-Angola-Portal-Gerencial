@@ -38,6 +38,8 @@ public class RequestsController : BaseController
     private readonly IGroupBuilderService _groupBuilderService;
     private readonly IRequestStatusSyncService _statusSyncService;
     private readonly IApprovalRoutingService _approvalRouting;
+    private readonly ILineItemFactory _lineItemFactory;
+    private readonly IRequestLineItemSubmissionValidator _lineItemValidator;
 
     public RequestsController(
         ApplicationDbContext context,
@@ -49,7 +51,9 @@ public class RequestsController : BaseController
         IPrimaveraRequestValidationService primaveraValidationService,
         IGroupBuilderService groupBuilderService,
         IRequestStatusSyncService statusSyncService,
-        IApprovalRoutingService approvalRouting) : base(context)
+        IApprovalRoutingService approvalRouting,
+        ILineItemFactory lineItemFactory,
+        IRequestLineItemSubmissionValidator lineItemValidator) : base(context)
     {
         _extractionService = extractionService;
         _adminLog = adminLog;
@@ -60,6 +64,8 @@ public class RequestsController : BaseController
         _groupBuilderService = groupBuilderService;
         _statusSyncService = statusSyncService;
         _approvalRouting = approvalRouting;
+        _lineItemFactory = lineItemFactory;
+        _lineItemValidator = lineItemValidator;
     }
 
     /// <summary>
@@ -1811,6 +1817,38 @@ public class RequestsController : BaseController
         var initialStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == initialStatusCode);
         if (initialStatus == null) return StatusCode(500, $"{initialStatusCode} status code not found in database lookup.");
 
+        // Phase 2 — Mandatory items (QUOTATION): a Quotation is created already-submitted
+        // (WAITING_QUOTATION with SubmittedAtUtc set), so CreateRequest is the authoritative gate.
+        // (PAYMENT is created as a DRAFT and is validated at Submit instead — do not block it here.)
+        if (requestTypeEntity.Code == RequestConstants.Types.Quotation)
+        {
+            // Resolve active units once (code → id + valid-id set); no per-item queries.
+            var activeUnits = await _context.Units.AsNoTracking()
+                .Where(u => u.IsActive).Select(u => new { u.Id, u.Code }).ToListAsync();
+            var validUnitIds = activeUnits.Select(u => u.Id).ToHashSet();
+            var codeToId = activeUnits
+                .GroupBy(u => u.Code, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
+
+            var candidates = (dto.LineItems ?? new List<RequestLineItemDto>())
+                .Select((li, idx) => new LineItemCandidate
+                {
+                    Index = idx,
+                    Description = li.Description,
+                    Quantity = li.Quantity,
+                    UnitId = (!string.IsNullOrWhiteSpace(li.Unit) && codeToId.TryGetValue(li.Unit, out var uid)) ? uid : (int?)null
+                })
+                .ToList();
+
+            var quotationValidation = _lineItemValidator.ValidateQuotation(candidates, validUnitIds);
+            if (!quotationValidation.IsValid)
+            {
+                var problem = new ProblemDetails { Title = "Erro de Validação", Detail = quotationValidation.Summary, Status = 400 };
+                problem.Extensions["lineItemErrors"] = quotationValidation.Errors;
+                return BadRequest(problem);
+            }
+        }
+
 
 
 
@@ -2406,6 +2444,7 @@ public class RequestsController : BaseController
 
         // 2. Perform Submission Validation
         var errors = new List<string>();
+        var lineItemErrors = new List<LineItemValidationError>(); // structured, index-addressable
 
         // Phase B — area routing via DepartmentManagers (single source of truth).
         // The request is NOT nominated to a single approver anymore: AreaApproverId
@@ -2457,26 +2496,67 @@ public class RequestsController : BaseController
             errors.Add("A Data de Necessidade (Necessário Até) é obrigatória para pedidos de Cotação.");
 
         // Conditional Item Validation
-        if (request.RequestType!.Code == "QUOTATION" && !request.LineItems.Any(l => !l.IsDeleted) && !request.Attachments.Any(a => !a.IsDeleted))
+        // Phase 2 — a QUOTATION can only be submitted with at least one VALID item; an attachment no
+        // longer substitutes items (closes the /duplicate DRAFT-quotation bypass). Reuses the same
+        // validator as CreateRequest so the rule lives in one place.
+        if (request.RequestType!.Code == "QUOTATION")
         {
-            errors.Add("O pedido de cotação deve conter pelo menos itens ou um anexo descritivo antes de ser submetido.");
-        }
+            var activeQuotationItems = request.LineItems.Where(l => !l.IsDeleted).ToList();
+            var distinctQUnitIds = activeQuotationItems.Where(l => l.UnitId.HasValue).Select(l => l.UnitId!.Value).Distinct().ToList();
+            var validQUnitIds = distinctQUnitIds.Count == 0
+                ? new HashSet<int>()
+                : (await _context.Units.Where(u => distinctQUnitIds.Contains(u.Id) && u.IsActive)
+                        .Select(u => u.Id).ToListAsync()).ToHashSet();
 
-        if (request.RequestType!.Code == "PAYMENT" && !request.LineItems.Any(l => !l.IsDeleted))
-        {
-            errors.Add("Para submeter, o pedido deve conter pelo menos um item.");
-        }
+            var qCandidates = activeQuotationItems.Select(l => new LineItemCandidate
+            {
+                Index = l.LineNumber,
+                Description = l.Description,
+                Quantity = l.Quantity,
+                UnitId = l.UnitId,
+                IsDeleted = l.IsDeleted
+            }).ToList();
 
-        // PAYMENT: DueDate, CostCenter and IvaRate are handled at later workflow stages (Area/Final Approver)
-        // Relaxed here to decouple from early Requester constraints.
+            var quotationSubmitValidation = _lineItemValidator.ValidateQuotation(qCandidates, validQUnitIds);
+            if (!quotationSubmitValidation.IsValid)
+            {
+                errors.Add("Adicione pelo menos um item válido antes de submeter a solicitação de Cotação.");
+                lineItemErrors.AddRange(quotationSubmitValidation.Errors);
+            }
+        }
 
         if (request.RequestType!.Code == "PAYMENT")
         {
-            if (request.EstimatedTotalAmount <= 0 && request.LineItems.Any(l => !l.IsDeleted))
+            var activePaymentItems = request.LineItems.Where(l => !l.IsDeleted).ToList();
+
+            // Resolve the set of valid (active) unit ids referenced by the items in ONE query (no N+1).
+            var distinctUnitIds = activePaymentItems.Where(l => l.UnitId.HasValue).Select(l => l.UnitId!.Value).Distinct().ToList();
+            var validUnitIds = distinctUnitIds.Count == 0
+                ? new HashSet<int>()
+                : (await _context.Units.Where(u => distinctUnitIds.Contains(u.Id) && u.IsActive)
+                        .Select(u => u.Id).ToListAsync()).ToHashSet();
+
+            var candidates = activePaymentItems.Select(l => new LineItemCandidate
+            {
+                Index = l.LineNumber,
+                Description = l.Description,
+                Quantity = l.Quantity,
+                UnitId = l.UnitId,
+                LineTotal = l.TotalAmount, // derived authoritative value (always recomputed by the backend)
+                IsDeleted = l.IsDeleted
+            }).ToList();
+
+            var paymentValidation = _lineItemValidator.ValidatePaymentSubmit(candidates, validUnitIds);
+            foreach (var msg in paymentValidation.Errors.Select(e => e.Message).Distinct())
+                errors.Add(msg);
+            lineItemErrors.AddRange(paymentValidation.Errors);
+
+            // Request-level sanity (kept in addition to the per-line checks above).
+            if (activePaymentItems.Count > 0 && request.EstimatedTotalAmount <= 0)
                 errors.Add("O pedido deve possuir valor total maior que zero.");
-            
-            // Supplier is no longer strictly mandatory at submission for PAYMENT requests
-            // as per DEC-076 / request for more flexibility in draft-to-submit flow.
+
+            // PAYMENT: DueDate, CostCenter and IvaRate are handled at later workflow stages (Area/Final Approver).
+            // Supplier is no longer strictly mandatory at submission for PAYMENT requests (DEC-076).
         }
 
         // Mandatory Document Validation for Submission
@@ -2489,12 +2569,15 @@ public class RequestsController : BaseController
 
         if (errors.Any())
         {
-            return BadRequest(new ProblemDetails
+            var problem = new ProblemDetails
             {
                 Title = "Validação de Submissão Falhou",
                 Detail = string.Join(" ", errors.Distinct()),
                 Status = 400
-            });
+            };
+            if (lineItemErrors.Count > 0)
+                problem.Extensions["lineItemErrors"] = lineItemErrors;
+            return BadRequest(problem);
         }
 
         // 3. Resolve Target Status based on Current Stage and Request Type
@@ -4190,54 +4273,6 @@ public class RequestsController : BaseController
             });
         }
 
-        // Validate and normalize ItemPriority — backend enforces valid codes
-        var validPriorities = new[] { "HIGH", "MEDIUM", "LOW" };
-        var itemPriority = validPriorities.Contains(dto.ItemPriority?.ToUpper()) ? dto.ItemPriority!.ToUpper() : "MEDIUM";
-
-        // Auto-assign initial item status based on parent request type (backend-controlled, not from client)
-        int? lineItemStatusId = request.RequestType?.Code switch
-        {
-            "QUOTATION" => 1, // WAITING_QUOTATION
-            "PAYMENT"   => 2, // PENDING
-            _           => null
-        };
-
-        var nextLineNumber = request.LineItems.Any() ? request.LineItems.Max(l => l.LineNumber) + 1 : 1;
-        var quantity = dto.Quantity ?? 0;
-        var unitPrice = dto.UnitPrice ?? 0;
-        var netTotal = Round2((quantity * unitPrice) - (dto.DiscountAmount ?? 0));
-        var addIvaRate = dto.IvaRateId.HasValue ? await _context.IvaRates.FindAsync(dto.IvaRateId.Value) : null;
-        var addIvaAmount = addIvaRate != null ? Round2(netTotal * (addIvaRate.RatePercent / 100m)) : 0m;
-        var computedTotal = Round2(netTotal + addIvaAmount);
-
-        var newItem = new RequestLineItem
-        {
-            Id = Guid.NewGuid(),
-            RequestId = requestId,
-            LineNumber = nextLineNumber,
-            ItemPriority = itemPriority,
-            Description = dto.Description,
-            Quantity = quantity,
-            UnitId = dto.UnitId, // Mapped from Frontend Select
-            UnitPrice = unitPrice,
-            DiscountPercent = dto.DiscountPercent,
-            DiscountAmount = dto.DiscountAmount,
-            TotalAmount = computedTotal,
-            CurrencyId = request.RequestType?.Code == "QUOTATION" && dto.CurrencyId.HasValue ? dto.CurrencyId : request.CurrencyId,
-            PlantId = dto.PlantId,
-            CostCenterId = dto.CostCenterId,
-            IvaRateId = dto.IvaRateId,
-            LineItemStatusId = lineItemStatusId, // Auto-assigned, never from client
-            SupplierId = request.RequestType?.Code == "PAYMENT" ? request.SupplierId : null,
-            SupplierName = request.RequestType?.Code == "PAYMENT" ? null : dto.SupplierName,
-            Notes = dto.Notes,
-            ItemCatalogId = dto.ItemCatalogId,
-            DueDate = dto.DueDate,
-            IsDeleted = false,
-            CreatedAtUtc = DateTime.UtcNow,
-            CreatedByUserId = actorId
-        };
-
         // Cross-Company Plant Validation
         if (dto.PlantId.HasValue)
         {
@@ -4269,21 +4304,27 @@ public class RequestsController : BaseController
             }
         }
 
-        _context.RequestLineItems.Add(newItem);
-
-        // Record item addition in history
-        var itemHistory = new RequestStatusHistory
+        // Build + stage the item and its history through the shared factory
+        // (same total/status/line-number math as before; single source of truth
+        // shared with the buyer reconciliation workaround).
+        var newItem = await _lineItemFactory.BuildAndStageAsync(request, new LineItemCreationSpec
         {
-            Id = Guid.NewGuid(),
-            RequestId = requestId,
-            ActorUserId = actorId,
-            ActionTaken = "ITEM_ADDED",
-            PreviousStatusId = request.StatusId,
-            NewStatusId = request.StatusId,
-            Comment = $"Item #{newItem.LineNumber} (\"{newItem.Description}\") adicionado ao pedido por {user.FullName}.",
-            CreatedAtUtc = DateTime.UtcNow
-        };
-        _context.RequestStatusHistories.Add(itemHistory);
+            Description = dto.Description,
+            Quantity = dto.Quantity ?? 0,
+            UnitId = dto.UnitId,
+            UnitPrice = dto.UnitPrice ?? 0,
+            CurrencyId = dto.CurrencyId,
+            PlantId = dto.PlantId,
+            CostCenterId = dto.CostCenterId,
+            DiscountPercent = dto.DiscountPercent,
+            DiscountAmount = dto.DiscountAmount,
+            IvaRateId = dto.IvaRateId,
+            ItemCatalogId = dto.ItemCatalogId,
+            SupplierName = dto.SupplierName,
+            Notes = dto.Notes,
+            DueDate = dto.DueDate,
+            ItemPriority = dto.ItemPriority ?? "MEDIUM"
+        }, actorId, user.FullName);
 
         await _context.SaveChangesAsync();
 
@@ -4295,6 +4336,179 @@ public class RequestsController : BaseController
         await _context.SaveChangesAsync();
 
         return CreatedAtAction(nameof(GetRequest), new { id = request.Id }, new { ItemId = newItem.Id });
+    }
+
+    /// <summary>
+    /// Buyer reconciliation workaround: create a *requested* line item from a proforma line to cover
+    /// an omitted item (or an old item-less request). Distinct from EXTRA_ITEM — the item is created
+    /// immediately as QUOTATION_PENDING and does not depend on approver acceptance.
+    ///
+    /// Conservative scope (backend-enforced): QUOTATION requests in WAITING_QUOTATION only, no active
+    /// approval batch, Buyer role. Two dedup layers: (1) same-operation idempotency via a client UUID
+    /// persisted under a unique index; (2) cross-session probable-duplicate detection via persisted
+    /// provenance (proforma attachment + normalized description/quantity/unit).
+    /// </summary>
+    [HttpPost("{requestId:guid}/line-items/from-proforma")]
+    public async Task<IActionResult> AddLineItemFromProforma(Guid requestId, [FromBody] CreateLineItemFromProformaDto dto)
+    {
+        if (!ModelState.IsValid) return ValidationProblem();
+
+        var actorId = CurrentUserId;
+        var user = await _context.Users.FindAsync(actorId);
+        if (user == null) return Unauthorized();
+
+        // Authorization: this workaround is a Buyer action.
+        if (!CurrentUserRoles.Contains(RoleConstants.Buyer))
+            return StatusCode(403, new ProblemDetails { Title = "Acesso Proibido", Detail = "Apenas o papel de Comprador pode adicionar itens solicitados durante a conciliação.", Status = 403 });
+
+        var request = await _context.Requests
+            .Include(r => r.Status)
+            .Include(r => r.RequestType)
+            .Include(r => r.LineItems)
+            .Include(r => r.ApprovalBatches)
+            .FirstOrDefaultAsync(r => r.Id == requestId);
+
+        if (request == null) return NotFound(new ProblemDetails { Title = "Pedido não encontrado.", Status = 404 });
+
+        // State guards (conservative initial scope).
+        if (request.RequestType?.Code != RequestConstants.Types.Quotation)
+            return Conflict(new ProblemDetails { Title = "Ação Bloqueada", Detail = "Este recurso está disponível apenas para pedidos de Cotação.", Status = 409 });
+
+        if (request.Status?.Code != RequestConstants.Statuses.WaitingQuotation)
+            return Conflict(new ProblemDetails { Title = "Ação Bloqueada", Detail = "Só é possível adicionar itens solicitados enquanto o pedido está em cotação (Aguardando Cotação).", Status = 409 });
+
+        // Block when an approval batch is still active (partial approval in flight) — do not risk
+        // interfering with amounts already under review/approval.
+        var activeBatchStatuses = new[]
+        {
+            RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval,
+            RequestConstants.ApprovalBatchStatuses.AreaAdjustment,
+            RequestConstants.ApprovalBatchStatuses.WaitingFinalApproval,
+            RequestConstants.ApprovalBatchStatuses.FinalAdjustment
+        };
+        if (request.ApprovalBatches.Any(b => activeBatchStatuses.Contains(b.Status)))
+            return Conflict(new ProblemDetails { Title = "Ação Bloqueada", Detail = "Existe um lote de aprovação ativo para este pedido. Conclua ou cancele o lote antes de adicionar novos itens solicitados.", Status = 409 });
+
+        var quantity = dto.Quantity ?? 0;
+        var normalizedDesc = NormalizeForDedup(dto.Description);
+
+        // ── Dedup layer 1: same-operation idempotency (client UUID + unique index), SCOPED to this request ──
+        // The lookup is scoped by RequestId so a key can never resolve to an item of another request.
+        var byKey = await _context.RequestLineItems
+            .FirstOrDefaultAsync(li => li.RequestId == requestId && li.CreationIdempotencyKey == dto.IdempotencyKey);
+        if (byKey != null)
+            return Ok(new { itemId = byKey.Id, deduplicated = true, reason = "IDEMPOTENT_RETRY", item = ProjectReconciliationItem(byKey) });
+
+        // ── Dedup layer 2: cross-session probable-duplicate detection (persisted provenance) ──
+        var siblings = await _context.RequestLineItems
+            .Where(li => li.RequestId == requestId && !li.IsDeleted)
+            .ToListAsync();
+
+        // Unambiguous: same proforma attachment + normalized description + qty + unit → dedupe silently.
+        if (dto.SourceProformaAttachmentId.HasValue)
+        {
+            var exact = siblings.FirstOrDefault(li =>
+                li.SourceProformaAttachmentId == dto.SourceProformaAttachmentId &&
+                li.UnitId == dto.UnitId &&
+                li.Quantity == quantity &&
+                NormalizeForDedup(li.Description) == normalizedDesc);
+            if (exact != null)
+                return Ok(new { itemId = exact.Id, deduplicated = true, reason = "UNAMBIGUOUS_DUPLICATE", item = ProjectReconciliationItem(exact) });
+        }
+
+        // Probable: same normalized description + qty + unit (regardless of proforma) → require confirmation.
+        if (!dto.ConfirmCreateDespiteDuplicate)
+        {
+            var probable = siblings.FirstOrDefault(li =>
+                li.UnitId == dto.UnitId &&
+                li.Quantity == quantity &&
+                NormalizeForDedup(li.Description) == normalizedDesc);
+            if (probable != null)
+            {
+                return Conflict(new
+                {
+                    title = "Possível item duplicado",
+                    detail = "Já existe um item semelhante neste pedido. Utilize o item existente ou confirme a criação de um novo.",
+                    duplicateSuspected = true,
+                    existingItemId = probable.Id,
+                    existingDescription = probable.Description,
+                    existingLineNumber = probable.LineNumber,
+                    existingItem = ProjectReconciliationItem(probable)
+                });
+            }
+        }
+
+        // ── Create via shared factory ──
+        var newItem = await _lineItemFactory.BuildAndStageAsync(request, new LineItemCreationSpec
+        {
+            Description = dto.Description.Trim(),
+            Quantity = quantity,
+            UnitId = dto.UnitId,
+            UnitPrice = 0m, // conservative: never adopt the proforma price as the requested value
+            PlantId = request.PlantId,
+            ItemCatalogId = dto.ItemCatalogId,
+            ItemPriority = "MEDIUM",
+            QuotationLifecycleStatus = RequestConstants.QuotationLifecycleStatuses.QuotationPending,
+            CreationOrigin = LineItemCreationOrigins.BuyerReconciliation,
+            SourceProformaAttachmentId = dto.SourceProformaAttachmentId,
+            CreationIdempotencyKey = dto.IdempotencyKey,
+            HistoryAction = LineItemHistoryActions.ItemAddedFromProforma,
+            HistoryComment = $"Item solicitado \"{dto.Description.Trim()}\" (Qtd: {quantity}) criado a partir da proforma durante a conciliação por {user.FullName}."
+        }, actorId, user.FullName);
+
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (
+            ex.InnerException?.Message?.Contains("IX_RequestLineItems_RequestId_CreationIdempotencyKey", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            // Race: a concurrent operation with the same (RequestId, idempotency key) won. Return the winner.
+            _context.Entry(newItem).State = EntityState.Detached;
+            var winner = await _context.RequestLineItems.AsNoTracking()
+                .FirstOrDefaultAsync(li => li.RequestId == requestId && li.CreationIdempotencyKey == dto.IdempotencyKey);
+            if (winner != null)
+                return Ok(new { itemId = winner.Id, deduplicated = true, reason = "IDEMPOTENT_RACE", item = ProjectReconciliationItem(winner) });
+            throw;
+        }
+
+        // Recalculate total from DB AFTER saving (the new line has UnitPrice 0, so it does not inflate).
+        await RecalculateEstimatedTotalAsync(request, requestId);
+        request.UpdatedAtUtc = DateTime.UtcNow;
+        request.UpdatedByUserId = actorId;
+        await _context.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(GetRequest), new { id = request.Id }, new { itemId = newItem.Id, deduplicated = false, item = ProjectReconciliationItem(newItem) });
+    }
+
+    /// <summary>Compact projection of a line item for the reconciliation wizard to update its local state.</summary>
+    private static object ProjectReconciliationItem(RequestLineItem li) => new
+    {
+        id = li.Id,
+        lineNumber = li.LineNumber,
+        description = li.Description,
+        quantity = li.Quantity,
+        unitId = li.UnitId,
+        unitPrice = li.UnitPrice,
+        itemCatalogId = li.ItemCatalogId,
+        quotationLifecycleStatus = li.QuotationLifecycleStatus
+    };
+
+    /// <summary>
+    /// Normalizes a description for duplicate comparison: trim, lowercase, strip accents,
+    /// collapse whitespace, drop trailing punctuation. Mirrors the catalog matcher's approach.
+    /// </summary>
+    private static string NormalizeForDedup(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return string.Empty;
+        var lowered = s.Trim().ToLowerInvariant();
+        var decomposed = lowered.Normalize(System.Text.NormalizationForm.FormD);
+        var sb = new System.Text.StringBuilder(decomposed.Length);
+        foreach (var ch in decomposed)
+            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch) != System.Globalization.UnicodeCategory.NonSpacingMark)
+                sb.Append(ch);
+        var noAccents = sb.ToString().Normalize(System.Text.NormalizationForm.FormC);
+        return System.Text.RegularExpressions.Regex.Replace(noAccents, @"\s+", " ").TrimEnd('.', ',', ';', ':', '!');
     }
 
     [HttpPut("{requestId}/line-items/{itemId}")]

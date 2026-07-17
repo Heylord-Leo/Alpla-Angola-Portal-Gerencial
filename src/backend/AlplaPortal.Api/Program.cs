@@ -1,4 +1,5 @@
 using AlplaPortal.Application.Interfaces;
+using AlplaPortal.Application.Validation;
 using AlplaPortal.Application.Interfaces.Contracts;
 using AlplaPortal.Application.Interfaces.Extraction;
 using AlplaPortal.Application.Interfaces.Integration;
@@ -11,6 +12,8 @@ using AlplaPortal.Infrastructure.Services.Extraction;
 using AlplaPortal.Infrastructure.Services.Integration;
 using AlplaPortal.Infrastructure.Services.Auth;
 using AlplaPortal.Infrastructure.Services.Approvals;
+using AlplaPortal.Infrastructure.Services.Requests;
+using AlplaPortal.Infrastructure.Services.Suppliers;
 using AlplaPortal.Application.Interfaces.Purchasing;
 using AlplaPortal.Application.Interfaces.MonthlyChanges;
 using AlplaPortal.Application.Interfaces.Operations;
@@ -108,6 +111,15 @@ builder.Services.AddScoped<IStatusAggregationService, StatusAggregationService>(
 // Approval Intelligence
 builder.Services.AddScoped<IApprovalIntelligenceService, ApprovalIntelligenceService>();
 builder.Services.AddScoped<IRequestStatusSyncService, RequestStatusSyncService>();
+
+// Shared line-item creation (standard add-item + buyer reconciliation workaround)
+builder.Services.AddScoped<ILineItemFactory, LineItemFactory>();
+
+// Phase 2 — reusable line-item validity rule (QUOTATION create + PAYMENT submit)
+builder.Services.AddScoped<IRequestLineItemSubmissionValidator, RequestLineItemSubmissionValidator>();
+
+// Phase 3 — shared supplier matching + DRAFT creation (general admin + contextual payment-OCR endpoints)
+builder.Services.AddScoped<ISupplierCreationService, SupplierCreationService>();
 
 // Department Manager redesign — single source of truth for area-approval routing
 builder.Services.AddScoped<IApprovalRoutingService, ApprovalRoutingService>();
@@ -239,9 +251,20 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Configure EF Core with SQL Server
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
-    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+// Configure EF Core with SQL Server.
+// Guard against EMPTY as well as missing: the committed appsettings.json ships
+// "DefaultConnection": "" on purpose (secrets stay out of git), and an empty string
+// passes a null-check but produces the confusing runtime error "The ConnectionString
+// property has not been initialized" on first DB use instead of failing at startup.
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException(
+        "Connection string 'DefaultConnection' is missing or empty. " +
+        "In Development, provide it via src/backend/AlplaPortal.Api/appsettings.Development.json " +
+        "(gitignored — see docs) or the environment variable ConnectionStrings__DefaultConnection. " +
+        "In deployed environments, check appsettings.json / environment configuration.");
+}
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(connectionString, b => b.MigrationsAssembly("AlplaPortal.Infrastructure")));

@@ -36,6 +36,11 @@ export function RequestCreate() {
     const [isTemplateLoading, setIsTemplateLoading] = useState(false);
     const [feedback, setFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'error', message: null });
     const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
+    // Per-row validation for the mandatory Quotation items (which fields are invalid on each row).
+    const [itemRowErrors, setItemRowErrors] = useState<Record<number, { description?: boolean; quantity?: boolean; unitId?: boolean }>>({});
+    // Transient red-pulse flag for the items section (auto-clears after ~5s → discreet error border remains).
+    const [itemsPulse, setItemsPulse] = useState(false);
+    const itemsPulseTimer = useRef<number | undefined>(undefined);
     const [requestTypes, setRequestTypes] = useState<any[]>([]);
     const [needLevels, setNeedLevels] = useState<LookupDto[]>([]);
     const [departments, setDepartments] = useState<LookupDto[]>([]);
@@ -619,6 +624,19 @@ export function RequestCreate() {
             next[index] = { ...next[index], [field]: value };
             return next;
         });
+        clearItemRowError(index, field as 'description' | 'quantity' | 'unitId');
+    };
+
+    // Clear a single invalid-field flag once the user starts fixing it (keeps highlights honest).
+    const clearItemRowError = (index: number, field: 'description' | 'quantity' | 'unitId') => {
+        setItemRowErrors(prev => {
+            if (!prev[index] || !prev[index][field]) return prev;
+            const nextRow = { ...prev[index] };
+            delete nextRow[field];
+            const next = { ...prev };
+            if (Object.keys(nextRow).length === 0) delete next[index]; else next[index] = nextRow;
+            return next;
+        });
     };
 
     const handleRemoveRequesterItem = (index: number) => {
@@ -637,6 +655,8 @@ export function RequestCreate() {
             };
             return next;
         });
+        if (description && description.trim() !== '') clearItemRowError(index, 'description');
+        if (defaultUnitId) clearItemRowError(index, 'unitId');
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -659,10 +679,53 @@ export function RequestCreate() {
             }
         }
 
+        // Phase 2 — Mandatory items (QUOTATION): a Quotation is created already-submitted, so we block
+        // before the POST. Mirror the payload filter (only description-non-empty rows are sent) AND the
+        // authoritative backend rule: there must be >= 1 item and EVERY sent item must be valid
+        // (quantity > 0 and a unit). A single invalid row blocks the submission.
+        const rowErrors: Record<number, { description?: boolean; quantity?: boolean; unitId?: boolean }> = {};
+        if (Number(formData.requestTypeId) === 1) {
+            // A row is "started" if the user touched any of its meaningful fields.
+            const startedRows = requesterItems
+                .map((ri, idx) => ({ ri, idx }))
+                .filter(({ ri }) => (!!ri.description && ri.description.trim() !== '') || Number(ri.quantity) > 0 || !!ri.unitId);
+
+            if (startedRows.length === 0) {
+                // Empty section — no rows to highlight, just the section-level message.
+                newErrors['LineItems'] = ['Adicione pelo menos um item válido antes de continuar.'];
+            } else {
+                for (const { ri, idx } of startedRows) {
+                    const e: { description?: boolean; quantity?: boolean; unitId?: boolean } = {};
+                    if (!ri.description || ri.description.trim() === '') e.description = true;
+                    if (!(Number(ri.quantity) > 0)) e.quantity = true;
+                    if (!ri.unitId) e.unitId = true;
+                    if (Object.keys(e).length > 0) rowErrors[idx] = e;
+                }
+                const anyFullyValid = startedRows.some(({ ri }) => !!ri.description && ri.description.trim() !== '' && Number(ri.quantity) > 0 && !!ri.unitId);
+                if (Object.keys(rowErrors).length > 0 || !anyFullyValid) {
+                    newErrors['LineItems'] = ['Corrija os itens destacados antes de continuar.'];
+                }
+            }
+        }
+        setItemRowErrors(rowErrors);
+
         if (Object.keys(newErrors).length > 0) {
             setFieldErrors(newErrors);
             setFeedback({ type: 'error', message: 'Preencha todos os campos obrigatórios antes de continuar.' });
             scrollToFirstError(newErrors);
+            // Items section: pulse for ~5s then leave a discreet error border; focus the first fixable field.
+            if (newErrors['LineItems']) {
+                triggerItemsPulse();
+                const firstBadRow = Object.keys(rowErrors).map(Number).sort((a, b) => a - b)[0];
+                if (firstBadRow !== undefined) {
+                    const field = rowErrors[firstBadRow].description ? 'description'
+                        : rowErrors[firstBadRow].quantity ? 'quantity' : 'unitId';
+                    setTimeout(() => {
+                        const cell = document.querySelector(`[data-item-row="${firstBadRow}"][data-item-field="${field}"]`);
+                        (cell?.querySelector('input, select') as HTMLElement | null)?.focus();
+                    }, 550);
+                }
+            }
             return;
         }
 
@@ -733,6 +796,10 @@ export function RequestCreate() {
                 description: ri.description,
                 quantity: ri.quantity,
                 unitId: ri.unitId,
+                // The backend resolves the unit from its CODE (RequestLineItemDto.Unit) — send it so the
+                // item is created with a unit and passes the Phase-2 mandatory-unit rule. (unitId alone
+                // is ignored by the backend bulk-add / validation, which key off the code.)
+                unit: units.find(u => u.id === ri.unitId)?.code,
                 unitPrice: 0,
                 discountAmount: 0,
                 ivaRateId: null,
@@ -767,7 +834,7 @@ export function RequestCreate() {
             const fallbackSuccessMessage = isQuotation ? 'Pedido de Cotação criado com sucesso.' : 'Rascunho salvo com sucesso.';
 
             if (isQuotation) {
-                const quotationSuccessMessage = 'Pedido de Cotação criado. Os itens serão inseridos na tela "Gestão de Cotações".';
+                const quotationSuccessMessage = 'Pedido de Cotação criado e enviado para a Gestão de Cotações.';
                 navigate(`/requests${location.state?.fromList || ''}`, {
                     replace: true,
                     state: { successMessage: quotationSuccessMessage }
@@ -861,6 +928,18 @@ export function RequestCreate() {
         ...inputStyle,
         ...(getFieldErrors(fieldName) ? { borderColor: '#EF4444', backgroundColor: '#FEF2F2', boxShadow: '0 0 0 3px rgba(239,68,68,0.2)' } : {})
     });
+
+    // Fire the items-section red pulse for ~5s; the discreet error border persists afterwards.
+    const triggerItemsPulse = () => {
+        if (itemsPulseTimer.current) window.clearTimeout(itemsPulseTimer.current);
+        setItemsPulse(true);
+        itemsPulseTimer.current = window.setTimeout(() => setItemsPulse(false), 5000);
+    };
+    useEffect(() => () => { if (itemsPulseTimer.current) window.clearTimeout(itemsPulseTimer.current); }, []);
+
+    // Red styling for an individual invalid item field.
+    const itemFieldStyle = (rowIdx: number, field: 'description' | 'quantity' | 'unitId') =>
+        (itemRowErrors[rowIdx]?.[field] ? { borderColor: '#EF4444', backgroundColor: '#FEF2F2', boxShadow: '0 0 0 2px rgba(239,68,68,0.2)' } : {});
 
     const headerProps = {
         breadcrumbs: [
@@ -1116,13 +1195,17 @@ export function RequestCreate() {
                                      exit={{ opacity: 0, height: 0, overflow: 'hidden' }}
                                      transition={{ duration: 0.3 }}
                                  >
-                                     <div data-guide="request-quotation-items-section" style={{
+                                     <div data-guide="request-quotation-items-section" data-field="LineItems" tabIndex={-1}
+                                         className={itemsPulse ? 'error-pulse' : undefined}
+                                         style={{
                                          marginBottom: '16px',
                                          padding: '24px',
-                                         backgroundColor: 'var(--color-bg-surface)',
-                                         border: '1px solid var(--color-border)',
+                                         backgroundColor: getFieldErrors('LineItems') ? '#FEF6F6' : 'var(--color-bg-surface)',
+                                         border: getFieldErrors('LineItems') ? '1px solid #EF4444' : '1px solid var(--color-border)',
                                          borderRadius: 'var(--radius-sm)',
-                                         boxShadow: 'var(--shadow-sm)'
+                                         boxShadow: getFieldErrors('LineItems') && !itemsPulse ? 'var(--shadow-sm)' : (itemsPulse ? 'none' : 'var(--shadow-sm)'),
+                                         outline: 'none',
+                                         scrollMarginTop: '150px'
                                      }}>
                                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                                              <div>
@@ -1147,6 +1230,18 @@ export function RequestCreate() {
                                                  <Plus size={14} /> Adicionar Item
                                              </button>
                                          </div>
+
+                                         {getFieldErrors('LineItems') && (
+                                             <div style={{
+                                                 display: 'flex', alignItems: 'flex-start', gap: '8px',
+                                                 backgroundColor: '#FEE2E2', border: '1px solid #EF4444',
+                                                 borderRadius: '4px', padding: '10px 12px', marginBottom: '16px',
+                                                 color: '#B91C1C', fontSize: '0.75rem', fontWeight: 600
+                                             }}>
+                                                 <AlertCircle size={16} style={{ flexShrink: 0, marginTop: '1px' }} />
+                                                 <span>{getFieldErrors('LineItems')![0]}</span>
+                                             </div>
+                                         )}
 
                                          {requesterItems.length === 0 ? (
                                              <div style={{
@@ -1176,35 +1271,44 @@ export function RequestCreate() {
                                                                  <td style={{ padding: '4px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--color-text-muted)' }}>
                                                                      {idx + 1}
                                                                  </td>
-                                                                 <td style={{ padding: '4px 8px' }}>
+                                                                 <td data-item-row={idx} data-item-field="description" style={{ padding: '4px 8px', verticalAlign: 'top' }}>
                                                                      <CatalogItemAutocomplete
                                                                          value={item.itemCatalogCode ? `[${item.itemCatalogCode}] ${item.description}` : item.description}
                                                                          itemCatalogId={item.itemCatalogId}
                                                                          onChange={(desc, catId, catCode, defaultUnitId) => handleCatalogSelectRequesterItem(idx, desc, catId, catCode, defaultUnitId)}
                                                                          placeholder="Pesquisar item do catálogo ou digitar descrição..."
-                                                                         style={{ padding: '6px 8px', marginTop: 0 }}
+                                                                         style={{ padding: '6px 8px', marginTop: 0, ...itemFieldStyle(idx, 'description') }}
                                                                      />
+                                                                     {itemRowErrors[idx]?.description && (
+                                                                         <div style={{ color: '#B91C1C', fontSize: '0.68rem', fontWeight: 600, marginTop: '3px' }}>Informe a descrição.</div>
+                                                                     )}
                                                                  </td>
-                                                                 <td style={{ padding: '4px 8px' }}>
+                                                                 <td data-item-row={idx} data-item-field="unitId" style={{ padding: '4px 8px', verticalAlign: 'top' }}>
                                                                      <select
                                                                          value={item.unitId || ''}
                                                                          onChange={(e) => handleUpdateRequesterItem(idx, 'unitId', e.target.value ? Number(e.target.value) : null)}
-                                                                         style={{ ...inputStyle, padding: '6px 8px', marginTop: 0, textAlign: 'center' }}
+                                                                         style={{ ...inputStyle, padding: '6px 8px', marginTop: 0, textAlign: 'center', ...itemFieldStyle(idx, 'unitId') }}
                                                                      >
                                                                          <option value="">—</option>
                                                                          {units.filter(u => u.isActive !== false || u.id === item.unitId).map(u => (
                                                                              <option key={u.id} value={u.id}>{u.code}</option>
                                                                          ))}
                                                                      </select>
+                                                                     {itemRowErrors[idx]?.unitId && (
+                                                                         <div style={{ color: '#B91C1C', fontSize: '0.68rem', fontWeight: 600, marginTop: '3px' }}>Selecione a unidade.</div>
+                                                                     )}
                                                                  </td>
-                                                                 <td style={{ padding: '4px 8px' }}>
+                                                                 <td data-item-row={idx} data-item-field="quantity" style={{ padding: '4px 8px', verticalAlign: 'top' }}>
                                                                      <input
                                                                          type="number"
                                                                          min={0}
                                                                          value={item.quantity}
                                                                          onChange={(e) => handleUpdateRequesterItem(idx, 'quantity', Number(e.target.value))}
-                                                                         style={{ ...inputStyle, padding: '6px 8px', marginTop: 0, textAlign: 'center' }}
+                                                                         style={{ ...inputStyle, padding: '6px 8px', marginTop: 0, textAlign: 'center', ...itemFieldStyle(idx, 'quantity') }}
                                                                      />
+                                                                     {itemRowErrors[idx]?.quantity && (
+                                                                         <div style={{ color: '#B91C1C', fontSize: '0.68rem', fontWeight: 600, marginTop: '3px' }}>A quantidade deve ser maior que zero.</div>
+                                                                     )}
                                                                  </td>
                                                                  <td style={{ padding: '4px 8px' }}>
                                                                      <input
@@ -1811,13 +1915,17 @@ export function RequestCreate() {
                     </div>
                 </section>
             </form>
-            <QuickSupplierModal 
+            <QuickSupplierModal
                 isOpen={quickSupplierModal.show}
                 onClose={() => setQuickSupplierModal({ show: false, initialName: '', initialTaxId: '' })}
+                mode="PAYMENT_OCR"
+                extractedName={quickSupplierModal.initialName}
+                extractedTaxId={quickSupplierModal.initialTaxId}
                 onSuccess={(s) => {
                     handleUpdateOcrDraft('supplierId', s.id);
                     handleUpdateOcrDraft('supplierNameSnapshot', s.name);
                     handleUpdateOcrDraft('supplierPortalCode', s.portalCode || '');
+                    handleUpdateOcrDraft('supplierRegistrationStatus', 'DRAFT');
                     clearFieldError('SupplierId');
                 }}
                 initialName={quickSupplierModal.initialName}

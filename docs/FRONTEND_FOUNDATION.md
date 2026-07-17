@@ -891,3 +891,30 @@ To ensure the portal works predictably at standard laptop resolutions (1366x768 
 3. **AppShell Overflow Containment**: The main `AppShell` and `PageContainer` use `overflowX: 'hidden'` as a structural safety net. However, the true fix relies on the components themselves respecting the width limits.
 4. **Auto-Collapsing Navigation**: The main sidebar (`AppShell.tsx`) automatically detects horizontal constraints using `matchMedia('(max-width: 1366px)')` and defaults to a collapsed state on standard laptops to return maximum horizontal space to the data tables.
 5. **Table Containment**: All standard tables apply `max-width: 100%` and `word-break: break-word` globally to prevent cell text from destroying the viewport grid.
+
+## Mandatory-Field Error UX (v2.207.0)
+
+Standardized pattern for surfacing required-field / conflict errors so the user is guided to the exact
+problem instead of just seeing a top-of-page toast.
+
+1. **Structured API contract over free text**: backends return a stable machine code (e.g. `COMPANY_TAX_ID_CONFLICT`)
+   plus the resolved entity (conflicting company id/name). `ApiError.details` carries the full parsed body so the
+   frontend reacts on the code, never by parsing message text. Example: Empresas (Dados Mestres) NIF conflict
+   keeps the toast as a summary, then scrolls to the NIF field, highlights it, shows an inline message, focuses it,
+   and preserves the other typed values.
+2. **Reusable `.error-pulse` token** (`styles/globals.css`): a red attention pulse that runs ~5s (five 1s cycles)
+   then settles, leaving whatever discreet error border the element already carries. Honors
+   `@media (prefers-reduced-motion: reduce)`. Used by the RequestCreate mandatory-items section: scroll to the
+   section, pulse, then discreet border, with section-level and per-field inline messages and focus on the first
+   fixable field.
+3. **Per-field highlighting**: when a row/section has multiple fields, highlight only the invalid ones and clear the
+   flag as soon as the user starts fixing that field.
+
+## Contextual Supplier Decision Modal (v2.207.0)
+
+`QuickSupplierModal` (mode `PAYMENT_OCR`) is a staged decision flow, never a mixed card+form screen:
+`suggestion` (existing supplier found by name → **USAR FORNECEDOR CADASTRADO** recommended primary, plus
+**NÃO É ESTE FORNECEDOR**), `alternatives` (search another / create without NIF / back / cancel), and `create`
+(no-NIF DRAFT creation, with an explicit confirmation when a similar name exists). The modal always exposes one
+clear primary action per stage. The internal-company NIF is dropped and never re-sent; audit provenance is
+resolved server-side.

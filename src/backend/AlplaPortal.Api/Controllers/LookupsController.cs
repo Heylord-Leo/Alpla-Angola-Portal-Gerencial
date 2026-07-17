@@ -1,9 +1,11 @@
 using AlplaPortal.Application.DTOs.Requests;
+using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Services.Approvals;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace AlplaPortal.Api.Controllers;
 
@@ -14,12 +16,14 @@ public class LookupsController : ControllerBase
     private readonly ApplicationDbContext _context;
     private readonly ILogger<LookupsController> _logger;
     private readonly DepartmentManagerService _departmentManagers;
+    private readonly ISupplierCreationService _supplierCreation;
 
-    public LookupsController(ApplicationDbContext context, ILogger<LookupsController> logger, DepartmentManagerService departmentManagers)
+    public LookupsController(ApplicationDbContext context, ILogger<LookupsController> logger, DepartmentManagerService departmentManagers, ISupplierCreationService supplierCreation)
     {
         _context = context;
         _logger = logger;
         _departmentManagers = departmentManagers;
+        _supplierCreation = supplierCreation;
     }
 
     [HttpGet("units")]
@@ -334,28 +338,59 @@ public class LookupsController : ControllerBase
 
         var items = await query
             .OrderBy(c => c.Name)
-            .Select(c => new { c.Id, c.Name, c.IsActive, c.FinalApproverUserId })
+            .Select(c => new { c.Id, c.Name, c.Code, c.TaxId, c.IsActive, c.FinalApproverUserId })
             .ToListAsync();
 
         return Ok(items);
+    }
+
+    /// <summary>
+    /// Structured 409 body for an internal-company NIF conflict. Carries a stable machine code and the
+    /// conflicting company's id/name/NIF so the frontend can react (scroll, highlight, inline message)
+    /// without parsing free text.
+    /// </summary>
+    private static ProblemDetails CompanyTaxIdConflict(Domain.Entities.Company conflict, string normTaxId)
+    {
+        var pd = new ProblemDetails
+        {
+            Title = "NIF já registado",
+            Detail = $"Este NIF já está associado à empresa '{conflict.Name}'.",
+            Status = 409
+        };
+        pd.Extensions["code"] = "COMPANY_TAX_ID_CONFLICT";
+        pd.Extensions["field"] = "taxId";
+        pd.Extensions["conflictCompanyId"] = conflict.Id;
+        pd.Extensions["conflictCompanyName"] = conflict.Name;
+        pd.Extensions["taxId"] = normTaxId;
+        return pd;
     }
 
     [HttpPost("companies")]
     [Authorize(Roles = "System Administrator")]
     public async Task<IActionResult> CreateCompany([FromBody] CreateLookupDto dto)
     {
-        var entity = new Domain.Entities.Company 
-        { 
-            Name = dto.Name, 
+        // Internal company NIF — persisted normalized (canonical) and unique across companies.
+        var normTaxId = AlplaPortal.Domain.Common.TaxIdNormalizer.NormalizeOrNull(dto.TaxId);
+        if (normTaxId != null)
+        {
+            var conflict = await _context.Companies.FirstOrDefaultAsync(c => c.TaxId == normTaxId);
+            if (conflict != null)
+                return Conflict(CompanyTaxIdConflict(conflict, normTaxId));
+        }
+
+        var entity = new Domain.Entities.Company
+        {
+            Name = dto.Name,
+            TaxId = normTaxId,
             IsActive = true,
             FinalApproverUserId = dto.FinalApproverUserId
         };
         _context.Companies.Add(entity);
-        
+
         try
         {
             await _context.SaveChangesAsync();
-            return Created($"/api/v1/lookups/companies/{entity.Id}", new { entity.Id, entity.Name, entity.IsActive, entity.FinalApproverUserId });
+            return Created($"/api/v1/lookups/companies/{entity.Id}", new { entity.Id, entity.Name, entity.Code, entity.TaxId, entity.IsActive, entity.FinalApproverUserId });
         }
         catch (DbUpdateException ex)
         {
@@ -383,7 +418,17 @@ public class LookupsController : ControllerBase
             });
         }
 
+        // Internal company NIF — normalize + enforce uniqueness across other companies.
+        var normTaxId = AlplaPortal.Domain.Common.TaxIdNormalizer.NormalizeOrNull(dto.TaxId);
+        if (normTaxId != null)
+        {
+            var conflict = await _context.Companies.FirstOrDefaultAsync(c => c.Id != id && c.TaxId == normTaxId);
+            if (conflict != null)
+                return Conflict(CompanyTaxIdConflict(conflict, normTaxId));
+        }
+
         entity.Name = dto.Name;
+        entity.TaxId = normTaxId;
         entity.FinalApproverUserId = dto.FinalApproverUserId;
 
         try
@@ -836,241 +881,155 @@ public class LookupsController : ControllerBase
         });
     }
 
+    // ─── Shared helpers for the supplier endpoints ───
+
+    private Guid? GetActorId()
+    {
+        var raw = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        return Guid.TryParse(raw, out var g) ? g : (Guid?)null;
+    }
+
     /// <summary>
-    /// Extracts the numeric suffix from a PortalCode string like "SUP-000003" or "SUP-0003".
-    /// Returns 0 if the code is null, doesn't start with "SUP-", or the suffix is not numeric.
-    /// Handles any zero-padding width (D4, D5, D6, etc.).
+    /// Contextual authorization for creating a DRAFT supplier from the payment-OCR flow.
+    /// Grants: users with an existing general supplier-create role, OR users who can create Payment
+    /// requests (mirrors CreateRequest — at least one plant scope AND one department scope).
+    /// This grants ONLY DRAFT creation via the contextual endpoint — no general/administrative access.
     /// </summary>
-    private static int ParsePortalCodeSequence(string? code)
+    private async Task<bool> CanCreateSupplierContextuallyAsync(Guid actorId)
     {
-        if (code == null || !code.StartsWith("SUP-") || code.Length <= 4)
-            return 0;
-        return int.TryParse(code.Substring(4), out int parsed) ? parsed : 0;
+        if (User.IsInRole("System Administrator") || User.IsInRole("Buyer") || User.IsInRole("Finance")
+            || User.IsInRole("Contracts") || User.IsInRole("Local Manager"))
+            return true;
+
+        var hasPlantScope = await _context.UserPlantScopes.AnyAsync(ups => ups.UserId == actorId);
+        var hasDeptScope = await _context.UserDepartmentScopes.AnyAsync(uds => uds.UserId == actorId);
+        return hasPlantScope && hasDeptScope;
     }
 
-    private async Task<string> GetNextPortalCodeAsync()
+    private static object? SupplierBody(SupplierSummaryDto? s)
+        => s == null ? null : new { s.Id, s.Name, s.TaxId, s.PortalCode, s.PrimaveraCode, s.IsActive, s.RegistrationStatus };
+
+    private static object ResultBody(SupplierCreationResult r) => new
     {
-        var counterKey = "SUPPLIER_PORTAL_CODE";
-        int seqNumber;
+        code = r.Code,
+        status = r.Status.ToString(),
+        message = r.Message,
+        supplier = SupplierBody(r.Supplier),
+        candidates = r.Candidates.Select(SupplierBody).ToList(),
+        internalCompany = r.InternalCompanyId == null ? null
+            : new { id = r.InternalCompanyId, name = r.InternalCompanyName, taxId = r.InternalCompanyTaxId }
+    };
 
-        // Use a transaction with a database-level lock to ensure concurrency safety
-        using (var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted))
-        {
-            try
-            {
-                // 1. Acquire an update lock on the counter record (blocking other concurrent generations)
-                var counter = await _context.SystemCounters
-                    .FromSqlRaw("SELECT * FROM SystemCounters WITH (UPDLOCK, ROWLOCK) WHERE Id = {0}", counterKey)
-                    .FirstOrDefaultAsync();
-
-                // 2. Perform robust "Self-healing": always check the actual database state.
-                // Materialize all SUP- codes and find the max numerically on the client side.
-                // This avoids SQL alphabetic ordering issues with mixed-length codes
-                // (e.g. "SUP-0003" sorts higher than "SUP-000002" alphabetically but is lower numerically).
-                var allPortalCodes = await _context.Suppliers
-                    .Where(s => s.PortalCode != null && s.PortalCode.StartsWith("SUP-"))
-                    .Select(s => s.PortalCode!)
-                    .ToListAsync();
-
-                int maxInDb = allPortalCodes
-                    .Select(ParsePortalCodeSequence)
-                    .DefaultIfEmpty(0)
-                    .Max();
-
-                if (counter == null)
-                {
-                    seqNumber = maxInDb + 1;
-                    counter = new Domain.Entities.SystemCounter
-                    {
-                        Id = counterKey,
-                        CurrentValue = seqNumber,
-                        LastUpdatedUtc = DateTime.UtcNow
-                    };
-                    _context.SystemCounters.Add(counter);
-                }
-                else
-                {
-                    // If the counter is lagging behind the actual data, force it to catch up
-                    if (counter.CurrentValue < maxInDb)
-                    {
-                        counter.CurrentValue = maxInDb;
-                    }
-
-                    counter.CurrentValue++;
-                    counter.LastUpdatedUtc = DateTime.UtcNow;
-                    seqNumber = counter.CurrentValue;
-                }
-
-                // 3. Persist changes to the counter
-                await _context.SaveChangesAsync();
-                
-                // 4. Commit the transaction to release the lock
-                await transaction.CommitAsync();
-            }
-            catch (Exception)
-            {
-                await transaction.RollbackAsync();
-                throw;
-            }
-        }
-
-        // Return precisely formatted code: SUP- + 6 zero-padded digits (canonical D6 standard)
-        return $"SUP-{seqNumber:D6}";
-    }
-
+    /// <summary>
+    /// General admin/buyer supplier creation. Preserves the existing behavior (only hard NIF/name
+    /// conflicts block — no soft "suspected duplicate" prompt) by confirming through the shared service.
+    /// </summary>
     [HttpPost("suppliers")]
     [Authorize(Roles = "System Administrator,Buyer,Finance,Contracts,Local Manager")]
     public async Task<IActionResult> CreateSupplier([FromBody] CreateSupplierDto dto)
     {
-      try
-      {
-        // Name uniqueness guard — case-insensitive check (IX_Suppliers_Name)
+        var actorId = GetActorId();
+        if (actorId == null) return Unauthorized();
+
+        var result = await _supplierCreation.CreateAsync(new SupplierCreationInput
         {
-            var normalizedName = dto.Name.Trim().ToUpper();
-            var existingByName = await _context.Suppliers
-                .FirstOrDefaultAsync(s => s.Name.ToUpper() == normalizedName);
-            if (existingByName != null)
-            {
-                return Conflict(new ProblemDetails
+            Name = dto.Name ?? string.Empty,
+            TaxId = dto.TaxId,
+            PrimaveraCode = dto.PrimaveraCode,
+            Origin = "MANUAL",
+            ConfirmCreateDespiteDuplicate = true // admin flow blocks only on hard NIF/name conflicts (unchanged)
+        }, actorId.Value);
+
+        switch (result.Status)
+        {
+            case SupplierCreationStatus.Created:
+                return Created($"/api/v1/lookups/suppliers/{result.Supplier!.Id}", new
                 {
-                    Title = "Nome já registado",
-                    Detail = $"Já existe um fornecedor com o nome '{dto.Name.Trim()}': {existingByName.PortalCode}. Utilize o fornecedor existente ou altere o nome.",
-                    Status = 409
+                    result.Supplier.Id, result.Supplier.PortalCode, result.Supplier.PrimaveraCode,
+                    result.Supplier.Name, result.Supplier.TaxId, result.Supplier.IsActive, result.Supplier.RegistrationStatus
                 });
-            }
+            case SupplierCreationStatus.Conflict:
+            case SupplierCreationStatus.DuplicateSuspected:
+            case SupplierCreationStatus.InternalCompanyTaxId:
+                return Conflict(ResultBody(result));
+            case SupplierCreationStatus.Invalid:
+                return BadRequest(new ProblemDetails { Title = "Dados inválidos", Detail = result.Message, Status = 400 });
+            default:
+                return StatusCode(500, new ProblemDetails { Title = "Erro ao criar Fornecedor", Detail = result.Message ?? "Erro inesperado ao criar o fornecedor.", Status = 500 });
         }
+    }
 
-        // NIF uniqueness guard — when provided, check for existing supplier
-        if (!string.IsNullOrWhiteSpace(dto.TaxId))
+    /// <summary>
+    /// Authoritative supplier match for the frontend (no writes). Returns whether a supplier already
+    /// exists (active/inactive), a suspected duplicate, or nothing (creation allowed). The frontend
+    /// must NOT decide "does not exist" from a paginated search — it uses this result.
+    /// </summary>
+    [HttpGet("suppliers/match")]
+    [Authorize]
+    public async Task<IActionResult> MatchSupplier([FromQuery] string? name, [FromQuery] string? taxId)
+    {
+        // Restrict to the same audience as contextual creation (general supplier roles OR users who can
+        // create Payment requests) — the authoritative match must not be broader than who may act on it.
+        var actorId = GetActorId();
+        if (actorId == null) return Unauthorized();
+        if (!await CanCreateSupplierContextuallyAsync(actorId.Value))
+            return StatusCode(403, new ProblemDetails
+            {
+                Title = "Acesso Proibido",
+                Detail = "Você não tem autorização para consultar correspondência de fornecedores neste fluxo.",
+                Status = 403
+            });
+
+        var result = await _supplierCreation.MatchAsync(name, taxId);
+        return Ok(ResultBody(result));
+    }
+
+    /// <summary>
+    /// Contextual supplier creation from the Payment OCR flow (no requestId — OCR runs before POST /requests).
+    /// Creates ONLY a DRAFT supplier (Origin = PAYMENT_OCR), never PrimaveraCode/administrative fields.
+    /// Authorized for users who can create Payment requests (see CanCreateSupplierContextuallyAsync).
+    /// </summary>
+    [HttpPost("suppliers/from-payment-ocr")]
+    [Authorize]
+    public async Task<IActionResult> CreateSupplierFromPaymentOcr([FromBody] CreateSupplierFromPaymentOcrDto dto)
+    {
+        var actorId = GetActorId();
+        if (actorId == null) return Unauthorized();
+
+        if (!await CanCreateSupplierContextuallyAsync(actorId.Value))
+            return StatusCode(403, new ProblemDetails
+            {
+                Title = "Acesso Proibido",
+                Detail = "Você não tem autorização para criar fornecedores. Esta ação requer permissão para criar solicitações de Pagamento.",
+                Status = 403
+            });
+
+        var result = await _supplierCreation.CreateAsync(new SupplierCreationInput
         {
-            var existingByNif = await _context.Suppliers
-                .FirstOrDefaultAsync(s => s.TaxId == dto.TaxId.Trim());
-            if (existingByNif != null)
-            {
-                return Conflict(new ProblemDetails
-                {
-                    Title = "NIF já registado",
-                    Detail = $"Já existe um fornecedor com o NIF '{dto.TaxId.Trim()}': {existingByNif.Name} ({existingByNif.PortalCode}). Utilize o fornecedor existente.",
-                    Status = 409
-                });
-            }
-        }
+            Name = dto.Name ?? string.Empty,
+            TaxId = dto.TaxId,
+            Address = dto.Address,
+            ContactName = dto.ContactName,
+            ContactEmail = dto.ContactEmail,
+            ContactPhone = dto.ContactPhone,
+            Origin = "PAYMENT_OCR",
+            ConfirmCreateDespiteDuplicate = dto.ConfirmCreateDespiteDuplicate,
+            ExtractedName = dto.ExtractedName ?? dto.Name,
+            ExtractedTaxId = dto.ExtractedTaxId ?? dto.TaxId,
+            InternalCompanyTaxIdExtracted = dto.InternalCompanyTaxIdExtracted,
+            RejectedSuggestedSupplierId = dto.RejectedSuggestedSupplierId
+            // PrimaveraCode / RegistrationStatus / IsActive intentionally NOT accepted here.
+        }, actorId.Value);
 
-        var actorId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        const int maxRetries = 3;
-
-        for (int attempt = 1; attempt <= maxRetries; attempt++)
+        return result.Status switch
         {
-            // Generate Portal Code automatically (with self-healing from DB state)
-            var portalCode = await GetNextPortalCodeAsync();
-
-            var entity = new Domain.Entities.Supplier 
-            { 
-                PortalCode = portalCode,
-                PrimaveraCode = dto.PrimaveraCode?.Trim().ToUpper(),
-                Name = dto.Name.Trim(), 
-                TaxId = dto.TaxId?.Trim(),
-                IsActive = true,
-                RegistrationStatus = "DRAFT",
-                CreatedAtUtc = DateTime.UtcNow,
-                CreatedByUserId = actorId
-            };
-
-            _context.Suppliers.Add(entity);
-
-            try
-            {
-                await _context.SaveChangesAsync();
-                return Created($"/api/v1/lookups/suppliers/{entity.Id}", new { entity.Id, entity.PortalCode, entity.PrimaveraCode, entity.Name, entity.TaxId, entity.IsActive, entity.RegistrationStatus });
-            }
-            catch (DbUpdateException ex) when (
-                attempt < maxRetries &&
-                ex.InnerException?.Message?.Contains("IX_Suppliers_PortalCode", StringComparison.OrdinalIgnoreCase) == true)
-            {
-                // PortalCode collision — detach the failed entity and retry with a new code.
-                // This can happen in rare race conditions or if SystemCounters is out of sync.
-                _logger.LogWarning("PortalCode collision on attempt {Attempt}: '{PortalCode}'. Retrying...", attempt, portalCode);
-                _context.Entry(entity).State = Microsoft.EntityFrameworkCore.EntityState.Detached;
-                continue;
-            }
-            catch (DbUpdateException ex)
-            {
-                var innerMsg = ex.InnerException?.Message ?? ex.Message;
-
-                // Safety net: Name unique constraint violation (race condition — pre-check passed but another request inserted first)
-                if (innerMsg.Contains("IX_Suppliers_Name", StringComparison.OrdinalIgnoreCase))
-                {
-                    _logger.LogWarning(ex, "Supplier Name unique constraint violation (race condition). Name: {Name}", dto.Name.Trim());
-                    _context.Entry(entity).State = Microsoft.EntityFrameworkCore.EntityState.Detached;
-                    return Conflict(new ProblemDetails
-                    {
-                        Title = "Nome já registado",
-                        Detail = $"Já existe um fornecedor com o nome '{dto.Name.Trim()}'. Utilize o fornecedor existente ou altere o nome.",
-                        Status = 409
-                    });
-                }
-
-                // Safety net: TaxId unique constraint violation (race condition)
-                if (innerMsg.Contains("IX_Suppliers_TaxId", StringComparison.OrdinalIgnoreCase) ||
-                    (innerMsg.Contains("TaxId", StringComparison.OrdinalIgnoreCase) && innerMsg.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase)))
-                {
-                    _logger.LogWarning(ex, "Supplier TaxId unique constraint violation (race condition). TaxId: {TaxId}", dto.TaxId?.Trim());
-                    _context.Entry(entity).State = Microsoft.EntityFrameworkCore.EntityState.Detached;
-                    return Conflict(new ProblemDetails
-                    {
-                        Title = "NIF já registado",
-                        Detail = $"Já existe um fornecedor com o NIF '{dto.TaxId?.Trim()}'. Utilize o fornecedor existente.",
-                        Status = 409
-                    });
-                }
-
-                // PortalCode collision on last attempt
-                if (innerMsg.Contains("IX_Suppliers_PortalCode", StringComparison.OrdinalIgnoreCase))
-                {
-                    _logger.LogError(ex, "PortalCode collision exhausted all {MaxRetries} retries. Inner: {InnerMessage}", maxRetries, innerMsg);
-                    _context.Entry(entity).State = Microsoft.EntityFrameworkCore.EntityState.Detached;
-                    return StatusCode(500, new ProblemDetails
-                    {
-                        Title = "Erro ao criar Fornecedor",
-                        Detail = "Não foi possível gerar um código único para o fornecedor após múltiplas tentativas. Tente novamente.",
-                        Status = 500
-                    });
-                }
-
-                // Truly unexpected DB error
-                _logger.LogError(ex, "Failed to create supplier. Inner: {InnerMessage}", innerMsg);
-                return StatusCode(500, new ProblemDetails
-                {
-                    Title = "Erro ao criar Fornecedor",
-                    Detail = "Ocorreu um erro ao salvar o fornecedor. Tente novamente ou contacte o administrador.",
-                    Status = 500
-                });
-            }
-        }
-
-        // Should never reach here, but safety fallback
-        return StatusCode(500, new ProblemDetails
-        {
-            Title = "Erro ao criar Fornecedor",
-            Detail = "Não foi possível gerar um código único para o fornecedor após múltiplas tentativas.",
-            Status = 500
-        });
-      }
-      catch (Exception ex)
-      {
-          // Outer safety net: catch ANY unhandled exception to prevent the generic
-          // UseExceptionHandler middleware from swallowing the real error message.
-          // This ensures the frontend always receives a meaningful error.
-          var innerMsg = ex.InnerException?.Message ?? ex.Message;
-          _logger.LogError(ex, "Unhandled exception in CreateSupplier. Type: {ExType}, Message: {Message}, Inner: {InnerMessage}",
-              ex.GetType().Name, ex.Message, innerMsg);
-          return StatusCode(500, new ProblemDetails
-          {
-              Title = "Erro ao criar Fornecedor",
-              Detail = $"Erro inesperado: {innerMsg}",
-              Status = 500
-          });
-      }
+            SupplierCreationStatus.Created => Created($"/api/v1/lookups/suppliers/{result.Supplier!.Id}", ResultBody(result)),
+            SupplierCreationStatus.Conflict => Conflict(ResultBody(result)),
+            SupplierCreationStatus.DuplicateSuspected => Conflict(ResultBody(result)),
+            SupplierCreationStatus.InternalCompanyTaxId => Conflict(ResultBody(result)),
+            SupplierCreationStatus.Invalid => BadRequest(ResultBody(result)),
+            _ => StatusCode(500, ResultBody(result))
+        };
     }
 
     [HttpPut("suppliers/{id}")]
@@ -2274,6 +2233,7 @@ public class CreateLookupDto
     public string Name { get; set; } = string.Empty;
     public int CompanyId { get; set; } // Only used for Plants
     public Guid? FinalApproverUserId { get; set; } // Only used for Companies
+    public string? TaxId { get; set; } // Only used for Companies (internal NIF)
 }
 
 public class CreateSupplierDto
@@ -2282,6 +2242,33 @@ public class CreateSupplierDto
     public string? PrimaveraCode { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? TaxId { get; set; }
+}
+
+/// <summary>
+/// Contextual DRAFT supplier creation from the Payment OCR flow. Deliberately excludes administrative
+/// fields (PortalCode, PrimaveraCode, RegistrationStatus, IsActive) — those are never client-settable here.
+/// </summary>
+public class CreateSupplierFromPaymentOcrDto
+{
+    public string? Name { get; set; }
+    public string? TaxId { get; set; }
+    public string? Address { get; set; }
+    public string? ContactName { get; set; }
+    public string? ContactEmail { get; set; }
+    public string? ContactPhone { get; set; }
+
+    /// <summary>Proceed despite a suspected (same-name/different-NIF) duplicate.</summary>
+    public bool ConfirmCreateDespiteDuplicate { get; set; }
+
+    /// <summary>Raw OCR-extracted values, recorded for audit/provenance.</summary>
+    public string? ExtractedName { get; set; }
+    public string? ExtractedTaxId { get; set; }
+
+    /// <summary>Internal-company NIF that was extracted then dropped (audit — supplier created without NIF).</summary>
+    public string? InternalCompanyTaxIdExtracted { get; set; }
+
+    /// <summary>Id of the name-matched supplier the user explicitly declined before creating a no-NIF supplier (audit).</summary>
+    public int? RejectedSuggestedSupplierId { get; set; }
 }
 
 public class CreateUnitDto : CreateLookupDto

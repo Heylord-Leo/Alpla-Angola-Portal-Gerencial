@@ -130,80 +130,35 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
 
         const extractedSupplierName = getSafeValue<string>(suggestions?.supplierName, '');
         const extractedSupplierTaxId = getSafeValue<string>(suggestions?.supplierTaxId, '');
-        
-        // --- Supplier Name Normalizer: strips trailing punctuation, collapses whitespace ---
-        const normalizeName = (name: string): string => {
-            return name
-                .toLowerCase()
-                .trim()
-                .replace(/[.,;:!]+$/g, '')   // Remove trailing punctuation (e.g. "SA." → "SA")
-                .replace(/\s+/g, ' ')         // Collapse multiple spaces
-                .replace(/[''`´]/g, "'")      // Normalize apostrophes
-                .trim();
-        };
 
-        // Part A: Supplier Matching (multi-strategy)
+        // Part A: Supplier Matching — AUTHORITATIVE (the backend decides existence). The frontend no
+        // longer concludes "does not exist" from a paginated client search; it uses the backend result.
         let matchedSupplierId: number | null = null;
         let extractedSupplierPortalCode: string | null = null;
         let extractedSupplierPrimaveraCode: string | null = null;
         let extractedSupplierRegistrationStatus: string | undefined = undefined;
-        
-        if (extractedSupplierName && typeof extractedSupplierName === 'string') {
+        let supplierMatch: any = null;
+
+        if ((extractedSupplierName && extractedSupplierName.trim()) || (extractedSupplierTaxId && extractedSupplierTaxId.trim())) {
             try {
-                // Search by name first
-                const searchResults = await api.lookups.searchSuppliers(extractedSupplierName);
-                const normalizedExtracted = normalizeName(extractedSupplierName);
+                supplierMatch = await api.lookups.matchSupplier(extractedSupplierName, extractedSupplierTaxId);
 
-                // Strategy 1: Exact normalized name match
-                let match = searchResults.find((s: any) => normalizeName(s.name) === normalizedExtracted);
-
-                // Strategy 2: NIF/TaxId match — if name didn't match but we have a tax ID
-                if (!match && extractedSupplierTaxId) {
-                    const normalizedTaxId = extractedSupplierTaxId.replace(/[\s\-.]/g, '').trim();
-                    if (normalizedTaxId.length >= 5) {
-                        // First check if any name-search result has matching NIF
-                        match = searchResults.find((s: any) => 
-                            s.taxId && s.taxId.replace(/[\s\-.]/g, '').trim() === normalizedTaxId
-                        );
-                        
-                        // If still no match, do a dedicated search by NIF
-                        if (!match) {
-                            const nifResults = await api.lookups.searchSuppliers(normalizedTaxId);
-                            match = nifResults.find((s: any) => 
-                                s.taxId && s.taxId.replace(/[\s\-.]/g, '').trim() === normalizedTaxId
-                            );
-                        }
-                    }
+                // Auto-select ONLY when an ACTIVE supplier already exists (Conflict + active).
+                // Inactive matches and suspected duplicates are surfaced to the UI without auto-selecting.
+                if (supplierMatch?.status === 'Conflict' && supplierMatch.supplier && supplierMatch.supplier.isActive) {
+                    matchedSupplierId = supplierMatch.supplier.id;
+                    extractedSupplierPortalCode = supplierMatch.supplier.portalCode ?? null;
+                    extractedSupplierRegistrationStatus = supplierMatch.supplier.registrationStatus;
                 }
 
-                // Strategy 3: Fuzzy contains — one name contains the other (for trade names / abbreviations)
-                if (!match && normalizedExtracted.length >= 5) {
-                    match = searchResults.find((s: any) => {
-                        const normalizedDb = normalizeName(s.name);
-                        return normalizedDb.includes(normalizedExtracted) || normalizedExtracted.includes(normalizedDb);
-                    });
+                if (import.meta.env.DEV) {
+                    console.group('[OCR] Supplier Match (backend authoritative)');
+                    console.log('Name:', extractedSupplierName, '| NIF:', extractedSupplierTaxId || '(empty)');
+                    console.log('Result:', supplierMatch?.status, supplierMatch?.code || '');
+                    console.groupEnd();
                 }
-
-                if (match) {
-                    matchedSupplierId = match.id;
-                    extractedSupplierPortalCode = match.portalCode;
-                    extractedSupplierPrimaveraCode = match.primaveraCode;
-                    extractedSupplierRegistrationStatus = match.registrationStatus;
-                }
-
-                // --- Supplier Match Diagnostics ---
-                console.group('[OCR] Supplier Match Diagnostics');
-                console.log('Extracted Name:', extractedSupplierName);
-                console.log('Normalized Name:', normalizedExtracted);
-                console.log('Extracted NIF:', extractedSupplierTaxId || '(empty)');
-                console.log('Search Results:', searchResults.length, 'candidates');
-                console.log('Match Result:', match
-                    ? `✅ Matched → ${match.name} (ID: ${match.id}, Code: ${match.portalCode})`
-                    : '❌ No match — supplier may need registration'
-                );
-                console.groupEnd();
             } catch (e) {
-                console.error("[useOcrProcessor] Supplier matching failed", e);
+                if (import.meta.env.DEV) console.error('[useOcrProcessor] Supplier matching failed', e);
             }
         }
 
@@ -243,20 +198,22 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
             }
         }
 
-        // --- Company Match Diagnostics (visible in browser DevTools > Console) ---
-        console.group('[OCR] Company Match Diagnostics');
-        console.log('Extracted Company (raw):', extractedBilledCompany || '(empty)');
-        console.log('System Companies:', companies.map(c => ({ id: c.id, name: c.name })));
-        console.log('Keywords detected:', {
-            hasPlastico: extractedBilledCompany ? /plastico/i.test(extractedBilledCompany) : false,
-            hasSopro: extractedBilledCompany ? /sopro/i.test(extractedBilledCompany) : false,
-            hasAlpla: extractedBilledCompany ? /alpla/i.test(extractedBilledCompany) : false,
-        });
-        console.log('Match Result:', matchedCompanyId
-            ? `✅ Matched → Company ID ${matchedCompanyId} (${companies.find(c => c.id === matchedCompanyId)?.name})`
-            : '❌ No match found'
-        );
-        console.groupEnd();
+        // --- Company Match Diagnostics (DEV-only; never logged in production) ---
+        if (import.meta.env.DEV) {
+            console.group('[OCR] Company Match Diagnostics');
+            console.log('Extracted Company (raw):', extractedBilledCompany || '(empty)');
+            console.log('System Companies:', companies.map(c => ({ id: c.id, name: c.name })));
+            console.log('Keywords detected:', {
+                hasPlastico: extractedBilledCompany ? /plastico/i.test(extractedBilledCompany) : false,
+                hasSopro: extractedBilledCompany ? /sopro/i.test(extractedBilledCompany) : false,
+                hasAlpla: extractedBilledCompany ? /alpla/i.test(extractedBilledCompany) : false,
+            });
+            console.log('Match Result:', matchedCompanyId
+                ? `✅ Matched → Company ID ${matchedCompanyId} (${companies.find(c => c.id === matchedCompanyId)?.name})`
+                : '❌ No match found'
+            );
+            console.groupEnd();
+        }
 
         const draft: OcrDraft = {
             supplierId: matchedSupplierId,
@@ -265,6 +222,7 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
             supplierPrimaveraCode: extractedSupplierPrimaveraCode,
             supplierRegistrationStatus: extractedSupplierRegistrationStatus,
             supplierTaxId: extractedSupplierTaxId,
+            supplierMatch: supplierMatch,
             companyId: matchedCompanyId,
             extractedCompanyName: extractedBilledCompany,
             isCompanyOcrAutoFilled: isCompanyOcrAutoFilled,
@@ -517,27 +475,29 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
             // and users can still manually link via autocomplete
         }
 
-        // --- Calculation Diagnostics (visible in browser DevTools > Console) ---
-        console.group('[OCR] Extraction & Calculation Diagnostics');
-        console.log('Header Total (grandTotal from OCR):', getSafeValue<number>(suggestions?.grandTotal, 0));
-        console.log('Header Total (totalAmount fallback):', getSafeValue<number>(suggestions?.totalAmount, 0));
-        console.log('Final Draft Total:', draft.totalAmount);
-        console.log('Global Discount:', draft.discountAmount);
-        console.log('Header Has IVA:', draft.headerHasIva, '| Items with uncertain IVA:', draft.items.filter(i => i.ivaUncertain).length);
-        console.table(draft.items.map((item, i) => ({
-            '#': i + 1,
-            description: (item.description || '').substring(0, 40),
-            qty: item.quantity,
-            unitPrice: item.unitPrice,
-            discount: item.discountAmount,
-            totalPrice: item.totalPrice,
-            ivaUncertain: item.ivaUncertain,
-            autoMatch: item.autoMatchStatus || '-',
-            catalogId: item.itemCatalogId || '-',
-            gross: ((item.quantity || 0) * (item.unitPrice || 0)).toFixed(2),
-            net: (((item.quantity || 0) * (item.unitPrice || 0)) - (item.discountAmount || 0)).toFixed(2)
-        })));
-        console.groupEnd();
+        // --- Calculation Diagnostics (DEV-only; never logged in production) ---
+        if (import.meta.env.DEV) {
+            console.group('[OCR] Extraction & Calculation Diagnostics');
+            console.log('Header Total (grandTotal from OCR):', getSafeValue<number>(suggestions?.grandTotal, 0));
+            console.log('Header Total (totalAmount fallback):', getSafeValue<number>(suggestions?.totalAmount, 0));
+            console.log('Final Draft Total:', draft.totalAmount);
+            console.log('Global Discount:', draft.discountAmount);
+            console.log('Header Has IVA:', draft.headerHasIva, '| Items with uncertain IVA:', draft.items.filter(i => i.ivaUncertain).length);
+            console.table(draft.items.map((item, i) => ({
+                '#': i + 1,
+                description: (item.description || '').substring(0, 40),
+                qty: item.quantity,
+                unitPrice: item.unitPrice,
+                discount: item.discountAmount,
+                totalPrice: item.totalPrice,
+                ivaUncertain: item.ivaUncertain,
+                autoMatch: item.autoMatchStatus || '-',
+                catalogId: item.itemCatalogId || '-',
+                gross: ((item.quantity || 0) * (item.unitPrice || 0)).toFixed(2),
+                net: (((item.quantity || 0) * (item.unitPrice || 0)) - (item.discountAmount || 0)).toFixed(2)
+            })));
+            console.groupEnd();
+        }
 
         return draft;
     };

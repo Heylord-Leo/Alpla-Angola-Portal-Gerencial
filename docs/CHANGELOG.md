@@ -4,9 +4,24 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.206.0
+v2.207.0
 
 ## [Unreleased]
+
+## [v2.207.0] - 2026-07-17
+
+### Added — Itens Obrigatórios, Workaround de Reconciliação, Fornecedor Contextual (OCR) e NIF de Empresa
+
+- **Itens obrigatórios em novos pedidos**: Cotação valida ≥1 item válido (descrição, quantidade > 0, unidade) no **CreateRequest**; Pagamento valida no **Submit** (DRAFT sem itens continua permitido para OCR progressivo). Regra extraída para `IRequestLineItemSubmissionValidator` (reutilizável), com consistência financeira por linha no Pagamento. Sem migração destrutiva — pedidos históricos sem item permanecem acessíveis.
+- **UX de campos obrigatórios**: em Empresas, conflito de NIF retorna contrato estruturado (`COMPANY_TAX_ID_CONFLICT` + nome/ID da empresa) e o frontend faz scroll, destaca o campo, mostra mensagem inline, foca e preserva os demais valores. Em novo pedido de Cotação, a seção de itens faz scroll, pulsa em vermelho ~5s (token reutilizável `.error-pulse`, respeita `prefers-reduced-motion`), depois mantém borda de erro discreta, com mensagens por seção e por campo e foco no primeiro campo corrigível.
+- **Workaround de reconciliação (comprador)**: `POST /api/v1/requests/{requestId}/line-items/from-proforma` cria um item **solicitado** omitido a partir da proforma/OCR, semanticamente distinto de `EXTRA_ITEM`. `ILineItemFactory` centraliza criação/validação/histórico. Proveniência: `CreationOrigin=BUYER_RECONCILIATION`, `SourceProformaAttachmentId`, `CreationIdempotencyKey` (índice único filtrado) + evento `ITEM_ADDED_FROM_PROFORMA`. Idempotência de mesma operação (chave por linha) + detecção de duplicidade cross-session (RequestId + proforma + linha normalizada). `UnitPrice=0` — nunca copia o preço da proforma como valor solicitado.
+- **Criação contextual de fornecedor (OCR de Pagamento)**: `POST /api/v1/lookups/suppliers/from-payment-ocr` cria fornecedor **apenas DRAFT** (Origin=PAYMENT_OCR; nunca PrimaveraCode/ativação/aprovação). `ISupplierCreationService` é a fonte única de matching autoritativo (NIF normalizado → nome normalizado → inativo → duplicidade provável) + geração de PortalCode concorrência-segura + auditoria. Endpoint geral de admin refatorado sobre o mesmo serviço, preservando o comportamento.
+- **`Company.TaxId` (Dados Mestres → Empresas)**: NIF fiscal das empresas internas, normalizado, com índice único filtrado (migration `AddCompanyTaxId`; seed por `Code` — APA=5417567485, APS=5001760246). Tela de Empresas ganhou coluna e campo NIF com normalização, unicidade (409 estruturado) e validação inline.
+- **Bloqueio autoritativo de NIF interno + fluxo de decisão do modal**: o serviço bloqueia qualquer NIF que pertença a uma empresa interna (`INTERNAL_COMPANY_TAX_ID`) no match e na criação. O modal contextual, ao receber o bloqueio, descarta o NIF interno, refaz o matching **apenas por nome** e apresenta um fluxo de decisão claro: **usar fornecedor cadastrado** (recomendado; card com estado ativo/inativo, portal/Primavera), **não é este** → alternativas (buscar outro / criar sem NIF / voltar / cancelar), e criação **sem NIF** apenas com confirmação explícita quando existe nome semelhante.
+- **Endurecimento de auditoria (server-side)**: os metadados de proveniência enviados pelo cliente (NIF interno descartado, `RejectedSuggestedSupplierId`) são **validados/resolvidos no backend** — o NIF interno é confirmado contra `Company`, o fornecedor recusado é confirmado como candidato plausível do nome, e o histórico usa apenas nomes/IDs resolvidos do banco. Reivindicações falsas são ignoradas (sem auditoria fabricada).
+- **Testes**: novos testes de unidade e integração (SQL Server) para matching/normalização, exclusão de NIF interno, `TaxIdNormalizer`, resolução de auditoria e validadores. Migrations aditivas validadas (apply/seed/índice/rollback/reapply).
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
 
 ## [v2.206.0] - 2026-07-16
 

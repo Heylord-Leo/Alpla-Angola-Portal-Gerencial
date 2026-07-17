@@ -23,8 +23,15 @@ public class Company
     /// <summary>Short code used in Asset Code generation (e.g. "APA", "APS"). Unique.</summary>
     public string? Code { get; set; }
 
+    /// <summary>
+    /// Fiscal number (NIF/VAT) of this internal ALPLA company, persisted normalized (separators removed).
+    /// Used to identify the billed/recipient company on OCR documents and to exclude internal NIFs from
+    /// supplier matching/creation. Nullable; unique among companies when present.
+    /// </summary>
+    public string? TaxId { get; set; }
+
     public bool IsActive { get; set; } = true;
-    
+
     public Guid? FinalApproverUserId { get; set; }
     public User? FinalApproverUser { get; set; }
 }

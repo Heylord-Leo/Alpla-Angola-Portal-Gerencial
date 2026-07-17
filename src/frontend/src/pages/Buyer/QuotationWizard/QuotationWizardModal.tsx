@@ -21,6 +21,8 @@ interface QuotationWizardModalProps {
     ivaRates: any[];
     units: any[];
     currencies: any[];
+    /** Upsert a requested line item created/returned by the from-proforma workaround into the active request. */
+    onRequestLineItemUpserted?: (item: any) => void;
 }
 
 const STEPS: { key: QuotationWizardStep; title: string }[] = [
@@ -41,7 +43,8 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
     onReplaceDocument,
     ivaRates,
     units,
-    currencies
+    currencies,
+    onRequestLineItemUpserted
 }) => {
     const { 
         isOpen, 
@@ -231,7 +234,7 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
                     />
                 )}
                         {currentStep === 'RECONCILIATION' && (
-                            <WizardStepReconciliation draft={draft} request={request} wizardState={wizardState} ivaRates={ivaRates} />
+                            <WizardStepReconciliation draft={draft} request={request} wizardState={wizardState} ivaRates={ivaRates} units={units} onRequestLineItemUpserted={onRequestLineItemUpserted} />
                         )}
                         {currentStep === 'SUPPLIER_VALIDATION' && (
                             <WizardStepSupplierValidation draft={draft} wizardState={wizardState} />

@@ -9,14 +9,17 @@ export class ApiError extends Error {
     public correlationId?: string;
     public errorCode?: string;
     public rawText?: string;
+    /** Full parsed error body (e.g. ProblemDetails with structured extensions). */
+    public details?: any;
 
-    constructor(message: string, status?: number, fieldErrors?: Record<string, string[]>, correlationId?: string, errorCode?: string, rawText?: string) {
+    constructor(message: string, status?: number, fieldErrors?: Record<string, string[]>, correlationId?: string, errorCode?: string, rawText?: string, details?: any) {
         super(message);
         this.status = status;
         this.fieldErrors = fieldErrors;
         this.correlationId = correlationId;
         this.errorCode = errorCode;
         this.rawText = rawText;
+        this.details = details;
         this.name = 'ApiError';
     }
 }
@@ -99,8 +102,9 @@ async function handleApiError(
         response.status,
         undefined,
         errJson?.correlationId || correlationId,
-        errJson?.errorCode,
-        rawText
+        errJson?.errorCode || errJson?.code,
+        rawText,
+        errJson
     );
     throw apiError;
 }
@@ -391,6 +395,27 @@ export const api = {
                 body: JSON.stringify(data),
             });
             if (!response.ok) return handleApiError(response, 'Falha ao adicionar item.');
+            return response.json();
+        },
+        /**
+         * Buyer reconciliation workaround: create a *requested* line item from a proforma line
+         * (distinct from EXTRA_ITEM). `data.idempotencyKey` must be a stable per-line UUID reused
+         * on retries. On a probable cross-session duplicate the backend answers 409 with
+         * `{ duplicateSuspected: true, existingItemId, ... }` — returned as-is (not thrown) so the
+         * caller can offer "use existing / create anyway" (resend with `confirmCreateDespiteDuplicate: true`).
+         */
+        createLineItemFromProforma: async (requestId: string, data: any): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/line-items/from-proforma`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (response.status === 409) {
+                const body = await response.json().catch(() => null);
+                if (body && body.duplicateSuspected) return body; // caller decides
+                return handleApiError(response, 'Não foi possível adicionar o item solicitado.');
+            }
+            if (!response.ok) return handleApiError(response, 'Falha ao adicionar item solicitado a partir da proforma.');
             return response.json();
         },
         updateLineItem: async (requestId: string, itemId: string, data: any): Promise<void> => {
@@ -1324,6 +1349,37 @@ export const api = {
                 body: JSON.stringify(data),
             });
             if (!response.ok) return handleApiError(response, 'Falha ao criar fornecedor.');
+            return response.json();
+        },
+        /**
+         * Authoritative supplier match (backend decides existence). Returns
+         * { code, status, message, supplier, candidates }. status: 'Created' = no blocking match (may create);
+         * 'Conflict' = existing (supplier.isActive tells active/inactive); 'DuplicateSuspected' = candidates.
+         */
+        matchSupplier: async (name?: string, taxId?: string): Promise<any> => {
+            const params = new URLSearchParams();
+            if (name) params.append('name', name);
+            if (taxId) params.append('taxId', taxId);
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/match?${params.toString()}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao verificar o fornecedor.');
+            return response.json();
+        },
+        /**
+         * Contextual DRAFT supplier creation from the Payment OCR flow. A 409 body (conflict / inactive /
+         * duplicate suspected) is returned as-is (not thrown) so the caller can decide (use existing /
+         * create anyway with confirmCreateDespiteDuplicate).
+         */
+        createSupplierFromPaymentOcr: async (data: any): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/from-payment-ocr`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (response.status === 409) {
+                const body = await response.json().catch(() => null);
+                if (body) return body;
+            }
+            if (!response.ok) return handleApiError(response, 'Falha ao criar fornecedor a partir do OCR de pagamento.');
             return response.json();
         },
         updateSupplier: async (id: number, data: any): Promise<void> => {

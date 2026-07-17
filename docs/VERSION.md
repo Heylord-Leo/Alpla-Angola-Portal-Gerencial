@@ -2,7 +2,20 @@
 
 ## Current Version
 
-v2.206.0
+v2.207.0
+
+## [v2.207.0] - 2026-07-17
+
+### Added — Itens Obrigatórios, Workaround de Reconciliação, Fornecedor Contextual (OCR de Pagamento) e NIF de Empresa
+
+- **Itens obrigatórios**: Cotação exige ≥1 item válido no CreateRequest; Pagamento exige no Submit (validador reutilizável + consistência financeira). UX de erro: scroll/foco, pulso vermelho ~5s e depois borda discreta, mensagens por seção e por campo.
+- **Workaround de reconciliação**: comprador pode adicionar item **solicitado** omitido a partir da proforma (`POST /requests/{id}/line-items/from-proforma`), distinto de `EXTRA_ITEM`, com idempotência (chave por linha) e detecção de duplicidade cross-session; `UnitPrice=0` (nunca copia preço da proforma).
+- **Criação contextual de fornecedor (OCR de Pagamento)**: endpoint `POST /lookups/suppliers/from-payment-ocr` cria apenas DRAFT (Origin=PAYMENT_OCR), com matching autoritativo server-side (NIF/nome normalizados, inativo, duplicidade) e auditoria estruturada.
+- **`Company.TaxId` (Dados Mestres → Empresas)**: NIF fiscal das empresas internas (índice único filtrado; seed APA=5417567485, APS=5001760246), coluna/campo na tela de Empresas com validação e feedback estruturado de conflito.
+- **Bloqueio de NIF interno + fallback de decisão**: o fluxo contextual nunca cadastra NIF de empresa interna (`INTERNAL_COMPANY_TAX_ID`); o modal descarta o NIF, refaz o matching por nome e oferece um fluxo de decisão claro (usar cadastro existente / alternativas / criar sem NIF com confirmação explícita).
+- **Endurecimento de auditoria**: metadados de proveniência (NIF interno descartado, fornecedor sugerido recusado) são resolvidos server-side contra o banco — o texto do cliente nunca é gravado como verdade.
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
 
 ## [v2.206.0] - 2026-07-16
 
