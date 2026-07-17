@@ -2,6 +2,14 @@ namespace AlplaPortal.Domain.Constants;
 
 public static class ContractConstants
 {
+    /// <summary>
+    /// Unit code assigned to the auto-generated line item of a contract-originated PAYMENT request.
+    /// Must exist and be active in the Units master data (seeded in ConsolidatedBaseline). Resolved by
+    /// code at runtime — never hardcode the numeric Id. "UN" (Unidade) is the generic unit used for a
+    /// single contractual payment; it satisfies the Phase-2 mandatory-unit rule at Submit.
+    /// </summary>
+    public const string DefaultLineItemUnitCode = "UN";
+
     public static class Statuses
     {
         public const string Draft = "DRAFT";

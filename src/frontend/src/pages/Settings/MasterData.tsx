@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 
-import { api } from '../../lib/api';
+import { api, ApiError } from '../../lib/api';
 import { LookupDto, CurrencyDto, UserDto } from '../../types';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { KebabMenu } from '../../components/ui/KebabMenu';
@@ -62,6 +62,9 @@ export function MasterData() {
 
     const [feedback, setFeedback] = useState<{ message: string, type: FeedbackType } | null>(null);
     const [validationErrors, setValidationErrors] = useState<{ name?: string, primaveraCode?: string }>({});
+    // Inline error for the company NIF field (structured 409 conflict from the API).
+    const [companyTaxIdError, setCompanyTaxIdError] = useState<string | null>(null);
+    const companyTaxIdRef = useRef<HTMLInputElement>(null);
 
     const loadSuppliers = useCallback(async (query: string = '', page: number = 1) => {
         try {
@@ -153,6 +156,7 @@ export function MasterData() {
     const handleEdit = (item: any, type: 'unit' | 'currency' | 'needLevel' | 'department' | 'plant' | 'supplier' | 'costCenter' | 'ivaRate' | 'company' | 'contractType') => {
         setEditMode({ type, id: item.id });
         setValidationErrors({});
+        setCompanyTaxIdError(null);
         setFormData({
             code: item.code || '',
             name: item.name || '',
@@ -182,6 +186,7 @@ export function MasterData() {
 
         setEditMode({ type: defaultType, id: null });
         setValidationErrors({});
+        setCompanyTaxIdError(null);
         setFormData({ code: '', name: '', symbol: '', allowsDecimalQuantity: false, taxId: '', portalCode: '', primaveraCode: '', companyId: 0, finalApproverUserId: '', ratePercent: 0 });
     };
 
@@ -252,7 +257,7 @@ export function MasterData() {
                     await api.lookups.createIvaRate({ code: formData.code, name: formData.name, ratePercent: formData.ratePercent });
                 }
             } else if (activeTab === 'companies') {
-                const companyPayload = { name: formData.name, finalApproverUserId: formData.finalApproverUserId || null as any };
+                const companyPayload = { name: formData.name, taxId: formData.taxId?.trim() || null as any, finalApproverUserId: formData.finalApproverUserId || null as any };
                 if (editMode.id) {
                     await api.lookups.updateCompany(editMode.id, companyPayload);
                 } else {
@@ -273,6 +278,21 @@ export function MasterData() {
             setFeedback({ message: 'Registo salvo com sucesso.', type: 'success' });
             handleCancel();
         } catch (err: any) {
+            // Structured NIF conflict (companies): keep the toast as a summary, but also surface the
+            // error inline on the NIF field, scroll to it and focus — without discarding filled values.
+            const code = err instanceof ApiError ? (err.errorCode || err.details?.code) : undefined;
+            if (activeTab === 'companies' && code === 'COMPANY_TAX_ID_CONFLICT') {
+                const companyName = err.details?.conflictCompanyName;
+                const inlineMsg = companyName
+                    ? `Este NIF já está associado à empresa '${companyName}'.`
+                    : (err.details?.detail || 'Este NIF já está associado a outra empresa.');
+                setCompanyTaxIdError(inlineMsg);
+                setFeedback({ message: inlineMsg, type: 'error' });
+                // Smooth-scroll to the field and focus it after the scroll settles.
+                companyTaxIdRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                setTimeout(() => companyTaxIdRef.current?.focus(), 350);
+                return;
+            }
             setFeedback({ message: err.message || 'Erro ao salvar o registo.', type: 'error' });
         }
     };
@@ -660,6 +680,35 @@ export function MasterData() {
                         )}
 
                         {activeTab === 'companies' && (
+                            <div style={{ marginBottom: '16px' }}>
+                                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-main)', textTransform: 'uppercase', marginBottom: '6px' }}>NIF (Nº de Contribuinte)</label>
+                                <input
+                                    ref={companyTaxIdRef}
+                                    type="text"
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px',
+                                        backgroundColor: companyTaxIdError ? '#FEF2F2' : 'white',
+                                        border: companyTaxIdError ? '2px solid #EF4444' : '2px solid var(--color-border)',
+                                        boxShadow: companyTaxIdError ? '0 0 0 3px rgba(239,68,68,0.2)' : 'none',
+                                        fontSize: '0.85rem',
+                                        fontWeight: 600,
+                                        outline: 'none'
+                                    }}
+                                    value={formData.taxId}
+                                    onChange={e => { if (companyTaxIdError) setCompanyTaxIdError(null); setFormData({ ...formData, taxId: e.target.value }); }}
+                                    placeholder="Ex.: 5417567485"
+                                    aria-invalid={!!companyTaxIdError}
+                                />
+                                {companyTaxIdError ? (
+                                    <p style={{ marginTop: '4px', fontSize: '0.72rem', color: '#B91C1C', fontWeight: 600 }}>{companyTaxIdError}</p>
+                                ) : (
+                                    <p style={{ marginTop: '4px', fontSize: '0.65rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>NIF fiscal desta empresa interna. Usado para identificar a empresa faturada em documentos e impedir que este NIF seja cadastrado como fornecedor. Deve ser único.</p>
+                                )}
+                            </div>
+                        )}
+
+                        {activeTab === 'companies' && (
                             <div>
                                 <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-main)', textTransform: 'uppercase', marginBottom: '6px' }}>Aprovador Final</label>
                                 <select
@@ -777,6 +826,9 @@ export function MasterData() {
                                 )}
                                 {activeTab === 'departments' && (
                                     <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Managers de Aprovação</th>
+                                )}
+                                {activeTab === 'companies' && (
+                                    <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>NIF</th>
                                 )}
                                 {activeTab === 'companies' && (
                                     <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Aprovador Final</th>
@@ -1022,6 +1074,9 @@ export function MasterData() {
                                     <td style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>{c.id}</td>
                                     <td style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}> - </td>
                                     <td style={{ padding: '16px', fontSize: '0.85rem', fontWeight: 600 }}>{c.name}</td>
+                                    <td style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>
+                                        {(c as any).taxId || '-'}
+                                    </td>
                                     <td style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
                                         {users.find(u => u.id === (c as any).finalApproverUserId)?.fullName || '-'}
                                     </td>

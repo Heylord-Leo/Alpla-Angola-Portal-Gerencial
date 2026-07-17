@@ -1365,6 +1365,21 @@ public class ContractsController : BaseController
             ContractPaymentObligationId = obligationId
         };
 
+        // Phase 2 — the contract's auto-generated payment item must carry a valid ACTIVE unit so it
+        // passes the mandatory-unit rule at Submit. Resolve the default unit by code (never hardcode the Id).
+        // If it is missing or inactive, fail here WITHOUT persisting a partial/unit-less payment.
+        var contractUnit = await _context.Units
+            .FirstOrDefaultAsync(u => u.Code == ContractConstants.DefaultLineItemUnitCode && u.IsActive);
+        if (contractUnit == null)
+        {
+            return StatusCode(500, new ProblemDetails
+            {
+                Title = "Unidade padrão não configurada",
+                Detail = $"A unidade padrão dos itens contratuais ('{ContractConstants.DefaultLineItemUnitCode}') não está configurada ou está inativa. Configure-a antes de gerar pagamentos a partir de contratos.",
+                Status = 500
+            });
+        }
+
         // Create default initial request item to satisfy "must contain at least one item" submission rule
         var defaultItem = new RequestLineItem
         {
@@ -1373,7 +1388,7 @@ public class ContractsController : BaseController
             ItemPriority = "MEDIUM",
             Description = $"Pagamento contratual - {contract.Title} - {obligation.Description}",
             Quantity = 1.0m,
-            UnitId = null,
+            UnitId = contractUnit.Id,
             UnitPrice = obligation.ExpectedAmount,
             TotalAmount = obligation.ExpectedAmount,
             CurrencyId = obligation.CurrencyId ?? contract.CurrencyId,

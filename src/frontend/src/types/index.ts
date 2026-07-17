@@ -323,6 +323,8 @@ export interface OcrDraft {
     globalVatInferred?: boolean; // True when global VAT was inferred from document summary and applied to all items
     inferredVatRatePercent?: number; // The inferred VAT rate percentage for display in UI banner
     supplierRegistrationStatus?: string;
+    /** Backend authoritative supplier match result: { code, status, message, supplier, candidates }. */
+    supplierMatch?: any;
     supplierAddress?: string;
     supplierContactName?: string;
     supplierEmail?: string;

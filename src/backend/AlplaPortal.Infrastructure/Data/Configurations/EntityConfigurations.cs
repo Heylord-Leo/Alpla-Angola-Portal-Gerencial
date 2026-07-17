@@ -65,6 +65,22 @@ public class RequestLineItemConfiguration : IEntityTypeConfiguration<RequestLine
                .WithMany()
                .HasForeignKey(li => li.SelectedQuotationItemId)
                .OnDelete(DeleteBehavior.NoAction);
+
+        // ── Provenance & idempotency (buyer reconciliation workaround) ──
+        builder.Property(li => li.CreationOrigin).HasMaxLength(50);
+        builder.Property(li => li.CreationIdempotencyKey).HasMaxLength(100);
+
+        // Same-operation idempotency: a client-supplied token uniquely identifies one
+        // "add as requested item" operation WITHIN a request. Scoped to (RequestId, key) so the same
+        // key in different requests are independent operations and can never cross-resolve.
+        // Filtered so it only applies to reconciliation-created rows (legacy/standard rows keep NULL
+        // and are exempt from the uniqueness constraint).
+        builder.HasIndex(li => new { li.RequestId, li.CreationIdempotencyKey })
+               .IsUnique()
+               .HasFilter("[CreationIdempotencyKey] IS NOT NULL");
+
+        // Cross-session probable-duplicate detection lookup (not unique — legitimate lines may repeat).
+        builder.HasIndex(li => new { li.RequestId, li.SourceProformaAttachmentId });
     }
 }
 

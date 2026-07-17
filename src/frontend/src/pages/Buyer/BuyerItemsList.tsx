@@ -449,6 +449,35 @@ export function BuyerItemsList() {
         }
     };
 
+    // Upsert a requested line item (created or returned by the from-proforma workaround) into the
+    // active wizard request WITHOUT a full refetch, so the wizard draft and other steps are preserved.
+    const handleWizardLineItemUpserted = (item: any) => {
+        if (!item || !item.id) return;
+        setWizardActiveRequest((prev: any) => {
+            if (!prev) return prev;
+            const existing = prev.lineItems || [];
+            const mapped = {
+                id: item.id,
+                lineNumber: item.lineNumber,
+                description: item.description,
+                quantity: item.quantity,
+                unit: undefined,
+                unitId: item.unitId ?? null,
+                unitPrice: item.unitPrice ?? 0,
+                totalAmount: (item.unitPrice ?? 0) * (item.quantity ?? 1),
+                notes: null,
+                itemCatalogId: item.itemCatalogId ?? null,
+                lineItemStatusCode: undefined,
+                quotationLifecycleStatus: item.quotationLifecycleStatus,
+            };
+            const idx = existing.findIndex((li: any) => li.id === item.id);
+            const lineItems = idx >= 0
+                ? existing.map((li: any, i: number) => (i === idx ? { ...li, ...mapped } : li))
+                : [...existing, mapped];
+            return { ...prev, lineItems };
+        });
+    };
+
     const handleOpenWizard = (group: any, mode: 'MANUAL' | 'UPLOAD', editQuotation?: SavedQuotationDto) => {
         setWizardActiveRequest(group);
         if (editQuotation) {
@@ -2805,6 +2834,7 @@ export function BuyerItemsList() {
                 ivaRates={ivaRates}
                 units={units}
                 currencies={currencies}
+                onRequestLineItemUpserted={handleWizardLineItemUpserted}
             />
 
         </PageContainer>

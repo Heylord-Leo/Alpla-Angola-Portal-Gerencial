@@ -99,6 +99,31 @@ public class RequestLineItem
     /// <summary>Financial allocation lines (1..N, sum of percentages = 100%). Used for split allocation across plants/cost centers.</summary>
     public ICollection<RequestLineItemAllocation> Allocations { get; set; } = new List<RequestLineItemAllocation>();
 
+    // ── Provenance & idempotency (buyer reconciliation workaround) ──
+
+    /// <summary>
+    /// How this line was created. Null = standard requester/create flow.
+    /// Known value: "BUYER_RECONCILIATION" — created by the Buyer from a proforma line
+    /// during quotation reconciliation to cover an omitted requested item.
+    /// See <see cref="AlplaPortal.Domain.Constants.LineItemCreationOrigins"/>.
+    /// </summary>
+    public string? CreationOrigin { get; set; }
+
+    /// <summary>
+    /// Soft reference to the proforma <see cref="RequestAttachment"/> the line was derived from,
+    /// when created via the reconciliation workaround. Used for cross-session duplicate detection.
+    /// No hard FK to avoid delete-cascade coupling.
+    /// </summary>
+    public Guid? SourceProformaAttachmentId { get; set; }
+
+    /// <summary>
+    /// Client-supplied idempotency token (UUID) for the single "add as requested item" operation.
+    /// Persisted with a unique filtered index so retries/double-clicks/races return the same line
+    /// instead of creating a duplicate. Session-scoped: does NOT dedupe across sessions
+    /// (that is handled by <see cref="SourceProformaAttachmentId"/>-based detection).
+    /// </summary>
+    public string? CreationIdempotencyKey { get; set; }
+
     public DateTime CreatedAtUtc { get; set; }
     public Guid CreatedByUserId { get; set; }
 

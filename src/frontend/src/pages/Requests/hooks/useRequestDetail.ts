@@ -698,7 +698,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 } else if (!isPayment && hasNoItems) {
                     setFeedback({
                         type: 'success',
-                        message: id ? 'Pedido atualizado com sucesso.' : 'Rascunho salvo. Itens serão inseridos na tela "Gestão de Cotações".',
+                        message: id ? 'Pedido atualizado com sucesso.' : 'Rascunho salvo com sucesso.',
                     });
                 } else {
                     setFeedback({ type: 'success', message: 'Pedido atualizado com sucesso.' });
@@ -874,29 +874,50 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         // 1. Mandatory Content check
         // PAYMENT: Requires at least one item
         // QUOTATION: Requires at least one item OR one attachment
-        if (requestTypeCode === 'PAYMENT' && lineItems.length === 0) {
-            setFeedback({
-                type: 'error',
-                message: 'Para submeter, o pedido deve conter pelo menos um item.'
-            });
-            itemsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            setIsItemsHighlighted(true);
-            setTimeout(() => setIsItemsHighlighted(false), 5000);
-            return;
+        if (requestTypeCode === 'PAYMENT') {
+            const activePaymentItems = lineItems.filter(it => !(it as any).isDeleted);
+            const noItems = activePaymentItems.length === 0;
+            // Phase 2 — each active line must be individually valid; a zero/invalid line must not be
+            // masked by another valid line (mirrors the authoritative backend Submit check).
+            const hasInvalidItem = activePaymentItems.some(it =>
+                !it.description || it.description.trim() === '' ||
+                Number(it.quantity) <= 0 ||
+                !it.unit ||
+                Number(it.totalAmount) <= 0
+            );
+            if (noItems || hasInvalidItem) {
+                setFeedback({
+                    type: 'error',
+                    message: noItems
+                        ? 'Para submeter, o pedido deve conter pelo menos um item.'
+                        : 'Cada item do pagamento deve ter descrição, quantidade maior que zero, unidade e valor de linha maior que zero.'
+                });
+                itemsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                setIsItemsHighlighted(true);
+                setTimeout(() => setIsItemsHighlighted(false), 5000);
+                return;
+            }
         }
 
-        if (requestTypeCode === 'QUOTATION' && lineItems.length === 0 && attachments.length === 0) {
-            setFeedback({
-                type: 'error',
-                message: 'O pedido de cotação deve conter pelo menos itens ou um anexo descritivo antes de ser submetido.'
-            });
-            setIsItemsHighlighted(true);
-            setIsAttachmentsHighlighted(true);
-            setTimeout(() => {
-                setIsItemsHighlighted(false);
-                setIsAttachmentsHighlighted(false);
-            }, 5000);
-            return;
+        if (requestTypeCode === 'QUOTATION') {
+            // Phase 2 — a Quotation can only be submitted with at least one VALID item; an attachment no
+            // longer substitutes items. Mirrors the authoritative backend Submit rule.
+            const activeQuotationItems = lineItems.filter(it => !(it as any).isDeleted);
+            const noItems = activeQuotationItems.length === 0;
+            const hasInvalidItem = activeQuotationItems.some(it =>
+                !it.description || it.description.trim() === '' ||
+                Number(it.quantity) <= 0 ||
+                !it.unit
+            );
+            if (noItems || hasInvalidItem) {
+                setFeedback({
+                    type: 'error',
+                    message: 'Adicione pelo menos um item válido antes de submeter a solicitação de Cotação.'
+                });
+                setIsItemsHighlighted(true);
+                setTimeout(() => setIsItemsHighlighted(false), 5000);
+                return;
+            }
         }
 
         // 1.1 Mandatory Proforma check (Only for PAYMENT types)

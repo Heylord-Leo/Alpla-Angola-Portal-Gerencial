@@ -1,25 +1,65 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { OcrDraft, RequestDetailsDto } from '../../../types';
 import { UseQuotationWizardStateReturn } from './hooks/useQuotationWizardState';
-import { CheckCircle, AlertCircle, HelpCircle, Link as LinkIcon, Plus, XCircle, Search, RefreshCw, Lock } from 'lucide-react';
+import { CheckCircle, AlertCircle, HelpCircle, Link as LinkIcon, Plus, XCircle, Search, RefreshCw, Lock, FilePlus } from 'lucide-react';
 import { isLineItemEligibleForQuotation } from '../batchEligibility';
+import { AddRequestedItemModal } from './AddRequestedItemModal';
 
 interface WizardStepReconciliationProps {
     draft: OcrDraft | null;
     request: RequestDetailsDto | null;
     wizardState: UseQuotationWizardStateReturn;
     ivaRates: any[];
+    units?: any[];
+    /** Upsert a requested line item created by the from-proforma workaround into the active request. */
+    onRequestLineItemUpserted?: (item: any) => void;
 }
 
-export const WizardStepReconciliation: React.FC<WizardStepReconciliationProps> = ({ 
-    draft, 
+const ACTIVE_BATCH_STATUSES = ['WAITING_AREA_APPROVAL', 'AREA_ADJUSTMENT', 'WAITING_FINAL_APPROVAL', 'FINAL_ADJUSTMENT'];
+
+export const WizardStepReconciliation: React.FC<WizardStepReconciliationProps> = ({
+    draft,
     request,
     wizardState,
-    ivaRates
+    ivaRates,
+    units = [],
+    onRequestLineItemUpserted
 }) => {
+    // Which OCR draft line currently has the "add as requested item" form open (index into draft.items).
+    const [addFormDraftIndex, setAddFormDraftIndex] = useState<number | null>(null);
+
     if (!draft || !request) return null;
 
     const { updateDraftItemFields, toggleNotQuotedPlaceholder } = wizardState;
+
+    // Backend-enforced scope, mirrored in the UI: only QUOTATION in WAITING_QUOTATION with no active batch.
+    const req: any = request;
+    const hasActiveBatch = (req.approvalBatches || []).some((b: any) => ACTIVE_BATCH_STATUSES.includes(b.status));
+    const canAddRequestedItem =
+        req.requestTypeCode === 'QUOTATION' &&
+        req.requestStatusCode === 'WAITING_QUOTATION' &&
+        !hasActiveBatch;
+
+    // Whether the request TRULY has no items — the signal that gates the "add as requested item" action.
+    // The backend list already excludes soft-deleted items (LineItemsController: !li.IsDeleted), so any
+    // line present here counts as an existing item, INCLUDING cancelled ones and non-eligible statuses
+    // (BATCH_ASSIGNED / QUOTATION_APPROVED / CLOSED_NOT_QUOTED). This is intentionally DIFFERENT from
+    // `eligibleRequestItems` (quotation-eligibility only): the button must not reappear just because all
+    // existing items became ineligible for the current quotation. Conservative: any non-deleted line blocks it.
+    const existingRequestItems = (req.lineItems || []).filter((li: any) => !li.isDeleted);
+
+    // Called after the backend creates (or idempotently/duplicate-returns) a requested item:
+    // upsert it into the request locally (no refetch), then auto-map the originating OCR line.
+    const handleRequestedItemResolved = (draftIndex: number, item: any) => {
+        if (!item || !item.id) return;
+        onRequestLineItemUpserted?.(item);
+        updateDraftItemFields(draftIndex, {
+            reconciliationStatus: 'MAPPED',
+            mappedRequestLineItemId: item.id,
+            isAutoSuggested: false
+        } as any, ivaRates);
+        setAddFormDraftIndex(null);
+    };
 
     const realItems = draft.items.filter((i: any) => i.reconciliationStatus !== 'NOT_QUOTED');
     const mappedIds = new Set(draft.items.map((i: any) => i.mappedRequestLineItemId).filter(Boolean));
@@ -259,13 +299,36 @@ export const WizardStepReconciliation: React.FC<WizardStepReconciliationProps> =
                                             >
                                                 <Plus size={14} /> Item adicional
                                             </button>
-                                            <button 
+                                            <button
                                                 onClick={() => handleStatusChange(idx, "IGNORED")}
                                                 style={quoteItem.reconciliationStatus === "IGNORED" ? { ...baseBtnStyle, border: "1px solid #94A3B8", backgroundColor: "#94A3B8", color: "#fff" } : unselectedBtnStyle}
                                             >
                                                 <XCircle size={14} /> Ignorar linha
                                             </button>
                                         </div>
+
+                                        {/* Distinct action: create a REQUESTED item from this proforma line (not EXTRA_ITEM).
+                                            Shown ONLY while the request truly has NO items (recovery case for item-less requests).
+                                            Uses `existingRequestItems` (any non-deleted line, regardless of quotation-eligibility),
+                                            NOT `eligibleRequestItems` — so it never reappears just because existing items became
+                                            ineligible. As soon as the first item exists, this disappears on every proforma line. */}
+                                        {canAddRequestedItem && existingRequestItems.length === 0 && (
+                                            <div style={{ borderTop: "1px dashed #E2E8F0", paddingTop: "10px" }}>
+                                                <button
+                                                    onClick={() => {
+                                                        const di = draft.items.findIndex((i: any) => i === quoteItem);
+                                                        if (di !== -1) setAddFormDraftIndex(di);
+                                                    }}
+                                                    style={{ ...baseBtnStyle, border: "1px solid var(--color-primary)", backgroundColor: "#fff", color: "var(--color-primary)", fontWeight: 600 }}
+                                                    title="Cria um novo item solicitado no pedido a partir desta linha (para itens omitidos pelo requisitante). Diferente de 'Item adicional'."
+                                                >
+                                                    <FilePlus size={14} /> Adicionar como item solicitado
+                                                </button>
+                                                <div style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "6px" }}>
+                                                    Use quando este item deveria constar no pedido original, mas foi omitido. Não confundir com "Item adicional" (proposta sujeita à aprovação).
+                                                </div>
+                                            </div>
+                                        )}
 
                                         {/* Validation Help Text for Missing Status */}
                                         {!quoteItem.reconciliationStatus && (
@@ -406,6 +469,22 @@ export const WizardStepReconciliation: React.FC<WizardStepReconciliationProps> =
                     </div>
                 </div>
             </div>
+
+            {addFormDraftIndex !== null && draft.items[addFormDraftIndex] && (
+                <AddRequestedItemModal
+                    requestId={req.requestId}
+                    sourceProformaAttachmentId={draft.proformaAttachmentId ?? null}
+                    units={units}
+                    initial={{
+                        description: draft.items[addFormDraftIndex].description || '',
+                        quantity: draft.items[addFormDraftIndex].quantity || 1,
+                        unitId: draft.items[addFormDraftIndex].unitId ?? null,
+                        itemCatalogId: (draft.items[addFormDraftIndex] as any).itemCatalogId ?? null,
+                    }}
+                    onClose={() => setAddFormDraftIndex(null)}
+                    onResolved={(item) => handleRequestedItemResolved(addFormDraftIndex, item)}
+                />
+            )}
         </div>
     );
 };

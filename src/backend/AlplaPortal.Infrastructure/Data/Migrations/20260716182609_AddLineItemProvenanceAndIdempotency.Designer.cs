@@ -4,6 +4,7 @@ using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AlplaPortal.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260716182609_AddLineItemProvenanceAndIdempotency")]
+    partial class AddLineItemProvenanceAndIdempotency
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -571,9 +574,6 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("TaxId")
-                        .HasColumnType("nvarchar(450)");
-
                     b.HasKey("Id");
 
                     b.HasIndex("Code")
@@ -581,10 +581,6 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .HasFilter("\"Code\" IS NOT NULL");
 
                     b.HasIndex("FinalApproverUserId");
-
-                    b.HasIndex("TaxId")
-                        .IsUnique()
-                        .HasFilter("[TaxId] IS NOT NULL AND [TaxId] <> ''");
 
                     b.ToTable("Companies");
 
@@ -594,16 +590,14 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                             Id = 1,
                             Code = "APA",
                             IsActive = true,
-                            Name = "AlplaPLASTICO",
-                            TaxId = "5417567485"
+                            Name = "AlplaPLASTICO"
                         },
                         new
                         {
                             Id = 2,
                             Code = "APS",
                             IsActive = true,
-                            Name = "AlplaSOPRO",
-                            TaxId = "5001760246"
+                            Name = "AlplaSOPRO"
                         });
                 });
 
@@ -6599,7 +6593,7 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("TaxId")
-                        .HasColumnType("nvarchar(450)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
                         .HasColumnType("datetime2");
@@ -6625,10 +6619,6 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .HasFilter("[PrimaveraCode] IS NOT NULL AND [PrimaveraCode] <> ''");
 
                     b.HasIndex("RegistrationStatus");
-
-                    b.HasIndex("TaxId")
-                        .IsUnique()
-                        .HasFilter("[TaxId] IS NOT NULL AND [TaxId] <> ''");
 
                     b.ToTable("Suppliers");
 

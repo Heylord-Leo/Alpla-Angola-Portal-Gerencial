@@ -2121,3 +2121,20 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
 - **Alternatives considered:** Creating a new dedicated sync component inside the Contracts module (rejected: unnecessary duplication; the existing SyncWorkspace is generic and reusable via route parameterization).
 - **Consequences:** The supplier import flow now aligns with the business workflow where Contracts reviews and completes supplier fichas. Dados Mestres retains its CRUD maintenance focus without sync operations for suppliers. Catalog sync remains unaffected.
 
+
+---
+
+## DEC-138 — Company.TaxId as Authoritative Internal-NIF Source & Contextual Supplier Creation Policy
+
+- **Date:** 2026-07-17
+- **Status:** Accepted
+- **Context:** Payment-OCR extraction sometimes returns an internal ALPLA company's NIF (e.g. the billed company AlplaPLASTICO, NIF 5417567485) as if it were the supplier's NIF (Zeepack case). Registering an internal NIF as a supplier is invalid, and audit provenance about "which internal company / which supplier was declined" must not be forgeable by the client.
+- **Decision:**
+    1. **`Company.TaxId`** (nullable, normalized, unique filtered index) is the authoritative source of internal-company fiscal numbers, managed in Dados Mestres → Empresas (seeded by `Code`: APA=5417567485, APS=5001760246). NIFs are **not** hardcoded in code.
+    2. **Backend-authoritative internal-NIF block**: `ISupplierCreationService` rejects any NIF that resolves to a `Company.TaxId` on both match and create (`INTERNAL_COMPANY_TAX_ID`), independent of the frontend.
+    3. **Contextual creation is DRAFT-only**: `suppliers/from-payment-ocr` creates `Origin=PAYMENT_OCR`, `RegistrationStatus=DRAFT`; it never sets PrimaveraCode, activates, approves, or touches administrative fields (admin endpoint keeps those, refactored over the same service).
+    4. **Internal-NIF fallback**: when blocked, the modal drops the NIF, re-matches by name only, and offers use-existing / alternatives / create-without-NIF (explicit confirmation when a similar name exists). Creating a name-duplicate without a NIF requires the explicit duplicate decision.
+    5. **Server-side audit resolution**: client-provided provenance (`InternalCompanyTaxIdExtracted`, `RejectedSuggestedSupplierId`) is validated against the DB before being written — the internal NIF must resolve to a `Company`, and the rejected supplier must be a plausible name candidate. The history records only DB-resolved names/ids; false claims are ignored (no fabricated audit).
+- **Alternatives considered:** Hardcoding internal NIFs (rejected: not admin-manageable, drifts); trusting the client's audit metadata directly (rejected: forgeable audit); returning HTTP 400 on invalid rejected-supplier metadata (rejected in favor of ignoring, since the metadata is audit-only and grants no privilege — ignoring fully prevents false audit without breaking legitimate creation after a name edit).
+- **Consequences:** Internal NIFs can never become suppliers via the contextual flow; the Zeepack dead-end is resolved with a clear decision flow; audit provenance is trustworthy. The broad OCR multi-NIF classifier and the shared `SupplierValidationPanel` remain designed-only (see `docs/ai-ocr/OCR_MULTI_NIF_CLASSIFICATION_PLAN.md` and `docs/ai-ocr/SUPPLIER_VALIDATION_SHARED_COMPONENT_PLAN.md`).
+- **Related:** [DEC-137](#dec-137--supplier-import-relocation-dados-mestres--fichas-de-fornecedor), FRONTEND_FOUNDATION.md § Contextual Supplier Decision Modal

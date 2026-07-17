@@ -102,7 +102,9 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
     };
     const inputBase: React.CSSProperties = {
         width: '100%', padding: '8px 12px',
-        backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '4px',
+        // Longhand border props (not the `border` shorthand) so the error state can override only
+        // borderColor without React warning about mixing shorthand/longhand across rerenders.
+        backgroundColor: '#f8fafc', borderWidth: '1px', borderStyle: 'solid', borderColor: '#cbd5e1', borderRadius: '4px',
         fontWeight: 500, fontSize: '14px', color: '#0f172a',
         outline: 'none', transition: 'all 0.15s', boxSizing: 'border-box',
     };
