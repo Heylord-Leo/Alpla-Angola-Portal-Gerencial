@@ -88,8 +88,31 @@ Idempotent SQL is generated at design time WITHOUT running the API host:
   `--project` and `--startup-project` target `AlplaPortal.Infrastructure`, so `Program.cs` (and its runtime
   connection-string guard) never execute during generation. No real connection string is required to
   generate the script; the factory's non-operational placeholder never connects to LocalDB.
-- Generation is a single **`dotnet ef migrations script --idempotent --configuration Release --no-build`**
-  reusing the workflow's Release build. Generation failure aborts before any SQL is applied.
+- Generation reuses the workflow's Release build. Generation failure aborts before any SQL is applied.
+
+### Incremental Range Scripting (DEC-145)
+
+The script is generated for the **pending range only**, not from the first migration — a full script
+re-emits historical migration bodies and can fail to compile when a historical body references a column
+a later migration dropped (e.g. `Departments.ResponsibleUserId`, error 207).
+
+- **Strict prefix validation** runs first (before backup/generation): applied migrations must be an exact,
+  contiguous prefix of the filesystem list (`get-expected-migrations.ps1` order). Blocks on
+  out-of-order / gap / interleaved-pending / duplicate / foreign history, reporting index/expected/found.
+  History is never auto-corrected.
+- **FROM/TO**: `dotnet ef migrations script <FROM> <TO> --idempotent` with `FROM` = last applied
+  (`0` when the DB is empty — full history is expected there) and `TO` = last filesystem migration.
+- **Empty DB**: `FROM = 0` — the full script is expected and required.
+- **No pending**: early success; no backup, no script, no `sqlcmd`.
+- **Exact-set validation**: the MigrationIds INSERTed into `__EFMigrationsHistory` must equal the pending
+  set exactly (none already-applied, none after TO); incremental scripts must contain no
+  `ResponsibleUserId` and no `SET QUOTED_IDENTIFIER OFF`. Mismatch aborts before `sqlcmd`.
+- **After a STEP 5 failure** (multi-batch, no global transaction — not guaranteed atomic): the script
+  prints a read-only `__EFMigrationsHistory` snapshot and requires manual verification of history + objects
+  **before** any restore or retry. Run `scripts/db/check-pre-migration-state.ps1` (read-only) to confirm
+  the expected pre-migration state (e.g. TEST after the 2026-07-17 failure: 79 applied, none of the 3 new
+  recorded, `CreationOrigin` / `Companies.TaxId` / `IX_Companies_TaxId` / `IX_Suppliers_TaxId` absent).
+  **Never auto-restore.**
 
 
 ---
