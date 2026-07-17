@@ -58,6 +58,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Pure, testable helpers for incremental (FROM/TO) scripting and prefix validation (DEC-145).
+. (Join-Path $PSScriptRoot "migration-range.ps1")
+
 Write-Host ""
 Write-Host "=============================================" -ForegroundColor Cyan
 Write-Host "  EF Core Migration Application - $Environment" -ForegroundColor Cyan
@@ -123,11 +126,38 @@ $conn.Close()
 
 Write-Host "Applied migrations in [$dbName]: $($applied.Count)"
 
+# Normalize to arrays so positional indexing is reliable (a single row is a scalar otherwise).
+$expectedMigrations = @($expectedMigrations)
+$applied = @($applied)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STRICT PREFIX VALIDATION (DEC-145) — before any backup, generation or application.
+# The applied migrations MUST be an exact, contiguous prefix of the filesystem list. This blocks
+# out-of-order / gapped / interleaved / duplicated / foreign histories, which the incremental
+# FROM/TO generation would otherwise silently mis-handle.
+# ─────────────────────────────────────────────────────────────────────────────
+Write-Host ""
+Write-Host "STEP 1b - Validating applied history is an exact prefix of the filesystem..." -ForegroundColor Yellow
+$prefix = Test-MigrationPrefix -Expected $expectedMigrations -Applied $applied
+if (-not $prefix.Valid) {
+    Write-Host "::error::MIGRATION HISTORY VALIDATION FAILED: $($prefix.Reason)"
+    if ($prefix.Index -ge 0) {
+        Write-Host "::error::  Position:  $($prefix.Index)"
+        Write-Host "::error::  Expected:  $($prefix.Expected)"
+        Write-Host "::error::  Found:     $($prefix.Found)"
+    }
+    Write-Host "::error::The database history diverges from the repository. NO backup, script or SQL was run."
+    Write-Host "::error::Investigate manually — the history is NOT auto-corrected."
+    exit 1
+}
+Write-Host "OK - Applied history is a valid prefix of the filesystem list." -ForegroundColor Green
+
 # Compare
 $pending = @()
 foreach ($m in $expectedMigrations) {
     if ($applied -notcontains $m) { $pending += $m }
 }
+$pending = @($pending)
 
 if ($pending.Count -eq 0) {
     Write-Host ""
@@ -205,6 +235,20 @@ $infraProject = Join-Path $RepoRoot "src\backend\AlplaPortal.Infrastructure"
 $startupProject = $infraProject
 $sqlOutputFile = Join-Path $env:TEMP "apply-migrations-$Environment-$(Get-Date -Format 'yyyyMMdd_HHmmss').sql"
 
+# Determine the incremental range (DEC-145). Generating from the FIRST migration re-emits historical
+# migration bodies; when a historical body references a column dropped by a later migration
+# (e.g. Departments.ResponsibleUserId), SQL Server fails to COMPILE it inside the guarded IF block
+# before the runtime guard can skip it. FROM = last applied (or '0' for an empty DB); TO = last expected.
+$range = Get-MigrationRange -Expected $expectedMigrations -Applied $applied
+$fromMigration = $range.From
+$toMigration = $range.To
+if ($fromMigration -eq '0') {
+    Write-Host "Empty database: FROM = 0 (full history is expected and required for a fresh database)." -ForegroundColor Yellow
+} else {
+    Write-Host "Incremental range: FROM (last applied, not re-applied) = $fromMigration" -ForegroundColor Yellow
+}
+Write-Host "                   TO   (last on filesystem)             = $toMigration" -ForegroundColor Yellow
+
 # Use the repo-pinned LOCAL dotnet-ef tool (.config/dotnet-tools.json -> 8.0.11). Deterministic and
 # independent of any global tool state on the runner (we never install/update/uninstall global tools).
 # Run from the repo root so the local tool manifest is discovered.
@@ -227,11 +271,11 @@ try {
     }
     Write-Host "OK - dotnet-ef 8.0.11 confirmed." -ForegroundColor Green
 
-    # Generate idempotent SQL. The design-time factory (DesignTimeDbContextFactory) supplies the
-    # DbContext WITHOUT constructing/running the API host (Program.cs), so the runtime
-    # connection-string guard is never triggered. Reuse the Release build the workflow already
-    # produced (single, deterministic attempt; no predictably-invalid --no-build-in-Debug retry).
-    dotnet ef migrations script --idempotent `
+    # Generate the INCREMENTAL idempotent SQL for the FROM..TO range only. The design-time factory
+    # (DesignTimeDbContextFactory) supplies the DbContext WITHOUT constructing/running the API host
+    # (Program.cs), so the runtime connection-string guard is never triggered. Reuse the Release build
+    # the workflow already produced (single, deterministic attempt).
+    dotnet ef migrations script $fromMigration $toMigration --idempotent `
         --configuration Release `
         --no-build `
         --project $infraProject `
@@ -291,33 +335,51 @@ Write-Host "--- end preview ---" -ForegroundColor Cyan
 # ─────────────────────────────────────────────────────────────────────────────
 
 Write-Host ""
-Write-Host "STEP 4 - Validating SQL script covers all pending migrations..." -ForegroundColor Yellow
+Write-Host "STEP 4 - Validating the generated SQL covers EXACTLY the pending set..." -ForegroundColor Yellow
 
-$missingFromSql = @()
-foreach ($m in $pending) {
-    # Check for the INSERT INTO __EFMigrationsHistory for this migration ID
-    if ($sqlContent -notmatch [regex]::Escape($m)) {
-        $missingFromSql += $m
+# Authoritative check: the MigrationIds the script INSERTs into __EFMigrationsHistory must equal the
+# pending set exactly — not a generic substring search.
+$scriptMigrations = @(Get-MigrationIdsFromScript -SqlContent $sqlContent)
+$pendingSorted = @($pending | Sort-Object)
+$scriptSorted = @($scriptMigrations | Sort-Object)
+
+$missingFromSql = @($pending | Where-Object { $scriptMigrations -notcontains $_ })
+$extraInSql = @($scriptMigrations | Where-Object { $pending -notcontains $_ })
+# None of the ALREADY-APPLIED migrations may be (re-)inserted into __EFMigrationsHistory by this range.
+$reappliedApplied = @($scriptMigrations | Where-Object { $applied -contains $_ })
+# Nothing after the TO migration may appear.
+$toIndex = [array]::IndexOf($expectedMigrations, $toMigration)
+$afterTo = @($scriptMigrations | Where-Object { [array]::IndexOf($expectedMigrations, $_) -gt $toIndex })
+
+$validationFailed = $false
+if ($missingFromSql.Count -gt 0) { $validationFailed = $true; Write-Host "::error::Pending migration(s) MISSING from the script:"; $missingFromSql | ForEach-Object { Write-Host "::error::  MISSING: $_" } }
+if ($extraInSql.Count -gt 0)     { $validationFailed = $true; Write-Host "::error::Script records migration(s) that are NOT pending:"; $extraInSql | ForEach-Object { Write-Host "::error::  UNEXPECTED: $_" } }
+if ($reappliedApplied.Count -gt 0) { $validationFailed = $true; Write-Host "::error::Script would (re-)insert already-applied migration(s):"; $reappliedApplied | ForEach-Object { Write-Host "::error::  RE-APPLIED: $_" } }
+if ($afterTo.Count -gt 0)        { $validationFailed = $true; Write-Host "::error::Script records migration(s) after TO ($toMigration):"; $afterTo | ForEach-Object { Write-Host "::error::  AFTER-TO: $_" } }
+if ($scriptMigrations.Count -ne $pending.Count) { $validationFailed = $true; Write-Host "::error::Recorded count ($($scriptMigrations.Count)) != pending count ($($pending.Count))." }
+
+# In the incremental scenario (non-empty DB), the script must NOT reference a column dropped by history
+# (Departments.ResponsibleUserId). For an EMPTY database (FROM = 0) the full history is expected and the
+# column legitimately appears (created then dropped in sequence), so this check is skipped.
+if ($fromMigration -ne '0') {
+    if ([regex]::IsMatch($sqlContent, 'ResponsibleUserId', 'IgnoreCase')) {
+        $validationFailed = $true
+        Write-Host "::error::Incremental script unexpectedly references 'ResponsibleUserId' (a dropped historical column)."
+    } else {
+        Write-Host "OK - No 'ResponsibleUserId' reference in the incremental script." -ForegroundColor Green
     }
 }
 
-if ($missingFromSql.Count -gt 0) {
+if ($validationFailed) {
     Write-Host ""
-    Write-Host "::error::CRITICAL: The generated SQL script does NOT include the following pending migration(s):" -ForegroundColor Red
-    foreach ($m in $missingFromSql) {
-        Write-Host "::error::  MISSING: $m" -ForegroundColor Red
-    }
-    Write-Host ""
-    Write-Host "::error::This is likely caused by missing .Designer.cs files (see DEC-138)." -ForegroundColor Red
-    Write-Host "::error::These migrations must be applied manually using a handcrafted SQL script." -ForegroundColor Red
-    Write-Host "::error::See: docs/DEPLOYMENT_CHECKLIST.md" -ForegroundColor Red
-
-    # Clean up temp file
+    Write-Host "::error::Expected (pending): $($pendingSorted -join ', ')" -ForegroundColor Red
+    Write-Host "::error::Found (in script):  $($scriptSorted -join ', ')" -ForegroundColor Red
+    Write-Host "::error::Aborting BEFORE sqlcmd. No SQL was applied."
     Remove-Item $sqlOutputFile -ErrorAction SilentlyContinue
     exit 1
 }
 
-Write-Host "OK - All $($pending.Count) pending migrations are covered in the generated SQL." -ForegroundColor Green
+Write-Host "OK - The script records EXACTLY the $($pending.Count) pending migration(s), nothing else." -ForegroundColor Green
 Write-Host ""
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -378,8 +440,33 @@ if ($connBuilder.IntegratedSecurity) {
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "::error::Migration SQL failed! Check output above." -ForegroundColor Red
+
+    # The EF idempotent script uses multiple GO-separated batches and NO global transaction, so a
+    # failure is NOT guaranteed to be atomic. Do a READ-ONLY post-failure snapshot to help decide,
+    # and explicitly tell the operator to verify state BEFORE any restore or retry. We do NOT restore.
+    Write-Host ""
+    Write-Host "::warning::Post-failure READ-ONLY state (no restore performed, no schema changed by this step):" -ForegroundColor Yellow
+    try {
+        $connPf = New-Object System.Data.SqlClient.SqlConnection($ConnectionString)
+        $connPf.Open()
+        $pfCmd = $connPf.CreateCommand()
+        $pfCmd.CommandText = "SELECT COUNT(*) FROM __EFMigrationsHistory"
+        Write-Host ("  __EFMigrationsHistory count: {0}" -f $pfCmd.ExecuteScalar())
+        $pfCmd.CommandText = "SELECT TOP 5 MigrationId FROM __EFMigrationsHistory ORDER BY MigrationId DESC"
+        $rd = $pfCmd.ExecuteReader()
+        Write-Host "  Last applied MigrationIds:"
+        while ($rd.Read()) { Write-Host "    - $($rd['MigrationId'])" }
+        $rd.Close(); $connPf.Close()
+    } catch {
+        Write-Host "  (Could not read post-failure state: $($_.Exception.Message))"
+    }
+    Write-Host ""
+    Write-Host "::warning::MANUAL CHECK REQUIRED before any restore or retry:" -ForegroundColor Yellow
+    Write-Host "  1) Confirm __EFMigrationsHistory does NOT contain a partially-recorded migration."
+    Write-Host "  2) Confirm the objects created by the pending migrations are absent or in the expected prior state."
+    Write-Host "  3) Only then decide whether to fix-forward or restore. Do NOT auto-restore."
     if (-not $SkipBackup) {
-        Write-Host "Database backup is at: $backupFile" -ForegroundColor Yellow
+        Write-Host "  Backup available at: $backupFile" -ForegroundColor Yellow
     }
     Remove-Item $sqlOutputFile -ErrorAction SilentlyContinue
     exit 1

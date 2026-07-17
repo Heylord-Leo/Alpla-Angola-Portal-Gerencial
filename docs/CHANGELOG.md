@@ -4,9 +4,22 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.207.1
+v2.207.2
 
 ## [Unreleased]
+
+## [v2.207.2] - 2026-07-17
+
+### Fixed — Geração incremental (FROM/TO) do SQL de migrations com validação de prefixo
+
+- **Geração incremental por intervalo FROM/TO**: o SQL idempotente passa a ser gerado apenas para o intervalo pendente via `dotnet ef migrations script <FROM> <TO> --idempotent` (`FROM` = última migration aplicada, ou `0` para banco vazio; `TO` = última migration do filesystem), em vez de gerar desde a primeira migration.
+- **Prevenção de recompilação de SQL histórico**: gerar desde o início reemitia o corpo de migrations já aplicadas; quando uma migration histórica referencia uma coluna removida por outra posterior (`Departments.ResponsibleUserId`), o SQL Server falhava ao **compilar** a referência inline dentro do bloco guardado `IF NOT EXISTS(...) BEGIN ... END` (erro 207 "Invalid column name") antes da avaliação do guard em runtime. O intervalo pendente exclui esses corpos históricos.
+- **Validação estrita de prefixo do histórico** antes de qualquer backup/geração/aplicação: as migrations aplicadas devem ser um prefixo exato e contíguo da lista do filesystem (ordem canônica de `get-expected-migrations.ps1`). Bloqueia **gap, ordem divergente, migration desconhecida (aplicada ausente do filesystem), pendência intercalada, mais aplicadas que esperadas e duplicidade**, reportando índice/esperada/encontrada; o histórico nunca é corrigido automaticamente.
+- **Validação exata dos MigrationIds presentes no script**: extração dos IDs inseridos em `__EFMigrationsHistory` (não busca textual genérica) exigindo conjunto == pendentes, nenhuma já-aplicada reinserida, nenhuma após o `TO` e contagem == pendentes; no cenário incremental, ausência de `ResponsibleUserId` e de `SET QUOTED_IDENTIFIER OFF`. Qualquer divergência aborta antes do `sqlcmd`.
+- **Verificação read-only de estado parcial antes de nova aplicação** (`scripts/db/check-pre-migration-state.ps1`): confirma contagem aplicada, ausência das pendentes no histórico e ausência dos objetos que elas criam; e orientação pós-falha (snapshot read-only do `__EFMigrationsHistory` + conferência manual), sem auto-restore. `sqlcmd -b`, preflight `QUOTED_IDENTIFIER` e interrupção em exit≠0 preservados.
+- Casos de **banco vazio** (`FROM = 0`, script completo esperado) e **sem pendências** (saída antecipada, sem backup/script/sqlcmd) tratados explicitamente. Testes unitários (`migration-range.Tests.ps1`, 18 asserts, sem DB).
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.207.1] - 2026-07-17
 

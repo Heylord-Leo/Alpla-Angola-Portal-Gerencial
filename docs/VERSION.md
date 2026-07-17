@@ -2,7 +2,18 @@
 
 ## Current Version
 
-v2.207.1
+v2.207.2
+
+## [v2.207.2] - 2026-07-17
+
+### Fixed — Geração incremental (FROM/TO) do SQL de migrations com validação de prefixo
+
+- O SQL idempotente passa a ser gerado apenas para o **intervalo pendente** (`dotnet ef migrations script <FROM> <TO> --idempotent`), evitando recompilar corpos de migrations históricas — inclusive as que referenciam colunas já removidas (`Departments.ResponsibleUserId`), causa do erro 207 "Invalid column name".
+- **Validação estrita de prefixo** do histórico antes de qualquer backup/geração: bloqueia gaps, ordem divergente, migration desconhecida, pendente intercalada e duplicidade, reportando índice/esperada/encontrada.
+- **Validação exata** dos MigrationIds inseridos em `__EFMigrationsHistory` (conjunto == pendentes; nada já-aplicado; nada após o TO).
+- **Verificação read-only** de estado parcial (`check-pre-migration-state.ps1`) e orientação pós-falha, sem auto-restore.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.207.1] - 2026-07-17
 
