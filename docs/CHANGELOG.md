@@ -4,9 +4,22 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.207.0
+v2.207.1
 
 ## [Unreleased]
+
+## [v2.207.1] - 2026-07-17
+
+### Fixed — Estabilização do design-time do EF Core (pipeline de migrations)
+
+- **`DesignTimeDbContextFactory`** (`AlplaPortal.Infrastructure/Data/`) fornece o `ApplicationDbContext` para os comandos `dotnet ef`, resolvendo a connection string por env `ConnectionStrings__DefaultConnection` → `appsettings(.Development).json` (opcional) → placeholder de design-time não-operacional (nunca LocalDB). Não resolve serviços da aplicação, não faz seed e não abre conexão.
+- **`dotnet-ef` fixado em 8.0.11** via `.config/dotnet-tools.json` (ferramenta local).
+- **Remoção da dependência da ferramenta global**: scripts e workflows passam a executar `dotnet tool restore` e a **validar** que `dotnet ef --version` é 8.0.11, falhando imediatamente caso contrário (nenhuma instalação/atualização/remoção de tool global no runner).
+- **Geração idempotente em Release com `--no-build`**: uma única tentativa determinística reutilizando o build Release do workflow (removidas a tentativa Debug previsivelmente inválida e o fallback duplo); falha na geração aborta antes de aplicar qualquer SQL.
+- **Infrastructure como startup project**: `--project` e `--startup-project` apontam para `AlplaPortal.Infrastructure` (self-contained, sem host), de modo que o `Program.cs` — e seu guard de connection-string — **nunca é executado** durante a geração do SQL. O guard de runtime permanece intacto.
+- **Paridade dos workflows TEST e PROD** (`apply-migrations-test.yml` e `apply-migrations-prod.yml`) com a mesma estratégia técnica.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.207.0] - 2026-07-17
 

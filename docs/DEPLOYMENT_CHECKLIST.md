@@ -77,6 +77,20 @@ The following files are auto-generated and no longer need manual updates:
 - `get-expected-migrations.ps1` — scans the migrations folder at runtime
 - Deploy workflow migration checks — read from `expected-migrations.txt`
 
+### Design-Time Tooling (DEC-144)
+
+Idempotent SQL is generated at design time WITHOUT running the API host:
+
+- **Local `dotnet-ef` tool**, pinned to **8.0.11** in `.config/dotnet-tools.json`. The workflows run
+  `dotnet tool restore` and **assert** `dotnet ef --version` contains `8.0.11` (fail otherwise). No global
+  tool is installed/updated on the runner.
+- **`DesignTimeDbContextFactory`** (`AlplaPortal.Infrastructure/Data/`) supplies the DbContext; both
+  `--project` and `--startup-project` target `AlplaPortal.Infrastructure`, so `Program.cs` (and its runtime
+  connection-string guard) never execute during generation. No real connection string is required to
+  generate the script; the factory's non-operational placeholder never connects to LocalDB.
+- Generation is a single **`dotnet ef migrations script --idempotent --configuration Release --no-build`**
+  reusing the workflow's Release build. Generation failure aborts before any SQL is applied.
+
 
 ---
 

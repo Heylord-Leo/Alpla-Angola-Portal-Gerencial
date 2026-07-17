@@ -196,47 +196,54 @@ if (-not $SkipBackup) {
 
 Write-Host "STEP 3 - Generating idempotent migration SQL..." -ForegroundColor Yellow
 
+# Both --project and --startup-project point to AlplaPortal.Infrastructure. It is self-contained for
+# design time (DbContext + migrations + SqlServer provider + EFCore.Design + DesignTimeDbContextFactory)
+# and has NO application host, so the EF tools use the factory directly and NEVER build/run the API
+# host (Program.cs). This keeps the runtime connection-string guard in Program.cs untouched while
+# preventing it from ever executing during design-time SQL generation.
 $infraProject = Join-Path $RepoRoot "src\backend\AlplaPortal.Infrastructure"
-$startupProject = Join-Path $RepoRoot "src\backend\AlplaPortal.Api"
+$startupProject = $infraProject
 $sqlOutputFile = Join-Path $env:TEMP "apply-migrations-$Environment-$(Get-Date -Format 'yyyyMMdd_HHmmss').sql"
 
-# Ensure dotnet-ef tool is available
-$toolsPath = Join-Path $env:USERPROFILE ".dotnet\tools"
-$env:PATH = "$toolsPath;$env:PATH"
-if ($env:GITHUB_PATH) {
-    Add-Content -Path $env:GITHUB_PATH -Value $toolsPath
-}
-
-$dotnetEf = Join-Path $toolsPath "dotnet-ef.exe"
-
-# Install/Update global dotnet-ef to a compatible version (8.0.11)
-Write-Host "Installing/Updating dotnet-ef global tool (v8.0.11)..." -ForegroundColor Yellow
-dotnet tool update --global dotnet-ef --version 8.0.11 2>&1
-
-if (-not (Test-Path $dotnetEf)) {
-    throw "dotnet-ef.exe nao encontrado em $dotnetEf apos instalacao."
-}
-
-$efToolCheck = & $dotnetEf --version 2>&1
-Write-Host "dotnet-ef version: $efToolCheck"
-
-# Generate idempotent SQL script (from start, covers all migrations)
-& $dotnetEf migrations script --idempotent `
-    --project $infraProject `
-    --startup-project $startupProject `
-    --output $sqlOutputFile `
-    --no-build 2>&1
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "::warning::dotnet ef script with --no-build failed. Trying with build..."
-    & $dotnetEf migrations script --idempotent `
-        --project $infraProject `
-        --startup-project $startupProject `
-        --output $sqlOutputFile 2>&1
+# Use the repo-pinned LOCAL dotnet-ef tool (.config/dotnet-tools.json -> 8.0.11). Deterministic and
+# independent of any global tool state on the runner (we never install/update/uninstall global tools).
+# Run from the repo root so the local tool manifest is discovered.
+Push-Location $RepoRoot
+try {
+    Write-Host "Restoring local dotnet tools (.config/dotnet-tools.json)..." -ForegroundColor Yellow
+    dotnet tool restore
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "::error::Failed to generate migration SQL script."
+        Write-Host "::error::dotnet tool restore failed. Cannot obtain the pinned dotnet-ef tool."
         exit 1
     }
+
+    # Validate the EFFECTIVE version is exactly 8.0.11 — fail fast if anything else is in effect.
+    $efVersionOutput = (dotnet ef --version 2>&1 | Out-String)
+    Write-Host "dotnet ef --version:"
+    Write-Host $efVersionOutput
+    if ($efVersionOutput -notmatch '8\.0\.11') {
+        Write-Host "::error::Expected dotnet-ef 8.0.11 but a different version is in effect. Aborting."
+        exit 1
+    }
+    Write-Host "OK - dotnet-ef 8.0.11 confirmed." -ForegroundColor Green
+
+    # Generate idempotent SQL. The design-time factory (DesignTimeDbContextFactory) supplies the
+    # DbContext WITHOUT constructing/running the API host (Program.cs), so the runtime
+    # connection-string guard is never triggered. Reuse the Release build the workflow already
+    # produced (single, deterministic attempt; no predictably-invalid --no-build-in-Debug retry).
+    dotnet ef migrations script --idempotent `
+        --configuration Release `
+        --no-build `
+        --project $infraProject `
+        --startup-project $startupProject `
+        --output $sqlOutputFile
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "::error::Failed to generate migration SQL script. Aborting before any SQL is applied."
+        exit 1
+    }
+}
+finally {
+    Pop-Location
 }
 
 if (-not (Test-Path $sqlOutputFile)) {

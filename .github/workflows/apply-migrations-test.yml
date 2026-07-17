@@ -63,22 +63,22 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      # --- Ensure dotnet-ef tool is available ---
-      - name: Install dotnet-ef tool
+      # --- Restore the repo-pinned LOCAL dotnet-ef tool (.config/dotnet-tools.json -> 8.0.11) ---
+      # Deterministic: uses the manifest version regardless of any global tool on the runner.
+      # We never install/update/uninstall the global dotnet-ef tool.
+      - name: Restore local dotnet-ef tool
         shell: pwsh
         run: |
-          $toolsPath = Join-Path $env:USERPROFILE ".dotnet\tools"
-          $env:PATH = "$toolsPath;$env:PATH"
-          Add-Content -Path $env:GITHUB_PATH -Value $toolsPath
-          
-          Write-Host "Installing/Updating dotnet-ef global tool (v8.0.11)..."
-          dotnet tool update --global dotnet-ef --version 8.0.11
-          
-          $dotnetEf = Join-Path $toolsPath "dotnet-ef.exe"
-          if (-not (Test-Path $dotnetEf)) {
-            throw "dotnet-ef.exe nao encontrado apos instalacao."
+          dotnet tool restore
+          if ($LASTEXITCODE -ne 0) { throw "dotnet tool restore failed." }
+
+          $efVersion = (dotnet ef --version 2>&1 | Out-String)
+          Write-Host "dotnet ef --version:"
+          Write-Host $efVersion
+          if ($efVersion -notmatch '8\.0\.11') {
+            throw "Expected dotnet-ef 8.0.11 but a different version is in effect. Aborting."
           }
-          & $dotnetEf --version
+          Write-Host "OK - dotnet-ef 8.0.11 confirmed."
 
       # --- Restore and Build ---
       # Required for dotnet ef migrations script to resolve the DbContext
