@@ -4,9 +4,26 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.208.1
+v2.208.2
 
 ## [Unreleased]
+
+## [v2.208.2] - 2026-07-19
+
+### Fixed — CI: Compatibilidade do Workflow "Sync PROD Data to TEST" com Runners sem Git no PATH
+
+- **Correção do step "Resolve commit metadata"**: falhava no runner self-hosted com "The term 'git' is not recognized" porque `git` não está no `PATH` ali, e `actions/checkout@v4` caía para o fallback de download via API REST (documentado), que não deixa metadados `.git` utilizáveis.
+- **Removida a dependência obrigatória de Git no runner**: o workflow não exige mais que `git` esteja instalado para rodar esta sincronização.
+- **`GITHUB_SHA` validado e usado como SHA autoritativo**: fonte de verdade para o commit resolvido, fornecida diretamente pelo GitHub Actions para o dispatch — não depende de clone real do repositório.
+- **Cross-check com `git rev-parse HEAD` somente quando Git e metadados `.git` estão disponíveis**: detectado via `Get-Command git` + verificação do diretório `.git`; nunca invocado incondicionalmente.
+- **Suporte explícito ao checkout por fallback REST** do `actions/checkout@v4`; checkout continua sem `ref:` forçado (usa o ref selecionado no dispatch).
+- **Validação de SHA hexadecimal completo de 40 caracteres** (`^[0-9a-fA-F]{40}$`) tanto no novo script de resolução de metadados quanto, como defesa em profundidade, em `validate-sync-prod-data-test-inputs.ps1`.
+- **Falha explícita quando o Git local diverge de `GITHUB_SHA`**: o erro ocorre antes da validação de inputs/ref/versão e antes do script de sincronização — nunca depois.
+- **Nenhuma alteração na lógica de sincronização de dados**: `scripts/db/sync-prod-data-test.ps1` permanece idêntico ao conteúdo já publicado e confiável (backup PROD/TEST, `SINGLE_USER`/`RESTORE ... WITH REPLACE`/`MULTI_USER`, remapeamento de login, neutralização de `EmailOutbox`/`SmtpSettings`/`IntegrationProviders`, espelhamento de anexos via Robocopy).
+- **Warning do Node 20** (`actions/checkout@v4`) continua registrado apenas como nota informativa, sem relação com esta correção.
+- Nenhuma alteração funcional na aplicação.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.208.1] - 2026-07-19
 

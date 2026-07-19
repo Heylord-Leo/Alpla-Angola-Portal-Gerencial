@@ -39,19 +39,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # --- Resolve commit metadata from the checked-out working tree ---
+      # --- Resolve commit metadata (Git is optional; GITHUB_SHA is authoritative) ---
       - name: Resolve commit metadata
         id: commit_meta
         shell: pwsh
         run: |
-          $resolvedSha = (git rev-parse HEAD).Trim()
-          Write-Host "github.ref_name:    ${{ github.ref_name }}"
-          Write-Host "github.sha (event): ${{ github.sha }}"
-          Write-Host "git rev-parse HEAD: $resolvedSha"
-          if ($resolvedSha -ne "${{ github.sha }}") {
-            Write-Host "[WARN] Resolved HEAD differs from github.sha of the triggering event." -ForegroundColor Yellow
-          }
-          "resolved_sha=$resolvedSha" >> $env:GITHUB_OUTPUT
+          & "${{ github.workspace }}\scripts\db\resolve-sync-commit-metadata.ps1" `
+            -EventSha $env:GITHUB_SHA `
+            -RepoRoot "${{ github.workspace }}"
 
       # --- Validate inputs, branch ref and repository version (non-destructive) ---
       - name: Validate inputs, ref and version

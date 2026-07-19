@@ -31,6 +31,7 @@ param(
     [string]$TargetAppPath,
 
     [Parameter(Mandatory = $true)]
+    [AllowEmptyString()]
     [string]$ResolvedCommitSha,
 
     [Parameter(Mandatory = $true)]
@@ -50,6 +51,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $SemVerPattern = '^v\d+\.\d+\.\d+$'
+$ShaPattern = '^[0-9a-fA-F]{40}$'
 
 function Get-RepositoryVersion {
     param([Parameter(Mandatory = $true)][string]$VersionFilePath)
@@ -171,7 +173,20 @@ foreach ($protectedPath in $forbiddenAppPaths) {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5. Safe Traceability Output (only reached once every guard above passed)
+# 5. Resolved Commit SHA Safety (defense in depth: the resolved SHA already
+#    comes validated from scripts/db/resolve-sync-commit-metadata.ps1, but
+#    this script never trusts an upstream value without checking its shape)
+# ─────────────────────────────────────────────────────────────────────────────
+if ([string]::IsNullOrWhiteSpace($ResolvedCommitSha)) {
+    throw "TRACEABILITY ERROR: resolved commit SHA must not be empty."
+}
+
+if ($ResolvedCommitSha -notmatch $ShaPattern) {
+    throw "TRACEABILITY ERROR: resolved commit SHA '$ResolvedCommitSha' is not a valid 40-character hexadecimal SHA."
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. Safe Traceability Output (only reached once every guard above passed)
 # ─────────────────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "Validacao concluida com sucesso." -ForegroundColor Green
