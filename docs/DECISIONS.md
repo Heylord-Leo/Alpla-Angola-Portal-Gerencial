@@ -2244,3 +2244,31 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
   failures are fully reproducible locally via `pwsh` without any risk to TEST or PROD data.
 - **Related:** [[DEC-147]] (previous decision published from this same branch), `docs/DEPLOYMENT_CHECKLIST.md`
   → "Sync PROD Data to TEST" section.
+
+---
+
+## DEC-148a — Commit Metadata Resolution Must Not Require Git on the Runner (Addendum to DEC-148)
+
+- **Date:** 2026-07-19
+- **Status:** Accepted
+- **Context:** The first hardened version of the "Resolve commit metadata" step (DEC-148) called
+  `git rev-parse HEAD` unconditionally. The self-hosted TEST runner does not have `git` in `PATH`, so
+  `actions/checkout@v4` silently fell back to its documented REST API archive download — which produces a
+  working directory with **no `.git` metadata at all**. The unconditional `git` call then failed with
+  "The term 'git' is not recognized...", aborting the run before the real input/ref/version validation
+  ([[DEC-148]]) ever executed. No database, backup, restore, or attachment operation ran — the failure was
+  purely in the non-destructive metadata step.
+- **Decision:** `GITHUB_SHA` (the event SHA GitHub Actions supplies to every run) is the **sole
+  authoritative source** for the resolved commit SHA — it requires no Git installation and no `.git`
+  metadata. A local `git rev-parse HEAD` is attempted **opportunistically only** when both the `git`
+  command and a `.git` directory are present (`Get-Command git -ErrorAction SilentlyContinue` +
+  `Test-Path .git`); when present, it is used strictly as an integrity cross-check and the run **fails
+  only if it disagrees** with `GITHUB_SHA`. The workflow must never require Git to be installed merely to
+  run this sync, and `scripts/db/resolve-sync-commit-metadata.ps1` never invokes `git` unconditionally.
+  `scripts/db/validate-sync-prod-data-test-inputs.ps1` independently re-validates the resolved SHA's shape
+  (non-empty, `^[0-9a-fA-F]{40}$`) as defense in depth, without adding a redundant second SHA parameter —
+  the SHA-agreement check itself lives exclusively in the metadata-resolution step.
+- **Consequences:** the workflow now runs correctly whether `actions/checkout@v4` performs a real git
+  clone or falls back to the REST archive; installing Git on the runner remains optional infrastructure
+  work, not a prerequisite for this workflow, and is not being done as part of this fix.
+- **Related:** [[DEC-148]], `docs/DEPLOYMENT_CHECKLIST.md` → "Sync PROD Data to TEST" section.

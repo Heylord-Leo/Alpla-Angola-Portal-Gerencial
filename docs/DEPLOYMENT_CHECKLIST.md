@@ -279,14 +279,22 @@ only receives it through the normal `Portal-Gerencial-rev1` → `main` merge pro
      being run (e.g. `v2.208.0`). The workflow reads `docs/VERSION.md` itself and rejects any value that
      doesn't match it exactly (and rejects anything that isn't valid SemVer `vX.Y.Z`), so the input can
      never be silently inferred or substituted.
-4. All of the above is checked in a dedicated **"Validate inputs, ref and version"** step that runs
+4. Before validation, a **"Resolve commit metadata"** step determines the commit SHA used for
+   traceability. `GITHUB_SHA` (supplied directly by GitHub Actions for the dispatched run) is always
+   authoritative and is used as the resolved SHA. This runner does **not** require Git to be installed:
+   `actions/checkout@v4` may fall back to downloading the repository as a REST API archive when `git` is
+   not in `PATH`, in which case there is no `.git` directory to inspect. When `git` **and** `.git`
+   metadata both happen to be available, the step opportunistically runs `git rev-parse HEAD` as an extra
+   cross-check and **fails only if it disagrees** with `GITHUB_SHA` — it never fails merely because Git is
+   missing (`scripts/db/resolve-sync-commit-metadata.ps1`).
+5. All of the above is checked in a dedicated **"Validate inputs, ref and version"** step that runs
    *before* `scripts/db/sync-prod-data-test.ps1` is ever invoked — no backup, restore, or attachment
    operation happens if validation fails.
-5. Once validation passes, the job prints safe traceability metadata (workflow ref, `github.ref_name`,
-   resolved commit SHA via `git rev-parse HEAD`, repository version, `release_version` input, confirmation
-   status, source/target database names and application paths). It never prints passwords, connection
-   strings, or secret values. The SQL Server instance name is printed later, by the unchanged sync script
-   itself, right before the restore step.
+6. Once validation passes, the job prints safe traceability metadata (workflow ref, `github.ref_name`,
+   resolved commit SHA, repository version, `release_version` input, confirmation status, source/target
+   database names and application paths). It never prints passwords, connection strings, or secret values.
+   The SQL Server instance name is printed later, by the unchanged sync script itself, right before the
+   restore step.
 
 **What the sync script still does (unchanged since it was authored on `main`):** backs up TEST
 (pre-restore) and PROD (source) to `C:\Apps\AlplaPortal\Test\backups\db`; restores the PROD backup over

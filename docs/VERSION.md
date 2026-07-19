@@ -2,7 +2,21 @@
 
 ## Current Version
 
-v2.208.1
+v2.208.2
+
+## [v2.208.2] - 2026-07-19
+
+### Fixed — CI: Sync PROD Data to TEST Workflow — Git-Optional Commit Metadata
+
+- Fixed the `Resolve commit metadata` step, which failed on the self-hosted runner with "The term 'git' is not recognized" because `git` is not in `PATH` there and `actions/checkout@v4` fell back to its documented REST API archive download (no `.git` metadata in that case).
+- `GITHUB_SHA` (supplied directly by GitHub Actions for the dispatched run) is now the authoritative resolved commit SHA — no Git installation or `.git` metadata is required to run this workflow.
+- A local `git rev-parse HEAD` cross-check now runs only opportunistically, when both `git` (via `Get-Command`) and a `.git` directory are available; it fails explicitly, before validation and before the sync script, only if the local SHA disagrees with `GITHUB_SHA`.
+- `GITHUB_SHA` is validated as a full 40-character hexadecimal SHA (`^[0-9a-fA-F]{40}$`) before use; `scripts/db/validate-sync-prod-data-test-inputs.ps1` independently re-validates the resolved SHA's shape as defense in depth.
+- `actions/checkout@v4`'s REST fallback checkout strategy is now explicitly supported; checkout continues without a forced ref.
+- No application functionality changed; no change to the destructive synchronization logic in `scripts/db/sync-prod-data-test.ps1` (verified identical to the previously published, trusted copy).
+- The Node 20 deprecation warning from `actions/checkout@v4` remains informational only and unrelated to this fix.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.208.1] - 2026-07-19
 
