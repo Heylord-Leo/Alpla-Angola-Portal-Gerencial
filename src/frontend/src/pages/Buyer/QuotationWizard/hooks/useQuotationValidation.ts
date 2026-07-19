@@ -62,6 +62,9 @@ export function useQuotationValidation() {
                 errors.push(`Item ${item.lineNumber}: Justificativa é obrigatória para itens substitutos.`);
             } else if (item.reconciliationStatus === 'EXTRA_ITEM' && (!item.reconciliationJustification || !item.reconciliationJustification.trim())) {
                 errors.push(`Item ${item.lineNumber}: Justificativa é obrigatória para itens adicionais.`);
+            } else if (item.reconciliationStatus === 'IGNORED' && (item.totalPrice ?? 0) > 0 && (!item.reconciliationJustification || !item.reconciliationJustification.trim())) {
+                // Ignored line WITH value leaves the integrity baseline — requires its own justification.
+                errors.push(`Item ${item.lineNumber}: Justificativa é obrigatória para ignorar uma linha com valor.`);
             } else if (item.reconciliationStatus === 'MAPPED' && !item.mappedRequestLineItemId) {
                 errors.push(`Item ${item.lineNumber}: Deve selecionar o item solicitado correspondente.`);
             } else if (item.reconciliationStatus === 'SUBSTITUTE' && !item.mappedRequestLineItemId) {

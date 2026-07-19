@@ -404,6 +404,50 @@ public class ApprovalBatchItemConfiguration : IEntityTypeConfiguration<ApprovalB
     }
 }
 
+public class QuotationReuseAuthorizationConfiguration : IEntityTypeConfiguration<QuotationReuseAuthorization>
+{
+    public void Configure(EntityTypeBuilder<QuotationReuseAuthorization> builder)
+    {
+        builder.HasKey(a => a.Id);
+
+        builder.Property(a => a.Reason).IsRequired().HasMaxLength(1000);
+        builder.Property(a => a.RevocationReason).HasMaxLength(1000);
+
+        builder.HasOne(a => a.Request)
+               .WithMany()
+               .HasForeignKey(a => a.RequestId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasOne(a => a.Quotation)
+               .WithMany()
+               .HasForeignKey(a => a.QuotationId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasOne(a => a.QuotationItem)
+               .WithMany()
+               .HasForeignKey(a => a.QuotationItemId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasOne(a => a.SourceApprovalBatch)
+               .WithMany()
+               .HasForeignKey(a => a.SourceApprovalBatchId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        // At most ONE active authorization per (item, source cancelled batch) — consumption/
+        // revocation flips IsActive so a new authorization for a NEW cancelled use stays possible.
+        builder.HasIndex(a => new { a.QuotationItemId, a.SourceApprovalBatchId })
+               .IsUnique()
+               .HasFilter("[IsActive] = 1")
+               .HasDatabaseName("UX_QuotationReuseAuth_Item_SourceBatch_Active");
+
+        builder.HasIndex(a => a.RequestId).HasDatabaseName("IX_QuotationReuseAuth_RequestId");
+        builder.HasIndex(a => a.QuotationId).HasDatabaseName("IX_QuotationReuseAuth_QuotationId");
+        builder.HasIndex(a => a.QuotationItemId).HasDatabaseName("IX_QuotationReuseAuth_QuotationItemId");
+        builder.HasIndex(a => a.SourceApprovalBatchId).HasDatabaseName("IX_QuotationReuseAuth_SourceBatchId");
+        builder.HasIndex(a => a.IsActive).HasDatabaseName("IX_QuotationReuseAuth_IsActive");
+    }
+}
+
 public class ApprovalBatchExtraItemDecisionConfiguration : IEntityTypeConfiguration<ApprovalBatchExtraItemDecision>
 {
     public void Configure(EntityTypeBuilder<ApprovalBatchExtraItemDecision> builder)

@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { useLocation, useSearchParams } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, FileText, CheckCircle2, X, Pencil, Trash2, ShieldCheck, AlertCircle, RefreshCcw, Hash, Calendar, UserPlus, AlertTriangle, BookOpen, MoreVertical, Package, PieChart, Layers, CheckSquare } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, FileText, CheckCircle2, X, Pencil, Trash2, ShieldCheck, AlertCircle, RefreshCcw, Hash, Calendar, UserPlus, AlertTriangle, BookOpen, MoreVertical, Package, PieChart, Layers, CheckSquare, History } from 'lucide-react';
 import { useAuth } from '../../features/auth/AuthContext';
 import { api } from '../../lib/api';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
@@ -10,6 +10,7 @@ import { formatCurrencyAO, formatDate, getUrgencyStyle, formatDateTime } from '.
 import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModal';
 import { QuickSupplierModal } from '../../components/Buyer/QuickSupplierModal';
 import { QuickCurrencyModal } from '../../components/Buyer/QuickCurrencyModal';
+import { QuotationReuseModal } from '../../components/Buyer/QuotationReuseModal';
 import { QuotationWizardModal } from './QuotationWizard/QuotationWizardModal';
 import { useQuotationWizardState } from './QuotationWizard/hooks/useQuotationWizardState';
 import { PartialApprovalBatchModal } from './PartialApprovalBatchModal';
@@ -246,6 +247,8 @@ export function BuyerItemsList() {
         show: false, requestId: '', draft: null, duplicate: null
     });
     const [expandedQuotations, setExpandedQuotations] = useState<Record<string, boolean>>({});
+    // Option C — explicit reuse of quotations used in a cancelled batch
+    const [reuseModal, setReuseModal] = useState<{ requestId: string; quotation: SavedQuotationDto } | null>(null);
     const [drawerRequestId, setDrawerRequestId] = useState<string | null>(null);
     const [showHelpModal, setShowHelpModal] = useState(false);
     const [fileDuplicateWarning, setFileDuplicateWarning] = useState<{
@@ -346,9 +349,12 @@ export function BuyerItemsList() {
                 // NOT_QUOTED items ARE persisted (zeroed) — they are document-level
                 // information ("this supplier did not quote this item") and must NOT
                 // touch the request line item's QuotationLifecycleStatus. The item
-                // stays pending on the request for future quotations. Only IGNORED
-                // lines are dropped.
-                items: draft.items.filter(i => ['MAPPED', 'SUBSTITUTE', 'EXTRA_ITEM', 'NOT_QUOTED'].includes(i.reconciliationStatus as string)).map((i, idx) => ({
+                // stays pending on the request for future quotations.
+                // IGNORED lines are ALSO persisted (with their per-line justification):
+                // the backend excludes them from the quotation totals AND subtracts them
+                // from the OCR baseline in the Financial Integrity Gate — dropping them
+                // here made every ignored line a false divergence (excludedIgnoredTotal=0).
+                items: draft.items.filter(i => ['MAPPED', 'SUBSTITUTE', 'EXTRA_ITEM', 'NOT_QUOTED', 'IGNORED'].includes(i.reconciliationStatus as string)).map((i, idx) => ({
                     mappedRequestLineItemId: i.mappedRequestLineItemId,
                     lineNumber: idx + 1,
                     description: i.description || '',
@@ -1975,6 +1981,9 @@ export function BuyerItemsList() {
                                                         return group.quotations.map((q: SavedQuotationDto) => {
                                                             const isExpanded = !!expandedQuotations[q.id];
                                                             const isLowest = group.quotations.length > 1 && q.totalAmount === lowestByCurrency[q.currency];
+                                                            // Option C: items of this quotation used in a CANCELLED batch
+                                                            const reuseBlockedCount = (q.items || []).filter((qi: any) => qi.isReuseBlocked).length;
+                                                            const reuseAuthorizedCount = (q.items || []).filter((qi: any) => qi.isReuseAuthorized).length;
 
                                                             return (
                                                                 <div key={q.id} style={{
@@ -2017,6 +2026,21 @@ export function BuyerItemsList() {
                                                                                             Menor Valor ({q.currency})
                                                                                         </span>
                                                                                     )}
+                                                                                    {reuseBlockedCount > 0 && (
+                                                                                        <>
+                                                                                            <span style={{ backgroundColor: '#F59E0B', color: '#fff', fontSize: '0.65rem', fontWeight: 900, padding: '2px 6px', borderRadius: '4px', textTransform: 'uppercase' }}>
+                                                                                                Usada em lote cancelado
+                                                                                            </span>
+                                                                                            <span style={{ backgroundColor: '#FEF3C7', color: '#92400E', fontSize: '0.65rem', fontWeight: 900, padding: '2px 6px', borderRadius: '4px', textTransform: 'uppercase', border: '1px solid #F59E0B' }}>
+                                                                                                Reuso requer confirmação
+                                                                                            </span>
+                                                                                        </>
+                                                                                    )}
+                                                                                    {reuseBlockedCount === 0 && reuseAuthorizedCount > 0 && (
+                                                                                        <span style={{ backgroundColor: '#DCFCE7', color: '#166534', fontSize: '0.65rem', fontWeight: 900, padding: '2px 6px', borderRadius: '4px', textTransform: 'uppercase', border: '1px solid #86efac' }}>
+                                                                                            Reuso autorizado ({reuseAuthorizedCount})
+                                                                                        </span>
+                                                                                    )}
                                                                                 </div>
                                                                                 <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 700, display: 'flex', gap: '16px', marginTop: '2px' }}>
                                                                                     <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -2033,6 +2057,23 @@ export function BuyerItemsList() {
                                                                         </div>
 
                                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+                                                                            {/* Option C — explicit reuse action for cancelled-batch quotations */}
+                                                                            {mode === 'BUYER' && reuseBlockedCount > 0 && (
+                                                                                <div onClick={(e) => e.stopPropagation()}>
+                                                                                    <button
+                                                                                        onClick={() => setReuseModal({ requestId: group.requestId, quotation: q })}
+                                                                                        style={{
+                                                                                            display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
+                                                                                            backgroundColor: '#D97706', border: 'none', borderRadius: '4px',
+                                                                                            color: '#fff', fontWeight: 800, fontSize: '0.7rem',
+                                                                                            textTransform: 'uppercase', cursor: 'pointer'
+                                                                                        }}
+                                                                                    >
+                                                                                        <History size={12} /> Reutilizar cotação
+                                                                                    </button>
+                                                                                </div>
+                                                                            )}
+
                                                                             {/* Maintenance Actions (Step 8.1) */}
                                                                             {canMutateQuotation && mode === 'BUYER' && (
                                                                                 <div style={{ display: 'flex', gap: '8px' }} onClick={(e) => e.stopPropagation()}>
@@ -2767,6 +2808,15 @@ export function BuyerItemsList() {
                     }
                 }}
                 initialCode={quickCurrencyModal.initialCode}
+            />
+
+            {/* Option C — explicit reuse of cancelled-batch quotations */}
+            <QuotationReuseModal
+                isOpen={!!reuseModal}
+                requestId={reuseModal?.requestId || ''}
+                quotation={reuseModal?.quotation || null}
+                onClose={() => setReuseModal(null)}
+                onAuthorized={() => { loadData(); }}
             />
 
             {/* Quick View Drawer */}

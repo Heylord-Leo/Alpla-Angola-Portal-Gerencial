@@ -2,7 +2,19 @@
 
 ## Current Version
 
-v2.207.3
+v2.208.0
+
+## [v2.208.0] - 2026-07-19
+
+### Added — Reuso Explícito e Auditável de Cotações de Lotes Cancelados (Opção C)
+
+- **`QuotationReuseAuthorization`** (por item, motivo obrigatório, revogável, consumo atômico): item de cotação usado em lote de aprovação **CANCELADO** deixa de ser elegível automaticamente — exige autorização explícita do comprador. `IQuotationItemEligibilityService` é a fonte única da regra; enforcement 409 `QUOTATION_REUSE_NOT_AUTHORIZED` em CreateBatch/UpdateBatch/ResubmitBatch/aprovação individual. UI: badges e modal de reuso no comprador; wizard do aprovador oculta bloqueados (radio/melhor-preço/selecionar-todos) e mostra proveniência "Reutilizado do Lote #N (cancelado)". Eventos `QUOTATION_REUSE_AUTHORIZED/REVOKED/REUSED_IN_NEW_BATCH`. Migration aditiva com Down completo; sem backfill; histórico de lotes intacto.
+
+### Fixed — Integridade de Cotação com Linhas Ignoradas + Estado do Wizard
+
+- Linhas **IGNORED** agora são enviadas e persistidas (com justificativa própria obrigatória quando têm valor); o Integrity Check compara escopos equivalentes (`comparableDocumentTotal = OCR − ignoradas`); totais da cotação incluem apenas linhas consideradas; statuses de reconciliação normalizados no boundary; ciclo de vida do `saveError` corrigido (voltar/editar/trocar documento/reabrir/tentar/sucesso).
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
 
 ## [v2.207.3] - 2026-07-18
 

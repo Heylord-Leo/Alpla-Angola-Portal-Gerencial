@@ -241,13 +241,16 @@ export const WizardStepReconciliation: React.FC<WizardStepReconciliationProps> =
                     </div>
                     <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "16px", maxHeight: "600px", overflowY: "auto" }}>
                         {realItems.map((quoteItem: any, idx: number) => {
+                            const isIgnored = quoteItem.reconciliationStatus === "IGNORED";
+                            // Ignoring a document line WITH value excludes it from the integrity
+                            // baseline, so that exclusion needs its own justification (zero-value
+                            // lines are exempt).
+                            const ignoredWithValue = isIgnored && (quoteItem.totalPrice ?? 0) > 0;
                             const showMapping = quoteItem.reconciliationStatus === "MAPPED" || quoteItem.reconciliationStatus === "SUBSTITUTE";
-                            const showJustification = quoteItem.reconciliationStatus === "SUBSTITUTE" || quoteItem.reconciliationStatus === "EXTRA_ITEM";
-                            const isJustificationRequired = quoteItem.reconciliationStatus === "SUBSTITUTE" || quoteItem.reconciliationStatus === "EXTRA_ITEM";
+                            const showJustification = quoteItem.reconciliationStatus === "SUBSTITUTE" || quoteItem.reconciliationStatus === "EXTRA_ITEM" || ignoredWithValue;
+                            const isJustificationRequired = quoteItem.reconciliationStatus === "SUBSTITUTE" || quoteItem.reconciliationStatus === "EXTRA_ITEM" || ignoredWithValue;
                             const missingMapping = showMapping && !quoteItem.mappedRequestLineItemId;
                             const missingJustification = isJustificationRequired && (!quoteItem.reconciliationJustification || !quoteItem.reconciliationJustification.trim());
-                            
-                            const isIgnored = quoteItem.reconciliationStatus === "IGNORED";
 
                             const baseBtnStyle = { padding: "6px 12px", fontSize: "0.875rem", fontWeight: 500, borderRadius: "4px", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" };
                             const unselectedBtnStyle = { ...baseBtnStyle, border: "1px solid #E2E8F0", backgroundColor: "#F8FAFC", color: "#64748B" };

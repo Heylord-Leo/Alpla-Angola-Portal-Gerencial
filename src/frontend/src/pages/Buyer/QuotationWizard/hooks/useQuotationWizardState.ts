@@ -227,6 +227,9 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
                     if (!item.reconciliationStatus) return false; // Missing status
                     if (item.reconciliationStatus === 'SUBSTITUTE' && (!item.reconciliationJustification || !item.reconciliationJustification.trim())) return false;
                     if (item.reconciliationStatus === 'EXTRA_ITEM' && (!item.reconciliationJustification || !item.reconciliationJustification.trim())) return false;
+                    // Ignoring a document line WITH value removes it from the integrity baseline —
+                    // that exclusion needs a per-line justification (zero-value lines are exempt).
+                    if (item.reconciliationStatus === 'IGNORED' && (item.totalPrice ?? 0) > 0 && (!item.reconciliationJustification || !item.reconciliationJustification.trim())) return false;
                     if (item.reconciliationStatus === 'MAPPED' && !item.mappedRequestLineItemId) return false;
                     if (item.reconciliationStatus === 'SUBSTITUTE' && !item.mappedRequestLineItemId) return false;
                 }

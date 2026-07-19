@@ -56,6 +56,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<ApprovalBatch> ApprovalBatches => Set<ApprovalBatch>();
     public DbSet<ApprovalBatchItem> ApprovalBatchItems => Set<ApprovalBatchItem>();
     public DbSet<ApprovalBatchExtraItemDecision> ApprovalBatchExtraItemDecisions => Set<ApprovalBatchExtraItemDecision>();
+    public DbSet<QuotationReuseAuthorization> QuotationReuseAuthorizations => Set<QuotationReuseAuthorization>();
 
     // Integration Foundation (Phase 0)
     public DbSet<IntegrationProvider> IntegrationProviders => Set<IntegrationProvider>();

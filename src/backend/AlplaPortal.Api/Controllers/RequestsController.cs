@@ -40,6 +40,7 @@ public class RequestsController : BaseController
     private readonly IApprovalRoutingService _approvalRouting;
     private readonly ILineItemFactory _lineItemFactory;
     private readonly IRequestLineItemSubmissionValidator _lineItemValidator;
+    private readonly IQuotationItemEligibilityService _quotationEligibility;
 
     public RequestsController(
         ApplicationDbContext context,
@@ -53,7 +54,8 @@ public class RequestsController : BaseController
         IRequestStatusSyncService statusSyncService,
         IApprovalRoutingService approvalRouting,
         ILineItemFactory lineItemFactory,
-        IRequestLineItemSubmissionValidator lineItemValidator) : base(context)
+        IRequestLineItemSubmissionValidator lineItemValidator,
+        IQuotationItemEligibilityService quotationEligibility) : base(context)
     {
         _extractionService = extractionService;
         _adminLog = adminLog;
@@ -66,6 +68,7 @@ public class RequestsController : BaseController
         _approvalRouting = approvalRouting;
         _lineItemFactory = lineItemFactory;
         _lineItemValidator = lineItemValidator;
+        _quotationEligibility = quotationEligibility;
     }
 
     /// <summary>
@@ -1370,6 +1373,25 @@ public class RequestsController : BaseController
                     batchDto.CreatedByUserName = createdName;
                 if (batchDto.UpdatedByUserId.HasValue && batchUserNamesById.TryGetValue(batchDto.UpdatedByUserId.Value, out var updatedName))
                     batchDto.UpdatedByUserName = updatedName;
+            }
+        }
+
+        // ── Cancelled-batch reuse annotations (Option C) — server-resolved eligibility so the
+        // approver wizard hides blocked candidates and the buyer sees reuse state/provenance.
+        if (request.Quotations != null && request.Quotations.Any(q => q.Items != null && q.Items.Count > 0))
+        {
+            var reuseEligibility = await _quotationEligibility.GetEligibilityMapAsync(id);
+            foreach (var qItemDto in request.Quotations.SelectMany(q => q.Items))
+            {
+                if (reuseEligibility.TryGetValue(qItemDto.Id, out var elig))
+                {
+                    qItemDto.IsReuseBlocked = elig.IsReuseBlocked;
+                    qItemDto.IsReuseAuthorized = elig.IsReuseAuthorized;
+                    qItemDto.SourceCancelledBatchId = elig.SourceCancelledBatchId;
+                    qItemDto.SourceCancelledBatchNumber = elig.SourceCancelledBatchNumber;
+                    qItemDto.ReuseAuthorizationId = elig.ReuseAuthorizationId;
+                    qItemDto.ReuseConsumedFromBatchId = elig.ReuseConsumedByBatchId;
+                }
             }
         }
 
@@ -3124,6 +3146,201 @@ public class RequestsController : BaseController
 
     [HttpPost("{id:guid}/quotations")]
     
+    /// <summary>
+    /// Option C — explicit Buyer authorization to reuse quotation items previously used in a
+    /// CANCELLED approval batch. One authorization record per item (partial reuse/revocation,
+    /// exact audit). All-or-nothing: any invalid item aborts the whole call. The cancelled batch
+    /// is never reopened or modified.
+    /// </summary>
+    [HttpPost("{id:guid}/quotations/{quotationId:guid}/authorize-reuse")]
+    public async Task<IActionResult> AuthorizeQuotationReuse(Guid id, Guid quotationId, [FromBody] AuthorizeQuotationReuseDto dto)
+    {
+        var actorId = CurrentUserId;
+
+        if (!CurrentUserRoles.Contains(RoleConstants.Buyer) && !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
+            return StatusCode(403, new ProblemDetails { Title = "Acesso Negado", Detail = "Apenas compradores podem autorizar o reuso de cotações.", Status = 403 });
+
+        var reason = dto.Reason?.Trim();
+        if (string.IsNullOrWhiteSpace(reason))
+            return BadRequest(new ProblemDetails { Title = "Motivo Obrigatório", Detail = "Informe o motivo da autorização de reuso.", Status = 400 });
+
+        var itemIds = (dto.QuotationItemIds ?? new List<Guid>()).Distinct().ToList();
+        if (itemIds.Count == 0)
+            return BadRequest(new ProblemDetails { Title = "Nenhum Item", Detail = "Selecione pelo menos um item de cotação para autorizar o reuso.", Status = 400 });
+
+        var quotation = await _context.Quotations.AsNoTracking()
+            .FirstOrDefaultAsync(q => q.Id == quotationId && q.RequestId == id);
+        if (quotation == null)
+            return NotFound(new ProblemDetails { Title = "Cotação não encontrada.", Status = 404 });
+
+        var quotationItems = await _context.QuotationItems.AsNoTracking()
+            .Where(qi => qi.QuotationId == quotationId && itemIds.Contains(qi.Id))
+            .ToDictionaryAsync(qi => qi.Id);
+
+        var eligibility = await _quotationEligibility.GetEligibilityMapAsync(id);
+
+        // All-or-nothing validation: every requested item must be individually authorizable.
+        var validationErrors = new List<string>();
+        foreach (var itemId in itemIds)
+        {
+            if (!quotationItems.TryGetValue(itemId, out var qi))
+            {
+                validationErrors.Add($"Item {itemId} não pertence a esta cotação.");
+                continue;
+            }
+            if (!eligibility.TryGetValue(itemId, out var elig))
+            {
+                validationErrors.Add($"Item {itemId} não encontrado no pedido.");
+                continue;
+            }
+            switch (elig.ReasonCode)
+            {
+                case Application.Interfaces.Purchasing.QuotationItemEligibilityReasons.ReuseAuthorizationRequired:
+                case Application.Interfaces.Purchasing.QuotationItemEligibilityReasons.AuthorizationConsumed:
+                case Application.Interfaces.Purchasing.QuotationItemEligibilityReasons.AuthorizationRevoked:
+                    break; // authorizable (consumed/revoked belong to a finished cycle — a new record is allowed)
+                case Application.Interfaces.Purchasing.QuotationItemEligibilityReasons.ReuseAuthorized:
+                    return Conflict(new ProblemDetails
+                    {
+                        Title = "Autorização Já Existente",
+                        Detail = $"O item '{qi.Description}' já possui uma autorização de reuso ativa.",
+                        Status = 409,
+                        Extensions = { ["code"] = "REUSE_ALREADY_AUTHORIZED", ["quotationItemId"] = itemId }
+                    });
+                case Application.Interfaces.Purchasing.QuotationItemEligibilityReasons.ItemNotReconciled:
+                    validationErrors.Add($"Item '{qi.Description}' não está reconciliado (MAPPED/SUBSTITUTE/EXTRA_ITEM) e não pode ser autorizado.");
+                    break;
+                default: // ELIGIBLE_NORMAL — never used in a cancelled batch
+                    validationErrors.Add($"Item '{qi.Description}' não foi utilizado em nenhum lote cancelado — não requer autorização de reuso.");
+                    break;
+            }
+        }
+
+        if (validationErrors.Count > 0)
+            return BadRequest(new ProblemDetails { Title = "Validação de Reuso Falhou", Detail = string.Join(" | ", validationErrors), Status = 400 });
+
+        // Create one auditable record per item (all in the same transaction).
+        var now = DateTime.UtcNow;
+        var created = new List<QuotationReuseAuthorization>();
+        foreach (var itemId in itemIds)
+        {
+            var elig = eligibility[itemId];
+            created.Add(new QuotationReuseAuthorization
+            {
+                Id = Guid.NewGuid(),
+                RequestId = id,
+                QuotationId = quotationId,
+                QuotationItemId = itemId,
+                SourceApprovalBatchId = elig.SourceCancelledBatchId!.Value,
+                AuthorizedByUserId = actorId,
+                AuthorizedAtUtc = now,
+                Reason = reason!,
+                IsActive = true,
+                CreatedAtUtc = now
+            });
+        }
+        _context.QuotationReuseAuthorizations.AddRange(created);
+
+        var sourceBatchNumbers = itemIds
+            .Select(i => eligibility[i].SourceCancelledBatchNumber)
+            .Where(n => n.HasValue).Select(n => n!.Value).Distinct().OrderBy(n => n).ToList();
+        var itemDescriptions = itemIds.Select(i => quotationItems[i].Description).ToList();
+
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = id,
+            ActorUserId = actorId,
+            ActionTaken = "QUOTATION_REUSE_AUTHORIZED",
+            PreviousStatusId = (await _context.Requests.AsNoTracking().Where(r => r.Id == id).Select(r => r.StatusId).FirstAsync()),
+            NewStatusId = (await _context.Requests.AsNoTracking().Where(r => r.Id == id).Select(r => r.StatusId).FirstAsync()),
+            Comment = $"Reuso autorizado para {created.Count} item(ns) da cotação {quotation.DocumentNumber} ({quotation.SupplierNameSnapshot}), utilizados no(s) Lote(s) #{string.Join(", #", sourceBatchNumbers)} (cancelado). Itens: {string.Join("; ", itemDescriptions)}. Motivo: {reason}",
+            CreatedAtUtc = now
+        });
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            authorizationCount = created.Count,
+            quotationId,
+            quotationItemIds = itemIds,
+            sourceCancelledBatchIds = created.Select(c => c.SourceApprovalBatchId).Distinct().ToList(),
+            authorizedAtUtc = now
+        });
+    }
+
+    /// <summary>Revokes an active, unconsumed reuse authorization (Buyer-only). Consumed authorizations cannot be revoked.</summary>
+    [HttpPost("{id:guid}/quotation-reuse-authorizations/{authorizationId:guid}/revoke")]
+    public async Task<IActionResult> RevokeQuotationReuse(Guid id, Guid authorizationId, [FromBody] RevokeQuotationReuseDto dto)
+    {
+        var actorId = CurrentUserId;
+
+        if (!CurrentUserRoles.Contains(RoleConstants.Buyer) && !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
+            return StatusCode(403, new ProblemDetails { Title = "Acesso Negado", Detail = "Apenas compradores podem revogar autorizações de reuso.", Status = 403 });
+
+        var reason = dto.Reason?.Trim();
+        if (string.IsNullOrWhiteSpace(reason))
+            return BadRequest(new ProblemDetails { Title = "Motivo Obrigatório", Detail = "Informe o motivo da revogação.", Status = 400 });
+
+        var auth = await _context.QuotationReuseAuthorizations
+            .Include(a => a.Quotation)
+            .FirstOrDefaultAsync(a => a.Id == authorizationId && a.RequestId == id);
+        if (auth == null)
+            return NotFound(new ProblemDetails { Title = "Autorização não encontrada.", Status = 404 });
+
+        if (auth.ConsumedAtUtc != null)
+            return Conflict(new ProblemDetails
+            {
+                Title = "Autorização Já Consumida",
+                Detail = "Esta autorização já foi consumida por um lote e não pode ser revogada.",
+                Status = 409,
+                Extensions = { ["code"] = "REUSE_AUTHORIZATION_CONSUMED" }
+            });
+
+        if (!auth.IsActive || auth.RevokedAtUtc != null)
+            return Conflict(new ProblemDetails
+            {
+                Title = "Autorização Inativa",
+                Detail = "Esta autorização já não está ativa.",
+                Status = 409,
+                Extensions = { ["code"] = "REUSE_AUTHORIZATION_INACTIVE" }
+            });
+
+        auth.IsActive = false;
+        auth.RevokedByUserId = actorId;
+        auth.RevokedAtUtc = DateTime.UtcNow;
+        auth.RevocationReason = reason;
+
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = id,
+            ActorUserId = actorId,
+            ActionTaken = "QUOTATION_REUSE_REVOKED",
+            PreviousStatusId = (await _context.Requests.AsNoTracking().Where(r => r.Id == id).Select(r => r.StatusId).FirstAsync()),
+            NewStatusId = (await _context.Requests.AsNoTracking().Where(r => r.Id == id).Select(r => r.StatusId).FirstAsync()),
+            Comment = $"Autorização de reuso revogada (cotação {auth.Quotation?.DocumentNumber}, item {auth.QuotationItemId}). Motivo: {reason}",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        await _context.SaveChangesAsync();
+        return Ok(new { revoked = true, authorizationId });
+    }
+
+    /// <summary>
+    /// API-boundary normalization of reconciliation statuses (single canonical vocabulary —
+    /// RequestConstants.ReconciliationStatuses). Trims and upper-cases so casing/whitespace
+    /// variants from any client can never silently bypass status-based rules downstream.
+    /// </summary>
+    private static void NormalizeReconciliationStatuses(SaveQuotationRequestDto dto)
+    {
+        foreach (var item in dto.Items)
+        {
+            item.ReconciliationStatus = (item.ReconciliationStatus ?? string.Empty).Trim().ToUpperInvariant();
+        }
+    }
+
     private bool ValidateReconciliation(SaveQuotationRequestDto dto, out string errorMessage)
     {
         errorMessage = string.Empty;
@@ -3190,7 +3407,8 @@ public class RequestsController : BaseController
     [HttpPost("{id:guid}/quotations")]
     public async Task<ActionResult<SavedQuotationDto>> SaveQuotation(Guid id, [FromQuery] Guid? replaceQuotationId, [FromBody] SaveQuotationRequestDto dto)
     {
-        
+        NormalizeReconciliationStatuses(dto);
+
         if (!ValidateReconciliation(dto, out string saveError))
         {
             return BadRequest(new ProblemDetails { Title = "Reconciliation Validation Failed", Detail = saveError, Status = 400 });
@@ -3306,6 +3524,20 @@ public class RequestsController : BaseController
             decimal ivaAmount = Round2(netSubtotal * (ivaPercent / 100m));
             decimal lineTotal = Round2(netSubtotal + ivaAmount);
 
+            // Ignoring a document line with monetary value excludes it from the comparable
+            // integrity baseline — that exclusion requires its own per-line justification.
+            // Zero-value ignored lines need none.
+            if (item.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Ignored && lineTotal > 0
+                && string.IsNullOrWhiteSpace(item.ReconciliationJustification))
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Justificativa Obrigatória",
+                    Detail = $"Item {item.LineNumber}: uma linha ignorada com valor ({lineTotal:N2}) exige justificativa própria na reconciliação.",
+                    Status = 400
+                });
+            }
+
             quotation.Items.Add(new QuotationItem
             {
                 Id = Guid.NewGuid(),
@@ -3330,9 +3562,15 @@ public class RequestsController : BaseController
         }
 
         // Sum up line totals. Item-level discounts are already applied per-line.
-        decimal totalGross = quotation.Items.Sum(i => i.GrossSubtotal);
-        decimal sumItemDiscounts = quotation.Items.Sum(i => i.DiscountAmount);
-        decimal totalItemIva = quotation.Items.Sum(i => i.IvaAmount);
+        // Only CONSIDERED lines (MAPPED/SUBSTITUTE/EXTRA_ITEM) compose the quotation's financial
+        // totals: IGNORED lines are persisted for audit (with their justification) but are
+        // explicitly excluded from the quotation value — mirroring the wizard's displayed total.
+        var totalConsideredItems = quotation.Items
+            .Where(i => RequestConstants.ReconciliationStatuses.Considered.Contains(i.ReconciliationStatus))
+            .ToList();
+        decimal totalGross = totalConsideredItems.Sum(i => i.GrossSubtotal);
+        decimal sumItemDiscounts = totalConsideredItems.Sum(i => i.DiscountAmount);
+        decimal totalItemIva = totalConsideredItems.Sum(i => i.IvaAmount);
         decimal netAfterItemDiscounts = Round2(Math.Max(0, totalGross - sumItemDiscounts));
 
         // Global (commercial) discount from DTO — reduces the taxable base further
@@ -3352,41 +3590,29 @@ public class RequestsController : BaseController
 
         // ═══════════════════════════════════════════════════════════════
         // Phase 1: Per-Quotation Financial Integrity Gate
+        // The OCR baseline covers the WHOLE document, while the quotation total only covers
+        // reconciled lines — so lines explicitly reconciled as IGNORED are subtracted from the
+        // baseline (comparable scope). Real divergences on considered lines still trip the gate.
+        // Math extracted to QuotationIntegrityCalculator for testability.
         // ═══════════════════════════════════════════════════════════════
         if (dto.OcrTotal.HasValue && dto.OcrTotal.Value > 0 && !dto.FinancialIntegrityOverride)
         {
-            var ocrBaseline = dto.OcrTotal.Value;
-            var validStatuses = new[] { "MAPPED", "SUBSTITUTE", "EXTRA_ITEM" };
-            
-            var consideredGross = quotation.Items.Where(i => validStatuses.Contains(i.ReconciliationStatus)).Sum(i => i.GrossSubtotal);
-            var consideredDiscount = quotation.Items.Where(i => validStatuses.Contains(i.ReconciliationStatus)).Sum(i => i.DiscountAmount);
-            var consideredNet = Round2(Math.Max(0, consideredGross - consideredDiscount));
-            
-            // Adjust global discount proportionally to the considered items
-            decimal globalDiscountRatio = netAfterItemDiscounts > 0 ? (consideredNet / netAfterItemDiscounts) : 0m;
-            decimal consideredGlobalDiscount = Round2(globalDiscount * globalDiscountRatio);
-            
-            decimal consideredTaxableBase = Round2(Math.Max(0, consideredNet - consideredGlobalDiscount));
-            
-            var consideredIvaAmount = quotation.Items.Where(i => validStatuses.Contains(i.ReconciliationStatus)).Sum(i => i.IvaAmount);
-            decimal consideredAdjustedIva = Round2(consideredIvaAmount * (consideredNet > 0 ? (consideredTaxableBase / consideredNet) : 1m));
-            
-            decimal quotationConsideredTotal = Round2(consideredTaxableBase + consideredAdjustedIva);
+            var integrity = AlplaPortal.Application.Validation.QuotationIntegrityCalculator.Compute(
+                dto.OcrTotal.Value, quotation.Items, globalDiscount, netAfterItemDiscounts);
 
-            // Using standard 2.00 threshold for variances
-            var varianceAmount = Math.Abs(ocrBaseline - quotationConsideredTotal);
-            if (varianceAmount > 2.00m)
+            if (integrity.VarianceAmount > AlplaPortal.Application.Validation.QuotationIntegrityCalculator.ToleranceAmount)
             {
-                var variancePercent = ocrBaseline > 0 ? (varianceAmount / ocrBaseline) * 100m : 100m;
                 return StatusCode(409, new
                 {
                     integrityCheckFailed = true,
-                    ocrOriginalTotal = ocrBaseline,
-                    quotationTotal = quotationConsideredTotal,
-                    varianceAmount = varianceAmount,
-                    variancePercent = Math.Round(variancePercent, 2),
-                    toleranceApplied = 2.00m,
-                    detail = $"Divergência detectada ({varianceAmount:N2} {quotation.Currency}). A cotação não pode ser salva sem justificação explícita."
+                    ocrOriginalTotal = integrity.OcrOriginalTotal,
+                    excludedIgnoredTotal = integrity.ExcludedIgnoredTotal,
+                    comparableDocumentTotal = integrity.ComparableDocumentTotal,
+                    quotationTotal = integrity.QuotationConsideredTotal,
+                    varianceAmount = integrity.VarianceAmount,
+                    variancePercent = integrity.VariancePercent,
+                    toleranceApplied = AlplaPortal.Application.Validation.QuotationIntegrityCalculator.ToleranceAmount,
+                    detail = $"Divergência detectada ({integrity.VarianceAmount:N2} {quotation.Currency}). A cotação não pode ser salva sem justificação explícita."
                 });
             }
         }
@@ -3490,7 +3716,8 @@ public class RequestsController : BaseController
     [HttpPut("{requestId}/quotations/{quotationId}")]
     public async Task<ActionResult<SavedQuotationDto>> UpdateQuotation([FromRoute] Guid requestId, [FromRoute] Guid quotationId, [FromBody] SaveQuotationRequestDto dto)
     {
-        
+        NormalizeReconciliationStatuses(dto);
+
         if (!ValidateReconciliation(dto, out string saveError))
         {
             return BadRequest(new ProblemDetails { Title = "Reconciliation Validation Failed", Detail = saveError, Status = 400 });
@@ -3635,7 +3862,20 @@ public class RequestsController : BaseController
             decimal ivaAmount = Round2(netSubtotal * (ivaPercent / 100m));
             decimal lineTotal = Round2(netSubtotal + ivaAmount);
 
-            var existing = quotation.Items.FirstOrDefault(e => 
+            // Same rule as SaveQuotation: ignoring a document line WITH value excludes it from
+            // the integrity baseline — that exclusion requires its own per-line justification.
+            if (item.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Ignored && lineTotal > 0
+                && string.IsNullOrWhiteSpace(item.ReconciliationJustification))
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Justificativa Obrigatória",
+                    Detail = $"Item {item.LineNumber}: uma linha ignorada com valor ({lineTotal:N2}) exige justificativa própria na reconciliação.",
+                    Status = 400
+                });
+            }
+
+            var existing = quotation.Items.FirstOrDefault(e =>
                 (item.MappedRequestLineItemId.HasValue && e.MappedRequestLineItemId == item.MappedRequestLineItemId) ||
                 (!item.MappedRequestLineItemId.HasValue && !e.MappedRequestLineItemId.HasValue && e.LineNumber == item.LineNumber)
             );
@@ -3687,9 +3927,14 @@ public class RequestsController : BaseController
             }
         }
 
-        decimal totalGross = quotation.Items.Sum(i => i.GrossSubtotal);
-        decimal sumItemDiscounts = quotation.Items.Sum(i => i.DiscountAmount);
-        decimal totalItemIva = quotation.Items.Sum(i => i.IvaAmount);
+        // Only CONSIDERED lines compose the quotation totals — IGNORED lines are kept for audit
+        // (with justification) but never add to the quotation value (same rule as SaveQuotation).
+        var totalConsideredItems = quotation.Items
+            .Where(i => RequestConstants.ReconciliationStatuses.Considered.Contains(i.ReconciliationStatus))
+            .ToList();
+        decimal totalGross = totalConsideredItems.Sum(i => i.GrossSubtotal);
+        decimal sumItemDiscounts = totalConsideredItems.Sum(i => i.DiscountAmount);
+        decimal totalItemIva = totalConsideredItems.Sum(i => i.IvaAmount);
         decimal netAfterItemDiscounts = Round2(Math.Max(0, totalGross - sumItemDiscounts));
 
         // Global (commercial) discount from DTO — reduces the taxable base further
@@ -5203,12 +5448,46 @@ public class RequestsController : BaseController
 
             if (validQuotationItemIds.Count != selectedQuotationItemIds.Count)
             {
-                return BadRequest(new ProblemDetails 
-                { 
-                    Title = "Cotação Inválida", 
-                    Detail = "Um ou mais itens de cotação selecionados são inválidos ou não pertencem a este pedido.", 
-                    Status = 400 
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Cotação Inválida",
+                    Detail = "Um ou mais itens de cotação selecionados são inválidos ou não pertencem a este pedido.",
+                    Status = 400
                 });
+            }
+
+            // Cancelled-batch reuse rule (Option C): winners must not include items previously used
+            // in a CANCELLED approval batch without an explicit, active Buyer reuse authorization.
+            var (reuseBlocked, reuseAuthorized) = await _quotationEligibility.ValidateSelectionAsync(id, selectedQuotationItemIds);
+            if (reuseBlocked.Count > 0)
+            {
+                return ApprovalBatchController.ReuseNotAuthorizedConflict(reuseBlocked);
+            }
+
+            // Consume authorizations used by this individual (non-batch) approval in the same
+            // transaction (SaveChanges happens in ApplyStatusChangeAndSyncItemsAsync).
+            if (reuseAuthorized.Count > 0)
+            {
+                var authIds = reuseAuthorized.Select(a => a.ReuseAuthorizationId!.Value).ToList();
+                var authEntities = await _context.QuotationReuseAuthorizations
+                    .Where(a => authIds.Contains(a.Id)).ToListAsync();
+                foreach (var auth in authEntities)
+                {
+                    auth.IsActive = false;
+                    auth.ConsumedAtUtc = DateTime.UtcNow; // no batch: individual approval consumption
+                    var elig = reuseAuthorized.First(a => a.ReuseAuthorizationId == auth.Id);
+                    _context.RequestStatusHistories.Add(new RequestStatusHistory
+                    {
+                        Id = Guid.NewGuid(),
+                        RequestId = id,
+                        ActorUserId = actorId,
+                        ActionTaken = "QUOTATION_REUSED_IN_NEW_BATCH",
+                        PreviousStatusId = request.StatusId,
+                        NewStatusId = request.StatusId,
+                        Comment = $"Item de cotação {auth.QuotationItemId} reutilizado do Lote #{elig.SourceCancelledBatchNumber} (cancelado) na aprovação individual (sem lote). Motivo da autorização: {auth.Reason}",
+                        CreatedAtUtc = DateTime.UtcNow
+                    });
+                }
             }
 
             // Save the awards to the line items and record audit history

@@ -65,6 +65,22 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
         setMounted(true);
     }, []);
 
+    // The modal stays mounted while closed (returns null), so local state survives between
+    // sessions. A save error from a previous quotation must never leak into a new one:
+    // reset transient submit state on every open/close transition.
+    useEffect(() => {
+        setSaveError(null);
+        setIsSaving(false);
+    }, [isOpen]);
+
+    // Within the SAME session: as soon as the user starts fixing the cause (any draft
+    // mutation — reconciliation status, justification, financial values, document), the stale
+    // save error must disappear. The draft reference only changes on real mutations, so an
+    // untouched error stays visible.
+    useEffect(() => {
+        setSaveError(null);
+    }, [draft]);
+
     if (!isOpen) return null;
 
     const currentIndex = STEPS.findIndex(s => s.key === currentStep);
@@ -79,6 +95,7 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
     };
 
     const handleBack = () => {
+        setSaveError(null); // navigating back to fix data — the previous save error is stale
         if (currentIndex > 0) {
             goToStep(STEPS[currentIndex - 1].key);
         }
@@ -114,6 +131,7 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
     };
 
     const handleReplaceConfirm = async () => {
+        setSaveError(null); // a new document starts a fresh attempt — previous save errors are stale
         if (!isEditing && draft?.proformaAttachmentId) {
             const success = await onReplaceDocument(draft.proformaAttachmentId);
             if (success) {
@@ -125,6 +143,7 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
     };
 
     const handleClose = async () => {
+        setSaveError(null); // never carry a save error into the next wizard session
         await onCancelWizard();
     };
 

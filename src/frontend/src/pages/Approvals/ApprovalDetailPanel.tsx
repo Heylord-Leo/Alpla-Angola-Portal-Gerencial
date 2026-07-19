@@ -738,8 +738,11 @@ export function ApprovalDetailPanel({
                                             if (!quotation || !quotation.items) return;
                                             const newAwards = { ...itemAwards };
                                             activeItems.forEach(item => {
-                                                const qItem = quotation.items.find(qi => qi.lineNumber === item.lineNumber);
-                                                if (qItem) {
+                                                // Match by mapping (not lineNumber) and skip reuse-blocked
+                                                // items (Option C) — bulk select must never pick them.
+                                                const qItem = quotation.items.find(qi => qi.mappedRequestLineItemId === item.id);
+                                                if (qItem && !qItem.isReuseBlocked
+                                                    && (qItem.reconciliationStatus === 'MAPPED' || qItem.reconciliationStatus === 'SUBSTITUTE')) {
                                                     newAwards[item.id] = qItem.id;
                                                 }
                                             });

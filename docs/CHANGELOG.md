@@ -4,9 +4,37 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.207.3
+v2.208.0
 
 ## [Unreleased]
+
+## [v2.208.0] - 2026-07-19
+
+### Fixed — Integridade de Cotação e Correções do Wizard (Escopo A)
+
+- **Linhas IGNORED permanecem no payload e no histórico de auditoria**: o wizard de Cotação passa a enviar as linhas explicitamente ignoradas (antes eram descartadas do payload, tornando cada linha ignorada uma falsa divergência exatamente igual ao seu valor com IVA); são persistidas em `QuotationItems` com `ReconciliationStatus=IGNORED` e justificativa.
+- **Totais das linhas ignoradas excluídos do baseline comparável do OCR**: `QuotationIntegrityCalculator` calcula `excludedIgnoredTotal` (LineTotal com IVA) e `comparableDocumentTotal = totalOCR − ignoradas`; a variância e a tolerância (2,00) operam sobre escopos financeiros equivalentes. Divergências reais nas linhas consideradas continuam bloqueando (resposta 409 com campos de diagnóstico).
+- **Linha ignorada com valor > 0 exige justificativa própria da reconciliação** (UI + gates de avanço/salvamento + validação backend 400 estruturada, sem stack trace); linha de valor zero é isenta.
+- **Agregados da cotação (SaveQuotation/UpdateQuotation) somam apenas linhas consideradas** (MAPPED/SUBSTITUTE/EXTRA_ITEM) — a IGNORED fica para auditoria sem inflar o total.
+- **Normalização de status de reconciliação no boundary da API** (trim + uppercase, vocabulário canônico `RequestConstants.ReconciliationStatuses`).
+- **Ciclo de vida do `saveError` do wizard corrigido**: limpo ao abrir/fechar, iniciar nova cotação, trocar documento, navegar para trás, editar o draft (qualquer mutação), nova tentativa e sucesso — sem vazar entre sessões nem persistir após correção.
+- Testes: `QuotationIntegrityCalculatorTests` (7) e `SaveQuotationIgnoredLineIntegrationTests` (3, controller real + SQL, incluindo variante de caixa normalizada).
+
+### Added — Reuso Explícito de Cotações após Lotes Cancelados (Escopo B, Opção C)
+
+- **Itens usados em lotes CANCELADOS são bloqueados por default**: a inelegibilidade é **derivada** dos vínculos históricos (`ApprovalBatchItems` × lote CANCELLED) — sem backfill destrutivo; requests históricos (ex.: REQ-13/07/2026-024) ficam corretos automaticamente.
+- **Autorização explícita e por item do comprador** (`QuotationReuseAuthorization`): motivo obrigatório, **reuso parcial** suportado (a ação "reutilizar cotação" cria um registro por item), índice único filtrado impede duas autorizações ativas para o mesmo (item, lote de origem).
+- **Revogação antes do consumo** (`.../quotation-reuse-authorizations/{id}/revoke`); autorização consumida não pode ser revogada (409 `REUSE_AUTHORIZATION_CONSUMED`); duplicada ativa → 409 `REUSE_ALREADY_AUTHORIZED`.
+- **Consumo atômico**: ao usar o item num novo lote (CreateBatch/UpdateBatch), a autorização é consumida na mesma transação (`ConsumedByApprovalBatchId`/`ConsumedAtUtc`); falha do lote reverte o consumo; consumida nunca volta a ser elegível (novo ciclo exige novo cancelamento + nova autorização).
+- **Backend rejeita seleção direta não autorizada**: `IQuotationItemEligibilityService` (fonte única) + 409 estruturado `QUOTATION_REUSE_NOT_AUTHORIZED` (com quotationItemId/lote de origem) em `CreateBatch`, `UpdateBatch`, `ResubmitBatch` e na aprovação individual de área — independentemente do frontend.
+- **UI**: comprador vê badges "Usada em lote cancelado"/"Reuso requer confirmação" e modal de autorização (itens com checkbox, lote de origem, motivo, garantias de que o histórico não muda); wizard do aprovador oculta itens bloqueados (sem radio, fora do melhor-preço, do "Selecionar Todos" e do sumário, com mensagem "Lote #N cancelado — reuso não autorizado") e exibe proveniência "Reutilizado do Lote #N (cancelado)" nos autorizados, sem pré-seleção.
+- **Auditoria**: `QUOTATION_REUSE_AUTHORIZED`, `QUOTATION_REUSE_REVOKED`, `QUOTATION_REUSED_IN_NEW_BATCH` no histórico do pedido (cotação, fornecedor, lote de origem/destino, itens, autor, motivo).
+- **Lotes históricos e `ApprovalBatchItems` permanecem inalterados** (validado por teste e no ciclo da migration); `SelectedQuotationItemId` históricos preservados; migration `20260718205502_AddQuotationReuseAuthorizations` aditiva com Down completo (ciclo apply/rollback/reapply validado).
+- Testes: `QuotationReuseAuthorizationIntegrationTests` (7, controllers reais + SQL, espelho do REQ-024).
+
+**Notas operacionais (dev, registradas como débito técnico):** o HMR do Vite não detecta mudanças na árvore OneDrive/junction — reinicie o Vite após alterações de frontend; `dotnet run` pode falhar por política corporativa no apphost `.exe` — inicie o backend dev com `dotnet bin/Debug/net8.0/AlplaPortal.Api.dll`. Portas oficiais inalteradas (5000/5173).
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
 
 ## [v2.207.3] - 2026-07-18
 

@@ -188,6 +188,28 @@ public static class RequestConstants
     }
 
     /// <summary>
+    /// Canonical reconciliation statuses for quotation items (wizard reconciliation step).
+    /// Single source of truth — frontend, DTOs, controllers and the integrity calculator must
+    /// all use these exact values (the API boundary normalizes casing/whitespace).
+    /// </summary>
+    public static class ReconciliationStatuses
+    {
+        /// <summary>Document line matched to a requested item.</summary>
+        public const string Mapped = "MAPPED";
+        /// <summary>Document line replaces a requested item (justification required).</summary>
+        public const string Substitute = "SUBSTITUTE";
+        /// <summary>Document line proposed as an additional item (justification required; approver decides).</summary>
+        public const string ExtraItem = "EXTRA_ITEM";
+        /// <summary>Document line explicitly excluded from the quotation (justification required when it has value).</summary>
+        public const string Ignored = "IGNORED";
+        /// <summary>Requested item the supplier did not quote (zeroed; document-scoped info).</summary>
+        public const string NotQuoted = "NOT_QUOTED";
+
+        /// <summary>Statuses whose lines compose the quotation's financial totals.</summary>
+        public static readonly string[] Considered = { Mapped, Substitute, ExtraItem };
+    }
+
+    /// <summary>
     /// Payment condition codes defined by Buyer at PO registration.
     /// </summary>
     public static class PaymentConditions

@@ -26,6 +26,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\backend\AlplaPortal.Infrastructure\AlplaPortal.Infrastructure.csproj" />
     <ProjectReference Include="..\..\..\src\backend\AlplaPortal.Application\AlplaPortal.Application.csproj" />
+    <ProjectReference Include="..\..\..\src\backend\AlplaPortal.Api\AlplaPortal.Api.csproj" />
   </ItemGroup>
 
 </Project>

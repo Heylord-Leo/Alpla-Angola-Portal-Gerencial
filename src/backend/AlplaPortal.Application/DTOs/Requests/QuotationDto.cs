@@ -123,4 +123,28 @@ public class SavedQuotationItemDto
     public string? LineItemStatusBadgeColor { get; set; }
 
     public PurchaseHistoryInsightDto? HistoryInsight { get; set; }
+
+    // ── Cancelled-batch reuse (Option C) — annotated server-side from the eligibility service ──
+    /// <summary>Used in a CANCELLED batch and NOT authorized for reuse — must not be a selectable candidate.</summary>
+    public bool IsReuseBlocked { get; set; }
+    /// <summary>Explicitly authorized for reuse (active, unconsumed authorization).</summary>
+    public bool IsReuseAuthorized { get; set; }
+    public Guid? SourceCancelledBatchId { get; set; }
+    public int? SourceCancelledBatchNumber { get; set; }
+    public Guid? ReuseAuthorizationId { get; set; }
+    /// <summary>Batch that consumed the reuse authorization (provenance after consumption).</summary>
+    public Guid? ReuseConsumedFromBatchId { get; set; }
+}
+
+/// <summary>Buyer request to authorize reuse of specific quotation items previously used in a CANCELLED batch (Option C).</summary>
+public class AuthorizeQuotationReuseDto
+{
+    public List<Guid> QuotationItemIds { get; set; } = new();
+    public string Reason { get; set; } = string.Empty;
+}
+
+/// <summary>Buyer request to revoke an active, unconsumed reuse authorization.</summary>
+public class RevokeQuotationReuseDto
+{
+    public string Reason { get; set; } = string.Empty;
 }
