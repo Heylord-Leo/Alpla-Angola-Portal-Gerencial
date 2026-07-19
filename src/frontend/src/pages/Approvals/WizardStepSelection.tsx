@@ -103,6 +103,13 @@ export const WizardStepSelection: React.FC<WizardStepSelectionProps> = ({
         return extras;
     }, [quotations]);
 
+    // Option C: a cancelled-batch item without an active reuse authorization is not a candidate
+    // anywhere in this step (radio, best price, select-all). Backend annotation is authoritative.
+    const isSelectableCandidate = (qi: any): boolean =>
+        !!qi &&
+        (qi.reconciliationStatus === 'MAPPED' || qi.reconciliationStatus === 'SUBSTITUTE') &&
+        !qi.isReuseBlocked;
+
     // Compute lowest price per item
     const lowestPrices = useMemo(() => {
         const prices: Record<string, number> = {};
@@ -110,11 +117,9 @@ export const WizardStepSelection: React.FC<WizardStepSelectionProps> = ({
             let minPrice: number | null = null;
             quotations.forEach(q => {
                 const qItem = q.items?.find(qi => qi.mappedRequestLineItemId === item.id);
-                if (qItem && 
-                    (qItem.reconciliationStatus === 'MAPPED' || qItem.reconciliationStatus === 'SUBSTITUTE') && 
-                    qItem.unitPrice > 0) {
-                    if (minPrice === null || qItem.unitPrice < minPrice) {
-                        minPrice = qItem.unitPrice;
+                if (isSelectableCandidate(qItem) && qItem!.unitPrice > 0) {
+                    if (minPrice === null || qItem!.unitPrice < minPrice) {
+                        minPrice = qItem!.unitPrice;
                     }
                 }
             });
@@ -280,7 +285,10 @@ export const WizardStepSelection: React.FC<WizardStepSelectionProps> = ({
                                     </span>
                                 </th>
                                 {quotations.map(q => {
-                                    const coversAll = activeItems.every((item: any) => q.items?.some(qi => qi.mappedRequestLineItemId === item.id));
+                                    // "Select all" only when every item has a SELECTABLE candidate in this
+                                    // quotation — reuse-blocked items (Option C) disable bulk selection.
+                                    const coversAll = activeItems.every((item: any) =>
+                                        isSelectableCandidate(q.items?.find(qi => qi.mappedRequestLineItemId === item.id)));
                                     return (
                                         <th key={q.id} style={{
                                             padding: '14px 16px', borderBottom: '2px solid #E5E7EB',
@@ -347,8 +355,10 @@ export const WizardStepSelection: React.FC<WizardStepSelectionProps> = ({
                                             const isBestPrice = qItem && qItem.unitPrice === lowestPrices[item.id];
                                             const isNotQuoted = qItem?.reconciliationStatus === 'NOT_QUOTED';
                                             const isIgnored = qItem?.reconciliationStatus === 'IGNORED';
-                                            const isValid = qItem && !isNotQuoted && !isIgnored;
-                                            const isSelected = itemAwards[item.id] === qItem?.id || (isSingleQuotation && !!qItem);
+                                            // Option C: cancelled-batch item without authorization → no radio, not selectable
+                                            const isReuseBlocked = !!qItem?.isReuseBlocked;
+                                            const isValid = qItem && !isNotQuoted && !isIgnored && !isReuseBlocked;
+                                            const isSelected = itemAwards[item.id] === qItem?.id || (isSingleQuotation && !!qItem && !isReuseBlocked);
 
                                             return (
                                                 <td key={q.id} style={{
@@ -403,15 +413,28 @@ export const WizardStepSelection: React.FC<WizardStepSelectionProps> = ({
                                                                     </span>
                                                                 </div>
                                                             )}
+                                                            {(qItem.isReuseAuthorized || qItem.reuseConsumedFromBatchId) && qItem.sourceCancelledBatchNumber != null && (
+                                                                <div style={{ paddingLeft: isSingleQuotation ? '0' : '26px', marginTop: '2px' }}>
+                                                                    <span style={{
+                                                                        fontSize: '0.5625rem', fontWeight: 700, color: '#92400E',
+                                                                        backgroundColor: '#FEF3C7',
+                                                                        padding: '2px 6px', borderRadius: '4px', textTransform: 'uppercase'
+                                                                    }}>
+                                                                        Reutilizado do Lote #{qItem.sourceCancelledBatchNumber} (cancelado)
+                                                                    </span>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     ) : (
                                                         <div style={{
-                                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                            height: '100%', color: '#9CA3AF', fontSize: '0.75rem',
-                                                            fontWeight: 500, fontStyle: 'italic', padding: '16px 0',
-                                                            backgroundColor: isNotQuoted ? '#F9FAFB' : 'transparent', borderRadius: '8px'
+                                                            display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+                                                            height: '100%', color: isReuseBlocked ? '#B45309' : '#9CA3AF', fontSize: '0.7rem',
+                                                            fontWeight: isReuseBlocked ? 700 : 500, fontStyle: 'italic', padding: '16px 6px',
+                                                            backgroundColor: isReuseBlocked ? '#FFFBEB' : (isNotQuoted ? '#F9FAFB' : 'transparent'), borderRadius: '8px'
                                                         }}>
-                                                            {isNotQuoted ? '— não cotado —' : (isIgnored ? '' : '—')}
+                                                            {isReuseBlocked
+                                                                ? `Lote #${qItem?.sourceCancelledBatchNumber ?? '?'} cancelado — reuso não autorizado`
+                                                                : isNotQuoted ? '— não cotado —' : (isIgnored ? '' : '—')}
                                                         </div>
                                                     )}
                                                 </td>

@@ -119,7 +119,8 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
                         initialAwards[item.id] = item.selectedQuotationItemId;
                     } else if (autoSelect && singleQuotation && singleQuotation.items) {
                         const matchedItem = singleQuotation.items.find(qi => qi.mappedRequestLineItemId === item.id);
-                        if (matchedItem) {
+                        // Option C: never auto-select a cancelled-batch item without reuse authorization
+                        if (matchedItem && !matchedItem.isReuseBlocked) {
                             initialAwards[item.id] = matchedItem.id;
                         }
                     }
@@ -311,6 +312,14 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
         setExtraItemDecisions(prev => ({ ...prev, [quotationItemId]: decision }));
     };
 
+    // Option C: a quotation item used in a CANCELLED batch without an active reuse authorization
+    // is NOT a selectable candidate anywhere in this wizard (radio, select-all, best-price).
+    // The backend annotation (isReuseBlocked) is authoritative; the API also rejects with 409.
+    const isSelectableCandidate = (qi: any): boolean =>
+        !!qi &&
+        (qi.reconciliationStatus === 'MAPPED' || qi.reconciliationStatus === 'SUBSTITUTE') &&
+        !qi.isReuseBlocked;
+
     const handleSelectAllFromQuotation = (quotationId: string) => {
         setHasInteracted(true);
         const quotation = quotations.find(q => q.id === quotationId);
@@ -318,10 +327,8 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
         const newAwards = { ...itemAwards };
         activeItems.forEach((item: any) => {
             const qItem = quotation.items.find(qi => qi.mappedRequestLineItemId === item.id);
-            if (qItem && 
-                (qItem.reconciliationStatus === 'MAPPED' || qItem.reconciliationStatus === 'SUBSTITUTE') && 
-                qItem.unitPrice > 0) {
-                newAwards[item.id] = qItem.id;
+            if (isSelectableCandidate(qItem) && qItem!.unitPrice > 0) {
+                newAwards[item.id] = qItem!.id;
             }
         });
         setItemAwards(newAwards);
@@ -335,12 +342,10 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
             let lowestQItemId: string | null = null;
             quotations.forEach(q => {
                 const qItem = q.items?.find(qi => qi.mappedRequestLineItemId === item.id);
-                if (qItem && 
-                    (qItem.reconciliationStatus === 'MAPPED' || qItem.reconciliationStatus === 'SUBSTITUTE') && 
-                    qItem.unitPrice > 0) {
-                    if (lowestPrice === null || qItem.unitPrice < lowestPrice) {
-                        lowestPrice = qItem.unitPrice;
-                        lowestQItemId = qItem.id;
+                if (isSelectableCandidate(qItem) && qItem!.unitPrice > 0) {
+                    if (lowestPrice === null || qItem!.unitPrice < lowestPrice) {
+                        lowestPrice = qItem!.unitPrice;
+                        lowestQItemId = qItem!.id;
                     }
                 }
             });

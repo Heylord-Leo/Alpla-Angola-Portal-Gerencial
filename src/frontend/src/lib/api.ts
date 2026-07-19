@@ -717,6 +717,25 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao processar OCR do documento.');
             return response.json();
         },
+        /** Option C — explicit Buyer authorization to reuse quotation items previously used in a cancelled batch. */
+        authorizeQuotationReuse: async (requestId: string, quotationId: string, quotationItemIds: string[], reason: string): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/quotations/${quotationId}/authorize-reuse`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ quotationItemIds, reason }),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao autorizar o reuso da cotação.');
+            return res.json();
+        },
+        revokeQuotationReuse: async (requestId: string, authorizationId: string, reason: string): Promise<any> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/quotation-reuse-authorizations/${authorizationId}/revoke`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason }),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao revogar a autorização de reuso.');
+            return res.json();
+        },
         saveQuotation: async (requestId: string, quotation: any, replaceQuotationId?: string): Promise<any> => {
             const url = replaceQuotationId 
                 ? `${API_BASE_URL}/api/v1/requests/${requestId}/quotations?replaceQuotationId=${replaceQuotationId}`

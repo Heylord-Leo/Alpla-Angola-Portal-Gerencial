@@ -2186,3 +2186,20 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
 - **Alternatives considered:** RowVersion as the immediate fix (rejected: the bug is incorrect tracking, not real concurrency — a token would not prevent it); marking entries `Added` via `Entry(a).State` (rejected: `DbSet.Add` is the idiomatic, graph-safe equivalent); removing the client-set Guid so EF generates it (rejected: wider behavioral change, unnecessary).
 - **Consequences:** PAYMENT area approval works (validated end-to-end in DEV: single POST → 200, 4 allocations inserted); QUOTATION individual approval — same corrected block — is covered structurally; regression tests (`AreaApprovalAllocationTrackingTests`) pin the tracking states (old `Deleted` / new `Added`) and reproduce the original bug pattern as a guard.
 - **Related:** RequestsController `ProcessAreaApproval` / `ApplyStatusChangeAndSyncItemsAsync`; ApprovalBatchController (reference implementation, unchanged)
+
+---
+
+## DEC-147 — Explicit Per-Item Quotation Reuse Authorization after Cancelled Approval Batches (Option C)
+
+- **Date:** 2026-07-19
+- **Status:** Accepted
+- **Context:** After an approval batch is cancelled, its quotation items remained automatically selectable in a later batch's "Comparison and Selection" (matching only RequestId + mapping + MAPPED/SUBSTITUTE), silently re-offering decisions that had been discarded with the cancelled batch (observed on REQ-13/07/2026-024: cancelled Batch #1's AB items competed against Batch #2's QD winners).
+- **Decision (Option C):**
+    1. A quotation item selected in a **CANCELLED** batch stays stored and visible in history but is **not automatically eligible** for a new batch. Eligibility is **derived** from `ApprovalBatchItems × ApprovalBatch(CANCELLED)` — no backfill, historical requests behave correctly immediately.
+    2. Re-eligibility requires an **explicit Buyer authorization per QuotationItem** (`QuotationReuseAuthorization`: mandatory reason, unique-active per (item, source batch), revocable while unconsumed, **consumed atomically** by the batch that uses the item; a new cancelled use opens a new cycle needing a new authorization).
+    3. `IQuotationItemEligibilityService` is the single source of truth; every endpoint persisting `SelectedQuotationItemId` (CreateBatch/UpdateBatch/ResubmitBatch/individual area approval) enforces it with structured **409 `QUOTATION_REUSE_NOT_AUTHORIZED`** — the frontend filter (wizard candidates, best price, select-all, provenance badges) is UX, never the gate.
+    4. Audit events `QUOTATION_REUSE_AUTHORIZED / REVOKED / REUSED_IN_NEW_BATCH` record quotation, supplier, source/target batches, items, actor and reason.
+- **Alternatives considered:** deleting/deactivating quotation items on batch cancellation (rejected: destroys audit history); quotation-level authorization with nullable item (rejected: ambiguous audit, no partial reuse); frontend-only filtering (rejected: silently bypassable).
+- **Consequences:** cancelled batches and their `ApprovalBatchItems`/`SelectedQuotationItemId` remain untouched forever; new batches always receive fresh items and fresh decisions; partial reuse is exact and auditable.
+- **Operational notes recorded with this delivery (dev-environment debt):** Vite file-watching (HMR) is unreliable on the OneDrive/junction working tree — restart Vite after frontend changes; corporate execution policy can block the apphost `.exe` under OneDrive, so the dev backend is started with `dotnet bin/Debug/net8.0/AlplaPortal.Api.dll` (official ports 5000/5173 unchanged).
+- **Related:** [DEC-146](#dec-146--explicit-dbsetadd-for-new-entities-with-client-generated-guid-pks-reached-via-navigation), ApprovalBatchController, RequestsController, QuotationItemEligibilityService

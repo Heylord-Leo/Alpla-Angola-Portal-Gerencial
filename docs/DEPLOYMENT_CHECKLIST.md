@@ -404,3 +404,13 @@ npm run dev
 
 Backend: http://localhost:5000 | Frontend: http://localhost:5173
 
+
+## Local Development Runtime Notes (DEC-147)
+
+- **Vite HMR unreliable on the OneDrive/junction tree**: file changes are often not detected by the
+  watcher — after frontend changes, **restart the Vite dev server** (port 5173). Do not diagnose stale
+  UI without first restarting Vite.
+- **`dotnet run` may fail with "Access is denied"** on the apphost `AlplaPortal.Api.exe` (corporate
+  execution policy on the OneDrive path). Start the dev backend with:
+  `ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:5000 dotnet bin/Debug/net8.0/AlplaPortal.Api.dll`
+- Official development ports remain **5000 (API)** and **5173 (frontend)**.

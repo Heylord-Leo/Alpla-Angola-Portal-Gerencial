@@ -106,6 +106,8 @@ builder.Services.AddScoped<IWorkflowNotificationOrchestrator, WorkflowNotificati
 
 // Purchasing Module
 builder.Services.AddScoped<IGroupBuilderService, GroupBuilderService>();
+// Cancelled-batch quotation reuse rule (Option C) — single source of truth for eligibility
+builder.Services.AddScoped<IQuotationItemEligibilityService, QuotationItemEligibilityService>();
 builder.Services.AddScoped<IStatusAggregationService, StatusAggregationService>();
 
 // Approval Intelligence

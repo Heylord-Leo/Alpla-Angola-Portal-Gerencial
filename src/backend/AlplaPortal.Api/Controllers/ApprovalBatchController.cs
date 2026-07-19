@@ -24,18 +24,45 @@ public class ApprovalBatchController : BaseController
     private readonly IRequestStatusSyncService _statusSyncService;
     private readonly IGroupBuilderService _groupBuilderService;
     private readonly IApprovalRoutingService _approvalRouting;
+    private readonly IQuotationItemEligibilityService _quotationEligibility;
 
     public ApprovalBatchController(
         ApplicationDbContext context,
         ILogger<ApprovalBatchController> logger,
         IRequestStatusSyncService statusSyncService,
         IGroupBuilderService groupBuilderService,
-        IApprovalRoutingService approvalRouting) : base(context)
+        IApprovalRoutingService approvalRouting,
+        IQuotationItemEligibilityService quotationEligibility) : base(context)
     {
         _logger = logger;
         _statusSyncService = statusSyncService;
         _groupBuilderService = groupBuilderService;
         _approvalRouting = approvalRouting;
+        _quotationEligibility = quotationEligibility;
+    }
+
+    /// <summary>
+    /// Structured 409 for Option C (no silent reuse): a quotation item used in a CANCELLED batch
+    /// cannot be selected again without an explicit, active Buyer reuse authorization.
+    /// </summary>
+    internal static ObjectResult ReuseNotAuthorizedConflict(IReadOnlyList<QuotationItemEligibility> blocked)
+    {
+        var pd = new ProblemDetails
+        {
+            Title = "Reuso de cotação não autorizado",
+            Detail = "Este item de cotação foi utilizado num lote de aprovação cancelado e exige autorização explícita de reuso antes de poder ser selecionado novamente.",
+            Status = 409
+        };
+        pd.Extensions["code"] = "QUOTATION_REUSE_NOT_AUTHORIZED";
+        pd.Extensions["blockedItems"] = blocked.Select(b => new
+        {
+            quotationItemId = b.QuotationItemId,
+            quotationId = b.QuotationId,
+            sourceCancelledBatchId = b.SourceCancelledBatchId,
+            sourceCancelledBatchNumber = b.SourceCancelledBatchNumber,
+            reasonCode = b.ReasonCode
+        }).ToList();
+        return new ConflictObjectResult(pd);
     }
 
     /// <summary>
@@ -215,6 +242,14 @@ public class ApprovalBatchController : BaseController
             });
         }
 
+        // ── 5g. Cancelled-batch reuse rule (Option C): items used in a CANCELLED batch need an
+        // explicit, active Buyer authorization; authorized ones are consumed atomically below.
+        var (reuseBlocked, reuseAuthorized) = await _quotationEligibility.ValidateSelectionAsync(requestId, quotationItemIds);
+        if (reuseBlocked.Count > 0)
+        {
+            return ReuseNotAuthorizedConflict(reuseBlocked);
+        }
+
         // ── 5.1. Phase B routing guard: a batch enters WAITING_AREA_APPROVAL, so at
         // least one area manager must be resolvable for the request's department/plant.
         // Department.ResponsibleUserId is no longer consulted.
@@ -266,6 +301,45 @@ public class ApprovalBatchController : BaseController
             lineItem.UpdatedAtUtc = DateTime.UtcNow;
             lineItem.UpdatedByUserId = actorId;
             _context.Entry(lineItem).State = EntityState.Modified;
+        }
+
+        // ── 7.1. Consume reuse authorizations in the SAME transaction as the batch (Option C):
+        // each authorized reused item flips its authorization to consumed and records provenance.
+        // If SaveChanges fails, everything (batch + consumption + history) rolls back together.
+        if (reuseAuthorized.Count > 0)
+        {
+            var authIds = reuseAuthorized.Select(a => a.ReuseAuthorizationId!.Value).ToList();
+            var authEntities = await _context.QuotationReuseAuthorizations
+                .Where(a => authIds.Contains(a.Id))
+                .ToListAsync();
+            var authorizerIds = authEntities.Select(a => a.AuthorizedByUserId).Distinct().ToList();
+            var authorizerNames = await _context.Users.AsNoTracking()
+                .Where(u => authorizerIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id, u => u.FullName);
+
+            foreach (var auth in authEntities)
+            {
+                auth.IsActive = false;
+                auth.ConsumedByApprovalBatchId = batch.Id;
+                auth.ConsumedAtUtc = DateTime.UtcNow;
+
+                var elig = reuseAuthorized.First(a => a.ReuseAuthorizationId == auth.Id);
+                quotationItemMap.TryGetValue(auth.QuotationItemId, out var qi);
+                var lineItemId = dto.Items.First(i => i.SelectedQuotationItemId == auth.QuotationItemId).RequestLineItemId;
+                var authorizer = authorizerNames.TryGetValue(auth.AuthorizedByUserId, out var n) ? n : auth.AuthorizedByUserId.ToString();
+
+                _context.RequestStatusHistories.Add(new RequestStatusHistory
+                {
+                    Id = Guid.NewGuid(),
+                    RequestId = requestId,
+                    ActorUserId = actorId,
+                    ActionTaken = "QUOTATION_REUSED_IN_NEW_BATCH",
+                    PreviousStatusId = request.StatusId,
+                    NewStatusId = request.StatusId,
+                    Comment = $"Item de cotação '{qi?.Description}' ({qi?.Quotation?.DocumentNumber} — {qi?.Quotation?.SupplierNameSnapshot}) reutilizado do Lote #{elig.SourceCancelledBatchNumber} (cancelado) no Lote #{batch.BatchNumber}. Item do pedido: {lineItemId}. Autorizado por {authorizer} em {auth.AuthorizedAtUtc:dd/MM/yyyy HH:mm}. Motivo da autorização: {auth.Reason}",
+                    CreatedAtUtc = DateTime.UtcNow
+                });
+            }
         }
 
         // ── 8. Sync Request.StatusId (legacy compatibility) ──
@@ -957,6 +1031,16 @@ public class ApprovalBatchController : BaseController
             }
         }
 
+        // ── 3.1. Cancelled-batch reuse rule (Option C): the edited winner set must not include
+        // items from a cancelled batch without an active authorization. Items whose authorization
+        // was already consumed by THIS batch stay legitimate (consumingBatchId).
+        var (reuseBlocked, reuseAuthorized) = await _quotationEligibility.ValidateSelectionAsync(
+            requestId, allQuotationItemIds, consumingBatchId: batchId);
+        if (reuseBlocked.Count > 0)
+        {
+            return ReuseNotAuthorizedConflict(reuseBlocked);
+        }
+
         // ── 4. Apply changes ──
         // Remove items no longer in the batch
         var removedIds = currentBatchRliIds.Except(requestLineItemIds).ToHashSet();
@@ -991,6 +1075,43 @@ public class ApprovalBatchController : BaseController
 
                 var lineItem = request.LineItems.First(li => li.Id == item.RequestLineItemId);
                 lineItem.QuotationLifecycleStatus = RequestConstants.QuotationLifecycleStatuses.BatchAssigned;
+            }
+        }
+
+        // ── 4.1. Consume reuse authorizations for newly assigned reused items — same transaction
+        // as the batch edit (rolls back together on failure).
+        if (reuseAuthorized.Count > 0)
+        {
+            var authIds = reuseAuthorized.Select(a => a.ReuseAuthorizationId!.Value).ToList();
+            var authEntities = await _context.QuotationReuseAuthorizations
+                .Where(a => authIds.Contains(a.Id))
+                .ToListAsync();
+            var authorizerIds = authEntities.Select(a => a.AuthorizedByUserId).Distinct().ToList();
+            var authorizerNames = await _context.Users.AsNoTracking()
+                .Where(u => authorizerIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id, u => u.FullName);
+
+            foreach (var auth in authEntities)
+            {
+                auth.IsActive = false;
+                auth.ConsumedByApprovalBatchId = batch.Id;
+                auth.ConsumedAtUtc = DateTime.UtcNow;
+
+                var elig = reuseAuthorized.First(a => a.ReuseAuthorizationId == auth.Id);
+                quotationItemMap.TryGetValue(auth.QuotationItemId, out var qi);
+                var authorizer = authorizerNames.TryGetValue(auth.AuthorizedByUserId, out var n) ? n : auth.AuthorizedByUserId.ToString();
+
+                _context.RequestStatusHistories.Add(new RequestStatusHistory
+                {
+                    Id = Guid.NewGuid(),
+                    RequestId = requestId,
+                    ActorUserId = actorId,
+                    ActionTaken = "QUOTATION_REUSED_IN_NEW_BATCH",
+                    PreviousStatusId = request.StatusId,
+                    NewStatusId = request.StatusId,
+                    Comment = $"Item de cotação '{qi?.Description}' reutilizado do Lote #{elig.SourceCancelledBatchNumber} (cancelado) no Lote #{batch.BatchNumber} (edição em reajuste). Autorizado por {authorizer} em {auth.AuthorizedAtUtc:dd/MM/yyyy HH:mm}. Motivo da autorização: {auth.Reason}",
+                    CreatedAtUtc = DateTime.UtcNow
+                });
             }
         }
 
@@ -1037,8 +1158,18 @@ public class ApprovalBatchController : BaseController
         var (request, batch, error) = await LoadAndValidateBatchForRework(requestId, batchId);
         if (error != null) return error;
 
+        // Defensive Option C check: the batch's winners must still be legitimate at resubmission
+        // (its own consumed authorizations pass via consumingBatchId; anything else blocked → 409).
+        var resubmitQuotationItemIds = batch!.Items.Select(bi => bi.SelectedQuotationItemId).ToList();
+        var (resubmitBlocked, _) = await _quotationEligibility.ValidateSelectionAsync(
+            requestId, resubmitQuotationItemIds, consumingBatchId: batchId);
+        if (resubmitBlocked.Count > 0)
+        {
+            return ReuseNotAuthorizedConflict(resubmitBlocked);
+        }
+
         // ── Update batch state ──
-        batch!.Status = RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval;
+        batch.Status = RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval;
         batch.UpdatedAtUtc = DateTime.UtcNow;
         batch.UpdatedByUserId = actorId;
 

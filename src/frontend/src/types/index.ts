@@ -148,6 +148,14 @@ export interface SavedQuotationItemDto {
     lineItemStatusBadgeColor?: string | null;
 
     historyInsight?: PurchaseHistoryInsightDto;
+
+    // Cancelled-batch reuse (Option C) — server-annotated eligibility/provenance
+    isReuseBlocked?: boolean;
+    isReuseAuthorized?: boolean;
+    sourceCancelledBatchId?: string | null;
+    sourceCancelledBatchNumber?: number | null;
+    reuseAuthorizationId?: string | null;
+    reuseConsumedFromBatchId?: string | null;
 }
 
 export interface PurchaseHistoryInsightDto {

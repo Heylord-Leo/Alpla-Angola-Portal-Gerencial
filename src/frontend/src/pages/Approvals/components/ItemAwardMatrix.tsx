@@ -19,29 +19,34 @@ export function ItemAwardMatrix({
     onSelectAll
 }: ItemAwardMatrixProps) {
     
+    // Option C: items used in a CANCELLED batch without an active reuse authorization are not
+    // candidates (server-annotated; the backend also rejects them with 409 as the hard gate).
+    const isSelectableCandidate = (qItem: any) =>
+        !!qItem &&
+        (qItem.reconciliationStatus === 'MAPPED' || qItem.reconciliationStatus === 'SUBSTITUTE') &&
+        !qItem.isReuseBlocked;
+
     // Find the lowest price for each request item (across all quotations)
     const lowestPrices = useMemo(() => {
         const prices: Record<string, number> = {};
-        
+
         items.forEach(item => {
             let minPrice: number | null = null;
-            
+
             quotations.forEach(q => {
                 const qItem = q.items.find(qi => qi.mappedRequestLineItemId === item.id);
-                if (qItem && 
-                    (qItem.reconciliationStatus === 'MAPPED' || qItem.reconciliationStatus === 'SUBSTITUTE') && 
-                    qItem.unitPrice > 0) {
-                    if (minPrice === null || qItem.unitPrice < minPrice) {
-                        minPrice = qItem.unitPrice;
+                if (isSelectableCandidate(qItem) && qItem!.unitPrice > 0) {
+                    if (minPrice === null || qItem!.unitPrice < minPrice) {
+                        minPrice = qItem!.unitPrice;
                     }
                 }
             });
-            
+
             if (minPrice !== null) {
                 prices[item.id] = minPrice;
             }
         });
-        
+
         return prices;
     }, [items, quotations]);
 
@@ -137,8 +142,11 @@ export function ItemAwardMatrix({
                                     </span>
                                 </th>
                                 {quotations.map(q => {
-                                    // Check if this quotation covers all items
-                                    const coversAll = items.every(item => q.items.some(qi => qi.mappedRequestLineItemId === item.id));
+                                    // "Select all" only when this quotation covers every item with a
+                                    // SELECTABLE candidate — reuse-blocked items (Option C) must never
+                                    // be selected in bulk.
+                                    const coversAll = items.every(item =>
+                                        isSelectableCandidate(q.items.find(qi => qi.mappedRequestLineItemId === item.id)));
                                     
                                     return (
                                         <th key={q.id} style={{ 
@@ -227,7 +235,9 @@ export function ItemAwardMatrix({
                                             const isSelected = qItem && itemAwards[item.id] === qItem.id;
                                             const isNotQuoted = qItem?.reconciliationStatus === 'NOT_QUOTED';
                                             const isIgnored = qItem?.reconciliationStatus === 'IGNORED';
-                                            const isValid = qItem && !isNotQuoted && !isIgnored;
+                                            // Option C: cancelled-batch item without reuse authorization is NOT selectable
+                                            const isReuseBlocked = !!qItem?.isReuseBlocked;
+                                            const isValid = qItem && !isNotQuoted && !isIgnored && !isReuseBlocked;
                                             
                                             return (
                                                 <td key={q.id} style={{ 
@@ -281,11 +291,19 @@ export function ItemAwardMatrix({
                                                                     </span>
                                                                 </div>
                                                             )}
+
+                                                            {(qItem.isReuseAuthorized || qItem.reuseConsumedFromBatchId) && qItem.sourceCancelledBatchNumber != null && (
+                                                                <div style={{ paddingLeft: '26px', marginTop: '4px' }}>
+                                                                    <span style={{ fontSize: '0.625rem', fontWeight: 800, color: '#92400E', backgroundColor: '#FEF3C7', padding: '2px 6px', borderRadius: '4px', textTransform: 'uppercase' }}>
+                                                                        Reutilizado do Lote #{qItem.sourceCancelledBatchNumber} (cancelado)
+                                                                    </span>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     ) : (
-                                                        <div style={{ 
-                                                            display: 'flex', 
-                                                            alignItems: 'center', 
+                                                        <div style={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
                                                             justifyContent: 'center',
                                                             height: '100%',
                                                             color: 'var(--color-text-muted)',
@@ -295,7 +313,11 @@ export function ItemAwardMatrix({
                                                             backgroundColor: isNotQuoted ? 'var(--color-bg-page)' : 'transparent',
                                                             borderRadius: '8px'
                                                         }}>
-                                                            {isNotQuoted ? '— não cotado —' : (isIgnored ? '' : '—')}
+                                                            {isNotQuoted
+                                                                ? '— não cotado —'
+                                                                : isReuseBlocked
+                                                                    ? `— lote #${qItem?.sourceCancelledBatchNumber ?? '?'} cancelado (reuso não autorizado) —`
+                                                                    : (isIgnored ? '' : '—')}
                                                         </div>
                                                     )}
                                                 </td>
