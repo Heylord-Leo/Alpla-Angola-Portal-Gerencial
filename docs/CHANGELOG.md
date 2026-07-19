@@ -4,9 +4,22 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.208.2
+v2.208.3
 
 ## [Unreleased]
+
+## [v2.208.3] - 2026-07-19
+
+### Fixed — CI: Guard "ResponsibleUserId" do Workflow "Apply TEST Migrations" Restrito Corretamente
+
+- **Falso positivo corrigido**: o script incremental de 71→83 migrations (incluindo `20260716094419_PhaseCRemoveLegacyAreaApprovalConfig`, que remove a coluna legada `Departments.ResponsibleUserId` com backup de auditoria) estava sendo rejeitado por um guard que fazia busca de substring/regex genérica em todo o SQL gerado, sem distinguir operação de remoção legítima de recriação perigosa.
+- **`Test-ResponsibleUserIdSafety`** (nova função pura em `scripts/db/migration-range.ps1`): combina duas camadas — (1) posição: qualquer referência de uma migration posicionada **depois** da que remove a coluna é sempre rejeitada; (2) padrão: mesmo antes/na migration de remoção, apenas formas genuinamente perigosas são rejeitadas (`ADD`, `CREATE INDEX`, `ADD CONSTRAINT`/FK, `ALTER COLUMN`, `UPDATE`/`INSERT` gravando na coluna) — leituras, `DROP COLUMN`/`INDEX`/`CONSTRAINT` e backups de auditoria em outra tabela continuam permitidos.
+- **`Test-ModelSnapshotNoLegacyProperty`** (nova função pura): confirma, de forma estática e sem banco, que o modelo EF atual não define mais `Departments.ResponsibleUserId` — escopada ao bloco da entidade, evitando falso positivo com propriedades de nome parecido em outras entidades (ex.: `Request.CurrentResponsibleUserId`).
+- **Nenhuma mudança na lógica de sincronização/migração em si**: `Test-MigrationPrefix`, `Get-MigrationRange`, `Get-MigrationIdsFromScript`, o comportamento de abortar antes do `sqlcmd`, backup, e demais proteções permanecem inalterados.
+- 29 testes não-destrutivos adicionados e passando (`scripts/db/migration-range.Tests.ps1`), incluindo contra o script real gerado (71→83) e o `ApplicationDbContextModelSnapshot.cs` real do repositório.
+- Confirmado por investigação: nenhum SQL foi aplicado ao TEST pela falha anterior nem por esta correção; `Portal-Gerencial-Test` permaneceu em 71 migrations aplicadas durante todo o processo.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.208.2] - 2026-07-19
 

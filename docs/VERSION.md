@@ -2,7 +2,20 @@
 
 ## Current Version
 
-v2.208.2
+v2.208.3
+
+## [v2.208.3] - 2026-07-19
+
+### Fixed — CI: Apply TEST Migrations — Narrow the ResponsibleUserId Guard
+
+- Fixed a false-positive abort in the "Apply TEST Migrations" workflow: the incremental script (71 → 83 migrations, including `20260716094419_PhaseCRemoveLegacyAreaApprovalConfig`) legitimately references the dropped `Departments.ResponsibleUserId` column while backing it up for audit and removing it, and was being rejected by a broad substring/regex check over the entire generated SQL.
+- Replaced the substring guard with `Test-ResponsibleUserIdSafety` (`scripts/db/migration-range.ps1`): permits safe reads/backfill (`20260715210124_AddDepartmentManagers`) and removal/audit-backup operations at or before the drop, while still rejecting genuinely dangerous shapes (re-adding the column, indexing it, constraining it, or writing into it) anywhere, and any reference at all from a migration positioned after the drop.
+- Added `Test-ModelSnapshotNoLegacyProperty` as a static, DB-independent guard confirming the current EF model no longer defines `Departments.ResponsibleUserId` (scoped to the entity block, so an unrelated same-named-substring property elsewhere is never a false positive).
+- No change to the actual synchronization/migration logic; no change to `Test-MigrationPrefix`, `Get-MigrationRange`, `Get-MigrationIdsFromScript`, or the abort-before-`sqlcmd` behavior.
+- 29 non-destructive tests added/passing (`scripts/db/migration-range.Tests.ps1`), including against the real generated 71→83 script and the real repository model snapshot.
+- No SQL was applied to TEST or PROD by the previous failed run or by this investigation/fix; `Portal-Gerencial-Test` remained at 71 applied migrations throughout.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.208.2] - 2026-07-19
 

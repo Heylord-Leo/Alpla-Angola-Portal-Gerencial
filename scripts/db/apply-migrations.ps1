@@ -358,16 +358,49 @@ if ($reappliedApplied.Count -gt 0) { $validationFailed = $true; Write-Host "::er
 if ($afterTo.Count -gt 0)        { $validationFailed = $true; Write-Host "::error::Script records migration(s) after TO ($toMigration):"; $afterTo | ForEach-Object { Write-Host "::error::  AFTER-TO: $_" } }
 if ($scriptMigrations.Count -ne $pending.Count) { $validationFailed = $true; Write-Host "::error::Recorded count ($($scriptMigrations.Count)) != pending count ($($pending.Count))." }
 
-# In the incremental scenario (non-empty DB), the script must NOT reference a column dropped by history
-# (Departments.ResponsibleUserId). For an EMPTY database (FROM = 0) the full history is expected and the
-# column legitimately appears (created then dropped in sequence), so this check is skipped.
+# In the incremental scenario (non-empty DB), Departments.ResponsibleUserId (dropped by
+# 20260716094419_PhaseCRemoveLegacyAreaApprovalConfig) must not be recreated, repopulated, indexed or
+# constrained by any migration. It IS legitimately referenced by two migrations at/before the drop:
+# 20260715210124_AddDepartmentManagers (one-time read-only backfill into the new DepartmentManagers
+# model) and the Phase C migration itself (audit backup INSERT into a separate table, then
+# DROP CONSTRAINT/INDEX/COLUMN). See Test-ResponsibleUserIdSafety (migration-range.ps1) and DEC-149.
+# For an EMPTY database (FROM = 0) the full history is expected and the column legitimately appears
+# (created, backfilled, then dropped in sequence), so this check is skipped.
 if ($fromMigration -ne '0') {
-    if ([regex]::IsMatch($sqlContent, 'ResponsibleUserId', 'IgnoreCase')) {
+    $ruidCheck = Test-ResponsibleUserIdSafety -SqlContent $sqlContent -ExpectedMigrations $expectedMigrations `
+        -BoundaryMigrationId '20260716094419_PhaseCRemoveLegacyAreaApprovalConfig'
+    if (-not $ruidCheck.Safe) {
         $validationFailed = $true
-        Write-Host "::error::Incremental script unexpectedly references 'ResponsibleUserId' (a dropped historical column)."
+        if ($ruidCheck.PositionViolations.Count -gt 0) {
+            Write-Host "::error::Script references 'ResponsibleUserId' from migration(s) positioned AFTER the column was dropped:"
+            $ruidCheck.PositionViolations | ForEach-Object { Write-Host "::error::  AFTER-DROP REFERENCE: $_" }
+        }
+        if ($ruidCheck.PatternViolations.Count -gt 0) {
+            Write-Host "::error::Script contains dangerous SQL patterns re-creating/re-populating the dropped 'ResponsibleUserId' column:"
+            $ruidCheck.PatternViolations | ForEach-Object { Write-Host "::error::  DANGEROUS PATTERN: $_" }
+        }
     } else {
-        Write-Host "OK - No 'ResponsibleUserId' reference in the incremental script." -ForegroundColor Green
+        Write-Host "OK - 'ResponsibleUserId' reference(s), if any, are limited to safe read/backfill/removal operations at or before the drop." -ForegroundColor Green
     }
+}
+
+# Static, DB-independent guard: the CURRENT model must not still define Departments.ResponsibleUserId.
+# This catches the case where the column mapping lingers in the model (e.g. an incomplete revert or a
+# future re-introduction) even if no pending migration happens to reference it in generated SQL.
+$modelSnapshotPath = Join-Path $RepoRoot "src\backend\AlplaPortal.Infrastructure\Data\Migrations\ApplicationDbContextModelSnapshot.cs"
+if (Test-Path $modelSnapshotPath) {
+    $snapshotContent = Get-Content $modelSnapshotPath -Raw
+    $snapshotCheck = Test-ModelSnapshotNoLegacyProperty -SnapshotContent $snapshotContent `
+        -EntityFullName "AlplaPortal.Domain.Entities.Department" -PropertyName "ResponsibleUserId"
+    if (-not $snapshotCheck.Safe) {
+        $validationFailed = $true
+        Write-Host "::error::$($snapshotCheck.Reason)"
+    } else {
+        Write-Host "OK - Current model snapshot does not define Departments.ResponsibleUserId." -ForegroundColor Green
+    }
+} else {
+    Write-Host "::error::Model snapshot not found at $modelSnapshotPath"
+    $validationFailed = $true
 }
 
 if ($validationFailed) {

@@ -71,6 +71,161 @@ GO
 $ids = @(Get-MigrationIdsFromScript -SqlContent $sample)
 Assert ($ids.Count -eq 2 -and $ids -contains 'm03' -and $ids -contains 'm04') "extracts exactly the inserted MigrationIds"
 
+Write-Host "Test-ResponsibleUserIdSafety:"
+# Synthetic migration order mirroring the real pending set's shape: AddDepartmentManagers (legitimate
+# read/backfill), PhaseC (legitimate drop + audit backup), then later unrelated migrations.
+$ruExpected = @(
+    'm01_AddSignedReturnDocumentId',
+    'm02_AddDepartmentManagers',
+    'm03_PhaseCRemoveLegacyAreaApprovalConfig',
+    'm04_AddLineItemProvenanceAndIdempotency',
+    'm05_AddQuotationReuseAuthorizations'
+)
+$ruBoundary = 'm03_PhaseCRemoveLegacyAreaApprovalConfig'
+
+# 1) No occurrence at all -> safe
+$noRef = "IF NOT EXISTS (SELECT * FROM [__EFMigrationsHistory] WHERE [MigrationId] = N'm01_AddSignedReturnDocumentId')`nBEGIN`n    ALTER TABLE [X] ADD [Y] int NULL;`nEND;`nGO"
+Assert (Test-ResponsibleUserIdSafety -SqlContent $noRef -ExpectedMigrations $ruExpected -BoundaryMigrationId $ruBoundary).Safe "1 no occurrence -> safe"
+
+# 2) DROP COLUMN inside the boundary (PhaseC) block -> accepted
+$dropCol = @"
+IF NOT EXISTS (SELECT * FROM [__EFMigrationsHistory] WHERE [MigrationId] = N'm03_PhaseCRemoveLegacyAreaApprovalConfig')
+BEGIN
+    ALTER TABLE [Departments] DROP COLUMN [ResponsibleUserId];
+END;
+GO
+"@
+Assert (Test-ResponsibleUserIdSafety -SqlContent $dropCol -ExpectedMigrations $ruExpected -BoundaryMigrationId $ruBoundary).Safe "2 DROP COLUMN in boundary block -> accepted"
+
+# 3) DROP INDEX / DROP CONSTRAINT inside the boundary block -> accepted
+$dropIdxConstraint = @"
+IF NOT EXISTS (SELECT * FROM [__EFMigrationsHistory] WHERE [MigrationId] = N'm03_PhaseCRemoveLegacyAreaApprovalConfig')
+BEGIN
+    ALTER TABLE [Departments] DROP CONSTRAINT [FK_Departments_Users_ResponsibleUserId];
+    DROP INDEX [IX_Departments_ResponsibleUserId] ON [Departments];
+END;
+GO
+"@
+Assert (Test-ResponsibleUserIdSafety -SqlContent $dropIdxConstraint -ExpectedMigrations $ruExpected -BoundaryMigrationId $ruBoundary).Safe "3 DROP INDEX/CONSTRAINT in boundary block -> accepted"
+
+# Real-world shape: read-only backfill (m02, before boundary) + audit backup insert into another table (m03) -> accepted
+$legitimateReal = @"
+IF NOT EXISTS (SELECT * FROM [__EFMigrationsHistory] WHERE [MigrationId] = N'm02_AddDepartmentManagers')
+BEGIN
+    INSERT INTO DepartmentManagers (DepartmentId, PlantId, UserId, IsActive, CreatedAtUtc)
+    SELECT d.Id, NULL, d.ResponsibleUserId, 1, GETUTCDATE()
+    FROM Departments d
+    WHERE d.ResponsibleUserId IS NOT NULL;
+END;
+GO
+IF NOT EXISTS (SELECT * FROM [__EFMigrationsHistory] WHERE [MigrationId] = N'm03_PhaseCRemoveLegacyAreaApprovalConfig')
+BEGIN
+    INSERT INTO dbo._PhaseC_DepartmentResponsibleBackup (DepartmentId, ResponsibleUserId)
+    SELECT d.Id, d.ResponsibleUserId FROM Departments d WHERE d.ResponsibleUserId IS NOT NULL;
+    ALTER TABLE [Departments] DROP CONSTRAINT [FK_Departments_Users_ResponsibleUserId];
+    DROP INDEX [IX_Departments_ResponsibleUserId] ON [Departments];
+    ALTER TABLE [Departments] DROP COLUMN [ResponsibleUserId];
+END;
+GO
+"@
+Assert (Test-ResponsibleUserIdSafety -SqlContent $legitimateReal -ExpectedMigrations $ruExpected -BoundaryMigrationId $ruBoundary).Safe "3b real backfill + audit-backup insert into OTHER table -> accepted"
+
+# 4) ADD ResponsibleUserId -> rejected
+$addCol = @"
+IF NOT EXISTS (SELECT * FROM [__EFMigrationsHistory] WHERE [MigrationId] = N'm03_PhaseCRemoveLegacyAreaApprovalConfig')
+BEGIN
+    ALTER TABLE [Departments] ADD [ResponsibleUserId] uniqueidentifier NULL;
+END;
+GO
+"@
+Assert (-not (Test-ResponsibleUserIdSafety -SqlContent $addCol -ExpectedMigrations $ruExpected -BoundaryMigrationId $ruBoundary).Safe) "4 ADD ResponsibleUserId -> rejected"
+
+# 5) CREATE INDEX using ResponsibleUserId -> rejected
+$createIdx = @"
+IF NOT EXISTS (SELECT * FROM [__EFMigrationsHistory] WHERE [MigrationId] = N'm03_PhaseCRemoveLegacyAreaApprovalConfig')
+BEGIN
+    CREATE INDEX [IX_Departments_ResponsibleUserId] ON [Departments] ([ResponsibleUserId]);
+END;
+GO
+"@
+Assert (-not (Test-ResponsibleUserIdSafety -SqlContent $createIdx -ExpectedMigrations $ruExpected -BoundaryMigrationId $ruBoundary).Safe) "5 CREATE INDEX on ResponsibleUserId -> rejected"
+
+# 6) New FK involving ResponsibleUserId -> rejected
+$newFk = @"
+IF NOT EXISTS (SELECT * FROM [__EFMigrationsHistory] WHERE [MigrationId] = N'm03_PhaseCRemoveLegacyAreaApprovalConfig')
+BEGIN
+    ALTER TABLE [Departments] ADD CONSTRAINT [FK_Departments_Users_ResponsibleUserId] FOREIGN KEY ([ResponsibleUserId]) REFERENCES [Users] ([Id]);
+END;
+GO
+"@
+Assert (-not (Test-ResponsibleUserIdSafety -SqlContent $newFk -ExpectedMigrations $ruExpected -BoundaryMigrationId $ruBoundary).Safe) "6 new FK on ResponsibleUserId -> rejected"
+
+# 7) UPDATE setting ResponsibleUserId -> rejected
+$updateSet = @"
+IF NOT EXISTS (SELECT * FROM [__EFMigrationsHistory] WHERE [MigrationId] = N'm03_PhaseCRemoveLegacyAreaApprovalConfig')
+BEGIN
+    UPDATE [Departments] SET [ResponsibleUserId] = NULL;
+END;
+GO
+"@
+Assert (-not (Test-ResponsibleUserIdSafety -SqlContent $updateSet -ExpectedMigrations $ruExpected -BoundaryMigrationId $ruBoundary).Safe) "7 UPDATE SET ResponsibleUserId -> rejected"
+
+# 8) ResponsibleUserId appears in a migration block AFTER the boundary -> rejected
+$afterBoundary = @"
+IF NOT EXISTS (SELECT * FROM [__EFMigrationsHistory] WHERE [MigrationId] = N'm04_AddLineItemProvenanceAndIdempotency')
+BEGIN
+    SELECT ResponsibleUserId FROM Departments;
+END;
+GO
+"@
+Assert (-not (Test-ResponsibleUserIdSafety -SqlContent $afterBoundary -ExpectedMigrations $ruExpected -BoundaryMigrationId $ruBoundary).Safe) "8 reference after boundary migration -> rejected"
+
+Write-Host "Test-ModelSnapshotNoLegacyProperty:"
+$snapshotClean = @"
+modelBuilder.Entity("AlplaPortal.Domain.Entities.Department", b =>
+{
+    b.Property<int>("Id").ValueGeneratedOnAdd().HasColumnType("int");
+    b.Property<string>("Code").HasColumnType("nvarchar(max)");
+    b.ToTable("Departments");
+});
+modelBuilder.Entity("AlplaPortal.Domain.Entities.SomeOtherEntity", b =>
+{
+    b.Property<Guid?>("CurrentResponsibleUserId").HasColumnType("uniqueidentifier");
+    b.ToTable("SomeOtherEntity");
+});
+"@
+Assert (Test-ModelSnapshotNoLegacyProperty -SnapshotContent $snapshotClean -EntityFullName "AlplaPortal.Domain.Entities.Department" -PropertyName "ResponsibleUserId").Safe "9a clean snapshot (only differently-named property elsewhere) -> safe"
+
+$snapshotStale = @"
+modelBuilder.Entity("AlplaPortal.Domain.Entities.Department", b =>
+{
+    b.Property<int>("Id").ValueGeneratedOnAdd().HasColumnType("int");
+    b.Property<Guid?>("ResponsibleUserId").HasColumnType("uniqueidentifier");
+    b.ToTable("Departments");
+});
+"@
+Assert (-not (Test-ModelSnapshotNoLegacyProperty -SnapshotContent $snapshotStale -EntityFullName "AlplaPortal.Domain.Entities.Department" -PropertyName "ResponsibleUserId").Safe) "9b ModelSnapshot still defines ResponsibleUserId -> rejected"
+
+$snapshotStaleFk = @"
+modelBuilder.Entity("AlplaPortal.Domain.Entities.Department", b =>
+{
+    b.HasOne("AlplaPortal.Domain.Entities.User", "ResponsibleUser")
+        .WithMany()
+        .HasForeignKey("ResponsibleUserId");
+});
+"@
+Assert (-not (Test-ModelSnapshotNoLegacyProperty -SnapshotContent $snapshotStaleFk -EntityFullName "AlplaPortal.Domain.Entities.Department" -PropertyName "ResponsibleUserId").Safe) "9c ModelSnapshot still has FK on ResponsibleUserId -> rejected"
+
+# Against the REAL, current repository snapshot file (read-only)
+$realSnapshotPath = Join-Path $PSScriptRoot "..\..\src\backend\AlplaPortal.Infrastructure\Data\Migrations\ApplicationDbContextModelSnapshot.cs"
+if (Test-Path $realSnapshotPath) {
+    $realSnapshot = Get-Content $realSnapshotPath -Raw
+    $realCheck = Test-ModelSnapshotNoLegacyProperty -SnapshotContent $realSnapshot -EntityFullName "AlplaPortal.Domain.Entities.Department" -PropertyName "ResponsibleUserId"
+    Assert $realCheck.Safe "9d real repository ApplicationDbContextModelSnapshot.cs has no Departments.ResponsibleUserId"
+} else {
+    Write-Host "  SKIP  9d real snapshot file not found at $realSnapshotPath" -ForegroundColor Yellow
+}
+
 Write-Host ""
 if ($fail -gt 0) { Write-Host "RESULT: $fail test(s) FAILED" -ForegroundColor Red; exit 1 }
 Write-Host "RESULT: ALL TESTS PASSED" -ForegroundColor Green

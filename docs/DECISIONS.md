@@ -2272,3 +2272,14 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
   clone or falls back to the REST archive; installing Git on the runner remains optional infrastructure
   work, not a prerequisite for this workflow, and is not being done as part of this fix.
 - **Related:** [[DEC-148]], `docs/DEPLOYMENT_CHECKLIST.md` → "Sync PROD Data to TEST" section.
+
+---
+
+## DEC-145a — Narrow the ResponsibleUserId Guard to Position + Dangerous-Pattern Semantics (Addendum to DEC-145)
+
+- **Date:** 2026-07-19
+- **Status:** Accepted
+- **Context:** DEC-145 point 3 introduced a blanket check — `[regex]::IsMatch($sqlContent, 'ResponsibleUserId')` over the entire incremental script — to catch the SQL-compile failure described there. This blocked the *legitimate* incremental script for the real 71→83 pending set: `20260715210124_AddDepartmentManagers` safely reads `Departments.ResponsibleUserId` to backfill the new `DepartmentManagers` model, and `20260716094419_PhaseCRemoveLegacyAreaApprovalConfig` safely backs the value up to an audit table before `DROP CONSTRAINT`/`DROP INDEX`/`DROP COLUMN`. Neither recreates, repopulates, indexes, or constrains the column — the blanket substring check could not tell the difference.
+- **Decision:** Replaced the blanket check with `Test-ResponsibleUserIdSafety` (`scripts/db/migration-range.ps1`, pure/DB-independent, unit-tested): (1) a **position layer** attributes every occurrence to its owning migration (nearest preceding EF idempotent guard marker) and rejects any occurrence from a migration positioned after the column-dropping migration outright; (2) a **pattern layer** rejects only genuinely dangerous SQL shapes (`ADD`, `CREATE INDEX` on it, `ADD CONSTRAINT`/FK against it, `ALTER COLUMN`, `UPDATE`/`INSERT` writing into `Departments.ResponsibleUserId` itself) regardless of position. Added `Test-ModelSnapshotNoLegacyProperty` as a companion static check confirming the current EF model no longer defines the property, scoped to the entity's block so an unrelated same-named-substring property elsewhere (e.g. `Request.CurrentResponsibleUserId`) is never a false positive.
+- **Consequences:** the real, legitimate incremental script now passes; a future migration that tried to recreate, repopulate, index, or reference the dropped column after its removal is still caught, at the specific offending migration. All other DEC-145 protections (strict prefix validation, exact-set MigrationId comparison, `QUOTED_IDENTIFIER` handling, abort-before-`sqlcmd`) are unchanged.
+- **Related:** [[DEC-145]], `scripts/db/migration-range.Tests.ps1` (29 tests), `scripts/db/apply-migrations.ps1`.
