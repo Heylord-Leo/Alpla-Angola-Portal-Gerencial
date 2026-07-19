@@ -2,7 +2,21 @@
 
 ## Current Version
 
-v2.208.0
+v2.208.1
+
+## [v2.208.1] - 2026-07-19
+
+### Fixed — CI: Sync PROD Data to TEST Workflow Hardening and Branch Migration
+
+- Workflow `.github/workflows/sync-prod-data-test.yml` and script `scripts/db/sync-prod-data-test.ps1` ported from `main` to **Portal-Gerencial-rev1** (the official continuous development branch); they are no longer maintained on `main` directly.
+- Removed the historical hardcoded `release_version == v2.205.0` validation; replaced with dynamic validation against `docs/VERSION.md` ("Current Version"), with SemVer format enforcement (`^v\d+\.\d+\.\d+$`) on both the repository value and the user input.
+- Added a strict branch guard: the workflow only proceeds when `github.ref_name == 'Portal-Gerencial-rev1'`; any other ref aborts before any database operation, with no bypass input.
+- Preserved both mandatory destructive confirmations (`RESTORE_PROD_TO_TEST`, `I_UNDERSTAND_PROD_WILL_NOT_BE_MODIFIED`).
+- Added safe traceability output (ref, resolved commit SHA, repository version, input version, confirmation status, source/target database names and paths) printed before the sync script runs — no secrets, passwords or connection strings printed.
+- `scripts/db/sync-prod-data-test.ps1` preserved with **zero functional changes** (verified byte-for-byte identical to `main`) — no defect found in the synchronization logic itself.
+- Node 20 deprecation warning from `actions/checkout@v4` recorded as an informational note only, unrelated to the synchronization logic.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.208.0] - 2026-07-19
 

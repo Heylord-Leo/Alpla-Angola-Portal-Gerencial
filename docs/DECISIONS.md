@@ -2203,3 +2203,44 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
 - **Consequences:** cancelled batches and their `ApprovalBatchItems`/`SelectedQuotationItemId` remain untouched forever; new batches always receive fresh items and fresh decisions; partial reuse is exact and auditable.
 - **Operational notes recorded with this delivery (dev-environment debt):** Vite file-watching (HMR) is unreliable on the OneDrive/junction working tree — restart Vite after frontend changes; corporate execution policy can block the apphost `.exe` under OneDrive, so the dev backend is started with `dotnet bin/Debug/net8.0/AlplaPortal.Api.dll` (official ports 5000/5173 unchanged).
 - **Related:** [DEC-146](#dec-146--explicit-dbsetadd-for-new-entities-with-client-generated-guid-pks-reached-via-navigation), ApprovalBatchController, RequestsController, QuotationItemEligibilityService
+
+---
+
+## DEC-148 — Sync PROD→TEST Workflow Migrated to Portal-Gerencial-rev1 with Dynamic Version and Ref Guards
+
+- **Date:** 2026-07-19
+- **Status:** Accepted
+- **Context:** `.github/workflows/sync-prod-data-test.yml` and `scripts/db/sync-prod-data-test.ps1` were created
+  directly on `main` (2026-07-14/15) and never ported to `Portal-Gerencial-rev1`, the official continuous
+  development branch. Its `release_version` guard was hardcoded to the literal `v2.205.0` from creation
+  time and never updated. A dispatch against the (then-current) `main` — the only ref where the workflow
+  existed — failed validation because the published version had since advanced to `v2.208.0`, exposing
+  both the stale hardcode and the branch-ownership gap.
+- **Decision:**
+    1. The workflow and script are now maintained in **Portal-Gerencial-rev1** (ported byte-for-byte for
+       the `.ps1`; only the YAML validation step changed). `main` will receive them again through the
+       normal `Portal-Gerencial-rev1` → `main` merge process — they are no longer edited directly on `main`.
+    2. The `release_version` input is validated **dynamically** against `docs/VERSION.md`
+       ("Current Version") on the checked-out ref, not a hardcoded literal. Both the repository value and
+       the user input must independently match `^v\d+\.\d+\.\d+$`, and then must be exactly equal.
+    3. A strict **ref guard** requires `github.ref_name == 'Portal-Gerencial-rev1'`; any other ref
+       (including `main`) aborts before any database, backup, restore, or attachment operation, with no
+       bypass input in this version — ambiguity on a destructive-to-TEST workflow is worse than the
+       inconvenience of re-dispatching from the correct branch.
+    4. Validation (confirmations, ref, version, DB/path safety) runs in an isolated, non-destructive
+       PowerShell script (`scripts/db/validate-sync-prod-data-test-inputs.ps1`) that never opens a SQL
+       connection, creates a backup, or invokes Robocopy — making it independently testable without
+       touching TEST or PROD.
+    5. Safe traceability metadata (ref, resolved commit SHA via `git rev-parse HEAD`, repository version,
+       input version, confirmation status, source/target DB names and app paths) is printed before the
+       sync script runs; no secret, password, connection string, or token is ever printed. The SQL Server
+       instance name continues to be printed later by the unchanged sync script, right before the restore.
+    6. `scripts/db/sync-prod-data-test.ps1` itself (backups, `SINGLE_USER`/`RESTORE ... WITH REPLACE`/
+       `MULTI_USER`, login remap, `EmailOutbox`/`SmtpSettings`/`IntegrationProviders` neutralization,
+       Robocopy mirroring with exit-code validation, path protections, secret masking) is **unchanged** —
+       no defect was found in it during this hardening pass.
+- **Consequences:** the workflow can now only be run from the branch the team actually maintains; a stale
+  version guard can never again silently block (or, worse, silently pass) a real release; and validation
+  failures are fully reproducible locally via `pwsh` without any risk to TEST or PROD data.
+- **Related:** [[DEC-147]] (previous decision published from this same branch), `docs/DEPLOYMENT_CHECKLIST.md`
+  → "Sync PROD Data to TEST" section.

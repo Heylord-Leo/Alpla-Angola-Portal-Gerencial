@@ -4,9 +4,27 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.208.0
+v2.208.1
 
 ## [Unreleased]
+
+## [v2.208.1] - 2026-07-19
+
+### Fixed — CI: Endurecimento e Migração do Workflow "Sync PROD Data to TEST"
+
+- **Workflow portado para `Portal-Gerencial-rev1`**: `.github/workflows/sync-prod-data-test.yml` e `scripts/db/sync-prod-data-test.ps1` existiam apenas em `main`, criados diretamente lá e nunca sincronizados com o branch oficial de desenvolvimento; agora são mantidos em `Portal-Gerencial-rev1` e chegam a `main` pelo processo normal de merge.
+- **Removido o hardcode histórico `release_version == v2.205.0`**, que rejeitava qualquer versão publicada além de v2.205.0 (causa raiz da falha ao tentar dispatchar com v2.208.0).
+- **Validação dinâmica contra `docs/VERSION.md`**: a versão exigida é lida da seção "Current Version" do repositório no ref selecionado, normalizada (trim), e comparada por igualdade exata com o input `release_version`.
+- **Validação SemVer** (`^v\d+\.\d+\.\d+$`) aplicada tanto à versão do repositório quanto ao valor informado pelo usuário — rejeita formatos como `v2.208`, `2.208.0` (sem prefixo `v`) ou valor vazio.
+- **Guard obrigatório de branch**: o workflow só prossegue quando `github.ref_name == 'Portal-Gerencial-rev1'`; qualquer outro ref (incluindo `main` ou branches de release) aborta antes de qualquer operação de banco, sem input de bypass.
+- **As duas confirmações destrutivas preservadas**: `confirm_restore = RESTORE_PROD_TO_TEST` e `confirm_no_prod_changes = I_UNDERSTAND_PROD_WILL_NOT_BE_MODIFIED`.
+- **Impressão segura de rastreabilidade** antes de qualquer operação destrutiva: ref selecionado, `github.ref_name`, SHA resolvido (`git rev-parse HEAD`, comparado com `github.sha`), versão do repositório, versão informada, status da confirmação, bancos e caminhos origem/destino — nenhuma senha, connection string ou segredo é impresso.
+- **Script de sincronização preservado sem nenhuma mudança funcional**: `scripts/db/sync-prod-data-test.ps1` permanece byte-a-byte idêntico ao de `main` (backup PROD/TEST, `SINGLE_USER`/`RESTORE ... WITH REPLACE`/`MULTI_USER`, remapeamento de login, neutralização de `EmailOutbox`/`SmtpSettings`/`IntegrationProviders`, espelhamento de anexos via Robocopy com validação de exit code) — nenhum defeito foi encontrado nesta lógica.
+- **Warning do Node 20** (`actions/checkout@v4`) registrado apenas como nota informativa, sem relação com a lógica de sincronização.
+- Nova validação isolada e não-destrutiva (`scripts/db/validate-sync-prod-data-test-inputs.ps1`) — nunca abre conexão SQL, nunca cria backup, nunca invoca Robocopy — permitindo testar todos os guards sem tocar TEST ou PROD.
+- Nenhuma alteração funcional na aplicação; nenhuma alteração na lógica de sincronização de dados.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.208.0] - 2026-07-19
 
