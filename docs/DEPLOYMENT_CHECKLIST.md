@@ -256,6 +256,52 @@ For Production post-deploy validation, see [POST_DEPLOYMENT_CHECKLIST_PROD.md](f
 
 ---
 
+## Sync PROD Data to TEST (Manual, Destructive on TEST)
+
+> [!CAUTION]
+> This workflow **overwrites `[Portal-Gerencial-Test]` completely** with a restore of PROD data.
+> PROD (`[Portal-Gerencial]`) is always the **read-only source** and is never modified by this workflow.
+
+**Where it lives:** `.github/workflows/sync-prod-data-test.yml` + `scripts/db/sync-prod-data-test.ps1`,
+maintained in **Portal-Gerencial-rev1** (DEC-147). It is no longer maintained on `main` directly — `main`
+only receives it through the normal `Portal-Gerencial-rev1` → `main` merge process.
+
+**How to run it:**
+
+1. In GitHub Actions, open **Sync PROD Data to TEST**.
+2. Click **Run workflow** and set **"Use workflow from"** to **`Portal-Gerencial-rev1`** explicitly — the
+   workflow only exists on that branch's definition, and it also **hard-fails** if the resolved
+   `github.ref_name` is not `Portal-Gerencial-rev1` (no bypass input exists by design).
+3. Fill in the three required inputs:
+   - `confirm_restore` = exactly `RESTORE_PROD_TO_TEST`
+   - `confirm_no_prod_changes` = exactly `I_UNDERSTAND_PROD_WILL_NOT_BE_MODIFIED`
+   - `release_version` = the **current value of `docs/VERSION.md` → "Current Version"** on the branch
+     being run (e.g. `v2.208.0`). The workflow reads `docs/VERSION.md` itself and rejects any value that
+     doesn't match it exactly (and rejects anything that isn't valid SemVer `vX.Y.Z`), so the input can
+     never be silently inferred or substituted.
+4. All of the above is checked in a dedicated **"Validate inputs, ref and version"** step that runs
+   *before* `scripts/db/sync-prod-data-test.ps1` is ever invoked — no backup, restore, or attachment
+   operation happens if validation fails.
+5. Once validation passes, the job prints safe traceability metadata (workflow ref, `github.ref_name`,
+   resolved commit SHA via `git rev-parse HEAD`, repository version, `release_version` input, confirmation
+   status, source/target database names and application paths). It never prints passwords, connection
+   strings, or secret values. The SQL Server instance name is printed later, by the unchanged sync script
+   itself, right before the restore step.
+
+**What the sync script still does (unchanged since it was authored on `main`):** backs up TEST
+(pre-restore) and PROD (source) to `C:\Apps\AlplaPortal\Test\backups\db`; restores the PROD backup over
+`[Portal-Gerencial-Test]` (`SINGLE_USER WITH ROLLBACK IMMEDIATE` → `RESTORE ... WITH REPLACE` →
+`MULTI_USER`); remaps the `usr_portalgerencial_test` login; neutralizes `EmailOutbox`, `SmtpSettings`, and
+`IntegrationProviders` in TEST so it can never send real emails or call real external integrations;
+mirrors PROD attachments into TEST via Robocopy (`/MIR`, exit code `>= 8` fails the job); restores the IIS
+TEST app pool at the end.
+
+**Maintenance note:** the workflow currently emits a Node 20 deprecation warning from
+`actions/checkout@v4`. It is informational only and unrelated to the synchronization logic — do not
+change `actions/checkout` or Node configuration to silence it as part of an unrelated change.
+
+---
+
 ## Local Development Database
 
 > [!NOTE]

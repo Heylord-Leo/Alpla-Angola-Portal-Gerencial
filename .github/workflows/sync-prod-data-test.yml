@@ -1,0 +1,90 @@
+# =============================================================================
+# Alpla Angola - Portal Gerencial
+# GitHub Actions Workflow: Sync PROD Data to TEST (Manual)
+# =============================================================================
+# Maintained in Portal-Gerencial-rev1 (the official continuous development
+# branch). Must be dispatched with "Use workflow from: Portal-Gerencial-rev1".
+# PROD is always the read-only source; TEST is the destructive target.
+# =============================================================================
+name: Sync PROD Data to TEST
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_restore:
+        description: 'Digite "RESTORE_PROD_TO_TEST" para confirmar o restore no TEST'
+        required: true
+        type: string
+      confirm_no_prod_changes:
+        description: 'Digite "I_UNDERSTAND_PROD_WILL_NOT_BE_MODIFIED" para confirmar a seguranca da PROD'
+        required: true
+        type: string
+      release_version:
+        description: 'Current release version from docs/VERSION.md, for example v2.208.0.'
+        required: true
+        type: string
+
+concurrency:
+  group: sync-prod-data-test
+  cancel-in-progress: false
+
+jobs:
+  sync-data:
+    name: Sync PROD Data to TEST (${{ inputs.release_version }})
+    runs-on: [self-hosted, Windows, X64, iis, test, alpla-portal-test]
+    environment: test
+
+    steps:
+      # --- Checkout (whatever ref was selected in the dispatch UI - no override) ---
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # --- Resolve commit metadata from the checked-out working tree ---
+      - name: Resolve commit metadata
+        id: commit_meta
+        shell: pwsh
+        run: |
+          $resolvedSha = (git rev-parse HEAD).Trim()
+          Write-Host "github.ref_name:    ${{ github.ref_name }}"
+          Write-Host "github.sha (event): ${{ github.sha }}"
+          Write-Host "git rev-parse HEAD: $resolvedSha"
+          if ($resolvedSha -ne "${{ github.sha }}") {
+            Write-Host "[WARN] Resolved HEAD differs from github.sha of the triggering event." -ForegroundColor Yellow
+          }
+          "resolved_sha=$resolvedSha" >> $env:GITHUB_OUTPUT
+
+      # --- Validate inputs, branch ref and repository version (non-destructive) ---
+      - name: Validate inputs, ref and version
+        id: validate
+        shell: pwsh
+        env:
+          CONFIRM_RESTORE: ${{ inputs.confirm_restore }}
+          CONFIRM_NO_PROD_CHANGES: ${{ inputs.confirm_no_prod_changes }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          & "${{ github.workspace }}\scripts\db\validate-sync-prod-data-test-inputs.ps1" `
+            -ConfirmRestore $env:CONFIRM_RESTORE `
+            -ConfirmNoProdChanges $env:CONFIRM_NO_PROD_CHANGES `
+            -ReleaseVersion $env:RELEASE_VERSION `
+            -RefName "${{ github.ref_name }}" `
+            -RequiredRefName "Portal-Gerencial-rev1" `
+            -VersionFilePath "${{ github.workspace }}\docs\VERSION.md" `
+            -SourceDbName "Portal-Gerencial" `
+            -TargetDbName "Portal-Gerencial-Test" `
+            -SourceAppPath "C:\Apps\AlplaPortal\Prod" `
+            -TargetAppPath "C:\Apps\AlplaPortal\Test" `
+            -ResolvedCommitSha "${{ steps.commit_meta.outputs.resolved_sha }}" `
+            -WorkflowRef "${{ github.ref }}"
+
+      # --- Executar Script de Sincronizacao ---
+      - name: Run sync script
+        shell: pwsh
+        env:
+          TEST_SQL_ADMIN_CONNECTION_STRING: ${{ secrets.TEST_SQL_ADMIN_CONNECTION_STRING }}
+        run: |
+          & "${{ github.workspace }}\scripts\db\sync-prod-data-test.ps1" `
+            -Environment TEST `
+            -ProdDbName "Portal-Gerencial" `
+            -TestDbName "Portal-Gerencial-Test" `
+            -ProdAppPath "C:\Apps\AlplaPortal\Prod" `
+            -TestAppPath "C:\Apps\AlplaPortal\Test"
