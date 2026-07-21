@@ -188,7 +188,30 @@ export function ApprovalDetailPanel({
     const [insightSearchQ, setInsightSearchQ] = useState('');
     const [isWizardOpen, setIsWizardOpen] = useState(false);
 
+    const isQuotation = data.requestTypeCode === 'QUOTATION';
     const isPayment = data.requestTypeCode === 'PAYMENT';
+
+    const hasApprovalBatches = Array.isArray(data.approvalBatches) && data.approvalBatches.length > 0;
+    const hasSelectedQuotationItem = (data.lineItems || []).some(
+        (item: any) => Boolean(item.selectedQuotationItemId)
+    );
+    const cameFromLegacyCompleteQuotation = (data.statusHistory || []).some(
+        (history: any) => history.actionTaken === 'COMPLETE_QUOTATION'
+    );
+
+    const isLegacyQuotationApproval =
+        isQuotation &&
+        data.statusCode === 'WAITING_AREA_APPROVAL' &&
+        !hasApprovalBatches &&
+        !hasSelectedQuotationItem &&
+        cameFromLegacyCompleteQuotation;
+
+    const showAreaAdjustment =
+        !isPayment && (Boolean(activeBatch) || isLegacyQuotationApproval);
+
+    const showAreaReject =
+        Boolean(activeBatch) || isPayment || isLegacyQuotationApproval;
+
     // Partial/batch approval means the request's own aggregate status (data.statusCode)
     // can lag behind reality — e.g. it can still read WAITING_QUOTATION while one of its
     // batches is already WAITING_AREA_APPROVAL, because other line items are still
@@ -274,7 +297,6 @@ export function ApprovalDetailPanel({
     };
 
     // --- Computed ---
-    const isQuotation = data.requestTypeCode === 'QUOTATION';
     const selectedQuotation = data.quotations?.find(q => q.isSelected);
 
     // DEC-099/DEC-103: Cost Center & Plant Validation Logic
@@ -1290,8 +1312,8 @@ export function ApprovalDetailPanel({
             <div data-tour="approval-drawer-actions" style={{ position: 'sticky', bottom: 0, zIndex: 50, backgroundColor: 'var(--color-bg-page)', borderTop: '1px solid var(--color-border)', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', flexWrap: 'wrap', boxShadow: '0 -4px 12px -2px rgba(0,0,0,0.08)', width: '100%' }}>
                 {isAreaApprovalStage ? (
                     <>
-                        {/* Guard G1: Only show quick-actions when scope is deterministic */}
-                        {(!!activeBatch || isPayment) && showAdjustmentAction && !!activeBatch && (
+                        {/* Guard G1: Only show quick-actions when scope is deterministic (active batch, payment, or legacy quotation without batch) */}
+                        {showAdjustmentAction && showAreaAdjustment && (
                             <button
                                 onClick={() => setShowApprovalModal({ show: true, type: 'REQUEST_ADJUSTMENT' })}
                                 disabled={approvalProcessing}
@@ -1318,7 +1340,7 @@ export function ApprovalDetailPanel({
                                 <ArrowRightLeft size={16} /> Reajuste
                             </button>
                         )}
-                        {(!!activeBatch || isPayment) && (
+                        {showAreaReject && (
                             <button
                                 onClick={() => setShowApprovalModal({ show: true, type: 'REJECT' })}
                                 disabled={approvalProcessing}
@@ -1468,6 +1490,7 @@ export function ApprovalDetailPanel({
                 selectedQuotationName={selectedQuotation?.supplierNameSnapshot || null}
                 batchNumber={activeBatch?.batchNumber ?? null}
                 batchItemCount={activeBatch?.items?.length ?? null}
+                isLegacyQuotationApproval={isLegacyQuotationApproval}
             />
 
             {/* WIZARD MODAL (For Area Approval Quotes) */}
