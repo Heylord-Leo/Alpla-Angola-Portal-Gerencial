@@ -1483,6 +1483,7 @@ export function ApprovalDetailPanel({
                 onDownloadAttachment={handleDownloadAttachment}
                 intelligence={intelligence}
                 approvalStage={approvalStage}
+                activeBatch={activeBatch}
             />
 
             {/* HELP OVERLAY (MODAL) */}
